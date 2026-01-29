@@ -1,0 +1,19 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "op.legends.seq.mixins",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MinecraftMixin"
+  ],
+  "client": [
+    "InGameHudMixin",
+    "TitleScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}

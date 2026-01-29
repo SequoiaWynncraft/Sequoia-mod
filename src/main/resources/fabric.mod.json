@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "seq",
+  "version": "${version}",
+  "name": "Sequoia",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/seq/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "client": [
+      "op.legends.seq.client.SeqClient"
+    ],
+    "main": [
+      "op.legends.seq.Seq"
+    ]
+  },
+  "mixins": [
+    "seq.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
