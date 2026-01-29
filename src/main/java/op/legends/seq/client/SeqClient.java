@@ -49,7 +49,7 @@ public class SeqClient implements ClientModInitializer {
     @Subscribe
     public void onMinecraftFinishedLoading(MinecraftFinishedLoading ignored) {
         //after minecraft done loading
-
+        //NO RENDER SHIT THE EVENT TAKES IT OUT OF THE THREAD
     }
 
     @Subscribe
