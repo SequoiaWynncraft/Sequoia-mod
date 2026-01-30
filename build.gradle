@@ -11,6 +11,16 @@ base {
     archivesName = project.archives_base_name
 }
 
+loom {
+    runs {
+        client {
+            property("devauth.configDir", getRootProject().file(".devauth").absolutePath)
+            vmArgs "-ea"
+            client()
+        }
+    }
+}
+
 var natives = ""
 
 switch (org.gradle.internal.os.OperatingSystem.current()) {
