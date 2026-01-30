@@ -9,6 +9,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import op.legends.seq.events.MinecraftFinishedLoading;
 import op.legends.seq.events.Render2DEvent;
+import op.legends.seq.command.SeqCommand;
 import op.legends.seq.managers.AssetManager;
 import op.legends.seq.managers.FontManager;
 import op.legends.seq.managers.GameManager;
@@ -44,6 +45,7 @@ public class SeqClient implements ClientModInitializer {
         }
         fontManager = new FontManager();
         gameManager = new GameManager();
+        SeqCommand.register();
     }
 
     @Subscribe
