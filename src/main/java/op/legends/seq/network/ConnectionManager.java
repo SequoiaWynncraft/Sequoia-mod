@@ -20,14 +20,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-public class ConnectionManager {
+public class ConnectionManager extends WebSocketClient {
 
     private static final String WS_URL = "ws://localhost:8081/ws";
     private static final Path TOKEN_FILE = Path.of(System.getProperty("user.home"), ".seq_token");
     private static final Gson GSON = new Gson();
 
     private static ConnectionManager instance;
-    private WebSocketClient client;
     private String token;
     @Getter
     private boolean authenticated = false;
@@ -41,47 +40,20 @@ public class ConnectionManager {
     }
 
     private ConnectionManager() {
+        super(URI.create(WS_URL));
         loadToken();
     }
 
+    @Override
     public void connect() {
-        if (client != null && client.isOpen()) {
+        if (isOpen()) {
             sendChat("Already connected");
             return;
         }
 
         sendChat("Connecting...");
-
         try {
-            client = new WebSocketClient(new URI(WS_URL)) {
-                @Override
-                public void onOpen(ServerHandshake handshake) {
-                    SeqClient.LOGGER.info("WebSocket connected");
-                    if (token != null) {
-                        authenticate();
-                    } else {
-                        requestAuth();
-                    }
-                }
-
-                @Override
-                public void onMessage(String message) {
-                    handleMessage(message);
-                }
-
-                @Override
-                public void onClose(int code, String reason, boolean remote) {
-                    SeqClient.LOGGER.info("WebSocket closed: {} - {}", code, reason);
-                    authenticated = false;
-                }
-
-                @Override
-                public void onError(Exception ex) {
-                    SeqClient.LOGGER.error("WebSocket error", ex);
-                    sendChat("Connection error: " + ex.getMessage());
-                }
-            };
-            client.connect();
+            super.connect();
         } catch (Exception e) {
             SeqClient.LOGGER.error("Failed to connect", e);
             sendChat("Failed to connect: " + e.getMessage());
@@ -89,13 +61,40 @@ public class ConnectionManager {
     }
 
     public void disconnect() {
-        if (client == null || !client.isOpen()) {
+        if (!isOpen()) {
             sendChat("Not connected");
             return;
         }
-        client.close();
+        close();
         authenticated = false;
         sendChat("Disconnected");
+    }
+
+    @Override
+    public void onOpen(ServerHandshake handshake) {
+        SeqClient.LOGGER.info("WebSocket connected");
+        if (token != null) {
+            authenticate();
+        } else {
+            requestAuth();
+        }
+    }
+
+    @Override
+    public void onMessage(String message) {
+        handleMessage(message);
+    }
+
+    @Override
+    public void onClose(int code, String reason, boolean remote) {
+        SeqClient.LOGGER.info("WebSocket closed: {} - {}", code, reason);
+        authenticated = false;
+    }
+
+    @Override
+    public void onError(Exception ex) {
+        SeqClient.LOGGER.error("WebSocket error", ex);
+        sendChat("Connection error: " + ex.getMessage());
     }
 
     private void requestAuth() {
@@ -106,25 +105,25 @@ public class ConnectionManager {
         msg.addProperty("type", "auth_request");
         msg.addProperty("minecraft_uuid", player.getUUID().toString());
         msg.addProperty("minecraft_username", player.getName().getString());
-        client.send(GSON.toJson(msg));
+        send(GSON.toJson(msg));
     }
 
     private void authenticate() {
         JsonObject msg = new JsonObject();
         msg.addProperty("type", "authenticate");
         msg.addProperty("token", token);
-        client.send(GSON.toJson(msg));
+        send(GSON.toJson(msg));
     }
 
     public void requestConnectedUsers(Consumer<List<String>> callback) {
-        if (client == null || !client.isOpen()) {
+        if (!isOpen()) {
             callback.accept(List.of());
             return;
         }
         this.connectedUsersCallback = callback;
         JsonObject msg = new JsonObject();
         msg.addProperty("type", "get_connected");
-        client.send(GSON.toJson(msg));
+        send(GSON.toJson(msg));
     }
 
     private void handleMessage(String message) {
@@ -167,7 +166,7 @@ public class ConnectionManager {
                         deleteToken();
                     }
                     if (error.contains("guild")) {
-                        client.close();
+                        close();
                     }
                 }
             }
@@ -203,7 +202,7 @@ public class ConnectionManager {
     }
 
     public boolean isConnected() {
-        return client != null && client.isOpen();
+        return isOpen();
     }
 
     private void sendChat(String message) {
