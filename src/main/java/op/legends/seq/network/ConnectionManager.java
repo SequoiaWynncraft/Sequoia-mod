@@ -89,6 +89,7 @@ public class ConnectionManager extends WebSocketClient {
     public void onClose(int code, String reason, boolean remote) {
         SeqClient.LOGGER.info("WebSocket closed: {} - {}", code, reason);
         authenticated = false;
+        instance = null;
     }
 
     @Override
