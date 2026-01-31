@@ -10,6 +10,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import op.legends.seq.client.SeqClient;
 import org.java_websocket.client.WebSocketClient;
+import org.java_websocket.enums.ReadyState;
 import org.java_websocket.handshake.ServerHandshake;
 
 import java.net.URI;
@@ -46,8 +47,8 @@ public class ConnectionManager extends WebSocketClient {
 
     @Override
     public void connect() {
-        if (isOpen()) {
-            sendChat("Already connected");
+        if (getReadyState() != ReadyState.NOT_YET_CONNECTED) { // according to the goons this is only "state" im allowed to connnect otherwise its illegal and entire instance is basically fucked
+            sendChat("Already connected/connecting");
             return;
         }
 
@@ -57,6 +58,7 @@ public class ConnectionManager extends WebSocketClient {
         } catch (Exception e) {
             SeqClient.LOGGER.error("Failed to connect", e);
             sendChat("Failed to connect: " + e.getMessage());
+            instance = null;
         }
     }
 
