@@ -11,10 +11,10 @@
   "environment": "*",
   "entrypoints": {
     "client": [
-      "op.legends.seq.client.SeqClient"
+      "org.sequoia.seq.client.SeqClient"
     ],
     "main": [
-      "op.legends.seq.Seq"
+      "org.sequoia.seq.Seq"
     ]
   },
   "mixins": [
