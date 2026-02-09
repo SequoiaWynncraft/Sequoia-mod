@@ -4,26 +4,22 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
-import net.minecraft.ChatFormatting;
-import net.minecraft.network.chat.ClickEvent;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.MutableComponent;
+import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.enums.ReadyState;
 import org.java_websocket.handshake.ServerHandshake;
 
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 
-public class ConnectionManager extends WebSocketClient {
+public class ConnectionManager extends WebSocketClient implements NotificationAccessor {
 
-    private static final String WS_URL = "ws://localhost:8081/ws";
+    private static final String WS_URL = "ws://45.38.20.147:8081/ws";
     private static final Path TOKEN_FILE = Path.of(System.getProperty("user.home"), ".seq_token");
     private static final Gson GSON = new Gson();
 
@@ -48,28 +44,28 @@ public class ConnectionManager extends WebSocketClient {
     @Override
     public void connect() {
         if (getReadyState() != ReadyState.NOT_YET_CONNECTED) { // according to the goons this is only "state" im allowed to connnect otherwise its illegal and entire instance is basically fucked
-            sendChat("Already connected/connecting");
+            notify("Already connected/connecting");
             return;
         }
 
-        sendChat("Connecting...");
+        notify("Connecting...");
         try {
             super.connect();
         } catch (Exception e) {
             SeqClient.LOGGER.error("Failed to connect", e);
-            sendChat("Failed to connect: " + e.getMessage());
+            notify("Failed to connect: " + e.getMessage());
             instance = null;
         }
     }
 
     public void disconnect() {
         if (!isOpen()) {
-            sendChat("Not connected");
+            notify("Not connected");
             return;
         }
         close();
         authenticated = false;
-        sendChat("Disconnected");
+        notify("Disconnected");
     }
 
     @Override
@@ -97,7 +93,7 @@ public class ConnectionManager extends WebSocketClient {
     @Override
     public void onError(Exception ex) {
         SeqClient.LOGGER.error("WebSocket error", ex);
-        sendChat("Connection error: " + ex.getMessage());
+        notify("Connection error: " + ex.getMessage());
     }
 
     private void requestAuth() {
@@ -138,20 +134,20 @@ public class ConnectionManager extends WebSocketClient {
                 case "auth_challenge" -> {
                     String url = json.get("url").getAsString();
                     String code = json.get("code").getAsString();
-                    sendClickableLink("Click here to authenticate", url);
-                    sendChat("Your code: " + code);
+                    notifyClickable("Click here to authenticate", url);
+                    notify("Your code: " + code);
                 }
                 case "auth_success" -> {
                     token = json.get("token").getAsString();
                     String discordUser = json.get("discord_username").getAsString();
                     saveToken();
                     authenticated = true;
-                    sendChat("Successfully linked to Discord: " + discordUser);
+                    notify("Successfully linked to Discord: " + discordUser);
                 }
                 case "authenticated" -> {
                     String discordUser = json.get("discord_username").getAsString();
                     authenticated = true;
-                    sendChat("Connected as " + discordUser);
+                    notify("Connected as " + discordUser);
                 }
                 case "connected_users" -> {
                     List<String> users = new ArrayList<>();
@@ -163,7 +159,7 @@ public class ConnectionManager extends WebSocketClient {
                 }
                 case "error" -> {
                     String error = json.get("message").getAsString();
-                    sendChat("Error: " + error);
+                    notify("Error: " + error);
                     if (error.contains("expired") || error.contains("Invalid")) {
                         token = null;
                         deleteToken();
@@ -208,30 +204,4 @@ public class ConnectionManager extends WebSocketClient {
         return isOpen();
     }
 
-    private void sendChat(String message) {
-        Minecraft.getInstance().execute(() -> {
-            if (Minecraft.getInstance().player != null) {
-                Minecraft.getInstance().player.displayClientMessage(Component.literal("[Seq] " + message), false);
-            }
-        });
-    }
-
-    private void sendClickableLink(String text, String url) {
-        Minecraft.getInstance().execute(() -> {
-            if (Minecraft.getInstance().player != null) {
-                try {
-                    URI uri = new URI(url);
-                    MutableComponent link = Component.literal("[Seq] " + text)
-                            .withStyle(style -> style
-                                    .withClickEvent(new ClickEvent.OpenUrl(uri))
-                                    .withColor(ChatFormatting.AQUA)
-                                    .withUnderlined(true));
-                    Minecraft.getInstance().player.displayClientMessage(link, false);
-                } catch (URISyntaxException e) {
-                    Minecraft.getInstance().player.displayClientMessage(
-                            Component.literal("[Seq] " + text + ": " + url), false);
-                }
-            }
-        });
-    }
 }

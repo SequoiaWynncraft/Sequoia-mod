@@ -6,6 +6,7 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.network.chat.Component;
+import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.network.ConnectionManager;
 
 public class SeqCommand {
@@ -34,16 +35,16 @@ public class SeqCommand {
                                 .executes(ctx -> {
                                     if (!ConnectionManager.getInstance().isConnected()) {
                                         ctx.getSource().sendFeedback(
-                                                Component.literal("[Seq] Not connected. Use /seq connect first."));
+                                                NotificationAccessor.prefixed("Not connected. Use /seq connect first."));
                                         return 0;
                                     }
                                     ConnectionManager.getInstance().requestConnectedUsers(users -> {
                                         if (users.isEmpty()) {
                                             ctx.getSource().sendFeedback(
-                                                    Component.literal("[Seq] No users connected."));
+                                                    NotificationAccessor.prefixed("No users connected."));
                                         } else {
                                             ctx.getSource().sendFeedback(
-                                                    Component.literal("[Seq] Connected users (" + users.size() + "):"));
+                                                    NotificationAccessor.prefixed("Connected users (" + users.size() + "):"));
                                             for (String user : users) {
                                                 ctx.getSource().sendFeedback(
                                                         Component.literal("  - " + user));
