@@ -15,6 +15,8 @@ import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryStack;
 
 import java.awt.*;
+import java.util.ArrayDeque;
+import java.util.Queue;
 import java.util.function.LongConsumer;
 
 import static org.sequoia.seq.client.SeqClient.mc;
@@ -27,7 +29,27 @@ public class NVGContext {
     @Getter
     private static long context = -1L;
 
+    private static final Queue<LongConsumer> deferredDrawCalls = new ArrayDeque<>();
+
     private NVGContext() {
+    }
+
+    /**
+     * Queues a draw call to be rendered after the HUD, so it appears on top of hotbar/crosshair.
+     * Flushed by InGameHudMixin at the tail of Gui.render().
+     */
+    public static void renderDeferred(LongConsumer drawCall) {
+        deferredDrawCalls.add(drawCall);
+    }
+
+    /**
+     * Executes all deferred draw calls. Called from InGameHudMixin after HUD rendering.
+     */
+    public static void flushDeferred() {
+        LongConsumer drawCall;
+        while ((drawCall = deferredDrawCalls.poll()) != null) {
+            render(drawCall);
+        }
     }
 
     public static void init() {

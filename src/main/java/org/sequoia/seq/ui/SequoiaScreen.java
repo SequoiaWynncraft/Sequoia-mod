@@ -44,7 +44,7 @@ public class SequoiaScreen extends Screen {
         nvgMouseX = (float) (mouseX * guiScale / 2.0);
         nvgMouseY = (float) (mouseY * guiScale / 2.0);
 
-        NVGContext.render(nvg -> {
+        NVGContext.renderDeferred(nvg -> {
             float screenWidth = (int) (SeqClient.mc.getWindow().getWidth() / 2f);
             float screenHeight = (int) (SeqClient.mc.getWindow().getHeight() / 2f);
 

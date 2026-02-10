@@ -117,23 +117,23 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
         // Slider track
         float trackY = sliderY + (SLIDER_HEIGHT - 4) / 2f;
-        NVGWrapper.drawRoundedRect(nvg, sliderX, trackY, sliderWidth, 4, 2, TRACK_COLOR);
+        NVGWrapper.drawRect(nvg, sliderX, trackY, sliderWidth, 4, TRACK_COLOR);
 
         // Slider fill
         double value = getDoubleValue();
         float ratio = (float) ((value - min) / (max - min));
         ratio = Math.max(0, Math.min(1, ratio));
         float fillWidth = sliderWidth * ratio;
-        NVGWrapper.drawRoundedRect(nvg, sliderX, trackY, fillWidth, 4, 2, FILL_COLOR);
+        NVGWrapper.drawRect(nvg, sliderX, trackY, fillWidth, 4, FILL_COLOR);
 
         // Knob
         float knobX = sliderX + fillWidth;
         float knobY = sliderY + SLIDER_HEIGHT / 2f - KNOB_RADIUS / 2f;
-        NVGWrapper.drawRoundedRect(nvg, knobX - KNOB_RADIUS, knobY, KNOB_RADIUS * 2, KNOB_RADIUS * 2, KNOB_RADIUS, KNOB_COLOR);
+        NVGWrapper.drawRect(nvg, knobX - KNOB_RADIUS, knobY - KNOB_RADIUS / 2, KNOB_RADIUS * 2, KNOB_RADIUS * 2, KNOB_COLOR);
 
         // Text box
         Color boxBg = editing ? TEXT_BOX_ACTIVE : TEXT_BOX_BG;
-        NVGWrapper.drawRoundedRect(nvg, textBoxX, textBoxY, TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, 3, boxBg);
+        NVGWrapper.drawRect(nvg, textBoxX, textBoxY, TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, boxBg);
         if (editing) {
             NVGWrapper.drawRectOutline(nvg, textBoxX, textBoxY, TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, 1, TEXT_BOX_BORDER);
         }
@@ -144,9 +144,18 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         var textColor = NVGContext.nvgColor(TEXT_COLOR);
         nvgFillColor(nvg, textColor);
 
-        String displayText = editing ? editBuffer + ((cursorBlink / 20) % 2 == 0 ? "|" : "") : formatValue(value);
+        String displayText = editing ? editBuffer : formatValue(value);
         nvgText(nvg, textBoxX + TEXT_BOX_WIDTH / 2f, textBoxY + TEXT_BOX_HEIGHT / 2f, displayText);
         textColor.free();
+
+        // Draw cursor separately so it doesn't affect text width
+        if (editing && (cursorBlink / 1000) % 2 == 0) {
+            float[] textBounds = new float[4];
+            nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            float textW = nvgTextBounds(nvg, 0, 0, editBuffer, textBounds);
+            float cursorX = textBoxX + (TEXT_BOX_WIDTH + textW) / 2f + 1;
+            NVGWrapper.drawRect(nvg, cursorX, textBoxY + 3, 1, TEXT_BOX_HEIGHT - 6, TEXT_COLOR);
+        }
     }
 
     @Override

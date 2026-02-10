@@ -44,14 +44,14 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
         boolean on = setting.getValue();
 
         Color bgColor = on ? ON_COLOR : OFF_COLOR;
-        NVGWrapper.drawRoundedRect(nvg, toggleX, toggleY, TOGGLE_WIDTH, TOGGLE_HEIGHT, TOGGLE_HEIGHT / 2f, bgColor);
+        NVGWrapper.drawRect(nvg, toggleX, toggleY, TOGGLE_WIDTH, TOGGLE_HEIGHT, bgColor);
 
         float knobSize = TOGGLE_HEIGHT - KNOB_PADDING * 2;
         float knobX = on
                 ? toggleX + TOGGLE_WIDTH - knobSize - KNOB_PADDING
                 : toggleX + KNOB_PADDING;
         float knobY = toggleY + KNOB_PADDING;
-        NVGWrapper.drawRoundedRect(nvg, knobX, knobY, knobSize, knobSize, knobSize / 2f, KNOB_COLOR);
+        NVGWrapper.drawRect(nvg, knobX, knobY, knobSize, knobSize, KNOB_COLOR);
     }
 
     @Override

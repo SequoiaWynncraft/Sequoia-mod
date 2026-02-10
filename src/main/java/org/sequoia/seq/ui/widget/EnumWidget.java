@@ -41,7 +41,7 @@ public class EnumWidget extends SettingWidget<Setting.EnumSetting<?>> {
         float btnX = x + width - BUTTON_WIDTH - 8;
         float btnY = y + (height - BUTTON_HEIGHT) / 2f;
         boolean hovered = isHovered(mouseX, mouseY, btnX, btnY, BUTTON_WIDTH, BUTTON_HEIGHT);
-        NVGWrapper.drawRoundedRect(nvg, btnX, btnY, BUTTON_WIDTH, BUTTON_HEIGHT, 3, hovered ? BUTTON_HOVER : BUTTON_COLOR);
+        NVGWrapper.drawRect(nvg, btnX, btnY, BUTTON_WIDTH, BUTTON_HEIGHT, hovered ? BUTTON_HOVER : BUTTON_COLOR);
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, FONT_SIZE);
