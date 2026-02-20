@@ -19,12 +19,12 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
     private static final float TEXT_BOX_HEIGHT = 18;
 
     private static final Color TRACK_COLOR = new Color(50, 50, 60, 200);
-    private static final Color FILL_COLOR = new Color(80, 200, 120, 255);
+    private static final Color FILL_COLOR = new Color(160, 130, 220, 255);
     private static final Color KNOB_COLOR = new Color(255, 255, 255, 255);
     private static final Color LABEL_COLOR = new Color(220, 220, 220, 255);
     private static final Color TEXT_BOX_BG = new Color(30, 30, 40, 200);
     private static final Color TEXT_BOX_ACTIVE = new Color(50, 50, 70, 220);
-    private static final Color TEXT_BOX_BORDER = new Color(80, 200, 120, 180);
+    private static final Color TEXT_BOX_BORDER = new Color(130, 100, 200, 180);
     private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
 
     private boolean dragging = false;

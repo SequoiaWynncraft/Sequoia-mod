@@ -26,7 +26,7 @@ public class FontManager {
     private static float fontSize = 9f;
     @Setter
     public String altFont = "";
-    private String selectedFont = "arial";
+    private String selectedFont = "mc";
     @Setter
     private boolean shadowsEnabled = true;
     @Setter

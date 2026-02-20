@@ -19,7 +19,7 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
     private static final Color LABEL_COLOR = new Color(220, 220, 220, 255);
     private static final Color TEXT_BOX_BG = new Color(30, 30, 40, 200);
     private static final Color TEXT_BOX_ACTIVE = new Color(50, 50, 70, 220);
-    private static final Color TEXT_BOX_BORDER = new Color(80, 200, 120, 180);
+    private static final Color TEXT_BOX_BORDER = new Color(130, 100, 200, 180);
     private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
     private static final Color PLACEHOLDER_COLOR = new Color(120, 120, 140, 180);
 

@@ -10,7 +10,7 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 
 public class GameManager implements EventBusAccessor {
-    private static final String DEFAULT_RESOURCE_FONT = "arial";
+    private static final String DEFAULT_RESOURCE_FONT = "mc";
 
     public GameManager() {
         subscribe(this);
@@ -18,7 +18,7 @@ public class GameManager implements EventBusAccessor {
 
     public void loadFont() {
         //Minecraft font for when people dont want custom font. AKA fuck minecrafts renderer
-        loadFontFromResources("/assets/seq/fonts/arial.ttf", DEFAULT_RESOURCE_FONT);
+        loadFontFromResources("/assets/seq/fonts/mc.ttf", DEFAULT_RESOURCE_FONT);
 
 
         SeqClient.getFontManager().setSelectedFont(DEFAULT_RESOURCE_FONT);

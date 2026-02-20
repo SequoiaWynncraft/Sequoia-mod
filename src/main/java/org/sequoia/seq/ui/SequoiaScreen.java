@@ -25,7 +25,7 @@ public class SequoiaScreen extends Screen {
     private static final Color BUTTON_COLOR = new Color(40, 40, 50, 200);
     private static final Color BUTTON_HOVER_COLOR = new Color(60, 60, 80, 220);
     private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
-    private static final Color TITLE_COLOR = new Color(100, 220, 130, 255);
+    private static final Color TITLE_COLOR = new Color(160, 130, 220, 255);
 
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
 
@@ -104,7 +104,7 @@ public class SequoiaScreen extends Screen {
             float centerX = screenWidth / 2f - BUTTON_WIDTH / 2f;
 
             if (isInButton(mx, my, centerX, startY)) {
-                // Partyfinder — no-op
+                SeqClient.mc.setScreen(new PartyFinderScreen(this));
             } else if (isInButton(mx, my, centerX, startY + BUTTON_HEIGHT + BUTTON_SPACING)) {
                 SeqClient.mc.setScreen(new SettingsScreen(this));
             } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 2)) {
@@ -127,6 +127,4 @@ public class SequoiaScreen extends Screen {
         return false;
     }
 
-    @Override
-    public void renderBackground(@NotNull GuiGraphics guiGraphics, int i, int j, float f) {}
 }

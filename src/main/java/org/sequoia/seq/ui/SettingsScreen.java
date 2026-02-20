@@ -42,26 +42,26 @@ public class SettingsScreen extends Screen {
 
     // Colors
     private static final Color BG_COLOR = new Color(10, 10, 16, 100);
-    private static final Color SIDEBAR_COLOR = new Color(18, 18, 26, 100);
+    private static final Color SIDEBAR_COLOR = new Color(18, 18, 26, 200);
     private static final Color PANEL_COLOR = new Color(22, 22, 30, 100);
     private static final Color HEADER_COLOR = new Color(26, 26, 36, 110);
     private static final Color CATEGORY_COLOR = new Color(30, 30, 42, 110);
     private static final Color CATEGORY_HOVER = new Color(38, 38, 52, 120);
-    private static final Color TITLE_COLOR = new Color(100, 220, 130, 255);
+    private static final Color TITLE_COLOR = new Color(160, 130, 220, 255);
     private static final Color CATEGORY_TEXT = new Color(180, 180, 200, 255);
     private static final Color ARROW_COLOR = new Color(140, 140, 160, 255);
     private static final Color SCROLLBAR_TRACK = new Color(30, 30, 42, 255);
-    private static final Color SCROLLBAR_THUMB = new Color(100, 220, 130, 150);
+    private static final Color SCROLLBAR_THUMB = new Color(160, 130, 220, 150);
     private static final Color SETTING_BG = new Color(22, 22, 30, 100);
     private static final Color SETTING_BG_ALT = new Color(26, 26, 36, 100);
     private static final Color SIDEBAR_BUTTON_COLOR = new Color(30, 30, 42, 110);
     private static final Color SIDEBAR_BUTTON_HOVER = new Color(42, 42, 58, 120);
-    private static final Color SIDEBAR_BUTTON_ACTIVE = new Color(40, 140, 80, 120);
+    private static final Color SIDEBAR_BUTTON_ACTIVE = new Color(80, 50, 140, 120);
     private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
     private static final Color DIVIDER_COLOR = new Color(40, 40, 55, 255);
     private static final Color SEARCH_BG = new Color(30, 30, 40, 255);
     private static final Color SEARCH_ACTIVE_BG = new Color(40, 40, 55, 255);
-    private static final Color SEARCH_BORDER = new Color(80, 200, 120, 180);
+    private static final Color SEARCH_BORDER = new Color(130, 100, 200, 180);
     private static final Color SEARCH_PLACEHOLDER = new Color(100, 100, 120, 200);
 
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
@@ -341,6 +341,7 @@ public class SettingsScreen extends Screen {
 
             // Partyfinder
             if (isHovered(mx, my, btnX, btnStartY, btnW, SIDEBAR_BUTTON_HEIGHT)) {
+                SeqClient.mc.setScreen(new PartyFinderScreen(this));
                 return true;
             }
             // Settings (already here)
@@ -541,6 +542,4 @@ public class SettingsScreen extends Screen {
         return false;
     }
 
-    @Override
-    public void renderBackground(@NotNull GuiGraphics guiGraphics, int i, int j, float f) {}
 }

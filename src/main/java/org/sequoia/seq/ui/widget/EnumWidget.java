@@ -17,7 +17,7 @@ public class EnumWidget extends SettingWidget<Setting.EnumSetting<?>> {
     private static final Color BUTTON_COLOR = new Color(50, 50, 60, 200);
     private static final Color BUTTON_HOVER = new Color(70, 70, 85, 220);
     private static final Color LABEL_COLOR = new Color(220, 220, 220, 255);
-    private static final Color VALUE_COLOR = new Color(80, 200, 120, 255);
+    private static final Color VALUE_COLOR = new Color(160, 130, 220, 255);
 
     public EnumWidget(Setting.EnumSetting<?> setting) {
         super(setting);

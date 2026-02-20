@@ -15,7 +15,7 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
     private static final float KNOB_PADDING = 2;
     private static final float FONT_SIZE = 12;
 
-    private static final Color ON_COLOR = new Color(80, 200, 120, 255);
+    private static final Color ON_COLOR = new Color(160, 130, 220, 255);
     private static final Color OFF_COLOR = new Color(80, 80, 90, 200);
     private static final Color KNOB_COLOR = new Color(255, 255, 255, 255);
     private static final Color LABEL_COLOR = new Color(220, 220, 220, 255);

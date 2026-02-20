@@ -19,7 +19,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class AssetManager {
 
-    private static final String[] ASSET_FILES = new String[]{"icon.png"};
+    private static final String[] ASSET_FILES = new String[]{
+            "icon.png", "archer.png", "assassin.png", "warrior.png", "mage.png", "shaman.png", "star.png"
+    };
     @Getter
     public static ConcurrentHashMap<String, Asset> assetsMap = new ConcurrentHashMap<>();
 

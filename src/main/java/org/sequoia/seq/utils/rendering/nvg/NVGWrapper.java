@@ -211,7 +211,7 @@ public class NVGWrapper {
 
     public static int loadImageFromInputStream(long context, ByteBuffer buffer) {
 
-        int imageHandle = NanoVG.nvgCreateImageMem(context, 0, buffer);
+        int imageHandle = NanoVG.nvgCreateImageMem(context, NanoVG.NVG_IMAGE_NEAREST, buffer);
         if (imageHandle == 0) {
             throw new IllegalStateException("Failed to load image: " + buffer);
         }
