@@ -20,7 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AssetManager {
 
     private static final String[] ASSET_FILES = new String[]{
-            "icon.png", "archer.png", "assassin.png", "warrior.png", "mage.png", "shaman.png", "star.png"
+            "icon.png", "archer.png", "assassin.png", "warrior.png", "mage.png", "shaman.png", "star.png",
+            "notg.png", "nol.png", "tcc.png", "tna.png", "starup.png", "cross.png"
     };
     @Getter
     public static ConcurrentHashMap<String, Asset> assetsMap = new ConcurrentHashMap<>();

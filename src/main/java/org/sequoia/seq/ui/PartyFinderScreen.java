@@ -7,6 +7,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
+import org.lwjgl.nanovg.NVGPaint;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.managers.AssetManager;
 
@@ -14,17 +15,16 @@ import org.sequoia.seq.utils.rendering.nvg.NVGContext;
 import org.sequoia.seq.utils.rendering.nvg.NVGWrapper;
 
 import java.awt.*;
-import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.*;
 import java.util.List;
-import java.util.Set;
 
 import static org.lwjgl.nanovg.NanoVG.*;
 
 public class PartyFinderScreen extends Screen {
 
-    // ── Raid types ──
+    // ── Raid types & Party tags ──
     private static final String[] RAID_TYPES = {"NOTG", "NOL", "TCC", "TNA", "ANNI"};
+    private static final String[] PARTY_TAGS = {"Chill", "Grind"};
 
     // ── Layout ──
     private static final float SIDEBAR_WIDTH = 140;
@@ -65,6 +65,9 @@ public class PartyFinderScreen extends Screen {
     private static final float FILTER_BUTTON_H = 24;
     private static final float FILTER_BUTTON_MARGIN = 12;
 
+    // Leader management icon sizes
+    private static final float LEADER_ICON_SIZE = 14;
+
     // ── Font sizes ──
     private static final float TITLE_FONT_SIZE = 18;
     private static final float SIDEBAR_TITLE_SIZE = 16;
@@ -78,6 +81,7 @@ public class PartyFinderScreen extends Screen {
     private static final float RAID_LABEL_SIZE = 9;
     private static final float MODAL_TITLE_SIZE = 16;
     private static final float MODAL_LABEL_SIZE = 12;
+    private static final float TAG_CHIP_FONT_SIZE = 11;
 
     // ── Colors ──
     private static final Color BG_COLOR = new Color(10, 10, 16, 100);
@@ -100,6 +104,7 @@ public class PartyFinderScreen extends Screen {
     private static final Color CARD_BG = new Color(30, 30, 42, 110);
     private static final Color CARD_EXPANDED_BG = new Color(26, 26, 36, 120);
     private static final Color MEMBER_TEXT_COLOR = new Color(220, 220, 230, 255);
+    private static final Color MEMBER_DIM_COLOR = new Color(120, 120, 140, 180);
     private static final Color ROLE_TEXT_COLOR = new Color(160, 160, 180, 255);
 
     private static final Color PARTY_TYPE_TEXT = new Color(180, 180, 200, 255);
@@ -118,7 +123,6 @@ public class PartyFinderScreen extends Screen {
     private static final Color DROPDOWN_HOVER = new Color(55, 55, 75, 240);
     private static final Color DROPDOWN_BORDER = new Color(80, 80, 100, 200);
 
-    private static final Color TYPE_ICON_RING = new Color(200, 50, 50, 255);
     private static final Color TYPE_ICON_SELECTED = new Color(200, 50, 50, 80);
 
     private static final Color SCROLLBAR_TRACK = new Color(30, 30, 42, 255);
@@ -130,9 +134,22 @@ public class PartyFinderScreen extends Screen {
     private static final Color MODAL_DROPDOWN_BG = new Color(35, 35, 48, 255);
     private static final Color MODAL_DROPDOWN_BORDER = new Color(80, 80, 100, 200);
 
+    private static final Color TAG_CHIP_BG = new Color(40, 40, 55, 220);
+    private static final Color TAG_CHIP_HOVER = new Color(55, 55, 75, 240);
+    private static final Color FILTER_BOX_BG = new Color(15, 15, 22, 240);
+
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
     private static final String[] ROLES = {"DPS", "Tank", "Support", "Other"};
-    private static final String[] PARTY_TYPES = {"Casual", "Grind"};
+
+    // All possible tags = RAID_TYPES + PARTY_TAGS
+    private static final String[] ALL_TAGS;
+    static {
+        ALL_TAGS = new String[RAID_TYPES.length + PARTY_TAGS.length];
+        System.arraycopy(RAID_TYPES, 0, ALL_TAGS, 0, RAID_TYPES.length);
+        System.arraycopy(PARTY_TAGS, 0, ALL_TAGS, RAID_TYPES.length, PARTY_TAGS.length);
+    }
+
+    private static final Set<String> RAID_TYPE_SET = new HashSet<>(Arrays.asList(RAID_TYPES));
 
     // ── State ──
     private final Screen parent;
@@ -161,49 +178,66 @@ public class PartyFinderScreen extends Screen {
     // ── Modal state ──
     private boolean modalOpen = false;
     private final Set<String> modalSelectedRaids = new HashSet<>();
-    private String modalPartyType = "Casual";
     private int modalReservedSlots = 0;
-    private boolean modalPartyTypeDropdownOpen = false;
     private boolean reservedSlotsFocused = false;
     private String reservedSlotsInput = "0";
+
+    // Edit tags sub-overlay in modal
+    private boolean editTagsScreenOpen = false;
+    private final Set<String> modalActiveTags = new LinkedHashSet<>();
+    private final Set<String> modalInactiveTags = new LinkedHashSet<>();
+    private final Map<String, Long> modalTagAnimStartTimes = new HashMap<>();
 
     // Cached modal position
     private float modalX, modalY;
 
+    // ── Filter+ screen state ──
+    private boolean filterScreenOpen = false;
+    private final Set<String> activeFilterTags = new LinkedHashSet<>();
+    private final Set<String> inactiveFilterTags = new LinkedHashSet<>();
+    private final Map<String, Long> filterTagAnimStartTimes = new HashMap<>();
+
+    // ── Leader member management ──
+    private int hoveredMemberPartyIndex = -1;
+    private int hoveredMemberIndex = -1;
+
     public PartyFinderScreen(Screen parent) {
         super(Component.literal("Party Finder"));
         this.parent = parent;
+        // Initialize filter: all tags active
+        for (String tag : ALL_TAGS) {
+            activeFilterTags.add(tag);
+        }
+        // Initialize modal tags: Chill active, Grind inactive
+        modalActiveTags.add("Chill");
+        modalInactiveTags.add("Grind");
         buildDemoData();
     }
 
     private void buildDemoData() {
-        PartyListing p1 = new PartyListing(List.of("NOTG"), "Casual");
+        PartyListing p1 = new PartyListing(List.of("NOTG", "Chill"));
         p1.members.add(new PartyMember("GAZTheMiner", "archer", "DPS", true));
         p1.members.add(new PartyMember("Vicvir", "warrior", "Tank", false));
         p1.expanded = true;
         parties.add(p1);
 
-        PartyListing p2 = new PartyListing(List.of("TCC", "NOL"), "Grind");
+        PartyListing p2 = new PartyListing(List.of("TCC", "NOL", "Grind"));
         p2.members.add(new PartyMember("PlayerOne", "mage", "Support", true));
         p2.members.add(new PartyMember("PlayerTwo", "warrior", "DPS", false));
         parties.add(p2);
 
-        PartyListing p3 = new PartyListing(List.of("NOL", "NOTG"), "Casual");
+        PartyListing p3 = new PartyListing(List.of("NOL", "NOTG", "Chill"));
         p3.members.add(new PartyMember("Leader123", "assassin", "DPS", true));
         p3.members.add(new PartyMember("MemberA", "warrior", "Tank", false));
         p3.members.add(new PartyMember("MemberB", "mage", "Support", false));
         p3.members.add(new PartyMember("MemberC", "archer", "DPS", false));
         parties.add(p3);
 
-        PartyListing p4 = new PartyListing(List.of("ANNI"), "Casual");
+        PartyListing p4 = new PartyListing(List.of("ANNI", "Chill"));
         p4.members.add(new PartyMember("RaidLeader", "shaman", "Support", true));
         p4.members.add(new PartyMember("DPS1", "assassin", "DPS", false));
         p4.members.add(new PartyMember("DPS2", "archer", "DPS", false));
         parties.add(p4);
-    }
-
-    private static int maxSizeForRaids(List<String> raidTypes) {
-        return raidTypes.contains("ANNI") ? 10 : 4;
     }
 
     // ══════════════════════════════ RENDER ══════════════════════════════
@@ -244,6 +278,10 @@ public class PartyFinderScreen extends Screen {
             float contentY = HEADER_HEIGHT;
             float contentWidth = panelWidth;
             float contentHeight = screenHeight - HEADER_HEIGHT;
+
+            // Update hovered member tracking
+            hoveredMemberPartyIndex = -1;
+            hoveredMemberIndex = -1;
 
             nvgSave(nvg);
             nvgScissor(nvg, contentX, contentY, contentWidth, contentHeight);
@@ -290,13 +328,18 @@ public class PartyFinderScreen extends Screen {
             ftc.free();
 
             // Role dropdown overlay
-            if (roleDropdownOpen && !modalOpen) {
+            if (roleDropdownOpen && !modalOpen && !filterScreenOpen) {
                 renderRoleDropdownMenu(nvg, fontName);
             }
 
             // Modal overlay
             if (modalOpen) {
                 renderModal(nvg, fontName, panelX, panelWidth, screenHeight);
+            }
+
+            // Filter+ screen overlay (highest priority)
+            if (filterScreenOpen) {
+                renderFilterScreen(nvg, fontName, panelX, panelWidth, screenHeight);
             }
         });
     }
@@ -481,8 +524,9 @@ public class PartyFinderScreen extends Screen {
     private void renderExpandedCard(long nvg, String fontName, float x, float y, float w, float h,
                                     PartyListing party, int partyIndex, boolean isJoined) {
         float rowX = x + CARD_PADDING;
+        List<String> raidTags = party.getRaidTags();
 
-        drawRaidTypeCircle(nvg, fontName, rowX, y + (CARD_HEADER_HEIGHT - TYPE_ICON_SIZE) / 2f, TYPE_ICON_SIZE, party.raidTypes.get(0));
+        drawRaidIconCircle(nvg, fontName, rowX, y + (CARD_HEADER_HEIGHT - TYPE_ICON_SIZE) / 2f, TYPE_ICON_SIZE, raidTags);
         rowX += TYPE_ICON_SIZE + 6;
 
         nvgFontFace(nvg, fontName);
@@ -502,16 +546,19 @@ public class PartyFinderScreen extends Screen {
         arrCol.free();
 
         // Members
+        boolean isMyParty = partyIndex == myPartyIndex;
+        boolean amLeaderOfThisParty = isMyParty && isPartyLeader;
         float memberY = y + CARD_HEADER_HEIGHT;
-        for (PartyMember member : party.members) {
-            renderMemberRow(nvg, fontName, x + CARD_PADDING + 10, memberY, w - CARD_PADDING * 2 - 10, member);
+        for (int mi = 0; mi < party.members.size(); mi++) {
+            PartyMember member = party.members.get(mi);
+            renderMemberRow(nvg, fontName, x + CARD_PADDING + 10, memberY,
+                    w - CARD_PADDING * 2 - 10, member, partyIndex, mi, amLeaderOfThisParty);
             memberY += MEMBER_ROW_HEIGHT;
         }
 
         float lastMemberCenterY = memberY - MEMBER_ROW_HEIGHT / 2f;
 
         // Join/Joined (don't show on your own party)
-        boolean isMyParty = partyIndex == myPartyIndex;
         if (!isMyParty) {
             float joinX = x + w - CARD_PADDING - JOIN_BUTTON_WIDTH;
             float joinY = memberY - MEMBER_ROW_HEIGHT + (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
@@ -532,7 +579,7 @@ public class PartyFinderScreen extends Screen {
             jtc.free();
         }
 
-        // Raid(Type) label
+        // Tag label
         float labelRightX = x + w - CARD_PADDING - (isMyParty ? 0 : JOIN_BUTTON_WIDTH + 8);
         nvgFontSize(nvg, TYPE_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
@@ -545,8 +592,9 @@ public class PartyFinderScreen extends Screen {
     private void renderCollapsedCard(long nvg, String fontName, float x, float y, float w, PartyListing party) {
         float rowX = x + CARD_PADDING;
         float centerY = y + COLLAPSED_ROW_HEIGHT / 2f;
+        List<String> raidTags = party.getRaidTags();
 
-        drawRaidTypeCircle(nvg, fontName, rowX, y + (COLLAPSED_ROW_HEIGHT - TYPE_ICON_SIZE) / 2f, TYPE_ICON_SIZE, party.raidTypes.get(0));
+        drawRaidIconCircle(nvg, fontName, rowX, y + (COLLAPSED_ROW_HEIGHT - TYPE_ICON_SIZE) / 2f, TYPE_ICON_SIZE, raidTags);
         rowX += TYPE_ICON_SIZE + 6;
 
         nvgFontFace(nvg, fontName);
@@ -608,9 +656,21 @@ public class PartyFinderScreen extends Screen {
         tc.free();
     }
 
-    private void renderMemberRow(long nvg, String fontName, float x, float y, float w, PartyMember member) {
+    private void renderMemberRow(long nvg, String fontName, float x, float y, float w,
+                                 PartyMember member, int partyIndex, int memberIndex,
+                                 boolean amLeaderOfThisParty) {
         float rowX = x;
         float centerY = y + MEMBER_ROW_HEIGHT / 2f;
+
+        // Hover detection for leader management
+        boolean isHoveredMember = false;
+        if (amLeaderOfThisParty && !member.isLeader) {
+            if (isHovered(nvgMouseX, nvgMouseY, x, y, w, MEMBER_ROW_HEIGHT)) {
+                isHoveredMember = true;
+                hoveredMemberPartyIndex = partyIndex;
+                hoveredMemberIndex = memberIndex;
+            }
+        }
 
         if (member.isLeader) {
             AssetManager.Asset starIcon = getClassIcon("star");
@@ -621,10 +681,12 @@ public class PartyFinderScreen extends Screen {
         }
         rowX += STAR_ICON_SIZE + 4;
 
+        // Member name - dimmed if hovered for management
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var nc = NVGContext.nvgColor(MEMBER_TEXT_COLOR);
+        Color nameColor = isHoveredMember ? MEMBER_DIM_COLOR : MEMBER_TEXT_COLOR;
+        var nc = NVGContext.nvgColor(nameColor);
         nvgFillColor(nvg, nc);
         nvgText(nvg, rowX, centerY, member.name);
         nc.free();
@@ -633,6 +695,23 @@ public class PartyFinderScreen extends Screen {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
         float nameW = nvgTextBounds(nvg, 0, 0, member.name, bounds);
+
+        // Draw promote/kick icons on hover
+        if (isHoveredMember) {
+            AssetManager.Asset starupIcon = getClassIcon("starup");
+            AssetManager.Asset crossIcon = getClassIcon("cross");
+
+            if (starupIcon != null) {
+                float iconY = centerY - LEADER_ICON_SIZE / 2f;
+                NVGWrapper.drawImage(nvg, starupIcon, rowX, iconY, LEADER_ICON_SIZE, LEADER_ICON_SIZE, 255);
+            }
+            if (crossIcon != null) {
+                float iconY = centerY - LEADER_ICON_SIZE / 2f;
+                float crossX = rowX + nameW - LEADER_ICON_SIZE;
+                NVGWrapper.drawImage(nvg, crossIcon, crossX, iconY, LEADER_ICON_SIZE, LEADER_ICON_SIZE, 255);
+            }
+        }
+
         rowX += nameW + 8;
 
         AssetManager.Asset icon = getClassIcon(member.className);
@@ -672,28 +751,89 @@ public class PartyFinderScreen extends Screen {
         c.free();
     }
 
-    // ── Raid type circle (with abbreviation text) ──
+    // ── Pizza-slice raid icon circle ──
 
-    private void drawRaidTypeCircle(long nvg, String fontName, float x, float y, float size, String raidType) {
+    private void drawRaidIconCircle(long nvg, String fontName, float x, float y, float size, List<String> raidTags) {
         float cx = x + size / 2f;
         float cy = y + size / 2f;
+        float radius = size / 2f - 1;
 
-        nvgBeginPath(nvg);
-        nvgCircle(nvg, cx, cy, size / 2f - 1);
-        nvgStrokeWidth(nvg, 2f);
-        var sc = NVGContext.nvgColor(TYPE_ICON_RING);
-        nvgStrokeColor(nvg, sc);
-        nvgStroke(nvg);
-        nvgClosePath(nvg);
-        sc.free();
+        if (raidTags.isEmpty()) {
+            return;
+        }
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, RAID_LABEL_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var tc = NVGContext.nvgColor(TEXT_COLOR);
-        nvgFillColor(nvg, tc);
-        nvgText(nvg, cx, cy, raidType);
-        tc.free();
+        // Check if ANNI - text fallback
+        if (raidTags.size() == 1 && "ANNI".equals(raidTags.get(0))) {
+            nvgFontFace(nvg, fontName);
+            nvgFontSize(nvg, RAID_LABEL_SIZE);
+            nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            var tc = NVGContext.nvgColor(TEXT_COLOR);
+            nvgFillColor(nvg, tc);
+            nvgText(nvg, cx, cy, "ANNI");
+            tc.free();
+            return;
+        }
+
+        int count = raidTags.size();
+        float anglePerSlice = (float) (2.0 * Math.PI / count);
+        // Start from top (-PI/2)
+        float startAngle = (float) (-Math.PI / 2.0);
+
+        for (int i = 0; i < count; i++) {
+            String tag = raidTags.get(i);
+            AssetManager.Asset raidIcon = getClassIcon(tag.toLowerCase());
+
+            float sliceStart = startAngle + i * anglePerSlice;
+            float sliceEnd = sliceStart + anglePerSlice;
+
+            if (count == 1) {
+                // Full circle - just fill with image
+                if (raidIcon != null) {
+                    nvgSave(nvg);
+                    nvgBeginPath(nvg);
+                    nvgCircle(nvg, cx, cy, radius);
+                    try (NVGPaint paint = NVGPaint.calloc()) {
+                        nvgImagePattern(nvg, x, y, size, size, 0, raidIcon.getImage(), 1.0f, paint);
+                        nvgFillPaint(nvg, paint);
+                        nvgFill(nvg);
+                    }
+                    nvgClosePath(nvg);
+                    nvgRestore(nvg);
+                } else {
+                    // Fallback to text
+                    nvgFontFace(nvg, fontName);
+                    nvgFontSize(nvg, RAID_LABEL_SIZE);
+                    nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                    var tc = NVGContext.nvgColor(TEXT_COLOR);
+                    nvgFillColor(nvg, tc);
+                    nvgText(nvg, cx, cy, tag);
+                    tc.free();
+                }
+            } else {
+                // Pie slice
+                nvgSave(nvg);
+                nvgBeginPath(nvg);
+                nvgMoveTo(nvg, cx, cy);
+                nvgArc(nvg, cx, cy, radius, sliceStart, sliceEnd, NVG_CW);
+                nvgClosePath(nvg);
+
+                if (raidIcon != null) {
+                    try (NVGPaint paint = NVGPaint.calloc()) {
+                        nvgImagePattern(nvg, x, y, size, size, 0, raidIcon.getImage(), 1.0f, paint);
+                        nvgFillPaint(nvg, paint);
+                        nvgFill(nvg);
+                    }
+                } else {
+                    // Fallback solid color for missing icon
+                    var fc = NVGContext.nvgColor(TYPE_ICON_SELECTED);
+                    nvgFillColor(nvg, fc);
+                    nvgFill(nvg);
+                    fc.free();
+                }
+                nvgRestore(nvg);
+            }
+        }
+
     }
 
     // ── Create/Manage Party Modal ──
@@ -702,7 +842,7 @@ public class PartyFinderScreen extends Screen {
         // Darken background
         NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, MODAL_OVERLAY);
 
-        // Modal centered in main panel area (NOT accounting for sidebar)
+        // Modal centered in main panel area
         modalX = panelX + (panelWidth - MODAL_WIDTH) / 2f;
         modalY = (screenHeight - MODAL_HEIGHT) / 2f;
 
@@ -718,21 +858,23 @@ public class PartyFinderScreen extends Screen {
         nvgText(nvg, modalX + MODAL_WIDTH / 2f, modalY + 18, "Create Party");
         tc.free();
 
-        // Raid type circles row
+        // Raid type icons row
         float totalCirclesW = RAID_TYPES.length * RAID_CIRCLE_SIZE + (RAID_TYPES.length - 1) * RAID_CIRCLE_SPACING;
         float circleStartX = modalX + (MODAL_WIDTH - totalCirclesW) / 2f;
         float circleY = modalY + 38;
 
         for (int i = 0; i < RAID_TYPES.length; i++) {
             String rt = RAID_TYPES[i];
-            float cx = circleStartX + i * (RAID_CIRCLE_SIZE + RAID_CIRCLE_SPACING) + RAID_CIRCLE_SIZE / 2f;
-            float cy = circleY + RAID_CIRCLE_SIZE / 2f;
+            float iconX = circleStartX + i * (RAID_CIRCLE_SIZE + RAID_CIRCLE_SPACING);
+            float iconY = circleY;
+            float rcx = iconX + RAID_CIRCLE_SIZE / 2f;
+            float rcy = iconY + RAID_CIRCLE_SIZE / 2f;
             boolean selected = modalSelectedRaids.contains(rt);
 
-            // Fill if selected
+            // Selection highlight behind icon
             if (selected) {
                 nvgBeginPath(nvg);
-                nvgCircle(nvg, cx, cy, RAID_CIRCLE_SIZE / 2f - 2);
+                nvgCircle(nvg, rcx, rcy, RAID_CIRCLE_SIZE / 2f - 2);
                 var fill = NVGContext.nvgColor(TYPE_ICON_SELECTED);
                 nvgFillColor(nvg, fill);
                 nvgFill(nvg);
@@ -740,27 +882,25 @@ public class PartyFinderScreen extends Screen {
                 fill.free();
             }
 
-            // Ring
-            nvgBeginPath(nvg);
-            nvgCircle(nvg, cx, cy, RAID_CIRCLE_SIZE / 2f - 1);
-            nvgStrokeWidth(nvg, 2f);
-            var ringCol = NVGContext.nvgColor(TYPE_ICON_RING);
-            nvgStrokeColor(nvg, ringCol);
-            nvgStroke(nvg);
-            nvgClosePath(nvg);
-            ringCol.free();
-
-            // Label
-            nvgFontFace(nvg, fontName);
-            nvgFontSize(nvg, RAID_LABEL_SIZE);
-            nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            var lc = NVGContext.nvgColor(TEXT_COLOR);
-            nvgFillColor(nvg, lc);
-            nvgText(nvg, cx, cy, rt);
-            lc.free();
+            // Draw raid icon image (or text fallback for ANNI)
+            AssetManager.Asset raidIcon = getClassIcon(rt.toLowerCase());
+            if (raidIcon != null) {
+                float imgInset = 4;
+                NVGWrapper.drawImage(nvg, raidIcon, iconX + imgInset, iconY + imgInset,
+                        RAID_CIRCLE_SIZE - imgInset * 2, RAID_CIRCLE_SIZE - imgInset * 2, selected ? 255 : 160);
+            } else {
+                // Text fallback (e.g. ANNI)
+                nvgFontFace(nvg, fontName);
+                nvgFontSize(nvg, RAID_LABEL_SIZE);
+                nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                var lc = NVGContext.nvgColor(selected ? TEXT_COLOR : PARTY_TYPE_TEXT);
+                nvgFillColor(nvg, lc);
+                nvgText(nvg, rcx, rcy, rt);
+                lc.free();
+            }
         }
 
-        // "Party type" and "Reserved slots" labels
+        // "Reserved slots" label
         float rowY = circleY + RAID_CIRCLE_SIZE + 16;
         float leftColX = modalX + MODAL_WIDTH * 0.25f;
         float rightColX = modalX + MODAL_WIDTH * 0.75f;
@@ -768,40 +908,33 @@ public class PartyFinderScreen extends Screen {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MODAL_LABEL_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var l1 = NVGContext.nvgColor(PARTY_TYPE_TEXT);
-        nvgFillColor(nvg, l1);
-        nvgText(nvg, leftColX, rowY, "Party type");
-        l1.free();
-
         var l2 = NVGContext.nvgColor(PARTY_TYPE_TEXT);
         nvgFillColor(nvg, l2);
         nvgText(nvg, rightColX, rowY, "Reserved slots");
         l2.free();
 
-        // Party type dropdown
-        float ptDropX = leftColX - MODAL_DROPDOWN_W / 2f;
-        float ptDropY = rowY + 12;
-        boolean ptHovered = isHovered(nvgMouseX, nvgMouseY, ptDropX, ptDropY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H);
-        NVGWrapper.drawRect(nvg, ptDropX, ptDropY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H,
-                ptHovered ? SEARCH_ACTIVE_BG : MODAL_DROPDOWN_BG);
-        NVGWrapper.drawRectOutline(nvg, ptDropX, ptDropY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H, 1, MODAL_DROPDOWN_BORDER);
+        // Edit tags button (same color as Filter+)
+        float etBtnX = leftColX - MODAL_DROPDOWN_W / 2f;
+        float etBtnY = rowY + 12;
+        boolean etHovered = isHovered(nvgMouseX, nvgMouseY, etBtnX, etBtnY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H);
+        NVGWrapper.drawRect(nvg, etBtnX, etBtnY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H,
+                etHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
 
         nvgFontSize(nvg, MODAL_LABEL_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         var ptc = NVGContext.nvgColor(TEXT_COLOR);
         nvgFillColor(nvg, ptc);
-        nvgText(nvg, leftColX, ptDropY + MODAL_DROPDOWN_H / 2f, modalPartyType);
+        nvgText(nvg, leftColX, etBtnY + MODAL_DROPDOWN_H / 2f, "Edit tags");
         ptc.free();
 
         // Reserved slots with up/down arrows
         float arrowW = 16;
         float rsFieldW = MODAL_DROPDOWN_W - arrowW;
         float rsBoxX = rightColX - MODAL_DROPDOWN_W / 2f;
-        float rsBoxY = ptDropY;
+        float rsBoxY = etBtnY;
         float arrowX = rsBoxX + rsFieldW;
         float halfArrowH = MODAL_DROPDOWN_H / 2f;
 
-        // Number field
         Color rsFieldBg = reservedSlotsFocused ? SEARCH_ACTIVE_BG : MODAL_DROPDOWN_BG;
         NVGWrapper.drawRect(nvg, rsBoxX, rsBoxY, rsFieldW, MODAL_DROPDOWN_H, rsFieldBg);
         NVGWrapper.drawRectOutline(nvg, rsBoxX, rsBoxY, rsFieldW, MODAL_DROPDOWN_H, 1,
@@ -843,26 +976,218 @@ public class PartyFinderScreen extends Screen {
         nvgText(nvg, createBtnX + MODAL_BUTTON_W / 2f, createBtnY + MODAL_BUTTON_H / 2f, createLabel);
         cbc.free();
 
-        // Party type dropdown menu (if open, on top)
-        if (modalPartyTypeDropdownOpen) {
-            float ddY = ptDropY + MODAL_DROPDOWN_H;
-            float ddH = PARTY_TYPES.length * MODAL_DROPDOWN_H;
-            NVGWrapper.drawRect(nvg, ptDropX, ddY, MODAL_DROPDOWN_W, ddH, DROPDOWN_BG);
-            NVGWrapper.drawRectOutline(nvg, ptDropX, ddY, MODAL_DROPDOWN_W, ddH, 1, DROPDOWN_BORDER);
+        // Edit tags sub-overlay (on top of modal)
+        if (editTagsScreenOpen) {
+            renderEditTagsOverlay(nvg, fontName, panelX, panelX + (SeqClient.mc.getWindow().getWidth() / 2f - SIDEBAR_WIDTH), screenHeight);
+        }
+    }
 
-            for (int i = 0; i < PARTY_TYPES.length; i++) {
-                float itemY = ddY + i * MODAL_DROPDOWN_H;
-                boolean ih = isHovered(nvgMouseX, nvgMouseY, ptDropX, itemY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H);
-                if (ih) NVGWrapper.drawRect(nvg, ptDropX, itemY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H, DROPDOWN_HOVER);
+    // ── Edit Tags Sub-Overlay (in modal) — same layout as Filter+ screen ──
 
-                nvgFontFace(nvg, fontName);
-                nvgFontSize(nvg, MODAL_LABEL_SIZE);
-                nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-                var ic = NVGContext.nvgColor(TEXT_COLOR);
-                nvgFillColor(nvg, ic);
-                nvgText(nvg, leftColX, itemY + MODAL_DROPDOWN_H / 2f, PARTY_TYPES[i]);
-                ic.free();
+    private void renderEditTagsOverlay(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
+        float overlayW = 260;
+        float overlayH = 180;
+        float overlayX = modalX + (MODAL_WIDTH - overlayW) / 2f;
+        float overlayY = modalY + (MODAL_HEIGHT - overlayH) / 2f;
+
+        NVGWrapper.drawRect(nvg, modalX, modalY, MODAL_WIDTH, MODAL_HEIGHT, MODAL_OVERLAY);
+        NVGWrapper.drawRect(nvg, overlayX, overlayY, overlayW, overlayH, MODAL_BG);
+        NVGWrapper.drawRectOutline(nvg, overlayX, overlayY, overlayW, overlayH, 1, MODAL_BORDER);
+
+        // Title
+        nvgFontFace(nvg, fontName);
+        nvgFontSize(nvg, MODAL_TITLE_SIZE);
+        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        var tc = NVGContext.nvgColor(TEXT_COLOR);
+        nvgFillColor(nvg, tc);
+        nvgText(nvg, overlayX + overlayW / 2f, overlayY + 18, "Tag selection");
+        tc.free();
+
+        float boxPadding = 12;
+        float boxW = overlayW - boxPadding * 2;
+        float boxH = 46;
+        float boxX = overlayX + boxPadding;
+
+        // Active tags box
+        float activeBoxY = overlayY + 34;
+        NVGWrapper.drawRect(nvg, boxX, activeBoxY, boxW, boxH, FILTER_BOX_BG);
+        nvgFontSize(nvg, 9);
+        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+        var al = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        nvgFillColor(nvg, al);
+        nvgText(nvg, boxX + 4, activeBoxY + 2, "Active tags");
+        al.free();
+
+        renderTagChips(nvg, fontName, boxX + 4, activeBoxY + 14, boxW - 8, modalActiveTags, true, modalTagAnimStartTimes);
+
+        // Inactive tags box
+        float inactiveBoxY = activeBoxY + boxH + 8;
+        NVGWrapper.drawRect(nvg, boxX, inactiveBoxY, boxW, boxH, FILTER_BOX_BG);
+        nvgFontSize(nvg, 9);
+        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+        var il = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        nvgFillColor(nvg, il);
+        nvgText(nvg, boxX + 4, inactiveBoxY + 2, "Inactive tags");
+        il.free();
+
+        renderTagChips(nvg, fontName, boxX + 4, inactiveBoxY + 14, boxW - 8, modalInactiveTags, false, modalTagAnimStartTimes);
+
+        // Back button
+        float backW = 70;
+        float backH = 20;
+        float backX = overlayX + (overlayW - backW) / 2f;
+        float backY = overlayY + overlayH - backH - 8;
+        boolean backHovered = isHovered(nvgMouseX, nvgMouseY, backX, backY, backW, backH);
+        NVGWrapper.drawRect(nvg, backX, backY, backW, backH, backHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
+
+        nvgFontSize(nvg, MEMBER_FONT_SIZE);
+        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        var bc = NVGContext.nvgColor(TEXT_COLOR);
+        nvgFillColor(nvg, bc);
+        nvgText(nvg, backX + backW / 2f, backY + backH / 2f, "< Back");
+        bc.free();
+    }
+
+    // ── Filter+ Screen ──
+
+    private void renderFilterScreen(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
+        NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, MODAL_OVERLAY);
+
+        float filterW = 260;
+        float filterH = 180;
+        float filterX = panelX + (panelWidth - filterW) / 2f;
+        float filterY = (screenHeight - filterH) / 2f;
+
+        NVGWrapper.drawRect(nvg, filterX, filterY, filterW, filterH, MODAL_BG);
+        NVGWrapper.drawRectOutline(nvg, filterX, filterY, filterW, filterH, 1, MODAL_BORDER);
+
+        // Title
+        nvgFontFace(nvg, fontName);
+        nvgFontSize(nvg, MODAL_TITLE_SIZE);
+        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        var tc = NVGContext.nvgColor(TEXT_COLOR);
+        nvgFillColor(nvg, tc);
+        nvgText(nvg, filterX + filterW / 2f, filterY + 18, "Tag filter selection");
+        tc.free();
+
+        float boxPadding = 12;
+        float boxW = filterW - boxPadding * 2;
+        float boxH = 46;
+        float boxX = filterX + boxPadding;
+
+        // Active filters box
+        float activeBoxY = filterY + 34;
+        NVGWrapper.drawRect(nvg, boxX, activeBoxY, boxW, boxH, FILTER_BOX_BG);
+        nvgFontSize(nvg, 9);
+        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+        var al = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        nvgFillColor(nvg, al);
+        nvgText(nvg, boxX + 4, activeBoxY + 2, "Active filters");
+        al.free();
+
+        renderTagChips(nvg, fontName, boxX + 4, activeBoxY + 14, boxW - 8, activeFilterTags, true, filterTagAnimStartTimes);
+
+        // Inactive filters box
+        float inactiveBoxY = activeBoxY + boxH + 8;
+        NVGWrapper.drawRect(nvg, boxX, inactiveBoxY, boxW, boxH, FILTER_BOX_BG);
+        nvgFontSize(nvg, 9);
+        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+        var il = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        nvgFillColor(nvg, il);
+        nvgText(nvg, boxX + 4, inactiveBoxY + 2, "Inactive filters");
+        il.free();
+
+        renderTagChips(nvg, fontName, boxX + 4, inactiveBoxY + 14, boxW - 8, inactiveFilterTags, false, filterTagAnimStartTimes);
+
+        // Back button
+        float backW = 70;
+        float backH = 20;
+        float backX = filterX + (filterW - backW) / 2f;
+        float backY = filterY + filterH - backH - 8;
+        boolean backHovered = isHovered(nvgMouseX, nvgMouseY, backX, backY, backW, backH);
+        NVGWrapper.drawRect(nvg, backX, backY, backW, backH, backHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
+
+        nvgFontSize(nvg, MEMBER_FONT_SIZE);
+        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        var bc = NVGContext.nvgColor(TEXT_COLOR);
+        nvgFillColor(nvg, bc);
+        nvgText(nvg, backX + backW / 2f, backY + backH / 2f, "< Back");
+        bc.free();
+    }
+
+    // ── Tag chip rendering with pendulum animation ──
+
+    private void renderTagChips(long nvg, String fontName, float startX, float startY, float maxWidth,
+                                Set<String> tags, boolean isActive, Map<String, Long> animStartTimes) {
+        float chipH = 16;
+        float chipPadding = 6;
+        float chipSpacing = 4;
+        float curX = startX;
+        float curY = startY;
+
+        // Sort: raid tags first, then non-raid tags
+        List<String> sorted = new ArrayList<>(tags.size());
+        for (String tag : tags) {
+            if (RAID_TYPE_SET.contains(tag)) sorted.add(tag);
+        }
+        for (String tag : tags) {
+            if (!RAID_TYPE_SET.contains(tag)) sorted.add(tag);
+        }
+
+        nvgFontFace(nvg, fontName);
+        nvgFontSize(nvg, TAG_CHIP_FONT_SIZE);
+
+        for (String tag : sorted) {
+            String label = tag + (isActive ? " -" : " +");
+            float[] bounds = new float[4];
+            nvgTextBounds(nvg, 0, 0, label, bounds);
+            float chipW = (bounds[2] - bounds[0]) + chipPadding * 2;
+
+            if (curX + chipW > startX + maxWidth && curX > startX) {
+                curX = startX;
+                curY += chipH + 3;
             }
+
+            // Pendulum animation
+            float angle = 0;
+            Long animStart = animStartTimes.get(tag);
+            if (animStart != null) {
+                float elapsed = (System.currentTimeMillis() - animStart) / 1000f;
+                if (elapsed < 1.0f) {
+                    float amplitude = 15f;
+                    float freq = 12f;
+                    float damping = 4f;
+                    angle = (float) (amplitude * Math.sin(freq * elapsed) * Math.exp(-damping * elapsed));
+                } else {
+                    animStartTimes.remove(tag);
+                }
+            }
+
+            float chipCenterX = curX + chipW / 2f;
+            float chipCenterY = curY + chipH / 2f;
+
+            nvgSave(nvg);
+            if (angle != 0) {
+                nvgTranslate(nvg, chipCenterX, chipCenterY);
+                nvgRotate(nvg, (float) Math.toRadians(angle));
+                nvgTranslate(nvg, -chipCenterX, -chipCenterY);
+            }
+
+            boolean chipHovered = isHovered(nvgMouseX, nvgMouseY, curX, curY, chipW, chipH);
+            NVGWrapper.drawRoundedRect(nvg, curX, curY, chipW, chipH, 4, chipHovered ? TAG_CHIP_HOVER : TAG_CHIP_BG);
+
+            nvgFontFace(nvg, fontName);
+            nvgFontSize(nvg, TAG_CHIP_FONT_SIZE);
+            nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            Color chipTextColor = RAID_TYPE_SET.contains(tag) ? TITLE_COLOR : TEXT_COLOR;
+            var cc = NVGContext.nvgColor(chipTextColor);
+            nvgFillColor(nvg, cc);
+            nvgText(nvg, chipCenterX, chipCenterY, label);
+            cc.free();
+
+            nvgRestore(nvg);
+
+            curX += chipW + chipSpacing;
         }
     }
 
@@ -885,18 +1210,29 @@ public class PartyFinderScreen extends Screen {
     }
 
     private boolean matchesFilters(PartyListing party) {
+        // Search filter
         if (!searchQuery.isEmpty()) {
             boolean matches = false;
             String q = searchQuery.toLowerCase();
             for (PartyMember m : party.members) {
                 if (m.name.toLowerCase().contains(q)) { matches = true; break; }
             }
-            boolean raidMatch = false;
-            for (String rt : party.raidTypes) {
-                if (rt.toLowerCase().contains(q)) { raidMatch = true; break; }
+            boolean tagMatch = false;
+            for (String tag : party.tags) {
+                if (tag.toLowerCase().contains(q)) { tagMatch = true; break; }
             }
-            if (!matches && !party.partyType.toLowerCase().contains(q) && !raidMatch) return false;
+            if (!matches && !tagMatch) return false;
         }
+
+        // Tag filter: party must have at least one tag in activeFilterTags
+        if (!activeFilterTags.isEmpty()) {
+            boolean hasActiveTag = false;
+            for (String tag : party.tags) {
+                if (activeFilterTags.contains(tag)) { hasActiveTag = true; break; }
+            }
+            if (!hasActiveTag) return false;
+        }
+
         return true;
     }
 
@@ -917,7 +1253,12 @@ public class PartyFinderScreen extends Screen {
         float screenWidth = SeqClient.mc.getWindow().getWidth() / 2f;
         float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
 
-        // ── Modal clicks (highest priority) ──
+        // ── Filter screen (highest priority) ──
+        if (filterScreenOpen) {
+            return handleFilterScreenClick(mx, my, screenWidth, screenHeight);
+        }
+
+        // ── Modal clicks ──
         if (modalOpen) {
             return handleModalClick(mx, my, screenWidth, screenHeight);
         }
@@ -931,7 +1272,6 @@ public class PartyFinderScreen extends Screen {
                 if (isHovered(mx, my, dropdownRenderX, itemY, dropdownRenderW, itemH)) {
                     selectedRole = ROLES[i].equals(selectedRole) ? null : ROLES[i];
                     roleDropdownOpen = false;
-                    // Update role in current party
                     if (selectedRole != null && joinedPartyIndex >= 0 && joinedPartyIndex < parties.size()) {
                         String playerName = SeqClient.mc.getUser().getName();
                         for (PartyMember m : parties.get(joinedPartyIndex).members) {
@@ -1024,7 +1364,7 @@ public class PartyFinderScreen extends Screen {
         float filterX = panelX + panelWidth - FILTER_BUTTON_W - FILTER_BUTTON_MARGIN;
         float filterY = screenHeight - FILTER_BUTTON_H - FILTER_BUTTON_MARGIN;
         if (isHovered(mx, my, filterX, filterY, FILTER_BUTTON_W, FILTER_BUTTON_H)) {
-            // TODO: open filter options
+            filterScreenOpen = true;
             return true;
         }
 
@@ -1060,18 +1400,48 @@ public class PartyFinderScreen extends Screen {
             if (party.expanded) {
                 cardH = CARD_HEADER_HEIGHT + party.members.size() * MEMBER_ROW_HEIGHT + CARD_PADDING;
 
+                // Leader management: promote/kick clicks
+                boolean isMyParty = i == myPartyIndex;
+                boolean amLeaderOfThisParty = isMyParty && isPartyLeader;
+                if (amLeaderOfThisParty) {
+                    float memberY = cursorY + CARD_HEADER_HEIGHT;
+                    float memberRowX = cardX + CARD_PADDING + 10;
+                    float memberRowW = cardW - CARD_PADDING * 2 - 10;
+                    for (int mi = 0; mi < party.members.size(); mi++) {
+                        PartyMember member = party.members.get(mi);
+                        if (!member.isLeader && isHovered(mx, my, memberRowX, memberY, memberRowW, MEMBER_ROW_HEIGHT)) {
+                            // Compute name width to determine icon click zones
+                            // Left half of name area = promote, Right half = kick
+                            float nameStartX = memberRowX + STAR_ICON_SIZE + 4;
+                            float nameAreaW = memberRowW - STAR_ICON_SIZE - 4;
+                            float nameMidX = nameStartX + nameAreaW / 2f;
+
+                            if (mx < nameMidX) {
+                                // Promote: set this member as leader, remove own leadership
+                                for (PartyMember pm : party.members) {
+                                    pm.isLeader = false;
+                                }
+                                member.isLeader = true;
+                                isPartyLeader = false;
+                            } else {
+                                // Kick: remove member
+                                party.members.remove(mi);
+                            }
+                            return true;
+                        }
+                        memberY += MEMBER_ROW_HEIGHT;
+                    }
+                }
+
                 float joinBtnX = cardX + cardW - CARD_PADDING - JOIN_BUTTON_WIDTH;
                 float joinBtnY = cursorY + CARD_HEADER_HEIGHT + (party.members.size() - 1) * MEMBER_ROW_HEIGHT
                         + (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
-                boolean isMyParty = i == myPartyIndex;
                 if (!isMyParty && isHovered(mx, my, joinBtnX, joinBtnY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT)) {
                     if (joinedPartyIndex == i) {
-                        // Leave this party - remove self from members
                         String playerName = SeqClient.mc.getUser().getName();
                         party.members.removeIf(m -> m.name.equals(playerName));
                         joinedPartyIndex = -1;
                     } else if (joinedPartyIndex < 0) {
-                        // Join (only if not already in a party)
                         String playerName = SeqClient.mc.getUser().getName();
                         String role = selectedRole != null ? selectedRole : "DPS";
                         party.members.add(new PartyMember(playerName, "assassin", role, false));
@@ -1099,12 +1469,15 @@ public class PartyFinderScreen extends Screen {
 
     private void openModal(boolean managing) {
         modalOpen = true;
-        modalPartyTypeDropdownOpen = false;
+        editTagsScreenOpen = false;
         reservedSlotsFocused = false;
         hasListedParty = managing && isPartyLeader;
         if (!managing) {
             modalSelectedRaids.clear();
-            modalPartyType = "Casual";
+            modalActiveTags.clear();
+            modalActiveTags.add("Chill");
+            modalInactiveTags.clear();
+            modalInactiveTags.add("Grind");
             modalReservedSlots = 0;
         }
         reservedSlotsInput = String.valueOf(modalReservedSlots);
@@ -1116,34 +1489,16 @@ public class PartyFinderScreen extends Screen {
         float mX = panelX + (panelWidth - MODAL_WIDTH) / 2f;
         float mY = (screenHeight - MODAL_HEIGHT) / 2f;
 
+        // Edit tags sub-overlay (highest priority within modal)
+        if (editTagsScreenOpen) {
+            return handleEditTagsClick(mx, my, mX, mY);
+        }
+
         // Click outside modal closes it
         if (!isHovered(mx, my, mX, mY, MODAL_WIDTH, MODAL_HEIGHT)) {
             modalOpen = false;
-            modalPartyTypeDropdownOpen = false;
+            editTagsScreenOpen = false;
             reservedSlotsFocused = false;
-            return true;
-        }
-
-        // Party type dropdown menu (check first)
-        if (modalPartyTypeDropdownOpen) {
-            float leftColX = mX + MODAL_WIDTH * 0.25f;
-            float ptDropX = leftColX - MODAL_DROPDOWN_W / 2f;
-
-            float totalCirclesW = RAID_TYPES.length * RAID_CIRCLE_SIZE + (RAID_TYPES.length - 1) * RAID_CIRCLE_SPACING;
-            float circleY = mY + 38;
-            float rowY = circleY + RAID_CIRCLE_SIZE + 16;
-            float ptDropY = rowY + 12;
-            float ddY = ptDropY + MODAL_DROPDOWN_H;
-
-            for (int i = 0; i < PARTY_TYPES.length; i++) {
-                float itemY = ddY + i * MODAL_DROPDOWN_H;
-                if (isHovered(mx, my, ptDropX, itemY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H)) {
-                    modalPartyType = PARTY_TYPES[i];
-                    modalPartyTypeDropdownOpen = false;
-                    return true;
-                }
-            }
-            modalPartyTypeDropdownOpen = false;
             return true;
         }
 
@@ -1159,7 +1514,6 @@ public class PartyFinderScreen extends Screen {
                 if (modalSelectedRaids.contains(rt)) {
                     modalSelectedRaids.remove(rt);
                 } else {
-                    // ANNI exclusivity
                     if ("ANNI".equals(rt)) {
                         modalSelectedRaids.clear();
                         modalSelectedRaids.add("ANNI");
@@ -1172,14 +1526,14 @@ public class PartyFinderScreen extends Screen {
             }
         }
 
-        // Party type dropdown button
+        // Edit tags button click
         float leftColX = mX + MODAL_WIDTH * 0.25f;
         float rowY = circleY + RAID_CIRCLE_SIZE + 16;
-        float ptDropX = leftColX - MODAL_DROPDOWN_W / 2f;
-        float ptDropY = rowY + 12;
+        float etBtnX = leftColX - MODAL_DROPDOWN_W / 2f;
+        float etBtnY = rowY + 12;
 
-        if (isHovered(mx, my, ptDropX, ptDropY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H)) {
-            modalPartyTypeDropdownOpen = !modalPartyTypeDropdownOpen;
+        if (isHovered(mx, my, etBtnX, etBtnY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H)) {
+            editTagsScreenOpen = true;
             return true;
         }
 
@@ -1188,32 +1542,28 @@ public class PartyFinderScreen extends Screen {
         float arrowW = 16;
         float rsFieldW = MODAL_DROPDOWN_W - arrowW;
         float rsBoxX = rightColX - MODAL_DROPDOWN_W / 2f;
-        float rsBoxY = ptDropY;
+        float rsBoxY = etBtnY;
         float arrowX = rsBoxX + rsFieldW;
         float halfArrowH = MODAL_DROPDOWN_H / 2f;
         int maxSlots = modalSelectedRaids.contains("ANNI") ? 9 : 3;
 
-        // Up arrow
         if (isHovered(mx, my, arrowX, rsBoxY, arrowW, halfArrowH)) {
             modalReservedSlots = Math.min(maxSlots, modalReservedSlots + 1);
             reservedSlotsInput = String.valueOf(modalReservedSlots);
             reservedSlotsFocused = false;
             return true;
         }
-        // Down arrow
         if (isHovered(mx, my, arrowX, rsBoxY + halfArrowH, arrowW, halfArrowH)) {
             modalReservedSlots = Math.max(0, modalReservedSlots - 1);
             reservedSlotsInput = String.valueOf(modalReservedSlots);
             reservedSlotsFocused = false;
             return true;
         }
-        // Number field - click to focus and type
         if (isHovered(mx, my, rsBoxX, rsBoxY, rsFieldW, MODAL_DROPDOWN_H)) {
             reservedSlotsFocused = true;
             reservedSlotsInput = String.valueOf(modalReservedSlots);
             return true;
         }
-        // Clicked elsewhere in modal - unfocus
         if (reservedSlotsFocused) {
             commitReservedSlotsInput();
             reservedSlotsFocused = false;
@@ -1225,25 +1575,24 @@ public class PartyFinderScreen extends Screen {
         if (isHovered(mx, my, createBtnX, createBtnY, MODAL_BUTTON_W, MODAL_BUTTON_H)) {
             if (!modalSelectedRaids.isEmpty()) {
                 commitReservedSlotsInput();
-                List<String> raidTypes = new ArrayList<>(modalSelectedRaids);
+                // Combine raids + active tags
+                List<String> tags = new ArrayList<>(modalSelectedRaids);
+                tags.addAll(modalActiveTags);
                 String playerName = SeqClient.mc.getUser().getName();
 
                 if (myPartyIndex >= 0 && myPartyIndex < parties.size()) {
-                    // Update existing party
                     PartyListing existing = parties.get(myPartyIndex);
-                    PartyListing updated = new PartyListing(raidTypes, modalPartyType);
+                    PartyListing updated = new PartyListing(tags);
                     updated.members.addAll(existing.members);
                     updated.expanded = true;
                     parties.set(myPartyIndex, updated);
                 } else {
-                    // Create new party
-                    PartyListing newParty = new PartyListing(raidTypes, modalPartyType);
+                    PartyListing newParty = new PartyListing(tags);
                     String role = selectedRole != null ? selectedRole : "DPS";
                     newParty.members.add(new PartyMember(playerName, "assassin", role, true));
                     newParty.expanded = true;
                     parties.add(0, newParty);
                     myPartyIndex = 0;
-                    // Shift joinedPartyIndex if needed
                     if (joinedPartyIndex >= 0) joinedPartyIndex++;
                 }
 
@@ -1251,6 +1600,7 @@ public class PartyFinderScreen extends Screen {
                 hasListedParty = true;
                 joinedPartyIndex = myPartyIndex;
                 modalOpen = false;
+                editTagsScreenOpen = false;
                 reservedSlotsFocused = false;
                 scrollOffset = 0;
             }
@@ -1258,6 +1608,153 @@ public class PartyFinderScreen extends Screen {
         }
 
         return true;
+    }
+
+    private boolean handleEditTagsClick(float mx, float my, float modalX, float modalY) {
+        float overlayW = 260;
+        float overlayH = 180;
+        float overlayX = modalX + (MODAL_WIDTH - overlayW) / 2f;
+        float overlayY = modalY + (MODAL_HEIGHT - overlayH) / 2f;
+
+        // Back button
+        float backW = 70;
+        float backH = 20;
+        float backX = overlayX + (overlayW - backW) / 2f;
+        float backY = overlayY + overlayH - backH - 8;
+        if (isHovered(mx, my, backX, backY, backW, backH)) {
+            editTagsScreenOpen = false;
+            return true;
+        }
+
+        // Click outside overlay closes it
+        if (!isHovered(mx, my, overlayX, overlayY, overlayW, overlayH)) {
+            editTagsScreenOpen = false;
+            return true;
+        }
+
+        // Check tag chip clicks
+        float boxPadding = 12;
+        float boxW = overlayW - boxPadding * 2;
+        float boxX = overlayX + boxPadding;
+        float boxH = 46;
+
+        // Active tags area
+        float activeBoxY = overlayY + 34;
+        float activeChipY = activeBoxY + 14;
+        String clickedActiveTag = findClickedTagChip(mx, my, boxX + 4, activeChipY, boxW - 8, modalActiveTags, true);
+        if (clickedActiveTag != null) {
+            modalActiveTags.remove(clickedActiveTag);
+            modalInactiveTags.add(clickedActiveTag);
+            modalTagAnimStartTimes.put(clickedActiveTag, System.currentTimeMillis());
+            return true;
+        }
+
+        // Inactive tags area
+        float inactiveBoxY = activeBoxY + boxH + 8;
+        float inactiveChipY = inactiveBoxY + 14;
+        String clickedInactiveTag = findClickedTagChip(mx, my, boxX + 4, inactiveChipY, boxW - 8, modalInactiveTags, false);
+        if (clickedInactiveTag != null) {
+            modalInactiveTags.remove(clickedInactiveTag);
+            modalActiveTags.add(clickedInactiveTag);
+            modalTagAnimStartTimes.put(clickedInactiveTag, System.currentTimeMillis());
+            return true;
+        }
+
+        return true;
+    }
+
+    private boolean handleFilterScreenClick(float mx, float my, float screenWidth, float screenHeight) {
+        float panelX = SIDEBAR_WIDTH;
+        float panelWidth = screenWidth - SIDEBAR_WIDTH;
+        float filterW = 260;
+        float filterH = 180;
+        float filterX = panelX + (panelWidth - filterW) / 2f;
+        float filterY = (screenHeight - filterH) / 2f;
+
+        // Back button
+        float backW = 70;
+        float backH = 20;
+        float backX = filterX + (filterW - backW) / 2f;
+        float backY = filterY + filterH - backH - 8;
+        if (isHovered(mx, my, backX, backY, backW, backH)) {
+            filterScreenOpen = false;
+            return true;
+        }
+
+        // Click outside filter screen closes it
+        if (!isHovered(mx, my, filterX, filterY, filterW, filterH)) {
+            filterScreenOpen = false;
+            return true;
+        }
+
+        float boxPadding = 12;
+        float boxW = filterW - boxPadding * 2;
+        float boxX = filterX + boxPadding;
+
+        // Active tags area
+        float activeBoxY = filterY + 34;
+        float activeChipY = activeBoxY + 14;
+        String clickedActive = findClickedTagChip(mx, my, boxX + 4, activeChipY, boxW - 8, activeFilterTags, true);
+        if (clickedActive != null) {
+            activeFilterTags.remove(clickedActive);
+            inactiveFilterTags.add(clickedActive);
+            filterTagAnimStartTimes.put(clickedActive, System.currentTimeMillis());
+            return true;
+        }
+
+        // Inactive tags area
+        float inactiveBoxY = activeBoxY + 46 + 8;
+        float inactiveChipY = inactiveBoxY + 14;
+        String clickedInactive = findClickedTagChip(mx, my, boxX + 4, inactiveChipY, boxW - 8, inactiveFilterTags, false);
+        if (clickedInactive != null) {
+            inactiveFilterTags.remove(clickedInactive);
+            activeFilterTags.add(clickedInactive);
+            filterTagAnimStartTimes.put(clickedInactive, System.currentTimeMillis());
+            return true;
+        }
+
+        return true;
+    }
+
+    /**
+     * Finds which tag chip was clicked given the layout parameters.
+     * Returns the tag name or null if no chip was hit.
+     */
+    private String findClickedTagChip(float mx, float my, float startX, float startY, float maxWidth,
+                                      Set<String> tags, boolean isActive) {
+        float chipH = 16;
+        float chipPadding = 6;
+        float chipSpacing = 4;
+        float curX = startX;
+        float curY = startY;
+
+        // Sort same as renderTagChips: raid tags first
+        List<String> sorted = new ArrayList<>(tags.size());
+        for (String tag : tags) {
+            if (RAID_TYPE_SET.contains(tag)) sorted.add(tag);
+        }
+        for (String tag : tags) {
+            if (!RAID_TYPE_SET.contains(tag)) sorted.add(tag);
+        }
+
+        for (String tag : sorted) {
+            String label = tag + (isActive ? " -" : " +");
+            // Approximate chip width: ~6px per char at TAG_CHIP_FONT_SIZE + padding
+            float approxCharW = 5.5f;
+            float chipW = label.length() * approxCharW + chipPadding * 2;
+
+            if (curX + chipW > startX + maxWidth && curX > startX) {
+                curX = startX;
+                curY += chipH + 3;
+            }
+
+            if (isHovered(mx, my, curX, curY, chipW, chipH)) {
+                return tag;
+            }
+
+            curX += chipW + chipSpacing;
+        }
+        return null;
     }
 
     @Override
@@ -1288,7 +1785,7 @@ public class PartyFinderScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (modalOpen) return true;
+        if (modalOpen || filterScreenOpen) return true;
         scrollOffset -= (float) scrollY * SCROLL_SPEED;
         scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset));
         return true;
@@ -1296,15 +1793,24 @@ public class PartyFinderScreen extends Screen {
 
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
+        if (filterScreenOpen) {
+            if (keyEvent.key() == GLFW.GLFW_KEY_ESCAPE) {
+                filterScreenOpen = false;
+                return true;
+            }
+            return true;
+        }
         if (modalOpen) {
             int keyCode = keyEvent.key();
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                if (reservedSlotsFocused) {
+                if (editTagsScreenOpen) {
+                    editTagsScreenOpen = false;
+                } else if (reservedSlotsFocused) {
                     commitReservedSlotsInput();
                     reservedSlotsFocused = false;
                 } else {
                     modalOpen = false;
-                    modalPartyTypeDropdownOpen = false;
+                    editTagsScreenOpen = false;
                 }
                 return true;
             }
@@ -1380,7 +1886,7 @@ public class PartyFinderScreen extends Screen {
         final String name;
         final String className;
         String role;
-        final boolean isLeader;
+        boolean isLeader;
 
         PartyMember(String name, String className, String role, boolean isLeader) {
             this.name = name;
@@ -1392,23 +1898,27 @@ public class PartyFinderScreen extends Screen {
 
     private static class PartyListing {
         final int maxSize;
-        final List<String> raidTypes;
-        final String partyType;
+        final List<String> tags;
         final List<PartyMember> members = new ArrayList<>();
         boolean expanded = false;
 
-        PartyListing(List<String> raidTypes, String partyType) {
-            this.raidTypes = raidTypes;
-            this.partyType = partyType;
-            this.maxSize = maxSizeForRaids(raidTypes);
+        PartyListing(List<String> tags) {
+            this.tags = new ArrayList<>(tags);
+            this.maxSize = tags.contains("ANNI") ? 10 : 4;
         }
 
-        String raidLabel() {
-            return String.join(", ", raidTypes);
+        List<String> getRaidTags() {
+            List<String> raids = new ArrayList<>();
+            for (String tag : tags) {
+                if (RAID_TYPE_SET.contains(tag)) {
+                    raids.add(tag);
+                }
+            }
+            return raids;
         }
 
         String displayLabel() {
-            return raidLabel() + "(" + partyType + ")";
+            return String.join(", ", tags);
         }
 
         PartyMember getLeader() {
