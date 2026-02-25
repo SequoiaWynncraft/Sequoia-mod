@@ -8,8 +8,11 @@ import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.nanovg.NVGPaint;
+import org.sequoia.seq.accessors.PartyAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.managers.AssetManager;
+import org.sequoia.seq.managers.PartyListing;
+import org.sequoia.seq.managers.PartyMember;
 
 import org.sequoia.seq.utils.rendering.nvg.NVGContext;
 import org.sequoia.seq.utils.rendering.nvg.NVGWrapper;
@@ -20,7 +23,7 @@ import java.util.List;
 
 import static org.lwjgl.nanovg.NanoVG.*;
 
-public class PartyFinderScreen extends Screen {
+public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     // ── Raid types & Party tags ──
     private static final String[] RAID_TYPES = {"NOTG", "NOL", "TCC", "TNA", "ANNI"};
@@ -167,12 +170,6 @@ public class PartyFinderScreen extends Screen {
     private boolean roleDropdownOpen = false;
     private String selectedRole = null;
 
-    private int joinedPartyIndex = -1;
-    private int myPartyIndex = -1;
-    private boolean isPartyLeader = false;
-    private boolean hasListedParty = false;
-    private final List<PartyListing> parties = new ArrayList<>();
-
     private float dropdownRenderX, dropdownRenderY, dropdownRenderW;
 
     // ── Modal state ──
@@ -211,33 +208,6 @@ public class PartyFinderScreen extends Screen {
         // Initialize modal tags: Chill active, Grind inactive
         modalActiveTags.add("Chill");
         modalInactiveTags.add("Grind");
-        buildDemoData();
-    }
-
-    private void buildDemoData() {
-        PartyListing p1 = new PartyListing(List.of("NOTG", "Chill"));
-        p1.members.add(new PartyMember("GAZTheMiner", "archer", "DPS", true));
-        p1.members.add(new PartyMember("Vicvir", "warrior", "Tank", false));
-        p1.expanded = true;
-        parties.add(p1);
-
-        PartyListing p2 = new PartyListing(List.of("TCC", "NOL", "Grind"));
-        p2.members.add(new PartyMember("PlayerOne", "mage", "Support", true));
-        p2.members.add(new PartyMember("PlayerTwo", "warrior", "DPS", false));
-        parties.add(p2);
-
-        PartyListing p3 = new PartyListing(List.of("NOL", "NOTG", "Chill"));
-        p3.members.add(new PartyMember("Leader123", "assassin", "DPS", true));
-        p3.members.add(new PartyMember("MemberA", "warrior", "Tank", false));
-        p3.members.add(new PartyMember("MemberB", "mage", "Support", false));
-        p3.members.add(new PartyMember("MemberC", "archer", "DPS", false));
-        parties.add(p3);
-
-        PartyListing p4 = new PartyListing(List.of("ANNI", "Chill"));
-        p4.members.add(new PartyMember("RaidLeader", "shaman", "Support", true));
-        p4.members.add(new PartyMember("DPS1", "assassin", "DPS", false));
-        p4.members.add(new PartyMember("DPS2", "archer", "DPS", false));
-        parties.add(p4);
     }
 
     // ══════════════════════════════ RENDER ══════════════════════════════
@@ -287,8 +257,8 @@ public class PartyFinderScreen extends Screen {
             nvgScissor(nvg, contentX, contentY, contentWidth, contentHeight);
 
             float cursorY = contentY - scrollOffset + PADDING;
-            for (int i = 0; i < parties.size(); i++) {
-                PartyListing party = parties.get(i);
+            for (int i = 0; i < party().getParties().size(); i++) {
+                PartyListing party = party().getParties().get(i);
                 if (!matchesFilters(party)) continue;
 
                 float cardH = party.expanded
@@ -425,8 +395,8 @@ public class PartyFinderScreen extends Screen {
         float btnX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
         float btnY = searchY;
 
-        if (isPartyLeader) {
-            String manageLabel = hasListedParty ? "Manage Party" : "New party +";
+        if (party().isPartyLeader()) {
+            String manageLabel = party().hasListedParty() ? "Manage Party" : "New party +";
             float manageW = 95;
             drawHeaderButton(nvg, fontName, btnX, btnY, manageW, SEARCH_BAR_HEIGHT, manageLabel, MANAGE_PARTY_COLOR, NEW_PARTY_HOVER);
             btnX += manageW + 6;
@@ -435,7 +405,7 @@ public class PartyFinderScreen extends Screen {
             drawHeaderButton(nvg, fontName, btnX, btnY, delistW, SEARCH_BAR_HEIGHT, "Delist party", DELIST_PARTY_COLOR, DELIST_PARTY_HOVER);
             btnX += delistW + 6;
         } else {
-            boolean inPartyAsMember = joinedPartyIndex >= 0;
+            boolean inPartyAsMember = party().getJoinedPartyIndex() >= 0;
             Color newBg = inPartyAsMember ? new Color(60, 60, 70, 180) : NEW_PARTY_COLOR;
             Color newHover = inPartyAsMember ? new Color(60, 60, 70, 180) : NEW_PARTY_HOVER;
             drawHeaderButton(nvg, fontName, btnX, btnY, 80, SEARCH_BAR_HEIGHT, "New party +", newBg, newHover);
@@ -511,7 +481,7 @@ public class PartyFinderScreen extends Screen {
 
     private void renderPartyCard(long nvg, String fontName, float x, float y, float w, float h,
                                  PartyListing party, int partyIndex) {
-        boolean isJoined = joinedPartyIndex == partyIndex;
+        boolean isJoined = party().getJoinedPartyIndex() == partyIndex;
         NVGWrapper.drawRect(nvg, x, y, w, h, party.expanded ? CARD_EXPANDED_BG : CARD_BG);
 
         if (party.expanded) {
@@ -546,8 +516,8 @@ public class PartyFinderScreen extends Screen {
         arrCol.free();
 
         // Members
-        boolean isMyParty = partyIndex == myPartyIndex;
-        boolean amLeaderOfThisParty = isMyParty && isPartyLeader;
+        boolean isMyParty = partyIndex == party().getMyPartyIndex();
+        boolean amLeaderOfThisParty = isMyParty && party().isPartyLeader();
         float memberY = y + CARD_HEADER_HEIGHT;
         for (int mi = 0; mi < party.members.size(); mi++) {
             PartyMember member = party.members.get(mi);
@@ -562,7 +532,7 @@ public class PartyFinderScreen extends Screen {
         if (!isMyParty) {
             float joinX = x + w - CARD_PADDING - JOIN_BUTTON_WIDTH;
             float joinY = memberY - MEMBER_ROW_HEIGHT + (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
-            boolean alreadyInParty = joinedPartyIndex >= 0 && !isJoined;
+            boolean alreadyInParty = party().getJoinedPartyIndex() >= 0 && !isJoined;
             boolean joinHovered = !alreadyInParty && isHovered(nvgMouseX, nvgMouseY, joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT);
             Color joinBg = isJoined ? JOINED_BUTTON_COLOR
                     : alreadyInParty ? new Color(60, 60, 70, 180)
@@ -964,7 +934,7 @@ public class PartyFinderScreen extends Screen {
         // Create/Update button
         float createBtnX = modalX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
         float createBtnY = modalY + MODAL_HEIGHT - MODAL_BUTTON_H - 14;
-        String createLabel = hasListedParty ? "Update..." : "Create!";
+        String createLabel = party().hasListedParty() ? "Update..." : "Create!";
         boolean createHovered = isHovered(nvgMouseX, nvgMouseY, createBtnX, createBtnY, MODAL_BUTTON_W, MODAL_BUTTON_H);
         NVGWrapper.drawRect(nvg, createBtnX, createBtnY, MODAL_BUTTON_W, MODAL_BUTTON_H,
                 createHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
@@ -1272,14 +1242,8 @@ public class PartyFinderScreen extends Screen {
                 if (isHovered(mx, my, dropdownRenderX, itemY, dropdownRenderW, itemH)) {
                     selectedRole = ROLES[i].equals(selectedRole) ? null : ROLES[i];
                     roleDropdownOpen = false;
-                    if (selectedRole != null && joinedPartyIndex >= 0 && joinedPartyIndex < parties.size()) {
-                        String playerName = SeqClient.mc.getUser().getName();
-                        for (PartyMember m : parties.get(joinedPartyIndex).members) {
-                            if (m.name.equals(playerName)) {
-                                m.role = selectedRole;
-                                break;
-                            }
-                        }
+                    if (selectedRole != null) {
+                        party().setRole(selectedRole);
                     }
                     return true;
                 }
@@ -1319,7 +1283,7 @@ public class PartyFinderScreen extends Screen {
         float headerBtnX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
         float headerBtnY = searchY;
 
-        if (isPartyLeader) {
+        if (party().isPartyLeader()) {
             float manageW = 95;
             if (isHovered(mx, my, headerBtnX, headerBtnY, manageW, SEARCH_BAR_HEIGHT)) {
                 openModal(true);
@@ -1329,25 +1293,14 @@ public class PartyFinderScreen extends Screen {
 
             float delistW = 80;
             if (isHovered(mx, my, headerBtnX, headerBtnY, delistW, SEARCH_BAR_HEIGHT)) {
-                if (myPartyIndex >= 0 && myPartyIndex < parties.size()) {
-                    parties.remove(myPartyIndex);
-                    if (joinedPartyIndex == myPartyIndex) {
-                        joinedPartyIndex = -1;
-                    } else if (joinedPartyIndex > myPartyIndex) {
-                        joinedPartyIndex--;
-                    }
-                }
-                myPartyIndex = -1;
-                joinedPartyIndex = -1;
-                isPartyLeader = false;
-                hasListedParty = false;
+                party().delistParty();
                 return true;
             }
             headerBtnX += delistW + 6;
         } else {
             float newW = 80;
             if (isHovered(mx, my, headerBtnX, headerBtnY, newW, SEARCH_BAR_HEIGHT)) {
-                if (joinedPartyIndex < 0) {
+                if (party().getJoinedPartyIndex() < 0) {
                     openModal(false);
                 }
                 return true;
@@ -1389,8 +1342,8 @@ public class PartyFinderScreen extends Screen {
         float cursorY = contentY - scrollOffset + PADDING;
         float contentWidth = panelWidth;
 
-        for (int i = 0; i < parties.size(); i++) {
-            PartyListing party = parties.get(i);
+        for (int i = 0; i < party().getParties().size(); i++) {
+            PartyListing party = party().getParties().get(i);
             if (!matchesFilters(party)) continue;
 
             float cardX = panelX + PADDING;
@@ -1401,8 +1354,8 @@ public class PartyFinderScreen extends Screen {
                 cardH = CARD_HEADER_HEIGHT + party.members.size() * MEMBER_ROW_HEIGHT + CARD_PADDING;
 
                 // Leader management: promote/kick clicks
-                boolean isMyParty = i == myPartyIndex;
-                boolean amLeaderOfThisParty = isMyParty && isPartyLeader;
+                boolean isMyParty = i == party().getMyPartyIndex();
+                boolean amLeaderOfThisParty = isMyParty && party().isPartyLeader();
                 if (amLeaderOfThisParty) {
                     float memberY = cursorY + CARD_HEADER_HEIGHT;
                     float memberRowX = cardX + CARD_PADDING + 10;
@@ -1417,15 +1370,9 @@ public class PartyFinderScreen extends Screen {
                             float nameMidX = nameStartX + nameAreaW / 2f;
 
                             if (mx < nameMidX) {
-                                // Promote: set this member as leader, remove own leadership
-                                for (PartyMember pm : party.members) {
-                                    pm.isLeader = false;
-                                }
-                                member.isLeader = true;
-                                isPartyLeader = false;
+                                party().promoteMember(i, mi);
                             } else {
-                                // Kick: remove member
-                                party.members.remove(mi);
+                                party().kickMember(i, mi);
                             }
                             return true;
                         }
@@ -1437,15 +1384,10 @@ public class PartyFinderScreen extends Screen {
                 float joinBtnY = cursorY + CARD_HEADER_HEIGHT + (party.members.size() - 1) * MEMBER_ROW_HEIGHT
                         + (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
                 if (!isMyParty && isHovered(mx, my, joinBtnX, joinBtnY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT)) {
-                    if (joinedPartyIndex == i) {
-                        String playerName = SeqClient.mc.getUser().getName();
-                        party.members.removeIf(m -> m.name.equals(playerName));
-                        joinedPartyIndex = -1;
-                    } else if (joinedPartyIndex < 0) {
-                        String playerName = SeqClient.mc.getUser().getName();
-                        String role = selectedRole != null ? selectedRole : "DPS";
-                        party.members.add(new PartyMember(playerName, "assassin", role, false));
-                        joinedPartyIndex = i;
+                    if (party().getJoinedPartyIndex() == i) {
+                        party().leaveParty();
+                    } else if (party().getJoinedPartyIndex() < 0) {
+                        party().joinParty(i, selectedRole);
                     }
                     return true;
                 }
@@ -1471,7 +1413,7 @@ public class PartyFinderScreen extends Screen {
         modalOpen = true;
         editTagsScreenOpen = false;
         reservedSlotsFocused = false;
-        hasListedParty = managing && isPartyLeader;
+        party().setHasListedParty(managing);
         if (!managing) {
             modalSelectedRaids.clear();
             modalActiveTags.clear();
@@ -1578,27 +1520,13 @@ public class PartyFinderScreen extends Screen {
                 // Combine raids + active tags
                 List<String> tags = new ArrayList<>(modalSelectedRaids);
                 tags.addAll(modalActiveTags);
-                String playerName = SeqClient.mc.getUser().getName();
 
-                if (myPartyIndex >= 0 && myPartyIndex < parties.size()) {
-                    PartyListing existing = parties.get(myPartyIndex);
-                    PartyListing updated = new PartyListing(tags);
-                    updated.members.addAll(existing.members);
-                    updated.expanded = true;
-                    parties.set(myPartyIndex, updated);
+                if (party().getMyPartyIndex() >= 0) {
+                    party().updateParty(tags);
                 } else {
-                    PartyListing newParty = new PartyListing(tags);
-                    String role = selectedRole != null ? selectedRole : "DPS";
-                    newParty.members.add(new PartyMember(playerName, "assassin", role, true));
-                    newParty.expanded = true;
-                    parties.add(0, newParty);
-                    myPartyIndex = 0;
-                    if (joinedPartyIndex >= 0) joinedPartyIndex++;
+                    party().createParty(tags, selectedRole);
                 }
 
-                isPartyLeader = true;
-                hasListedParty = true;
-                joinedPartyIndex = myPartyIndex;
                 modalOpen = false;
                 editTagsScreenOpen = false;
                 reservedSlotsFocused = false;
@@ -1880,50 +1808,4 @@ public class PartyFinderScreen extends Screen {
     @Override
     public boolean isPauseScreen() { return false; }
 
-    // ══════════════════════════════ DATA ══════════════════════════════
-
-    private static class PartyMember {
-        final String name;
-        final String className;
-        String role;
-        boolean isLeader;
-
-        PartyMember(String name, String className, String role, boolean isLeader) {
-            this.name = name;
-            this.className = className;
-            this.role = role;
-            this.isLeader = isLeader;
-        }
-    }
-
-    private static class PartyListing {
-        final int maxSize;
-        final List<String> tags;
-        final List<PartyMember> members = new ArrayList<>();
-        boolean expanded = false;
-
-        PartyListing(List<String> tags) {
-            this.tags = new ArrayList<>(tags);
-            this.maxSize = tags.contains("ANNI") ? 10 : 4;
-        }
-
-        List<String> getRaidTags() {
-            List<String> raids = new ArrayList<>();
-            for (String tag : tags) {
-                if (RAID_TYPE_SET.contains(tag)) {
-                    raids.add(tag);
-                }
-            }
-            return raids;
-        }
-
-        String displayLabel() {
-            return String.join(", ", tags);
-        }
-
-        PartyMember getLeader() {
-            for (PartyMember m : members) { if (m.isLeader) return m; }
-            return members.isEmpty() ? null : members.get(0);
-        }
-    }
 }

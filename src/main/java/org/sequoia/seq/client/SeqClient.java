@@ -21,6 +21,7 @@ import org.sequoia.seq.command.SeqCommand;
 import org.sequoia.seq.managers.AssetManager;
 import org.sequoia.seq.managers.FontManager;
 import org.sequoia.seq.managers.GameManager;
+import org.sequoia.seq.managers.PartyFinderManager;
 import org.sequoia.seq.ui.SequoiaScreen;
 import org.sequoia.seq.utils.rendering.nvg.NVGContext;
 import org.sequoia.seq.utils.rendering.nvg.NVGWrapper;
@@ -41,6 +42,8 @@ public class SeqClient implements ClientModInitializer {
     public static AssetManager assetManager;
     @Getter
     public static ConfigManager configManager;
+    @Getter
+    public static PartyFinderManager partyFinderManager;
 
     private static KeyMapping openScreenKey;
 
@@ -54,6 +57,7 @@ public class SeqClient implements ClientModInitializer {
         }
         fontManager = new FontManager();
         gameManager = new GameManager();
+        partyFinderManager = new PartyFinderManager();
         configManager = new ConfigManager();
         configManager.load();
         SeqCommand.register();
