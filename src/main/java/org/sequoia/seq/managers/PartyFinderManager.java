@@ -1,148 +1,264 @@
 package org.sequoia.seq.managers;
 
+import com.google.gson.*;
 import lombok.Getter;
 import org.sequoia.seq.client.SeqClient;
+import org.sequoia.seq.events.PartyFinderUpdateEvent;
+import org.sequoia.seq.model.*;
+import org.sequoia.seq.network.ApiClient;
+import org.sequoia.seq.network.ConnectionManager;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class PartyFinderManager {
 
+    private static final Gson GSON = new GsonBuilder()
+            .registerTypeAdapter(Instant.class, (JsonDeserializer<Instant>) (json, type, ctx) ->
+                    Instant.parse(json.getAsString()))
+            .create();
+
     @Getter
-    private final List<PartyListing> parties = new ArrayList<>();
+    private final List<Activity> activities = new CopyOnWriteArrayList<>();
     @Getter
-    private int joinedPartyIndex = -1;
+    private final List<Listing> listings = new CopyOnWriteArrayList<>();
+
+    /** The listing the local player is currently a member of, or null. */
     @Getter
-    private int myPartyIndex = -1;
-    @Getter
-    private boolean isPartyLeader = false;
-    private boolean hasListedParty = false;
+    private Listing currentListing;
 
     public PartyFinderManager() {
-        buildDemoData();
+        // Register for real-time WS updates
+        ConnectionManager.onPartyFinderUpdate(update -> {
+            Listing listing = GSON.fromJson(update.listingJson(), Listing.class);
+            handlePartyFinderUpdate(update.action(), listing);
+        });
     }
 
-    // ── Accessors ──
+    // ── Data loading ──
 
-    public boolean hasListedParty() { return hasListedParty; }
+    public CompletableFuture<List<Activity>> loadActivities() {
+        return ApiClient.getInstance().getActivities()
+                .thenApply(result -> {
+                    activities.clear();
+                    activities.addAll(result);
+                    return result;
+                })
+                .exceptionally(e -> {
+                    SeqClient.LOGGER.error("Failed to load activities", e);
+                    return List.of();
+                });
+    }
+
+    public CompletableFuture<List<Listing>> loadListings(Long activityId, PartyRegion region) {
+        return ApiClient.getInstance().getListings(activityId, region)
+                .thenApply(result -> {
+                    listings.clear();
+                    listings.addAll(result);
+                    refreshCurrentListing();
+                    return result;
+                })
+                .exceptionally(e -> {
+                    SeqClient.LOGGER.error("Failed to load listings", e);
+                    return List.of();
+                });
+    }
 
     // ── Party actions ──
 
-    public void joinParty(int partyIndex, String role) {
-        if (joinedPartyIndex >= 0) return;
-        if (partyIndex < 0 || partyIndex >= parties.size()) return;
-        String playerName = SeqClient.mc.getUser().getName();
-        String actualRole = role != null ? role : "DPS";
-        parties.get(partyIndex).members.add(new PartyMember(playerName, "assassin", actualRole, false));
-        joinedPartyIndex = partyIndex;
+    public CompletableFuture<Listing> createParty(long activityId, PartyMode mode, PartyRegion region, PartyRole role, String note) {
+        return ApiClient.getInstance().createListing(activityId, mode, region, role, note)
+                .thenApply(listing -> {
+                    listings.add(0, listing);
+                    currentListing = listing;
+                    return listing;
+                })
+                .exceptionally(e -> {
+                    SeqClient.LOGGER.error("Failed to create party", e);
+                    return null;
+                });
     }
 
-    public void leaveParty() {
-        if (joinedPartyIndex < 0 || joinedPartyIndex >= parties.size()) return;
-        String playerName = SeqClient.mc.getUser().getName();
-        parties.get(joinedPartyIndex).members.removeIf(m -> m.name.equals(playerName));
-        joinedPartyIndex = -1;
+    public CompletableFuture<Listing> joinParty(long listingId, PartyRole role) {
+        return ApiClient.getInstance().joinListing(listingId, role)
+                .thenApply(listing -> {
+                    replaceListing(listing);
+                    currentListing = listing;
+                    return listing;
+                })
+                .exceptionally(e -> {
+                    SeqClient.LOGGER.error("Failed to join party", e);
+                    return null;
+                });
     }
 
-    public void createParty(List<String> tags, String role) {
-        String playerName = SeqClient.mc.getUser().getName();
-        String actualRole = role != null ? role : "DPS";
-        PartyListing newParty = new PartyListing(tags);
-        newParty.members.add(new PartyMember(playerName, "assassin", actualRole, true));
-        newParty.expanded = true;
-        parties.add(0, newParty);
-        myPartyIndex = 0;
-        if (joinedPartyIndex >= 0) joinedPartyIndex++;
-        isPartyLeader = true;
-        hasListedParty = true;
-        joinedPartyIndex = myPartyIndex;
+    public CompletableFuture<Listing> leaveParty(long listingId) {
+        return ApiClient.getInstance().leaveListing(listingId)
+                .thenApply(listing -> {
+                    replaceListing(listing);
+                    currentListing = null;
+                    return listing;
+                })
+                .exceptionally(e -> {
+                    SeqClient.LOGGER.error("Failed to leave party", e);
+                    return null;
+                });
     }
 
-    public void updateParty(List<String> tags) {
-        if (myPartyIndex < 0 || myPartyIndex >= parties.size()) return;
-        PartyListing existing = parties.get(myPartyIndex);
-        PartyListing updated = new PartyListing(tags);
-        updated.members.addAll(existing.members);
-        updated.expanded = true;
-        parties.set(myPartyIndex, updated);
-        isPartyLeader = true;
-        hasListedParty = true;
-        joinedPartyIndex = myPartyIndex;
+    public CompletableFuture<Listing> closeParty(long listingId) {
+        return ApiClient.getInstance().closeListing(listingId)
+                .thenApply(listing -> {
+                    replaceListing(listing);
+                    currentListing = listing;
+                    return listing;
+                })
+                .exceptionally(e -> {
+                    SeqClient.LOGGER.error("Failed to close party", e);
+                    return null;
+                });
     }
 
-    public void delistParty() {
-        if (myPartyIndex >= 0 && myPartyIndex < parties.size()) {
-            parties.remove(myPartyIndex);
-            if (joinedPartyIndex == myPartyIndex) {
-                joinedPartyIndex = -1;
-            } else if (joinedPartyIndex > myPartyIndex) {
-                joinedPartyIndex--;
+    public CompletableFuture<Listing> reopenParty(long listingId) {
+        return ApiClient.getInstance().reopenListing(listingId)
+                .thenApply(listing -> {
+                    replaceListing(listing);
+                    currentListing = listing;
+                    return listing;
+                })
+                .exceptionally(e -> {
+                    SeqClient.LOGGER.error("Failed to reopen party", e);
+                    return null;
+                });
+    }
+
+    public CompletableFuture<Void> disbandParty(long listingId) {
+        return ApiClient.getInstance().disbandListing(listingId)
+                .thenRun(() -> {
+                    listings.removeIf(l -> l.id() == listingId);
+                    if (currentListing != null && currentListing.id() == listingId) {
+                        currentListing = null;
+                    }
+                })
+                .exceptionally(e -> {
+                    SeqClient.LOGGER.error("Failed to disband party", e);
+                    return null;
+                });
+    }
+
+    public CompletableFuture<Void> kickMember(long listingId, UUID targetUUID) {
+        return ApiClient.getInstance().kickMember(listingId, targetUUID)
+                .exceptionally(e -> {
+                    SeqClient.LOGGER.error("Failed to kick member", e);
+                    return null;
+                });
+    }
+
+    public CompletableFuture<Listing> changeMyRole(PartyRole role) {
+        return ApiClient.getInstance().changeMyRole(role)
+                .thenApply(listing -> {
+                    replaceListing(listing);
+                    currentListing = listing;
+                    return listing;
+                })
+                .exceptionally(e -> {
+                    SeqClient.LOGGER.error("Failed to change role", e);
+                    return null;
+                });
+    }
+
+    public CompletableFuture<Listing> reassignRole(long listingId, UUID targetUUID, PartyRole role) {
+        return ApiClient.getInstance().reassignRole(listingId, targetUUID, role)
+                .thenApply(listing -> {
+                    replaceListing(listing);
+                    currentListing = listing;
+                    return listing;
+                })
+                .exceptionally(e -> {
+                    SeqClient.LOGGER.error("Failed to reassign role", e);
+                    return null;
+                });
+    }
+
+    public CompletableFuture<Listing> transferLeadership(long listingId, UUID targetUUID) {
+        return ApiClient.getInstance().transferLeadership(listingId, targetUUID)
+                .thenApply(listing -> {
+                    replaceListing(listing);
+                    currentListing = listing;
+                    return listing;
+                })
+                .exceptionally(e -> {
+                    SeqClient.LOGGER.error("Failed to transfer leadership", e);
+                    return null;
+                });
+    }
+
+    // ── Convenience queries ──
+
+    public boolean isInParty() {
+        return currentListing != null;
+    }
+
+    public boolean isPartyLeader() {
+        if (currentListing == null) return false;
+        String myUUID = getLocalPlayerUUID();
+        return myUUID != null && myUUID.equals(currentListing.leaderUUID());
+    }
+
+    public String getLocalPlayerUUID() {
+        var player = SeqClient.mc.player;
+        return player != null ? player.getUUID().toString() : null;
+    }
+
+    // ── Real-time update handler ──
+
+    public void handlePartyFinderUpdate(String action, Listing listing) {
+        switch (action) {
+            case "CREATED" -> {
+                // Add to the top of the list if not already present
+                if (listings.stream().noneMatch(l -> l.id() == listing.id())) {
+                    listings.add(0, listing);
+                }
+            }
+            case "UPDATED" -> replaceListing(listing);
+            case "DISBANDED" -> {
+                listings.removeIf(l -> l.id() == listing.id());
+                if (currentListing != null && currentListing.id() == listing.id()) {
+                    currentListing = null;
+                }
             }
         }
-        myPartyIndex = -1;
-        joinedPartyIndex = -1;
-        isPartyLeader = false;
-        hasListedParty = false;
-    }
+        refreshCurrentListing();
 
-    public void kickMember(int partyIndex, int memberIndex) {
-        if (partyIndex < 0 || partyIndex >= parties.size()) return;
-        PartyListing party = parties.get(partyIndex);
-        if (memberIndex < 0 || memberIndex >= party.members.size()) return;
-        party.members.remove(memberIndex);
-    }
-
-    public void promoteMember(int partyIndex, int memberIndex) {
-        if (partyIndex < 0 || partyIndex >= parties.size()) return;
-        PartyListing party = parties.get(partyIndex);
-        if (memberIndex < 0 || memberIndex >= party.members.size()) return;
-        for (PartyMember pm : party.members) {
-            pm.isLeader = false;
+        // Fire event for the UI
+        if (SeqClient.getEventBus() != null) {
+            SeqClient.getEventBus().fire(new PartyFinderUpdateEvent(action, listing));
         }
-        party.members.get(memberIndex).isLeader = true;
-        isPartyLeader = false;
     }
 
-    public void setRole(String role) {
-        if (role == null || joinedPartyIndex < 0 || joinedPartyIndex >= parties.size()) return;
-        String playerName = SeqClient.mc.getUser().getName();
-        for (PartyMember m : parties.get(joinedPartyIndex).members) {
-            if (m.name.equals(playerName)) {
-                m.role = role;
-                break;
+    // ── Internal helpers ──
+
+    private void replaceListing(Listing updated) {
+        for (int i = 0; i < listings.size(); i++) {
+            if (listings.get(i).id() == updated.id()) {
+                listings.set(i, updated);
+                return;
             }
         }
+        // Not found — add it
+        listings.add(updated);
     }
 
-    public void setHasListedParty(boolean managing) {
-        hasListedParty = managing && isPartyLeader;
-    }
-
-    //TODO: delete this once we actually can goon to ts
-
-    private void buildDemoData() {
-        PartyListing p1 = new PartyListing(List.of("NOTG", "Chill"));
-        p1.members.add(new PartyMember("GAZTheMiner", "archer", "DPS", true));
-        p1.members.add(new PartyMember("Vicvir", "warrior", "Tank", false));
-        p1.expanded = true;
-        parties.add(p1);
-
-        PartyListing p2 = new PartyListing(List.of("TCC", "NOL", "Grind"));
-        p2.members.add(new PartyMember("PlayerOne", "mage", "Support", true));
-        p2.members.add(new PartyMember("PlayerTwo", "warrior", "DPS", false));
-        parties.add(p2);
-
-        PartyListing p3 = new PartyListing(List.of("NOL", "NOTG", "Chill"));
-        p3.members.add(new PartyMember("Leader123", "assassin", "DPS", true));
-        p3.members.add(new PartyMember("MemberA", "warrior", "Tank", false));
-        p3.members.add(new PartyMember("MemberB", "mage", "Support", false));
-        p3.members.add(new PartyMember("MemberC", "archer", "DPS", false));
-        parties.add(p3);
-
-        PartyListing p4 = new PartyListing(List.of("ANNI", "Chill"));
-        p4.members.add(new PartyMember("RaidLeader", "shaman", "Support", true));
-        p4.members.add(new PartyMember("DPS1", "assassin", "DPS", false));
-        p4.members.add(new PartyMember("DPS2", "archer", "DPS", false));
-        parties.add(p4);
+    private void refreshCurrentListing() {
+        String myUUID = getLocalPlayerUUID();
+        if (myUUID == null) {
+            currentListing = null;
+            return;
+        }
+        currentListing = listings.stream()
+                .filter(l -> l.members().stream().anyMatch(m -> m.playerUUID().equals(myUUID)))
+                .findFirst()
+                .orElse(null);
     }
 }
