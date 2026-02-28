@@ -118,6 +118,46 @@ processResources {
     }
 }
 
+// ── BuildConfig generation ──
+def buildConfigDir = layout.buildDirectory.dir("generated/sources/buildConfig/java/main")
+
+def generateBuildConfig = tasks.register("generateBuildConfig") {
+    def env = project.findProperty("backend_environment") ?: "staging"
+    def wsUrl, apiUrl
+    switch (env) {
+        case "production":
+            wsUrl = "wss://api.seqwawa.com/ws"
+            apiUrl = "https://api.seqwawa.com/api"
+            break
+        default:
+            wsUrl = "wss://staging.seqwawa.com/ws"
+            apiUrl = "https://staging.seqwawa.com/api"
+            break
+    }
+
+    inputs.property("env", env)
+    outputs.dir(buildConfigDir)
+
+    doLast {
+        def outputDir = buildConfigDir.get().asFile.toPath().resolve("org/sequoia/seq/network")
+        outputDir.toFile().mkdirs()
+        outputDir.resolve("BuildConfig.java").toFile().text = """\
+package org.sequoia.seq.network;
+
+/** Auto-generated — do not edit. */
+public final class BuildConfig {
+    private BuildConfig() {}
+    public static final String ENVIRONMENT = "${env}";
+    public static final String WS_URL = "${wsUrl}";
+    public static final String API_URL = "${apiUrl}";
+}
+"""
+    }
+}
+
+sourceSets.main.java.srcDir(buildConfigDir)
+tasks.named("compileJava").configure { dependsOn(generateBuildConfig) }
+
 def targetJavaVersion = 21
 tasks.withType(JavaCompile).configureEach {
     // ensure that the encoding is set to UTF-8, no matter what the system default is
