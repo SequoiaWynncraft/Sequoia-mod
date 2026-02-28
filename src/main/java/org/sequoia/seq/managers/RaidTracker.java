@@ -4,37 +4,32 @@ import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.network.ConnectionManager;
 
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
- * Detects raid starts from Wynncraft chat and announces them to the guild via the backend.
+ * Detects raid completions from Wynncraft chat and announces them to the guild.
  * <p>
- * Wynncraft raids typically show party members in a system message when entering.
- * This tracker watches for those patterns and sends announcements.
+ * Matches messages like: "Player1, Player2, and Player3 finished The Canyon Colossus 
+ * and claimed 2x Aspects, 2048x Emeralds, +10367m Guild Experience, and +440 Seasonal Rating"
  */
 public class RaidTracker {
 
     /**
-     * Pattern for Wynncraft raid start messages.
-     * e.g. "You have entered The Canyon Colossus raid!" or similar.
+     * Pattern for Wynncraft raid completion.
+     * Group 1: Comma-separated player names (with optional "and")
+     * Group 2: Raid name (e.g., "The Canyon Colossus")
+     * Group 3: Aspects count
+     * Group 4: Emeralds count  
+     * Group 5: Guild Experience (numeric value before 'm')
+     * Group 6: Seasonal Rating
      */
-    private static final Pattern RAID_ENTER_PATTERN =
-            Pattern.compile("(?:You have entered|Starting) (?:the )?(.+?)(?:\\s+raid)?[!.]", Pattern.CASE_INSENSITIVE);
-
-    /**
-     * Pattern for party members shown when entering a raid.
-     * e.g. " - PlayerName" or "- PlayerName (Lv 106)"
-     */
-    private static final Pattern PARTY_MEMBER_PATTERN =
-            Pattern.compile("^\\s*[-•]\\s+(\\w{3,16})");
-
-    private boolean collectingParty = false;
-    private String currentRaid = null;
-    private final List<String> partyMembers = new ArrayList<>();
-    private long collectStartTime = 0;
+    private static final Pattern RAID_FINISH_PATTERN = Pattern.compile(
+        "^(.+?) finished (.+?) and claimed (\\d+)x Aspects, (\\d+)x Emeralds, \\+([\\d.]+)m Guild Experience, and \\+(\\d+) Seasonal Rating$"
+    );
 
     public RaidTracker() {
         registerChatHook();
@@ -47,55 +42,34 @@ public class RaidTracker {
             if (!SeqClient.getRaidAutoAnnounceSetting().getValue()) return;
 
             String plain = message.getString();
+            Matcher matcher = RAID_FINISH_PATTERN.matcher(plain);
 
-            // Check if we're timed out on collecting party members
-            if (collectingParty && System.currentTimeMillis() - collectStartTime > 3000) {
-                // Timed out, send what we have
-                sendAnnouncement();
-            }
+            if (!matcher.find()) return;
 
-            // Check for raid entry
-            Matcher raidMatcher = RAID_ENTER_PATTERN.matcher(plain);
-            if (raidMatcher.find()) {
-                currentRaid = raidMatcher.group(1).trim();
-                partyMembers.clear();
-                collectingParty = true;
-                collectStartTime = System.currentTimeMillis();
+            // Parse player names: "A, B, C, and D" -> [A, B, C, D]
+            String namesPart = matcher.group(1).replace(", and ", ", ");
+            List<String> partyMembers = Arrays.stream(namesPart.split(", "))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toList());
 
-                // Add self
-                if (SeqClient.mc.player != null) {
-                    partyMembers.add(SeqClient.mc.player.getName().getString());
-                }
-                return;
-            }
+            String raidName = matcher.group(2);
+            int aspects = Integer.parseInt(matcher.group(3));
+            int emeralds = Integer.parseInt(matcher.group(4));
+            double guildExp = Double.parseDouble(matcher.group(5));
+            int seasonalRating = Integer.parseInt(matcher.group(6));
 
-            // Collect party members if we're in collection mode
-            if (collectingParty) {
-                Matcher memberMatcher = PARTY_MEMBER_PATTERN.matcher(plain);
-                if (memberMatcher.find()) {
-                    partyMembers.add(memberMatcher.group(1));
-                } else if (!plain.isBlank()) {
-                    // Non-member line → done collecting
-                    sendAnnouncement();
-                }
-            }
-        });
-    }
-
-    private void sendAnnouncement() {
-        if (currentRaid != null && !partyMembers.isEmpty()) {
             ConnectionManager instance = ConnectionManager.getInstance();
-            if (instance != null) {
-                // Loot counts are sent later when raid completes; start with zeros
+            if (instance != null && !partyMembers.isEmpty()) {
                 instance.sendRaidAnnouncement(
-                        partyMembers,
-                        currentRaid,
-                        0, 0, 0.0, 0
+                    partyMembers,
+                    raidName,
+                    aspects,
+                    emeralds,
+                    guildExp,
+                    seasonalRating
                 );
             }
-        }
-        collectingParty = false;
-        currentRaid = null;
-        partyMembers.clear();
+        });
     }
 }
