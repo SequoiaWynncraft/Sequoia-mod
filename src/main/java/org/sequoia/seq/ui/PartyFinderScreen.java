@@ -175,7 +175,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private Long filterActivityId = null;
     private PartyRegion filterRegion = null;
     private boolean filterDropdownOpen = false;
-    private boolean regionFilterDropdownOpen = false;
+    private boolean filterActivityDropdownOpen = false;
+    private boolean filterRegionDropdownOpen = false;
 
     // ── Leader member management ──
     private int hoveredMemberPartyIndex = -1;
@@ -501,19 +502,23 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private void renderExpandedCard(long nvg, String fontName, float x, float y, float w, float h,
                                     Listing listing, int listingIndex, boolean isJoined) {
         float rowX = x + CARD_PADDING;
+        // Reserve space for right-side elements (status badge + mode/region + collapse arrow)
+        float rightReserved = STATUS_BADGE_W + 80 + 20; // badge + mode text + arrow
+        float maxNameW = w - CARD_PADDING * 2 - rightReserved - 50; // 50 for member count
 
-        // Activity name
+        // Activity name (truncated if needed)
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, CARD_TITLE_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        String actName = truncateText(nvg, listing.activity().name(), maxNameW);
         var nc = NVGContext.nvgColor(TITLE_COLOR);
         nvgFillColor(nvg, nc);
-        nvgText(nvg, rowX, y + CARD_HEADER_HEIGHT / 2f, listing.activity().name());
+        nvgText(nvg, rowX, y + CARD_HEADER_HEIGHT / 2f, actName);
         nc.free();
 
         // Member count
         float[] bounds = new float[4];
-        nvgTextBounds(nvg, 0, 0, listing.activity().name(), bounds);
+        nvgTextBounds(nvg, 0, 0, actName, bounds);
         float nameW = bounds[2] - bounds[0];
 
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
@@ -595,18 +600,22 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private void renderCollapsedCard(long nvg, String fontName, float x, float y, float w, Listing listing) {
         float rowX = x + CARD_PADDING;
         float centerY = y + COLLAPSED_ROW_HEIGHT / 2f;
+        // Reserve space for right-side elements (expand + status + mode/region)
+        float rightReserved = 22 + STATUS_BADGE_W + 6 + 80;
+        float maxNameW = w * 0.35f; // cap activity name at 35% of card width
 
-        // Activity name
+        // Activity name (truncated if needed)
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, CARD_TITLE_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        String actName = truncateText(nvg, listing.activity().name(), maxNameW);
         var nc = NVGContext.nvgColor(TITLE_COLOR);
         nvgFillColor(nvg, nc);
-        nvgText(nvg, rowX, centerY, listing.activity().name());
+        nvgText(nvg, rowX, centerY, actName);
         nc.free();
 
         float[] bounds = new float[4];
-        nvgTextBounds(nvg, 0, 0, listing.activity().name(), bounds);
+        nvgTextBounds(nvg, 0, 0, actName, bounds);
         rowX += (bounds[2] - bounds[0]) + 8;
 
         // Member count
@@ -951,13 +960,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         // Activity filter
         renderModalLabel(nvg, fontName, labelX, rowY, "Activity");
         String actLabel = filterActivityId == null ? "All" : getActivityNameById(filterActivityId);
-        renderModalDropdown(nvg, fontName, ddX, rowY, ddW, actLabel, false);
+        renderModalDropdown(nvg, fontName, ddX, rowY, ddW, actLabel, filterActivityDropdownOpen);
         rowY += MODAL_ROW_SPACING;
 
         // Region filter
         renderModalLabel(nvg, fontName, labelX, rowY, "Region");
         String regLabel = filterRegion == null ? "All" : filterRegion.name();
-        renderModalDropdown(nvg, fontName, ddX, rowY, ddW, regLabel, false);
+        renderModalDropdown(nvg, fontName, ddX, rowY, ddW, regLabel, filterRegionDropdownOpen);
 
         // Apply / Clear buttons
         float backW = 60;
@@ -983,6 +992,31 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFillColor(nvg, clc);
         nvgText(nvg, clearX + clearW / 2f, btnY + backH / 2f, "Clear");
         clc.free();
+
+        // Render open dropdowns on top of dialog
+        float ddRowY = filterY + 40;
+        if (filterActivityDropdownOpen) {
+            List<Activity> acts = party().getActivities();
+            String[] items = new String[acts.size() + 1];
+            items[0] = "All";
+            for (int i = 0; i < acts.size(); i++) items[i + 1] = acts.get(i).name();
+            int sel = 0;
+            if (filterActivityId != null) {
+                for (int i = 0; i < acts.size(); i++) {
+                    if (acts.get(i).id() == filterActivityId) { sel = i + 1; break; }
+                }
+            }
+            renderDropdownItems(nvg, fontName, ddX, ddRowY + MODAL_DROPDOWN_H, ddW, items, sel);
+        }
+        ddRowY += MODAL_ROW_SPACING;
+        if (filterRegionDropdownOpen) {
+            PartyRegion[] regions = PartyRegion.values();
+            String[] items = new String[regions.length + 1];
+            items[0] = "All";
+            for (int i = 0; i < regions.length; i++) items[i + 1] = regions[i].name();
+            int sel = filterRegion == null ? 0 : filterRegion.ordinal() + 1;
+            renderDropdownItems(nvg, fontName, ddX, ddRowY + MODAL_DROPDOWN_H, ddW, items, sel);
+        }
     }
 
     // ── Helpers ──
@@ -1021,6 +1055,19 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     private boolean isHovered(float mx, float my, float bx, float by, float bw, float bh) {
         return mx >= bx && mx <= bx + bw && my >= by && my <= by + bh;
+    }
+
+    /** Truncate text with "..." suffix if it exceeds maxWidth (NVG font must already be set). */
+    private String truncateText(long nvg, String text, float maxWidth) {
+        float[] bounds = new float[4];
+        nvgTextBounds(nvg, 0, 0, text, bounds);
+        if (bounds[2] - bounds[0] <= maxWidth) return text;
+        for (int len = text.length() - 1; len > 0; len--) {
+            String candidate = text.substring(0, len) + "...";
+            nvgTextBounds(nvg, 0, 0, candidate, bounds);
+            if (bounds[2] - bounds[0] <= maxWidth) return candidate;
+        }
+        return "...";
     }
 
     // ══════════════════════════════ INPUT ══════════════════════════════
@@ -1398,48 +1445,73 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float ddX = filterX + filterW / 2f;
         float ddW = filterW / 2f - 20;
 
-        // Click outside closes
-        if (!isHovered(mx, my, filterX, filterY, filterW, filterH)) {
-            filterDropdownOpen = false;
+        // Handle open dropdown item clicks first
+        float ddRowY = filterY + 40;
+        if (filterActivityDropdownOpen) {
+            List<Activity> acts = party().getActivities();
+            float itemH = 20;
+            float menuY = ddRowY + MODAL_DROPDOWN_H;
+            // "All" option
+            if (isHovered(mx, my, ddX, menuY, ddW, itemH)) {
+                filterActivityId = null;
+                filterActivityDropdownOpen = false;
+                return true;
+            }
+            for (int i = 0; i < acts.size(); i++) {
+                float itemY = menuY + (i + 1) * itemH;
+                if (isHovered(mx, my, ddX, itemY, ddW, itemH)) {
+                    filterActivityId = acts.get(i).id();
+                    filterActivityDropdownOpen = false;
+                    return true;
+                }
+            }
+            filterActivityDropdownOpen = false;
+            return true;
+        }
+        ddRowY += MODAL_ROW_SPACING;
+        if (filterRegionDropdownOpen) {
+            PartyRegion[] regions = PartyRegion.values();
+            float itemH = 20;
+            float menuY = ddRowY + MODAL_DROPDOWN_H;
+            // "All" option
+            if (isHovered(mx, my, ddX, menuY, ddW, itemH)) {
+                filterRegion = null;
+                filterRegionDropdownOpen = false;
+                return true;
+            }
+            for (int i = 0; i < regions.length; i++) {
+                float itemY = menuY + (i + 1) * itemH;
+                if (isHovered(mx, my, ddX, itemY, ddW, itemH)) {
+                    filterRegion = regions[i];
+                    filterRegionDropdownOpen = false;
+                    return true;
+                }
+            }
+            filterRegionDropdownOpen = false;
             return true;
         }
 
-        // Activity filter dropdown click
+        // Click outside closes
+        if (!isHovered(mx, my, filterX, filterY, filterW, filterH)) {
+            filterDropdownOpen = false;
+            filterActivityDropdownOpen = false;
+            filterRegionDropdownOpen = false;
+            return true;
+        }
+
+        // Activity filter dropdown toggle
         float rowY = filterY + 40;
         if (isHovered(mx, my, ddX, rowY, ddW, MODAL_DROPDOWN_H)) {
-            // Cycle through: All → Activity 1 → Activity 2 → ... → All
-            List<Activity> acts = party().getActivities();
-            if (acts.isEmpty()) return true;
-            if (filterActivityId == null) {
-                filterActivityId = acts.get(0).id();
-            } else {
-                int idx = -1;
-                for (int i = 0; i < acts.size(); i++) {
-                    if (acts.get(i).id() == filterActivityId) { idx = i; break; }
-                }
-                if (idx >= 0 && idx < acts.size() - 1) {
-                    filterActivityId = acts.get(idx + 1).id();
-                } else {
-                    filterActivityId = null;
-                }
-            }
+            filterRegionDropdownOpen = false;
+            filterActivityDropdownOpen = !filterActivityDropdownOpen;
             return true;
         }
         rowY += MODAL_ROW_SPACING;
 
-        // Region filter dropdown click
+        // Region filter dropdown toggle
         if (isHovered(mx, my, ddX, rowY, ddW, MODAL_DROPDOWN_H)) {
-            PartyRegion[] regions = PartyRegion.values();
-            if (filterRegion == null) {
-                filterRegion = regions[0];
-            } else {
-                int idx = filterRegion.ordinal();
-                if (idx < regions.length - 1) {
-                    filterRegion = regions[idx + 1];
-                } else {
-                    filterRegion = null;
-                }
-            }
+            filterActivityDropdownOpen = false;
+            filterRegionDropdownOpen = !filterRegionDropdownOpen;
             return true;
         }
 
@@ -1453,6 +1525,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         if (isHovered(mx, my, btnStartX, btnY, backW, backH)) {
             filterDropdownOpen = false;
+            filterActivityDropdownOpen = false;
+            filterRegionDropdownOpen = false;
             refreshListings();
             return true;
         }
@@ -1463,6 +1537,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             filterActivityId = null;
             filterRegion = null;
             filterDropdownOpen = false;
+            filterActivityDropdownOpen = false;
+            filterRegionDropdownOpen = false;
             refreshListings();
             return true;
         }

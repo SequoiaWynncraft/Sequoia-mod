@@ -9,6 +9,7 @@ import net.minecraft.network.chat.Component;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.network.ConnectionManager;
+import org.sequoia.seq.ui.PartyFinderScreen;
 
 public class SeqCommand {
 
@@ -72,6 +73,12 @@ public class SeqCommand {
                                     SeqClient.getConfigManager().clearToken();
                                     ctx.getSource().sendFeedback(
                                             NotificationAccessor.prefixed("Logged out and token cleared."));
+                                    return 1;
+                                }))
+                        .then(ClientCommandManager.literal("party")
+                                .executes(ctx -> {
+                                    SeqClient.mc.execute(() ->
+                                            SeqClient.mc.setScreen(new PartyFinderScreen(SeqClient.mc.screen)));
                                     return 1;
                                 }))
         );
