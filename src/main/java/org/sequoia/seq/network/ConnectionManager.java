@@ -1,6 +1,7 @@
 package org.sequoia.seq.network;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
@@ -11,23 +12,40 @@ import org.java_websocket.enums.ReadyState;
 import org.java_websocket.handshake.ServerHandshake;
 
 import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 public class ConnectionManager extends WebSocketClient implements NotificationAccessor {
 
-    private static final String WS_URL = "ws://45.38.20.147:8081/ws";
-    private static final Path TOKEN_FILE = Path.of(System.getProperty("user.home"), ".seq_token");
     private static final Gson GSON = new Gson();
+    private static final long RECONNECT_BASE_MS = 1_000;
+    private static final long RECONNECT_CAP_MS = 60_000;
 
     private static ConnectionManager instance;
-    private String token;
-    @Getter
-    private boolean authenticated = false;
+    private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "seq-reconnect");
+        t.setDaemon(true);
+        return t;
+    });
+
+    @Getter private boolean authenticated = false;
+    @Getter private Instant connectedSince;
     private Consumer<List<String>> connectedUsersCallback;
+
+    // Reconnect state
+    private static boolean autoReconnect = true;
+    private static int reconnectAttempt = 0;
+    private static ScheduledFuture<?> reconnectTask;
+
+    // Callbacks for new message types
+    private static Consumer<DiscordChatMessage> discordChatHandler;
+    private static Consumer<PartyFinderUpdateMessage> partyFinderUpdateHandler;
 
     public static ConnectionManager getInstance() {
         if (instance == null) {
@@ -37,42 +55,51 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private ConnectionManager() {
-        super(URI.create(WS_URL));
-        loadToken();
+        super(URI.create(BuildConfig.WS_URL));
     }
+
+    // ── Connect / Disconnect ──
 
     @Override
     public void connect() {
-        if (getReadyState() != ReadyState.NOT_YET_CONNECTED) { // according to the goons this is only "state" im allowed to connnect otherwise its illegal and entire instance is basically fucked
+        if (getReadyState() != ReadyState.NOT_YET_CONNECTED) {
             notify("Already connected/connecting");
             return;
         }
 
-        notify("Connecting...");
+        notify("Connecting to " + BuildConfig.ENVIRONMENT + "...");
         try {
             super.connect();
         } catch (Exception e) {
             SeqClient.LOGGER.error("Failed to connect", e);
             notify("Failed to connect: " + e.getMessage());
             instance = null;
+            scheduleReconnect();
         }
     }
 
     public void disconnect() {
+        autoReconnect = false;
+        cancelReconnect();
         if (!isOpen()) {
             notify("Not connected");
             return;
         }
         close();
         authenticated = false;
+        connectedSince = null;
         notify("Disconnected");
     }
 
+    // ── WebSocket lifecycle ──
+
     @Override
     public void onOpen(ServerHandshake handshake) {
-        SeqClient.LOGGER.info("WebSocket connected");
+        SeqClient.LOGGER.info("WebSocket connected to {}", BuildConfig.WS_URL);
+        reconnectAttempt = 0;
+        String token = SeqClient.getConfigManager().getToken();
         if (token != null) {
-            authenticate();
+            sendAuthenticate(token);
         } else {
             requestAuth();
         }
@@ -85,9 +112,13 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     @Override
     public void onClose(int code, String reason, boolean remote) {
-        SeqClient.LOGGER.info("WebSocket closed: {} - {}", code, reason);
+        SeqClient.LOGGER.info("WebSocket closed: {} - {} (remote={})", code, reason, remote);
         authenticated = false;
+        connectedSince = null;
         instance = null;
+        if (autoReconnect && remote) {
+            scheduleReconnect();
+        }
     }
 
     @Override
@@ -96,22 +127,53 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         notify("Connection error: " + ex.getMessage());
     }
 
+    // ── Auto-reconnect ──
+
+    private static void scheduleReconnect() {
+        cancelReconnect();
+        long delay = Math.min(RECONNECT_BASE_MS * (1L << reconnectAttempt), RECONNECT_CAP_MS);
+        reconnectAttempt++;
+        SeqClient.LOGGER.info("Reconnecting in {}ms (attempt {})", delay, reconnectAttempt);
+        reconnectTask = scheduler.schedule(() -> {
+            instance = null;
+            try {
+                getInstance().connect();
+            } catch (Exception e) {
+                SeqClient.LOGGER.error("Reconnect failed", e);
+                scheduleReconnect();
+            }
+        }, delay, TimeUnit.MILLISECONDS);
+    }
+
+    private static void cancelReconnect() {
+        if (reconnectTask != null) {
+            reconnectTask.cancel(false);
+            reconnectTask = null;
+        }
+    }
+
+    // ── Outgoing messages ──
+
+    private void send(String type, JsonObject payload) {
+        if (payload == null) payload = new JsonObject();
+        payload.addProperty("type", type);
+        send(GSON.toJson(payload));
+    }
+
     private void requestAuth() {
         var player = Minecraft.getInstance().player;
         if (player == null) return;
 
         JsonObject msg = new JsonObject();
-        msg.addProperty("type", "auth_request");
         msg.addProperty("minecraft_uuid", player.getUUID().toString());
         msg.addProperty("minecraft_username", player.getName().getString());
-        send(GSON.toJson(msg));
+        send("auth_request", msg);
     }
 
-    private void authenticate() {
+    private void sendAuthenticate(String token) {
         JsonObject msg = new JsonObject();
-        msg.addProperty("type", "authenticate");
         msg.addProperty("token", token);
-        send(GSON.toJson(msg));
+        send("authenticate", msg);
     }
 
     public void requestConnectedUsers(Consumer<List<String>> callback) {
@@ -120,10 +182,34 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return;
         }
         this.connectedUsersCallback = callback;
-        JsonObject msg = new JsonObject();
-        msg.addProperty("type", "get_connected");
-        send(GSON.toJson(msg));
+        send("get_connected", null);
     }
+
+    public void sendGuildChat(String username, String message) {
+        if (!authenticated || !isOpen()) return;
+        JsonObject msg = new JsonObject();
+        msg.addProperty("username", username);
+        msg.addProperty("message", message);
+        send("guild_chat", msg);
+    }
+
+    public void sendRaidAnnouncement(List<String> usernames, String raidType,
+                                     int aspectCount, int emeraldCount,
+                                     double experienceCount, int srCount) {
+        if (!authenticated || !isOpen()) return;
+        JsonObject msg = new JsonObject();
+        JsonArray names = new JsonArray();
+        usernames.forEach(names::add);
+        msg.add("usernames", names);
+        msg.addProperty("raid_type", raidType);
+        msg.addProperty("aspect_count", aspectCount);
+        msg.addProperty("emerald_count", emeraldCount);
+        msg.addProperty("experience_count", experienceCount);
+        msg.addProperty("sr_count", srCount);
+        send("guild_raid_announcement", msg);
+    }
+
+    // ── Incoming message handler ──
 
     private void handleMessage(String message) {
         try {
@@ -138,15 +224,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     notify("Your code: " + code);
                 }
                 case "auth_success" -> {
-                    token = json.get("token").getAsString();
+                    String token = json.get("token").getAsString();
                     String discordUser = json.get("discord_username").getAsString();
-                    saveToken();
+                    SeqClient.getConfigManager().setToken(token);
                     authenticated = true;
+                    connectedSince = Instant.now();
+                    autoReconnect = true;
                     notify("Successfully linked to Discord: " + discordUser);
                 }
                 case "authenticated" -> {
                     String discordUser = json.get("discord_username").getAsString();
                     authenticated = true;
+                    connectedSince = Instant.now();
+                    autoReconnect = true;
                     notify("Connected as " + discordUser);
                 }
                 case "connected_users" -> {
@@ -157,14 +247,28 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         connectedUsersCallback = null;
                     }
                 }
+                case "discord_chat" -> {
+                    if (discordChatHandler != null) {
+                        String username = json.get("username").getAsString();
+                        String msg = json.get("message").getAsString();
+                        discordChatHandler.accept(new DiscordChatMessage(username, msg));
+                    }
+                }
+                case "party_finder_update" -> {
+                    if (partyFinderUpdateHandler != null) {
+                        String action = json.get("action").getAsString();
+                        JsonObject listingJson = json.getAsJsonObject("listing");
+                        partyFinderUpdateHandler.accept(new PartyFinderUpdateMessage(action, listingJson));
+                    }
+                }
                 case "error" -> {
                     String error = json.get("message").getAsString();
                     notify("Error: " + error);
                     if (error.contains("expired") || error.contains("Invalid")) {
-                        token = null;
-                        deleteToken();
+                        SeqClient.getConfigManager().clearToken();
                     }
                     if (error.contains("guild")) {
+                        autoReconnect = false;
                         close();
                     }
                 }
@@ -174,34 +278,28 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
     }
 
-    private void loadToken() {
-        try {
-            if (Files.exists(TOKEN_FILE)) {
-                token = Files.readString(TOKEN_FILE).trim();
-            }
-        } catch (Exception e) {
-            SeqClient.LOGGER.warn("Failed to load token", e);
-        }
+    // ── Handler registration ──
+
+    public static void onDiscordChat(Consumer<DiscordChatMessage> handler) {
+        discordChatHandler = handler;
     }
 
-    private void saveToken() {
-        try {
-            Files.writeString(TOKEN_FILE, token);
-        } catch (Exception e) {
-            SeqClient.LOGGER.warn("Failed to save token", e);
-        }
+    public static void onPartyFinderUpdate(Consumer<PartyFinderUpdateMessage> handler) {
+        partyFinderUpdateHandler = handler;
     }
 
-    private void deleteToken() {
-        try {
-            Files.deleteIfExists(TOKEN_FILE);
-        } catch (Exception e) {
-            SeqClient.LOGGER.warn("Failed to delete token", e);
-        }
-    }
+    // ── Utility ──
 
     public boolean isConnected() {
         return isOpen();
     }
 
+    public String getEnvironment() {
+        return BuildConfig.ENVIRONMENT;
+    }
+
+    // ── Message records ──
+
+    public record DiscordChatMessage(String username, String message) {}
+    public record PartyFinderUpdateMessage(String action, JsonObject listingJson) {}
 }
