@@ -45,6 +45,14 @@ public class SeqClient implements ClientModInitializer {
     @Getter
     public static PartyFinderManager partyFinderManager;
 
+    // ── Network config settings ──
+    @Getter
+    public static Setting.BooleanSetting autoConnectSetting;
+    @Getter
+    public static Setting.BooleanSetting showDiscordChatSetting;
+    @Getter
+    public static Setting.BooleanSetting raidAutoAnnounceSetting;
+
     private static KeyMapping openScreenKey;
 
     @Override
@@ -97,6 +105,15 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(new Setting.BooleanSetting("boolean", "test", false));
         getConfigManager().register(new Setting.StringSetting("String", "test", "hi"));
         getConfigManager().register(new Setting.EnumSetting<>("Enum", "test", Enums.HELLO, Enums.class));
+
+        // Network settings
+        autoConnectSetting = new Setting.BooleanSetting("auto_connect", "network", true);
+        showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
+        raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
+        getConfigManager().register(autoConnectSetting);
+        getConfigManager().register(showDiscordChatSetting);
+        getConfigManager().register(raidAutoAnnounceSetting);
+        getConfigManager().load(); // reload to pick up saved values for new settings
     }
 
     private enum Enums {
