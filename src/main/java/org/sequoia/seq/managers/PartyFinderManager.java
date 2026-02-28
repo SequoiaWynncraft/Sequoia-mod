@@ -233,7 +233,7 @@ public class PartyFinderManager {
 
         // Fire event for the UI
         if (SeqClient.getEventBus() != null) {
-            SeqClient.getEventBus().fire(new PartyFinderUpdateEvent(action, listing));
+            SeqClient.getEventBus().dispatch(new PartyFinderUpdateEvent(action, listing));
         }
     }
 
