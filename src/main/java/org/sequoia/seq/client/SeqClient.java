@@ -60,6 +60,7 @@ public class SeqClient implements ClientModInitializer {
         partyFinderManager = new PartyFinderManager();
         configManager = new ConfigManager();
         configManager.load();
+        configManager.migrateToken();
         SeqCommand.register();
 
         KeyMapping.Category category =
