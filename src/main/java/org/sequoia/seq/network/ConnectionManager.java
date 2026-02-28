@@ -290,12 +290,23 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     // ── Utility ──
 
-    public boolean isConnected() {
-        return isOpen();
+    public static boolean isConnected() {
+        return instance != null && instance.isOpen();
     }
 
     public String getEnvironment() {
         return BuildConfig.ENVIRONMENT;
+    }
+
+    public String getUptimeString() {
+        if (connectedSince == null) return null;
+        java.time.Duration dur = java.time.Duration.between(connectedSince, Instant.now());
+        long hours = dur.toHours();
+        long mins = dur.toMinutesPart();
+        long secs = dur.toSecondsPart();
+        if (hours > 0) return hours + "h " + mins + "m";
+        if (mins > 0) return mins + "m " + secs + "s";
+        return secs + "s";
     }
 
     // ── Message records ──

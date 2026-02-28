@@ -7,6 +7,7 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.network.chat.Component;
 import org.sequoia.seq.accessors.NotificationAccessor;
+import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.network.ConnectionManager;
 
 public class SeqCommand {
@@ -51,6 +52,26 @@ public class SeqCommand {
                                             }
                                         }
                                     });
+                                    return 1;
+                                }))
+                        .then(ClientCommandManager.literal("status")
+                                .executes(ctx -> {
+                                    boolean connected = ConnectionManager.isConnected();
+                                    String token = SeqClient.getConfigManager().getToken();
+                                    boolean hasToken = token != null && !token.isBlank();
+                                    String uptime = ConnectionManager.getInstance().getUptimeString();
+                                    ctx.getSource().sendFeedback(
+                                            NotificationAccessor.prefixed("Connected: " + connected
+                                                    + " | Token: " + (hasToken ? "present" : "none")
+                                                    + (uptime != null ? " | Uptime: " + uptime : "")));
+                                    return 1;
+                                }))
+                        .then(ClientCommandManager.literal("logout")
+                                .executes(ctx -> {
+                                    ConnectionManager.getInstance().disconnect();
+                                    SeqClient.getConfigManager().clearToken();
+                                    ctx.getSource().sendFeedback(
+                                            NotificationAccessor.prefixed("Logged out and token cleared."));
                                     return 1;
                                 }))
         );
