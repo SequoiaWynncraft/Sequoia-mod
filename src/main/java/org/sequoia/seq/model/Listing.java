@@ -1,0 +1,38 @@
+package org.sequoia.seq.model;
+
+import java.time.Instant;
+import java.util.List;
+
+public record Listing(
+        long id,
+        Activity activity,
+        String leaderUUID,
+        PartyMode mode,
+        PartyRegion region,
+        PartyStatus status,
+        String note,
+        List<Member> members,
+        Instant createdAt
+) {
+    /** Whether this listing's expand state is toggled in the UI (client-only, not from backend). */
+    private static final java.util.Map<Long, Boolean> expandedState = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public boolean isExpanded() {
+        return expandedState.getOrDefault(id, false);
+    }
+
+    public void setExpanded(boolean expanded) {
+        expandedState.put(id, expanded);
+    }
+
+    public static void clearExpandedState() {
+        expandedState.clear();
+    }
+
+    public Member getLeader() {
+        return members.stream()
+                .filter(m -> m.playerUUID().equals(leaderUUID))
+                .findFirst()
+                .orElse(members.isEmpty() ? null : members.get(0));
+    }
+}
