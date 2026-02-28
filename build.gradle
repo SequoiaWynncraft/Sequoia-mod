@@ -181,6 +181,11 @@ java {
     withSourcesJar()
 }
 
+// Ensure sourcesJar depends on generateBuildConfig
+tasks.named("sourcesJar").configure {
+     dependsOn(generateBuildConfig)
+}
+
 jar {
     from("LICENSE") {
         rename { "${it}_${project.archives_base_name}" }
