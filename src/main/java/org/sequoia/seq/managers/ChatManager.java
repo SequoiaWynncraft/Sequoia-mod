@@ -1,7 +1,8 @@
 package org.sequoia.seq.managers;
 
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.Style;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.events.DiscordChatEvent;
 import org.sequoia.seq.network.ConnectionManager;
@@ -12,55 +13,153 @@ import java.util.regex.Pattern;
 /**
  * Bridges Wynncraft guild chat ↔ Discord via the Sequoia backend.
  * <p>
- * Outgoing: intercepts Wynncraft guild chat system messages, sends to backend.
+ * Outgoing: intercepts Wynncraft guild chat, resolves nicknames to real usernames
+ * via component insertion tags, and sends to backend.
  * Incoming: listens for Discord chat WS messages, displays in MC chat.
  */
 public class ChatManager {
 
     /**
-     * Wynncraft guild chat pattern (plain text of the component).
-     * Typical format: "[★★★★★ PlayerName] message" or variants with rank symbols.
+     * Aqua text color (0x55FFFF / §b) used by Wynncraft for guild chat messages.
+     * Adapted from Wynntils' RecipientType.GUILD foreground pattern {@code ^§b(...).*$}.
+     * Other message types use different colors: DMs use §#ddcc99ff, party uses §e,
+     * shout uses §#bd45ffff, territory/battle info uses §c, etc.
      */
-    private static final Pattern GUILD_CHAT_PATTERN =
-            Pattern.compile("^\\[(?:[★☆]+ )?(.+?)]\\s*(.+)$");
-
-    /**
-     * Prefix Wynncraft uses in the raw component for guild messages.
-     * The component string usually starts with a color-coded "[Guild]" or similar.
-     */
-    private static final String GUILD_PREFIX = "\uE009"; // Wynncraft guild icon codepoint
+    private static final int GUILD_CHAT_COLOR = 0x55FFFF;
+    // Nicknames may contain spaces (e.g. "Emanant Force"), so allow spaces in the
+    // display-name capture group. DOTALL so the message group captures across \n.
+    // The leading \\S+ skips the guild/rank icon prefix so we only match the first
+    // "Name: message" occurrence, not something like "Server:" buried in the text.
+    private static final Pattern CHAT_PATTERN = Pattern.compile(
+        "\\S+\\s+([a-zA-Z0-9_][a-zA-Z0-9_ ]*[a-zA-Z0-9_]|[a-zA-Z0-9_]{3,16}):\\s*(.*)",
+        Pattern.DOTALL
+    );
+    private static final Pattern HOVER_REAL_NAME_PATTERN = Pattern.compile(
+        // Wynntils format: "<nick>'s real name is <username>"
+        // Legacy format:   "Real Username: <username>"
+        "(?:'s real name is\\s+|Real Username:\\s*)([a-zA-Z0-9_]{3,16})",
+        Pattern.CASE_INSENSITIVE
+    );
 
     public ChatManager() {
-        registerOutgoingHook();
         registerIncomingHook();
     }
 
     // ── Outgoing: Wynncraft guild → backend → Discord ──
 
-    private void registerOutgoingHook() {
-        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-            if (overlay) return; // ignore action bar messages
-            if (!ConnectionManager.isConnected()) return;
+    /**
+     * Called from {@link org.sequoia.seq.mixins.ClientPacketListenerMixin} at the
+     * packet level, before Wynntils or Fabric's message API can cancel/reformat
+     * the message. This ensures multiline guild messages are never missed.
+     */
+    public static void onSystemChat(Component message) {
+        // Guild chat uses aqua color (§b / 0x55FFFF) per Wynntils' RecipientType.GUILD.
+        // This cleanly rejects DMs, party, shout, territory, and other message types
+        // that share the \uDAFF\uDFFC icon prefix but use different colors.
+        var color = message.getStyle().getColor();
+        if (color == null || color.getValue() != GUILD_CHAT_COLOR) return;
 
-            String plain = message.getString();
+        String rawText = message.getString();
 
-            // Detect guild chat messages (either via icon codepoint or pattern)
-            if (!plain.contains(GUILD_PREFIX) && !isGuildChat(plain)) return;
+        SeqClient.LOGGER.info("[ChatManager] Guild message detected: {}", rawText);
 
-            Matcher matcher = GUILD_CHAT_PATTERN.matcher(stripGuildPrefix(plain));
-            if (!matcher.find()) return;
+        if (!ConnectionManager.isConnected()) {
+            SeqClient.LOGGER.warn("[ChatManager] Dropping guild message: not connected/authenticated");
+            return;
+        }
 
-            String username = matcher.group(1).trim();
-            String content = matcher.group(2).trim();
+        ParsedMessage parsed = parseGuildMessage(message);
+        if (parsed == null) {
+            SeqClient.LOGGER.warn("[ChatManager] Failed to parse guild message: {}", rawText);
+            return;
+        }
 
-            // Don't echo our own messages back (backend will handle dedup too)
-            if (SeqClient.mc.player != null
-                    && username.equalsIgnoreCase(SeqClient.mc.player.getName().getString())) {
-                return;
+        SeqClient.LOGGER.info("[ChatManager] Parsed -> username='{}' avatarUrl='{}' message='{}'",
+            parsed.username(), parsed.avatarUrl(), parsed.message());
+
+        ConnectionManager.getInstance().sendGuildChat(parsed.username(), parsed.message(), parsed.avatarUrl());
+    }
+
+    /**
+     * Extracts real username and message content from Wynncraft guild chat.
+     * 
+     * <p>Wynncraft sends nicknames as the visible text, but puts the real username
+     * in the Style's insertion field (used for shift-click @mentions). We look for
+     * the component with a valid username insertion to identify the speaker.
+     */
+    private static ParsedMessage parseGuildMessage(Component message) {
+        String rawText = message.getString();
+        Matcher matcher = CHAT_PATTERN.matcher(rawText);
+
+        if (!matcher.find()) {
+            SeqClient.LOGGER.warn("[ChatManager] CHAT_PATTERN did not match: '{}'", rawText);
+            return null; // Not a standard "Name: Message" format
+        }
+
+        String displayedName = matcher.group(1);
+        String content = matcher.group(2)
+            .replaceAll("[\\n\\r]+", " ")           // collapse newlines into spaces
+            .replaceAll("\\p{C}", "")               // strip all Unicode "Other" chars (control, format, private-use, surrogates, unassigned)
+            .replaceAll(" {2,}", " ")               // collapse multiple spaces
+            .trim();
+
+        if (content.isEmpty()) return null;
+
+        // Search the component tree for the real username
+        String realUsername = findRealUsername(message);
+        SeqClient.LOGGER.info("[ChatManager] displayedName='{}' realUsername='{}'", displayedName, realUsername);
+
+        String avatarUrl = "https://mc-heads.net/avatar/" + (realUsername != null ? realUsername : displayedName) + "/64";
+
+        String username = realUsername != null ? realUsername + "/" + displayedName : displayedName;
+        return new ParsedMessage(username, content, avatarUrl);
+    }
+
+    // Recursively search the component tree for an insertion tag
+    private static String findRealUsername(Component component) {
+        return findRealUsername(component, 0);
+    }
+
+    private static String findRealUsername(Component component, int depth) {
+        String indent = "  ".repeat(depth);
+        String text = component.getString();
+        Style style = component.getStyle();
+
+        String insertion = style.getInsertion();
+        HoverEvent hoverEvent = style.getHoverEvent();
+        SeqClient.LOGGER.info("[ChatManager] {}component text='{}' insertion='{}' hover={}",
+            indent, text, insertion,
+            hoverEvent != null ? hoverEvent.getClass().getSimpleName() : "null");
+
+        // 1. Try insertion tag (Standard for non-nicked players)
+        if (insertion != null && insertion.matches("[a-zA-Z0-9_]{3,16}")) {
+            SeqClient.LOGGER.info("[ChatManager] {}  → found via insertion: '{}'", indent, insertion);
+            return insertion;
+        }
+
+        // 2. Try Hover Event (Wynntils method for nicked players)
+        if (hoverEvent instanceof HoverEvent.ShowText showTextEvent) {
+            Component hoverComponent = showTextEvent.value();
+            if (hoverComponent != null) {
+                String hoverText = hoverComponent.getString();
+                SeqClient.LOGGER.info("[ChatManager] {}  hover text: '{}'", indent, hoverText);
+                Matcher matcher = HOVER_REAL_NAME_PATTERN.matcher(hoverText);
+                if (matcher.find()) {
+                    SeqClient.LOGGER.info("[ChatManager] {}  → found via hover: '{}'", indent, matcher.group(1));
+                    return matcher.group(1);
+                }
             }
+        }
 
-            ConnectionManager.getInstance().sendGuildChat(username, content);
-        });
+        // 3. Search children components
+        for (Component sibling : component.getSiblings()) {
+            String found = findRealUsername(sibling, depth + 1);
+            if (found != null) {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     // ── Incoming: Discord → backend → WS → MC chat ──
@@ -74,22 +173,11 @@ public class ChatManager {
                 SeqClient.mc.player.displayClientMessage(Component.literal(formatted), false);
             }
 
-            // Fire event for other listeners
             if (SeqClient.getEventBus() != null) {
                 SeqClient.getEventBus().dispatch(new DiscordChatEvent(msg.username(), msg.message()));
             }
         });
     }
 
-    // ── Helpers ──
-
-    private boolean isGuildChat(String plain) {
-        // Wynncraft guild chat heuristic: starts with rank symbols in brackets
-        return plain.startsWith("[") && plain.contains("★");
-    }
-
-    private String stripGuildPrefix(String plain) {
-        // Remove any leading guild icon codepoints or formatting
-        return plain.replace(GUILD_PREFIX, "").trim();
-    }
+    private record ParsedMessage(String username, String message, String avatarUrl) {}
 }

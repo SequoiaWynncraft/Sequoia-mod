@@ -8,7 +8,6 @@ import net.minecraft.client.Minecraft;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.java_websocket.client.WebSocketClient;
-import org.java_websocket.enums.ReadyState;
 import org.java_websocket.handshake.ServerHandshake;
 
 import java.net.URI;
@@ -62,7 +61,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     @Override
     public void connect() {
-        if (getReadyState() != ReadyState.NOT_YET_CONNECTED) {
+        if (isOpen()) {
             notify("Already connected/connecting");
             return;
         }
@@ -185,11 +184,21 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         send("get_connected", null);
     }
 
-    public void sendGuildChat(String username, String message) {
-        if (!authenticated || !isOpen()) return;
+    public void sendGuildChat(String username, String message, String avatarUrl) {
+        if (!isOpen()) {
+            SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat dropped: socket not open");
+            return;
+        }
+        if (!authenticated) {
+            SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat dropped: not authenticated");
+            return;
+        }
+
+        SeqClient.LOGGER.info("[ConnectionManager] Sending guild_chat username='{}' message='{}'", username, message);
         JsonObject msg = new JsonObject();
         msg.addProperty("username", username);
         msg.addProperty("message", message);
+        if (avatarUrl != null) msg.addProperty("avatar_url", avatarUrl);
         send("guild_chat", msg);
     }
 
@@ -291,7 +300,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // ── Utility ──
 
     public static boolean isConnected() {
-        return instance != null && instance.isOpen();
+        return instance != null && instance.isOpen() && instance.authenticated;
     }
 
     public String getEnvironment() {
