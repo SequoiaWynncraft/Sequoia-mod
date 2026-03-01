@@ -23,7 +23,6 @@ import org.sequoia.seq.managers.ChatManager;
 import org.sequoia.seq.managers.FontManager;
 import org.sequoia.seq.managers.GameManager;
 import org.sequoia.seq.managers.PartyFinderManager;
-import org.sequoia.seq.managers.RaidTracker;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.ui.SequoiaScreen;
 import org.sequoia.seq.utils.rendering.nvg.NVGContext;
@@ -48,7 +47,6 @@ public class SeqClient implements ClientModInitializer {
     @Getter
     public static PartyFinderManager partyFinderManager;
     public static ChatManager chatManager;
-    public static RaidTracker raidTracker;
 
     // ── Network config settings ──
     @Getter
@@ -72,7 +70,6 @@ public class SeqClient implements ClientModInitializer {
         gameManager = new GameManager();
         partyFinderManager = new PartyFinderManager();
         chatManager = new ChatManager();
-        raidTracker = new RaidTracker();
         configManager = new ConfigManager();
         configManager.load();
         configManager.migrateToken();

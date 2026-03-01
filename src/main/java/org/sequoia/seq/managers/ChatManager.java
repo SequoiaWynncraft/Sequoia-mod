@@ -59,23 +59,10 @@ public class ChatManager {
         var color = message.getStyle().getColor();
         if (color == null || color.getValue() != GUILD_CHAT_COLOR) return;
 
-        String rawText = message.getString();
-
-        SeqClient.LOGGER.info("[ChatManager] Guild message detected: {}", rawText);
-
-        if (!ConnectionManager.isConnected()) {
-            SeqClient.LOGGER.warn("[ChatManager] Dropping guild message: not connected/authenticated");
-            return;
-        }
+        if (!ConnectionManager.isConnected()) return;
 
         ParsedMessage parsed = parseGuildMessage(message);
-        if (parsed == null) {
-            SeqClient.LOGGER.warn("[ChatManager] Failed to parse guild message: {}", rawText);
-            return;
-        }
-
-        SeqClient.LOGGER.info("[ChatManager] Parsed -> username='{}' avatarUrl='{}' message='{}'",
-            parsed.username(), parsed.avatarUrl(), parsed.message());
+        if (parsed == null) return;
 
         ConnectionManager.getInstance().sendGuildChat(parsed.username(), parsed.message(), parsed.avatarUrl());
     }
@@ -91,10 +78,7 @@ public class ChatManager {
         String rawText = message.getString();
         Matcher matcher = CHAT_PATTERN.matcher(rawText);
 
-        if (!matcher.find()) {
-            SeqClient.LOGGER.warn("[ChatManager] CHAT_PATTERN did not match: '{}'", rawText);
-            return null; // Not a standard "Name: Message" format
-        }
+        if (!matcher.find()) return null;
 
         String displayedName = matcher.group(1);
         String content = matcher.group(2)
@@ -107,7 +91,6 @@ public class ChatManager {
 
         // Search the component tree for the real username
         String realUsername = findRealUsername(message);
-        SeqClient.LOGGER.info("[ChatManager] displayedName='{}' realUsername='{}'", displayedName, realUsername);
 
         String avatarUrl = "https://mc-heads.net/avatar/" + (realUsername != null ? realUsername : displayedName) + "/64";
 
@@ -121,19 +104,13 @@ public class ChatManager {
     }
 
     private static String findRealUsername(Component component, int depth) {
-        String indent = "  ".repeat(depth);
-        String text = component.getString();
         Style style = component.getStyle();
 
         String insertion = style.getInsertion();
         HoverEvent hoverEvent = style.getHoverEvent();
-        SeqClient.LOGGER.info("[ChatManager] {}component text='{}' insertion='{}' hover={}",
-            indent, text, insertion,
-            hoverEvent != null ? hoverEvent.getClass().getSimpleName() : "null");
 
         // 1. Try insertion tag (Standard for non-nicked players)
         if (insertion != null && insertion.matches("[a-zA-Z0-9_]{3,16}")) {
-            SeqClient.LOGGER.info("[ChatManager] {}  → found via insertion: '{}'", indent, insertion);
             return insertion;
         }
 
@@ -142,10 +119,8 @@ public class ChatManager {
             Component hoverComponent = showTextEvent.value();
             if (hoverComponent != null) {
                 String hoverText = hoverComponent.getString();
-                SeqClient.LOGGER.info("[ChatManager] {}  hover text: '{}'", indent, hoverText);
                 Matcher matcher = HOVER_REAL_NAME_PATTERN.matcher(hoverText);
                 if (matcher.find()) {
-                    SeqClient.LOGGER.info("[ChatManager] {}  → found via hover: '{}'", indent, matcher.group(1));
                     return matcher.group(1);
                 }
             }
