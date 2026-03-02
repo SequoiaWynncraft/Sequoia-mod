@@ -5,6 +5,7 @@ import java.util.List;
 
 public record Listing(
         long id,
+        List<Activity> activities,
         Activity activity,
         String leaderUUID,
         PartyMode mode,
@@ -12,9 +13,11 @@ public record Listing(
         PartyStatus status,
         String note,
         List<Member> members,
-        Instant createdAt
-) {
-    /** Whether this listing's expand state is toggled in the UI (client-only, not from backend). */
+        Instant createdAt) {
+    /**
+     * Whether this listing's expand state is toggled in the UI (client-only, not
+     * from backend).
+     */
     private static final java.util.Map<Long, Boolean> expandedState = new java.util.concurrent.ConcurrentHashMap<>();
 
     public boolean isExpanded() {
@@ -27,6 +30,25 @@ public record Listing(
 
     public static void clearExpandedState() {
         expandedState.clear();
+    }
+
+    public List<Activity> resolvedActivities() {
+        if (activities != null && !activities.isEmpty()) {
+            return activities;
+        }
+        return activity != null ? List.of(activity) : List.of();
+    }
+
+    public Activity primaryActivity() {
+        List<Activity> resolved = resolvedActivities();
+        return resolved.isEmpty() ? null : resolved.get(0);
+    }
+
+    public int maxPartySize() {
+        return resolvedActivities().stream()
+                .mapToInt(Activity::maxPartySize)
+                .max()
+                .orElse(Math.max(1, members != null ? members.size() : 1));
     }
 
     public Member getLeader() {

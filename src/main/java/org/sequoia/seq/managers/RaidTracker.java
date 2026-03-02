@@ -1,14 +1,13 @@
 package org.sequoia.seq.managers;
 
-import net.minecraft.network.chat.Component;
-import org.sequoia.seq.client.SeqClient;
-import org.sequoia.seq.network.ConnectionManager;
-
 import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import net.minecraft.network.chat.Component;
+import org.sequoia.seq.client.SeqClient;
+import org.sequoia.seq.network.ConnectionManager;
 
 /**
  * Detects raid completions from Wynncraft chat and announces them to the guild.
@@ -36,7 +35,7 @@ public class RaidTracker {
      * Group 6: Seasonal Rating
      */
     private static final Pattern RAID_FINISH_PATTERN = Pattern.compile(
-        "(.+?)\\s+finished\\s+(.+?)\\s+and claimed\\s+(\\d+)x Aspects,\\s+(\\d+)x Emeralds,\\s+\\+([\\d.]+)m Guild Experience,\\s+and\\s+\\+(\\d+)\\s+Seasonal Rating"
+        "(.+?)\\s+finished\\s+(.+?)\\s+and claimed\\s+(\\d+)x Aspects,\\s+(\\d+)x Emeralds,\\s+(?:and\\s+)?\\+([\\d.]+)m Guild Experience(?:,\\s+and\\s+\\+(\\d+)\\s+Seasonal Rating)?"
     );
 
     /**
@@ -50,7 +49,9 @@ public class RaidTracker {
         String plain = message.getString();
 
         // Quick keyword gate — skip cleanup & regex for the vast majority of messages.
-        if (!plain.contains("finished") || !plain.contains("Seasonal Rating")) return;
+        if (
+            !plain.contains("finished") || !plain.contains("Seasonal Rating")
+        ) return;
 
         // Strip newlines, Unicode control/format/private-use/surrogate chars,
         // and collapse multiple spaces — same cleanup ChatManager uses.
@@ -76,7 +77,8 @@ public class RaidTracker {
         // Wynncraft reports XP in millions (e.g. "10367m" = 10,367,000) — divide
         // by 1000 so the backend receives a friendlier value (10367 -> 10.367).
         double guildExp = Double.parseDouble(matcher.group(5)) / 1000.0;
-        int seasonalRating = Integer.parseInt(matcher.group(6));
+        int seasonalRating =
+            matcher.group(6) != null ? Integer.parseInt(matcher.group(6)) : 0;
 
         ConnectionManager instance = ConnectionManager.getInstance();
         if (instance != null && !partyMembers.isEmpty()) {
