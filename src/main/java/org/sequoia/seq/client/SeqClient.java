@@ -75,30 +75,31 @@ public class SeqClient implements ClientModInitializer {
         configManager.migrateToken();
         SeqCommand.register();
 
-        KeyMapping.Category category =
-                KeyMapping.Category.register(
-                        Identifier.fromNamespaceAndPath("sequoia-mod", "controls")
-                );
+        KeyMapping.Category category = KeyMapping.Category.register(
+                Identifier.fromNamespaceAndPath("sequoia-mod", "controls"));
 
         openScreenKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.sequoia-mod.open_settings",
                 InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_O,
-                category
-        ));
+                category));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openScreenKey.consumeClick()) {
                 if (client.screen == null) {
-                    client.setScreen(new SequoiaScreen());
+                    openMainScreen();
                 }
             }
         });
     }
 
+    public static void openMainScreen() {
+        mc.execute(() -> mc.setScreen(new SequoiaScreen()));
+    }
+
     @Subscribe(Preference.CALLER) // to stay in thread
     public void onMinecraftFinishedLoading(MinecraftFinishedLoading ignored) {
-        //after minecraft done loading
+        // after minecraft done loading
         NVGContext.init();
         SeqClient.gameManager.loadFont();
         SeqClient.assetManager = new AssetManager();

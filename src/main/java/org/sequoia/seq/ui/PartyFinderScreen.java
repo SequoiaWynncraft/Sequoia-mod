@@ -26,9 +26,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     // ── Raid types & Party tags ──
     private static final String[] RAID_TYPES = {
             "Nest of the Grootslangs",
-            "Nexus of Light",
-            "The Canyon Colossus",
             "The Nameless Anomaly",
+            "The Canyon Colossus",
+            "Nexus of Light",
             "Prelude to Annihilation",
     };
     private static final String[] PARTY_TAGS = { "Chill", "Grind" };
@@ -44,16 +44,17 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float SEARCH_BAR_WIDTH = 140;
     private static final float SEARCH_BAR_MARGIN = 8;
     private static final float SCROLL_SPEED = 12;
+    private static final long LOADING_NAME_REFRESH_MS = 1500L;
 
     // Party card layout
     private static final float CARD_PADDING = 10;
     private static final float CARD_SPACING = 6;
-    private static final float CARD_HEADER_HEIGHT = 32;
+    private static final float CARD_HEADER_HEIGHT = 52;
     private static final float MEMBER_ROW_HEIGHT = 26;
-    private static final float COLLAPSED_ROW_HEIGHT = 36;
+    private static final float COLLAPSED_ROW_HEIGHT = 56;
     private static final float CLASS_ICON_SIZE = 14;
     private static final float STAR_ICON_SIZE = 16;
-    private static final float TYPE_ICON_SIZE = 24;
+    private static final float TYPE_ICON_SIZE = 48;
     private static final float BUTTON_HEIGHT = 24;
     private static final float JOIN_BUTTON_WIDTH = 64;
 
@@ -66,6 +67,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float MODAL_DROPDOWN_H = 20;
     private static final float MODAL_BUTTON_W = 80;
     private static final float MODAL_BUTTON_H = 24;
+
+    // Tag selector/filter overlay layout
+    private static final float TAG_OVERLAY_WIDTH = 260;
+    private static final float TAG_OVERLAY_HEIGHT = 220;
+    private static final float TAG_BOX_HEIGHT = 66;
 
     // Filter button
     private static final float FILTER_BUTTON_W = 70;
@@ -151,11 +157,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             150,
             240,
             255);
-    private static final Color JOINED_BUTTON_COLOR = new Color(
-            140,
-            110,
-            200,
-            255);
     private static final Color NEW_PARTY_COLOR = new Color(160, 130, 220, 200);
     private static final Color NEW_PARTY_HOVER = new Color(180, 150, 240, 220);
     private static final Color MANAGE_PARTY_COLOR = new Color(
@@ -233,12 +234,15 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private int modalReservedSlots = 0;
     private boolean reservedSlotsFocused = false;
     private String reservedSlotsInput = "0";
+    private long nextLoadingNameRefreshAtMs = 0L;
 
     // Edit tags sub-overlay in modal
     private boolean editTagsScreenOpen = false;
     private final Set<String> modalActiveTags = new LinkedHashSet<>();
     private final Set<String> modalInactiveTags = new LinkedHashSet<>();
     private final Map<String, Long> modalTagAnimStartTimes = new HashMap<>();
+    private final List<TagChipHitbox> renderedModalActiveChipBounds = new ArrayList<>();
+    private final List<TagChipHitbox> renderedModalInactiveChipBounds = new ArrayList<>();
 
     // Cached modal position
     private float modalX, modalY;
@@ -248,10 +252,36 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private final Set<String> activeFilterTags = new LinkedHashSet<>();
     private final Set<String> inactiveFilterTags = new LinkedHashSet<>();
     private final Map<String, Long> filterTagAnimStartTimes = new HashMap<>();
+    private final List<TagChipHitbox> renderedFilterActiveChipBounds = new ArrayList<>();
+    private final List<TagChipHitbox> renderedFilterInactiveChipBounds = new ArrayList<>();
 
     // ── Leader member management ──
     private int hoveredMemberPartyIndex = -1;
     private int hoveredMemberIndex = -1;
+    private float hoveredPromoteIconX = -1;
+    private float hoveredPromoteIconY = -1;
+    private float hoveredKickIconX = -1;
+    private float hoveredKickIconY = -1;
+
+    private static class TagChipHitbox {
+        private final String tag;
+        private final float x;
+        private final float y;
+        private final float w;
+        private final float h;
+
+        private TagChipHitbox(String tag, float x, float y, float w, float h) {
+            this.tag = tag;
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
+        }
+
+        private boolean contains(float mx, float my) {
+            return mx >= x && mx <= x + w && my >= y && my <= y + h;
+        }
+    }
 
     public PartyFinderScreen(Screen parent) {
         super(Component.literal("Party Finder"));
@@ -335,6 +365,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             // Update hovered member tracking
             hoveredMemberPartyIndex = -1;
             hoveredMemberIndex = -1;
+            hoveredPromoteIconX = -1;
+            hoveredPromoteIconY = -1;
+            hoveredKickIconX = -1;
+            hoveredKickIconY = -1;
 
             nvgSave(nvg);
             nvgScissor(nvg, contentX, contentY, contentWidth, contentHeight);
@@ -440,6 +474,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                         screenHeight);
             }
         });
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        maybeRefreshForLoadingNames();
     }
 
     // ── Sidebar ──
@@ -830,7 +870,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         arrCol.free();
 
         // Members
-        boolean isMyParty = partyIndex == party().getMyPartyIndex();
+        boolean isMyParty = partyIndex == party().getMyPartyIndex() && party().isPartyLeader();
         boolean amLeaderOfThisParty = isMyParty && party().isPartyLeader();
         float memberY = y + CARD_HEADER_HEIGHT;
         for (int mi = 0; mi < party.members.size(); mi++) {
@@ -850,57 +890,57 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         float lastMemberCenterY = memberY - MEMBER_ROW_HEIGHT / 2f;
 
-        // Join/Joined (don't show on your own party)
-        if (!isMyParty) {
-            float joinX = x + w - CARD_PADDING - JOIN_BUTTON_WIDTH;
-            float joinY = memberY -
-                    MEMBER_ROW_HEIGHT +
-                    (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
-            boolean alreadyInParty = party().getJoinedPartyIndex() >= 0 && !isJoined;
-            boolean joinHovered = !alreadyInParty &&
-                    isHovered(
-                            nvgMouseX,
-                            nvgMouseY,
-                            joinX,
-                            joinY,
-                            JOIN_BUTTON_WIDTH,
-                            BUTTON_HEIGHT);
-            Color joinBg = isJoined
-                    ? JOINED_BUTTON_COLOR
-                    : alreadyInParty
-                            ? new Color(60, 60, 70, 180)
-                            : (joinHovered ? JOIN_BUTTON_HOVER : JOIN_BUTTON_COLOR);
-            NVGWrapper.drawRect(
-                    nvg,
-                    joinX,
-                    joinY,
-                    JOIN_BUTTON_WIDTH,
-                    BUTTON_HEIGHT,
-                    joinBg);
+        // Join/Leave/Joined
+        float joinX = x + w - CARD_PADDING - JOIN_BUTTON_WIDTH;
+        float joinY = memberY -
+                MEMBER_ROW_HEIGHT +
+                (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
+        boolean showJoinedDisabled = isMyParty;
+        boolean alreadyInParty = party().getJoinedPartyIndex() >= 0 && !isJoined;
+        boolean joinHovered = !showJoinedDisabled &&
+                !alreadyInParty &&
+                isHovered(
+                        nvgMouseX,
+                        nvgMouseY,
+                        joinX,
+                        joinY,
+                        JOIN_BUTTON_WIDTH,
+                        BUTTON_HEIGHT);
+        Color joinBg = (showJoinedDisabled || alreadyInParty)
+                ? new Color(60, 60, 70, 180)
+                : (joinHovered ? JOIN_BUTTON_HOVER : JOIN_BUTTON_COLOR);
+        NVGWrapper.drawRect(
+                nvg,
+                joinX,
+                joinY,
+                JOIN_BUTTON_WIDTH,
+                BUTTON_HEIGHT,
+                joinBg);
 
-            nvgFontFace(nvg, fontName);
-            nvgFontSize(nvg, MEMBER_FONT_SIZE);
-            nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            Color textCol = alreadyInParty
-                    ? new Color(120, 120, 130, 200)
-                    : TEXT_COLOR;
-            var jtc = NVGContext.nvgColor(textCol);
-            nvgFillColor(nvg, jtc);
-            nvgText(
-                    nvg,
-                    joinX + JOIN_BUTTON_WIDTH / 2f,
-                    joinY + BUTTON_HEIGHT / 2f,
-                    isJoined ? "Leave" : "Join");
-            jtc.free();
-        }
+        nvgFontFace(nvg, fontName);
+        nvgFontSize(nvg, MEMBER_FONT_SIZE);
+        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        Color textCol = (showJoinedDisabled || alreadyInParty)
+                ? new Color(120, 120, 130, 200)
+                : TEXT_COLOR;
+        var jtc = NVGContext.nvgColor(textCol);
+        nvgFillColor(nvg, jtc);
+        nvgText(
+                nvg,
+                joinX + JOIN_BUTTON_WIDTH / 2f,
+                joinY + BUTTON_HEIGHT / 2f,
+                showJoinedDisabled
+                        ? "Joined"
+                        : (isJoined ? "Leave" : "Join"));
+        jtc.free();
 
         // Tag label
-        float labelRightX = x + w - CARD_PADDING - (isMyParty ? 0 : JOIN_BUTTON_WIDTH + 8);
+        float labelRightX = x + w - CARD_PADDING - JOIN_BUTTON_WIDTH - 8;
         nvgFontSize(nvg, TYPE_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         var ptc = NVGContext.nvgColor(PARTY_TYPE_TEXT);
         nvgFillColor(nvg, ptc);
-        nvgText(nvg, labelRightX, lastMemberCenterY, party.displayLabel());
+        nvgText(nvg, labelRightX, lastMemberCenterY, party.displayShortLabel());
         ptc.free();
     }
 
@@ -935,6 +975,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         PartyMember leader = party.getLeader();
         if (leader != null) {
+            String leaderName = leader.displayName();
             AssetManager.Asset starIcon = getClassIcon("star");
             if (starIcon != null) {
                 float starY = centerY - STAR_ICON_SIZE / 2f;
@@ -954,7 +995,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
             var nc = NVGContext.nvgColor(MEMBER_TEXT_COLOR);
             nvgFillColor(nvg, nc);
-            nvgText(nvg, rowX, centerY, leader.name);
+            nvgText(nvg, rowX, centerY, leaderName);
             nc.free();
         }
 
@@ -994,7 +1035,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         var tc = NVGContext.nvgColor(PARTY_TYPE_TEXT);
         nvgFillColor(nvg, tc);
-        nvgText(nvg, rightX, centerY, party.displayLabel());
+        nvgText(nvg, rightX, centerY, party.displayShortLabel());
         tc.free();
     }
 
@@ -1044,35 +1085,41 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         Color nameColor = isHoveredMember
                 ? MEMBER_DIM_COLOR
                 : MEMBER_TEXT_COLOR;
+        String memberName = member.displayName();
         var nc = NVGContext.nvgColor(nameColor);
         nvgFillColor(nvg, nc);
-        nvgText(nvg, rowX, centerY, member.name);
+        nvgText(nvg, rowX, centerY, memberName);
         nc.free();
 
         float[] bounds = new float[4];
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
-        float nameW = nvgTextBounds(nvg, 0, 0, member.name, bounds);
+        float nameW = nvgTextBounds(nvg, 0, 0, memberName, bounds);
 
         // Draw promote/kick icons on hover
         if (isHoveredMember) {
             AssetManager.Asset starupIcon = getClassIcon("starup");
             AssetManager.Asset crossIcon = getClassIcon("cross");
+            float iconY = centerY - LEADER_ICON_SIZE / 2f;
+            float promoteX = rowX;
+            float crossX = rowX + nameW - LEADER_ICON_SIZE;
+
+            hoveredPromoteIconX = promoteX;
+            hoveredPromoteIconY = iconY;
+            hoveredKickIconX = crossX;
+            hoveredKickIconY = iconY;
 
             if (starupIcon != null) {
-                float iconY = centerY - LEADER_ICON_SIZE / 2f;
                 NVGWrapper.drawImage(
                         nvg,
                         starupIcon,
-                        rowX,
+                        promoteX,
                         iconY,
                         LEADER_ICON_SIZE,
                         LEADER_ICON_SIZE,
                         255);
             }
             if (crossIcon != null) {
-                float iconY = centerY - LEADER_ICON_SIZE / 2f;
-                float crossX = rowX + nameW - LEADER_ICON_SIZE;
                 NVGWrapper.drawImage(
                         nvg,
                         crossIcon,
@@ -1169,8 +1216,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         int count = raidTags.size();
         float anglePerSlice = (float) ((2.0 * Math.PI) / count);
-        // Start from top (-PI/2)
-        float startAngle = (float) (-Math.PI / 2.0);
+        // Start from top for most counts; rotate 4-slice icons by 45° to form an X
+        // split.
+        float startAngle = (count == 4)
+                ? (float) (-Math.PI / 4.0)
+                : (float) (-Math.PI / 2.0);
 
         for (int i = 0; i < count; i++) {
             String tag = raidTags.get(i);
@@ -1535,8 +1585,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float panelX,
             float panelWidth,
             float screenHeight) {
-        float overlayW = 260;
-        float overlayH = 180;
+        float overlayW = TAG_OVERLAY_WIDTH;
+        float overlayH = TAG_OVERLAY_HEIGHT;
         float overlayX = modalX + (MODAL_WIDTH - overlayW) / 2f;
         float overlayY = modalY + (MODAL_HEIGHT - overlayH) / 2f;
 
@@ -1574,7 +1624,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         float boxPadding = 12;
         float boxW = overlayW - boxPadding * 2;
-        float boxH = 46;
+        float boxH = TAG_BOX_HEIGHT;
         float boxX = overlayX + boxPadding;
 
         // Active tags box
@@ -1595,7 +1645,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 boxW - 8,
                 modalActiveTags,
                 true,
-                modalTagAnimStartTimes);
+                modalTagAnimStartTimes,
+                renderedModalActiveChipBounds);
 
         // Inactive tags box
         float inactiveBoxY = activeBoxY + boxH + 8;
@@ -1615,7 +1666,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 boxW - 8,
                 modalInactiveTags,
                 false,
-                modalTagAnimStartTimes);
+                modalTagAnimStartTimes,
+                renderedModalInactiveChipBounds);
 
         // Back button
         float backW = 70;
@@ -1661,8 +1713,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 screenHeight,
                 MODAL_OVERLAY);
 
-        float filterW = 260;
-        float filterH = 180;
+        float filterW = TAG_OVERLAY_WIDTH;
+        float filterH = TAG_OVERLAY_HEIGHT;
         float filterX = panelX + (panelWidth - filterW) / 2f;
         float filterY = (screenHeight - filterH) / 2f;
 
@@ -1691,7 +1743,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         float boxPadding = 12;
         float boxW = filterW - boxPadding * 2;
-        float boxH = 46;
+        float boxH = TAG_BOX_HEIGHT;
         float boxX = filterX + boxPadding;
 
         // Active filters box
@@ -1712,7 +1764,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 boxW - 8,
                 activeFilterTags,
                 true,
-                filterTagAnimStartTimes);
+                filterTagAnimStartTimes,
+                renderedFilterActiveChipBounds);
 
         // Inactive filters box
         float inactiveBoxY = activeBoxY + boxH + 8;
@@ -1732,7 +1785,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 boxW - 8,
                 inactiveFilterTags,
                 false,
-                filterTagAnimStartTimes);
+                filterTagAnimStartTimes,
+                renderedFilterInactiveChipBounds);
 
         // Back button
         float backW = 70;
@@ -1772,12 +1826,15 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float maxWidth,
             Set<String> tags,
             boolean isActive,
-            Map<String, Long> animStartTimes) {
+            Map<String, Long> animStartTimes,
+            List<TagChipHitbox> renderedChipBounds) {
         float chipH = 16;
         float chipPadding = 6;
         float chipSpacing = 4;
         float curX = startX;
         float curY = startY;
+
+        renderedChipBounds.clear();
 
         // Sort: raid tags first, then non-raid tags
         List<String> sorted = new ArrayList<>(tags.size());
@@ -1794,7 +1851,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFontSize(nvg, TAG_CHIP_FONT_SIZE);
 
         for (String tag : sorted) {
-            String label = tag + (isActive ? " -" : " +");
+            String label = getTagChipLabel(tag, isActive);
             float[] bounds = new float[4];
             nvgTextBounds(nvg, 0, 0, label, bounds);
             float chipW = (bounds[2] - bounds[0]) + chipPadding * 2;
@@ -1803,6 +1860,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 curX = startX;
                 curY += chipH + 3;
             }
+
+            renderedChipBounds.add(new TagChipHitbox(tag, curX, curY, chipW, chipH));
 
             // Pendulum animation
             float angle = 0;
@@ -1889,7 +1948,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             boolean matches = false;
             String q = searchQuery.toLowerCase();
             for (PartyMember m : party.members) {
-                if (m.name.toLowerCase().contains(q)) {
+                if (m.displayName().toLowerCase().contains(q)) {
                     matches = true;
                     break;
                 }
@@ -1919,6 +1978,34 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         return true;
+    }
+
+    private void maybeRefreshForLoadingNames() {
+        long now = System.currentTimeMillis();
+        if (now < nextLoadingNameRefreshAtMs) {
+            return;
+        }
+
+        boolean hasLoadingName = false;
+        for (PartyListing listing : party().getParties()) {
+            if (!matchesFilters(listing)) {
+                continue;
+            }
+            for (PartyMember member : listing.members) {
+                if ("Loading...".equals(member.displayName())) {
+                    hasLoadingName = true;
+                    break;
+                }
+            }
+            if (hasLoadingName) {
+                break;
+            }
+        }
+
+        if (hasLoadingName) {
+            party().refreshData();
+            nextLoadingNameRefreshAtMs = now + LOADING_NAME_REFRESH_MS;
+        }
     }
 
     private boolean isHovered(
@@ -2126,6 +2213,31 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         if (mx < panelX || my < contentY || my > contentY + contentHeight)
             return super.mouseClicked(click, outsideScreen);
 
+        // ── Leader management icon clicks ──
+        if (hoveredMemberPartyIndex >= 0 && hoveredMemberIndex >= 0) {
+            if (isHovered(
+                    mx,
+                    my,
+                    hoveredPromoteIconX,
+                    hoveredPromoteIconY,
+                    LEADER_ICON_SIZE,
+                    LEADER_ICON_SIZE)) {
+                party().promoteMember(hoveredMemberPartyIndex, hoveredMemberIndex);
+                return true;
+            }
+
+            if (isHovered(
+                    mx,
+                    my,
+                    hoveredKickIconX,
+                    hoveredKickIconY,
+                    LEADER_ICON_SIZE,
+                    LEADER_ICON_SIZE)) {
+                party().kickMember(hoveredMemberPartyIndex, hoveredMemberIndex);
+                return true;
+            }
+        }
+
         // ── Party cards ──
         float cursorY = contentY - scrollOffset + PADDING;
         float contentWidth = panelWidth;
@@ -2144,39 +2256,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                         party.members.size() * MEMBER_ROW_HEIGHT +
                         CARD_PADDING;
 
-                // Leader management: promote/kick clicks
-                boolean isMyParty = i == party().getMyPartyIndex();
-                boolean amLeaderOfThisParty = isMyParty && party().isPartyLeader();
-                if (amLeaderOfThisParty) {
-                    float memberY = cursorY + CARD_HEADER_HEIGHT;
-                    float memberRowX = cardX + CARD_PADDING + 10;
-                    float memberRowW = cardW - CARD_PADDING * 2 - 10;
-                    for (int mi = 0; mi < party.members.size(); mi++) {
-                        PartyMember member = party.members.get(mi);
-                        if (!member.isLeader &&
-                                isHovered(
-                                        mx,
-                                        my,
-                                        memberRowX,
-                                        memberY,
-                                        memberRowW,
-                                        MEMBER_ROW_HEIGHT)) {
-                            // Compute name width to determine icon click zones
-                            // Left half of name area = promote, Right half = kick
-                            float nameStartX = memberRowX + STAR_ICON_SIZE + 4;
-                            float nameAreaW = memberRowW - STAR_ICON_SIZE - 4;
-                            float nameMidX = nameStartX + nameAreaW / 2f;
-
-                            if (mx < nameMidX) {
-                                party().promoteMember(i, mi);
-                            } else {
-                                party().kickMember(i, mi);
-                            }
-                            return true;
-                        }
-                        memberY += MEMBER_ROW_HEIGHT;
-                    }
-                }
+                boolean isMyParty = i == party().getMyPartyIndex() && party().isPartyLeader();
 
                 float joinBtnX = cardX + cardW - CARD_PADDING - JOIN_BUTTON_WIDTH;
                 float joinBtnY = cursorY +
@@ -2369,8 +2449,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float my,
             float modalX,
             float modalY) {
-        float overlayW = 260;
-        float overlayH = 180;
+        float overlayW = TAG_OVERLAY_WIDTH;
+        float overlayH = TAG_OVERLAY_HEIGHT;
         float overlayX = modalX + (MODAL_WIDTH - overlayW) / 2f;
         float overlayY = modalY + (MODAL_HEIGHT - overlayH) / 2f;
 
@@ -2391,22 +2471,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         // Check tag chip clicks
-        float boxPadding = 12;
-        float boxW = overlayW - boxPadding * 2;
-        float boxX = overlayX + boxPadding;
-        float boxH = 46;
-
         // Active tags area
-        float activeBoxY = overlayY + 34;
-        float activeChipY = activeBoxY + 14;
         String clickedActiveTag = findClickedTagChip(
                 mx,
                 my,
-                boxX + 4,
-                activeChipY,
-                boxW - 8,
-                modalActiveTags,
-                true);
+                renderedModalActiveChipBounds);
         if (clickedActiveTag != null) {
             modalActiveTags.remove(clickedActiveTag);
             modalInactiveTags.add(clickedActiveTag);
@@ -2417,16 +2486,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         // Inactive tags area
-        float inactiveBoxY = activeBoxY + boxH + 8;
-        float inactiveChipY = inactiveBoxY + 14;
         String clickedInactiveTag = findClickedTagChip(
                 mx,
                 my,
-                boxX + 4,
-                inactiveChipY,
-                boxW - 8,
-                modalInactiveTags,
-                false);
+                renderedModalInactiveChipBounds);
         if (clickedInactiveTag != null) {
             modalInactiveTags.remove(clickedInactiveTag);
             modalActiveTags.add(clickedInactiveTag);
@@ -2459,8 +2522,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float screenHeight) {
         float panelX = SIDEBAR_WIDTH;
         float panelWidth = screenWidth - SIDEBAR_WIDTH;
-        float filterW = 260;
-        float filterH = 180;
+        float filterW = TAG_OVERLAY_WIDTH;
+        float filterH = TAG_OVERLAY_HEIGHT;
         float filterX = panelX + (panelWidth - filterW) / 2f;
         float filterY = (screenHeight - filterH) / 2f;
 
@@ -2480,21 +2543,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             return true;
         }
 
-        float boxPadding = 12;
-        float boxW = filterW - boxPadding * 2;
-        float boxX = filterX + boxPadding;
-
         // Active tags area
-        float activeBoxY = filterY + 34;
-        float activeChipY = activeBoxY + 14;
         String clickedActive = findClickedTagChip(
                 mx,
                 my,
-                boxX + 4,
-                activeChipY,
-                boxW - 8,
-                activeFilterTags,
-                true);
+                renderedFilterActiveChipBounds);
         if (clickedActive != null) {
             activeFilterTags.remove(clickedActive);
             inactiveFilterTags.add(clickedActive);
@@ -2505,16 +2558,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         // Inactive tags area
-        float inactiveBoxY = activeBoxY + 46 + 8;
-        float inactiveChipY = inactiveBoxY + 14;
         String clickedInactive = findClickedTagChip(
                 mx,
                 my,
-                boxX + 4,
-                inactiveChipY,
-                boxW - 8,
-                inactiveFilterTags,
-                false);
+                renderedFilterInactiveChipBounds);
         if (clickedInactive != null) {
             inactiveFilterTags.remove(clickedInactive);
             activeFilterTags.add(clickedInactive);
@@ -2527,53 +2574,31 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         return true;
     }
 
-    /**
-     * Finds which tag chip was clicked given the layout parameters.
-     * Returns the tag name or null if no chip was hit.
-     */
     private String findClickedTagChip(
             float mx,
             float my,
-            float startX,
-            float startY,
-            float maxWidth,
-            Set<String> tags,
-            boolean isActive) {
-        float chipH = 16;
-        float chipPadding = 6;
-        float chipSpacing = 4;
-        float curX = startX;
-        float curY = startY;
-
-        // Sort same as renderTagChips: raid tags first
-        List<String> sorted = new ArrayList<>(tags.size());
-        for (String tag : tags) {
-            if (RAID_TYPE_SET.contains(tag))
-                sorted.add(tag);
-        }
-        for (String tag : tags) {
-            if (!RAID_TYPE_SET.contains(tag))
-                sorted.add(tag);
-        }
-
-        for (String tag : sorted) {
-            String label = tag + (isActive ? " -" : " +");
-            // Approximate chip width: ~6px per char at TAG_CHIP_FONT_SIZE + padding
-            float approxCharW = 5.5f;
-            float chipW = label.length() * approxCharW + chipPadding * 2;
-
-            if (curX + chipW > startX + maxWidth && curX > startX) {
-                curX = startX;
-                curY += chipH + 3;
+            List<TagChipHitbox> renderedChipBounds) {
+        for (TagChipHitbox chip : renderedChipBounds) {
+            if (chip.contains(mx, my)) {
+                return chip.tag;
             }
-
-            if (isHovered(mx, my, curX, curY, chipW, chipH)) {
-                return tag;
-            }
-
-            curX += chipW + chipSpacing;
         }
         return null;
+    }
+
+    private String getTagChipLabel(String tag, boolean isActive) {
+        return getDisplayTag(tag) + (isActive ? " -" : " +");
+    }
+
+    private String getDisplayTag(String tag) {
+        return switch (tag) {
+            case "Nest of the Grootslangs" -> "NOG";
+            case "The Nameless Anomaly" -> "TNA";
+            case "The Canyon Colossus" -> "TCC";
+            case "Nexus of Light" -> "NOL";
+            case "Prelude to Annihilation" -> "PTA";
+            default -> tag;
+        };
     }
 
     @Override

@@ -44,9 +44,9 @@ public class PartyListing {
 
     static {
         register("Nest of the Grootslangs", "NOTG", "notg");
-        register("Nexus of Light", "NOL", "nol");
-        register("The Canyon Colossus", "TCC", "tcc");
         register("The Nameless Anomaly", "TNA", "tna");
+        register("The Canyon Colossus", "TCC", "tcc");
+        register("Nexus of Light", "NOL", "nol");
         register("Prelude to Annihilation", "ANNI", "annihilation");
 
         // Backend aliases observed in API payloads
@@ -185,7 +185,29 @@ public class PartyListing {
             return List.of("Unknown Activity");
         }
 
-        return displayNames;
+        List<String> ordered = new ArrayList<>(displayNames.size());
+        for (String knownDisplay : DISPLAY_TO_BACKEND.keySet()) {
+            for (String name : displayNames) {
+                if (knownDisplay.equalsIgnoreCase(name)) {
+                    ordered.add(knownDisplay);
+                    break;
+                }
+            }
+        }
+        for (String name : displayNames) {
+            boolean alreadyAdded = false;
+            for (String existing : ordered) {
+                if (existing.equalsIgnoreCase(name)) {
+                    alreadyAdded = true;
+                    break;
+                }
+            }
+            if (!alreadyAdded) {
+                ordered.add(name);
+            }
+        }
+
+        return ordered;
     }
 
     /**
@@ -202,6 +224,21 @@ public class PartyListing {
         String modeLabel = backing.mode() == PartyMode.CHILL ? "Chill" : "Grind";
         String displayNames = String.join(", ", getDisplayActivityNames(backing));
         return modeLabel + " · " + displayNames;
+    }
+
+    /**
+     * Label shown on party cards with short activity names,
+     * e.g. "Chill · NOTG, TNA".
+     */
+    public String displayShortLabel() {
+        String modeLabel = backing.mode() == PartyMode.CHILL ? "Chill" : "Grind";
+        List<String> shortNames = getDisplayActivityNames(backing)
+                .stream()
+                .map(PartyListing::displayNameToBackendName)
+                .map(name -> name == null ? "" : name.trim())
+                .filter(name -> !name.isEmpty())
+                .toList();
+        return modeLabel + " · " + (shortNames.isEmpty() ? "Unknown Activity" : String.join(", ", shortNames));
     }
 
     public PartyMember getLeader() {

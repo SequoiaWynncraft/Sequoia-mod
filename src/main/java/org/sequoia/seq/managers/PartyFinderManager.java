@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 import lombok.Getter;
+import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.events.PartyFinderUpdateEvent;
 import org.sequoia.seq.model.*;
@@ -15,7 +16,7 @@ import org.sequoia.seq.network.ApiClient;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.utils.PlayerNameCache;
 
-public class PartyFinderManager {
+public class PartyFinderManager implements NotificationAccessor {
 
     private static final Gson GSON = new GsonBuilder()
             .registerTypeAdapter(
@@ -139,7 +140,9 @@ public class PartyFinderManager {
                     return listing;
                 })
                 .exceptionally(e -> {
-                    SeqClient.LOGGER.error("Failed to join party", e);
+                    String errorMessage = extractUserFriendlyApiError(e, "Unable to join party");
+                    SeqClient.LOGGER.warn("Failed to join party: {}", errorMessage);
+                    notify(errorMessage);
                     return null;
                 });
     }
@@ -235,7 +238,9 @@ public class PartyFinderManager {
                     return listing;
                 })
                 .exceptionally(e -> {
-                    SeqClient.LOGGER.error("Failed to change role", e);
+                    String errorMessage = extractUserFriendlyApiError(e, "Unable to change role");
+                    SeqClient.LOGGER.warn("Failed to change role: {}", errorMessage);
+                    notify(errorMessage);
                     return null;
                 });
     }
@@ -589,6 +594,45 @@ public class PartyFinderManager {
             unique.putIfAbsent(listing.id(), listing);
         }
         return new ArrayList<>(unique.values());
+    }
+
+    private static String extractUserFriendlyApiError(
+            Throwable throwable,
+            String fallbackMessage) {
+        ApiClient.ApiException apiException = findApiException(throwable);
+        if (apiException == null) {
+            return fallbackMessage;
+        }
+
+        String responseBody = apiException.getResponseBody();
+        if (responseBody == null || responseBody.isBlank()) {
+            return fallbackMessage;
+        }
+
+        try {
+            JsonElement parsed = JsonParser.parseString(responseBody);
+            if (parsed.isJsonObject()) {
+                JsonObject obj = parsed.getAsJsonObject();
+                JsonElement error = obj.get("error");
+                if (error != null && error.isJsonPrimitive() && error.getAsJsonPrimitive().isString()) {
+                    return error.getAsString();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        return fallbackMessage;
+    }
+
+    private static ApiClient.ApiException findApiException(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof ApiClient.ApiException apiException) {
+                return apiException;
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 
     private void refreshCurrentListing() {
