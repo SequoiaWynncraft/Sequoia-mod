@@ -45,6 +45,7 @@ public class PartyFinderManager implements NotificationAccessor {
     private List<PartyListing> cachedParties;
     private volatile int listingsVersion = 0;
     private int cachedVersion = -1;
+    private volatile String latestPartyError;
 
     public PartyFinderManager() {
         // Register for real-time WS updates
@@ -123,7 +124,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     return listing;
                 })
                 .exceptionally(e -> {
-                    SeqClient.LOGGER.error("Failed to create party", e);
+                    handleActionError(e, "Unable to create party", "Failed to create party");
                     return null;
                 });
     }
@@ -157,7 +158,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     return listing;
                 })
                 .exceptionally(e -> {
-                    SeqClient.LOGGER.error("Failed to leave party", e);
+                    handleActionError(e, "Unable to leave party", "Failed to leave party");
                     return null;
                 });
     }
@@ -172,7 +173,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     return listing;
                 })
                 .exceptionally(e -> {
-                    SeqClient.LOGGER.error("Failed to close party", e);
+                    handleActionError(e, "Unable to close party", "Failed to close party");
                     return null;
                 });
     }
@@ -187,7 +188,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     return listing;
                 })
                 .exceptionally(e -> {
-                    SeqClient.LOGGER.error("Failed to reopen party", e);
+                    handleActionError(e, "Unable to reopen party", "Failed to reopen party");
                     return null;
                 });
     }
@@ -204,7 +205,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     return listing;
                 })
                 .exceptionally(e -> {
-                    SeqClient.LOGGER.error("Failed to disband party", e);
+                    handleActionError(e, "Unable to delist party", "Failed to disband party");
                     return null;
                 });
     }
@@ -223,7 +224,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     return listing;
                 })
                 .exceptionally(e -> {
-                    SeqClient.LOGGER.error("Failed to kick member", e);
+                    handleActionError(e, "Unable to kick member", "Failed to kick member");
                     return null;
                 });
     }
@@ -258,7 +259,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     return listing;
                 })
                 .exceptionally(e -> {
-                    SeqClient.LOGGER.error("Failed to reassign role", e);
+                    handleActionError(e, "Unable to reassign role", "Failed to reassign role");
                     return null;
                 });
     }
@@ -275,7 +276,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     return listing;
                 })
                 .exceptionally(e -> {
-                    SeqClient.LOGGER.error("Failed to transfer leadership", e);
+                    handleActionError(e, "Unable to promote member", "Failed to transfer leadership");
                     return null;
                 });
     }
@@ -419,7 +420,14 @@ public class PartyFinderManager implements NotificationAccessor {
         try {
             UUID targetUUID = UUID.fromString(
                     PlayerNameCache.formatUUID(member.playerUUID));
-            transferLeadership(party.id, targetUUID);
+            transferLeadership(party.id, targetUUID)
+                    .thenAccept(listing -> {
+                        if (listing != null) {
+                            sendGameDirectMessage(
+                                    targetUUID,
+                                    "You were promoted to party leader.");
+                        }
+                    });
         } catch (IllegalArgumentException e) {
             SeqClient.LOGGER.error(
                     "Invalid UUID for promote: {}",
@@ -442,7 +450,14 @@ public class PartyFinderManager implements NotificationAccessor {
         try {
             UUID targetUUID = UUID.fromString(
                     PlayerNameCache.formatUUID(member.playerUUID));
-            kickMember(party.id, targetUUID);
+            kickMember(party.id, targetUUID)
+                    .thenAccept(listing -> {
+                        if (listing != null) {
+                            sendGameDirectMessage(
+                                    targetUUID,
+                                    "You were kicked from the party.");
+                        }
+                    });
         } catch (IllegalArgumentException e) {
             SeqClient.LOGGER.error(
                     "Invalid UUID for kick: {}",
@@ -488,6 +503,7 @@ public class PartyFinderManager implements NotificationAccessor {
 
         if (raidDisplayNames.isEmpty()) {
             SeqClient.LOGGER.error("Cannot create party without a selected activity");
+            pushUiError("Select at least one raid before creating a party.");
             return;
         }
 
@@ -522,6 +538,7 @@ public class PartyFinderManager implements NotificationAccessor {
             SeqClient.LOGGER.error("Selected raids (raw): {}", raidDisplayNames);
             SeqClient.LOGGER.error("Loaded backend activities ({}): {}", availableNames.size(), availableNames);
             SeqClient.LOGGER.error("No matching activities found for selected raids: {}", raidDisplayNames);
+            pushUiError("Could not map selected raids to backend activities.");
             return;
         }
 
@@ -537,9 +554,78 @@ public class PartyFinderManager implements NotificationAccessor {
         createParty(activityIds, mode, PartyRegion.NA, partyRole, null);
     }
 
-    /** Placeholder — backend has no update-listing-tags endpoint yet. */
     public void updateParty(List<String> tags) {
-        SeqClient.LOGGER.warn("updateParty() not yet supported by backend");
+        if (currentListing == null) {
+            pushUiError("Unable to update party: no active listing.");
+            return;
+        }
+
+        PartyMode mode = PartyMode.CHILL;
+        List<String> raidDisplayNames = new ArrayList<>();
+        for (String tag : tags) {
+            if ("Grind".equalsIgnoreCase(tag)) {
+                mode = PartyMode.GRIND;
+            } else if (!"Chill".equalsIgnoreCase(tag)) {
+                raidDisplayNames.add(tag);
+            }
+        }
+
+        if (raidDisplayNames.isEmpty()) {
+            pushUiError("Select at least one raid before updating your party.");
+            return;
+        }
+
+        List<Long> activityIds = new ArrayList<>();
+        for (String activityDisplayName : raidDisplayNames) {
+            if (activityDisplayName == null || activityDisplayName.isBlank()) {
+                continue;
+            }
+
+            final String normalizedDisplayName = activityDisplayName.trim();
+            final String searchName = PartyListing.displayNameToBackendName(normalizedDisplayName);
+            Activity activity = activities
+                    .stream()
+                    .filter(a -> matchesActivityName(a, normalizedDisplayName, searchName))
+                    .findFirst()
+                    .orElse(null);
+
+            if (activity != null && !activityIds.contains(activity.id())) {
+                activityIds.add(activity.id());
+            }
+        }
+
+        if (activityIds.isEmpty()) {
+            pushUiError("Could not map selected raids to backend activities.");
+            return;
+        }
+
+        PartyRegion region = currentListing.region() != null ? currentListing.region() : PartyRegion.NA;
+        ApiClient.getInstance()
+                .updateListing(currentListing.id(), activityIds, mode, region, currentListing.note())
+                .thenAccept(listing -> {
+                    if (listing != null) {
+                        replaceListing(listing);
+                        currentListing = listing;
+                        listingsVersion++;
+                    }
+                })
+                .exceptionally(e -> {
+                    handleActionError(e, "Unable to update party", "Failed to update party");
+                    return null;
+                });
+    }
+
+    public void pushUiError(String message) {
+        if (message == null || message.isBlank()) {
+            return;
+        }
+        latestPartyError = message;
+    }
+
+    public String consumeLatestPartyError() {
+        String message = latestPartyError;
+        latestPartyError = null;
+        return message;
     }
 
     /** Loads activities and listings from the API. Called when the screen opens. */
@@ -633,6 +719,35 @@ public class PartyFinderManager implements NotificationAccessor {
             current = current.getCause();
         }
         return null;
+    }
+
+    private void handleActionError(
+            Throwable throwable,
+            String fallbackMessage,
+            String logMessage) {
+        String errorMessage = extractUserFriendlyApiError(throwable, fallbackMessage);
+        SeqClient.LOGGER.warn("{}: {}", logMessage, errorMessage);
+        pushUiError(errorMessage);
+    }
+
+    private void sendGameDirectMessage(UUID targetUUID, String message) {
+        if (targetUUID == null || message == null || message.isBlank()) {
+            return;
+        }
+
+        String targetName = PlayerNameCache.resolve(targetUUID.toString());
+        if (targetName == null || !targetName.matches("[A-Za-z0-9_]{3,16}")) {
+            SeqClient.LOGGER.warn("Skipping DM for unresolved target UUID {}", targetUUID);
+            return;
+        }
+
+        SeqClient.mc.execute(() -> {
+            var player = SeqClient.mc.player;
+            if (player == null || player.connection == null) {
+                return;
+            }
+            player.connection.sendCommand("msg " + targetName + " " + message);
+        });
     }
 
     private void refreshCurrentListing() {

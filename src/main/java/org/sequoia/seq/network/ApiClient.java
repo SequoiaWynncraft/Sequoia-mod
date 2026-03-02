@@ -196,6 +196,37 @@ public class ApiClient {
                 Listing.class);
     }
 
+    public CompletableFuture<Listing> updateListing(
+            long id,
+            List<Long> activityIds,
+            PartyMode mode,
+            PartyRegion region,
+            String note) {
+        if (activityIds == null || activityIds.isEmpty()) {
+            throw new IllegalArgumentException("activityIds must not be empty");
+        }
+
+        JsonObject body = new JsonObject();
+        JsonArray activityIdsJson = new JsonArray();
+        for (Long activityId : activityIds) {
+            if (activityId != null) {
+                activityIdsJson.add(activityId);
+            }
+        }
+        if (activityIdsJson.size() == 0) {
+            throw new IllegalArgumentException("activityIds must contain at least one non-null value");
+        }
+
+        body.add("activityIds", activityIdsJson);
+        body.addProperty("mode", mode.name());
+        body.addProperty("region", region.name());
+        if (note != null) {
+            body.addProperty("note", note);
+        }
+
+        return post("/party-finder/listings/" + id + "/update", body, Listing.class);
+    }
+
     // ── HTTP helpers ──
 
     private <T> CompletableFuture<T> get(
