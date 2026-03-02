@@ -718,6 +718,19 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     NEW_PARTY_HOVER);
             btnX += manageW + 6;
 
+            float inviteW = 56;
+            drawHeaderButton(
+                    nvg,
+                    fontName,
+                    btnX,
+                    btnY,
+                    inviteW,
+                    SEARCH_BAR_HEIGHT,
+                    "Invite",
+                    NEW_PARTY_COLOR,
+                    NEW_PARTY_HOVER);
+            btnX += inviteW + 6;
+
             float openCloseW = 84;
             String openCloseLabel = isCurrentListingClosed() ? "Open party" : "Close party";
             drawHeaderButton(
@@ -975,8 +988,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
         boolean showJoinedDisabled = isMyParty;
         boolean alreadyInParty = party().getJoinedPartyIndex() >= 0 && !isJoined;
-        boolean joinHovered = !showJoinedDisabled &&
-                !alreadyInParty &&
+        boolean buttonDisabled = showJoinedDisabled || alreadyInParty;
+        boolean joinHovered = !buttonDisabled &&
                 isHovered(
                         nvgMouseX,
                         nvgMouseY,
@@ -984,7 +997,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                         joinY,
                         JOIN_BUTTON_WIDTH,
                         BUTTON_HEIGHT);
-        Color joinBg = (showJoinedDisabled || alreadyInParty)
+        Color joinBg = buttonDisabled
                 ? new Color(60, 60, 70, 180)
                 : (joinHovered ? JOIN_BUTTON_HOVER : JOIN_BUTTON_COLOR);
         NVGWrapper.drawRect(
@@ -998,18 +1011,19 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        Color textCol = (showJoinedDisabled || alreadyInParty)
+        Color textCol = buttonDisabled
                 ? new Color(120, 120, 130, 200)
                 : TEXT_COLOR;
+        String actionText = showJoinedDisabled
+                ? "Joined"
+                : (isJoined ? "Leave" : "Join");
         var jtc = NVGContext.nvgColor(textCol);
         nvgFillColor(nvg, jtc);
         nvgText(
                 nvg,
                 joinX + JOIN_BUTTON_WIDTH / 2f,
                 joinY + BUTTON_HEIGHT / 2f,
-                showJoinedDisabled
-                        ? "Joined"
-                        : (isJoined ? "Leave" : "Join"));
+                actionText);
         jtc.free();
 
         // Tag label
@@ -2278,6 +2292,19 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 return true;
             }
             headerBtnX += manageW + 6;
+
+            float inviteW = 56;
+            if (isHovered(
+                    mx,
+                    my,
+                    headerBtnX,
+                    headerBtnY,
+                    inviteW,
+                    SEARCH_BAR_HEIGHT)) {
+                party().createInvite(selectedRole);
+                return true;
+            }
+            headerBtnX += inviteW + 6;
 
             float openCloseW = 84;
             if (isHovered(

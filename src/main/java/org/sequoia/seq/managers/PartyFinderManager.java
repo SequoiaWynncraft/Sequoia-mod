@@ -478,6 +478,32 @@ public class PartyFinderManager implements NotificationAccessor {
         joinParty(party.id, role);
     }
 
+    /** Creates a backend invite token reservation from the local listing. */
+    public void createInvite(String roleString) {
+        if (!isPartyLeader()) {
+            pushUiError("Only the party leader can invite players.");
+            return;
+        }
+
+        if (currentListing == null) {
+            pushUiError("Unable to invite player: no active listing.");
+            return;
+        }
+
+        PartyRole preferredRole = mapDisplayRole(roleString);
+
+        ApiClient.getInstance()
+                .createInvite(currentListing.id(), preferredRole)
+                .thenRun(() -> {
+                    notify("Party Finder invite created.");
+                    loadListings(null, null);
+                })
+                .exceptionally(e -> {
+                    handleActionError(e, "Unable to create party invite", "Failed to create invite");
+                    return null;
+                });
+    }
+
     /** Leaves the current party (no-arg overload). */
     public void leaveParty() {
         if (currentListing != null) {

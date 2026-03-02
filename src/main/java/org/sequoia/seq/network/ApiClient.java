@@ -3,9 +3,11 @@ package org.sequoia.seq.network;
 import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -122,11 +124,48 @@ public class ApiClient {
     }
 
     public CompletableFuture<Listing> joinListing(long id, PartyRole role) {
+        return joinListing(id, role, null);
+    }
+
+    public CompletableFuture<Listing> joinListing(
+            long id,
+            PartyRole role,
+            String inviteToken) {
         JsonObject body = new JsonObject();
         body.addProperty("role", role.name());
+
+        String path = "/party-finder/listings/" + id + "/join";
+        if (inviteToken != null && !inviteToken.isBlank()) {
+            path += "?inviteToken=" + URLEncoder.encode(inviteToken, StandardCharsets.UTF_8);
+        }
+
         return post(
-                "/party-finder/listings/" + id + "/join",
+                path,
                 body,
+                Listing.class);
+    }
+
+    public CompletableFuture<Void> createInvite(
+            long listingId,
+            PartyRole preferredRole) {
+        JsonObject body = null;
+        if (preferredRole != null) {
+            body = new JsonObject();
+            body.addProperty("role", preferredRole.name());
+        }
+
+        return post(
+                "/party-finder/listings/" + listingId + "/invite",
+                body,
+                Void.class);
+    }
+
+    public CompletableFuture<Listing> revokeInvite(
+            long listingId,
+            String inviteToken) {
+        String encodedToken = URLEncoder.encode(inviteToken, StandardCharsets.UTF_8);
+        return deleteTyped(
+                "/party-finder/listings/" + listingId + "/invite/" + encodedToken,
                 Listing.class);
     }
 
@@ -293,7 +332,7 @@ public class ApiClient {
                         throw new ApiException(resp.statusCode(), resp.body());
                     }
                     if (type == Void.class || resp.body().isBlank())
-                        return null;
+                        return gson.fromJson("null", type);
                     return gson.fromJson(resp.body(), type);
                 });
     }
