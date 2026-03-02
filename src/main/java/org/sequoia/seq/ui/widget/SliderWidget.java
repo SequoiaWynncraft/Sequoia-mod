@@ -66,9 +66,12 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
     private double getDoubleValue() {
         Object val = setting.getValue();
-        if (val instanceof Integer i) return i;
-        if (val instanceof Double d) return d;
-        if (val instanceof Float f) return f;
+        if (val instanceof Integer i)
+            return i;
+        if (val instanceof Double d)
+            return d;
+        if (val instanceof Float f)
+            return f;
         return 0;
     }
 
@@ -89,7 +92,8 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
     }
 
     private String formatValue(double val) {
-        if (isInteger) return String.valueOf((int) Math.round(val));
+        if (isInteger)
+            return String.valueOf((int) Math.round(val));
         return String.format("%.2f", val);
     }
 
@@ -104,7 +108,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
         var labelColor = NVGContext.nvgColor(LABEL_COLOR);
         nvgFillColor(nvg, labelColor);
-        nvgText(nvg, x + 8, y + 2, setting.getName());
+        nvgText(nvg, x + 8, y + 2, getDisplayName());
         labelColor.free();
 
         // Layout
@@ -129,7 +133,8 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         // Knob
         float knobX = sliderX + fillWidth;
         float knobY = sliderY + SLIDER_HEIGHT / 2f - KNOB_RADIUS / 2f;
-        NVGWrapper.drawRect(nvg, knobX - KNOB_RADIUS, knobY - KNOB_RADIUS / 2, KNOB_RADIUS * 2, KNOB_RADIUS * 2, KNOB_COLOR);
+        NVGWrapper.drawRect(nvg, knobX - KNOB_RADIUS, knobY - KNOB_RADIUS / 2, KNOB_RADIUS * 2, KNOB_RADIUS * 2,
+                KNOB_COLOR);
 
         // Text box
         Color boxBg = editing ? TEXT_BOX_ACTIVE : TEXT_BOX_BG;
@@ -160,7 +165,8 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
     @Override
     public boolean mouseClicked(float mouseX, float mouseY, int button) {
-        if (button != 0) return false;
+        if (button != 0)
+            return false;
 
         float sliderX = x + 8;
         float sliderWidth = width - TEXT_BOX_WIDTH - 24;
@@ -223,7 +229,8 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
     @Override
     public boolean keyPressed(KeyEvent keyEvent) {
         int keyCode = keyEvent.key();
-        if (!editing) return false;
+        if (!editing)
+            return false;
 
         if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
             applyEditBuffer();

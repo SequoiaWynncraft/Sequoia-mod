@@ -4,7 +4,23 @@ import lombok.Getter;
 import net.minecraft.client.input.KeyEvent;
 import org.sequoia.seq.config.Setting;
 
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+
 public abstract class SettingWidget<T extends Setting<?>> {
+    private static final Map<String, String> DISPLAY_NAME_OVERRIDES = new HashMap<>();
+    private static final Map<String, String> TOKEN_REPLACEMENTS = new HashMap<>();
+
+    static {
+        DISPLAY_NAME_OVERRIDES.put("auto_connect", "Auto connect to Sequoia backend");
+        DISPLAY_NAME_OVERRIDES.put("show_discord_bridge", "Show Discord chat");
+        DISPLAY_NAME_OVERRIDES.put("auto_announce", "Auto announce raids");
+
+        TOKEN_REPLACEMENTS.put("discord", "Discord");
+        TOKEN_REPLACEMENTS.put("bridge", "Chat");
+    }
+
     protected final T setting;
     protected float x;
     protected float y;
@@ -41,6 +57,43 @@ public abstract class SettingWidget<T extends Setting<?>> {
 
     public Setting<?> getSetting() {
         return setting;
+    }
+
+    protected String getDisplayName() {
+        return toDisplayName(setting.getName());
+    }
+
+    public static String toDisplayName(String rawName) {
+        if (rawName == null || rawName.isEmpty()) {
+            return "";
+        }
+
+        String normalized = rawName.toLowerCase(Locale.ROOT);
+        String override = DISPLAY_NAME_OVERRIDES.get(normalized);
+        if (override != null) {
+            return override;
+        }
+
+        String[] parts = rawName.split("[_\\s]+");
+        StringBuilder out = new StringBuilder();
+        for (String part : parts) {
+            if (part == null || part.isBlank()) {
+                continue;
+            }
+
+            String lower = part.toLowerCase(Locale.ROOT);
+            String replacement = TOKEN_REPLACEMENTS.get(lower);
+            String word = replacement != null
+                    ? replacement
+                    : Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
+
+            if (!out.isEmpty()) {
+                out.append(' ');
+            }
+            out.append(word);
+        }
+
+        return out.toString();
     }
 
     protected boolean isHovered(float mouseX, float mouseY, float bx, float by, float bw, float bh) {

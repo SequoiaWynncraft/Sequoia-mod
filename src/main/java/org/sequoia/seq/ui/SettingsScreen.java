@@ -27,6 +27,7 @@ public class SettingsScreen extends Screen {
     private static final float SIDEBAR_BUTTON_SPACING = 6;
     private static final float HEADER_HEIGHT = 30;
     private static final float CATEGORY_HEIGHT = 28;
+    private static final float CATEGORY_SPACING = 6;
     private static final float PADDING = 8;
     private static final float SEARCH_BAR_HEIGHT = 18;
     private static final float SEARCH_BAR_WIDTH = 180;
@@ -103,19 +104,31 @@ public class SettingsScreen extends Screen {
     }
 
     private SettingWidget<?> createWidget(Setting<?> setting) {
-        if (setting instanceof Setting.BooleanSetting b) return new BooleanWidget(b);
-        if (setting instanceof Setting.IntSetting i) return new SliderWidget(i);
-        if (setting instanceof Setting.DoubleSetting d) return new SliderWidget(d);
-        if (setting instanceof Setting.FloatSetting f) return new SliderWidget(f);
-        if (setting instanceof Setting.EnumSetting<?> e) return new EnumWidget(e);
-        if (setting instanceof Setting.StringSetting s) return new StringWidget(s);
+        if (setting instanceof Setting.BooleanSetting b)
+            return new BooleanWidget(b);
+        if (setting instanceof Setting.IntSetting i)
+            return new SliderWidget(i);
+        if (setting instanceof Setting.DoubleSetting d)
+            return new SliderWidget(d);
+        if (setting instanceof Setting.FloatSetting f)
+            return new SliderWidget(f);
+        if (setting instanceof Setting.EnumSetting<?> e)
+            return new EnumWidget(e);
+        if (setting instanceof Setting.StringSetting s)
+            return new StringWidget(s);
         return null;
     }
 
     private boolean matchesSearch(String settingName, String categoryName) {
-        if (searchQuery.isEmpty()) return true;
+        if (searchQuery.isEmpty())
+            return true;
         String query = searchQuery.toLowerCase();
-        return settingName.toLowerCase().contains(query) || categoryName.toLowerCase().contains(query);
+        String displaySettingName = SettingWidget.toDisplayName(settingName).toLowerCase();
+        String displayCategoryName = SettingWidget.toDisplayName(categoryName).toLowerCase();
+        return settingName.toLowerCase().contains(query)
+                || categoryName.toLowerCase().contains(query)
+                || displaySettingName.contains(query)
+                || displayCategoryName.contains(query);
     }
 
     @Override
@@ -155,8 +168,10 @@ public class SettingsScreen extends Screen {
             float btnStartY = 50;
 
             drawSidebarButton(nvg, fontName, btnX, btnStartY, btnW, "Partyfinder", false);
-            drawSidebarButton(nvg, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING), btnW, "Settings", true);
-            drawSidebarButton(nvg, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2, btnW, "Github", false);
+            drawSidebarButton(nvg, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING), btnW,
+                    "Settings", true);
+            drawSidebarButton(nvg, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
+                    btnW, "Github", false);
 
             // === Main Content Panel (fills rest of screen) ===
             float panelX = SIDEBAR_WIDTH;
@@ -177,7 +192,8 @@ public class SettingsScreen extends Screen {
             Color searchBg = searchFocused ? SEARCH_ACTIVE_BG : SEARCH_BG;
             NVGWrapper.drawRect(nvg, searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, searchBg);
             if (searchFocused) {
-                NVGWrapper.drawRectOutline(nvg, searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, 1, SEARCH_BORDER);
+                NVGWrapper.drawRectOutline(nvg, searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, 1,
+                        SEARCH_BORDER);
             }
 
             nvgFontFace(nvg, fontName);
@@ -247,7 +263,8 @@ public class SettingsScreen extends Screen {
                             filtered.add(w);
                         }
                     }
-                    if (filtered.isEmpty()) continue;
+                    if (filtered.isEmpty())
+                        continue;
                 }
 
                 // Category header
@@ -271,7 +288,7 @@ public class SettingsScreen extends Screen {
                 nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
                 var catTextCol = NVGContext.nvgColor(CATEGORY_TEXT);
                 nvgFillColor(nvg, catTextCol);
-                String displayName = category.substring(0, 1).toUpperCase() + category.substring(1);
+                String displayName = SettingWidget.toDisplayName(category);
                 nvgText(nvg, contentX + PADDING + 26, cursorY + CATEGORY_HEIGHT / 2f, displayName);
                 catTextCol.free();
 
@@ -289,6 +306,8 @@ public class SettingsScreen extends Screen {
                         settingIndex++;
                     }
                 }
+
+                cursorY += CATEGORY_SPACING;
             }
 
             maxScroll = Math.max(0, cursorY + scrollOffset - contentY - contentHeight);
@@ -345,11 +364,13 @@ public class SettingsScreen extends Screen {
                 return true;
             }
             // Settings (already here)
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING), btnW, SIDEBAR_BUTTON_HEIGHT)) {
+            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING), btnW,
+                    SIDEBAR_BUTTON_HEIGHT)) {
                 return true;
             }
             // Github
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2, btnW, SIDEBAR_BUTTON_HEIGHT)) {
+            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2, btnW,
+                    SIDEBAR_BUTTON_HEIGHT)) {
                 try {
                     java.net.URI uri = java.net.URI.create(GITHUB_URL);
                     java.awt.Desktop.getDesktop().browse(uri);
@@ -412,7 +433,8 @@ public class SettingsScreen extends Screen {
                             filtered.add(w);
                         }
                     }
-                    if (filtered.isEmpty()) continue;
+                    if (filtered.isEmpty())
+                        continue;
                 }
 
                 // Category header click
@@ -435,6 +457,8 @@ public class SettingsScreen extends Screen {
                         cursorY += widget.getHeight();
                     }
                 }
+
+                cursorY += CATEGORY_SPACING;
             }
         }
         return super.mouseClicked(click, outsideScreen);
@@ -476,7 +500,8 @@ public class SettingsScreen extends Screen {
 
         for (List<SettingWidget<?>> widgets : categories.values()) {
             for (SettingWidget<?> widget : widgets) {
-                if (widget.mouseDragged(mx, my)) return true;
+                if (widget.mouseDragged(mx, my))
+                    return true;
             }
         }
         return super.mouseDragged(click, deltaX, deltaY);
@@ -527,7 +552,8 @@ public class SettingsScreen extends Screen {
 
         for (List<SettingWidget<?>> widgets : categories.values()) {
             for (SettingWidget<?> widget : widgets) {
-                if (widget.keyPressed(keyEvent)) return true;
+                if (widget.keyPressed(keyEvent))
+                    return true;
             }
         }
         return super.keyPressed(keyEvent);

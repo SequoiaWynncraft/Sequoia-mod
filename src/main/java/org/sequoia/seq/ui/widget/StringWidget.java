@@ -43,7 +43,7 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
         var labelColor = NVGContext.nvgColor(LABEL_COLOR);
         nvgFillColor(nvg, labelColor);
-        nvgText(nvg, x + TEXT_BOX_MARGIN, y + 2, setting.getName());
+        nvgText(nvg, x + TEXT_BOX_MARGIN, y + 2, getDisplayName());
         labelColor.free();
 
         // Text box
@@ -86,7 +86,8 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
 
     @Override
     public boolean mouseClicked(float mouseX, float mouseY, int button) {
-        if (button != 0) return false;
+        if (button != 0)
+            return false;
 
         float boxX = x + TEXT_BOX_MARGIN;
         float boxY = y + 18;
@@ -108,7 +109,8 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
 
     @Override
     public boolean keyPressed(KeyEvent keyEvent) {
-        if (!editing) return false;
+        if (!editing)
+            return false;
 
         int keyCode = keyEvent.key();
 

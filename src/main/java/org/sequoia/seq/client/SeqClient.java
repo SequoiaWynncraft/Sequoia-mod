@@ -104,13 +104,6 @@ public class SeqClient implements ClientModInitializer {
         SeqClient.gameManager.loadFont();
         SeqClient.assetManager = new AssetManager();
 
-        getConfigManager().register(new Setting.IntSetting("int", "test", 1, 0, 50, 1));
-        getConfigManager().register(new Setting.DoubleSetting("double", "test", 1.1, 0.1, 50.1, 0.1));
-        getConfigManager().register(new Setting.FloatSetting("float", "test", 1.1f, 0.01f, 50.1f, 0.01f));
-        getConfigManager().register(new Setting.BooleanSetting("boolean", "test", false));
-        getConfigManager().register(new Setting.StringSetting("String", "test", "hi"));
-        getConfigManager().register(new Setting.EnumSetting<>("Enum", "test", Enums.HELLO, Enums.class));
-
         // Network settings
         autoConnectSetting = new Setting.BooleanSetting("auto_connect", "network", true);
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
@@ -127,11 +120,6 @@ public class SeqClient implements ClientModInitializer {
                 ConnectionManager.getInstance().connect();
             }
         }
-    }
-
-    private enum Enums {
-        HI,
-        HELLO
     }
 
     public static Identifier getFileLocation(String path) {
