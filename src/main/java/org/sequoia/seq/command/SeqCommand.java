@@ -10,6 +10,7 @@ import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.ui.PartyFinderScreen;
+import org.sequoia.seq.update.UpdateManager;
 
 public class SeqCommand {
 
@@ -103,6 +104,48 @@ public class SeqCommand {
                                                                                         .setScreen(new PartyFinderScreen(
                                                                                                         SeqClient.mc.screen)));
                                                                         return 1;
-                                                                })));
+                                                                }))
+                                                .then(ClientCommandManager.literal("update")
+                                                                .executes(ctx -> {
+                                                                        UpdateManager.getInstance()
+                                                                                        .checkForUpdatesManually();
+                                                                        ctx.getSource().sendFeedback(
+                                                                                        NotificationAccessor.prefixed(
+                                                                                                        "Checking for updates..."));
+                                                                        return 1;
+                                                                })
+                                                                .then(ClientCommandManager.literal("check")
+                                                                                .executes(ctx -> {
+                                                                                        UpdateManager.getInstance()
+                                                                                                        .checkForUpdatesManually();
+                                                                                        ctx.getSource().sendFeedback(
+                                                                                                        NotificationAccessor
+                                                                                                                        .prefixed(
+                                                                                                                                        "Checking for updates..."));
+                                                                                        return 1;
+                                                                                }))
+                                                                .then(ClientCommandManager.literal("apply")
+                                                                                .executes(ctx -> {
+                                                                                        UpdateManager.getInstance()
+                                                                                                        .applyPendingUpdate(
+                                                                                                                        false);
+                                                                                        return 1;
+                                                                                }))
+                                                                .then(ClientCommandManager.literal("apply-and-exit")
+                                                                                .executes(ctx -> {
+                                                                                        UpdateManager.getInstance()
+                                                                                                        .applyPendingUpdate(
+                                                                                                                        true);
+                                                                                        return 1;
+                                                                                }))
+                                                                .then(ClientCommandManager.literal("status")
+                                                                                .executes(ctx -> {
+                                                                                        ctx.getSource().sendFeedback(
+                                                                                                        NotificationAccessor
+                                                                                                                        .prefixed(
+                                                                                                                                        UpdateManager.getInstance()
+                                                                                                                                                        .getStatusLine()));
+                                                                                        return 1;
+                                                                                }))));
         }
 }

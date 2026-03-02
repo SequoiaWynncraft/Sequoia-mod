@@ -1427,6 +1427,23 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 nvgRestore(nvg);
             }
         }
+
+        // Draw divider lines between all slices
+        if (count >= 2) {
+            for (int i = 0; i < count; i++) {
+                float divAngle = startAngle + i * anglePerSlice;
+                float x1 = cx + radius * (float) Math.cos(divAngle);
+                float y1 = cy + radius * (float) Math.sin(divAngle);
+                nvgBeginPath(nvg);
+                nvgMoveTo(nvg, cx, cy);
+                nvgLineTo(nvg, x1, y1);
+                nvgStrokeWidth(nvg, 1.5f);
+                var divCol = NVGContext.nvgColor(DIVIDER_COLOR);
+                nvgStrokeColor(nvg, divCol);
+                nvgStroke(nvg);
+                divCol.free();
+            }
+        }
     }
 
     // ── Create/Manage Party Modal ──

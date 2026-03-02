@@ -15,6 +15,7 @@ import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 import org.sequoia.seq.config.ConfigManager;
 import org.sequoia.seq.config.Setting;
+import org.sequoia.seq.events.GameStartEvent;
 import org.sequoia.seq.events.MinecraftFinishedLoading;
 import org.sequoia.seq.events.Render2DEvent;
 import org.sequoia.seq.command.SeqCommand;
@@ -25,6 +26,7 @@ import org.sequoia.seq.managers.GameManager;
 import org.sequoia.seq.managers.PartyFinderManager;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.ui.SequoiaScreen;
+import org.sequoia.seq.update.UpdateManager;
 import org.sequoia.seq.utils.rendering.nvg.NVGContext;
 import org.sequoia.seq.utils.rendering.nvg.NVGWrapper;
 import org.slf4j.Logger;
@@ -55,6 +57,8 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting showDiscordChatSetting;
     @Getter
     public static Setting.BooleanSetting raidAutoAnnounceSetting;
+    @Getter
+    public static Setting.BooleanSetting checkUpdatesSetting;
 
     private static KeyMapping openScreenKey;
 
@@ -108,9 +112,11 @@ public class SeqClient implements ClientModInitializer {
         autoConnectSetting = new Setting.BooleanSetting("auto_connect", "network", true);
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
+        checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
+        getConfigManager().register(checkUpdatesSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled and token is present
@@ -119,6 +125,13 @@ public class SeqClient implements ClientModInitializer {
             if (token != null && !token.isBlank()) {
                 ConnectionManager.getInstance().connect();
             }
+        }
+    }
+
+    @Subscribe(Preference.CALLER)
+    public void onGameStart(GameStartEvent ignored) {
+        if (checkUpdatesSetting == null || checkUpdatesSetting.getValue()) {
+            UpdateManager.getInstance().checkForUpdatesOnStartup();
         }
     }
 
