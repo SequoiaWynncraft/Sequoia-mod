@@ -33,8 +33,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return t;
     });
 
-    @Getter private boolean authenticated = false;
-    @Getter private Instant connectedSince;
+    @Getter
+    private boolean authenticated = false;
+    @Getter
+    private Instant connectedSince;
     private Consumer<List<String>> connectedUsersCallback;
 
     // Reconnect state
@@ -45,6 +47,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // Callbacks for new message types
     private static Consumer<DiscordChatMessage> discordChatHandler;
     private static Consumer<PartyFinderUpdateMessage> partyFinderUpdateHandler;
+    private static Consumer<PartyFinderInviteMessage> partyFinderInviteHandler;
 
     public static ConnectionManager getInstance() {
         if (instance == null) {
@@ -154,14 +157,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // ── Outgoing messages ──
 
     private void send(String type, JsonObject payload) {
-        if (payload == null) payload = new JsonObject();
+        if (payload == null)
+            payload = new JsonObject();
         payload.addProperty("type", type);
         send(GSON.toJson(payload));
     }
 
     private void requestAuth() {
         var player = Minecraft.getInstance().player;
-        if (player == null) return;
+        if (player == null)
+            return;
 
         JsonObject msg = new JsonObject();
         msg.addProperty("minecraft_uuid", player.getUUID().toString());
@@ -198,14 +203,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         JsonObject msg = new JsonObject();
         msg.addProperty("username", username);
         msg.addProperty("message", message);
-        if (avatarUrl != null) msg.addProperty("avatar_url", avatarUrl);
+        if (avatarUrl != null)
+            msg.addProperty("avatar_url", avatarUrl);
         send("guild_chat", msg);
     }
 
     public void sendRaidAnnouncement(List<String> usernames, String raidType,
-                                     int aspectCount, int emeraldCount,
-                                     double experienceCount, int srCount) {
-        if (!authenticated || !isOpen()) return;
+            int aspectCount, int emeraldCount,
+            double experienceCount, int srCount) {
+        if (!authenticated || !isOpen())
+            return;
         JsonObject msg = new JsonObject();
         JsonArray names = new JsonArray();
         usernames.forEach(names::add);
@@ -270,6 +277,29 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         partyFinderUpdateHandler.accept(new PartyFinderUpdateMessage(action, listingJson));
                     }
                 }
+                case "party_finder_invite" -> {
+                    if (partyFinderInviteHandler != null) {
+                        long listingId = json.get("listing_id").getAsLong();
+                        String inviterUUID = json.get("inviter_uuid").getAsString();
+
+                        String preferredRole = null;
+                        if (json.has("preferred_role") && !json.get("preferred_role").isJsonNull()) {
+                            preferredRole = json.get("preferred_role").getAsString();
+                        }
+
+                        JsonObject listingJson = null;
+                        if (json.has("listing") && json.get("listing").isJsonObject()) {
+                            listingJson = json.getAsJsonObject("listing");
+                        }
+
+                        partyFinderInviteHandler.accept(
+                                new PartyFinderInviteMessage(
+                                        listingId,
+                                        inviterUUID,
+                                        preferredRole,
+                                        listingJson));
+                    }
+                }
                 case "error" -> {
                     String error = json.get("message").getAsString();
                     notify("Error: " + error);
@@ -297,6 +327,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         partyFinderUpdateHandler = handler;
     }
 
+    public static void onPartyFinderInvite(Consumer<PartyFinderInviteMessage> handler) {
+        partyFinderInviteHandler = handler;
+    }
+
     // ── Utility ──
 
     public static boolean isConnected() {
@@ -308,18 +342,31 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     public String getUptimeString() {
-        if (connectedSince == null) return null;
+        if (connectedSince == null)
+            return null;
         java.time.Duration dur = java.time.Duration.between(connectedSince, Instant.now());
         long hours = dur.toHours();
         long mins = dur.toMinutesPart();
         long secs = dur.toSecondsPart();
-        if (hours > 0) return hours + "h " + mins + "m";
-        if (mins > 0) return mins + "m " + secs + "s";
+        if (hours > 0)
+            return hours + "h " + mins + "m";
+        if (mins > 0)
+            return mins + "m " + secs + "s";
         return secs + "s";
     }
 
     // ── Message records ──
 
-    public record DiscordChatMessage(String username, String message) {}
-    public record PartyFinderUpdateMessage(String action, JsonObject listingJson) {}
+    public record DiscordChatMessage(String username, String message) {
+    }
+
+    public record PartyFinderUpdateMessage(String action, JsonObject listingJson) {
+    }
+
+    public record PartyFinderInviteMessage(
+            long listingId,
+            String inviterUUID,
+            String preferredRole,
+            JsonObject listingJson) {
+    }
 }

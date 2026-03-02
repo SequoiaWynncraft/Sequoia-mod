@@ -55,6 +55,18 @@ public class PartyFinderManager implements NotificationAccessor {
                     Listing.class);
             handlePartyFinderUpdate(update.action(), listing);
         });
+
+        ConnectionManager.onPartyFinderInvite(invite -> {
+            Listing listing = null;
+            if (invite.listingJson() != null) {
+                listing = GSON.fromJson(invite.listingJson(), Listing.class);
+            }
+            handlePartyFinderInvite(
+                    invite.listingId(),
+                    invite.inviterUUID(),
+                    invite.preferredRole(),
+                    listing);
+        });
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -333,6 +345,37 @@ public class PartyFinderManager implements NotificationAccessor {
             SeqClient.getEventBus().dispatch(
                     new PartyFinderUpdateEvent(action, listing));
         }
+    }
+
+    public void handlePartyFinderInvite(
+            long listingId,
+            String inviterUUID,
+            String preferredRole,
+            Listing listing) {
+        if (listing != null) {
+            upsertListing(listing, true);
+            listingsVersion++;
+            refreshCurrentListing();
+        }
+
+        String inviterName = PlayerNameCache.resolve(inviterUUID);
+        if (inviterName == null || inviterName.isBlank() || "Loading...".equals(inviterName)) {
+            inviterName = "a player";
+        }
+
+        String roleSuffix = "";
+        if (preferredRole != null && !preferredRole.isBlank()) {
+            String displayRole = formatRoleForInvite(preferredRole);
+            roleSuffix = " (preferred role: " + displayRole + ")";
+        }
+
+        notify("Party Finder invite from " + inviterName + roleSuffix + ".");
+
+        SeqClient.LOGGER.info(
+                "Received party_finder_invite listingId={} inviterUUID={} preferredRole={}",
+                listingId,
+                inviterUUID,
+                preferredRole);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -804,6 +847,15 @@ public class PartyFinderManager implements NotificationAccessor {
             case "HEALER" -> PartyRole.HEALER;
             case "TANK" -> PartyRole.TANK;
             default -> null;
+        };
+    }
+
+    private static String formatRoleForInvite(String role) {
+        return switch (role.toUpperCase()) {
+            case "DPS" -> "DPS";
+            case "HEALER" -> "Healer";
+            case "TANK" -> "Tank";
+            default -> role;
         };
     }
 
