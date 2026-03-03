@@ -147,12 +147,9 @@ public class ApiClient {
 
     public CompletableFuture<Void> createInvite(
             long listingId,
-            PartyRole preferredRole) {
-        JsonObject body = null;
-        if (preferredRole != null) {
-            body = new JsonObject();
-            body.addProperty("role", preferredRole.name());
-        }
+            UUID targetUUID) {
+        JsonObject body = new JsonObject();
+        body.addProperty("targetUUID", targetUUID.toString());
 
         return post(
                 "/party-finder/listings/" + listingId + "/invite",
@@ -264,6 +261,34 @@ public class ApiClient {
         }
 
         return post("/party-finder/listings/" + id + "/update", body, Listing.class);
+    }
+
+    public CompletableFuture<Listing> reserveSlots(
+            long listingId,
+            Integer count) {
+        JsonObject body = new JsonObject();
+        if (count != null) {
+            body.addProperty("count", count);
+        }
+
+        return post(
+                "/party-finder/listings/" + listingId + "/reserve",
+                body,
+                Listing.class);
+    }
+
+    public CompletableFuture<Listing> unreserveSlots(
+            long listingId,
+            Integer count) {
+        JsonObject body = new JsonObject();
+        if (count != null) {
+            body.addProperty("count", count);
+        }
+
+        return post(
+                "/party-finder/listings/" + listingId + "/unreserve",
+                body,
+                Listing.class);
     }
 
     // ── HTTP helpers ──

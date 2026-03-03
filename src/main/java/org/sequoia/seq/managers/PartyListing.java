@@ -138,6 +138,7 @@ public class PartyListing {
 
     public boolean expanded;
     public final List<PartyMember> members;
+    public final int occupiedSlots;
     public final int maxSize;
     public final List<String> tags;
     public final long id;
@@ -150,10 +151,17 @@ public class PartyListing {
         this.leaderUUID = listing.leaderUUID();
         this.expanded = false; // managed externally by PartyFinderManager's expanded state map
         this.maxSize = listing.maxPartySize();
-        this.members = safeMembers(listing)
+        this.occupiedSlots = listing.occupiedSlotCount();
+        List<PartyMember> adaptedMembers = new ArrayList<>();
+        safeMembers(listing)
                 .stream()
                 .map(m -> new PartyMember(m, listing.leaderUUID()))
-                .toList();
+                .forEach(adaptedMembers::add);
+        safeReservedSlots(listing)
+                .stream()
+                .map(PartyMember::reserved)
+                .forEach(adaptedMembers::add);
+        this.members = List.copyOf(adaptedMembers);
         this.tags = buildTags(listing);
     }
 
@@ -163,6 +171,14 @@ public class PartyListing {
             return List.of();
         }
         return members.stream().filter(Objects::nonNull).toList();
+    }
+
+    private static List<org.sequoia.seq.model.Member> safeReservedSlots(Listing listing) {
+        List<org.sequoia.seq.model.Member> reservedSlots = listing.reservedSlots();
+        if (reservedSlots == null) {
+            return List.of();
+        }
+        return reservedSlots.stream().filter(Objects::nonNull).toList();
     }
 
     private static List<String> buildTags(Listing listing) {

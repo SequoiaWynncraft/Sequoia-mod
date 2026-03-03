@@ -21,10 +21,13 @@ import org.sequoia.seq.utils.WynnClassCache;
  */
 public class PartyMember {
 
+    private static final String RESERVED_LABEL = "<RESERVED>";
+
     public final String name;
     /** Wynncraft class asset key (e.g. "archer"), or null if not yet resolved. */
     public final String className;
     public final boolean isLeader;
+    public final boolean isReserved;
     /** Display-friendly party role (e.g. "DPS", "Healer", "Tank"). */
     public final String role;
     public final String playerUUID;
@@ -33,6 +36,7 @@ public class PartyMember {
         this.playerUUID = member.playerUUID();
         this.name = PlayerNameCache.resolve(member.playerUUID());
         this.isLeader = member.playerUUID().equals(leaderUUID);
+        this.isReserved = false;
 
         // Party role — display-friendly text
         this.role = formatRole(member.role());
@@ -41,7 +45,23 @@ public class PartyMember {
         this.className = WynnClassCache.resolve(member.playerUUID());
     }
 
+    private PartyMember(Member reservedSlot) {
+        this.playerUUID = null;
+        this.name = RESERVED_LABEL;
+        this.isLeader = false;
+        this.isReserved = true;
+        this.role = formatRole(reservedSlot != null ? reservedSlot.role() : null);
+        this.className = null;
+    }
+
+    public static PartyMember reserved(Member reservedSlot) {
+        return new PartyMember(reservedSlot);
+    }
+
     public String displayName() {
+        if (isReserved) {
+            return RESERVED_LABEL;
+        }
         return PlayerNameCache.resolve(playerUUID);
     }
 

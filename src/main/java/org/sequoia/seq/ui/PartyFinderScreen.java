@@ -18,6 +18,8 @@ import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.managers.AssetManager;
 import org.sequoia.seq.managers.PartyListing;
 import org.sequoia.seq.managers.PartyMember;
+import org.sequoia.seq.model.Activity;
+import org.sequoia.seq.model.PartyMode;
 import org.sequoia.seq.model.PartyStatus;
 import org.sequoia.seq.utils.rendering.nvg.NVGContext;
 import org.sequoia.seq.utils.rendering.nvg.NVGWrapper;
@@ -243,6 +245,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     // ── Modal state ──
     private boolean modalOpen = false;
+    private boolean inviteModalOpen = false;
+    private boolean inviteUsernameFocused = false;
+    private String inviteUsernameInput = "";
     private final Set<String> modalSelectedRaids = new LinkedHashSet<>();
     private int modalReservedSlots = 0;
     private boolean reservedSlotsFocused = false;
@@ -470,13 +475,17 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             ftc.free();
 
             // Role dropdown overlay
-            if (roleDropdownOpen && !modalOpen && !filterScreenOpen) {
+            if (roleDropdownOpen && !modalOpen && !inviteModalOpen && !filterScreenOpen) {
                 renderRoleDropdownMenu(nvg, fontName);
             }
 
             // Modal overlay
             if (modalOpen) {
                 renderModal(nvg, fontName, panelX, panelWidth, screenHeight);
+            }
+
+            if (inviteModalOpen) {
+                renderInviteModal(nvg, fontName, panelX, panelWidth, screenHeight);
             }
 
             // Filter+ screen overlay (highest priority)
@@ -949,7 +958,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 nvg,
                 rowX,
                 y + CARD_HEADER_HEIGHT / 2f,
-                party.members.size() + "/" + party.maxSize);
+                party.occupiedSlots + "/" + party.maxSize);
         countCol.free();
 
         // Collapse arrow
@@ -1061,7 +1070,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         var cc = NVGContext.nvgColor(TEXT_COLOR);
         nvgFillColor(nvg, cc);
-        nvgText(nvg, rowX, centerY, party.members.size() + "/" + party.maxSize);
+        nvgText(nvg, rowX, centerY, party.occupiedSlots + "/" + party.maxSize);
         cc.free();
         rowX += 42;
 
@@ -1146,7 +1155,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Hover detection for leader management
         boolean isHoveredMember = false;
-        if (amLeaderOfThisParty && !member.isLeader) {
+        if (amLeaderOfThisParty && !member.isLeader && !member.isReserved) {
             if (isHovered(nvgMouseX, nvgMouseY, x, y, w, MEMBER_ROW_HEIGHT)) {
                 isHoveredMember = true;
                 hoveredMemberPartyIndex = partyIndex;
@@ -1239,13 +1248,15 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             rowX += CLASS_ICON_SIZE + 6;
         }
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, ROLE_FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var rc = NVGContext.nvgColor(ROLE_TEXT_COLOR);
-        nvgFillColor(nvg, rc);
-        nvgText(nvg, rowX, centerY, "(" + member.role + ")");
-        rc.free();
+        if (!member.isReserved) {
+            nvgFontFace(nvg, fontName);
+            nvgFontSize(nvg, ROLE_FONT_SIZE);
+            nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            var rc = NVGContext.nvgColor(ROLE_TEXT_COLOR);
+            nvgFillColor(nvg, rc);
+            nvgText(nvg, rowX, centerY, "(" + member.role + ")");
+            rc.free();
+        }
     }
 
     // ── Small triangle arrow (pointing up or down) ──
@@ -1486,7 +1497,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         var tc = NVGContext.nvgColor(TEXT_COLOR);
         nvgFillColor(nvg, tc);
-        nvgText(nvg, modalX + MODAL_WIDTH / 2f, modalY + 18, "Create Party");
+        String modalTitle = party().hasListedParty() ? "Update Party" : "Create Party";
+        nvgText(nvg, modalX + MODAL_WIDTH / 2f, modalY + 18, modalTitle);
         tc.free();
 
         // Raid type icons row
@@ -1684,7 +1696,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         // Create/Update button
         float createBtnX = modalX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
         float createBtnY = modalY + MODAL_HEIGHT - MODAL_BUTTON_H - 14;
-        String createLabel = party().hasListedParty() ? "Update..." : "Create!";
+        String createLabel = party().hasListedParty() ? "Update party" : "Create party";
         boolean createHovered = isHovered(
                 nvgMouseX,
                 nvgMouseY,
@@ -1700,7 +1712,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 MODAL_BUTTON_H,
                 createHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
 
-        nvgFontSize(nvg, MEMBER_FONT_SIZE);
+        nvgFontSize(nvg, MODAL_LABEL_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         var cbc = NVGContext.nvgColor(TEXT_COLOR);
         nvgFillColor(nvg, cbc);
@@ -2192,6 +2204,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             return handleFilterScreenClick(mx, my, screenWidth, screenHeight);
         }
 
+        if (inviteModalOpen) {
+            return handleInviteModalClick(mx, my, screenWidth, screenHeight);
+        }
+
         // ── Modal clicks ──
         if (modalOpen) {
             return handleModalClick(mx, my, screenWidth, screenHeight);
@@ -2301,7 +2317,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     headerBtnY,
                     inviteW,
                     SEARCH_BAR_HEIGHT)) {
-                party().createInvite(selectedRole);
+                openInviteModal();
                 return true;
             }
             headerBtnX += inviteW + 6;
@@ -2481,18 +2497,271 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     private void openModal(boolean managing) {
         modalOpen = true;
+        inviteModalOpen = false;
         editTagsScreenOpen = false;
         reservedSlotsFocused = false;
         party().setHasListedParty(managing);
         if (!managing) {
-            modalSelectedRaids.clear();
-            modalActiveTags.clear();
-            modalActiveTags.add("Chill");
-            modalInactiveTags.clear();
-            modalInactiveTags.add("Grind");
+            applyDefaultModalSelections();
             modalReservedSlots = 0;
+        } else {
+            applyModalSelectionsFromCurrentListing();
+            modalReservedSlots = estimateReservedSlotCount(party().getCurrentListing());
         }
         reservedSlotsInput = String.valueOf(modalReservedSlots);
+    }
+
+    private void applyDefaultModalSelections() {
+        modalSelectedRaids.clear();
+        modalActiveTags.clear();
+        modalActiveTags.add("Chill");
+        modalInactiveTags.clear();
+        modalInactiveTags.add("Grind");
+    }
+
+    private Set<String> getCurrentListingRaidTags() {
+        Set<String> raidTags = new LinkedHashSet<>();
+        org.sequoia.seq.model.Listing listing = party().getCurrentListing();
+        if (listing == null) {
+            return raidTags;
+        }
+
+        for (Activity activity : listing.resolvedActivities()) {
+            if (activity == null || activity.name() == null || activity.name().isBlank()) {
+                continue;
+            }
+            raidTags.add(PartyListing.backendNameToDisplayName(activity.name().trim()));
+        }
+
+        return raidTags;
+    }
+
+    private void applyModalSelectionsFromCurrentListing() {
+        modalSelectedRaids.clear();
+        modalSelectedRaids.addAll(getCurrentListingRaidTags());
+
+        modalActiveTags.clear();
+        modalInactiveTags.clear();
+
+        PartyMode mode = party().getCurrentListing() != null
+                ? party().getCurrentListing().mode()
+                : PartyMode.CHILL;
+
+        if (mode == PartyMode.GRIND) {
+            modalActiveTags.add("Grind");
+            modalInactiveTags.add("Chill");
+        } else {
+            modalActiveTags.add("Chill");
+            modalInactiveTags.add("Grind");
+        }
+    }
+
+    private void openInviteModal() {
+        inviteModalOpen = true;
+        modalOpen = false;
+        filterScreenOpen = false;
+        roleDropdownOpen = false;
+        inviteUsernameFocused = true;
+        inviteUsernameInput = "";
+    }
+
+    private void renderInviteModal(
+            long nvg,
+            String fontName,
+            float panelX,
+            float panelWidth,
+            float screenHeight) {
+        NVGWrapper.drawRect(
+                nvg,
+                panelX,
+                0,
+                panelWidth,
+                screenHeight,
+                MODAL_OVERLAY);
+
+        float inviteModalX = panelX + (panelWidth - MODAL_WIDTH) / 2f;
+        float inviteModalY = (screenHeight - MODAL_HEIGHT) / 2f;
+
+        NVGWrapper.drawRect(
+                nvg,
+                inviteModalX,
+                inviteModalY,
+                MODAL_WIDTH,
+                MODAL_HEIGHT,
+                MODAL_BG);
+        NVGWrapper.drawRectOutline(
+                nvg,
+                inviteModalX,
+                inviteModalY,
+                MODAL_WIDTH,
+                MODAL_HEIGHT,
+                1,
+                MODAL_BORDER);
+
+        nvgFontFace(nvg, fontName);
+        nvgFontSize(nvg, MODAL_TITLE_SIZE);
+        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        var titleColor = NVGContext.nvgColor(TEXT_COLOR);
+        nvgFillColor(nvg, titleColor);
+        nvgText(nvg, inviteModalX + MODAL_WIDTH / 2f, inviteModalY + 22, "Invite Player");
+        titleColor.free();
+
+        float labelY = inviteModalY + 64;
+        nvgFontSize(nvg, MODAL_LABEL_SIZE);
+        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        var labelColor = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        nvgFillColor(nvg, labelColor);
+        nvgText(nvg, inviteModalX + MODAL_WIDTH / 2f, labelY, "Username");
+        labelColor.free();
+
+        float inputW = 180;
+        float inputH = MODAL_DROPDOWN_H;
+        float inputX = inviteModalX + (MODAL_WIDTH - inputW) / 2f;
+        float inputY = labelY + 12;
+
+        NVGWrapper.drawRect(
+                nvg,
+                inputX,
+                inputY,
+                inputW,
+                inputH,
+                inviteUsernameFocused ? SEARCH_ACTIVE_BG : MODAL_DROPDOWN_BG);
+        NVGWrapper.drawRectOutline(
+                nvg,
+                inputX,
+                inputY,
+                inputW,
+                inputH,
+                1,
+                inviteUsernameFocused ? SEARCH_BORDER : MODAL_DROPDOWN_BORDER);
+
+        String inputText = inviteUsernameInput.isBlank() && !inviteUsernameFocused
+                ? "Enter username"
+                : inviteUsernameInput;
+        Color inputColor = inviteUsernameInput.isBlank() && !inviteUsernameFocused
+                ? PARTY_TYPE_TEXT
+                : TEXT_COLOR;
+
+        nvgFontFace(nvg, fontName);
+        nvgFontSize(nvg, MODAL_LABEL_SIZE);
+        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        var inputTextColor = NVGContext.nvgColor(inputColor);
+        nvgFillColor(nvg, inputTextColor);
+        nvgText(nvg, inputX + 8, inputY + inputH / 2f, inputText);
+        inputTextColor.free();
+
+        float sendBtnX = inviteModalX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
+        float sendBtnY = inviteModalY + MODAL_HEIGHT - MODAL_BUTTON_H - 14;
+        boolean sendHovered = isHovered(
+                nvgMouseX,
+                nvgMouseY,
+                sendBtnX,
+                sendBtnY,
+                MODAL_BUTTON_W,
+                MODAL_BUTTON_H);
+        NVGWrapper.drawRect(
+                nvg,
+                sendBtnX,
+                sendBtnY,
+                MODAL_BUTTON_W,
+                MODAL_BUTTON_H,
+                sendHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
+
+        nvgFontSize(nvg, MEMBER_FONT_SIZE);
+        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        var sendTextColor = NVGContext.nvgColor(TEXT_COLOR);
+        nvgFillColor(nvg, sendTextColor);
+        nvgText(
+                nvg,
+                sendBtnX + MODAL_BUTTON_W / 2f,
+                sendBtnY + MODAL_BUTTON_H / 2f,
+                "Send");
+        sendTextColor.free();
+    }
+
+    private static int estimateReservedSlotCount(org.sequoia.seq.model.Listing listing) {
+        if (listing == null) {
+            return 0;
+        }
+
+        if (listing.reservedSlots() != null) {
+            return listing.reservedSlots().size();
+        }
+
+        if (listing.members() == null) {
+            return 0;
+        }
+
+        int count = 0;
+        for (org.sequoia.seq.model.Member member : listing.members()) {
+            if (member == null) {
+                count++;
+                continue;
+            }
+
+            String playerUUID = member.playerUUID();
+            if (playerUUID == null || playerUUID.isBlank()) {
+                count++;
+                continue;
+            }
+
+            String normalized = playerUUID.trim().toLowerCase(Locale.ROOT);
+            if ("anonymous".equals(normalized) || "reserved".equals(normalized)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private boolean handleInviteModalClick(
+            float mx,
+            float my,
+            float screenWidth,
+            float screenHeight) {
+        float panelX = SIDEBAR_WIDTH;
+        float panelWidth = screenWidth - SIDEBAR_WIDTH;
+        float mX = panelX + (panelWidth - MODAL_WIDTH) / 2f;
+        float mY = (screenHeight - MODAL_HEIGHT) / 2f;
+
+        if (!isHovered(mx, my, mX, mY, MODAL_WIDTH, MODAL_HEIGHT)) {
+            inviteModalOpen = false;
+            inviteUsernameFocused = false;
+            return true;
+        }
+
+        float inputW = 180;
+        float inputH = MODAL_DROPDOWN_H;
+        float inputX = mX + (MODAL_WIDTH - inputW) / 2f;
+        float inputY = mY + 76;
+
+        if (isHovered(mx, my, inputX, inputY, inputW, inputH)) {
+            inviteUsernameFocused = true;
+            return true;
+        }
+
+        if (inviteUsernameFocused) {
+            inviteUsernameFocused = false;
+        }
+
+        float sendBtnX = mX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
+        float sendBtnY = mY + MODAL_HEIGHT - MODAL_BUTTON_H - 14;
+        if (isHovered(mx, my, sendBtnX, sendBtnY, MODAL_BUTTON_W, MODAL_BUTTON_H)) {
+            submitInviteFromModal();
+            return true;
+        }
+
+        return true;
+    }
+
+    private void submitInviteFromModal() {
+        String username = inviteUsernameInput == null ? "" : inviteUsernameInput.trim();
+        if (username.isEmpty()) {
+            showErrorPopup("Enter a username to invite.");
+            return;
+        }
+        party().createInvite(username);
+        inviteModalOpen = false;
+        inviteUsernameFocused = false;
     }
 
     private boolean handleModalClick(
@@ -2613,27 +2882,40 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 createBtnY,
                 MODAL_BUTTON_W,
                 MODAL_BUTTON_H)) {
-            if (!modalSelectedRaids.isEmpty()) {
-                if (modalSelectedRaids.contains("Prelude to Annihilation") && modalSelectedRaids.size() > 1) {
-                    showErrorPopup("Anni cannot be selected alongside other raids.");
-                    return true;
-                }
-                commitReservedSlotsInput();
-                // Combine raids + active tags
-                List<String> tags = new ArrayList<>(modalSelectedRaids);
-                tags.addAll(modalActiveTags);
+            boolean updatingParty = party().getMyPartyIndex() >= 0;
 
-                if (party().getMyPartyIndex() >= 0) {
-                    party().updateParty(tags);
-                } else {
-                    party().createParty(tags, selectedRole);
-                }
-
-                modalOpen = false;
-                editTagsScreenOpen = false;
-                reservedSlotsFocused = false;
-                scrollOffset = 0;
+            Set<String> selectedRaids = new LinkedHashSet<>(modalSelectedRaids);
+            if (updatingParty && selectedRaids.isEmpty()) {
+                selectedRaids.addAll(getCurrentListingRaidTags());
             }
+
+            if (selectedRaids.isEmpty()) {
+                showErrorPopup(
+                        updatingParty
+                                ? "No raid selected and no current raid could be reused."
+                                : "Select at least one raid before creating a party.");
+                return true;
+            }
+
+            if (selectedRaids.contains("Prelude to Annihilation") && selectedRaids.size() > 1) {
+                showErrorPopup("Anni cannot be selected alongside other raids.");
+                return true;
+            }
+
+            commitReservedSlotsInput();
+            List<String> tags = new ArrayList<>(selectedRaids);
+            tags.addAll(modalActiveTags);
+
+            if (updatingParty) {
+                party().updateParty(tags, selectedRole, modalReservedSlots);
+            } else {
+                party().createParty(tags, selectedRole, modalReservedSlots);
+            }
+
+            modalOpen = false;
+            editTagsScreenOpen = false;
+            reservedSlotsFocused = false;
+            scrollOffset = 0;
             return true;
         }
 
@@ -2832,7 +3114,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             double mouseY,
             double scrollX,
             double scrollY) {
-        if (modalOpen || filterScreenOpen)
+        if (modalOpen || inviteModalOpen || filterScreenOpen)
             return true;
         scrollOffset -= (float) scrollY * SCROLL_SPEED;
         scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset));
@@ -2844,6 +3126,47 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         if (filterScreenOpen) {
             if (keyEvent.key() == GLFW.GLFW_KEY_ESCAPE) {
                 filterScreenOpen = false;
+                return true;
+            }
+            return true;
+        }
+        if (inviteModalOpen) {
+            int keyCode = keyEvent.key();
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                inviteModalOpen = false;
+                inviteUsernameFocused = false;
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                submitInviteFromModal();
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (!inviteUsernameInput.isEmpty()) {
+                    inviteUsernameInput = inviteUsernameInput.substring(
+                            0,
+                            inviteUsernameInput.length() - 1);
+                }
+                return true;
+            }
+            if (inviteUsernameInput.length() >= 16) {
+                return true;
+            }
+            if (keyCode >= GLFW.GLFW_KEY_A && keyCode <= GLFW.GLFW_KEY_Z) {
+                boolean shift = (keyEvent.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0;
+                char letter = (char) ('a' + (keyCode - GLFW.GLFW_KEY_A));
+                inviteUsernameInput += shift
+                        ? Character.toUpperCase(letter)
+                        : letter;
+                return true;
+            }
+            if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
+                inviteUsernameInput += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_MINUS &&
+                    (keyEvent.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
+                inviteUsernameInput += '_';
                 return true;
             }
             return true;

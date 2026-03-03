@@ -13,6 +13,7 @@ public record Listing(
         PartyStatus status,
         String note,
         List<Member> members,
+        List<Member> reservedSlots,
         Instant createdAt) {
     /**
      * Whether this listing's expand state is toggled in the UI (client-only, not
@@ -48,7 +49,19 @@ public record Listing(
         return resolvedActivities().stream()
                 .mapToInt(Activity::maxPartySize)
                 .max()
-                .orElse(Math.max(1, members != null ? members.size() : 1));
+                .orElse(Math.max(1, occupiedSlotCount()));
+    }
+
+    public int occupiedSlotCount() {
+        return memberCount() + reservedSlotCount();
+    }
+
+    public int memberCount() {
+        return members != null ? members.size() : 0;
+    }
+
+    public int reservedSlotCount() {
+        return reservedSlots != null ? reservedSlots.size() : 0;
     }
 
     public Member getLeader() {

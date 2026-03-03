@@ -24,6 +24,7 @@ import net.minecraft.client.multiplayer.PlayerInfo;
 public class PlayerNameCache {
 
     private static final Map<String, String> cache = new ConcurrentHashMap<>();
+    private static final Map<String, String> usernameToUuid = new ConcurrentHashMap<>();
     private static final Set<String> pending = ConcurrentHashMap.newKeySet();
     private static final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
@@ -42,9 +43,13 @@ public class PlayerNameCache {
 
         // 1. Check local player
         var mc = Minecraft.getInstance();
-        if (mc.player != null && mc.player.getUUID().toString().equals(uuid)) {
-            String name = mc.player.getName().getString();
+        var localPlayer = mc.player;
+        if (localPlayer != null && localPlayer.getUUID().toString().equals(uuid)) {
+            String name = localPlayer.getName() != null
+                    ? localPlayer.getName().getString()
+                    : "Unknown";
             cache.put(uuid, name);
+            usernameToUuid.put(name.toLowerCase(), uuid);
             return name;
         }
 
@@ -54,13 +59,19 @@ public class PlayerNameCache {
             return cached;
 
         // 3. Check tab list
-        if (mc.getConnection() != null) {
+        var connection = mc.getConnection();
+        if (connection != null) {
             try {
-                UUID uid = UUID.fromString(formatUUID(uuid));
-                PlayerInfo info = mc.getConnection().getPlayerInfo(uid);
+                String formattedUuid = formatUUID(uuid);
+                if (formattedUuid == null) {
+                    return "Loading...";
+                }
+                UUID uid = UUID.fromString(formattedUuid);
+                PlayerInfo info = connection.getPlayerInfo(uid);
                 if (info != null && info.getProfile().name() != null) {
                     String name = info.getProfile().name();
                     cache.put(uuid, name);
+                    usernameToUuid.put(name.toLowerCase(), formatUUID(uuid));
                     return name;
                 }
             } catch (IllegalArgumentException ignored) {
@@ -89,7 +100,9 @@ public class PlayerNameCache {
                                 JsonObject.class);
                         if (json.has("name")) {
                             String name = json.get("name").getAsString();
-                            cache.put(uuid, name);
+                            String formatted = formatUUID(uuid);
+                            cache.put(formatted, name);
+                            usernameToUuid.put(name.toLowerCase(), formatted);
                         }
                     }
                 } catch (Exception e) {
@@ -121,11 +134,93 @@ public class PlayerNameCache {
     /** Manually cache a UUID→username mapping. */
     public static void put(String uuid, String username) {
         if (uuid != null && username != null) {
-            cache.put(uuid, username);
+            String formatted = formatUUID(uuid);
+            cache.put(formatted, username);
+            usernameToUuid.put(username.toLowerCase(), formatted);
         }
+    }
+
+    /**
+     * Resolve a username to UUID asynchronously.
+     * Returns a dashed UUID string, or null when not found.
+     */
+    public static CompletableFuture<String> resolveUUID(String username) {
+        if (username == null || username.isBlank()) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        String normalized = username.trim();
+        String key = normalized.toLowerCase();
+
+        String cachedUuid = usernameToUuid.get(key);
+        if (cachedUuid != null && !cachedUuid.isBlank()) {
+            return CompletableFuture.completedFuture(formatUUID(cachedUuid));
+        }
+
+        var mc = Minecraft.getInstance();
+        var localPlayer = mc.player;
+        if (localPlayer != null) {
+            String localName = localPlayer.getName() != null
+                    ? localPlayer.getName().getString()
+                    : null;
+            if (localName != null && localName.equalsIgnoreCase(normalized)) {
+                String localUuid = localPlayer.getUUID().toString();
+                put(localUuid, localName);
+                return CompletableFuture.completedFuture(localUuid);
+            }
+        }
+
+        var connection = mc.getConnection();
+        if (connection != null) {
+            for (PlayerInfo info : connection.getOnlinePlayers()) {
+                if (info == null || info.getProfile() == null) {
+                    continue;
+                }
+
+                String name = info.getProfile().name();
+                if (name.equalsIgnoreCase(normalized)) {
+                    String resolved = info.getProfile().id() != null
+                            ? info.getProfile().id().toString()
+                            : null;
+                    if (resolved != null) {
+                        put(resolved, name);
+                    }
+                    return CompletableFuture.completedFuture(resolved);
+                }
+            }
+        }
+
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                HttpRequest req = HttpRequest.newBuilder()
+                        .uri(URI.create("https://api.mojang.com/users/profiles/minecraft/" + normalized))
+                        .timeout(Duration.ofSeconds(10))
+                        .GET()
+                        .build();
+                HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() != 200 || resp.body() == null || resp.body().isBlank()) {
+                    return null;
+                }
+
+                JsonObject json = GSON.fromJson(resp.body(), JsonObject.class);
+                if (json == null || !json.has("id")) {
+                    return null;
+                }
+
+                String resolved = formatUUID(json.get("id").getAsString());
+                String resolvedName = json.has("name") && !json.get("name").isJsonNull()
+                        ? json.get("name").getAsString()
+                        : normalized;
+                put(resolved, resolvedName);
+                return resolved;
+            } catch (Exception ignored) {
+                return null;
+            }
+        });
     }
 
     public static void clear() {
         cache.clear();
+        usernameToUuid.clear();
     }
 }
