@@ -28,6 +28,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -52,6 +53,8 @@ public class UpdateManager implements NotificationAccessor {
     private volatile String sessionIgnoredTag;
     private volatile String statusLine = "Idle";
     private volatile ReleaseCandidate pendingRelease;
+    private volatile PendingInstall pendingInstall;
+    private final AtomicBoolean shutdownHookRegistered = new AtomicBoolean(false);
 
     public static UpdateManager getInstance() {
         if (instance == null) {
@@ -196,13 +199,10 @@ public class UpdateManager implements NotificationAccessor {
                         throw new IllegalStateException("GitHub API returned " + response.statusCode());
                     }
                     JsonObject root = gson.fromJson(response.body(), JsonObject.class);
-                    if (root == null) {
-                        return null;
-                    }
 
                     String tagName = getString(root, "tag_name");
                     if (tagName == null || !STRICT_TAG_PATTERN.matcher(tagName).matches()) {
-                        return null;
+                        throw new IllegalStateException("Release has invalid tag name: " + tagName);
                     }
 
                     String releasePage = getString(root, "html_url");
@@ -269,7 +269,11 @@ public class UpdateManager implements NotificationAccessor {
             Path modsDir = FabricLoader.getInstance().getGameDir().resolve("mods");
             Files.createDirectories(modsDir);
 
-            Path tempJar = modsDir.resolve(release.jarAsset().name() + ".download");
+            Path updatesDir = FabricLoader.getInstance().getGameDir().resolve("updates");
+            Files.createDirectories(updatesDir);
+
+            Path tempJar = updatesDir.resolve(release.jarAsset().name() + ".download");
+            Path pendingJar = updatesDir.resolve(release.jarAsset().name() + ".pending");
             Path finalJar = modsDir.resolve(release.jarAsset().name());
 
             downloadToFile(release.jarAsset().downloadUrl(), tempJar);
@@ -279,6 +283,20 @@ public class UpdateManager implements NotificationAccessor {
             if (!expectedChecksum.equalsIgnoreCase(actualChecksum)) {
                 Files.deleteIfExists(tempJar);
                 throw new IllegalStateException("Checksum mismatch for downloaded update.");
+            }
+
+            if (isWindows()) {
+                moveAtomically(tempJar, pendingJar);
+                pendingInstall = new PendingInstall(pendingJar, finalJar, modsDir, release.tagName());
+                registerShutdownHookIfNeeded();
+                pendingRelease = null;
+                statusLine = "Downloaded " + release.tagName() + ". It will install on exit.";
+                notify("Downloaded " + release.tagName() + ". It will install when Minecraft closes.");
+
+                if (exitAfterInstall) {
+                    Minecraft.getInstance().execute(() -> Minecraft.getInstance().stop());
+                }
+                return;
             }
 
             deleteExistingSequoiaJars(modsDir);
@@ -294,6 +312,100 @@ public class UpdateManager implements NotificationAccessor {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private void registerShutdownHookIfNeeded() {
+        if (!shutdownHookRegistered.compareAndSet(false, true)) {
+            return;
+        }
+        Runtime.getRuntime().addShutdownHook(new Thread(this::applyPendingInstallOnShutdown, "seq-update-shutdown"));
+    }
+
+    private void applyPendingInstallOnShutdown() {
+        PendingInstall install = pendingInstall;
+        if (install == null || !Files.exists(install.pendingJar())) {
+            return;
+        }
+
+        try {
+            if (isWindows()) {
+                launchWindowsHelper(install);
+                return;
+            }
+
+            deleteExistingSequoiaJars(install.modsDir());
+            moveAtomically(install.pendingJar(), install.finalJar());
+            SeqClient.LOGGER.info("Applied pending update {} on shutdown", install.tagName());
+        } catch (Exception e) {
+            SeqClient.LOGGER.warn("Failed to apply pending shutdown update", e);
+        }
+    }
+
+    private void launchWindowsHelper(PendingInstall install) {
+        try {
+            Path updatesDir = install.pendingJar().getParent();
+            if (updatesDir == null) {
+                throw new IllegalStateException("Missing updates directory for pending install.");
+            }
+
+            Path sourceJar = resolveCurrentModJarPath();
+            Path helperJar = updatesDir.resolve("seq-update-helper.jar");
+            Files.copy(sourceJar, helperJar, StandardCopyOption.REPLACE_EXISTING);
+
+            String javaExe = resolveJavaExecutable();
+            new ProcessBuilder(
+                    javaExe,
+                    "-cp",
+                    helperJar.toString(),
+                    UpdateApplier.class.getName(),
+                    install.modsDir().toString(),
+                    install.pendingJar().toString(),
+                    install.finalJar().toString(),
+                    helperJar.toString())
+                    .start();
+
+            SeqClient.LOGGER.info("Launched Windows update helper for {}", install.tagName());
+        } catch (Exception e) {
+            SeqClient.LOGGER.warn("Failed to launch Windows update helper", e);
+        }
+    }
+
+    private Path resolveCurrentModJarPath() {
+        try {
+            URI location = UpdateManager.class
+                    .getProtectionDomain()
+                    .getCodeSource()
+                    .getLocation()
+                    .toURI();
+            Path path = Path.of(location);
+            if (!Files.isRegularFile(path)) {
+                throw new IllegalStateException(
+                        "Updater helper requires a packaged mod jar (not a development classes directory).");
+            }
+            return path;
+        } catch (Exception e) {
+            throw new IllegalStateException("Unable to resolve updater jar location.", e);
+        }
+    }
+
+    private String resolveJavaExecutable() {
+        String javaHome = System.getProperty("java.home");
+        if (javaHome != null && !javaHome.isBlank()) {
+            Path javaExe = Path.of(javaHome, "bin", "java.exe");
+            if (Files.exists(javaExe)) {
+                return javaExe.toString();
+            }
+            Path javaBin = Path.of(javaHome, "bin", "java");
+            if (Files.exists(javaBin)) {
+                return javaBin.toString();
+            }
+        }
+        return "java";
+    }
+
+    private boolean isWindows() {
+        String osName = System.getProperty("os.name", "").toLowerCase();
+        return osName.contains("win");
     }
 
     private void downloadToFile(String url, Path targetFile) throws IOException, InterruptedException {
@@ -431,5 +543,8 @@ public class UpdateManager implements NotificationAccessor {
     }
 
     public record ReleaseAsset(String name, String downloadUrl) {
+    }
+
+    private record PendingInstall(Path pendingJar, Path finalJar, Path modsDir, String tagName) {
     }
 }
