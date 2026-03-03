@@ -52,8 +52,13 @@ public class PartyFinderManager implements NotificationAccessor {
     private volatile String latestPartyError;
 
     public PartyFinderManager() {
+        SeqClient.LOGGER.info("[PartyFinderWS] Registering party finder websocket handlers");
         // Register for real-time WS updates
         ConnectionManager.onPartyFinderUpdate(update -> {
+            SeqClient.LOGGER.info(
+                    "[PartyFinderWS] Received update callback action={} hasListingJson={}",
+                    update.action(),
+                    update.listingJson() != null);
             Listing listing = GSON.fromJson(
                     update.listingJson(),
                     Listing.class);
@@ -61,6 +66,12 @@ public class PartyFinderManager implements NotificationAccessor {
         });
 
         ConnectionManager.onPartyFinderInvite(invite -> {
+            SeqClient.LOGGER.info(
+                    "[PartyFinderWS] Received invite callback listingId={} inviterUUID={} tokenPresent={} hasListingJson={}",
+                    invite.listingId(),
+                    invite.inviterUUID(),
+                    invite.inviteToken() != null && !invite.inviteToken().isBlank(),
+                    invite.listingJson() != null);
             Listing listing = null;
             if (invite.listingJson() != null) {
                 listing = GSON.fromJson(invite.listingJson(), Listing.class);
@@ -69,7 +80,6 @@ public class PartyFinderManager implements NotificationAccessor {
                     invite.listingId(),
                     invite.inviterUUID(),
                     invite.inviteToken(),
-                    invite.preferredRole(),
                     listing);
         });
     }
@@ -353,6 +363,16 @@ public class PartyFinderManager implements NotificationAccessor {
     // ══════════════════════════════════════════════════════════════
 
     public void handlePartyFinderUpdate(String action, Listing listing) {
+        String myUUID = getLocalPlayerUUID();
+        SeqClient.LOGGER.info(
+                "[PartyFinderWS] handlePartyFinderUpdate action={} listingId={} myUUID={} containsMe={} reservedForMe={} reservedSlotCount={}",
+                action,
+                listing != null ? listing.id() : -1,
+                myUUID,
+                listingContainsPlayer(listing, myUUID),
+                listingHasReservedSlotForPlayer(listing, myUUID),
+                listing != null ? listing.reservedSlotCount() : -1);
+
         switch (action) {
             case "CREATED" -> {
                 upsertListing(listing, true);
@@ -386,9 +406,15 @@ public class PartyFinderManager implements NotificationAccessor {
             long listingId,
             String inviterUUID,
             String inviteToken,
-            String preferredRole,
             Listing listing) {
+        SeqClient.LOGGER.info(
+                "[PartyFinderWS] handlePartyFinderInvite listingId={} inviterUUID={} tokenPresent={} hasListing={}",
+                listingId,
+                inviterUUID,
+                inviteToken != null && !inviteToken.isBlank(),
+                listing != null);
         if (listing != null) {
+            SeqClient.LOGGER.info("[PartyFinderWS] Upserting invite listing {} from websocket payload", listing.id());
             upsertListing(listing, true);
             listingsVersion++;
             refreshCurrentListing();
@@ -398,48 +424,45 @@ public class PartyFinderManager implements NotificationAccessor {
         if (inviterName == null || inviterName.isBlank() || "Loading...".equals(inviterName)) {
             inviterName = "a player";
         }
-
-        String roleSuffix = "";
-        if (preferredRole != null && !preferredRole.isBlank()) {
-            String displayRole = formatRoleForInvite(preferredRole);
-            roleSuffix = " (preferred role: " + displayRole + ")";
-        }
+        SeqClient.LOGGER.info("[PartyFinderWS] Resolved inviter name='{}' for uuid={}", inviterName, inviterUUID);
 
         if (inviteToken == null || inviteToken.isBlank()) {
-            notify("Party Finder invite from " + inviterName + roleSuffix + ".");
+            SeqClient.LOGGER.info("[PartyFinderWS] Invite token missing; sending plain notification for listing {}", listingId);
+            notify("Party Finder invite from " + inviterName + ".");
         } else {
-            PartyRole joinRole = mapDisplayRole(preferredRole);
-            if (joinRole == null) {
-                joinRole = PartyRole.DPS;
-            }
+            SeqClient.LOGGER.info("[PartyFinderWS] Invite token present; sending clickable invite notification for listing {}", listingId);
             notifyInviteWithJoinAction(
-                    "Party Finder invite from " + inviterName + roleSuffix + ".",
+                    "Party Finder invite from " + inviterName + ".",
                     listingId,
-                    inviteToken,
-                    joinRole);
+                    inviteToken);
         }
 
         SeqClient.LOGGER.info(
-                "Received party_finder_invite listingId={} inviterUUID={} preferredRole={} tokenPresent={}",
+                "Received party_finder_invite listingId={} inviterUUID={} tokenPresent={}",
                 listingId,
                 inviterUUID,
-                preferredRole,
                 inviteToken != null && !inviteToken.isBlank());
     }
 
     private void notifyInviteWithJoinAction(
             String message,
             long listingId,
-            String inviteToken,
-            PartyRole role) {
+            String inviteToken) {
+        SeqClient.LOGGER.info(
+                "[PartyFinderWS] Queueing clickable invite chat message listingId={} tokenLength={}",
+                listingId,
+                inviteToken != null ? inviteToken.length() : 0);
         SeqClient.mc.execute(() -> {
             if (SeqClient.mc.player == null) {
+                SeqClient.LOGGER.warn(
+                        "[PartyFinderWS] Skipped invite chat message listingId={} because mc.player is null",
+                        listingId);
                 return;
             }
 
-                String joinCommand = "/seq internalinvite join " + listingId + " "
-                    + quoteForCommand(inviteToken) + " " + role.name();
-                String denyCommand = "/seq internalinvite deny " + listingId;
+            String joinCommand = "/seq internalinvite join " + listingId + " "
+                    + quoteForCommand(inviteToken);
+            String denyCommand = "/seq internalinvite deny " + listingId;
 
             MutableComponent fullMessage = Component.literal(PREFIX + message + " ")
                     .append(Component.literal("[Join]")
@@ -454,6 +477,12 @@ public class PartyFinderManager implements NotificationAccessor {
                             .withBold(true)
                             .withClickEvent(new ClickEvent.RunCommand(denyCommand))));
 
+            SeqClient.LOGGER.info(
+                    "[PartyFinderWS] Displaying invite chat message listingId={} player={} joinCommand={} denyCommand={}",
+                    listingId,
+                    SeqClient.mc.player.getName().getString(),
+                    joinCommand,
+                    denyCommand);
             SeqClient.mc.player.displayClientMessage(fullMessage, false);
         });
     }
@@ -628,6 +657,10 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         String normalizedUsername = username.trim();
+        SeqClient.LOGGER.info(
+            "[PartyFinderWS] createInvite requested listingId={} username='{}'",
+            currentListing != null ? currentListing.id() : -1,
+            normalizedUsername);
         if (!normalizedUsername.matches("[A-Za-z0-9_]{3,16}")) {
             pushUiError("Enter a valid Minecraft username.");
             return;
@@ -644,6 +677,10 @@ public class PartyFinderManager implements NotificationAccessor {
 
         PlayerNameCache.resolveUUID(normalizedUsername)
                 .thenCompose(resolvedUUID -> {
+                    SeqClient.LOGGER.info(
+                            "[PartyFinderWS] createInvite resolved username='{}' rawUUID='{}'",
+                            normalizedUsername,
+                            resolvedUUID);
                     if (resolvedUUID == null || resolvedUUID.isBlank()) {
                         pushUiError("Unable to find that player UUID.");
                         return CompletableFuture.completedFuture(false);
@@ -659,19 +696,31 @@ public class PartyFinderManager implements NotificationAccessor {
                     }
 
                     String myUUID = getLocalPlayerUUID();
+                    SeqClient.LOGGER.info(
+                            "[PartyFinderWS] createInvite normalized targetUUID={} myUUID={} listingId={}",
+                            targetUUID,
+                            myUUID,
+                            currentListing != null ? currentListing.id() : -1);
                     if (myUUID != null && myUUID.equalsIgnoreCase(targetUUID.toString())) {
                         pushUiError("You cannot invite yourself.");
                         return CompletableFuture.completedFuture(false);
                     }
 
+                    SeqClient.LOGGER.info(
+                            "[PartyFinderWS] createInvite calling API listingId={} targetUUID={}",
+                            currentListing.id(),
+                            targetUUID);
                     return ApiClient.getInstance()
                             .createInvite(currentListing.id(), targetUUID)
                             .thenApply(ignored -> true);
                 })
                 .thenAccept(inviteCreated -> {
                     if (Boolean.TRUE.equals(inviteCreated)) {
+                        SeqClient.LOGGER.info("[PartyFinderWS] createInvite API success; reloading listings");
                         notify("Party Finder invite created.");
                         loadListings(null, null);
+                    } else {
+                        SeqClient.LOGGER.warn("[PartyFinderWS] createInvite did not complete successfully");
                     }
                 })
                 .exceptionally(e -> {
@@ -1082,6 +1131,28 @@ public class PartyFinderManager implements NotificationAccessor {
         return false;
     }
 
+    private static boolean listingHasReservedSlotForPlayer(Listing listing, String myUUID) {
+        if (listing == null || myUUID == null || myUUID.isBlank()) {
+            return false;
+        }
+
+        List<Member> reservedSlots = listing.reservedSlots();
+        if (reservedSlots == null || reservedSlots.isEmpty()) {
+            return false;
+        }
+
+        for (Member reserved : reservedSlots) {
+            if (reserved == null) {
+                continue;
+            }
+            if (uuidEquals(myUUID, reserved.playerUUID())) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static boolean uuidEquals(String left, String right) {
         String leftNorm = normalizeUuidLike(left);
         String rightNorm = normalizeUuidLike(right);
@@ -1129,15 +1200,6 @@ public class PartyFinderManager implements NotificationAccessor {
             case "HEALER" -> PartyRole.HEALER;
             case "TANK" -> PartyRole.TANK;
             default -> null;
-        };
-    }
-
-    private static String formatRoleForInvite(String role) {
-        return switch (role.toUpperCase()) {
-            case "DPS" -> "DPS";
-            case "HEALER" -> "Healer";
-            case "TANK" -> "Tank";
-            default -> role;
         };
     }
 

@@ -49,7 +49,9 @@ public class PlayerNameCache {
                     ? localPlayer.getName().getString()
                     : "Unknown";
             cache.put(uuid, name);
-            usernameToUuid.put(name.toLowerCase(), uuid);
+            if (isCanonicalOnlinePlayerUuid(uuid)) {
+                usernameToUuid.put(name.toLowerCase(), uuid);
+            }
             return name;
         }
 
@@ -71,7 +73,10 @@ public class PlayerNameCache {
                 if (info != null && info.getProfile().name() != null) {
                     String name = info.getProfile().name();
                     cache.put(uuid, name);
-                    usernameToUuid.put(name.toLowerCase(), formatUUID(uuid));
+                    String formattedTabUuid = formatUUID(uuid);
+                    if (isCanonicalOnlinePlayerUuid(formattedTabUuid)) {
+                        usernameToUuid.put(name.toLowerCase(), formattedTabUuid);
+                    }
                     return name;
                 }
             } catch (IllegalArgumentException ignored) {
@@ -102,7 +107,9 @@ public class PlayerNameCache {
                             String name = json.get("name").getAsString();
                             String formatted = formatUUID(uuid);
                             cache.put(formatted, name);
-                            usernameToUuid.put(name.toLowerCase(), formatted);
+                            if (isCanonicalOnlinePlayerUuid(formatted)) {
+                                usernameToUuid.put(name.toLowerCase(), formatted);
+                            }
                         }
                     }
                 } catch (Exception e) {
@@ -136,7 +143,9 @@ public class PlayerNameCache {
         if (uuid != null && username != null) {
             String formatted = formatUUID(uuid);
             cache.put(formatted, username);
-            usernameToUuid.put(username.toLowerCase(), formatted);
+            if (isCanonicalOnlinePlayerUuid(formatted)) {
+                usernameToUuid.put(username.toLowerCase(), formatted);
+            }
         }
     }
 
@@ -154,7 +163,11 @@ public class PlayerNameCache {
 
         String cachedUuid = usernameToUuid.get(key);
         if (cachedUuid != null && !cachedUuid.isBlank()) {
-            return CompletableFuture.completedFuture(formatUUID(cachedUuid));
+            String formattedCached = formatUUID(cachedUuid);
+            if (isCanonicalOnlinePlayerUuid(formattedCached)) {
+                return CompletableFuture.completedFuture(formattedCached);
+            }
+            usernameToUuid.remove(key);
         }
 
         var mc = Minecraft.getInstance();
@@ -217,6 +230,20 @@ public class PlayerNameCache {
                 return null;
             }
         });
+    }
+
+    private static boolean isCanonicalOnlinePlayerUuid(String uuid) {
+        String formatted = formatUUID(uuid);
+        if (formatted == null || formatted.isBlank()) {
+            return false;
+        }
+
+        try {
+            UUID parsed = UUID.fromString(formatted);
+            return parsed.version() == 4 && parsed.variant() == 2;
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
     }
 
     public static void clear() {

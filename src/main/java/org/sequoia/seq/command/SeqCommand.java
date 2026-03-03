@@ -113,23 +113,7 @@ public class SeqCommand {
                                                                                                                                 "listingId"),
                                                                                                                 StringArgumentType
                                                                                                                                 .getString(ctx,
-                                                                                                                                                "inviteToken"),
-                                                                                                                null))
-                                                                                                .then(ClientCommandManager
-                                                                                                                .argument("role",
-                                                                                                                                StringArgumentType
-                                                                                                                                                .word())
-                                                                                                                .executes(ctx -> runInternalJoinInvite(
-                                                                                                                                ctx.getSource(),
-                                                                                                                                LongArgumentType.getLong(
-                                                                                                                                                ctx,
-                                                                                                                                                "listingId"),
-                                                                                                                                StringArgumentType
-                                                                                                                                                .getString(ctx,
-                                                                                                                                                                "inviteToken"),
-                                                                                                                                StringArgumentType
-                                                                                                                                                .getString(ctx,
-                                                                                                                                                                "role")))))))
+                                                                                                                                                "inviteToken"))))))
                                                 .then(ClientCommandManager.literal("deny")
                                                                 .then(ClientCommandManager.argument("listingId",
                                                                                 LongArgumentType.longArg(1))
@@ -145,25 +129,16 @@ public class SeqCommand {
         public static int runInternalJoinInvite(
                         FabricClientCommandSource source,
                         long listingId,
-                        String inviteToken,
-                        String roleName) {
+                        String inviteToken) {
                 if (inviteToken == null || inviteToken.isBlank()) {
                         source.sendFeedback(NotificationAccessor.prefixed("Invite token is required."));
                         return 0;
                 }
 
-                PartyRole role = PartyRole.DPS;
-                if (roleName != null && !roleName.isBlank()) {
-                        try {
-                                role = PartyRole.valueOf(roleName.trim().toUpperCase());
-                        } catch (IllegalArgumentException ignored) {
-                                source.sendFeedback(NotificationAccessor
-                                                .prefixed("Invalid role. Use DPS, HEALER, or TANK."));
-                                return 0;
-                        }
-                }
-
-                SeqClient.getPartyFinderManager().joinPartyWithInviteToken(listingId, role, inviteToken);
+                SeqClient.getPartyFinderManager().joinPartyWithInviteToken(
+                                listingId,
+                                PartyRole.DPS,
+                                inviteToken);
                 source.sendFeedback(NotificationAccessor.prefixed("Joining party invite..."));
                 return 1;
         }
