@@ -1452,6 +1452,34 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 nvgRestore(nvg);
             }
         }
+
+        if (count >= 2) {
+            var splitColor = NVGContext.nvgColor(DIVIDER_COLOR);
+            nvgStrokeColor(nvg, splitColor);
+            nvgStrokeWidth(nvg, 1.25f);
+
+            if (count == 2) {
+                float splitAngle = startAngle;
+                float dx = radius * (float) Math.cos(splitAngle);
+                float dy = radius * (float) Math.sin(splitAngle);
+                nvgBeginPath(nvg);
+                nvgMoveTo(nvg, cx - dx, cy - dy);
+                nvgLineTo(nvg, cx + dx, cy + dy);
+                nvgStroke(nvg);
+            } else {
+                for (int i = 0; i < count; i++) {
+                    float splitAngle = startAngle + i * anglePerSlice;
+                    float edgeX = cx + radius * (float) Math.cos(splitAngle);
+                    float edgeY = cy + radius * (float) Math.sin(splitAngle);
+                    nvgBeginPath(nvg);
+                    nvgMoveTo(nvg, cx, cy);
+                    nvgLineTo(nvg, edgeX, edgeY);
+                    nvgStroke(nvg);
+                }
+            }
+
+            splitColor.free();
+        }
     }
 
     // ── Create/Manage Party Modal ──
