@@ -10,6 +10,8 @@ import org.sequoia.seq.network.ConnectionManager;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.sequoia.seq.client.SeqClient.mc;
+
 /**
  * Bridges Wynncraft guild chat ↔ Discord via the Sequoia backend.
  * <p>
@@ -41,6 +43,10 @@ public class ChatManager {
             "(?:'s real name is\\s+|Real Username:\\s*)([a-zA-Z0-9_]{3,16})",
             Pattern.CASE_INSENSITIVE);
 
+    private static final Pattern WYNNCRAFT_WELCOME_PATTERN = Pattern.compile("§6§lWelcome to Wynncraft!");
+
+    private static boolean firstConnect = true;
+
     public ChatManager() {
         registerIncomingHook();
     }
@@ -53,6 +59,14 @@ public class ChatManager {
      * the message. This ensures multiline guild messages are never missed.
      */
     public static void onSystemChat(Component message) {
+        // Bumliotech goon parser to auto goon.
+        Matcher welcomeMatcher = WYNNCRAFT_WELCOME_PATTERN.matcher(message.getString());
+        if (SeqClient.getAutoConnectSetting().getValue() && welcomeMatcher.find() && mc.player != null && !ConnectionManager.getInstance().isOpen() && firstConnect) {
+            firstConnect = !firstConnect;
+            mc.execute(() -> mc.player.connection.sendCommand("seq connect"));
+        }
+
+
         // Guild chat uses aqua color (§b / 0x55FFFF) per Wynntils' RecipientType.GUILD.
         // This cleanly rejects DMs, party, shout, territory, and other message types
         // that share the \uDAFF\uDFFC icon prefix but use different colors.
@@ -152,10 +166,10 @@ public class ChatManager {
             if (!SeqClient.getShowDiscordChatSetting().getValue())
                 return;
 
-            SeqClient.mc.execute(() -> {
+            mc.execute(() -> {
                 String formatted = "§3[§bDiscord§3] §f" + msg.username() + "§7: §r" + msg.message();
-                if (SeqClient.mc.player != null) {
-                    SeqClient.mc.player.displayClientMessage(Component.literal(formatted), false);
+                if (mc.player != null) {
+                    mc.player.displayClientMessage(Component.literal(formatted), false);
                 }
 
                 if (SeqClient.getEventBus() != null) {
