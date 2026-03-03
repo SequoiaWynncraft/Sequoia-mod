@@ -34,7 +34,7 @@ public class EnumWidget extends SettingWidget<Setting.EnumSetting<?>> {
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         var labelColor = NVGContext.nvgColor(LABEL_COLOR);
         nvgFillColor(nvg, labelColor);
-        nvgText(nvg, x + 8, y + height / 2f, setting.getName());
+        nvgText(nvg, x + 8, y + height / 2f, getDisplayName());
         labelColor.free();
 
         // Button
@@ -52,10 +52,11 @@ public class EnumWidget extends SettingWidget<Setting.EnumSetting<?>> {
         valColor.free();
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
+    @SuppressWarnings({ "unchecked", "rawtypes" })
     @Override
     public boolean mouseClicked(float mouseX, float mouseY, int button) {
-        if (button != 0) return false;
+        if (button != 0)
+            return false;
 
         float btnX = x + width - BUTTON_WIDTH - 8;
         float btnY = y + (height - BUTTON_HEIGHT) / 2f;

@@ -35,7 +35,7 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         var labelColor = NVGContext.nvgColor(LABEL_COLOR);
         nvgFillColor(nvg, labelColor);
-        nvgText(nvg, x + 8, y + height / 2f, setting.getName());
+        nvgText(nvg, x + 8, y + height / 2f, getDisplayName());
         labelColor.free();
 
         // Toggle
