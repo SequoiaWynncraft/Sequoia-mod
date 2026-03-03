@@ -29,9 +29,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     // ── Raid types & Party tags ──
     private static final String[] RAID_TYPES = {
             "Nest of the Grootslangs",
-            "The Nameless Anomaly",
-            "The Canyon Colossus",
             "Nexus of Light",
+            "The Canyon Colossus",
+            "The Nameless Anomaly",
             "Prelude to Annihilation",
     };
     private static final String[] PARTY_TAGS = { "Chill", "Grind" };

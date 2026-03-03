@@ -8,6 +8,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 import lombok.Getter;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.events.PartyFinderUpdateEvent;
@@ -64,6 +68,7 @@ public class PartyFinderManager implements NotificationAccessor {
             handlePartyFinderInvite(
                     invite.listingId(),
                     invite.inviterUUID(),
+                    invite.inviteToken(),
                     invite.preferredRole(),
                     listing);
         });
@@ -90,22 +95,15 @@ public class PartyFinderManager implements NotificationAccessor {
     public CompletableFuture<List<Listing>> loadListings(
             Long activityId,
             PartyRegion region) {
-        SeqClient.LOGGER.info(
-                "[PartyFinderDebug] loadListings request activityId={} region={}",
-                activityId,
-                region);
         return ApiClient.getInstance()
                 .getListings(activityId, region)
                 .thenApply(result -> {
-                    logListingsStatusSummary("loadListings raw", result);
                     List<Listing> deduped = deduplicateById(result);
-                    logListingsStatusSummary("loadListings deduped", deduped);
                     synchronized (listingsLock) {
                         listings.clear();
                         listings.addAll(deduped);
                     }
                     refreshCurrentListing();
-                    logListingSnapshot("loadListings currentListing", currentListing);
                     listingsVersion++;
                     return deduped;
                 })
@@ -140,6 +138,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     replaceListing(listing);
                     currentListing = listing;
                     listingsVersion++;
+                    publishLocalClassUpdate();
                     return listing;
                 })
                 .exceptionally(e -> {
@@ -157,6 +156,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     replaceListing(listing);
                     currentListing = listing;
                     listingsVersion++;
+                    publishLocalClassUpdate();
                     return listing;
                 })
                 .exceptionally(e -> {
@@ -165,6 +165,34 @@ public class PartyFinderManager implements NotificationAccessor {
                     notify(errorMessage);
                     return null;
                 });
+    }
+
+    public CompletableFuture<Listing> joinPartyWithInviteToken(
+            long listingId,
+            PartyRole role,
+            String inviteToken) {
+        return ApiClient.getInstance()
+                .joinListing(listingId, role, inviteToken)
+                .thenApply(listing -> {
+                    replaceListing(listing);
+                    currentListing = listing;
+                    listingsVersion++;
+                    publishLocalClassUpdate();
+                    return listing;
+                })
+                .exceptionally(e -> {
+                    String errorMessage = extractUserFriendlyApiError(e, "Unable to join party");
+                    SeqClient.LOGGER.warn("Failed to join party with invite token: {}", errorMessage);
+                    notify(errorMessage);
+                    return null;
+                });
+    }
+
+    private void publishLocalClassUpdate() {
+        if (!ConnectionManager.isConnected()) {
+            return;
+        }
+        ConnectionManager.getInstance().sendLocalPartyClassUpdate();
     }
 
     public CompletableFuture<Listing> leaveParty(long listingId) {
@@ -183,11 +211,9 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<Listing> closeParty(long listingId) {
-        SeqClient.LOGGER.info("[PartyFinderDebug] closeParty request listingId={}", listingId);
         return ApiClient.getInstance()
                 .closeListing(listingId)
                 .thenApply(listing -> {
-                    logListingSnapshot("closeParty response", listing);
                     replaceListing(listing);
                     currentListing = listing;
                     listingsVersion++;
@@ -200,11 +226,9 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<Listing> reopenParty(long listingId) {
-        SeqClient.LOGGER.info("[PartyFinderDebug] reopenParty request listingId={}", listingId);
         return ApiClient.getInstance()
                 .reopenListing(listingId)
                 .thenApply(listing -> {
-                    logListingSnapshot("reopenParty response", listing);
                     replaceListing(listing);
                     currentListing = listing;
                     listingsVersion++;
@@ -329,7 +353,6 @@ public class PartyFinderManager implements NotificationAccessor {
     // ══════════════════════════════════════════════════════════════
 
     public void handlePartyFinderUpdate(String action, Listing listing) {
-        logListingSnapshot("ws update action=" + action, listing);
         switch (action) {
             case "CREATED" -> {
                 upsertListing(listing, true);
@@ -351,10 +374,6 @@ public class PartyFinderManager implements NotificationAccessor {
             }
         }
         refreshCurrentListing();
-        synchronized (listingsLock) {
-            logListingsStatusSummary("post-ws-update", new ArrayList<>(listings));
-        }
-        logListingSnapshot("post-ws-update currentListing", currentListing);
 
         // Fire event for the UI
         if (SeqClient.getEventBus() != null) {
@@ -366,6 +385,7 @@ public class PartyFinderManager implements NotificationAccessor {
     public void handlePartyFinderInvite(
             long listingId,
             String inviterUUID,
+            String inviteToken,
             String preferredRole,
             Listing listing) {
         if (listing != null) {
@@ -385,13 +405,66 @@ public class PartyFinderManager implements NotificationAccessor {
             roleSuffix = " (preferred role: " + displayRole + ")";
         }
 
-        notify("Party Finder invite from " + inviterName + roleSuffix + ".");
+        if (inviteToken == null || inviteToken.isBlank()) {
+            notify("Party Finder invite from " + inviterName + roleSuffix + ".");
+        } else {
+            PartyRole joinRole = mapDisplayRole(preferredRole);
+            if (joinRole == null) {
+                joinRole = PartyRole.DPS;
+            }
+            notifyInviteWithJoinAction(
+                    "Party Finder invite from " + inviterName + roleSuffix + ".",
+                    listingId,
+                    inviteToken,
+                    joinRole);
+        }
 
         SeqClient.LOGGER.info(
-                "Received party_finder_invite listingId={} inviterUUID={} preferredRole={}",
+                "Received party_finder_invite listingId={} inviterUUID={} preferredRole={} tokenPresent={}",
                 listingId,
                 inviterUUID,
-                preferredRole);
+                preferredRole,
+                inviteToken != null && !inviteToken.isBlank());
+    }
+
+    private void notifyInviteWithJoinAction(
+            String message,
+            long listingId,
+            String inviteToken,
+            PartyRole role) {
+        SeqClient.mc.execute(() -> {
+            if (SeqClient.mc.player == null) {
+                return;
+            }
+
+                String joinCommand = "/seq internalinvite join " + listingId + " "
+                    + quoteForCommand(inviteToken) + " " + role.name();
+                String denyCommand = "/seq internalinvite deny " + listingId;
+
+            MutableComponent fullMessage = Component.literal(PREFIX + message + " ")
+                    .append(Component.literal("[Join]")
+                            .withStyle(style -> style
+                                    .withColor(ChatFormatting.GREEN)
+                                    .withBold(true)
+                            .withClickEvent(new ClickEvent.RunCommand(joinCommand))))
+                    .append(Component.literal(" "))
+                    .append(Component.literal("[Deny]")
+                        .withStyle(style -> style
+                            .withColor(ChatFormatting.RED)
+                            .withBold(true)
+                            .withClickEvent(new ClickEvent.RunCommand(denyCommand))));
+
+            SeqClient.mc.player.displayClientMessage(fullMessage, false);
+        });
+    }
+
+    private static String quoteForCommand(String value) {
+        if (value == null) {
+            return "\"\"";
+        }
+        return "\"" + value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"") + "\"";
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -742,18 +815,10 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         PartyRegion region = currentListing.region() != null ? currentListing.region() : PartyRegion.NA;
-        SeqClient.LOGGER.info(
-            "[PartyFinderDebug] updateParty request listingId={} activityIds={} mode={} region={} reservedSlots={}",
-            currentListing.id(),
-            activityIds,
-            mode,
-            region,
-            requestedReservedSlots);
         ApiClient.getInstance()
                 .updateListing(currentListing.id(), activityIds, mode, region, currentListing.note())
                 .thenAccept(listing -> {
                     if (listing != null) {
-                logListingSnapshot("updateParty response", listing);
                         replaceListing(listing);
                         currentListing = listing;
                         listingsVersion++;
@@ -1119,50 +1184,5 @@ public class PartyFinderManager implements NotificationAccessor {
             }
         }
         return normalized.toString();
-    }
-
-    private static void logListingSnapshot(String context, Listing listing) {
-        if (listing == null) {
-            SeqClient.LOGGER.info("[PartyFinderDebug] {} listing=null", context);
-            return;
-        }
-
-        SeqClient.LOGGER.info(
-                "[PartyFinderDebug] {} id={} status={} region={} mode={} members={} reserved={} activities={}",
-                context,
-                listing.id(),
-                listing.status(),
-                listing.region(),
-                listing.mode(),
-                listing.memberCount(),
-                listing.reservedSlotCount(),
-                listing.resolvedActivities().stream().map(Activity::name).filter(Objects::nonNull).toList());
-    }
-
-    private static void logListingsStatusSummary(String context, List<Listing> listingList) {
-        if (listingList == null) {
-            SeqClient.LOGGER.info("[PartyFinderDebug] {} listings=null", context);
-            return;
-        }
-
-        Map<String, Long> byStatus = listingList.stream()
-                .filter(Objects::nonNull)
-                .collect(Collectors.groupingBy(
-                        listing -> String.valueOf(listing.status()),
-                        LinkedHashMap::new,
-                        Collectors.counting()));
-
-        List<String> closedIds = listingList.stream()
-                .filter(Objects::nonNull)
-                .filter(listing -> listing.status() == PartyStatus.CLOSED)
-                .map(listing -> Long.toString(listing.id()))
-                .toList();
-
-        SeqClient.LOGGER.info(
-                "[PartyFinderDebug] {} total={} byStatus={} closedIds={}",
-                context,
-                listingList.size(),
-                byStatus,
-                closedIds);
     }
 }

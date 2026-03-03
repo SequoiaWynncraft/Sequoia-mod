@@ -41,8 +41,10 @@ public class PartyMember {
         // Party role — display-friendly text
         this.role = formatRole(member.role());
 
-        // Wynncraft class — resolved from Wynntils for the local player
-        this.className = WynnClassCache.resolve(member.playerUUID());
+        // Wynncraft class icon key from backend class type (fallback to local
+        // resolution)
+        String backendClassIcon = WynnClassCache.toAssetKey(member.classType());
+        this.className = backendClassIcon != null ? backendClassIcon : WynnClassCache.resolve(member.playerUUID());
     }
 
     private PartyMember(Member reservedSlot) {

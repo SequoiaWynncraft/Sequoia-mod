@@ -17,6 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.model.*;
+import org.sequoia.seq.utils.WynnClassCache;
 
 /**
  * REST client for the Sequoia backend API.
@@ -133,6 +134,10 @@ public class ApiClient {
             String inviteToken) {
         JsonObject body = new JsonObject();
         body.addProperty("role", role.name());
+        WynnClassType classType = WynnClassCache.resolveLocalClassType();
+        if (classType != null) {
+            body.addProperty("classType", classType.name());
+        }
 
         String path = "/party-finder/listings/" + id + "/join";
         if (inviteToken != null && !inviteToken.isBlank()) {

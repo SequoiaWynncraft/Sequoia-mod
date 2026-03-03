@@ -3,6 +3,7 @@ package org.sequoia.seq.utils;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import org.sequoia.seq.client.SeqClient;
+import org.sequoia.seq.model.WynnClassType;
 
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -45,6 +46,34 @@ public class WynnClassCache {
             return null;
 
         return resolveFromWynntils();
+    }
+
+    public static WynnClassType resolveLocalClassType() {
+        String assetKey = resolveFromWynntils();
+        if (assetKey == null) {
+            return null;
+        }
+        return switch (assetKey) {
+            case "warrior" -> WynnClassType.WARRIOR;
+            case "archer" -> WynnClassType.ARCHER;
+            case "mage" -> WynnClassType.MAGE;
+            case "assassin" -> WynnClassType.ASSASSIN;
+            case "shaman" -> WynnClassType.SHAMAN;
+            default -> null;
+        };
+    }
+
+    public static String toAssetKey(WynnClassType classType) {
+        if (classType == null) {
+            return null;
+        }
+        return switch (classType) {
+            case WARRIOR -> "warrior";
+            case ARCHER -> "archer";
+            case MAGE -> "mage";
+            case ASSASSIN -> "assassin";
+            case SHAMAN -> "shaman";
+        };
     }
 
     private static String normalizeUuid(String uuid) {

@@ -9,6 +9,8 @@ import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
+import org.sequoia.seq.model.WynnClassType;
+import org.sequoia.seq.utils.WynnClassCache;
 
 import java.net.URI;
 import java.time.Instant;
@@ -225,6 +227,23 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         send("guild_raid_announcement", msg);
     }
 
+    public void sendPartyClassUpdate(WynnClassType classType) {
+        if (!authenticated || !isOpen() || classType == null) {
+            return;
+        }
+        JsonObject msg = new JsonObject();
+        msg.addProperty("class_type", classType.name());
+        send("party_class_update", msg);
+    }
+
+    public void sendLocalPartyClassUpdate() {
+        WynnClassType classType = WynnClassCache.resolveLocalClassType();
+        if (classType == null) {
+            return;
+        }
+        sendPartyClassUpdate(classType);
+    }
+
     // ── Incoming message handler ──
 
     private void handleMessage(String message) {
@@ -247,6 +266,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     connectedSince = Instant.now();
                     autoReconnect = true;
                     notify("Successfully linked to Discord: " + discordUser);
+                    sendLocalPartyClassUpdate();
                 }
                 case "authenticated" -> {
                     String discordUser = json.get("discord_username").getAsString();
@@ -254,6 +274,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     connectedSince = Instant.now();
                     autoReconnect = true;
                     notify("Connected as " + discordUser);
+                    sendLocalPartyClassUpdate();
                 }
                 case "connected_users" -> {
                     List<String> users = new ArrayList<>();
@@ -281,6 +302,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     if (partyFinderInviteHandler != null) {
                         long listingId = json.get("listing_id").getAsLong();
                         String inviterUUID = json.get("inviter_uuid").getAsString();
+                        String inviteToken = null;
+                        if (json.has("invite_token") && !json.get("invite_token").isJsonNull()) {
+                            inviteToken = json.get("invite_token").getAsString();
+                        }
 
                         String preferredRole = null;
                         if (json.has("preferred_role") && !json.get("preferred_role").isJsonNull()) {
@@ -296,6 +321,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                 new PartyFinderInviteMessage(
                                         listingId,
                                         inviterUUID,
+                                        inviteToken,
                                         preferredRole,
                                         listingJson));
                     }
@@ -366,6 +392,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     public record PartyFinderInviteMessage(
             long listingId,
             String inviterUUID,
+            String inviteToken,
             String preferredRole,
             JsonObject listingJson) {
     }
