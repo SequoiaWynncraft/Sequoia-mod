@@ -13,6 +13,7 @@ import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.model.PartyRole;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.ui.PartyFinderScreen;
+import org.sequoia.seq.update.UpdateManager;
 
 public class SeqCommand {
 
