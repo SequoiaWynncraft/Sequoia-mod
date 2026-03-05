@@ -67,11 +67,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     @Override
     public void connect() {
         SeqClient.LOGGER.info(
-                "[WebSocket] connect() called open={} authenticated={} autoReconnect={} url={}",
+                "[WebSocket] connect() called open={} authenticated={} autoReconnect={} configuredUrl={} clientUri={}",
                 isOpen(),
                 authenticated,
                 autoReconnect,
-                BuildConfig.WS_URL);
+                BuildConfig.WS_URL,
+                getURI());
         if (isOpen()) {
             notify("Already connected/connecting");
             return;
@@ -111,8 +112,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     @Override
     public void onOpen(ServerHandshake handshake) {
         SeqClient.LOGGER.info(
-                "[WebSocket] onOpen url={} status={} message='{}'",
+                "[WebSocket] onOpen configuredUrl={} clientUri={} status={} message='{}'",
                 BuildConfig.WS_URL,
+                getURI(),
                 handshake != null ? handshake.getHttpStatus() : -1,
                 handshake != null ? handshake.getHttpStatusMessage() : "null");
         reconnectAttempt = 0;
@@ -229,15 +231,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     public void sendGuildChat(String username, String message, String avatarUrl) {
         if (!isOpen()) {
-            SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat dropped: socket not open");
+            SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat dropped: socket not open uri={}", getURI());
             return;
         }
         if (!authenticated) {
-            SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat dropped: not authenticated");
+            SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat dropped: not authenticated uri={}", getURI());
             return;
         }
 
-        SeqClient.LOGGER.info("[ConnectionManager] Sending guild_chat username='{}' message='{}'", username, message);
+        SeqClient.LOGGER.info(
+                "[ConnectionManager] Sending guild_chat uri={} username='{}' message='{}'",
+                getURI(),
+                username,
+                message);
         JsonObject msg = new JsonObject();
         msg.addProperty("username", username);
         msg.addProperty("message", message);

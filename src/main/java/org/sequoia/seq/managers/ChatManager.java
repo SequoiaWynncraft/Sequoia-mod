@@ -7,6 +7,10 @@ import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.events.DiscordChatEvent;
 import org.sequoia.seq.network.ConnectionManager;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -42,6 +46,9 @@ public class ChatManager {
             // Legacy format: "Real Username: <username>"
             "(?:'s real name is\\s+|Real Username:\\s*)([a-zA-Z0-9_]{3,16})",
             Pattern.CASE_INSENSITIVE);
+    private static final Duration OUTGOING_DEDUPE_WINDOW = Duration.ofMillis(750);
+    private static volatile String lastOutgoingKey;
+    private static volatile Instant lastOutgoingAt = Instant.EPOCH;
 
     private static final Pattern WYNNCRAFT_WELCOME_PATTERN = Pattern.compile("§6§lWelcome to Wynncraft!");
 
@@ -81,6 +88,20 @@ public class ChatManager {
         if (parsed == null)
             return;
 
+        if (isDuplicateOutgoing(parsed.username(), parsed.message())) {
+            SeqClient.LOGGER.debug(
+                    "[GuildChat] Duplicate outgoing guild chat ignored username='{}' content='{}'",
+                    parsed.username(),
+                    parsed.message());
+            return;
+        }
+
+        SeqClient.LOGGER.info(
+                "[GuildChat] Forwarding parsed guild chat username='{}' content='{}' avatar='{}'",
+                parsed.username(),
+                parsed.message(),
+                parsed.avatarUrl());
+
         ConnectionManager.getInstance().sendGuildChat(parsed.username(), parsed.message(), parsed.avatarUrl());
     }
 
@@ -112,12 +133,59 @@ public class ChatManager {
 
         // Search the component tree for the real username
         String realUsername = findRealUsername(message);
+        String avatarUsername = resolveAvatarUsername(displayedName, realUsername);
+        if (avatarUsername == null) {
+            SeqClient.LOGGER.warn(
+                    "[GuildChat] Dropping guild chat: no avatar-safe username displayed='{}' real='{}'",
+                    displayedName,
+                    realUsername);
+            return null;
+        }
 
-        String avatarUrl = "https://mc-heads.net/avatar/" + (realUsername != null ? realUsername : displayedName)
+        if (!avatarUsername.equals(displayedName) && realUsername == null) {
+            SeqClient.LOGGER.debug(
+                    "[GuildChat] Using normalized fallback username='{}' from displayed='{}'",
+                    avatarUsername,
+                    displayedName);
+        }
+
+        String avatarUrl = "https://mc-heads.net/avatar/"
+                + URLEncoder.encode(avatarUsername, StandardCharsets.UTF_8).replace("+", "%20")
                 + "/64";
+        String webhookUsername = realUsername != null ? realUsername + "/" + displayedName : displayedName;
 
-        String username = realUsername != null ? realUsername + "/" + displayedName : displayedName;
-        return new ParsedMessage(username, content, avatarUrl);
+        return new ParsedMessage(webhookUsername, content, avatarUrl);
+    }
+
+    private static String resolveAvatarUsername(String displayedName, String realUsername) {
+        if (realUsername != null && realUsername.matches("[a-zA-Z0-9_]{3,16}")) {
+            return realUsername;
+        }
+        if (displayedName != null && displayedName.matches("[a-zA-Z0-9_]{3,16}")) {
+            return displayedName;
+        }
+
+        String normalized = displayedName == null ? "" : displayedName.replaceAll("[^a-zA-Z0-9_]", "");
+        if (normalized.matches("[a-zA-Z0-9_]{3,16}")) {
+            return normalized;
+        }
+
+        return null;
+    }
+
+    private static boolean isDuplicateOutgoing(String username, String message) {
+        String key = username + "\u0000" + message;
+        Instant now = Instant.now();
+
+        synchronized (ChatManager.class) {
+            if (key.equals(lastOutgoingKey)
+                    && Duration.between(lastOutgoingAt, now).compareTo(OUTGOING_DEDUPE_WINDOW) < 0) {
+                return true;
+            }
+            lastOutgoingKey = key;
+            lastOutgoingAt = now;
+            return false;
+        }
     }
 
     // Recursively search the component tree for an insertion tag
