@@ -97,12 +97,17 @@ public class ChatManager {
         }
 
         SeqClient.LOGGER.info(
-                "[GuildChat] Forwarding parsed guild chat username='{}' content='{}' avatar='{}'",
+                "[GuildChat] Forwarding parsed guild chat username='{}' nickname='{}' content='{}' avatar='{}'",
                 parsed.username(),
+                parsed.nickname(),
                 parsed.message(),
                 parsed.avatarUrl());
 
-        ConnectionManager.getInstance().sendGuildChat(parsed.username(), parsed.message(), parsed.avatarUrl());
+        ConnectionManager.getInstance().sendGuildChat(
+                parsed.username(),
+                parsed.nickname(),
+                parsed.message(),
+                parsed.avatarUrl());
     }
 
     /**
@@ -151,10 +156,23 @@ public class ChatManager {
 
         String avatarUrl = "https://mc-heads.net/avatar/"
                 + URLEncoder.encode(avatarUsername, StandardCharsets.UTF_8).replace("+", "%20")
-                + "/64";
-        String webhookUsername = realUsername != null ? realUsername + "/" + displayedName : displayedName;
+                + "/128";
+        String nickname = deriveNickname(displayedName, avatarUsername);
+        return new ParsedMessage(avatarUsername, nickname, content, avatarUrl);
+    }
 
-        return new ParsedMessage(webhookUsername, content, avatarUrl);
+    private static String deriveNickname(String displayedName, String actualUsername) {
+        if (displayedName == null) {
+            return null;
+        }
+        String trimmed = displayedName.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (actualUsername != null && trimmed.equalsIgnoreCase(actualUsername)) {
+            return null;
+        }
+        return trimmed;
     }
 
     private static String resolveAvatarUsername(String displayedName, String realUsername) {
@@ -247,6 +265,6 @@ public class ChatManager {
         });
     }
 
-    private record ParsedMessage(String username, String message, String avatarUrl) {
+    private record ParsedMessage(String username, String nickname, String message, String avatarUrl) {
     }
 }

@@ -97,7 +97,9 @@ public class PartyFinderManager implements NotificationAccessor {
                     return result;
                 })
                 .exceptionally(e -> {
-                    SeqClient.LOGGER.error("Failed to load activities", e);
+                    String message = extractUserFriendlyApiError(e, "Failed to load activities");
+                    SeqClient.LOGGER.error("Failed to load activities: {}", message, e);
+                    pushUiError(message);
                     return List.of();
                 });
     }
@@ -118,7 +120,9 @@ public class PartyFinderManager implements NotificationAccessor {
                     return deduped;
                 })
                 .exceptionally(e -> {
-                    SeqClient.LOGGER.error("Failed to load listings", e);
+                    String message = extractUserFriendlyApiError(e, "Failed to load listings");
+                    SeqClient.LOGGER.error("Failed to load listings: {}", message, e);
+                    pushUiError(message);
                     return List.of();
                 });
     }
@@ -427,10 +431,13 @@ public class PartyFinderManager implements NotificationAccessor {
         SeqClient.LOGGER.info("[PartyFinderWS] Resolved inviter name='{}' for uuid={}", inviterName, inviterUUID);
 
         if (inviteToken == null || inviteToken.isBlank()) {
-            SeqClient.LOGGER.info("[PartyFinderWS] Invite token missing; sending plain notification for listing {}", listingId);
+            SeqClient.LOGGER.info("[PartyFinderWS] Invite token missing; sending plain notification for listing {}",
+                    listingId);
             notify("Party Finder invite from " + inviterName + ".");
         } else {
-            SeqClient.LOGGER.info("[PartyFinderWS] Invite token present; sending clickable invite notification for listing {}", listingId);
+            SeqClient.LOGGER.info(
+                    "[PartyFinderWS] Invite token present; sending clickable invite notification for listing {}",
+                    listingId);
             notifyInviteWithJoinAction(
                     "Party Finder invite from " + inviterName + ".",
                     listingId,
@@ -469,13 +476,13 @@ public class PartyFinderManager implements NotificationAccessor {
                             .withStyle(style -> style
                                     .withColor(ChatFormatting.GREEN)
                                     .withBold(true)
-                            .withClickEvent(new ClickEvent.RunCommand(joinCommand))))
+                                    .withClickEvent(new ClickEvent.RunCommand(joinCommand))))
                     .append(Component.literal(" "))
                     .append(Component.literal("[Deny]")
-                        .withStyle(style -> style
-                            .withColor(ChatFormatting.RED)
-                            .withBold(true)
-                            .withClickEvent(new ClickEvent.RunCommand(denyCommand))));
+                            .withStyle(style -> style
+                                    .withColor(ChatFormatting.RED)
+                                    .withBold(true)
+                                    .withClickEvent(new ClickEvent.RunCommand(denyCommand))));
 
             SeqClient.LOGGER.info(
                     "[PartyFinderWS] Displaying invite chat message listingId={} player={} joinCommand={} denyCommand={}",
@@ -658,9 +665,9 @@ public class PartyFinderManager implements NotificationAccessor {
 
         String normalizedUsername = username.trim();
         SeqClient.LOGGER.info(
-            "[PartyFinderWS] createInvite requested listingId={} username='{}'",
-            currentListing != null ? currentListing.id() : -1,
-            normalizedUsername);
+                "[PartyFinderWS] createInvite requested listingId={} username='{}'",
+                currentListing != null ? currentListing.id() : -1,
+                normalizedUsername);
         if (!normalizedUsername.matches("[A-Za-z0-9_]{3,16}")) {
             pushUiError("Enter a valid Minecraft username.");
             return;
@@ -959,6 +966,12 @@ public class PartyFinderManager implements NotificationAccessor {
             return fallbackMessage;
         }
 
+        int statusCode = apiException.getStatusCode();
+        String statusMapped = mapStatusError(statusCode, apiException.getResponseBody());
+        if (statusMapped != null) {
+            return statusMapped;
+        }
+
         String responseBody = apiException.getResponseBody();
         if (responseBody == null || responseBody.isBlank()) {
             return fallbackMessage;
@@ -977,6 +990,23 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         return fallbackMessage;
+    }
+
+    private static String mapStatusError(int statusCode, String responseBody) {
+        String body = responseBody == null ? "" : responseBody.toLowerCase(Locale.ROOT);
+        if (statusCode == 400) {
+            return "Request rejected by backend validation. Check your inputs.";
+        }
+        if (statusCode == 401) {
+            return "Authentication required. Please relink/login with /seq connect.";
+        }
+        if (statusCode == 403) {
+            if (body.contains("guild") || body.contains("not in guild")) {
+                return "Access denied: your account is not in the guild.";
+            }
+            return "Access denied by backend authorization.";
+        }
+        return null;
     }
 
     private static ApiClient.ApiException findApiException(Throwable throwable) {

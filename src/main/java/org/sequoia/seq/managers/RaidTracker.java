@@ -49,8 +49,9 @@ public class RaidTracker {
         String plain = message.getString();
 
         // Quick keyword gate — skip cleanup & regex for the vast majority of messages.
+        // Seasonal Rating is optional, so gate on core raid-completion tokens only.
         if (
-            !plain.contains("finished") || !plain.contains("Seasonal Rating")
+            !plain.contains("finished") || !plain.contains("and claimed") || !plain.contains("Guild Experience")
         ) return;
 
         // Strip newlines, Unicode control/format/private-use/surrogate chars,
