@@ -12,6 +12,10 @@ import org.sequoia.seq.network.ConnectionManager;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.regex.Matcher;
@@ -211,7 +215,52 @@ public class ChatManager {
 
     // Recursively search the component tree for an insertion tag
     private static String findRealUsername(Component component) {
-        return findRealUsername(component, 0);
+        List<String> usernames = extractRealUsernames(component);
+        return usernames.isEmpty() ? null : usernames.get(0);
+    }
+
+    public static List<String> extractRealUsernames(Component component) {
+        if (component == null) {
+            return List.of();
+        }
+
+        Set<String> usernames = new LinkedHashSet<>();
+        collectRealUsernames(component, usernames);
+        return List.copyOf(new ArrayList<>(usernames));
+    }
+
+    private static void collectRealUsernames(Component component, Set<String> usernames) {
+        collectRealUsernames(component, usernames, 0);
+    }
+
+    private static void collectRealUsernames(Component component, Set<String> usernames, int depth) {
+        if (component == null) {
+            return;
+        }
+
+        Style style = component.getStyle();
+
+        String insertion = style.getInsertion();
+        HoverEvent hoverEvent = style.getHoverEvent();
+
+        if (insertion != null && insertion.matches("[a-zA-Z0-9_]{3,16}")) {
+            usernames.add(insertion);
+        }
+
+        if (hoverEvent instanceof HoverEvent.ShowText showTextEvent) {
+            Component hoverComponent = showTextEvent.value();
+            if (hoverComponent != null) {
+                String hoverText = hoverComponent.getString();
+                Matcher matcher = HOVER_REAL_NAME_PATTERN.matcher(hoverText);
+                if (matcher.find()) {
+                    usernames.add(matcher.group(1));
+                }
+            }
+        }
+
+        for (Component sibling : component.getSiblings()) {
+            collectRealUsernames(sibling, usernames, depth + 1);
+        }
     }
 
     private static String findRealUsername(Component component, int depth) {
