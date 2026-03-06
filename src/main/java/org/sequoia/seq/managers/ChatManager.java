@@ -1,8 +1,11 @@
 package org.sequoia.seq.managers;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
+import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.events.DiscordChatEvent;
 import org.sequoia.seq.network.ConnectionManager;
@@ -68,11 +71,11 @@ public class ChatManager {
     public static void onSystemChat(Component message) {
         // Bumliotech goon parser to auto goon.
         Matcher welcomeMatcher = WYNNCRAFT_WELCOME_PATTERN.matcher(message.getString());
-        if (SeqClient.getAutoConnectSetting().getValue() && welcomeMatcher.find() && mc.player != null && !ConnectionManager.getInstance().isOpen() && firstConnect) {
+        if (SeqClient.getAutoConnectSetting().getValue() && welcomeMatcher.find() && mc.player != null
+                && !ConnectionManager.getInstance().isOpen() && firstConnect) {
             firstConnect = !firstConnect;
             mc.execute(() -> mc.player.connection.sendCommand("seq connect"));
         }
-
 
         // Guild chat uses aqua color (§b / 0x55FFFF) per Wynntils' RecipientType.GUILD.
         // This cleanly rejects DMs, party, shout, territory, and other message types
@@ -253,9 +256,12 @@ public class ChatManager {
                 return;
 
             mc.execute(() -> {
-                String formatted = "§3[§bDiscord§3] §f" + msg.username() + "§7: §r" + msg.message();
                 if (mc.player != null) {
-                    mc.player.displayClientMessage(Component.literal(formatted), false);
+                    MutableComponent formatted = NotificationAccessor.prefixComponent()
+                            .append(Component.literal(msg.username()).withStyle(ChatFormatting.WHITE))
+                            .append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
+                            .append(Component.literal(msg.message()).withStyle(ChatFormatting.WHITE));
+                    mc.player.displayClientMessage(formatted, false);
                 }
 
                 if (SeqClient.getEventBus() != null) {

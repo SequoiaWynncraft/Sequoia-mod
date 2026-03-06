@@ -176,7 +176,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 .exceptionally(e -> {
                     String errorMessage = extractUserFriendlyApiError(e, "Unable to join party");
                     SeqClient.LOGGER.warn("Failed to join party: {}", errorMessage);
-                    notify(errorMessage);
+                    pushUiError(errorMessage);
                     return null;
                 });
     }
@@ -197,7 +197,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 .exceptionally(e -> {
                     String errorMessage = extractUserFriendlyApiError(e, "Unable to join party");
                     SeqClient.LOGGER.warn("Failed to join party with invite token: {}", errorMessage);
-                    notify(errorMessage);
+                    pushUiError(errorMessage);
                     return null;
                 });
     }
@@ -302,7 +302,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 .exceptionally(e -> {
                     String errorMessage = extractUserFriendlyApiError(e, "Unable to change role");
                     SeqClient.LOGGER.warn("Failed to change role: {}", errorMessage);
-                    notify(errorMessage);
+                    pushUiError(errorMessage);
                     return null;
                 });
     }
@@ -460,18 +460,21 @@ public class PartyFinderManager implements NotificationAccessor {
                 listingId,
                 inviteToken != null ? inviteToken.length() : 0);
         SeqClient.mc.execute(() -> {
-            if (SeqClient.mc.player == null) {
+            var player = SeqClient.mc.player;
+            if (player == null) {
                 SeqClient.LOGGER.warn(
                         "[PartyFinderWS] Skipped invite chat message listingId={} because mc.player is null",
                         listingId);
                 return;
             }
 
-            String joinCommand = "/seq internalinvite join " + listingId + " "
+            String joinCommand = "/_seqinvite join " + listingId + " "
                     + quoteForCommand(inviteToken);
-            String denyCommand = "/seq internalinvite deny " + listingId;
+            String denyCommand = "/_seqinvite deny " + listingId;
 
-            MutableComponent fullMessage = Component.literal(PREFIX + message + " ")
+            MutableComponent fullMessage = NotificationAccessor.prefixComponent()
+                    .append(Component.literal(String.valueOf(message)).withStyle(ChatFormatting.GRAY))
+                    .append(Component.literal(" "))
                     .append(Component.literal("[Join]")
                             .withStyle(style -> style
                                     .withColor(ChatFormatting.GREEN)
@@ -487,10 +490,10 @@ public class PartyFinderManager implements NotificationAccessor {
             SeqClient.LOGGER.info(
                     "[PartyFinderWS] Displaying invite chat message listingId={} player={} joinCommand={} denyCommand={}",
                     listingId,
-                    SeqClient.mc.player.getName().getString(),
+                    player.getName().getString(),
                     joinCommand,
                     denyCommand);
-            SeqClient.mc.player.displayClientMessage(fullMessage, false);
+            player.displayClientMessage(fullMessage, false);
         });
     }
 
@@ -998,7 +1001,7 @@ public class PartyFinderManager implements NotificationAccessor {
             return "Request rejected by backend validation. Check your inputs.";
         }
         if (statusCode == 401) {
-            return "Authentication required. Please relink/login with /seq connect.";
+            return "Authentication required. Please relink/login with /seq link.";
         }
         if (statusCode == 403) {
             if (body.contains("guild") || body.contains("not in guild")) {

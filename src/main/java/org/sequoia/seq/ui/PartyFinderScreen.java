@@ -80,7 +80,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float FILTER_BUTTON_W = 70;
     private static final float FILTER_BUTTON_H = 24;
     private static final float FILTER_BUTTON_MARGIN = 12;
-    private static final float ERROR_POPUP_W = 280;
+    private static final float ERROR_POPUP_MIN_W = 280;
     private static final float ERROR_POPUP_H = 26;
     private static final long ERROR_POPUP_DURATION_MS = 3500L;
 
@@ -533,25 +533,30 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             return;
         }
 
-        float popupX = panelX + (panelWidth - ERROR_POPUP_W) / 2f;
+        nvgFontFace(nvg, fontName);
+        nvgFontSize(nvg, 12);
+        float[] bounds = new float[4];
+        float textW = nvgTextBounds(nvg, 0, 0, activeErrorPopupMessage, bounds);
+        float maxPopupW = Math.max(180f, panelWidth - 20f);
+        float popupW = Math.min(maxPopupW, Math.max(ERROR_POPUP_MIN_W, textW + 28f));
+
+        float popupX = panelX + (panelWidth - popupW) / 2f;
         float popupY = screenHeight - ERROR_POPUP_H - 10;
 
-        NVGWrapper.drawRoundedRect(nvg, popupX, popupY, ERROR_POPUP_W, ERROR_POPUP_H, 6, ERROR_POPUP_BG);
+        NVGWrapper.drawRoundedRect(nvg, popupX, popupY, popupW, ERROR_POPUP_H, 6, ERROR_POPUP_BG);
         NVGWrapper.drawRectOutline(
                 nvg,
                 popupX,
                 popupY,
-                ERROR_POPUP_W,
+                popupW,
                 ERROR_POPUP_H,
                 1,
                 ERROR_POPUP_BORDER);
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, 12);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         var text = NVGContext.nvgColor(TEXT_COLOR);
         nvgFillColor(nvg, text);
-        nvgText(nvg, popupX + ERROR_POPUP_W / 2f, popupY + ERROR_POPUP_H / 2f, activeErrorPopupMessage);
+        nvgText(nvg, popupX + popupW / 2f, popupY + ERROR_POPUP_H / 2f, activeErrorPopupMessage);
         text.free();
     }
 

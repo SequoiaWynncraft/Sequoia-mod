@@ -1,24 +1,22 @@
 package org.sequoia.seq.command;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.arguments.LongArgumentType;
-import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
+import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.minecraft.commands.CommandBuildContext;
-import net.minecraft.network.chat.Component;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.model.PartyRole;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.ui.PartyFinderScreen;
-import org.sequoia.seq.update.UpdateManager;
 
 public class SeqCommand {
 
         public static void register() {
                 ClientCommandRegistrationCallback.EVENT.register(SeqCommand::registerCommands);
+                ClientSendMessageEvents.ALLOW_COMMAND.register(SeqCommand::onOutgoingCommand);
         }
 
         private static void registerCommands(
@@ -34,6 +32,11 @@ public class SeqCommand {
                                                         ConnectionManager.getInstance().connect();
                                                         return 1;
                                                 }))
+                                .then(ClientCommandManager.literal("link")
+                                                .executes(ctx -> {
+                                                        ConnectionManager.getInstance().link();
+                                                        return 1;
+                                                }))
                                 .then(ClientCommandManager.literal("disconnect")
                                                 .executes(ctx -> {
                                                         ConnectionManager.getInstance().disconnect();
@@ -41,7 +44,7 @@ public class SeqCommand {
                                                 }))
                                 .then(ClientCommandManager.literal("connected")
                                                 .executes(ctx -> {
-                                                        if (!ConnectionManager.getInstance().isConnected()) {
+                                                        if (!ConnectionManager.isConnected()) {
                                                                 ctx.getSource().sendFeedback(
                                                                                 NotificationAccessor.prefixed(
                                                                                                 "Not connected. Use /seq connect first."));
@@ -59,8 +62,9 @@ public class SeqCommand {
                                                                                                                         + users.size()
                                                                                                                         + "):"));
                                                                         for (String user : users) {
-                                                                                ctx.getSource().sendFeedback(Component
-                                                                                                .literal("  - " + user));
+                                                                                ctx.getSource().sendFeedback(
+                                                                                                NotificationAccessor
+                                                                                                                .prefixed("• " + user));
                                                                         }
                                                                 }
                                                         });
@@ -98,41 +102,15 @@ public class SeqCommand {
                                                                         .setScreen(new PartyFinderScreen(
                                                                                         SeqClient.mc.screen)));
                                                         return 1;
-                                                }))
-                                .then(ClientCommandManager.literal("internalinvite")
-                                                .then(ClientCommandManager.literal("join")
-                                                                .then(ClientCommandManager.argument("listingId",
-                                                                                LongArgumentType.longArg(1))
-                                                                                .then(ClientCommandManager.argument(
-                                                                                                "inviteToken",
-                                                                                                StringArgumentType
-                                                                                                                .string())
-                                                                                                .executes(ctx -> runInternalJoinInvite(
-                                                                                                                ctx.getSource(),
-                                                                                                                LongArgumentType.getLong(
-                                                                                                                                ctx,
-                                                                                                                                "listingId"),
-                                                                                                                StringArgumentType
-                                                                                                                                .getString(ctx,
-                                                                                                                                                "inviteToken"))))))
-                                                .then(ClientCommandManager.literal("deny")
-                                                                .then(ClientCommandManager.argument("listingId",
-                                                                                LongArgumentType.longArg(1))
-                                                                                .executes(ctx -> runInternalDenyInvite(
-                                                                                                ctx.getSource(),
-                                                                                                LongArgumentType.getLong(
-                                                                                                                ctx,
-                                                                                                                "listingId"))))));
+                                                }));
 
                 dispatcher.register(root);
         }
 
-        public static int runInternalJoinInvite(
-                        FabricClientCommandSource source,
+        private static int runInternalJoinInvite(
                         long listingId,
                         String inviteToken) {
                 if (inviteToken == null || inviteToken.isBlank()) {
-                        source.sendFeedback(NotificationAccessor.prefixed("Invite token is required."));
                         return 0;
                 }
 
@@ -140,15 +118,66 @@ public class SeqCommand {
                                 listingId,
                                 PartyRole.DPS,
                                 inviteToken);
-                source.sendFeedback(NotificationAccessor.prefixed("Joining party invite..."));
                 return 1;
         }
 
-        public static int runInternalDenyInvite(
-                        FabricClientCommandSource source,
+        private static int runInternalDenyInvite(
                         long listingId) {
-                source.sendFeedback(NotificationAccessor
-                                .prefixed("Denied party invite for listing #" + listingId + "."));
                 return 1;
+        }
+
+        private static boolean onOutgoingCommand(String command) {
+                String raw = command == null ? "" : command.trim();
+                if (raw.isEmpty()) {
+                        return true;
+                }
+                if (raw.charAt(0) == '/') {
+                        raw = raw.substring(1).trim();
+                }
+                if (!raw.startsWith("_seqinvite")) {
+                        return true;
+                }
+
+                String[] parts = raw.split("\\s+", 4);
+                if (parts.length < 3) {
+                        return false;
+                }
+
+                String action = parts[1];
+                long listingId;
+                try {
+                        listingId = Long.parseLong(parts[2]);
+                } catch (NumberFormatException ignored) {
+                        return false;
+                }
+
+                if ("join".equalsIgnoreCase(action)) {
+                        if (parts.length < 4) {
+                                return false;
+                        }
+                        String inviteToken = unquoteCommandValue(parts[3]);
+                        runInternalJoinInvite(listingId, inviteToken);
+                        return false;
+                }
+
+                if ("deny".equalsIgnoreCase(action)) {
+                        runInternalDenyInvite(listingId);
+                        return false;
+                }
+
+                return false;
+        }
+
+        private static String unquoteCommandValue(String rawValue) {
+                if (rawValue == null) {
+                        return "";
+                }
+                String value = rawValue.trim();
+                if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+                        value = value.substring(1, value.length() - 1)
+                                        .replace("\\\"", "\"")
+                                        .replace("\\\\", "\\");
+                }
+                return value;
         }
 }

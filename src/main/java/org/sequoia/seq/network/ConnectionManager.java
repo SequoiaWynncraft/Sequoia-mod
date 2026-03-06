@@ -30,6 +30,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static final Gson GSON = new Gson();
     private static final long RECONNECT_BASE_MS = 1_000;
     private static final long RECONNECT_CAP_MS = 60_000;
+    private static final int MAX_AUTO_RECONNECT_ATTEMPTS = 5;
     private static final int MAX_GUILD_CHAT_MESSAGE_LENGTH = 512;
     private static final long AUTH_BACKOFF_BASE_MS = 2_000;
     private static final long AUTH_BACKOFF_CAP_MS = 60_000;
@@ -63,10 +64,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static int reconnectAttempt = 0;
     private static ScheduledFuture<?> reconnectTask;
 
+    private enum AuthFlow {
+        CONNECT,
+        LINK
+    }
+
     // Callbacks for new message types
     private static Consumer<DiscordChatMessage> discordChatHandler;
     private static Consumer<PartyFinderUpdateMessage> partyFinderUpdateHandler;
     private static Consumer<PartyFinderInviteMessage> partyFinderInviteHandler;
+    private volatile AuthFlow pendingAuthFlow = AuthFlow.CONNECT;
 
     public static ConnectionManager getInstance() {
         if (instance == null) {
@@ -83,19 +90,39 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     @Override
     public void connect() {
+        connectInternal(AuthFlow.CONNECT);
+    }
+
+    public void link() {
+        connectInternal(AuthFlow.LINK);
+    }
+
+    private void connectInternal(AuthFlow authFlow) {
+        pendingAuthFlow = authFlow;
+        autoReconnect = true;
         SeqClient.LOGGER.info(
-                "[WebSocket] connect() called open={} authenticated={} autoReconnect={} configuredUrl={} clientUri={}",
+                "[WebSocket] connectInternal() called flow={} open={} authenticated={} autoReconnect={} configuredUrl={} clientUri={}",
+                authFlow,
                 isOpen(),
                 authenticated,
                 autoReconnect,
                 BuildConfig.WS_URL,
                 getURI());
         if (isOpen()) {
-            notify("Already connected/connecting");
+            if (authFlow == AuthFlow.LINK) {
+                notify("Starting account link flow...");
+                requestAuth(true);
+            } else {
+                notify("Already connected/connecting.");
+            }
             return;
         }
 
-        notify("Connecting to " + BuildConfig.ENVIRONMENT + "...");
+        if (authFlow == AuthFlow.LINK) {
+            notify("Linking your account on " + BuildConfig.ENVIRONMENT + "...");
+        } else {
+            notify("Connecting to " + BuildConfig.ENVIRONMENT + "...");
+        }
         try {
             super.connect();
         } catch (Exception e) {
@@ -142,12 +169,20 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         notInGuild = false;
         connectedSince = null;
         String token = SeqClient.getConfigManager().getToken();
+        if (pendingAuthFlow == AuthFlow.LINK) {
+            SeqClient.LOGGER.info("[WebSocket] Link flow requested; requesting auth challenge");
+            requestAuth(true);
+            return;
+        }
+
         if (token != null && !token.isBlank()) {
             SeqClient.LOGGER.info("[WebSocket] Authenticating with stored token (length={})", token.length());
             attemptAuthenticate(token, false);
         } else {
-            SeqClient.LOGGER.info("[WebSocket] No stored token found; requesting auth challenge");
-            requestAuth(false);
+            SeqClient.LOGGER.info("[WebSocket] No stored token found; connect flow will not request auth challenge");
+            notify("No linked account token found. Run /seq link first.");
+            autoReconnect = false;
+            close();
         }
     }
 
@@ -170,12 +205,21 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         notInGuild = false;
         connectedSince = null;
         instance = null;
-        if (autoReconnect && remote) {
-            SeqClient.LOGGER.info("[WebSocket] Scheduling reconnect after remote close");
+        boolean shouldReconnect = autoReconnect && shouldReconnectAfterClose(code, remote);
+        if (shouldReconnect) {
+            SeqClient.LOGGER.info(
+                    "[WebSocket] Scheduling reconnect after close code={} remote={} reason='{}'",
+                    code,
+                    remote,
+                    reason);
             scheduleReconnect();
         } else {
-            SeqClient.LOGGER.info("[WebSocket] Reconnect not scheduled (autoReconnect={} remote={})", autoReconnect,
-                    remote);
+            SeqClient.LOGGER.info(
+                    "[WebSocket] Reconnect not scheduled (autoReconnect={} code={} remote={} reason='{}')",
+                    autoReconnect,
+                    code,
+                    remote,
+                    reason);
         }
     }
 
@@ -193,6 +237,13 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // ── Auto-reconnect ──
 
     private static void scheduleReconnect() {
+        if (reconnectAttempt >= MAX_AUTO_RECONNECT_ATTEMPTS) {
+            autoReconnect = false;
+            cancelReconnect();
+            SeqClient.LOGGER.warn("[WebSocket] Auto reconnect exhausted after {} attempts", reconnectAttempt);
+            notifyManualConnectRequired();
+            return;
+        }
         cancelReconnect();
         long delay = Math.min(RECONNECT_BASE_MS * (1L << reconnectAttempt), RECONNECT_CAP_MS);
         reconnectAttempt++;
@@ -215,6 +266,27 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             reconnectTask.cancel(false);
             reconnectTask = null;
         }
+    }
+
+    private static boolean shouldReconnectAfterClose(int code, boolean remote) {
+        if (remote) {
+            return true;
+        }
+        // Local clean close (1000) is treated as intentional; do not auto-reconnect.
+        // Handshake/protocol close failures (e.g. 1002 from HTTP 502) should retry.
+        return code != 1000;
+    }
+
+    private static void notifyManualConnectRequired() {
+        Minecraft.getInstance().execute(() -> {
+            var player = Minecraft.getInstance().player;
+            if (player != null) {
+                player.displayClientMessage(
+                        NotificationAccessor.prefixed(
+                                "Could not reconnect automatically. Run /seq connect manually (or /seq link if needed)."),
+                        false);
+            }
+        });
     }
 
     // ── Outgoing messages ──
@@ -259,18 +331,18 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         try {
             sessionId = user.getSessionId();
         } catch (Throwable t) {
-            notify("Cannot link: missing session id. Re-log before /seq connect.");
+            notify("Cannot link: missing session id. Re-log before /seq link.");
             SeqClient.LOGGER.warn("[WebSocket] Could not read session id for auth_request", t);
             return;
         }
         if (sessionId == null || sessionId.isBlank()) {
-            notify("Cannot link: missing session id. Re-log before /seq connect.");
+            notify("Cannot link: missing session id. Re-log before /seq link.");
             return;
         }
         if (stableSessionId == null) {
             stableSessionId = sessionId;
         } else if (!stableSessionId.equals(sessionId)) {
-            notify("Session changed. Please run /seq connect again.");
+            notify("Session changed. Please run /seq link again.");
             SeqClient.LOGGER.warn("[WebSocket] Session id changed mid-session; blocking auth_request");
             return;
         }
@@ -537,7 +609,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         authFailed = true;
                         authenticated = false;
                         registerAuthFailure();
-                        notify("Invalid auth request. Check username/UUID/session, then run /seq connect.");
+                        notify("Invalid auth request. Check username/UUID/session, then run /seq link.");
                         return;
                     }
 
@@ -546,7 +618,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         authenticated = false;
                         registerAuthFailure();
                         SeqClient.getConfigManager().clearToken();
-                        notify("Authentication failed. Please relink/login with /seq connect.");
+                        notify("Authentication failed. Please relink/login with /seq link.");
                         return;
                     }
 
@@ -564,6 +636,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
                     if (normalized.contains("validation")) {
                         notify("Request rejected by backend validation. Please check your input.");
+                        return;
+                    }
+
+                    if (isPartyFinderError(json, normalized)) {
+                        SeqClient.getPartyFinderManager().pushUiError(error);
                         return;
                     }
 
@@ -717,6 +794,31 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             }
         }
         return -1;
+    }
+
+    private static boolean isPartyFinderError(JsonObject json, String normalizedMessage) {
+        if (normalizedMessage != null
+                && (normalizedMessage.contains("party finder")
+                        || normalizedMessage.contains("party_finder")
+                        || normalizedMessage.contains("listing")
+                        || normalizedMessage.contains("invite"))) {
+            return true;
+        }
+        if (json == null) {
+            return false;
+        }
+        if (json.has("context") && json.get("context").isJsonPrimitive()) {
+            String context = json.get("context").getAsString().toLowerCase(Locale.ROOT);
+            if (context.contains("party_finder") || context.contains("party finder")) {
+                return true;
+            }
+        }
+        if (json.has("request_type") && json.get("request_type").isJsonPrimitive()) {
+            String requestType = json.get("request_type").getAsString().toLowerCase(Locale.ROOT);
+            return requestType.startsWith("party_") || requestType.contains("listing")
+                    || requestType.contains("invite");
+        }
+        return false;
     }
 
     public String getEnvironment() {
