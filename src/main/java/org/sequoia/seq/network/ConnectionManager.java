@@ -73,6 +73,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static Consumer<DiscordChatMessage> discordChatHandler;
     private static Consumer<PartyFinderUpdateMessage> partyFinderUpdateHandler;
     private static Consumer<PartyFinderInviteMessage> partyFinderInviteHandler;
+    private static Consumer<PartyFinderStaleWarningMessage> partyFinderStaleWarningHandler;
     private volatile AuthFlow pendingAuthFlow = AuthFlow.CONNECT;
 
     public static ConnectionManager getInstance() {
@@ -597,6 +598,28 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         SeqClient.LOGGER.warn("[WebSocket] Received party_finder_invite but handler is not registered");
                     }
                 }
+                case "party_finder_stale_warning" -> {
+                    if (partyFinderStaleWarningHandler != null) {
+                        long listingId = json.get("listing_id").getAsLong();
+                        Instant disbandAt = Instant.parse(json.get("disband_at").getAsString());
+                        long minutesRemaining = json.get("minutes_remaining").getAsLong();
+
+                        SeqClient.LOGGER.info(
+                                "[WebSocket] Dispatching party_finder_stale_warning listingId={} disbandAt={} minutesRemaining={}",
+                                listingId,
+                                disbandAt,
+                                minutesRemaining);
+
+                        partyFinderStaleWarningHandler.accept(
+                                new PartyFinderStaleWarningMessage(
+                                        listingId,
+                                        disbandAt,
+                                        minutesRemaining));
+                    } else {
+                        SeqClient.LOGGER.warn(
+                                "[WebSocket] Received party_finder_stale_warning but handler is not registered");
+                    }
+                }
                 case "error" -> {
                     String error = json.has("message") && json.get("message").isJsonPrimitive()
                             ? json.get("message").getAsString()
@@ -668,6 +691,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     public static void onPartyFinderInvite(Consumer<PartyFinderInviteMessage> handler) {
         SeqClient.LOGGER.info("[WebSocket] Registering party_finder_invite handler present={}", handler != null);
         partyFinderInviteHandler = handler;
+    }
+
+    public static void onPartyFinderStaleWarning(Consumer<PartyFinderStaleWarningMessage> handler) {
+        SeqClient.LOGGER.info("[WebSocket] Registering party_finder_stale_warning handler present={}", handler != null);
+        partyFinderStaleWarningHandler = handler;
     }
 
     private static String truncate(String input, int maxLength) {
@@ -853,4 +881,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             String inviteToken,
             JsonObject listingJson) {
     }
+
+        public record PartyFinderStaleWarningMessage(
+            long listingId,
+            Instant disbandAt,
+            long minutesRemaining) {
+        }
 }

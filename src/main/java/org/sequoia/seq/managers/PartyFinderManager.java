@@ -82,6 +82,18 @@ public class PartyFinderManager implements NotificationAccessor {
                     invite.inviteToken(),
                     listing);
         });
+
+        ConnectionManager.onPartyFinderStaleWarning(warning -> {
+            SeqClient.LOGGER.info(
+                    "[PartyFinderWS] Received stale warning callback listingId={} disbandAt={} minutesRemaining={}",
+                    warning.listingId(),
+                    warning.disbandAt(),
+                    warning.minutesRemaining());
+            handlePartyFinderStaleWarning(
+                    warning.listingId(),
+                    warning.disbandAt(),
+                    warning.minutesRemaining());
+        });
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -449,6 +461,20 @@ public class PartyFinderManager implements NotificationAccessor {
                 listingId,
                 inviterUUID,
                 inviteToken != null && !inviteToken.isBlank());
+    }
+
+    public void handlePartyFinderStaleWarning(long listingId, Instant disbandAt, long minutesRemaining) {
+        SeqClient.LOGGER.info(
+                "[PartyFinderWS] handlePartyFinderStaleWarning listingId={} disbandAt={} minutesRemaining={}",
+                listingId,
+                disbandAt,
+                minutesRemaining);
+
+        long safeMinutesRemaining = Math.max(0, minutesRemaining);
+
+        notify("Your Party Finder listing will auto-disband in "
+                + safeMinutesRemaining
+                + " minutes.");
     }
 
     private void notifyInviteWithJoinAction(
