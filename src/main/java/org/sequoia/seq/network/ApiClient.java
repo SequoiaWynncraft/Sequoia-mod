@@ -96,6 +96,7 @@ public class ApiClient {
     public CompletableFuture<Listing> createListing(
             List<Long> activityIds,
             PartyMode mode,
+            boolean strict,
             PartyRegion region,
             PartyRole role,
             String note) {
@@ -117,6 +118,7 @@ public class ApiClient {
             body.addProperty("activityId", activityIdsJson.get(0).getAsLong());
         }
         body.addProperty("mode", mode.name());
+        body.addProperty("strict", strict);
         body.addProperty("region", region.name());
         body.addProperty("role", role.name());
         if (note != null && !note.isBlank())
@@ -241,6 +243,7 @@ public class ApiClient {
             long id,
             List<Long> activityIds,
             PartyMode mode,
+            boolean strict,
             PartyRegion region,
             String note) {
         if (activityIds == null || activityIds.isEmpty()) {
@@ -260,6 +263,7 @@ public class ApiClient {
 
         body.add("activityIds", activityIdsJson);
         body.addProperty("mode", mode.name());
+        body.addProperty("strict", strict);
         body.addProperty("region", region.name());
         if (note != null) {
             body.addProperty("note", note);

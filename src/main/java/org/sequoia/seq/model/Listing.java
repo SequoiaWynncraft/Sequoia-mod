@@ -9,6 +9,7 @@ public record Listing(
         Activity activity,
         String leaderUUID,
         PartyMode mode,
+        boolean strict,
         PartyRegion region,
         PartyStatus status,
         String note,

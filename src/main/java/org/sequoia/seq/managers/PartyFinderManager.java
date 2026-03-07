@@ -149,17 +149,18 @@ public class PartyFinderManager implements NotificationAccessor {
             PartyRegion region,
             PartyRole role,
             String note) {
-        return createParty(List.of(activityId), mode, region, role, note);
+        return createParty(List.of(activityId), mode, false, region, role, note);
     }
 
     public CompletableFuture<Listing> createParty(
             List<Long> activityIds,
             PartyMode mode,
+            boolean strict,
             PartyRegion region,
             PartyRole role,
             String note) {
         return ApiClient.getInstance()
-                .createListing(activityIds, mode, region, role, note)
+                .createListing(activityIds, mode, strict, region, role, note)
                 .thenApply(listing -> {
                     replaceListing(listing);
                     currentListing = listing;
@@ -776,7 +777,7 @@ public class PartyFinderManager implements NotificationAccessor {
      * Creates a party from the modal's tag list + role string.
      * Extracts activityIds from raid tags, mode from Chill/Grind tag.
      */
-    public void createParty(List<String> tags, String role, int reservedSlots) {
+    public void createParty(List<String> tags, String role, int reservedSlots, boolean strictRoles) {
         // Separate party-mode tags from raid/activity display names
         PartyMode mode = PartyMode.CHILL;
         List<String> raidDisplayNames = new ArrayList<>();
@@ -835,10 +836,11 @@ public class PartyFinderManager implements NotificationAccessor {
 
         PartyRole mappedCreateRole = mapDisplayRole(role);
         final PartyRole createRole = mappedCreateRole != null ? mappedCreateRole : PartyRole.DPS;
+        final boolean strict = mode == PartyMode.GRIND && strictRoles;
 
         // Default region to NA (no region selector in current UI)
         int requestedReservedSlots = Math.max(0, reservedSlots);
-        createParty(activityIds, mode, PartyRegion.NA, createRole, null)
+        createParty(activityIds, mode, strict, PartyRegion.NA, createRole, null)
                 .thenAccept(listing -> {
                     if (listing == null || requestedReservedSlots <= 0) {
                         return;
@@ -851,7 +853,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 });
     }
 
-    public void updateParty(List<String> tags, String role, int reservedSlots) {
+    public void updateParty(List<String> tags, String role, int reservedSlots, boolean strictRoles) {
         if (currentListing == null) {
             pushUiError("Unable to update party: no active listing.");
             return;
@@ -900,8 +902,15 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         PartyRegion region = currentListing.region() != null ? currentListing.region() : PartyRegion.NA;
+        boolean strict = mode == PartyMode.GRIND && strictRoles;
         ApiClient.getInstance()
-                .updateListing(currentListing.id(), activityIds, mode, region, currentListing.note())
+                .updateListing(
+                        currentListing.id(),
+                        activityIds,
+                        mode,
+                        strict,
+                        region,
+                        currentListing.note())
                 .thenAccept(listing -> {
                     if (listing != null) {
                         replaceListing(listing);

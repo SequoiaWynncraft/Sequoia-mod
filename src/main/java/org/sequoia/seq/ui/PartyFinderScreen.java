@@ -250,6 +250,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private String inviteUsernameInput = "";
     private final Set<String> modalSelectedRaids = new LinkedHashSet<>();
     private int modalReservedSlots = 0;
+    private boolean modalStrictRoles = false;
     private boolean reservedSlotsFocused = false;
     private String reservedSlotsInput = "0";
     private long nextLoadingNameRefreshAtMs = 0L;
@@ -1726,6 +1727,56 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 false,
                 TEXT_COLOR);
 
+        boolean grindSelected = isModalGrindSelected();
+        if (grindSelected) {
+            float strictLabelY = rsBoxY + MODAL_DROPDOWN_H + 12;
+            float checkboxSize = 12;
+            float checkboxX = modalX + MODAL_WIDTH / 2f - 72;
+            float checkboxY = strictLabelY - checkboxSize / 2f;
+
+            Color checkboxBg = modalStrictRoles ? TYPE_ICON_SELECTED : MODAL_DROPDOWN_BG;
+            Color checkboxBorder = modalStrictRoles ? SEARCH_BORDER : MODAL_DROPDOWN_BORDER;
+
+            NVGWrapper.drawRect(
+                    nvg,
+                    checkboxX,
+                    checkboxY,
+                    checkboxSize,
+                    checkboxSize,
+                    checkboxBg);
+            NVGWrapper.drawRectOutline(
+                    nvg,
+                    checkboxX,
+                    checkboxY,
+                    checkboxSize,
+                    checkboxSize,
+                    1,
+                    checkboxBorder);
+
+            if (modalStrictRoles) {
+                float innerInset = 3f;
+                NVGWrapper.drawRect(
+                        nvg,
+                        checkboxX + innerInset,
+                        checkboxY + innerInset,
+                        checkboxSize - innerInset * 2,
+                        checkboxSize - innerInset * 2,
+                        TEXT_COLOR);
+            }
+
+            nvgFontFace(nvg, fontName);
+            nvgFontSize(nvg, MODAL_LABEL_SIZE);
+            nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            var strictLabelCol = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+            nvgFillColor(nvg, strictLabelCol);
+            nvgText(
+                    nvg,
+                    checkboxX + checkboxSize + 8,
+                    strictLabelY,
+                    "Strict roles");
+            strictLabelCol.free();
+        }
+
         // Create/Update button
         float createBtnX = modalX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
         float createBtnY = modalY + MODAL_HEIGHT - MODAL_BUTTON_H - 14;
@@ -2550,6 +2601,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         modalActiveTags.add("Chill");
         modalInactiveTags.clear();
         modalInactiveTags.add("Grind");
+        modalStrictRoles = false;
     }
 
     private Set<String> getCurrentListingRaidTags() {
@@ -2587,6 +2639,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             modalActiveTags.add("Chill");
             modalInactiveTags.add("Grind");
         }
+
+        modalStrictRoles = party().getCurrentListing() != null && party().getCurrentListing().strict();
+    }
+
+    private boolean isModalGrindSelected() {
+        return modalActiveTags.stream().anyMatch(tag -> "Grind".equalsIgnoreCase(tag));
     }
 
     private void openInviteModal() {
@@ -2905,6 +2963,19 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             reservedSlotsFocused = false;
         }
 
+        if (isModalGrindSelected()) {
+            float strictLabelY = rsBoxY + MODAL_DROPDOWN_H + 12;
+            float checkboxSize = 12;
+            float checkboxX = mX + MODAL_WIDTH / 2f - 72;
+            float checkboxY = strictLabelY - checkboxSize / 2f;
+            float strictClickW = 144;
+
+            if (isHovered(mx, my, checkboxX, checkboxY, strictClickW, checkboxSize)) {
+                modalStrictRoles = !modalStrictRoles;
+                return true;
+            }
+        }
+
         // Create/Update button
         float createBtnX = mX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
         float createBtnY = mY + MODAL_HEIGHT - MODAL_BUTTON_H - 14;
@@ -2938,11 +3009,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             commitReservedSlotsInput();
             List<String> tags = new ArrayList<>(selectedRaids);
             tags.addAll(modalActiveTags);
+            boolean strictRoles = isModalGrindSelected() && modalStrictRoles;
 
             if (updatingParty) {
-                party().updateParty(tags, selectedRole, modalReservedSlots);
+                party().updateParty(tags, selectedRole, modalReservedSlots, strictRoles);
             } else {
-                party().createParty(tags, selectedRole, modalReservedSlots);
+                party().createParty(tags, selectedRole, modalReservedSlots, strictRoles);
             }
 
             modalOpen = false;
@@ -3016,6 +3088,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                                 System.currentTimeMillis());
                     }
                 }
+            }
+            if (!isModalGrindSelected()) {
+                modalStrictRoles = false;
             }
             modalTagAnimStartTimes.put(
                     clickedInactiveTag,

@@ -238,6 +238,9 @@ public class PartyListing {
      */
     public String displayLabel() {
         String modeLabel = backing.mode() == PartyMode.CHILL ? "Chill" : "Grind";
+        if (backing.mode() == PartyMode.GRIND && backing.strict()) {
+            modeLabel += " (Strict)";
+        }
         String displayNames = String.join(", ", getDisplayActivityNames(backing));
         return modeLabel + " · " + displayNames;
     }
@@ -248,6 +251,9 @@ public class PartyListing {
      */
     public String displayShortLabel() {
         String modeLabel = backing.mode() == PartyMode.CHILL ? "Chill" : "Grind";
+        if (backing.mode() == PartyMode.GRIND && backing.strict()) {
+            modeLabel += " (Strict)";
+        }
         List<String> shortNames = getDisplayActivityNames(backing)
                 .stream()
                 .map(PartyListing::displayNameToBackendName)
