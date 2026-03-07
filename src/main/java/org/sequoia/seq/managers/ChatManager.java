@@ -50,8 +50,10 @@ public class ChatManager {
             Pattern.DOTALL);
     private static final Pattern HOVER_REAL_NAME_PATTERN = Pattern.compile(
             // Wynntils format: "<nick>'s real name is <username>"
+            // Also accepts nicknames ending in 's' where Wynncraft uses "<nick>' real name
+            // is <username>"
             // Legacy format: "Real Username: <username>"
-            "(?:'s real name is\\s+|Real Username:\\s*)([a-zA-Z0-9_]{3,16})",
+            "(?:'(?:s)? real name is\\s+|Real Username:\\s*)([a-zA-Z0-9_]{3,16})",
             Pattern.CASE_INSENSITIVE);
     private static final Duration OUTGOING_DEDUPE_WINDOW = Duration.ofMillis(750);
     private static volatile String lastOutgoingKey;
