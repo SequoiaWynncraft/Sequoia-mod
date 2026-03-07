@@ -143,8 +143,9 @@ public class ChatManager {
         if (content.isEmpty())
             return null;
 
-        // Search the component tree for the real username
-        String realUsername = findRealUsername(message);
+        // Search the component tree for the real username. Prefer candidates that
+        // differ from the displayed nickname (e.g. nicked/decorated names).
+        String realUsername = findRealUsername(message, displayedName);
         String avatarUsername = resolveAvatarUsername(displayedName, realUsername);
         if (avatarUsername == null) {
             SeqClient.LOGGER.warn(
@@ -213,10 +214,45 @@ public class ChatManager {
         }
     }
 
-    // Recursively search the component tree for an insertion tag
-    private static String findRealUsername(Component component) {
+    private static String findRealUsername(Component component, String displayedName) {
         List<String> usernames = extractRealUsernames(component);
-        return usernames.isEmpty() ? null : usernames.get(0);
+        if (usernames.isEmpty()) {
+            return null;
+        }
+
+        if (displayedName == null || displayedName.isBlank()) {
+            return usernames.get(0);
+        }
+
+        String displayedTrimmed = displayedName.trim();
+        String displayedLower = displayedTrimmed.toLowerCase();
+
+        String bestPrefixExpansion = null;
+        for (String candidate : usernames) {
+            if (candidate == null) {
+                continue;
+            }
+            String candidateLower = candidate.toLowerCase();
+            if (candidateLower.equals(displayedLower)) {
+                continue;
+            }
+            if (candidateLower.startsWith(displayedLower)
+                    && candidate.length() > displayedTrimmed.length()
+                    && (bestPrefixExpansion == null || candidate.length() > bestPrefixExpansion.length())) {
+                bestPrefixExpansion = candidate;
+            }
+        }
+        if (bestPrefixExpansion != null) {
+            return bestPrefixExpansion;
+        }
+
+        for (String candidate : usernames) {
+            if (candidate != null && !candidate.equalsIgnoreCase(displayedTrimmed)) {
+                return candidate;
+            }
+        }
+
+        return usernames.get(0);
     }
 
     public static List<String> extractRealUsernames(Component component) {
@@ -243,10 +279,6 @@ public class ChatManager {
         String insertion = style.getInsertion();
         HoverEvent hoverEvent = style.getHoverEvent();
 
-        if (insertion != null && insertion.matches("[a-zA-Z0-9_]{3,16}")) {
-            usernames.add(insertion);
-        }
-
         if (hoverEvent instanceof HoverEvent.ShowText showTextEvent) {
             Component hoverComponent = showTextEvent.value();
             if (hoverComponent != null) {
@@ -258,43 +290,13 @@ public class ChatManager {
             }
         }
 
+        if (insertion != null && insertion.matches("[a-zA-Z0-9_]{3,16}")) {
+            usernames.add(insertion);
+        }
+
         for (Component sibling : component.getSiblings()) {
             collectRealUsernames(sibling, usernames, depth + 1);
         }
-    }
-
-    private static String findRealUsername(Component component, int depth) {
-        Style style = component.getStyle();
-
-        String insertion = style.getInsertion();
-        HoverEvent hoverEvent = style.getHoverEvent();
-
-        // 1. Try insertion tag (Standard for non-nicked players)
-        if (insertion != null && insertion.matches("[a-zA-Z0-9_]{3,16}")) {
-            return insertion;
-        }
-
-        // 2. Try Hover Event (Wynntils method for nicked players)
-        if (hoverEvent instanceof HoverEvent.ShowText showTextEvent) {
-            Component hoverComponent = showTextEvent.value();
-            if (hoverComponent != null) {
-                String hoverText = hoverComponent.getString();
-                Matcher matcher = HOVER_REAL_NAME_PATTERN.matcher(hoverText);
-                if (matcher.find()) {
-                    return matcher.group(1);
-                }
-            }
-        }
-
-        // 3. Search children components
-        for (Component sibling : component.getSiblings()) {
-            String found = findRealUsername(sibling, depth + 1);
-            if (found != null) {
-                return found;
-            }
-        }
-
-        return null;
     }
 
     // ── Incoming: Discord → backend → WS → MC chat ──
