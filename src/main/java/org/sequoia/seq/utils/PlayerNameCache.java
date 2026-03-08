@@ -7,8 +7,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,7 +25,7 @@ public class PlayerNameCache {
 
     private static final Map<String, String> cache = new ConcurrentHashMap<>();
     private static final Map<String, String> usernameToUuid = new ConcurrentHashMap<>();
-    private static final Set<String> pending = ConcurrentHashMap.newKeySet();
+    private static final Map<String, CompletableFuture<String>> pending = new ConcurrentHashMap<>();
     private static final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
@@ -38,90 +38,86 @@ public class PlayerNameCache {
      * list.
      */
     public static String resolve(String uuid) {
-        if (uuid == null)
+        String formattedUuid = formatUUID(uuid);
+        if (formattedUuid == null)
             return "Unknown";
 
-        // 1. Check local player
+        String resolved = resolveImmediate(formattedUuid);
+        if (resolved != null) {
+            return resolved;
+        }
+
+        resolveAsync(formattedUuid);
+        return "Loading...";
+    }
+
+    public static CompletableFuture<String> resolveAsync(String uuid) {
+        String formattedUuid = formatUUID(uuid);
+        if (formattedUuid == null) {
+            return CompletableFuture.completedFuture("Unknown");
+        }
+
+        String resolved = resolveImmediate(formattedUuid);
+        if (resolved != null) {
+            return CompletableFuture.completedFuture(resolved);
+        }
+
+        return pending.computeIfAbsent(formattedUuid, ignored -> CompletableFuture.supplyAsync(() -> {
+            try {
+                HttpRequest req = HttpRequest.newBuilder()
+                        .uri(URI.create(
+                                "https://sessionserver.mojang.com/session/minecraft/profile/"
+                                        + formattedUuid.replace("-", "")))
+                        .timeout(Duration.ofSeconds(10))
+                        .GET()
+                        .build();
+                HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() == 200) {
+                    JsonObject json = GSON.fromJson(resp.body(), JsonObject.class);
+                    if (json != null && json.has("name")) {
+                        String name = json.get("name").getAsString();
+                        put(formattedUuid, name);
+                        return name;
+                    }
+                }
+            } catch (Exception ignoredException) {
+            }
+
+            return null;
+        }).whenComplete((resolvedName, throwable) -> pending.remove(formattedUuid)));
+    }
+
+    private static String resolveImmediate(String formattedUuid) {
         var mc = Minecraft.getInstance();
         var localPlayer = mc.player;
-        if (localPlayer != null && localPlayer.getUUID().toString().equals(uuid)) {
+        if (localPlayer != null && localPlayer.getUUID().toString().equals(formattedUuid)) {
             String name = localPlayer.getName() != null
                     ? localPlayer.getName().getString()
                     : "Unknown";
-            cache.put(uuid, name);
-            if (isCanonicalOnlinePlayerUuid(uuid)) {
-                usernameToUuid.put(name.toLowerCase(), uuid);
-            }
+            put(formattedUuid, name);
             return name;
         }
 
-        // 2. Check cache
-        String cached = cache.get(uuid);
-        if (cached != null)
+        String cached = cache.get(formattedUuid);
+        if (cached != null) {
             return cached;
+        }
 
-        // 3. Check tab list
         var connection = mc.getConnection();
         if (connection != null) {
             try {
-                String formattedUuid = formatUUID(uuid);
-                if (formattedUuid == null) {
-                    return "Loading...";
-                }
                 UUID uid = UUID.fromString(formattedUuid);
                 PlayerInfo info = connection.getPlayerInfo(uid);
                 if (info != null && info.getProfile().name() != null) {
                     String name = info.getProfile().name();
-                    cache.put(uuid, name);
-                    String formattedTabUuid = formatUUID(uuid);
-                    if (isCanonicalOnlinePlayerUuid(formattedTabUuid)) {
-                        usernameToUuid.put(name.toLowerCase(), formattedTabUuid);
-                    }
+                    put(formattedUuid, name);
                     return name;
                 }
             } catch (IllegalArgumentException ignored) {
             }
         }
 
-        // 4. Start async Mojang API lookup if not already pending
-        if (pending.add(uuid)) {
-            CompletableFuture.runAsync(() -> {
-                try {
-                    String cleanUUID = uuid.replace("-", "");
-                    HttpRequest req = HttpRequest.newBuilder()
-                            .uri(
-                                    URI.create(
-                                            "https://sessionserver.mojang.com/session/minecraft/profile/" +
-                                                    cleanUUID))
-                            .timeout(Duration.ofSeconds(10))
-                            .GET()
-                            .build();
-                    HttpResponse<String> resp = httpClient.send(
-                            req,
-                            HttpResponse.BodyHandlers.ofString());
-                    if (resp.statusCode() == 200) {
-                        JsonObject json = GSON.fromJson(
-                                resp.body(),
-                                JsonObject.class);
-                        if (json.has("name")) {
-                            String name = json.get("name").getAsString();
-                            String formatted = formatUUID(uuid);
-                            cache.put(formatted, name);
-                            if (isCanonicalOnlinePlayerUuid(formatted)) {
-                                usernameToUuid.put(name.toLowerCase(), formatted);
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    // Lookup failed — will retry next time resolve() is called
-                } finally {
-                    pending.remove(uuid);
-                }
-            });
-        }
-
-        // 5. Fallback while async resolution is in progress
-        return "Loading...";
+        return null;
     }
 
     /**
@@ -131,9 +127,25 @@ public class PlayerNameCache {
     public static String formatUUID(String uuid) {
         if (uuid == null)
             return null;
-        if (uuid.contains("-"))
-            return uuid;
-        return uuid.replaceFirst(
+
+        String trimmed = uuid.trim();
+        if (trimmed.isBlank()) {
+            return null;
+        }
+
+        if (trimmed.contains("-")) {
+            try {
+                return UUID.fromString(trimmed).toString();
+            } catch (IllegalArgumentException ignored) {
+                return null;
+            }
+        }
+
+        if (!trimmed.matches("[0-9a-fA-F]{32}")) {
+            return null;
+        }
+
+        return trimmed.replaceFirst(
                 "(\\w{8})(\\w{4})(\\w{4})(\\w{4})(\\w{12})",
                 "$1-$2-$3-$4-$5");
     }
@@ -142,9 +154,12 @@ public class PlayerNameCache {
     public static void put(String uuid, String username) {
         if (uuid != null && username != null) {
             String formatted = formatUUID(uuid);
+            if (formatted == null) {
+                return;
+            }
             cache.put(formatted, username);
             if (isCanonicalOnlinePlayerUuid(formatted)) {
-                usernameToUuid.put(username.toLowerCase(), formatted);
+                usernameToUuid.put(username.toLowerCase(Locale.ROOT), formatted);
             }
         }
     }
@@ -159,7 +174,7 @@ public class PlayerNameCache {
         }
 
         String normalized = username.trim();
-        String key = normalized.toLowerCase();
+        String key = normalized.toLowerCase(Locale.ROOT);
 
         String cachedUuid = usernameToUuid.get(key);
         if (cachedUuid != null && !cachedUuid.isBlank()) {
@@ -191,7 +206,7 @@ public class PlayerNameCache {
                 }
 
                 String name = info.getProfile().name();
-                if (name.equalsIgnoreCase(normalized)) {
+                if (name != null && name.equalsIgnoreCase(normalized)) {
                     String resolved = info.getProfile().id() != null
                             ? info.getProfile().id().toString()
                             : null;
