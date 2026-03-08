@@ -48,7 +48,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float SEARCH_BAR_WIDTH = 140;
     private static final float SEARCH_BAR_MARGIN = 8;
     private static final float HEADER_BUTTON_SPACING = 6;
-    private static final float HEADER_INVITE_ALL_GAP = 14;
     private static final float HEADER_MANAGE_BUTTON_W = 88;
     private static final float HEADER_INVITE_BUTTON_W = 56;
     private static final float HEADER_OPEN_CLOSE_BUTTON_W = 84;
@@ -904,7 +903,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     searchY,
                     HEADER_DELIST_BUTTON_W,
                     SEARCH_BAR_HEIGHT);
-            nextButtonX += HEADER_DELIST_BUTTON_W + HEADER_INVITE_ALL_GAP;
+            nextButtonX += HEADER_DELIST_BUTTON_W + HEADER_BUTTON_SPACING;
 
             inviteAllButton = new HeaderButtonBounds(
                     nextButtonX,

@@ -831,7 +831,6 @@ public class PartyFinderManager implements NotificationAccessor {
             }
 
             if (uuidEquals(myUUID, memberUUID)) {
-                skippedCount++;
                 continue;
             }
 
