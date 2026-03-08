@@ -33,6 +33,8 @@ public class PartyFinderManager implements NotificationAccessor {
     private static final long INVITE_NAME_LOOKUP_TIMEOUT_SECONDS = 3L;
     private static final String GAME_PARTY_CREATE_COMMAND = "party create";
     private static final String GAME_PARTY_INVITE_PREFIX = "party invite ";
+    private static final String GAME_PARTY_KICK_PREFIX = "pa kick ";
+    private static final String GAME_PARTY_PROMOTE_PREFIX = "pa promote ";
 
     @Getter
     private final List<Activity> activities = new CopyOnWriteArrayList<>();
@@ -1027,6 +1029,7 @@ public class PartyFinderManager implements NotificationAccessor {
             transferLeadership(party.id, targetUUID)
                     .thenAccept(listing -> {
                         if (listing != null) {
+                            sendGamePartyCommandForUuid(targetUUID, GAME_PARTY_PROMOTE_PREFIX);
                             sendGameDirectMessage(
                                     targetUUID,
                                     "You were promoted to party leader.");
@@ -1057,6 +1060,7 @@ public class PartyFinderManager implements NotificationAccessor {
             kickMember(party.id, targetUUID)
                     .thenAccept(listing -> {
                         if (listing != null) {
+                            sendGamePartyCommandForUuid(targetUUID, GAME_PARTY_KICK_PREFIX);
                             sendGameDirectMessage(
                                     targetUUID,
                                     "You were kicked from the party.");
@@ -1890,6 +1894,34 @@ public class PartyFinderManager implements NotificationAccessor {
         }
         SeqClient.mc.player.connection.sendCommand(GAME_PARTY_INVITE_PREFIX + normalizedUsername);
         return CommandResult.success("Sent Wynn party invite to " + normalizedUsername + ".", null);
+    }
+
+    private void sendGamePartyCommandForUuid(UUID targetUUID, String commandPrefix) {
+        if (targetUUID == null || commandPrefix == null || commandPrefix.isBlank()) {
+            return;
+        }
+
+        PlayerNameCache.resolveAsync(targetUUID.toString())
+                .completeOnTimeout(null, INVITE_NAME_LOOKUP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .thenAccept(resolvedName -> {
+                    if (resolvedName == null
+                            || resolvedName.isBlank()
+                            || "Loading...".equalsIgnoreCase(resolvedName)
+                            || "Unknown".equalsIgnoreCase(resolvedName)
+                            || !resolvedName.matches("[A-Za-z0-9_]{3,16}")) {
+                        SeqClient.LOGGER.warn("Skipping party command '{}' for unresolved UUID {}", commandPrefix,
+                                targetUUID);
+                        return;
+                    }
+
+                    SeqClient.mc.execute(() -> {
+                        var player = SeqClient.mc.player;
+                        if (player == null || player.connection == null) {
+                            return;
+                        }
+                        player.connection.sendCommand(commandPrefix + resolvedName);
+                    });
+                });
     }
 
     private static String validateUsername(String username, boolean rejectSelf) {
