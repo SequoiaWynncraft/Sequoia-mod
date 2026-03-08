@@ -891,9 +891,9 @@ public class PartyFinderManager implements NotificationAccessor {
             ClickEvent joinClickEvent = new ClickEvent.RunCommand(joinCommand);
             ClickEvent denyClickEvent = new ClickEvent.RunCommand(denyCommand);
 
-            MutableComponent fullMessage = NotificationAccessor.prefixComponent()
-                    .append(Component.literal(String.valueOf(message)).withStyle(ChatFormatting.GRAY))
-                    .append(Component.literal(" "))
+            MutableComponent inviteMessage = NotificationAccessor.prefixComponent()
+                    .append(Component.literal(String.valueOf(message)).withStyle(ChatFormatting.GRAY));
+            MutableComponent actionMessage = Component.empty()
                     .append(NotificationAccessor.wynnPill(
                             "join",
                             ChatFormatting.GREEN,
@@ -912,7 +912,8 @@ public class PartyFinderManager implements NotificationAccessor {
                     player.getName().getString(),
                     joinCommand,
                     denyCommand);
-            player.displayClientMessage(fullMessage, false);
+            player.displayClientMessage(inviteMessage, false);
+            player.displayClientMessage(actionMessage, false);
         });
     }
 
