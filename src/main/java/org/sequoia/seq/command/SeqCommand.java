@@ -25,6 +25,7 @@ import org.sequoia.seq.model.Activity;
 import org.sequoia.seq.model.Listing;
 import org.sequoia.seq.model.PartyRole;
 import org.sequoia.seq.network.ConnectionManager;
+import org.sequoia.seq.network.auth.AuthState;
 import org.sequoia.seq.ui.PartyFinderScreen;
 import org.sequoia.seq.utils.PlayerNameCache;
 
@@ -111,30 +112,6 @@ public class SeqCommand {
                                 .then(buildPartyCommand("p"));
 
                 dispatcher.register(root);
-                dispatcher.register(buildInternalInviteCommand());
-        }
-
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildInternalInviteCommand() {
-                return ClientCommandManager.literal("_seqinvite")
-                                .then(ClientCommandManager.literal("join")
-                                                .then(ClientCommandManager.argument(
-                                                                "listingId",
-                                                                LongArgumentType.longArg(1))
-                                                                .then(ClientCommandManager.argument(
-                                                                                "inviteToken",
-                                                                                StringArgumentType.string())
-                                                                                .executes(ctx -> runInternalJoinInvite(
-                                                                                                LongArgumentType.getLong(ctx,
-                                                                                                                "listingId"),
-                                                                                                StringArgumentType.getString(ctx,
-                                                                                                                "inviteToken"))))))
-                                .then(ClientCommandManager.literal("deny")
-                                                .then(ClientCommandManager.argument(
-                                                                "listingId",
-                                                                LongArgumentType.longArg(1))
-                                                                .executes(ctx -> runInternalDenyInvite(
-                                                                                LongArgumentType.getLong(ctx,
-                                                                                                "listingId")))));
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildPartyCommand(String literalName) {
@@ -156,16 +133,12 @@ public class SeqCommand {
                                                                 StringArgumentType.greedyString())
                                                                 .suggests(SeqCommand::suggestActivities)
                                                                 .executes(SeqCommand::runPartyUpdate)))
-                                .then(ClientCommandManager.literal("join")
+                                .then(buildPartyJoinCommand())
+                                .then(ClientCommandManager.literal("deny")
                                                 .then(ClientCommandManager.argument(
                                                                 "listingId",
                                                                 LongArgumentType.longArg(1))
-                                                                .executes(ctx -> runPartyJoin(ctx, PartyRole.DPS))
-                                                                .then(ClientCommandManager.argument(
-                                                                                "role",
-                                                                                StringArgumentType.word())
-                                                                                .suggests(SeqCommand::suggestRoles)
-                                                                                .executes(SeqCommand::runPartyJoinWithRole))))
+                                                                .executes(SeqCommand::runPartyDeny)))
                                 .then(ClientCommandManager.literal("leave")
                                                 .executes(ctx -> relayCommandResult(
                                                                 ctx,
@@ -228,6 +201,30 @@ public class SeqCommand {
                                                                                 ctx,
                                                                                 SeqClient.getPartyFinderManager()
                                                                                                 .inviteAllCurrentMembersFromCommand()))));
+        }
+
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildPartyJoinCommand() {
+                return ClientCommandManager.literal("join")
+                                .then(ClientCommandManager.argument(
+                                                "listingId",
+                                                LongArgumentType.longArg(1))
+                                                .executes(ctx -> runPartyJoin(ctx, PartyRole.DPS, null))
+                                                .then(ClientCommandManager.literal("token")
+                                                                .then(ClientCommandManager.argument(
+                                                                                "inviteToken",
+                                                                                StringArgumentType.string())
+                                                                                .executes(SeqCommand::runPartyJoinWithToken)))
+                                                .then(ClientCommandManager.argument(
+                                                                "role",
+                                                                StringArgumentType.word())
+                                                                .suggests(SeqCommand::suggestRoles)
+                                                                .executes(SeqCommand::runPartyJoinWithRole)
+                                                                .then(ClientCommandManager.literal("token")
+                                                                                .then(ClientCommandManager.argument(
+                                                                                                "inviteToken",
+                                                                                                StringArgumentType
+                                                                                                                .string())
+                                                                                                .executes(SeqCommand::runPartyJoinWithRoleAndToken)))));
         }
 
         private static int openPartyScreen() {
@@ -317,11 +314,14 @@ public class SeqCommand {
                                 SeqClient.getPartyFinderManager().updatePartyFromCommand(activities));
         }
 
-        private static int runPartyJoin(CommandContext<FabricClientCommandSource> ctx, PartyRole role) {
+        private static int runPartyJoin(
+                        CommandContext<FabricClientCommandSource> ctx,
+                        PartyRole role,
+                        String inviteToken) {
                 long listingId = LongArgumentType.getLong(ctx, "listingId");
                 return relayCommandResult(
                                 ctx,
-                                SeqClient.getPartyFinderManager().joinPartyFromCommand(listingId, role));
+                                SeqClient.getPartyFinderManager().joinPartyFromCommand(listingId, role, inviteToken));
         }
 
         private static int runPartyJoinWithRole(CommandContext<FabricClientCommandSource> ctx) {
@@ -330,7 +330,29 @@ public class SeqCommand {
                         sendFeedback(ctx.getSource(), "Role must be one of: DPS, Healer, Tank.");
                         return 0;
                 }
-                return runPartyJoin(ctx, role);
+                return runPartyJoin(ctx, role, null);
+        }
+
+        private static int runPartyJoinWithToken(CommandContext<FabricClientCommandSource> ctx) {
+                return runPartyJoin(
+                                ctx,
+                                PartyRole.DPS,
+                                StringArgumentType.getString(ctx, "inviteToken"));
+        }
+
+        private static int runPartyJoinWithRoleAndToken(CommandContext<FabricClientCommandSource> ctx) {
+                PartyRole role = parseRole(StringArgumentType.getString(ctx, "role"));
+                if (role == null) {
+                        sendFeedback(ctx.getSource(), "Role must be one of: DPS, Healer, Tank.");
+                        return 0;
+                }
+                return runPartyJoin(ctx, role, StringArgumentType.getString(ctx, "inviteToken"));
+        }
+
+        private static int runPartyDeny(CommandContext<FabricClientCommandSource> ctx) {
+                long listingId = LongArgumentType.getLong(ctx, "listingId");
+                sendFeedback(ctx.getSource(), "Dismissed party invite for #" + listingId + ".");
+                return 1;
         }
 
         private static int runPartyInvite(CommandContext<FabricClientCommandSource> ctx) {
@@ -518,30 +540,4 @@ public class SeqCommand {
                 SeqClient.mc.execute(() -> source.sendFeedback(NotificationAccessor.prefixed(message)));
         }
 
-        private static int runInternalJoinInvite(
-                        long listingId,
-                        String inviteToken) {
-                if (inviteToken == null || inviteToken.isBlank()) {
-                        NotificationAccessor.notifyPlayer("Invite token missing.");
-                        return 0;
-                }
-
-                NotificationAccessor.notifyPlayer("Joining party finder invite...");
-                SeqClient.getPartyFinderManager().joinPartyWithInviteToken(
-                                listingId,
-                                PartyRole.DPS,
-                                inviteToken)
-                                .thenAccept(listing -> {
-                                        if (listing != null) {
-                                                NotificationAccessor.notifyPlayer("Joined party finder party.");
-                                        }
-                                });
-                return 1;
-        }
-
-        private static int runInternalDenyInvite(
-                        long listingId) {
-                NotificationAccessor.notifyPlayer("Denied party finder invite.");
-                return 1;
-        }
 }

@@ -304,7 +304,19 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<CommandResult<Listing>> joinPartyFromCommand(long listingId, PartyRole role) {
+        return joinPartyFromCommand(listingId, role, null);
+    }
+
+    public CompletableFuture<CommandResult<Listing>> joinPartyFromCommand(
+            long listingId,
+            PartyRole role,
+            String inviteToken) {
         PartyRole resolvedRole = role != null ? role : PartyRole.DPS;
+        String normalizedInviteToken = inviteToken;
+        if (normalizedInviteToken != null && normalizedInviteToken.isBlank()) {
+            return completedCommandFailure("Invite token missing.");
+        }
+
         return refreshListingsForCommand()
                 .thenCompose(listingsResult -> {
                     if (!listingsResult.success()) {
@@ -315,8 +327,12 @@ public class PartyFinderManager implements NotificationAccessor {
                                 + ". Leave it before joining another listing.");
                     }
 
+                    CompletableFuture<Listing> joinFuture = normalizedInviteToken == null
+                            ? ApiClient.getInstance().joinListing(listingId, resolvedRole)
+                            : ApiClient.getInstance().joinListing(listingId, resolvedRole, normalizedInviteToken);
+
                     return executeListingCommand(
-                            ApiClient.getInstance().joinListing(listingId, resolvedRole),
+                            joinFuture,
                             this::applyJoinedListingState,
                             "Unable to join party",
                             "Failed to join party",
@@ -878,9 +894,9 @@ public class PartyFinderManager implements NotificationAccessor {
                 return;
             }
 
-            String joinCommand = "/_seqinvite join " + listingId + " "
+            String joinCommand = "/seq p join " + listingId + " token "
                     + quoteForCommand(inviteToken);
-            String denyCommand = "/_seqinvite deny " + listingId;
+            String denyCommand = "/seq p deny " + listingId;
 
             ClickEvent joinClickEvent = new ClickEvent.RunCommand(joinCommand);
             ClickEvent denyClickEvent = new ClickEvent.RunCommand(denyCommand);

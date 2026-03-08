@@ -10,14 +10,17 @@ import org.sequoia.seq.client.SeqClient;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 import org.sequoia.seq.model.WynnClassType;
+import org.sequoia.seq.network.auth.AuthErrorCode;
+import org.sequoia.seq.network.auth.AuthException;
 import org.sequoia.seq.utils.WynnClassCache;
 
 import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.UUID;
+import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -47,17 +50,21 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     @Getter
     private boolean authenticated = false;
+
     @Getter
     private boolean authFailed = false;
+
     @Getter
     private boolean notInGuild = false;
+
     @Getter
     private Instant connectedSince;
+
     private Consumer<List<String>> connectedUsersCallback;
     private volatile long nextAllowedAuthAttemptAtMs;
     private volatile int authAttempt;
-    private volatile String stableSessionId;
     private volatile long nextPrivilegedSendAtMs;
+    private volatile boolean connectInProgress;
 
     // Reconnect state
     private static boolean autoReconnect = true;
@@ -111,27 +118,24 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 getURI());
         if (isOpen()) {
             if (authFlow == AuthFlow.LINK) {
-                notify("Starting account link flow...");
-                requestAuth(true);
+                notify("Refreshing backend authentication...");
+                refreshAuthentication();
             } else {
                 notify("Already connected/connecting.");
             }
             return;
         }
+        if (connectInProgress) {
+            notify("Already connected/connecting.");
+            return;
+        }
 
         if (authFlow == AuthFlow.LINK) {
-            notify("Linking your account on " + BuildConfig.ENVIRONMENT + "...");
+            notify("Authenticating your Minecraft account on " + BuildConfig.ENVIRONMENT + "...");
         } else {
             notify("Connecting to " + BuildConfig.ENVIRONMENT + "...");
         }
-        try {
-            super.connect();
-        } catch (Exception e) {
-            SeqClient.LOGGER.error("Failed to connect", e);
-            notify("Failed to connect: " + e.getMessage());
-            instance = null;
-            scheduleReconnect();
-        }
+        prepareAuthenticatedConnection(authFlow == AuthFlow.LINK);
     }
 
     public void disconnect() {
@@ -142,6 +146,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 autoReconnect);
         autoReconnect = false;
         cancelReconnect();
+        connectInProgress = false;
         if (!isOpen()) {
             notify("Not connected");
             return;
@@ -164,27 +169,30 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 getURI(),
                 handshake != null ? handshake.getHttpStatus() : -1,
                 handshake != null ? handshake.getHttpStatusMessage() : "null");
+        connectInProgress = false;
         reconnectAttempt = 0;
-        authenticated = false;
+        authenticated = true;
         authFailed = false;
         notInGuild = false;
-        connectedSince = null;
-        String token = SeqClient.getConfigManager().getToken();
-        if (pendingAuthFlow == AuthFlow.LINK) {
-            SeqClient.LOGGER.info("[WebSocket] Link flow requested; requesting auth challenge");
-            requestAuth(true);
-            return;
-        }
+        connectedSince = Instant.now();
+        autoReconnect = true;
+        authAttempt = 0;
+        nextAllowedAuthAttemptAtMs = 0;
 
-        if (token != null && !token.isBlank()) {
-            SeqClient.LOGGER.info("[WebSocket] Authenticating with stored token (length={})", token.length());
-            attemptAuthenticate(token, false);
+        String username = SeqClient.getConfigManager().getMinecraftUsername();
+        if (pendingAuthFlow == AuthFlow.LINK) {
+            notify(
+                    username != null && !username.isBlank()
+                            ? "Authenticated Minecraft account: " + username
+                            : "Authenticated Minecraft account.");
         } else {
-            SeqClient.LOGGER.info("[WebSocket] No stored token found; connect flow will not request auth challenge");
-            notify("No linked account token found. Run /seq link first.");
-            autoReconnect = false;
-            close();
+            notify(
+                    username != null && !username.isBlank()
+                            ? "Connected as " + username
+                            : "Connected to " + BuildConfig.ENVIRONMENT + ".");
         }
+        pendingAuthFlow = AuthFlow.CONNECT;
+        sendLocalPartyClassUpdate();
     }
 
     @Override
@@ -201,18 +209,17 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 reason,
                 remote,
                 autoReconnect);
+        connectInProgress = false;
         authenticated = false;
         authFailed = false;
         notInGuild = false;
         connectedSince = null;
         instance = null;
+        handleWebSocketAuthRejection(code, reason);
         boolean shouldReconnect = autoReconnect && shouldReconnectAfterClose(code, remote);
         if (shouldReconnect) {
             SeqClient.LOGGER.info(
-                    "[WebSocket] Scheduling reconnect after close code={} remote={} reason='{}'",
-                    code,
-                    remote,
-                    reason);
+                    "[WebSocket] Scheduling reconnect after close code={} remote={} reason='{}'", code, remote, reason);
             scheduleReconnect();
         } else {
             SeqClient.LOGGER.info(
@@ -232,6 +239,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 authenticated,
                 ex != null ? ex.getMessage() : "null",
                 ex);
+        connectInProgress = false;
         notify("Connection error: " + (ex != null ? ex.getMessage() : "unknown"));
     }
 
@@ -249,16 +257,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         long delay = Math.min(RECONNECT_BASE_MS * (1L << reconnectAttempt), RECONNECT_CAP_MS);
         reconnectAttempt++;
         SeqClient.LOGGER.info("[WebSocket] Reconnecting in {}ms (attempt {})", delay, reconnectAttempt);
-        reconnectTask = scheduler.schedule(() -> {
-            instance = null;
-            try {
-                SeqClient.LOGGER.info("[WebSocket] Running scheduled reconnect attempt {}", reconnectAttempt);
-                getInstance().connect();
-            } catch (Exception e) {
-                SeqClient.LOGGER.error("[WebSocket] Reconnect failed", e);
-                scheduleReconnect();
-            }
-        }, delay, TimeUnit.MILLISECONDS);
+        reconnectTask = scheduler.schedule(
+                () -> {
+                    instance = null;
+                    try {
+                        SeqClient.LOGGER.info("[WebSocket] Running scheduled reconnect attempt {}", reconnectAttempt);
+                        getInstance().connect();
+                    } catch (Exception e) {
+                        SeqClient.LOGGER.error("[WebSocket] Reconnect failed", e);
+                        scheduleReconnect();
+                    }
+                },
+                delay,
+                TimeUnit.MILLISECONDS);
     }
 
     private static void cancelReconnect() {
@@ -296,76 +307,129 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         if (isPrivilegedType(type) && !canSendPrivileged(type)) {
             return;
         }
-        if (payload == null)
-            payload = new JsonObject();
+        if (payload == null) payload = new JsonObject();
         payload.addProperty("type", type);
         SeqClient.LOGGER.debug("[WebSocket] send type={} payload={}", type, truncate(payload.toString(), 512));
         send(GSON.toJson(payload));
     }
 
-    private void requestAuth(boolean force) {
-        if (!force && !canAttemptAuthNow()) {
+    private void prepareAuthenticatedConnection(boolean forceRefresh) {
+        if (!forceRefresh && !canAttemptAuthNow()) {
             return;
         }
-        var player = Minecraft.getInstance().player;
-        var user = Minecraft.getInstance().getUser();
-        if (player == null || user == null) {
-            notify("Cannot start linking: player session is not ready.");
-            return;
-        }
+        connectInProgress = true;
+        SeqClient.getAuthService()
+                .ensureValidToken(forceRefresh)
+                .whenComplete((token, throwable) -> Minecraft.getInstance().execute(() -> {
+                    if (throwable != null) {
+                        connectInProgress = false;
+                        AuthException authException = unwrapAuthException(throwable);
+                        authFailed = true;
+                        authenticated = false;
+                        registerAuthFailure();
+                        SeqClient.LOGGER.warn(
+                                "[WebSocket] Failed to obtain backend auth token code={} message={}",
+                                authException.getStableCode(),
+                                authException.getMessage(),
+                                authException);
+                        notify(authException.getMessage());
+                        if (authException.isRetryable() && autoReconnect) {
+                            scheduleReconnect();
+                        }
+                        return;
+                    }
 
-        String username = player.getName().getString();
-        if (username == null || !MC_USERNAME_PATTERN.matcher(username).matches()) {
-            notify("Cannot link: invalid Minecraft username format.");
-            SeqClient.LOGGER.warn("[WebSocket] Invalid auth_request username '{}'", username);
-            return;
-        }
-
-        String uuidText = player.getUUID().toString();
-        if (!isValidUuid(uuidText)) {
-            notify("Cannot link: invalid Minecraft UUID.");
-            SeqClient.LOGGER.warn("[WebSocket] Invalid auth_request uuid '{}'", uuidText);
-            return;
-        }
-
-        String sessionId;
-        try {
-            sessionId = user.getSessionId();
-        } catch (Throwable t) {
-            notify("Cannot link: missing session id. Re-log before /seq link.");
-            SeqClient.LOGGER.warn("[WebSocket] Could not read session id for auth_request", t);
-            return;
-        }
-        if (sessionId == null || sessionId.isBlank()) {
-            notify("Cannot link: missing session id. Re-log before /seq link.");
-            return;
-        }
-        if (stableSessionId == null) {
-            stableSessionId = sessionId;
-        } else if (!stableSessionId.equals(sessionId)) {
-            notify("Session changed. Please run /seq link again.");
-            SeqClient.LOGGER.warn("[WebSocket] Session id changed mid-session; blocking auth_request");
-            return;
-        }
-
-        JsonObject msg = new JsonObject();
-        msg.addProperty("minecraft_uuid", uuidText);
-        msg.addProperty("minecraft_username", username);
-        msg.addProperty("session_id", sessionId);
-        send("auth_request", msg);
+                    try {
+                        configureHandshakeAuthorization(token);
+                        super.connect();
+                    } catch (Exception exception) {
+                        connectInProgress = false;
+                        SeqClient.LOGGER.error("Failed to connect", exception);
+                        notify("Failed to connect: " + exception.getMessage());
+                        instance = null;
+                        scheduleReconnect();
+                    }
+                }));
     }
 
-    private void attemptAuthenticate(String token, boolean force) {
-        if (token == null || token.isBlank()) {
-            requestAuth(force);
+    private void refreshAuthentication() {
+        SeqClient.getAuthService().beginAuthentication().whenComplete((session, throwable) -> Minecraft.getInstance()
+                .execute(() -> {
+                    if (throwable != null) {
+                        AuthException authException = unwrapAuthException(throwable);
+                        SeqClient.LOGGER.warn(
+                                "[WebSocket] Refresh authentication failed code={} message={}",
+                                authException.getStableCode(),
+                                authException.getMessage(),
+                                authException);
+                        notify(authException.getMessage());
+                        return;
+                    }
+
+                    notify(
+                            session.minecraftUsername() != null
+                                            && !session.minecraftUsername().isBlank()
+                                    ? "Refreshed backend token for " + session.minecraftUsername()
+                                    : "Refreshed backend token.");
+                }));
+    }
+
+    private void configureHandshakeAuthorization(String token) {
+        Map<String, String> headers = buildHandshakeHeaders(token);
+        clearHeaders();
+        headers.forEach(this::addHeader);
+    }
+
+    static Map<String, String> buildHandshakeHeaders(String token) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        if (token != null && !token.isBlank()) {
+            headers.put("Authorization", buildAuthorizationHeaderValue(token));
+        }
+        return headers;
+    }
+
+    static String buildAuthorizationHeaderValue(String token) {
+        return "Bearer " + token.trim();
+    }
+
+    private AuthException unwrapAuthException(Throwable throwable) {
+        Throwable cause = throwable;
+        while (cause instanceof java.util.concurrent.CompletionException && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        if (cause instanceof AuthException authException) {
+            return authException;
+        }
+        return new AuthException(
+                AuthErrorCode.NETWORK_FAILURE,
+                cause != null && cause.getMessage() != null ? cause.getMessage() : "Authentication request failed.",
+                true,
+                cause);
+    }
+
+    private void handleWebSocketAuthRejection(int code, String reason) {
+        String normalizedReason = reason == null ? "" : reason.toLowerCase(Locale.ROOT);
+        boolean rejected = code == 1008
+                || normalizedReason.contains("token")
+                || normalizedReason.contains("expired")
+                || normalizedReason.contains("unauthor")
+                || normalizedReason.contains("forbidden")
+                || normalizedReason.contains("auth");
+        if (!rejected) {
             return;
         }
-        if (!force && !canAttemptAuthNow()) {
-            return;
-        }
-        JsonObject msg = new JsonObject();
-        msg.addProperty("token", token);
-        send("authenticate", msg);
+
+        authFailed = true;
+        SeqClient.getAuthService()
+                .invalidateSession(
+                        normalizedReason.contains("expired")
+                                ? AuthErrorCode.TOKEN_EXPIRED
+                                : AuthErrorCode.WEBSOCKET_AUTH_REJECTED,
+                        normalizedReason.contains("expired")
+                                ? "Backend token expired. Re-authenticating."
+                                : "Backend rejected websocket authentication. Re-authenticating.");
+        notify(SeqClient.getAuthService().getLastError().getMessage());
+        registerAuthFailure();
     }
 
     public void requestConnectedUsers(Consumer<List<String>> callback) {
@@ -388,8 +452,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return;
         }
         if (authFailed || notInGuild) {
-            SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat dropped: authFailed={} notInGuild={}", authFailed,
-                    notInGuild);
+            SeqClient.LOGGER.warn(
+                    "[ConnectionManager] sendGuildChat dropped: authFailed={} notInGuild={}", authFailed, notInGuild);
             return;
         }
 
@@ -399,8 +463,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return;
         }
         if (cleanedMessage.length() > MAX_GUILD_CHAT_MESSAGE_LENGTH) {
-            SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat dropped: message too long={} max={}",
-                    cleanedMessage.length(), MAX_GUILD_CHAT_MESSAGE_LENGTH);
+            SeqClient.LOGGER.warn(
+                    "[ConnectionManager] sendGuildChat dropped: message too long={} max={}",
+                    cleanedMessage.length(),
+                    MAX_GUILD_CHAT_MESSAGE_LENGTH);
             notify("Guild chat message too long.");
             return;
         }
@@ -422,32 +488,33 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             msg.addProperty("nickname", safeNickname);
         }
         msg.addProperty("message", cleanedMessage);
-        if (safeAvatarUrl != null)
-            msg.addProperty("avatar_url", safeAvatarUrl);
+        if (safeAvatarUrl != null) msg.addProperty("avatar_url", safeAvatarUrl);
         send("guild_chat", msg);
     }
 
-    public void sendRaidAnnouncement(List<String> usernames, String raidType,
-            int aspectCount, int emeraldCount,
-            double experienceCount, int srCount) {
+    public void sendRaidAnnouncement(
+            List<String> usernames,
+            String raidType,
+            int aspectCount,
+            int emeraldCount,
+            double experienceCount,
+            int srCount) {
         if (!authenticated || !isOpen()) {
             SeqClient.LOGGER.warn(
-                    "[WebSocket] sendRaidAnnouncement dropped open={} authenticated={}",
-                    isOpen(),
-                    authenticated);
+                    "[WebSocket] sendRaidAnnouncement dropped open={} authenticated={}", isOpen(), authenticated);
             return;
         }
         if (authFailed || notInGuild) {
-            SeqClient.LOGGER.warn("[WebSocket] sendRaidAnnouncement dropped authFailed={} notInGuild={}", authFailed,
-                    notInGuild);
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendRaidAnnouncement dropped authFailed={} notInGuild={}", authFailed, notInGuild);
             return;
         }
         if (usernames == null || usernames.isEmpty() || raidType == null || raidType.isBlank()) {
             SeqClient.LOGGER.warn("[WebSocket] sendRaidAnnouncement dropped: invalid payload");
             return;
         }
-        SeqClient.LOGGER.info("[WebSocket] Sending guild_raid_announcement type={} usernames={}", raidType,
-                usernames.size());
+        SeqClient.LOGGER.info(
+                "[WebSocket] Sending guild_raid_announcement type={} usernames={}", raidType, usernames.size());
         JsonObject msg = new JsonObject();
         JsonArray names = new JsonArray();
         usernames.forEach(names::add);
@@ -470,8 +537,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return;
         }
         if (authFailed || notInGuild) {
-            SeqClient.LOGGER.warn("[WebSocket] sendPartyClassUpdate dropped authFailed={} notInGuild={}", authFailed,
-                    notInGuild);
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendPartyClassUpdate dropped authFailed={} notInGuild={}", authFailed, notInGuild);
             return;
         }
         SeqClient.LOGGER.info("[WebSocket] Sending party_class_update classType={}", classType);
@@ -501,28 +568,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             SeqClient.LOGGER.info("[WebSocket] Received message type={} payload={}", type, truncate(message, 512));
 
             switch (type) {
-                case "auth_challenge" -> {
-                    String url = json.get("url").getAsString();
-                    String code = json.get("code").getAsString();
-                    notifyClickable("Click here to authenticate", url);
-                    notify("Your code: " + code);
-                }
-                case "auth_success" -> {
-                    String token = json.get("token").getAsString();
-                    String discordUser = json.get("discord_username").getAsString();
-                    SeqClient.getConfigManager().setToken(token);
-                    authenticated = true;
-                    authFailed = false;
-                    notInGuild = false;
-                    authAttempt = 0;
-                    nextAllowedAuthAttemptAtMs = 0;
-                    connectedSince = Instant.now();
-                    autoReconnect = true;
-                    notify("Successfully linked to Discord: " + discordUser);
-                    sendLocalPartyClassUpdate();
-                }
                 case "authenticated" -> {
-                    String discordUser = json.get("discord_username").getAsString();
                     authenticated = true;
                     authFailed = false;
                     notInGuild = false;
@@ -530,7 +576,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     nextAllowedAuthAttemptAtMs = 0;
                     connectedSince = Instant.now();
                     autoReconnect = true;
-                    notify("Connected as " + discordUser);
+                    if (json.has("discord_username")
+                            && json.get("discord_username").isJsonPrimitive()) {
+                        String discordUser = json.get("discord_username").getAsString();
+                        notify("Connected as " + discordUser);
+                    }
                     sendLocalPartyClassUpdate();
                 }
                 case "connected_users" -> {
@@ -589,11 +639,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                 listingJson != null);
 
                         partyFinderInviteHandler.accept(
-                                new PartyFinderInviteMessage(
-                                        listingId,
-                                        inviterUUID,
-                                        inviteToken,
-                                        listingJson));
+                                new PartyFinderInviteMessage(listingId, inviterUUID, inviteToken, listingJson));
                     } else {
                         SeqClient.LOGGER.warn("[WebSocket] Received party_finder_invite but handler is not registered");
                     }
@@ -611,10 +657,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                 minutesRemaining);
 
                         partyFinderStaleWarningHandler.accept(
-                                new PartyFinderStaleWarningMessage(
-                                        listingId,
-                                        disbandAt,
-                                        minutesRemaining));
+                                new PartyFinderStaleWarningMessage(listingId, disbandAt, minutesRemaining));
                     } else {
                         SeqClient.LOGGER.warn(
                                 "[WebSocket] Received party_finder_stale_warning but handler is not registered");
@@ -640,8 +683,15 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         authFailed = true;
                         authenticated = false;
                         registerAuthFailure();
-                        SeqClient.getConfigManager().clearToken();
-                        notify("Authentication failed. Please relink/login with /seq link.");
+                        SeqClient.getAuthService()
+                                .invalidateSession(
+                                        normalized.contains("expired")
+                                                ? AuthErrorCode.TOKEN_EXPIRED
+                                                : AuthErrorCode.TOKEN_INVALID,
+                                        normalized.contains("expired")
+                                                ? "Backend token expired. Re-authentication required."
+                                                : "Backend rejected the stored token. Re-authentication required.");
+                        notify(SeqClient.getAuthService().getLastError().getMessage());
                         return;
                     }
 
@@ -650,8 +700,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         authFailed = true;
                         authenticated = false;
                         notify("Access denied: you are not in the guild.");
-                        SeqClient.LOGGER
-                                .warn("[WebSocket] Guild error detected; disabling auto-reconnect and closing socket");
+                        SeqClient.LOGGER.warn(
+                                "[WebSocket] Guild error detected; disabling auto-reconnect and closing socket");
                         autoReconnect = false;
                         close();
                         return;
@@ -733,8 +783,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     private boolean canSendPrivileged(String type) {
         if (!authenticated || authFailed || notInGuild) {
-            SeqClient.LOGGER.warn("[WebSocket] Dropping {}: authenticated={} authFailed={} notInGuild={}", type,
-                    authenticated, authFailed, notInGuild);
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] Dropping {}: authenticated={} authFailed={} notInGuild={}",
+                    type,
+                    authenticated,
+                    authFailed,
+                    notInGuild);
             return false;
         }
         long now = System.currentTimeMillis();
@@ -747,7 +801,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private static boolean isPrivilegedType(String type) {
-        return "guild_chat".equals(type) || "guild_raid_announcement".equals(type) || "party_class_update".equals(type)
+        return "guild_chat".equals(type)
+                || "guild_raid_announcement".equals(type)
+                || "party_class_update".equals(type)
                 || "get_connected".equals(type);
     }
 
@@ -796,15 +852,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return trimmed;
     }
 
-    private static boolean isValidUuid(String value) {
-        try {
-            UUID.fromString(value);
-            return true;
-        } catch (Exception ignored) {
-            return false;
-        }
-    }
-
     private static int extractStatusCode(JsonObject json) {
         if (json == null) {
             return -1;
@@ -843,7 +890,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
         if (json.has("request_type") && json.get("request_type").isJsonPrimitive()) {
             String requestType = json.get("request_type").getAsString().toLowerCase(Locale.ROOT);
-            return requestType.startsWith("party_") || requestType.contains("listing")
+            return requestType.startsWith("party_")
+                    || requestType.contains("listing")
                     || requestType.contains("invite");
         }
         return false;
@@ -854,37 +902,24 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     public String getUptimeString() {
-        if (connectedSince == null)
-            return null;
+        if (connectedSince == null) return null;
         java.time.Duration dur = java.time.Duration.between(connectedSince, Instant.now());
         long hours = dur.toHours();
         long mins = dur.toMinutesPart();
         long secs = dur.toSecondsPart();
-        if (hours > 0)
-            return hours + "h " + mins + "m";
-        if (mins > 0)
-            return mins + "m " + secs + "s";
+        if (hours > 0) return hours + "h " + mins + "m";
+        if (mins > 0) return mins + "m " + secs + "s";
         return secs + "s";
     }
 
     // ── Message records ──
 
-    public record DiscordChatMessage(String username, String message) {
-    }
+    public record DiscordChatMessage(String username, String message) {}
 
-    public record PartyFinderUpdateMessage(String action, JsonObject listingJson) {
-    }
+    public record PartyFinderUpdateMessage(String action, JsonObject listingJson) {}
 
     public record PartyFinderInviteMessage(
-            long listingId,
-            String inviterUUID,
-            String inviteToken,
-            JsonObject listingJson) {
-    }
+            long listingId, String inviterUUID, String inviteToken, JsonObject listingJson) {}
 
-        public record PartyFinderStaleWarningMessage(
-            long listingId,
-            Instant disbandAt,
-            long minutesRemaining) {
-        }
+    public record PartyFinderStaleWarningMessage(long listingId, Instant disbandAt, long minutesRemaining) {}
 }
