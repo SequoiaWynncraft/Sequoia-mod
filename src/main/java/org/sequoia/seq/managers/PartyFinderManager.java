@@ -346,6 +346,10 @@ public class PartyFinderManager implements NotificationAccessor {
 
                     String normalizedUsername = username.trim();
                     Listing listing = currentResult.data();
+                    String reservedSlotError = validateReservedSlotsForInvite(listing);
+                    if (reservedSlotError != null) {
+                        return completedCommandFailureVoid(reservedSlotError);
+                    }
                     return resolveUuidForCommand(normalizedUsername)
                             .thenCompose(uuidResult -> {
                                 if (!uuidResult.success()) {
@@ -1097,6 +1101,11 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         String normalizedUsername = username.trim();
+        String reservedSlotError = validateReservedSlotsForInvite(currentListing);
+        if (reservedSlotError != null) {
+            pushUiError(reservedSlotError);
+            return;
+        }
         SeqClient.LOGGER.info(
                 "[PartyFinderWS] createInvite requested listingId={} username='{}'",
                 currentListing != null ? currentListing.id() : -1,
@@ -2007,6 +2016,13 @@ public class PartyFinderManager implements NotificationAccessor {
             }
         }
         return count;
+    }
+
+    private static String validateReservedSlotsForInvite(Listing listing) {
+        if (inferReservedSlotCount(listing) > 0) {
+            return null;
+        }
+        return "Add at least one reserved slot before creating a party finder invite.";
     }
 
     private void refreshCurrentListing() {
