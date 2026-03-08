@@ -25,6 +25,7 @@ import org.sequoia.seq.model.Activity;
 import org.sequoia.seq.model.Listing;
 import org.sequoia.seq.model.PartyRole;
 import org.sequoia.seq.network.ConnectionManager;
+import org.sequoia.seq.network.auth.AuthState;
 import org.sequoia.seq.ui.PartyFinderScreen;
 import org.sequoia.seq.utils.PlayerNameCache;
 
