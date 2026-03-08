@@ -15,7 +15,6 @@ import java.util.concurrent.CompletableFuture;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.SharedSuggestionProvider;
 import org.sequoia.seq.accessors.NotificationAccessor;
@@ -35,7 +34,6 @@ public class SeqCommand {
 
         public static void register() {
                 ClientCommandRegistrationCallback.EVENT.register(SeqCommand::registerCommands);
-                ClientSendMessageEvents.ALLOW_COMMAND.register(SeqCommand::onOutgoingCommand);
         }
 
         private static void registerCommands(
@@ -113,6 +111,30 @@ public class SeqCommand {
                                 .then(buildPartyCommand("p"));
 
                 dispatcher.register(root);
+                dispatcher.register(buildInternalInviteCommand());
+        }
+
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildInternalInviteCommand() {
+                return ClientCommandManager.literal("_seqinvite")
+                                .then(ClientCommandManager.literal("join")
+                                                .then(ClientCommandManager.argument(
+                                                                "listingId",
+                                                                LongArgumentType.longArg(1))
+                                                                .then(ClientCommandManager.argument(
+                                                                                "inviteToken",
+                                                                                StringArgumentType.string())
+                                                                                .executes(ctx -> runInternalJoinInvite(
+                                                                                                LongArgumentType.getLong(ctx,
+                                                                                                                "listingId"),
+                                                                                                StringArgumentType.getString(ctx,
+                                                                                                                "inviteToken"))))))
+                                .then(ClientCommandManager.literal("deny")
+                                                .then(ClientCommandManager.argument(
+                                                                "listingId",
+                                                                LongArgumentType.longArg(1))
+                                                                .executes(ctx -> runInternalDenyInvite(
+                                                                                LongArgumentType.getLong(ctx,
+                                                                                                "listingId")))));
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildPartyCommand(String literalName) {
@@ -513,60 +535,5 @@ public class SeqCommand {
         private static int runInternalDenyInvite(
                         long listingId) {
                 return 1;
-        }
-
-        private static boolean onOutgoingCommand(String command) {
-                String raw = command == null ? "" : command.trim();
-                if (raw.isEmpty()) {
-                        return true;
-                }
-                if (raw.charAt(0) == '/') {
-                        raw = raw.substring(1).trim();
-                }
-                if (!raw.startsWith("_seqinvite")) {
-                        return true;
-                }
-
-                String[] parts = raw.split("\\s+", 4);
-                if (parts.length < 3) {
-                        return false;
-                }
-
-                String action = parts[1];
-                long listingId;
-                try {
-                        listingId = Long.parseLong(parts[2]);
-                } catch (NumberFormatException ignored) {
-                        return false;
-                }
-
-                if ("join".equalsIgnoreCase(action)) {
-                        if (parts.length < 4) {
-                                return false;
-                        }
-                        String inviteToken = unquoteCommandValue(parts[3]);
-                        runInternalJoinInvite(listingId, inviteToken);
-                        return false;
-                }
-
-                if ("deny".equalsIgnoreCase(action)) {
-                        runInternalDenyInvite(listingId);
-                        return false;
-                }
-
-                return false;
-        }
-
-        private static String unquoteCommandValue(String rawValue) {
-                if (rawValue == null) {
-                        return "";
-                }
-                String value = rawValue.trim();
-                if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
-                        value = value.substring(1, value.length() - 1)
-                                        .replace("\\\"", "\"")
-                                        .replace("\\\\", "\\");
-                }
-                return value;
         }
 }
