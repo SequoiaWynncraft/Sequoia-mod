@@ -13,10 +13,25 @@ import java.net.URISyntaxException;
 
 public interface NotificationAccessor {
 
-    String PREFIX = "Sequoia » ";
+    String PREFIX_LABEL = "sequoia";
+    String PILL_CORNER_LEFT = "⁤";
+    String PILL_CORNER_RIGHT = "⁤";
+    String PILL_BG_BACK = "";
+    String PILL_BG_FRONT = "";
 
     static @NotNull MutableComponent prefixComponent() {
-        return Component.literal(PREFIX).withStyle(ChatFormatting.DARK_PURPLE);
+        MutableComponent prefix = Component.empty();
+        prefix.append(Component.literal(PILL_CORNER_LEFT).withStyle(ChatFormatting.DARK_PURPLE));
+
+        for (int i = 0; i < PREFIX_LABEL.length(); i++) {
+            String glyph = toWynncraftGlyph(PREFIX_LABEL.charAt(i));
+            prefix.append(Component.literal(PILL_BG_BACK).withStyle(ChatFormatting.DARK_PURPLE));
+            prefix.append(Component.literal(PILL_BG_FRONT + glyph).withStyle(ChatFormatting.WHITE));
+        }
+
+        prefix.append(Component.literal(PILL_CORNER_RIGHT).withStyle(ChatFormatting.DARK_PURPLE));
+        prefix.append(Component.literal(" "));
+        return prefix;
     }
 
     default void notify(String message) {
@@ -50,5 +65,49 @@ public interface NotificationAccessor {
 
     static @NotNull Component prefixed(String message) {
         return prefixComponent().append(Component.literal(String.valueOf(message)).withStyle(ChatFormatting.GRAY));
+    }
+
+    private static String toWynncraftGlyph(char rawChar) {
+        char ch = Character.toLowerCase(rawChar);
+        return switch (ch) {
+            case 'a' -> "";
+            case 'b' -> "";
+            case 'c' -> "";
+            case 'd' -> "";
+            case 'e' -> "";
+            case 'f' -> "";
+            case 'g' -> "";
+            case 'h' -> "";
+            case 'i' -> "";
+            case 'j' -> "";
+            case 'k' -> "";
+            case 'l' -> "";
+            case 'm' -> "";
+            case 'n' -> "";
+            case 'o' -> "";
+            case 'p' -> "";
+            case 'q' -> "";
+            case 'r' -> "";
+            case 's' -> "";
+            case 't' -> "";
+            case 'u' -> "";
+            case 'v' -> "";
+            case 'w' -> "";
+            case 'x' -> "";
+            case 'y' -> "";
+            case 'z' -> "";
+            case '0' -> "";
+            case '1' -> "";
+            case '2' -> "";
+            case '3' -> "";
+            case '4' -> "";
+            case '5' -> "";
+            case '6' -> "";
+            case '7' -> "";
+            case '8' -> "";
+            case '9' -> "";
+            case ' ' -> " ";
+            default -> String.valueOf(rawChar);
+        };
     }
 }
