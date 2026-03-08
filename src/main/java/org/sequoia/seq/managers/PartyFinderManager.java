@@ -89,6 +89,16 @@ public class PartyFinderManager implements NotificationAccessor {
             String username) {
     }
 
+    private record InviteAllCandidate(
+            String memberUUID,
+            CompletableFuture<String> usernameFuture) {
+    }
+
+    private record ResolvedInviteTarget(
+            String memberUUID,
+            String username) {
+    }
+
     public PartyFinderManager() {
         SeqClient.LOGGER.info("[PartyFinderWS] Registering party finder websocket handlers");
         // Register for real-time WS updates
@@ -551,10 +561,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return ApiClient.getInstance()
                 .createListing(activityIds, mode, strict, region, role, note)
                 .thenApply(listing -> {
-                    replaceListing(listing);
-                    currentListing = listing;
-                    listingsVersion++;
-                    publishLocalClassUpdate();
+                    applyCreatedListingState(listing);
                     return listing;
                 })
                 .exceptionally(e -> {
@@ -569,10 +576,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return ApiClient.getInstance()
                 .joinListing(listingId, role)
                 .thenApply(listing -> {
-                    replaceListing(listing);
-                    currentListing = listing;
-                    listingsVersion++;
-                    publishLocalClassUpdate();
+                    applyJoinedListingState(listing);
                     return listing;
                 })
                 .exceptionally(e -> {
@@ -590,10 +594,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return ApiClient.getInstance()
                 .joinListing(listingId, role, inviteToken)
                 .thenApply(listing -> {
-                    replaceListing(listing);
-                    currentListing = listing;
-                    listingsVersion++;
-                    publishLocalClassUpdate();
+                    applyJoinedListingState(listing);
                     return listing;
                 })
                 .exceptionally(e -> {
@@ -615,9 +616,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return ApiClient.getInstance()
                 .leaveListing(listingId)
                 .thenApply(listing -> {
-                    replaceListing(listing);
-                    currentListing = null;
-                    listingsVersion++;
+                    applyLeftListingState(listing);
                     return listing;
                 })
                 .exceptionally(e -> {
@@ -630,9 +629,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return ApiClient.getInstance()
                 .closeListing(listingId)
                 .thenApply(listing -> {
-                    replaceListing(listing);
-                    currentListing = listing;
-                    listingsVersion++;
+                    applyUpdatedCurrentListingState(listing);
                     return listing;
                 })
                 .exceptionally(e -> {
@@ -645,9 +642,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return ApiClient.getInstance()
                 .reopenListing(listingId)
                 .thenApply(listing -> {
-                    replaceListing(listing);
-                    currentListing = listing;
-                    listingsVersion++;
+                    applyUpdatedCurrentListingState(listing);
                     return listing;
                 })
                 .exceptionally(e -> {
@@ -696,9 +691,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return ApiClient.getInstance()
                 .changeMyRole(role)
                 .thenApply(listing -> {
-                    replaceListing(listing);
-                    currentListing = listing;
-                    listingsVersion++;
+                    applyUpdatedCurrentListingState(listing);
                     return listing;
                 })
                 .exceptionally(e -> {
@@ -716,9 +709,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return ApiClient.getInstance()
                 .reassignRole(listingId, targetUUID, role)
                 .thenApply(listing -> {
-                    replaceListing(listing);
-                    currentListing = listing;
-                    listingsVersion++;
+                    applyUpdatedCurrentListingState(listing);
                     return listing;
                 })
                 .exceptionally(e -> {
@@ -733,9 +724,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return ApiClient.getInstance()
                 .transferLeadership(listingId, targetUUID)
                 .thenApply(listing -> {
-                    replaceListing(listing);
-                    currentListing = listing;
-                    listingsVersion++;
+                    applyUpdatedCurrentListingState(listing);
                     return listing;
                 })
                 .exceptionally(e -> {
@@ -1024,8 +1013,11 @@ public class PartyFinderManager implements NotificationAccessor {
             return;
         PartyMember member = party.members.get(memberIndex);
         try {
-            UUID targetUUID = UUID.fromString(
-                    PlayerNameCache.formatUUID(member.playerUUID));
+            String formattedTargetUuid = PlayerNameCache.formatUUID(member.playerUUID);
+            if (formattedTargetUuid == null) {
+                throw new IllegalArgumentException("Unparseable member UUID");
+            }
+            UUID targetUUID = UUID.fromString(formattedTargetUuid);
             transferLeadership(party.id, targetUUID)
                     .thenAccept(listing -> {
                         if (listing != null) {
@@ -1055,8 +1047,11 @@ public class PartyFinderManager implements NotificationAccessor {
             return;
         PartyMember member = party.members.get(memberIndex);
         try {
-            UUID targetUUID = UUID.fromString(
-                    PlayerNameCache.formatUUID(member.playerUUID));
+            String formattedTargetUuid = PlayerNameCache.formatUUID(member.playerUUID);
+            if (formattedTargetUuid == null) {
+                throw new IllegalArgumentException("Unparseable member UUID");
+            }
+            UUID targetUUID = UUID.fromString(formattedTargetUuid);
             kickMember(party.id, targetUUID)
                     .thenAccept(listing -> {
                         if (listing != null) {
@@ -1104,14 +1099,16 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         String normalizedUsername = username.trim();
-        String reservedSlotError = validateReservedSlotsForInvite(currentListing);
+        Listing requestedListing = currentListing;
+        long requestedListingId = requestedListing.id();
+        String reservedSlotError = validateReservedSlotsForInvite(requestedListing);
         if (reservedSlotError != null) {
             pushUiError(reservedSlotError);
             return;
         }
         SeqClient.LOGGER.info(
                 "[PartyFinderWS] createInvite requested listingId={} username='{}'",
-                currentListing != null ? currentListing.id() : -1,
+                requestedListingId,
                 normalizedUsername);
         if (!normalizedUsername.matches("[A-Za-z0-9_]{3,16}")) {
             pushUiError("Enter a valid Minecraft username.");
@@ -1138,9 +1135,16 @@ public class PartyFinderManager implements NotificationAccessor {
                         return CompletableFuture.completedFuture(false);
                     }
 
+                    String formattedResolvedUuid = PlayerNameCache.formatUUID(resolvedUUID);
+                    if (formattedResolvedUuid == null) {
+                        SeqClient.LOGGER.warn("Unable to normalize resolved invite UUID: {}", resolvedUUID);
+                        pushUiError("Unable to resolve a valid UUID for that player.");
+                        return CompletableFuture.completedFuture(false);
+                    }
+
                     UUID targetUUID;
                     try {
-                        targetUUID = UUID.fromString(PlayerNameCache.formatUUID(resolvedUUID));
+                        targetUUID = UUID.fromString(formattedResolvedUuid);
                     } catch (IllegalArgumentException e) {
                         SeqClient.LOGGER.warn("Unable to parse resolved invite UUID: {}", resolvedUUID, e);
                         pushUiError("Unable to resolve a valid UUID for that player.");
@@ -1152,18 +1156,33 @@ public class PartyFinderManager implements NotificationAccessor {
                             "[PartyFinderWS] createInvite normalized targetUUID={} myUUID={} listingId={}",
                             targetUUID,
                             myUUID,
-                            currentListing != null ? currentListing.id() : -1);
+                            requestedListingId);
                     if (myUUID != null && myUUID.equalsIgnoreCase(targetUUID.toString())) {
                         pushUiError("You cannot invite yourself.");
                         return CompletableFuture.completedFuture(false);
                     }
 
+                    if (currentListing == null || currentListing.id() != requestedListingId) {
+                        pushUiError("Your active party changed before the invite was created. Try again.");
+                        return CompletableFuture.completedFuture(false);
+                    }
+                    if (!isPartyLeader()) {
+                        pushUiError("Only the party leader can invite players.");
+                        return CompletableFuture.completedFuture(false);
+                    }
+
+                    String latestReservedSlotError = validateReservedSlotsForInvite(currentListing);
+                    if (latestReservedSlotError != null) {
+                        pushUiError(latestReservedSlotError);
+                        return CompletableFuture.completedFuture(false);
+                    }
+
                     SeqClient.LOGGER.info(
                             "[PartyFinderWS] createInvite calling API listingId={} targetUUID={}",
-                            currentListing.id(),
+                            requestedListingId,
                             targetUUID);
                     return ApiClient.getInstance()
-                            .createInvite(currentListing.id(), targetUUID)
+                            .createInvite(requestedListingId, targetUUID)
                             .thenApply(ignored -> true);
                 })
                 .thenAccept(inviteCreated -> {
@@ -1217,7 +1236,9 @@ public class PartyFinderManager implements NotificationAccessor {
                     notifyPlayer));
         }
 
-        List<Member> members = currentListing.members();
+        Listing listingSnapshot = currentListing;
+        long listingId = listingSnapshot.id();
+        List<Member> members = listingSnapshot.members();
         if (members == null || members.isEmpty()) {
             return CompletableFuture.completedFuture(finishInviteAll(
                     true,
@@ -1229,7 +1250,7 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         String myUUID = getLocalPlayerUUID();
-        List<CompletableFuture<String>> usernameFutures = new ArrayList<>();
+        List<InviteAllCandidate> inviteCandidates = new ArrayList<>();
         int skippedCount = 0;
 
         for (Member member : members) {
@@ -1248,11 +1269,12 @@ public class PartyFinderManager implements NotificationAccessor {
                 continue;
             }
 
-            usernameFutures.add(PlayerNameCache.resolveAsync(memberUUID)
-                    .exceptionally(ignored -> null));
+            inviteCandidates.add(new InviteAllCandidate(
+                    memberUUID,
+                    PlayerNameCache.resolveAsync(memberUUID).exceptionally(ignored -> null)));
         }
 
-        if (usernameFutures.isEmpty()) {
+        if (inviteCandidates.isEmpty()) {
             return CompletableFuture.completedFuture(finishInviteAll(
                     true,
                     false,
@@ -1263,14 +1285,26 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         int baseSkippedCount = skippedCount;
-        return CompletableFuture.allOf(usernameFutures.toArray(CompletableFuture[]::new))
+        return CompletableFuture.allOf(inviteCandidates.stream()
+                        .map(InviteAllCandidate::usernameFuture)
+                        .toArray(CompletableFuture[]::new))
                 .thenCompose(ignored -> {
-                    List<String> targets = new ArrayList<>();
+                    if (currentListing == null || currentListing.id() != listingId) {
+                        return CompletableFuture.completedFuture(finishInviteAll(
+                                false,
+                                false,
+                                0,
+                                baseSkippedCount,
+                                "your active party changed before invites could be sent.",
+                                notifyPlayer));
+                    }
+
+                    List<ResolvedInviteTarget> targets = new ArrayList<>();
                     Set<String> seenTargets = new LinkedHashSet<>();
                     int resolvedSkippedCount = baseSkippedCount;
 
-                    for (CompletableFuture<String> usernameFuture : usernameFutures) {
-                        String username = usernameFuture.getNow(null);
+                    for (InviteAllCandidate inviteCandidate : inviteCandidates) {
+                        String username = inviteCandidate.usernameFuture().getNow(null);
                         if (username == null
                                 || username.isBlank()
                                 || "Loading...".equalsIgnoreCase(username)
@@ -1286,7 +1320,7 @@ public class PartyFinderManager implements NotificationAccessor {
                             continue;
                         }
 
-                        targets.add(username);
+                        targets.add(new ResolvedInviteTarget(inviteCandidate.memberUUID(), username));
                     }
 
                     if (targets.isEmpty()) {
@@ -1314,16 +1348,46 @@ public class PartyFinderManager implements NotificationAccessor {
                             return;
                         }
 
-                        for (String username : targets) {
-                            currentPlayer.connection.sendCommand(GAME_PARTY_INVITE_PREFIX + username);
+                        if (currentListing == null || currentListing.id() != listingId) {
+                            dispatchFuture.complete(finishInviteAll(
+                                    false,
+                                    false,
+                                    0,
+                                    finalSkippedCount,
+                                    "your active party changed before invites could be sent.",
+                                    notifyPlayer));
+                            return;
+                        }
+                        if (!isPartyLeader()) {
+                            dispatchFuture.complete(finishInviteAll(
+                                    false,
+                                    false,
+                                    0,
+                                    finalSkippedCount,
+                                    "only the party leader can use this.",
+                                    notifyPlayer));
+                            return;
+                        }
+
+                        Set<String> activeMemberKeys = collectListingMemberKeys(currentListing);
+                        int sentCount = 0;
+                        int skippedAtDispatch = finalSkippedCount;
+                        for (ResolvedInviteTarget target : targets) {
+                            String memberKey = normalizeUuidLike(target.memberUUID());
+                            if (memberKey == null || !activeMemberKeys.contains(memberKey)) {
+                                skippedAtDispatch++;
+                                continue;
+                            }
+                            currentPlayer.connection.sendCommand(GAME_PARTY_INVITE_PREFIX + target.username());
+                            sentCount++;
                         }
 
                         dispatchFuture.complete(finishInviteAll(
                                 true,
-                                true,
-                                targets.size(),
-                                finalSkippedCount,
-                                formatInviteAllMessage(targets.size(), finalSkippedCount),
+                                sentCount > 0,
+                                sentCount,
+                                skippedAtDispatch,
+                                formatInviteAllMessage(sentCount, skippedAtDispatch),
                                 notifyPlayer));
                     });
                     return dispatchFuture;
@@ -1477,9 +1541,7 @@ public class PartyFinderManager implements NotificationAccessor {
                         currentListing.note())
                 .thenAccept(listing -> {
                     if (listing != null) {
-                        replaceListing(listing);
-                        currentListing = listing;
-                        listingsVersion++;
+                        applyUpdatedCurrentListingState(listing);
                         applyReservedSlotTarget(
                                 listing.id(),
                                 currentReservedSlots,
@@ -1805,10 +1867,16 @@ public class PartyFinderManager implements NotificationAccessor {
                         return CommandResult.failure("Unable to find a UUID for " + username + ".");
                     }
 
+                    String formattedResolvedUuid = PlayerNameCache.formatUUID(resolvedUuid);
+                    if (formattedResolvedUuid == null) {
+                        SeqClient.LOGGER.warn("Unable to normalize resolved UUID {}", resolvedUuid);
+                        return CommandResult.failure("Unable to resolve a valid UUID for " + username + ".");
+                    }
+
                     try {
                         return CommandResult.success(
                                 "Resolved UUID.",
-                                UUID.fromString(PlayerNameCache.formatUUID(resolvedUuid)));
+                                UUID.fromString(formattedResolvedUuid));
                     } catch (IllegalArgumentException e) {
                         SeqClient.LOGGER.warn("Unable to parse resolved UUID {}", resolvedUuid, e);
                         return CommandResult.failure("Unable to resolve a valid UUID for " + username + ".");
@@ -1969,27 +2037,43 @@ public class PartyFinderManager implements NotificationAccessor {
 
     private void applyCreatedListingState(Listing listing) {
         replaceListing(listing);
-        currentListing = listing;
+        boolean shouldPublishClassUpdate = false;
+        if (currentListing == null || currentListing.id() == listing.id()) {
+            currentListing = listing;
+            shouldPublishClassUpdate = true;
+        }
         listingsVersion++;
-        publishLocalClassUpdate();
+        if (shouldPublishClassUpdate) {
+            publishLocalClassUpdate();
+        }
     }
 
     private void applyJoinedListingState(Listing listing) {
         replaceListing(listing);
-        currentListing = listing;
+        boolean shouldPublishClassUpdate = false;
+        if (currentListing == null || currentListing.id() == listing.id()) {
+            currentListing = listing;
+            shouldPublishClassUpdate = true;
+        }
         listingsVersion++;
-        publishLocalClassUpdate();
+        if (shouldPublishClassUpdate) {
+            publishLocalClassUpdate();
+        }
     }
 
     private void applyUpdatedCurrentListingState(Listing listing) {
         replaceListing(listing);
-        currentListing = listing;
+        if (currentListing != null && currentListing.id() == listing.id()) {
+            currentListing = listing;
+        }
         listingsVersion++;
     }
 
     private void applyLeftListingState(Listing listing) {
         replaceListing(listing);
-        currentListing = null;
+        if (currentListing != null && currentListing.id() == listing.id()) {
+            currentListing = null;
+        }
         listingsVersion++;
     }
 
@@ -2158,6 +2242,25 @@ public class PartyFinderManager implements NotificationAccessor {
         return false;
     }
 
+    private static Set<String> collectListingMemberKeys(Listing listing) {
+        LinkedHashSet<String> memberKeys = new LinkedHashSet<>();
+        if (listing == null || listing.members() == null) {
+            return memberKeys;
+        }
+
+        for (Member member : listing.members()) {
+            if (member == null) {
+                continue;
+            }
+
+            String memberKey = normalizeUuidLike(member.playerUUID());
+            if (memberKey != null) {
+                memberKeys.add(memberKey);
+            }
+        }
+        return memberKeys;
+    }
+
     private static boolean uuidEquals(String left, String right) {
         String leftNorm = normalizeUuidLike(left);
         String rightNorm = normalizeUuidLike(right);
@@ -2178,6 +2281,9 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         String formatted = PlayerNameCache.formatUUID(trimmed);
+        if (formatted == null) {
+            return trimmed.toLowerCase(Locale.ROOT);
+        }
         StringBuilder hex = new StringBuilder(32);
         for (int i = 0; i < formatted.length(); i++) {
             char ch = Character.toLowerCase(formatted.charAt(i));

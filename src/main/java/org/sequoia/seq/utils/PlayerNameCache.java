@@ -7,6 +7,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -153,9 +154,12 @@ public class PlayerNameCache {
     public static void put(String uuid, String username) {
         if (uuid != null && username != null) {
             String formatted = formatUUID(uuid);
+            if (formatted == null) {
+                return;
+            }
             cache.put(formatted, username);
             if (isCanonicalOnlinePlayerUuid(formatted)) {
-                usernameToUuid.put(username.toLowerCase(), formatted);
+                usernameToUuid.put(username.toLowerCase(Locale.ROOT), formatted);
             }
         }
     }
@@ -170,7 +174,7 @@ public class PlayerNameCache {
         }
 
         String normalized = username.trim();
-        String key = normalized.toLowerCase();
+        String key = normalized.toLowerCase(Locale.ROOT);
 
         String cachedUuid = usernameToUuid.get(key);
         if (cachedUuid != null && !cachedUuid.isBlank()) {
@@ -202,7 +206,7 @@ public class PlayerNameCache {
                 }
 
                 String name = info.getProfile().name();
-                if (name.equalsIgnoreCase(normalized)) {
+                if (name != null && name.equalsIgnoreCase(normalized)) {
                     String resolved = info.getProfile().id() != null
                             ? info.getProfile().id().toString()
                             : null;
