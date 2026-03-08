@@ -522,18 +522,26 @@ public class SeqCommand {
                         long listingId,
                         String inviteToken) {
                 if (inviteToken == null || inviteToken.isBlank()) {
+                        NotificationAccessor.notifyPlayer("Invite token missing.");
                         return 0;
                 }
 
+                NotificationAccessor.notifyPlayer("Joining party finder invite...");
                 SeqClient.getPartyFinderManager().joinPartyWithInviteToken(
                                 listingId,
                                 PartyRole.DPS,
-                                inviteToken);
+                                inviteToken)
+                                .thenAccept(listing -> {
+                                        if (listing != null) {
+                                                NotificationAccessor.notifyPlayer("Joined party finder party.");
+                                        }
+                                });
                 return 1;
         }
 
         private static int runInternalDenyInvite(
                         long listingId) {
+                NotificationAccessor.notifyPlayer("Denied party finder invite.");
                 return 1;
         }
 }

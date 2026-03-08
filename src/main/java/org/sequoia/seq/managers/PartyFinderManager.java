@@ -6,6 +6,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -29,6 +30,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     Instant.class,
                     (JsonDeserializer<Instant>) (json, type, ctx) -> Instant.parse(json.getAsString()))
             .create();
+    private static final long INVITE_NAME_LOOKUP_TIMEOUT_SECONDS = 3L;
     private static final String GAME_PARTY_CREATE_COMMAND = "party create";
     private static final String GAME_PARTY_INVITE_PREFIX = "party invite ";
 
@@ -819,25 +821,30 @@ public class PartyFinderManager implements NotificationAccessor {
             refreshCurrentListing();
         }
 
-        String inviterName = PlayerNameCache.resolve(inviterUUID);
-        if (inviterName == null || inviterName.isBlank() || "Loading...".equals(inviterName)) {
-            inviterName = "a player";
-        }
-        SeqClient.LOGGER.info("[PartyFinderWS] Resolved inviter name='{}' for uuid={}", inviterName, inviterUUID);
+        PlayerNameCache.resolveAsync(inviterUUID)
+                .completeOnTimeout(null, INVITE_NAME_LOOKUP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .whenComplete((resolvedName, error) -> {
+                    String inviterName = formatInviterName(resolvedName);
+                    SeqClient.LOGGER.info(
+                            "[PartyFinderWS] Resolved inviter name='{}' for uuid={}",
+                            inviterName,
+                            inviterUUID);
 
-        if (inviteToken == null || inviteToken.isBlank()) {
-            SeqClient.LOGGER.info("[PartyFinderWS] Invite token missing; sending plain notification for listing {}",
-                    listingId);
-            notify("Party Finder invite from " + inviterName + ".");
-        } else {
-            SeqClient.LOGGER.info(
-                    "[PartyFinderWS] Invite token present; sending clickable invite notification for listing {}",
-                    listingId);
-            notifyInviteWithJoinAction(
-                    "Party Finder invite from " + inviterName + ".",
-                    listingId,
-                    inviteToken);
-        }
+                    if (inviteToken == null || inviteToken.isBlank()) {
+                        SeqClient.LOGGER.info(
+                                "[PartyFinderWS] Invite token missing; sending plain notification for listing {}",
+                                listingId);
+                        notify("Party Finder invite from " + inviterName + ".");
+                    } else {
+                        SeqClient.LOGGER.info(
+                                "[PartyFinderWS] Invite token present; sending clickable invite notification for listing {}",
+                                listingId);
+                        notifyInviteWithJoinAction(
+                                "Party Finder invite from " + inviterName + ".",
+                                listingId,
+                                inviteToken);
+                    }
+                });
 
         SeqClient.LOGGER.info(
                 "Received party_finder_invite listingId={} inviterUUID={} tokenPresent={}",
@@ -881,20 +888,23 @@ public class PartyFinderManager implements NotificationAccessor {
                     + quoteForCommand(inviteToken);
             String denyCommand = "/_seqinvite deny " + listingId;
 
+            ClickEvent joinClickEvent = new ClickEvent.RunCommand(joinCommand);
+            ClickEvent denyClickEvent = new ClickEvent.RunCommand(denyCommand);
+
             MutableComponent fullMessage = NotificationAccessor.prefixComponent()
                     .append(Component.literal(String.valueOf(message)).withStyle(ChatFormatting.GRAY))
                     .append(Component.literal(" "))
-                    .append(Component.literal("[Join]")
-                            .withStyle(style -> style
-                                    .withColor(ChatFormatting.GREEN)
-                                    .withBold(true)
-                                    .withClickEvent(new ClickEvent.RunCommand(joinCommand))))
+                    .append(NotificationAccessor.wynnPill(
+                            "join",
+                            ChatFormatting.GREEN,
+                            ChatFormatting.WHITE,
+                            joinClickEvent))
                     .append(Component.literal(" "))
-                    .append(Component.literal("[Deny]")
-                            .withStyle(style -> style
-                                    .withColor(ChatFormatting.RED)
-                                    .withBold(true)
-                                    .withClickEvent(new ClickEvent.RunCommand(denyCommand))));
+                    .append(NotificationAccessor.wynnPill(
+                            "deny",
+                            ChatFormatting.RED,
+                            ChatFormatting.WHITE,
+                            denyClickEvent));
 
             SeqClient.LOGGER.info(
                     "[PartyFinderWS] Displaying invite chat message listingId={} player={} joinCommand={} denyCommand={}",
@@ -913,6 +923,16 @@ public class PartyFinderManager implements NotificationAccessor {
         return "\"" + value
                 .replace("\\", "\\\\")
                 .replace("\"", "\\\"") + "\"";
+    }
+
+    private static String formatInviterName(String inviterName) {
+        if (inviterName == null
+                || inviterName.isBlank()
+                || "Loading...".equalsIgnoreCase(inviterName)
+                || "Unknown".equalsIgnoreCase(inviterName)) {
+            return "a player";
+        }
+        return inviterName;
     }
 
     // ══════════════════════════════════════════════════════════════

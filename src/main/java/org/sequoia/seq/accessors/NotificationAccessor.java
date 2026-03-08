@@ -20,27 +20,46 @@ public interface NotificationAccessor {
     String PILL_BG_FRONT = "";
 
     static @NotNull MutableComponent prefixComponent() {
-        MutableComponent prefix = Component.empty();
-        prefix.append(Component.literal(PILL_CORNER_LEFT).withStyle(ChatFormatting.DARK_PURPLE));
-
-        for (int i = 0; i < PREFIX_LABEL.length(); i++) {
-            String glyph = toWynncraftGlyph(PREFIX_LABEL.charAt(i));
-            prefix.append(Component.literal(PILL_BG_BACK).withStyle(ChatFormatting.DARK_PURPLE));
-            prefix.append(Component.literal(PILL_BG_FRONT + glyph).withStyle(ChatFormatting.WHITE));
-        }
-
-        prefix.append(Component.literal(PILL_CORNER_RIGHT).withStyle(ChatFormatting.DARK_PURPLE));
-        prefix.append(Component.literal(" "));
-        return prefix;
+        return wynnPill(PREFIX_LABEL, ChatFormatting.DARK_PURPLE, ChatFormatting.WHITE)
+                .append(Component.literal(" "));
     }
 
-    default void notify(String message) {
+    static @NotNull MutableComponent wynnPill(
+            String label,
+            ChatFormatting backgroundColor,
+            ChatFormatting foregroundColor) {
+        return wynnPill(label, backgroundColor, foregroundColor, null);
+    }
+
+    static @NotNull MutableComponent wynnPill(
+            String label,
+            ChatFormatting backgroundColor,
+            ChatFormatting foregroundColor,
+            ClickEvent clickEvent) {
+        MutableComponent pill = Component.empty();
+        pill.append(styledPillPart(PILL_CORNER_LEFT, backgroundColor, clickEvent));
+
+        for (int i = 0; i < label.length(); i++) {
+            String glyph = toWynncraftGlyph(label.charAt(i));
+            pill.append(styledPillPart(PILL_BG_BACK, backgroundColor, clickEvent));
+            pill.append(styledPillPart(PILL_BG_FRONT + glyph, foregroundColor, clickEvent));
+        }
+
+        pill.append(styledPillPart(PILL_CORNER_RIGHT, backgroundColor, clickEvent));
+        return pill;
+    }
+
+    static void notifyPlayer(String message) {
         Minecraft.getInstance().execute(() -> {
             LocalPlayer player = Minecraft.getInstance().player;
             if (player != null) {
                 player.displayClientMessage(prefixed(message), false);
             }
         });
+    }
+
+    default void notify(String message) {
+        notifyPlayer(message);
     }
 
     default void notifyClickable(String text, String url) {
@@ -65,6 +84,19 @@ public interface NotificationAccessor {
 
     static @NotNull Component prefixed(String message) {
         return prefixComponent().append(Component.literal(String.valueOf(message)).withStyle(ChatFormatting.GRAY));
+    }
+
+    private static MutableComponent styledPillPart(
+            String text,
+            ChatFormatting color,
+            ClickEvent clickEvent) {
+        return Component.literal(text).withStyle(style -> {
+            style = style.withColor(color);
+            if (clickEvent != null) {
+                style = style.withClickEvent(clickEvent);
+            }
+            return style;
+        });
     }
 
     private static String toWynncraftGlyph(char rawChar) {
