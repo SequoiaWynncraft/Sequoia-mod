@@ -1871,7 +1871,9 @@ public class PartyFinderManager implements NotificationAccessor {
         if (displayNames == null || displayNames.isEmpty()) {
             return "Unknown Activity";
         }
-        return String.join(", ", displayNames);
+        return displayNames.stream()
+                .map(PartyListing::displayNameToBackendName)
+                .collect(Collectors.joining(", "));
     }
 
     private static String formatRoleName(PartyRole role) {
@@ -2129,12 +2131,22 @@ public class PartyFinderManager implements NotificationAccessor {
 
         String backendName = activity.name().trim();
         String mappedDisplay = PartyListing.backendNameToDisplayName(backendName);
-        String mappedBackendFromDisplay = PartyListing.displayNameToBackendName(displayName);
+        String candidateCode = PartyListing.displayNameToBackendName(mappedDisplay);
+
+        String inputDisplay = PartyListing.backendNameToDisplayName(displayName);
+        String inputCode = PartyListing.displayNameToBackendName(inputDisplay);
+
+        String searchDisplay = PartyListing.backendNameToDisplayName(backendSearchName);
+        String searchCode = PartyListing.displayNameToBackendName(searchDisplay);
 
         if (backendName.equalsIgnoreCase(backendSearchName)
                 || backendName.equalsIgnoreCase(displayName)
                 || mappedDisplay.equalsIgnoreCase(displayName)
-                || backendName.equalsIgnoreCase(mappedBackendFromDisplay)) {
+                || mappedDisplay.equalsIgnoreCase(inputDisplay)
+                || candidateCode.equalsIgnoreCase(backendSearchName)
+                || candidateCode.equalsIgnoreCase(displayName)
+                || candidateCode.equalsIgnoreCase(inputCode)
+                || candidateCode.equalsIgnoreCase(searchCode)) {
             return true;
         }
 
@@ -2142,12 +2154,21 @@ public class PartyFinderManager implements NotificationAccessor {
         String normalizedDisplay = normalizeActivityKey(displayName);
         String normalizedMappedDisplay = normalizeActivityKey(mappedDisplay);
         String normalizedBackendSearch = normalizeActivityKey(backendSearchName);
-        String normalizedMappedBackend = normalizeActivityKey(mappedBackendFromDisplay);
+        String normalizedCandidateCode = normalizeActivityKey(candidateCode);
+        String normalizedInputDisplay = normalizeActivityKey(inputDisplay);
+        String normalizedInputCode = normalizeActivityKey(inputCode);
+        String normalizedSearchDisplay = normalizeActivityKey(searchDisplay);
+        String normalizedSearchCode = normalizeActivityKey(searchCode);
 
         return normalizedBackend.equals(normalizedDisplay)
                 || normalizedMappedDisplay.equals(normalizedDisplay)
+                || normalizedMappedDisplay.equals(normalizedInputDisplay)
                 || normalizedBackend.equals(normalizedBackendSearch)
-                || normalizedBackend.equals(normalizedMappedBackend);
+                || normalizedMappedDisplay.equals(normalizedSearchDisplay)
+                || normalizedCandidateCode.equals(normalizedDisplay)
+                || normalizedCandidateCode.equals(normalizedBackendSearch)
+                || normalizedCandidateCode.equals(normalizedInputCode)
+                || normalizedCandidateCode.equals(normalizedSearchCode);
     }
 
     private static String normalizeActivityKey(String value) {

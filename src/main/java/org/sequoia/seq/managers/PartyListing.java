@@ -56,10 +56,7 @@ public class PartyListing {
         BACKEND_TO_DISPLAY.put("The Orphion's Nexus of Light", "Nexus of Light");
         BACKEND_TO_DISPLAY.put("The Orphions Nexus of Light", "Nexus of Light");
 
-        LinkedHashSet<String> aliases = new LinkedHashSet<>();
-        aliases.addAll(DISPLAY_TO_BACKEND.keySet());
-        aliases.addAll(BACKEND_TO_DISPLAY.keySet());
-        ACTIVITY_COMMAND_ALIASES = List.copyOf(aliases);
+        ACTIVITY_COMMAND_ALIASES = List.copyOf(new LinkedHashSet<>(DISPLAY_TO_BACKEND.values()));
         ACTIVITY_DISPLAY_NAMES = List.copyOf(DISPLAY_TO_BACKEND.keySet());
     }
 
