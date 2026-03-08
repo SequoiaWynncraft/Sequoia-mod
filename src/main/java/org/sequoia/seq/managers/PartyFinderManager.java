@@ -1624,7 +1624,7 @@ public class PartyFinderManager implements NotificationAccessor {
             String logMessage,
             String successMessage) {
         return apiFuture
-                .thenApply(ignored -> CommandResult.success(successMessage, null))
+                .thenApply(ignored -> CommandResult.<Void>success(successMessage, null))
                 .exceptionally(e -> commandFailure(e, fallbackMessage, logMessage));
     }
 
