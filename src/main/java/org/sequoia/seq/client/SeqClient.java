@@ -17,7 +17,6 @@ import org.sequoia.seq.config.ConfigManager;
 import org.sequoia.seq.config.Setting;
 import org.sequoia.seq.events.GameStartEvent;
 import org.sequoia.seq.events.MinecraftFinishedLoading;
-import org.sequoia.seq.events.Render2DEvent;
 import org.sequoia.seq.command.SeqCommand;
 import org.sequoia.seq.managers.AssetManager;
 import org.sequoia.seq.managers.ChatManager;
@@ -25,15 +24,13 @@ import org.sequoia.seq.managers.FontManager;
 import org.sequoia.seq.managers.GameManager;
 import org.sequoia.seq.managers.PartyFinderManager;
 import org.sequoia.seq.model.WynnClassType;
+import org.sequoia.seq.network.auth.MinecraftAuthService;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.ui.SequoiaScreen;
 import org.sequoia.seq.utils.WynnClassCache;
 import org.sequoia.seq.update.UpdateManager;
 import org.sequoia.seq.utils.rendering.nvg.NVGContext;
-import org.sequoia.seq.utils.rendering.nvg.NVGWrapper;
 import org.slf4j.Logger;
-
-import java.awt.*;
 
 public class SeqClient implements ClientModInitializer {
     public static final Logger LOGGER = LogUtils.getLogger();
@@ -42,23 +39,34 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static EventBus eventBus;
+
     @Getter
     public static FontManager fontManager;
+
     public static GameManager gameManager;
     public static AssetManager assetManager;
+
     @Getter
     public static ConfigManager configManager;
+
     @Getter
     public static PartyFinderManager partyFinderManager;
+
+    @Getter
+    public static MinecraftAuthService authService;
+
     public static ChatManager chatManager;
 
     // ── Network config settings ──
     @Getter
     public static Setting.BooleanSetting autoConnectSetting;
+
     @Getter
     public static Setting.BooleanSetting showDiscordChatSetting;
+
     @Getter
     public static Setting.BooleanSetting raidAutoAnnounceSetting;
+
     @Getter
     public static Setting.BooleanSetting checkUpdatesSetting;
 
@@ -81,16 +89,14 @@ public class SeqClient implements ClientModInitializer {
         configManager = new ConfigManager();
         configManager.load();
         configManager.migrateToken();
+        authService = MinecraftAuthService.getInstance();
         SeqCommand.register();
 
-        KeyMapping.Category category = KeyMapping.Category.register(
-                Identifier.fromNamespaceAndPath("sequoia-mod", "controls"));
+        KeyMapping.Category category =
+                KeyMapping.Category.register(Identifier.fromNamespaceAndPath("sequoia-mod", "controls"));
 
-        openScreenKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
-                "key.sequoia-mod.open_settings",
-                InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_O,
-                category));
+        openScreenKey = KeyBindingHelper.registerKeyBinding(
+                new KeyMapping("key.sequoia-mod.open_settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O, category));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openScreenKey.consumeClick()) {
@@ -147,12 +153,9 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(checkUpdatesSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
-        // Auto-connect if enabled and token is present
+        // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.
         if (autoConnectSetting.getValue()) {
-            String token = configManager.getToken();
-            if (token != null && !token.isBlank()) {
-                ConnectionManager.getInstance().connect();
-            }
+            ConnectionManager.getInstance().connect();
         }
     }
 
