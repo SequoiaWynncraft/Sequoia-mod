@@ -781,7 +781,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     false,
                     0,
                     0,
-                    "Invite all: no active party found.");
+                    "no active party found.");
         }
 
         if (!isPartyLeader()) {
@@ -790,7 +790,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     false,
                     0,
                     0,
-                    "Invite all: only the party leader can use this.");
+                    "only the party leader can use this.");
         }
 
         var player = SeqClient.mc.player;
@@ -800,7 +800,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     false,
                     0,
                     0,
-                    "Invite all: client connection unavailable.");
+                    "client connection unavailable.");
         }
 
         List<Member> members = currentListing.members();
@@ -810,7 +810,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     false,
                     0,
                     0,
-                    "Invite all: no valid party members to invite.");
+                    "no valid party members to invite.");
         }
 
         String myUUID = getLocalPlayerUUID();
@@ -1188,16 +1188,16 @@ public class PartyFinderManager implements NotificationAccessor {
     private static String formatInviteAllMessage(int sentCount, int skippedCount) {
         if (sentCount <= 0) {
             if (skippedCount > 0) {
-                return "Invite all: no valid party members to invite. Skipped " + skippedCount + ".";
+                return "no valid party members to invite. Skipped " + skippedCount + ".";
             }
-            return "Invite all: no valid party members to invite.";
+            return "no valid party members to invite.";
         }
 
-        String inviteWord = sentCount == 1 ? "invite" : "invites";
+        String inviteWord = sentCount == 1 ? "party invite" : "party invites";
         if (skippedCount > 0) {
-            return "Invite all: sent " + sentCount + " " + inviteWord + ". Skipped " + skippedCount + ".";
+            return "sent " + sentCount + " " + inviteWord + ". Skipped " + skippedCount + ".";
         }
-        return "Invite all: sent " + sentCount + " " + inviteWord + ".";
+        return "sent " + sentCount + " " + inviteWord + ".";
     }
 
     private void sendGameDirectMessage(UUID targetUUID, String message) {
