@@ -1,17 +1,33 @@
 package org.sequoia.seq.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.LongArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
-import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.minecraft.commands.CommandBuildContext;
+import net.minecraft.commands.SharedSuggestionProvider;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
+import org.sequoia.seq.managers.PartyFinderManager;
+import org.sequoia.seq.managers.PartyListing;
+import org.sequoia.seq.model.Activity;
+import org.sequoia.seq.model.Listing;
 import org.sequoia.seq.model.PartyRole;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.network.auth.AuthState;
 import org.sequoia.seq.ui.PartyFinderScreen;
+import org.sequoia.seq.utils.PlayerNameCache;
 
 public class SeqCommand {
 

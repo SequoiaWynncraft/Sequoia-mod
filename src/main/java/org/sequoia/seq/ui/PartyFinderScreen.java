@@ -16,6 +16,7 @@ import org.lwjgl.nanovg.NVGPaint;
 import org.sequoia.seq.accessors.PartyAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.managers.AssetManager;
+import org.sequoia.seq.managers.PartyFinderManager;
 import org.sequoia.seq.managers.PartyListing;
 import org.sequoia.seq.managers.PartyMember;
 import org.sequoia.seq.model.Activity;
@@ -46,6 +47,14 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float SEARCH_BAR_HEIGHT = 18;
     private static final float SEARCH_BAR_WIDTH = 140;
     private static final float SEARCH_BAR_MARGIN = 8;
+    private static final float HEADER_BUTTON_SPACING = 6;
+    private static final float HEADER_MANAGE_BUTTON_W = 88;
+    private static final float HEADER_INVITE_BUTTON_W = 56;
+    private static final float HEADER_OPEN_CLOSE_BUTTON_W = 84;
+    private static final float HEADER_DELIST_BUTTON_W = 72;
+    private static final float HEADER_INVITE_ALL_BUTTON_W = 68;
+    private static final float HEADER_NEW_PARTY_BUTTON_W = 80;
+    private static final float HEADER_ROLE_DROPDOWN_W = 80;
     private static final float SCROLL_SPEED = 12;
     private static final long LOADING_NAME_REFRESH_MS = 1500L;
 
@@ -80,9 +89,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float FILTER_BUTTON_W = 70;
     private static final float FILTER_BUTTON_H = 24;
     private static final float FILTER_BUTTON_MARGIN = 12;
-    private static final float ERROR_POPUP_MIN_W = 280;
-    private static final float ERROR_POPUP_H = 26;
-    private static final long ERROR_POPUP_DURATION_MS = 3500L;
+    private static final float STATUS_BANNER_MIN_W = 280;
+    private static final float STATUS_BANNER_H = 26;
+    private static final long STATUS_BANNER_DURATION_MS = 3500L;
 
     // Leader management icon sizes
     private static final float LEADER_ICON_SIZE = 14;
@@ -281,8 +290,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private float hoveredPromoteIconY = -1;
     private float hoveredKickIconX = -1;
     private float hoveredKickIconY = -1;
-    private String activeErrorPopupMessage;
-    private long activeErrorPopupExpiresAtMs;
+    private String activeStatusBannerMessage;
+    private long activeStatusBannerExpiresAtMs;
 
     private static class TagChipHitbox {
         private final String tag;
@@ -302,6 +311,20 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         private boolean contains(float mx, float my) {
             return mx >= x && mx <= x + w && my >= y && my <= y + h;
         }
+    }
+
+    private record HeaderButtonBounds(float x, float y, float w, float h) {
+    }
+
+    private record HeaderControlsLayout(
+            HeaderButtonBounds searchBar,
+            HeaderButtonBounds manageButton,
+            HeaderButtonBounds inviteButton,
+            HeaderButtonBounds openCloseButton,
+            HeaderButtonBounds delistButton,
+            HeaderButtonBounds inviteAllButton,
+            HeaderButtonBounds newPartyButton,
+            HeaderButtonBounds roleDropdown) {
     }
 
     public PartyFinderScreen(Screen parent) {
@@ -499,7 +522,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                         screenHeight);
             }
 
-            renderErrorPopup(nvg, fontName, panelX, panelWidth, screenHeight);
+            renderStatusBanner(nvg, fontName, panelX, panelWidth, screenHeight);
         });
     }
 
@@ -508,56 +531,67 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         super.tick();
         String managerError = party().consumeLatestPartyError();
         if (managerError != null && !managerError.isBlank()) {
-            showErrorPopup(managerError);
+            showStatusBanner(managerError);
         }
         maybeRefreshForLoadingNames();
     }
 
-    private void showErrorPopup(String message) {
-        activeErrorPopupMessage = message;
-        activeErrorPopupExpiresAtMs = System.currentTimeMillis() + ERROR_POPUP_DURATION_MS;
+    private void showStatusBanner(String message) {
+        if (message == null || message.isBlank()) {
+            return;
+        }
+        activeStatusBannerMessage = message;
+        activeStatusBannerExpiresAtMs = System.currentTimeMillis() + STATUS_BANNER_DURATION_MS;
     }
 
-    private void renderErrorPopup(
+    private void showErrorPopup(String message) {
+        showStatusBanner(message);
+    }
+
+    private void renderStatusBanner(
             long nvg,
             String fontName,
             float panelX,
             float panelWidth,
             float screenHeight) {
-        if (activeErrorPopupMessage == null || activeErrorPopupMessage.isBlank()) {
+        if (activeStatusBannerMessage == null || activeStatusBannerMessage.isBlank()) {
             return;
         }
 
         long now = System.currentTimeMillis();
-        if (now >= activeErrorPopupExpiresAtMs) {
-            activeErrorPopupMessage = null;
+        if (now >= activeStatusBannerExpiresAtMs) {
+            activeStatusBannerMessage = null;
             return;
         }
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, 12);
         float[] bounds = new float[4];
-        float textW = nvgTextBounds(nvg, 0, 0, activeErrorPopupMessage, bounds);
+        float textW = nvgTextBounds(nvg, 0, 0, activeStatusBannerMessage, bounds);
         float maxPopupW = Math.max(180f, panelWidth - 20f);
-        float popupW = Math.min(maxPopupW, Math.max(ERROR_POPUP_MIN_W, textW + 28f));
+        float popupW = Math.min(maxPopupW, Math.max(STATUS_BANNER_MIN_W, textW + 28f));
 
         float popupX = panelX + (panelWidth - popupW) / 2f;
-        float popupY = screenHeight - ERROR_POPUP_H - 10;
+        float popupY = screenHeight - STATUS_BANNER_H - 10;
 
-        NVGWrapper.drawRoundedRect(nvg, popupX, popupY, popupW, ERROR_POPUP_H, 6, ERROR_POPUP_BG);
+        NVGWrapper.drawRoundedRect(nvg, popupX, popupY, popupW, STATUS_BANNER_H, 6, ERROR_POPUP_BG);
         NVGWrapper.drawRectOutline(
                 nvg,
                 popupX,
                 popupY,
                 popupW,
-                ERROR_POPUP_H,
+                STATUS_BANNER_H,
                 1,
                 ERROR_POPUP_BORDER);
 
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         var text = NVGContext.nvgColor(TEXT_COLOR);
         nvgFillColor(nvg, text);
-        nvgText(nvg, popupX + popupW / 2f, popupY + ERROR_POPUP_H / 2f, activeErrorPopupMessage);
+        nvgText(
+                nvg,
+                popupX + popupW / 2f,
+                popupY + STATUS_BANNER_H / 2f,
+                activeStatusBannerMessage);
         text.free();
     }
 
@@ -648,24 +682,26 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float panelX,
             float panelWidth) {
         searchCursorBlink++;
-        float searchX = panelX + SEARCH_BAR_MARGIN;
-        float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
+        HeaderControlsLayout layout = computeHeaderControlsLayout(panelX);
+        HeaderButtonBounds searchBar = layout.searchBar();
+        float searchX = searchBar.x();
+        float searchY = searchBar.y();
 
         Color searchBg = searchFocused ? SEARCH_ACTIVE_BG : SEARCH_BG;
         NVGWrapper.drawRect(
                 nvg,
                 searchX,
                 searchY,
-                SEARCH_BAR_WIDTH,
-                SEARCH_BAR_HEIGHT,
+                searchBar.w(),
+                searchBar.h(),
                 searchBg);
         if (searchFocused) {
             NVGWrapper.drawRectOutline(
                     nvg,
                     searchX,
                     searchY,
-                    SEARCH_BAR_WIDTH,
-                    SEARCH_BAR_HEIGHT,
+                    searchBar.w(),
+                    searchBar.h(),
                     1,
                     SEARCH_BORDER);
         }
@@ -675,7 +711,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 
         nvgSave(nvg);
-        nvgScissor(nvg, searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT);
+        nvgScissor(nvg, searchX, searchY, searchBar.w(), searchBar.h());
         if (searchQuery.isEmpty() && !searchFocused) {
             var ph = NVGContext.nvgColor(SEARCH_PLACEHOLDER);
             nvgFillColor(nvg, ph);
@@ -709,69 +745,50 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     searchX + 6 + textW + 1,
                     searchY + 3,
                     1,
-                    SEARCH_BAR_HEIGHT - 6,
+                    searchBar.h() - 6,
                     TEXT_COLOR);
         }
-
-        float btnX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
-        float btnY = searchY;
 
         if (party().isPartyLeader()) {
             String manageLabel = party().hasListedParty()
                     ? "Manage Party"
                     : "New party +";
-            float manageW = 88;
             drawHeaderButton(
                     nvg,
                     fontName,
-                    btnX,
-                    btnY,
-                    manageW,
-                    SEARCH_BAR_HEIGHT,
+                    layout.manageButton(),
                     manageLabel,
                     MANAGE_PARTY_COLOR,
                     NEW_PARTY_HOVER);
-            btnX += manageW + 6;
-
-            float inviteW = 56;
             drawHeaderButton(
                     nvg,
                     fontName,
-                    btnX,
-                    btnY,
-                    inviteW,
-                    SEARCH_BAR_HEIGHT,
+                    layout.inviteButton(),
                     "Invite",
                     NEW_PARTY_COLOR,
                     NEW_PARTY_HOVER);
-            btnX += inviteW + 6;
-
-            float openCloseW = 84;
             String openCloseLabel = isCurrentListingClosed() ? "Open party" : "Close party";
             drawHeaderButton(
                     nvg,
                     fontName,
-                    btnX,
-                    btnY,
-                    openCloseW,
-                    SEARCH_BAR_HEIGHT,
+                    layout.openCloseButton(),
                     openCloseLabel,
                     OPEN_CLOSE_PARTY_COLOR,
                     OPEN_CLOSE_PARTY_HOVER);
-            btnX += openCloseW + 6;
-
-            float delistW = 72;
             drawHeaderButton(
                     nvg,
                     fontName,
-                    btnX,
-                    btnY,
-                    delistW,
-                    SEARCH_BAR_HEIGHT,
+                    layout.delistButton(),
                     "Delist party",
                     DELIST_PARTY_COLOR,
                     DELIST_PARTY_HOVER);
-            btnX += delistW + 6;
+            drawHeaderButton(
+                    nvg,
+                    fontName,
+                    layout.inviteAllButton(),
+                    "Invite all",
+                    NEW_PARTY_COLOR,
+                    NEW_PARTY_HOVER);
         } else {
             boolean inPartyAsMember = party().getJoinedPartyIndex() >= 0;
             Color newBg = inPartyAsMember
@@ -783,27 +800,19 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             drawHeaderButton(
                     nvg,
                     fontName,
-                    btnX,
-                    btnY,
-                    80,
-                    SEARCH_BAR_HEIGHT,
+                    layout.newPartyButton(),
                     "New party +",
                     newBg,
                     newHover);
-            btnX += 86;
         }
 
-        float dropW = 80;
-        dropdownRenderX = btnX;
-        dropdownRenderY = btnY;
-        dropdownRenderW = dropW;
+        dropdownRenderX = layout.roleDropdown().x();
+        dropdownRenderY = layout.roleDropdown().y();
+        dropdownRenderW = layout.roleDropdown().w();
         renderRoleDropdownButton(
                 nvg,
                 fontName,
-                btnX,
-                btnY,
-                dropW,
-                SEARCH_BAR_HEIGHT);
+                layout.roleDropdown());
     }
 
     private void drawHeaderButton(
@@ -828,15 +837,115 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         c.free();
     }
 
+    private void drawHeaderButton(
+            long nvg,
+            String fontName,
+            HeaderButtonBounds bounds,
+            String label,
+            Color bg,
+            Color hoverBg) {
+        if (bounds == null) {
+            return;
+        }
+        drawHeaderButton(
+                nvg,
+                fontName,
+                bounds.x(),
+                bounds.y(),
+                bounds.w(),
+                bounds.h(),
+                label,
+                bg,
+                hoverBg);
+    }
+
+    private HeaderControlsLayout computeHeaderControlsLayout(float panelX) {
+        float searchX = panelX + SEARCH_BAR_MARGIN;
+        float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
+        HeaderButtonBounds searchBar = new HeaderButtonBounds(
+                searchX,
+                searchY,
+                SEARCH_BAR_WIDTH,
+                SEARCH_BAR_HEIGHT);
+
+        float nextButtonX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
+        HeaderButtonBounds manageButton = null;
+        HeaderButtonBounds inviteButton = null;
+        HeaderButtonBounds openCloseButton = null;
+        HeaderButtonBounds delistButton = null;
+        HeaderButtonBounds inviteAllButton = null;
+        HeaderButtonBounds newPartyButton = null;
+
+        if (party().isPartyLeader()) {
+            manageButton = new HeaderButtonBounds(
+                    nextButtonX,
+                    searchY,
+                    HEADER_MANAGE_BUTTON_W,
+                    SEARCH_BAR_HEIGHT);
+            nextButtonX += HEADER_MANAGE_BUTTON_W + HEADER_BUTTON_SPACING;
+
+            inviteButton = new HeaderButtonBounds(
+                    nextButtonX,
+                    searchY,
+                    HEADER_INVITE_BUTTON_W,
+                    SEARCH_BAR_HEIGHT);
+            nextButtonX += HEADER_INVITE_BUTTON_W + HEADER_BUTTON_SPACING;
+
+            openCloseButton = new HeaderButtonBounds(
+                    nextButtonX,
+                    searchY,
+                    HEADER_OPEN_CLOSE_BUTTON_W,
+                    SEARCH_BAR_HEIGHT);
+            nextButtonX += HEADER_OPEN_CLOSE_BUTTON_W + HEADER_BUTTON_SPACING;
+
+            delistButton = new HeaderButtonBounds(
+                    nextButtonX,
+                    searchY,
+                    HEADER_DELIST_BUTTON_W,
+                    SEARCH_BAR_HEIGHT);
+            nextButtonX += HEADER_DELIST_BUTTON_W + HEADER_BUTTON_SPACING;
+
+            inviteAllButton = new HeaderButtonBounds(
+                    nextButtonX,
+                    searchY,
+                    HEADER_INVITE_ALL_BUTTON_W,
+                    SEARCH_BAR_HEIGHT);
+            nextButtonX += HEADER_INVITE_ALL_BUTTON_W + HEADER_BUTTON_SPACING;
+        } else {
+            newPartyButton = new HeaderButtonBounds(
+                    nextButtonX,
+                    searchY,
+                    HEADER_NEW_PARTY_BUTTON_W,
+                    SEARCH_BAR_HEIGHT);
+            nextButtonX += HEADER_NEW_PARTY_BUTTON_W + HEADER_BUTTON_SPACING;
+        }
+
+        HeaderButtonBounds roleDropdown = new HeaderButtonBounds(
+                nextButtonX,
+                searchY,
+                HEADER_ROLE_DROPDOWN_W,
+                SEARCH_BAR_HEIGHT);
+        return new HeaderControlsLayout(
+                searchBar,
+                manageButton,
+                inviteButton,
+                openCloseButton,
+                delistButton,
+                inviteAllButton,
+                newPartyButton,
+                roleDropdown);
+    }
+
     // ── Role dropdown ──
 
     private void renderRoleDropdownButton(
             long nvg,
             String fontName,
-            float x,
-            float y,
-            float w,
-            float h) {
+            HeaderButtonBounds bounds) {
+        float x = bounds.x();
+        float y = bounds.y();
+        float w = bounds.w();
+        float h = bounds.h();
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
         NVGWrapper.drawRect(
                 nvg,
@@ -2265,6 +2374,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         return mx >= bx && mx <= bx + bw && my >= by && my <= by + bh;
     }
 
+    private boolean isHovered(float mx, float my, HeaderButtonBounds bounds) {
+        return bounds != null && isHovered(mx, my, bounds.x(), bounds.y(), bounds.w(), bounds.h());
+    }
+
     // ══════════════════════════════ INPUT ══════════════════════════════
 
     @Override
@@ -2359,16 +2472,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         // ── Header ──
         float panelX = SIDEBAR_WIDTH;
         float panelWidth = screenWidth - SIDEBAR_WIDTH;
+        HeaderControlsLayout headerLayout = computeHeaderControlsLayout(panelX);
 
-        float searchX = panelX + SEARCH_BAR_MARGIN;
-        float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
-        if (isHovered(
-                mx,
-                my,
-                searchX,
-                searchY,
-                SEARCH_BAR_WIDTH,
-                SEARCH_BAR_HEIGHT)) {
+        if (isHovered(mx, my, headerLayout.searchBar())) {
             searchFocused = true;
             searchCursorBlink = 0;
             return true;
@@ -2376,44 +2482,16 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             searchFocused = false;
         }
 
-        float headerBtnX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
-        float headerBtnY = searchY;
-
         if (party().isPartyLeader()) {
-            float manageW = 88;
-            if (isHovered(
-                    mx,
-                    my,
-                    headerBtnX,
-                    headerBtnY,
-                    manageW,
-                    SEARCH_BAR_HEIGHT)) {
+            if (isHovered(mx, my, headerLayout.manageButton())) {
                 openModal(true);
                 return true;
             }
-            headerBtnX += manageW + 6;
-
-            float inviteW = 56;
-            if (isHovered(
-                    mx,
-                    my,
-                    headerBtnX,
-                    headerBtnY,
-                    inviteW,
-                    SEARCH_BAR_HEIGHT)) {
+            if (isHovered(mx, my, headerLayout.inviteButton())) {
                 openInviteModal();
                 return true;
             }
-            headerBtnX += inviteW + 6;
-
-            float openCloseW = 84;
-            if (isHovered(
-                    mx,
-                    my,
-                    headerBtnX,
-                    headerBtnY,
-                    openCloseW,
-                    SEARCH_BAR_HEIGHT)) {
+            if (isHovered(mx, my, headerLayout.openCloseButton())) {
                 if (party().getCurrentListing() == null) {
                     showErrorPopup("Unable to update party state: no active listing.");
                 } else if (isCurrentListingClosed()) {
@@ -2423,44 +2501,26 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 }
                 return true;
             }
-            headerBtnX += openCloseW + 6;
-
-            float delistW = 72;
-            if (isHovered(
-                    mx,
-                    my,
-                    headerBtnX,
-                    headerBtnY,
-                    delistW,
-                    SEARCH_BAR_HEIGHT)) {
+            if (isHovered(mx, my, headerLayout.delistButton())) {
                 party().delistParty();
                 return true;
             }
-            headerBtnX += delistW + 6;
+            if (isHovered(mx, my, headerLayout.inviteAllButton())) {
+                showStatusBanner("Preparing party invites...");
+                party().inviteAllCurrentMembers().thenAccept(inviteAllResult -> SeqClient.mc.execute(() ->
+                        showStatusBanner(inviteAllResult.message())));
+                return true;
+            }
         } else {
-            float newW = 80;
-            if (isHovered(
-                    mx,
-                    my,
-                    headerBtnX,
-                    headerBtnY,
-                    newW,
-                    SEARCH_BAR_HEIGHT)) {
+            if (isHovered(mx, my, headerLayout.newPartyButton())) {
                 if (party().getJoinedPartyIndex() < 0) {
                     openModal(false);
                 }
                 return true;
             }
-            headerBtnX += 86;
         }
 
-        if (isHovered(
-                mx,
-                my,
-                dropdownRenderX,
-                dropdownRenderY,
-                dropdownRenderW,
-                SEARCH_BAR_HEIGHT)) {
+        if (isHovered(mx, my, headerLayout.roleDropdown())) {
             roleDropdownOpen = !roleDropdownOpen;
             return true;
         }
