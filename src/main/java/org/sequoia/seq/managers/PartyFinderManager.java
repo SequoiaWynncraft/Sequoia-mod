@@ -514,16 +514,15 @@ public class PartyFinderManager implements NotificationAccessor {
 
     public CompletableFuture<CommandResult<Void>> inviteAllCurrentMembersFromCommand() {
         return ensureCurrentListingForCommand()
-                .thenApply(currentResult -> {
+                .thenCompose(currentResult -> {
                     if (!currentResult.success()) {
-                        return CommandResult.failure(currentResult.message());
+                        return completedCommandFailureVoid(currentResult.message());
                     }
 
-                    InviteAllResult inviteAllResult = inviteAllCurrentMembersInternal(false);
-                    if (!inviteAllResult.success()) {
-                        return CommandResult.failure("Invite all: " + inviteAllResult.message());
-                    }
-                    return CommandResult.success("Invite all: " + inviteAllResult.message(), null);
+                    return inviteAllCurrentMembersInternal(false)
+                            .thenApply(inviteAllResult -> inviteAllResult.success()
+                                    ? CommandResult.success("Invite all: " + inviteAllResult.message(), null)
+                                    : CommandResult.failure("Invite all: " + inviteAllResult.message()));
                 });
     }
 
@@ -1178,56 +1177,55 @@ public class PartyFinderManager implements NotificationAccessor {
                 });
     }
 
-    public InviteAllResult inviteAllCurrentMembers() {
+    public CompletableFuture<InviteAllResult> inviteAllCurrentMembers() {
         return inviteAllCurrentMembersInternal(true);
     }
 
-    private InviteAllResult inviteAllCurrentMembersInternal(boolean notifyPlayer) {
+    private CompletableFuture<InviteAllResult> inviteAllCurrentMembersInternal(boolean notifyPlayer) {
         if (currentListing == null) {
-            return finishInviteAll(
+            return CompletableFuture.completedFuture(finishInviteAll(
                     false,
                     false,
                     0,
                     0,
                     "no active party found.",
-                    notifyPlayer);
+                    notifyPlayer));
         }
 
         if (!isPartyLeader()) {
-            return finishInviteAll(
+            return CompletableFuture.completedFuture(finishInviteAll(
                     false,
                     false,
                     0,
                     0,
                     "only the party leader can use this.",
-                    notifyPlayer);
+                    notifyPlayer));
         }
 
         var player = SeqClient.mc.player;
         if (player == null || player.connection == null) {
-            return finishInviteAll(
+            return CompletableFuture.completedFuture(finishInviteAll(
                     false,
                     false,
                     0,
                     0,
                     "client connection unavailable.",
-                    notifyPlayer);
+                    notifyPlayer));
         }
 
         List<Member> members = currentListing.members();
         if (members == null || members.isEmpty()) {
-            return finishInviteAll(
+            return CompletableFuture.completedFuture(finishInviteAll(
                     true,
                     false,
                     0,
                     0,
                     "no valid party members to invite.",
-                    notifyPlayer);
+                    notifyPlayer));
         }
 
         String myUUID = getLocalPlayerUUID();
-        List<String> targets = new ArrayList<>();
-        Set<String> seenTargets = new LinkedHashSet<>();
+        List<CompletableFuture<String>> usernameFutures = new ArrayList<>();
         int skippedCount = 0;
 
         for (Member member : members) {
@@ -1246,46 +1244,86 @@ public class PartyFinderManager implements NotificationAccessor {
                 continue;
             }
 
-            String username = PlayerNameCache.resolve(memberUUID);
-            if (username == null
-                    || username.isBlank()
-                    || "Loading...".equalsIgnoreCase(username)
-                    || "Unknown".equalsIgnoreCase(username)
-                    || !username.matches("[A-Za-z0-9_]{3,16}")) {
-                skippedCount++;
-                continue;
-            }
-
-            String normalizedUsername = username.toLowerCase(Locale.ROOT);
-            if (!seenTargets.add(normalizedUsername)) {
-                skippedCount++;
-                continue;
-            }
-
-            targets.add(username);
+            usernameFutures.add(PlayerNameCache.resolveAsync(memberUUID)
+                    .exceptionally(ignored -> null));
         }
 
-        if (targets.isEmpty()) {
-            return finishInviteAll(
+        if (usernameFutures.isEmpty()) {
+            return CompletableFuture.completedFuture(finishInviteAll(
                     true,
                     false,
                     0,
                     skippedCount,
                     formatInviteAllMessage(0, skippedCount),
-                    notifyPlayer);
+                    notifyPlayer));
         }
 
-        for (String username : targets) {
-            player.connection.sendCommand(GAME_PARTY_INVITE_PREFIX + username);
-        }
+        int baseSkippedCount = skippedCount;
+        return CompletableFuture.allOf(usernameFutures.toArray(CompletableFuture[]::new))
+                .thenCompose(ignored -> {
+                    List<String> targets = new ArrayList<>();
+                    Set<String> seenTargets = new LinkedHashSet<>();
+                    int resolvedSkippedCount = baseSkippedCount;
 
-        return finishInviteAll(
-                true,
-                true,
-                targets.size(),
-                skippedCount,
-                formatInviteAllMessage(targets.size(), skippedCount),
-                notifyPlayer);
+                    for (CompletableFuture<String> usernameFuture : usernameFutures) {
+                        String username = usernameFuture.getNow(null);
+                        if (username == null
+                                || username.isBlank()
+                                || "Loading...".equalsIgnoreCase(username)
+                                || "Unknown".equalsIgnoreCase(username)
+                                || !username.matches("[A-Za-z0-9_]{3,16}")) {
+                            resolvedSkippedCount++;
+                            continue;
+                        }
+
+                        String normalizedUsername = username.toLowerCase(Locale.ROOT);
+                        if (!seenTargets.add(normalizedUsername)) {
+                            resolvedSkippedCount++;
+                            continue;
+                        }
+
+                        targets.add(username);
+                    }
+
+                    if (targets.isEmpty()) {
+                        return CompletableFuture.completedFuture(finishInviteAll(
+                                true,
+                                false,
+                                0,
+                                resolvedSkippedCount,
+                                formatInviteAllMessage(0, resolvedSkippedCount),
+                                notifyPlayer));
+                    }
+
+                    CompletableFuture<InviteAllResult> dispatchFuture = new CompletableFuture<>();
+                    int finalSkippedCount = resolvedSkippedCount;
+                    SeqClient.mc.execute(() -> {
+                        var currentPlayer = SeqClient.mc.player;
+                        if (currentPlayer == null || currentPlayer.connection == null) {
+                            dispatchFuture.complete(finishInviteAll(
+                                    false,
+                                    false,
+                                    0,
+                                    finalSkippedCount,
+                                    "client connection unavailable.",
+                                    notifyPlayer));
+                            return;
+                        }
+
+                        for (String username : targets) {
+                            currentPlayer.connection.sendCommand(GAME_PARTY_INVITE_PREFIX + username);
+                        }
+
+                        dispatchFuture.complete(finishInviteAll(
+                                true,
+                                true,
+                                targets.size(),
+                                finalSkippedCount,
+                                formatInviteAllMessage(targets.size(), finalSkippedCount),
+                                notifyPlayer));
+                    });
+                    return dispatchFuture;
+                });
     }
 
     /** Leaves the current party (no-arg overload). */

@@ -2506,8 +2506,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 return true;
             }
             if (isHovered(mx, my, headerLayout.inviteAllButton())) {
-                PartyFinderManager.InviteAllResult inviteAllResult = party().inviteAllCurrentMembers();
-                showStatusBanner(inviteAllResult.message());
+                showStatusBanner("Preparing party invites...");
+                party().inviteAllCurrentMembers().thenAccept(inviteAllResult -> SeqClient.mc.execute(() ->
+                        showStatusBanner(inviteAllResult.message())));
                 return true;
             }
         } else {
