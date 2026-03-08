@@ -51,6 +51,14 @@ public class PartyFinderManager implements NotificationAccessor {
     private int cachedVersion = -1;
     private volatile String latestPartyError;
 
+    public record InviteAllResult(
+            boolean success,
+            boolean sentAny,
+            int sentCount,
+            int skippedCount,
+            String message) {
+    }
+
     public PartyFinderManager() {
         SeqClient.LOGGER.info("[PartyFinderWS] Registering party finder websocket handlers");
         // Register for real-time WS updates
@@ -766,6 +774,107 @@ public class PartyFinderManager implements NotificationAccessor {
                 });
     }
 
+    public InviteAllResult inviteAllCurrentMembers() {
+        if (currentListing == null) {
+            return finishInviteAll(
+                    false,
+                    false,
+                    0,
+                    0,
+                    "Invite all: no active party found.");
+        }
+
+        if (!isPartyLeader()) {
+            return finishInviteAll(
+                    false,
+                    false,
+                    0,
+                    0,
+                    "Invite all: only the party leader can use this.");
+        }
+
+        var player = SeqClient.mc.player;
+        if (player == null || player.connection == null) {
+            return finishInviteAll(
+                    false,
+                    false,
+                    0,
+                    0,
+                    "Invite all: client connection unavailable.");
+        }
+
+        List<Member> members = currentListing.members();
+        if (members == null || members.isEmpty()) {
+            return finishInviteAll(
+                    true,
+                    false,
+                    0,
+                    0,
+                    "Invite all: no valid party members to invite.");
+        }
+
+        String myUUID = getLocalPlayerUUID();
+        List<String> targets = new ArrayList<>();
+        Set<String> seenTargets = new LinkedHashSet<>();
+        int skippedCount = 0;
+
+        for (Member member : members) {
+            if (member == null) {
+                skippedCount++;
+                continue;
+            }
+
+            String memberUUID = member.playerUUID();
+            if (memberUUID == null || memberUUID.isBlank()) {
+                skippedCount++;
+                continue;
+            }
+
+            if (uuidEquals(myUUID, memberUUID)) {
+                skippedCount++;
+                continue;
+            }
+
+            String username = PlayerNameCache.resolve(memberUUID);
+            if (username == null
+                    || username.isBlank()
+                    || "Loading...".equalsIgnoreCase(username)
+                    || "Unknown".equalsIgnoreCase(username)
+                    || !username.matches("[A-Za-z0-9_]{3,16}")) {
+                skippedCount++;
+                continue;
+            }
+
+            String normalizedUsername = username.toLowerCase(Locale.ROOT);
+            if (!seenTargets.add(normalizedUsername)) {
+                skippedCount++;
+                continue;
+            }
+
+            targets.add(username);
+        }
+
+        if (targets.isEmpty()) {
+            return finishInviteAll(
+                    true,
+                    false,
+                    0,
+                    skippedCount,
+                    formatInviteAllMessage(0, skippedCount));
+        }
+
+        for (String username : targets) {
+            player.connection.sendCommand("pa " + username);
+        }
+
+        return finishInviteAll(
+                true,
+                true,
+                targets.size(),
+                skippedCount,
+                formatInviteAllMessage(targets.size(), skippedCount));
+    }
+
     /** Leaves the current party (no-arg overload). */
     public void leaveParty() {
         if (currentListing != null) {
@@ -1065,6 +1174,31 @@ public class PartyFinderManager implements NotificationAccessor {
         String errorMessage = extractUserFriendlyApiError(throwable, fallbackMessage);
         SeqClient.LOGGER.warn("{}: {}", logMessage, errorMessage);
         pushUiError(errorMessage);
+    }
+
+    private InviteAllResult finishInviteAll(
+            boolean success,
+            boolean sentAny,
+            int sentCount,
+            int skippedCount,
+            String message) {
+        notify(message);
+        return new InviteAllResult(success, sentAny, sentCount, skippedCount, message);
+    }
+
+    private static String formatInviteAllMessage(int sentCount, int skippedCount) {
+        if (sentCount <= 0) {
+            if (skippedCount > 0) {
+                return "Invite all: no valid party members to invite. Skipped " + skippedCount + ".";
+            }
+            return "Invite all: no valid party members to invite.";
+        }
+
+        String inviteWord = sentCount == 1 ? "invite" : "invites";
+        if (skippedCount > 0) {
+            return "Invite all: sent " + sentCount + " " + inviteWord + ". Skipped " + skippedCount + ".";
+        }
+        return "Invite all: sent " + sentCount + " " + inviteWord + ".";
     }
 
     private void sendGameDirectMessage(UUID targetUUID, String message) {
