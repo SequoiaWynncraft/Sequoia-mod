@@ -2,6 +2,7 @@ package org.sequoia.seq.managers;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +42,8 @@ public class PartyListing {
      * raids).
      */
     private static final Map<String, String> DISPLAY_TO_ASSET = new LinkedHashMap<>();
+    private static final List<String> ACTIVITY_COMMAND_ALIASES;
+    private static final List<String> ACTIVITY_DISPLAY_NAMES;
 
     static {
         register("Nest of the Grootslangs", "NOTG", "notg");
@@ -52,6 +55,12 @@ public class PartyListing {
         // Backend aliases observed in API payloads
         BACKEND_TO_DISPLAY.put("The Orphion's Nexus of Light", "Nexus of Light");
         BACKEND_TO_DISPLAY.put("The Orphions Nexus of Light", "Nexus of Light");
+
+        LinkedHashSet<String> aliases = new LinkedHashSet<>();
+        aliases.addAll(DISPLAY_TO_BACKEND.keySet());
+        aliases.addAll(BACKEND_TO_DISPLAY.keySet());
+        ACTIVITY_COMMAND_ALIASES = List.copyOf(aliases);
+        ACTIVITY_DISPLAY_NAMES = List.copyOf(DISPLAY_TO_BACKEND.keySet());
     }
 
     private static void register(
@@ -117,6 +126,14 @@ public class PartyListing {
         String trimmed = displayName.trim();
         String mapped = lookupIgnoreCase(DISPLAY_TO_BACKEND, trimmed);
         return mapped != null ? mapped : trimmed;
+    }
+
+    public static List<String> activityCommandAliases() {
+        return ACTIVITY_COMMAND_ALIASES;
+    }
+
+    public static List<String> activityDisplayNames() {
+        return ACTIVITY_DISPLAY_NAMES;
     }
 
     private static String lookupIgnoreCase(

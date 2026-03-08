@@ -6,6 +6,8 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.Getter;
 import net.minecraft.ChatFormatting;
@@ -27,6 +29,8 @@ public class PartyFinderManager implements NotificationAccessor {
                     Instant.class,
                     (JsonDeserializer<Instant>) (json, type, ctx) -> Instant.parse(json.getAsString()))
             .create();
+    private static final String GAME_PARTY_CREATE_COMMAND = "party create";
+    private static final String GAME_PARTY_INVITE_PREFIX = "party invite ";
 
     @Getter
     private final List<Activity> activities = new CopyOnWriteArrayList<>();
@@ -57,6 +61,28 @@ public class PartyFinderManager implements NotificationAccessor {
             int sentCount,
             int skippedCount,
             String message) {
+    }
+
+    public record CommandResult<T>(boolean success, String message, T data) {
+        public static <T> CommandResult<T> success(String message, T data) {
+            return new CommandResult<>(true, message, data);
+        }
+
+        public static <T> CommandResult<T> failure(String message) {
+            return new CommandResult<>(false, message, null);
+        }
+    }
+
+    private record ActivityResolution(
+            List<Long> activityIds,
+            List<String> unresolved,
+            List<String> displayNames) {
+    }
+
+    private record ListingMemberTarget(
+            Listing listing,
+            UUID targetUUID,
+            String username) {
     }
 
     public PartyFinderManager() {
@@ -144,6 +170,354 @@ public class PartyFinderManager implements NotificationAccessor {
                     SeqClient.LOGGER.error("Failed to load listings: {}", message, e);
                     pushUiError(message);
                     return List.of();
+                });
+    }
+
+    public CompletableFuture<CommandResult<List<Activity>>> ensureActivitiesLoadedForCommand() {
+        if (!activities.isEmpty()) {
+            return CompletableFuture.completedFuture(
+                    CommandResult.success("Activities ready.", List.copyOf(activities)));
+        }
+
+        return ApiClient.getInstance()
+                .getActivities()
+                .thenApply(result -> {
+                    activities.clear();
+                    activities.addAll(result);
+                    return CommandResult.success("Loaded " + result.size() + " activities.", List.copyOf(result));
+                })
+                .exceptionally(e -> commandFailure(e, "Failed to load activities", "Failed to load activities"));
+    }
+
+    public CompletableFuture<CommandResult<List<Listing>>> refreshListingsForCommand() {
+        return ApiClient.getInstance()
+                .getListings(null, null)
+                .thenApply(result -> {
+                    List<Listing> deduped = deduplicateById(result);
+                    synchronized (listingsLock) {
+                        listings.clear();
+                        listings.addAll(deduped);
+                    }
+                    refreshCurrentListing();
+                    listingsVersion++;
+                    return CommandResult.success("Loaded " + deduped.size() + " listings.", List.copyOf(deduped));
+                })
+                .exceptionally(e -> commandFailure(e, "Failed to load listings", "Failed to load listings"));
+    }
+
+    public CompletableFuture<CommandResult<Listing>> createPartyFromCommand(List<String> activityInputs) {
+        return refreshListingsForCommand()
+                .thenCompose(listingsResult -> {
+                    if (!listingsResult.success()) {
+                        return completedCommandFailure(listingsResult.message());
+                    }
+                    if (currentListing != null) {
+                        return completedCommandFailure("You are already in party #" + currentListing.id()
+                                + ". Use /seq p update or leave/disband it first.");
+                    }
+                    return ensureActivitiesLoadedForCommand()
+                            .thenCompose(activitiesResult -> {
+                                if (!activitiesResult.success()) {
+                                    return completedCommandFailure(activitiesResult.message());
+                                }
+
+                                CommandResult<ActivityResolution> selectionResult = resolveActivitiesForCommand(
+                                        activityInputs,
+                                        true);
+                                if (!selectionResult.success()) {
+                                    return completedCommandFailure(selectionResult.message());
+                                }
+
+                                ActivityResolution resolution = selectionResult.data();
+                                return executeListingCommand(
+                                        ApiClient.getInstance().createListing(
+                                                resolution.activityIds(),
+                                                PartyMode.CHILL,
+                                                false,
+                                                PartyRegion.NA,
+                                                PartyRole.DPS,
+                                                null),
+                                        listing -> applyCreatedListingState(listing),
+                                        "Unable to create party",
+                                        "Failed to create party",
+                                        listing -> "Created party #" + listing.id() + " for "
+                                                + formatActivityNames(resolution.displayNames()) + ".");
+                            });
+                });
+    }
+
+    public CompletableFuture<CommandResult<Listing>> updatePartyFromCommand(List<String> activityInputs) {
+        return ensureCurrentListingForCommand()
+                .thenCompose(currentResult -> {
+                    if (!currentResult.success()) {
+                        return completedCommandFailure(currentResult.message());
+                    }
+                    if (!isPartyLeader()) {
+                        return completedCommandFailure("Only the party leader can update the Sequoia listing.");
+                    }
+
+                    Listing listing = currentResult.data();
+                    return ensureActivitiesLoadedForCommand()
+                            .thenCompose(activitiesResult -> {
+                                if (!activitiesResult.success()) {
+                                    return completedCommandFailure(activitiesResult.message());
+                                }
+
+                                CommandResult<ActivityResolution> selectionResult = resolveActivitiesForCommand(
+                                        activityInputs,
+                                        true);
+                                if (!selectionResult.success()) {
+                                    return completedCommandFailure(selectionResult.message());
+                                }
+
+                                ActivityResolution resolution = selectionResult.data();
+                                PartyRegion region = listing.region() != null ? listing.region() : PartyRegion.NA;
+                                return executeListingCommand(
+                                        ApiClient.getInstance().updateListing(
+                                                listing.id(),
+                                                resolution.activityIds(),
+                                                listing.mode(),
+                                                listing.strict(),
+                                                region,
+                                                listing.note()),
+                                        this::applyUpdatedCurrentListingState,
+                                        "Unable to update party",
+                                        "Failed to update party",
+                                        updatedListing -> "Updated party #" + updatedListing.id() + " to "
+                                                + formatActivityNames(resolution.displayNames()) + ".");
+                            });
+                });
+    }
+
+    public CompletableFuture<CommandResult<Listing>> joinPartyFromCommand(long listingId, PartyRole role) {
+        PartyRole resolvedRole = role != null ? role : PartyRole.DPS;
+        return refreshListingsForCommand()
+                .thenCompose(listingsResult -> {
+                    if (!listingsResult.success()) {
+                        return completedCommandFailure(listingsResult.message());
+                    }
+                    if (currentListing != null) {
+                        return completedCommandFailure("You are already in party #" + currentListing.id()
+                                + ". Leave it before joining another listing.");
+                    }
+
+                    return executeListingCommand(
+                            ApiClient.getInstance().joinListing(listingId, resolvedRole),
+                            this::applyJoinedListingState,
+                            "Unable to join party",
+                            "Failed to join party",
+                            listing -> "Joined party #" + listing.id() + " as " + formatRoleName(resolvedRole) + ".");
+                });
+    }
+
+    public CompletableFuture<CommandResult<Listing>> leavePartyFromCommand() {
+        return ensureCurrentListingForCommand()
+                .thenCompose(currentResult -> {
+                    if (!currentResult.success()) {
+                        return completedCommandFailure(currentResult.message());
+                    }
+
+                    Listing listing = currentResult.data();
+                    return executeListingCommand(
+                            ApiClient.getInstance().leaveListing(listing.id()),
+                            this::applyLeftListingState,
+                            "Unable to leave party",
+                            "Failed to leave party",
+                            ignored -> "Left party #" + listing.id() + ".");
+                });
+    }
+
+    public CompletableFuture<CommandResult<Void>> createInviteFromCommand(String username) {
+        return ensureCurrentListingForCommand()
+                .thenCompose(currentResult -> {
+                    if (!currentResult.success()) {
+                        return completedCommandFailureVoid(currentResult.message());
+                    }
+                    if (!isPartyLeader()) {
+                        return completedCommandFailureVoid("Only the party leader can invite players.");
+                    }
+
+                    String validationMessage = validateUsername(username, false);
+                    if (validationMessage != null) {
+                        return completedCommandFailureVoid(validationMessage);
+                    }
+
+                    String normalizedUsername = username.trim();
+                    Listing listing = currentResult.data();
+                    return resolveUuidForCommand(normalizedUsername)
+                            .thenCompose(uuidResult -> {
+                                if (!uuidResult.success()) {
+                                    return completedCommandFailureVoid(uuidResult.message());
+                                }
+
+                                UUID targetUUID = uuidResult.data();
+                                if (uuidEquals(getLocalPlayerUUID(), targetUUID.toString())) {
+                                    return completedCommandFailureVoid("You cannot invite yourself.");
+                                }
+
+                                return executeVoidCommand(
+                                        ApiClient.getInstance().createInvite(listing.id(), targetUUID),
+                                        "Unable to create party invite",
+                                        "Failed to create invite",
+                                        "Created Sequoia invite for " + normalizedUsername + " on party #"
+                                                + listing.id() + ".");
+                            });
+                });
+    }
+
+    public CompletableFuture<CommandResult<Listing>> setReservedSlotTargetFromCommand(int requestedReservedSlots) {
+        if (requestedReservedSlots < 0) {
+            return completedCommandFailure("Reserved slot target cannot be negative.");
+        }
+
+        return ensureCurrentListingForCommand()
+                .thenCompose(currentResult -> {
+                    if (!currentResult.success()) {
+                        return completedCommandFailure(currentResult.message());
+                    }
+                    if (!isPartyLeader()) {
+                        return completedCommandFailure("Only the party leader can reserve slots.");
+                    }
+
+                    Listing listing = currentResult.data();
+                    int currentReservedSlots = inferReservedSlotCount(listing);
+                    int delta = requestedReservedSlots - currentReservedSlots;
+                    if (delta == 0) {
+                        return CompletableFuture.completedFuture(
+                                CommandResult.success(
+                                        "Reserved slots already set to " + requestedReservedSlots + " on party #"
+                                                + listing.id() + ".",
+                                        listing));
+                    }
+
+                    CompletableFuture<Listing> reserveFuture = delta > 0
+                            ? ApiClient.getInstance().reserveSlots(listing.id(), delta)
+                            : ApiClient.getInstance().unreserveSlots(listing.id(), -delta);
+                    String verb = requestedReservedSlots == 1 ? "slot" : "slots";
+                    return executeListingCommand(
+                            reserveFuture,
+                            this::applyUpdatedCurrentListingState,
+                            "Unable to adjust reserved slots",
+                            "Failed to adjust reserved slots",
+                            updatedListing -> "Set reserved slots to " + requestedReservedSlots + " " + verb
+                                    + " on party #" + updatedListing.id() + ".");
+                });
+    }
+
+    public CompletableFuture<CommandResult<Listing>> reopenPartyFromCommand() {
+        return runLeaderListingCommand(
+                "Only the party leader can open the Sequoia listing.",
+                listing -> executeListingCommand(
+                        ApiClient.getInstance().reopenListing(listing.id()),
+                        this::applyUpdatedCurrentListingState,
+                        "Unable to reopen party",
+                        "Failed to reopen party",
+                        updatedListing -> "Opened party #" + updatedListing.id() + "."));
+    }
+
+    public CompletableFuture<CommandResult<Listing>> closePartyFromCommand() {
+        return runLeaderListingCommand(
+                "Only the party leader can close the Sequoia listing.",
+                listing -> executeListingCommand(
+                        ApiClient.getInstance().closeListing(listing.id()),
+                        this::applyUpdatedCurrentListingState,
+                        "Unable to close party",
+                        "Failed to close party",
+                        updatedListing -> "Closed party #" + updatedListing.id() + "."));
+    }
+
+    public CompletableFuture<CommandResult<Listing>> disbandPartyFromCommand() {
+        return runLeaderListingCommand(
+                "Only the party leader can disband the Sequoia listing.",
+                listing -> executeListingCommand(
+                        ApiClient.getInstance().disbandListing(listing.id()),
+                        ignored -> applyDisbandedListingState(listing.id()),
+                        "Unable to disband party",
+                        "Failed to disband party",
+                        ignored -> "Disbanded party #" + listing.id() + "."));
+    }
+
+    public CompletableFuture<CommandResult<Listing>> changeRoleFromCommand(PartyRole role) {
+        PartyRole resolvedRole = role != null ? role : PartyRole.DPS;
+        return ensureCurrentListingForCommand()
+                .thenCompose(currentResult -> {
+                    if (!currentResult.success()) {
+                        return completedCommandFailure(currentResult.message());
+                    }
+
+                    return executeListingCommand(
+                            ApiClient.getInstance().changeMyRole(resolvedRole),
+                            this::applyUpdatedCurrentListingState,
+                            "Unable to change role",
+                            "Failed to change role",
+                            updatedListing -> "Changed your party role to " + formatRoleName(resolvedRole) + ".");
+                });
+    }
+
+    public CompletableFuture<CommandResult<Listing>> kickMemberFromCommand(String username) {
+        return resolveCurrentMemberTargetForCommand(username, true)
+                .thenCompose(targetResult -> {
+                    if (!targetResult.success()) {
+                        return completedCommandFailure(targetResult.message());
+                    }
+
+                    ListingMemberTarget target = targetResult.data();
+                    if (uuidEquals(target.listing().leaderUUID(), target.targetUUID().toString())) {
+                        return completedCommandFailure("You cannot kick the party leader.");
+                    }
+
+                    return executeListingCommand(
+                            ApiClient.getInstance().kickMember(target.listing().id(), target.targetUUID()),
+                            this::applyUpdatedCurrentListingState,
+                            "Unable to kick member",
+                            "Failed to kick member",
+                            updatedListing -> "Kicked " + target.username() + " from party #" + updatedListing.id()
+                                    + ".");
+                });
+    }
+
+    public CompletableFuture<CommandResult<Listing>> promoteMemberFromCommand(String username) {
+        return resolveCurrentMemberTargetForCommand(username, true)
+                .thenCompose(targetResult -> {
+                    if (!targetResult.success()) {
+                        return completedCommandFailure(targetResult.message());
+                    }
+
+                    ListingMemberTarget target = targetResult.data();
+                    if (uuidEquals(target.listing().leaderUUID(), target.targetUUID().toString())) {
+                        return completedCommandFailure(target.username() + " is already the party leader.");
+                    }
+
+                    return executeListingCommand(
+                            ApiClient.getInstance().transferLeadership(target.listing().id(), target.targetUUID()),
+                            this::applyUpdatedCurrentListingState,
+                            "Unable to promote member",
+                            "Failed to transfer leadership",
+                            updatedListing -> "Transferred party #" + updatedListing.id() + " leadership to "
+                                    + target.username() + ".");
+                });
+    }
+
+    public CompletableFuture<CommandResult<Void>> createGamePartyFromCommand() {
+        return CompletableFuture.completedFuture(sendGamePartyCreateCommand());
+    }
+
+    public CompletableFuture<CommandResult<Void>> inviteGamePlayerFromCommand(String username) {
+        return CompletableFuture.completedFuture(sendGamePartyInviteCommand(username));
+    }
+
+    public CompletableFuture<CommandResult<Void>> inviteAllCurrentMembersFromCommand() {
+        return ensureCurrentListingForCommand()
+                .thenApply(currentResult -> {
+                    if (!currentResult.success()) {
+                        return CommandResult.failure(currentResult.message());
+                    }
+
+                    InviteAllResult inviteAllResult = inviteAllCurrentMembersInternal(false);
+                    if (!inviteAllResult.success()) {
+                        return CommandResult.failure("Invite all: " + inviteAllResult.message());
+                    }
+                    return CommandResult.success("Invite all: " + inviteAllResult.message(), null);
                 });
     }
 
@@ -775,13 +1149,18 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public InviteAllResult inviteAllCurrentMembers() {
+        return inviteAllCurrentMembersInternal(true);
+    }
+
+    private InviteAllResult inviteAllCurrentMembersInternal(boolean notifyPlayer) {
         if (currentListing == null) {
             return finishInviteAll(
                     false,
                     false,
                     0,
                     0,
-                    "no active party found.");
+                    "no active party found.",
+                    notifyPlayer);
         }
 
         if (!isPartyLeader()) {
@@ -790,7 +1169,8 @@ public class PartyFinderManager implements NotificationAccessor {
                     false,
                     0,
                     0,
-                    "only the party leader can use this.");
+                    "only the party leader can use this.",
+                    notifyPlayer);
         }
 
         var player = SeqClient.mc.player;
@@ -800,7 +1180,8 @@ public class PartyFinderManager implements NotificationAccessor {
                     false,
                     0,
                     0,
-                    "client connection unavailable.");
+                    "client connection unavailable.",
+                    notifyPlayer);
         }
 
         List<Member> members = currentListing.members();
@@ -810,7 +1191,8 @@ public class PartyFinderManager implements NotificationAccessor {
                     false,
                     0,
                     0,
-                    "no valid party members to invite.");
+                    "no valid party members to invite.",
+                    notifyPlayer);
         }
 
         String myUUID = getLocalPlayerUUID();
@@ -859,11 +1241,12 @@ public class PartyFinderManager implements NotificationAccessor {
                     false,
                     0,
                     skippedCount,
-                    formatInviteAllMessage(0, skippedCount));
+                    formatInviteAllMessage(0, skippedCount),
+                    notifyPlayer);
         }
 
         for (String username : targets) {
-            player.connection.sendCommand("pa " + username);
+            player.connection.sendCommand(GAME_PARTY_INVITE_PREFIX + username);
         }
 
         return finishInviteAll(
@@ -871,7 +1254,8 @@ public class PartyFinderManager implements NotificationAccessor {
                 true,
                 targets.size(),
                 skippedCount,
-                formatInviteAllMessage(targets.size(), skippedCount));
+                formatInviteAllMessage(targets.size(), skippedCount),
+                notifyPlayer);
     }
 
     /** Leaves the current party (no-arg overload). */
@@ -1180,8 +1564,11 @@ public class PartyFinderManager implements NotificationAccessor {
             boolean sentAny,
             int sentCount,
             int skippedCount,
-            String message) {
-        notify(message);
+            String message,
+            boolean notifyPlayer) {
+        if (notifyPlayer) {
+            notify(message);
+        }
         return new InviteAllResult(success, sentAny, sentCount, skippedCount, message);
     }
 
@@ -1198,6 +1585,318 @@ public class PartyFinderManager implements NotificationAccessor {
             return "sent " + sentCount + " " + inviteWord + ". Skipped " + skippedCount + ".";
         }
         return "sent " + sentCount + " " + inviteWord + ".";
+    }
+
+    private static <T> CompletableFuture<CommandResult<T>> completedCommandFailure(String message) {
+        return CompletableFuture.completedFuture(CommandResult.failure(message));
+    }
+
+    private static CompletableFuture<CommandResult<Void>> completedCommandFailureVoid(String message) {
+        return CompletableFuture.completedFuture(CommandResult.failure(message));
+    }
+
+    private <T> CommandResult<T> commandFailure(
+            Throwable throwable,
+            String fallbackMessage,
+            String logMessage) {
+        String errorMessage = extractUserFriendlyApiError(throwable, fallbackMessage);
+        SeqClient.LOGGER.warn("{}: {}", logMessage, errorMessage);
+        return CommandResult.failure(errorMessage);
+    }
+
+    private CompletableFuture<CommandResult<Listing>> executeListingCommand(
+            CompletableFuture<Listing> apiFuture,
+            Consumer<Listing> stateUpdater,
+            String fallbackMessage,
+            String logMessage,
+            Function<Listing, String> successMessageBuilder) {
+        return apiFuture
+                .thenApply(listing -> {
+                    stateUpdater.accept(listing);
+                    return CommandResult.success(successMessageBuilder.apply(listing), listing);
+                })
+                .exceptionally(e -> commandFailure(e, fallbackMessage, logMessage));
+    }
+
+    private CompletableFuture<CommandResult<Void>> executeVoidCommand(
+            CompletableFuture<Void> apiFuture,
+            String fallbackMessage,
+            String logMessage,
+            String successMessage) {
+        return apiFuture
+                .thenApply(ignored -> CommandResult.success(successMessage, null))
+                .exceptionally(e -> commandFailure(e, fallbackMessage, logMessage));
+    }
+
+    private CompletableFuture<CommandResult<Listing>> runLeaderListingCommand(
+            String notLeaderMessage,
+            Function<Listing, CompletableFuture<CommandResult<Listing>>> action) {
+        return ensureCurrentListingForCommand()
+                .thenCompose(currentResult -> {
+                    if (!currentResult.success()) {
+                        return completedCommandFailure(currentResult.message());
+                    }
+                    if (!isPartyLeader()) {
+                        return completedCommandFailure(notLeaderMessage);
+                    }
+                    return action.apply(currentResult.data());
+                });
+    }
+
+    private CompletableFuture<CommandResult<Listing>> ensureCurrentListingForCommand() {
+        if (currentListing != null) {
+            return CompletableFuture.completedFuture(
+                    CommandResult.success("Current listing ready.", currentListing));
+        }
+
+        return refreshListingsForCommand()
+                .thenApply(result -> {
+                    if (!result.success()) {
+                        return CommandResult.failure(result.message());
+                    }
+                    if (currentListing == null) {
+                        return CommandResult.failure("You are not currently in a Sequoia party.");
+                    }
+                    return CommandResult.success("Current listing loaded.", currentListing);
+                });
+    }
+
+    private CommandResult<ActivityResolution> resolveActivitiesForCommand(
+            Collection<String> activityInputs,
+            boolean rejectUnresolved) {
+        if (activityInputs == null || activityInputs.isEmpty()) {
+            return CommandResult.failure("Provide at least one activity.");
+        }
+
+        LinkedHashSet<String> normalizedInputs = new LinkedHashSet<>();
+        for (String rawInput : activityInputs) {
+            if (rawInput == null) {
+                continue;
+            }
+            String trimmed = rawInput.trim();
+            if (!trimmed.isEmpty()) {
+                normalizedInputs.add(trimmed);
+            }
+        }
+
+        if (normalizedInputs.isEmpty()) {
+            return CommandResult.failure("Provide at least one activity.");
+        }
+
+        List<Long> activityIds = new ArrayList<>();
+        List<String> unresolved = new ArrayList<>();
+        LinkedHashSet<String> displayNames = new LinkedHashSet<>();
+
+        for (String activityInput : normalizedInputs) {
+            String searchName = PartyListing.displayNameToBackendName(activityInput);
+            Activity activity = activities
+                    .stream()
+                    .filter(candidate -> matchesActivityName(candidate, activityInput, searchName))
+                    .findFirst()
+                    .orElse(null);
+
+            if (activity == null) {
+                unresolved.add(activityInput);
+                continue;
+            }
+
+            if (!activityIds.contains(activity.id())) {
+                activityIds.add(activity.id());
+            }
+            displayNames.add(PartyListing.backendNameToDisplayName(activity.name()));
+        }
+
+        if (displayNames.contains("Prelude to Annihilation") && displayNames.size() > 1) {
+            return CommandResult.failure("Prelude to Annihilation cannot be combined with other activities.");
+        }
+
+        if (activityIds.isEmpty()) {
+            return CommandResult.failure("Unknown activities: " + String.join(", ", unresolved) + ".");
+        }
+
+        if (rejectUnresolved && !unresolved.isEmpty()) {
+            return CommandResult.failure("Unknown activities: " + String.join(", ", unresolved) + ".");
+        }
+
+        return CommandResult.success(
+                "Resolved " + displayNames.size() + " activities.",
+                new ActivityResolution(
+                        List.copyOf(activityIds),
+                        List.copyOf(unresolved),
+                        List.copyOf(displayNames)));
+    }
+
+    private CompletableFuture<CommandResult<UUID>> resolveUuidForCommand(String username) {
+        return PlayerNameCache.resolveUUID(username)
+                .thenApply(resolvedUuid -> {
+                    if (resolvedUuid == null || resolvedUuid.isBlank()) {
+                        return CommandResult.failure("Unable to find a UUID for " + username + ".");
+                    }
+
+                    try {
+                        return CommandResult.success(
+                                "Resolved UUID.",
+                                UUID.fromString(PlayerNameCache.formatUUID(resolvedUuid)));
+                    } catch (IllegalArgumentException e) {
+                        SeqClient.LOGGER.warn("Unable to parse resolved UUID {}", resolvedUuid, e);
+                        return CommandResult.failure("Unable to resolve a valid UUID for " + username + ".");
+                    }
+                });
+    }
+
+    private CompletableFuture<CommandResult<ListingMemberTarget>> resolveCurrentMemberTargetForCommand(
+            String username,
+            boolean requireLeader) {
+        String validationMessage = validateUsername(username, false);
+        if (validationMessage != null) {
+            return completedCommandFailure(validationMessage);
+        }
+
+        String normalizedUsername = username.trim();
+        return ensureCurrentListingForCommand()
+                .thenCompose(currentResult -> {
+                    if (!currentResult.success()) {
+                        return completedCommandFailure(currentResult.message());
+                    }
+                    if (requireLeader && !isPartyLeader()) {
+                        return completedCommandFailure("Only the party leader can manage party members.");
+                    }
+
+                    Listing listing = currentResult.data();
+                    return resolveUuidForCommand(normalizedUsername)
+                            .thenApply(uuidResult -> {
+                                if (!uuidResult.success()) {
+                                    return CommandResult.failure(uuidResult.message());
+                                }
+
+                                UUID targetUUID = uuidResult.data();
+                                Member targetMember = findMemberByUuid(listing, targetUUID);
+                                if (targetMember == null) {
+                                    return CommandResult.failure(
+                                            normalizedUsername + " is not in your Sequoia party.");
+                                }
+
+                                return CommandResult.success(
+                                        "Resolved target member.",
+                                        new ListingMemberTarget(listing, targetUUID, normalizedUsername));
+                            });
+                });
+    }
+
+    private static Member findMemberByUuid(Listing listing, UUID targetUUID) {
+        if (listing == null || targetUUID == null || listing.members() == null) {
+            return null;
+        }
+
+        for (Member member : listing.members()) {
+            if (member != null && uuidEquals(targetUUID.toString(), member.playerUUID())) {
+                return member;
+            }
+        }
+
+        return null;
+    }
+
+    private CommandResult<Void> sendGamePartyCreateCommand() {
+        if (SeqClient.mc.player == null || SeqClient.mc.player.connection == null) {
+            return CommandResult.failure("Client connection unavailable.");
+        }
+
+        SeqClient.mc.player.connection.sendCommand(GAME_PARTY_CREATE_COMMAND);
+        return CommandResult.success("Sent Wynn party create command.", null);
+    }
+
+    private CommandResult<Void> sendGamePartyInviteCommand(String username) {
+        String validationMessage = validateUsername(username, false);
+        if (validationMessage != null) {
+            return CommandResult.failure(validationMessage);
+        }
+        if (SeqClient.mc.player == null || SeqClient.mc.player.connection == null) {
+            return CommandResult.failure("Client connection unavailable.");
+        }
+
+        String normalizedUsername = username.trim();
+        if (SeqClient.mc.player.getName() != null
+                && SeqClient.mc.player.getName().getString().equalsIgnoreCase(normalizedUsername)) {
+            return CommandResult.failure("You cannot invite yourself.");
+        }
+        SeqClient.mc.player.connection.sendCommand(GAME_PARTY_INVITE_PREFIX + normalizedUsername);
+        return CommandResult.success("Sent Wynn party invite to " + normalizedUsername + ".", null);
+    }
+
+    private static String validateUsername(String username, boolean rejectSelf) {
+        if (username == null || username.isBlank()) {
+            return "Enter a valid Minecraft username.";
+        }
+
+        String normalizedUsername = username.trim();
+        if (!normalizedUsername.matches("[A-Za-z0-9_]{3,16}")) {
+            return "Enter a valid Minecraft username.";
+        }
+
+        if (rejectSelf) {
+            var player = SeqClient.mc.player;
+            String myUsername = player != null && player.getName() != null
+                    ? player.getName().getString()
+                    : null;
+            if (myUsername != null && myUsername.equalsIgnoreCase(normalizedUsername)) {
+                return "You cannot target yourself.";
+            }
+        }
+
+        return null;
+    }
+
+    private static String formatActivityNames(Collection<String> displayNames) {
+        if (displayNames == null || displayNames.isEmpty()) {
+            return "Unknown Activity";
+        }
+        return String.join(", ", displayNames);
+    }
+
+    private static String formatRoleName(PartyRole role) {
+        if (role == null) {
+            return "DPS";
+        }
+        return switch (role) {
+            case DPS -> "DPS";
+            case HEALER -> "Healer";
+            case TANK -> "Tank";
+        };
+    }
+
+    private void applyCreatedListingState(Listing listing) {
+        replaceListing(listing);
+        currentListing = listing;
+        listingsVersion++;
+        publishLocalClassUpdate();
+    }
+
+    private void applyJoinedListingState(Listing listing) {
+        replaceListing(listing);
+        currentListing = listing;
+        listingsVersion++;
+        publishLocalClassUpdate();
+    }
+
+    private void applyUpdatedCurrentListingState(Listing listing) {
+        replaceListing(listing);
+        currentListing = listing;
+        listingsVersion++;
+    }
+
+    private void applyLeftListingState(Listing listing) {
+        replaceListing(listing);
+        currentListing = null;
+        listingsVersion++;
+    }
+
+    private void applyDisbandedListingState(long listingId) {
+        listings.removeIf(l -> l.id() == listingId);
+        if (currentListing != null && currentListing.id() == listingId) {
+            currentListing = null;
+        }
+        listingsVersion++;
     }
 
     private void sendGameDirectMessage(UUID targetUUID, String message) {
@@ -1240,11 +1939,7 @@ public class PartyFinderManager implements NotificationAccessor {
         adjustFuture
                 .thenAccept(updatedListing -> {
                     if (updatedListing != null) {
-                        replaceListing(updatedListing);
-                        if (currentListing != null && currentListing.id() == listingId) {
-                            currentListing = updatedListing;
-                        }
-                        listingsVersion++;
+                        applyUpdatedCurrentListingState(updatedListing);
                     }
                 })
                 .exceptionally(e -> {
