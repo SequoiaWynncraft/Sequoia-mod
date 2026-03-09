@@ -19,20 +19,21 @@ import org.sequoia.seq.utils.rendering.nvg.NVGWrapper;
 public class AssetManager {
 
     private static final String[] ASSET_FILES = new String[] {
-            "icon.png",
-            "archer.png",
-            "assassin.png",
-            "warrior.png",
-            "mage.png",
-            "shaman.png",
-            "star.png",
-            "notg.png",
-            "nol.png",
-            "tcc.png",
-            "tna.png",
-            "annihilation.png",
-            "starup.png",
-            "cross.png",
+        "icon.png",
+        "archer.png",
+        "assassin.png",
+        "warrior.png",
+        "mage.png",
+        "shaman.png",
+        "star.png",
+        "notg.png",
+        "nol.png",
+        "tcc.png",
+        "tna.png",
+        "annihilation.png",
+        "starup.png",
+        "cross.png",
+        "gaz_ears.png",
     };
 
     @Getter
@@ -48,20 +49,14 @@ public class AssetManager {
                 String assetName = file.split("\\.")[0];
 
                 String path = "assets/seq/" + file;
-                URL resource = AssetManager.class.getClassLoader().getResource(
-                        path);
-                if (resource == null)
+                URL resource = AssetManager.class.getClassLoader().getResource(path);
+                if (resource == null) {
                     continue;
+                }
 
-                BufferedImage bufferedImage = ImageIO.read(
-                        resource.openStream());
-                Identifier identifier = SeqClient.getFileLocation(
-                        "textures/icons/" + assetName);
-                Asset asset = new Asset(
-                        identifier,
-                        bufferedImage,
-                        bufferedImage.getWidth(),
-                        bufferedImage.getHeight());
+                BufferedImage bufferedImage = ImageIO.read(resource.openStream());
+                Identifier identifier = SeqClient.getFileLocation("textures/icons/" + assetName);
+                Asset asset = new Asset(identifier, bufferedImage, bufferedImage.getWidth(), bufferedImage.getHeight());
                 assetsMap.put(assetName, asset);
             }
             linkAssetsToNanoVG();
@@ -83,9 +78,7 @@ public class AssetManager {
             byteBuffer.put(imageBytes);
             byteBuffer.flip();
 
-            asset.image = NVGWrapper.loadImageFromInputStream(
-                    NVGContext.getContext(),
-                    byteBuffer);
+            asset.image = NVGWrapper.loadImageFromInputStream(NVGContext.getContext(), byteBuffer);
             MemoryUtil.memFree(byteBuffer);
         });
     }
@@ -95,8 +88,7 @@ public class AssetManager {
     }
 
     public Asset getAsset(String assetName) {
-        if (assetName == null)
-            return null;
+        if (assetName == null) return null;
         return assetsMap.get(assetName);
     }
 
@@ -114,11 +106,7 @@ public class AssetManager {
         int width;
         int height;
 
-        public Asset(
-                Identifier identifier,
-                BufferedImage bufferedImage,
-                int width,
-                int height) {
+        public Asset(Identifier identifier, BufferedImage bufferedImage, int width, int height) {
             this.identifier = identifier;
             this.bufferedImage = bufferedImage;
             this.width = width;

@@ -179,6 +179,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final Color FILTER_BOX_BG = new Color(15, 15, 22, 240);
 
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
+    private static final String GAZ_EARS_ASSET = "gaz_ears";
+    private static final String GAZ_EARS_UUID = "66efb975-31b4-499e-9b46-a34980edd8ee";
     private static final String[] ROLES = {"DPS", "Healer", "Tank"};
 
     // All possible tags = RAID_TYPES + PARTY_TAGS
@@ -738,7 +740,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         List<String> raidTags = party.getRaidTags();
 
         drawRaidIconCircle(
-                nvg, fontName, rowX, y + (CARD_HEADER_HEIGHT - TYPE_ICON_SIZE) / 2f, TYPE_ICON_SIZE, raidTags);
+                nvg,
+                fontName,
+                rowX,
+                y + (CARD_HEADER_HEIGHT - TYPE_ICON_SIZE) / 2f,
+                TYPE_ICON_SIZE,
+                raidTags,
+                hasGazEarsMember(party));
         rowX += TYPE_ICON_SIZE + 6;
 
         nvgFontFace(nvg, fontName);
@@ -816,7 +824,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         List<String> raidTags = party.getRaidTags();
 
         drawRaidIconCircle(
-                nvg, fontName, rowX, y + (COLLAPSED_ROW_HEIGHT - TYPE_ICON_SIZE) / 2f, TYPE_ICON_SIZE, raidTags);
+                nvg,
+                fontName,
+                rowX,
+                y + (COLLAPSED_ROW_HEIGHT - TYPE_ICON_SIZE) / 2f,
+                TYPE_ICON_SIZE,
+                raidTags,
+                hasGazEarsMember(party));
         rowX += TYPE_ICON_SIZE + 6;
 
         nvgFontFace(nvg, fontName);
@@ -991,7 +1005,14 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     // ── Pizza-slice raid icon circle ──
 
-    private void drawRaidIconCircle(long nvg, String fontName, float x, float y, float size, List<String> raidTags) {
+    private void drawRaidIconCircle(
+            long nvg,
+            String fontName,
+            float x,
+            float y,
+            float size,
+            List<String> raidTags,
+            boolean drawGazEarsOverlay) {
         float cx = x + size / 2f;
         float cy = y + size / 2f;
         float radius = size / 2f - 1;
@@ -1148,6 +1169,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             }
 
             splitColor.free();
+        }
+
+        if (drawGazEarsOverlay) {
+            AssetManager.Asset gazEars = getClassIcon(GAZ_EARS_ASSET);
+            if (gazEars != null) {
+                NVGWrapper.drawImage(nvg, gazEars, x + size * 0.1f, y - size * 0.55f, size, size, 255);
+            }
         }
     }
 
@@ -1678,6 +1706,20 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private AssetManager.Asset getClassIcon(String className) {
         if (className == null || SeqClient.assetManager == null) return null;
         return SeqClient.assetManager.getAsset(className);
+    }
+
+    private boolean hasGazEarsMember(PartyListing party) {
+        if (party == null) {
+            return false;
+        }
+
+        for (PartyMember member : party.members) {
+            if (member != null && member.playerUUID != null && member.playerUUID.equalsIgnoreCase(GAZ_EARS_UUID)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private boolean isCurrentListingClosed() {
