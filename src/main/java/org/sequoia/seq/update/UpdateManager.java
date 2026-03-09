@@ -37,8 +37,8 @@ public class UpdateManager implements NotificationAccessor {
     private static final String MOD_ID = "seq";
     private static final String REPO_OWNER = "SequoiaWynncraft";
     private static final String REPO_NAME = "Sequoia-mod";
-    private static final String RELEASES_LATEST_API = "https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME
-            + "/releases/latest";
+    private static final URI DEFAULT_RELEASES_LATEST_API = URI.create(
+        "https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME + "/releases/latest");
     private static final Pattern STRICT_TAG_PATTERN = Pattern.compile("^v(\\d+)\\.(\\d+)\\.(\\d+)$");
 
     private static UpdateManager instance;
@@ -46,6 +46,7 @@ public class UpdateManager implements NotificationAccessor {
     private final HttpClient httpClient;
     private final ExecutorService executor;
     private final Gson gson;
+    private final URI latestReleaseApi;
 
     private volatile boolean startupChecked;
     private volatile boolean checking;
@@ -63,17 +64,34 @@ public class UpdateManager implements NotificationAccessor {
         return instance;
     }
 
-    private UpdateManager() {
-        this.executor = Executors.newFixedThreadPool(2, runnable -> {
+    UpdateManager() {
+        this(createExecutor());
+    }
+
+    private UpdateManager(ExecutorService executor) {
+        this(
+                HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .executor(executor)
+                        .build(),
+                executor,
+                new Gson(),
+                DEFAULT_RELEASES_LATEST_API);
+    }
+
+    UpdateManager(HttpClient httpClient, ExecutorService executor, Gson gson, URI latestReleaseApi) {
+        this.httpClient = httpClient;
+        this.executor = executor;
+        this.gson = gson;
+        this.latestReleaseApi = latestReleaseApi;
+    }
+
+    private static ExecutorService createExecutor() {
+        return Executors.newFixedThreadPool(2, runnable -> {
             Thread thread = new Thread(runnable, "seq-updater");
             thread.setDaemon(true);
             return thread;
         });
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .executor(executor)
-                .build();
-        this.gson = new Gson();
     }
 
     public void checkForUpdatesOnStartup() {
@@ -100,12 +118,12 @@ public class UpdateManager implements NotificationAccessor {
     public void applyPendingUpdate(boolean exitAfterInstall) {
         ReleaseCandidate target = pendingRelease;
         if (target == null) {
-            notify("No pending update available.");
+            sendNotification("No pending update available.");
             statusLine = "No pending update available.";
             return;
         }
         if (applying) {
-            notify("Update install already in progress.");
+            sendNotification("Update install already in progress.");
             return;
         }
 
@@ -116,7 +134,7 @@ public class UpdateManager implements NotificationAccessor {
                     applying = false;
                     if (throwable != null) {
                         statusLine = "Install failed: " + rootCauseMessage(throwable);
-                        notify("Update failed: " + rootCauseMessage(throwable));
+                        sendNotification("Update failed: " + rootCauseMessage(throwable));
                         SeqClient.LOGGER.error("Failed to apply update", throwable);
                     }
                 });
@@ -128,16 +146,16 @@ public class UpdateManager implements NotificationAccessor {
             return;
         }
         try {
-            Desktop.getDesktop().browse(URI.create(target.releasePageUrl()));
+            openBrowser(target.releasePageUrl());
         } catch (Exception e) {
-            notifyClickable("Open latest release", target.releasePageUrl());
+            sendClickableNotification("Open latest release", target.releasePageUrl());
         }
     }
 
     private void checkForUpdates(boolean manualTrigger) {
         if (checking) {
             if (manualTrigger) {
-                notify("Update check already running.");
+                sendNotification("Update check already running.");
             }
             return;
         }
@@ -149,7 +167,7 @@ public class UpdateManager implements NotificationAccessor {
             if (throwable != null) {
                 statusLine = "Update check failed: " + rootCauseMessage(throwable);
                 if (manualTrigger) {
-                    notify("Update check failed: " + rootCauseMessage(throwable));
+                    sendNotification("Update check failed: " + rootCauseMessage(throwable));
                 }
                 SeqClient.LOGGER.warn("Update check failed", throwable);
                 return;
@@ -157,7 +175,7 @@ public class UpdateManager implements NotificationAccessor {
             if (candidate == null) {
                 statusLine = "No valid release found.";
                 if (manualTrigger) {
-                    notify("No valid release found.");
+                    sendNotification("No valid release found.");
                 }
                 return;
             }
@@ -167,7 +185,7 @@ public class UpdateManager implements NotificationAccessor {
                 pendingRelease = null;
                 statusLine = "Up to date (" + installedVersion + ").";
                 if (manualTrigger) {
-                    notify("You are up to date (" + installedVersion + ").");
+                    sendNotification("You are up to date (" + installedVersion + ").");
                 }
                 return;
             }
@@ -179,14 +197,13 @@ public class UpdateManager implements NotificationAccessor {
 
             pendingRelease = candidate;
             statusLine = "Update available: " + installedVersion + " -> " + candidate.tagName();
-            Minecraft.getInstance().execute(() -> Minecraft.getInstance().setScreen(
-                    new UpdatePromptScreen(Minecraft.getInstance().screen, installedVersion, candidate)));
+            showUpdatePrompt(installedVersion, candidate);
         });
     }
 
-    private CompletableFuture<ReleaseCandidate> fetchLatestRelease() {
+    CompletableFuture<ReleaseCandidate> fetchLatestRelease() {
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(RELEASES_LATEST_API))
+                .uri(latestReleaseApi)
                 .header("Accept", "application/vnd.github+json")
                 .header("User-Agent", "Sequoia-Updater")
                 .timeout(Duration.ofSeconds(15))
@@ -264,12 +281,13 @@ public class UpdateManager implements NotificationAccessor {
                 });
     }
 
-    private void applyRelease(ReleaseCandidate release, boolean exitAfterInstall) {
+    void applyRelease(ReleaseCandidate release, boolean exitAfterInstall) {
         try {
-            Path modsDir = FabricLoader.getInstance().getGameDir().resolve("mods");
+            Path gameDir = resolveGameDir();
+            Path modsDir = gameDir.resolve("mods");
             Files.createDirectories(modsDir);
 
-            Path updatesDir = FabricLoader.getInstance().getGameDir().resolve("updates");
+            Path updatesDir = gameDir.resolve("updates");
             Files.createDirectories(updatesDir);
 
             Path tempJar = updatesDir.resolve(release.jarAsset().name() + ".download");
@@ -291,10 +309,10 @@ public class UpdateManager implements NotificationAccessor {
                 registerShutdownHookIfNeeded();
                 pendingRelease = null;
                 statusLine = "Downloaded " + release.tagName() + ". It will install on exit.";
-                notify("Downloaded " + release.tagName() + ". It will install when Minecraft closes.");
+                sendNotification("Downloaded " + release.tagName() + ". It will install when Minecraft closes.");
 
                 if (exitAfterInstall) {
-                    Minecraft.getInstance().execute(() -> Minecraft.getInstance().stop());
+                    requestMinecraftStop();
                 }
                 return;
             }
@@ -304,14 +322,39 @@ public class UpdateManager implements NotificationAccessor {
 
             pendingRelease = null;
             statusLine = "Installed " + release.tagName() + ". Restart required.";
-            notify("Installed " + release.tagName() + ". Restart Minecraft to load it.");
+            sendNotification("Installed " + release.tagName() + ". Restart Minecraft to load it.");
 
             if (exitAfterInstall) {
-                Minecraft.getInstance().execute(() -> Minecraft.getInstance().stop());
+                requestMinecraftStop();
             }
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    Path resolveGameDir() {
+        return FabricLoader.getInstance().getGameDir();
+    }
+
+    void showUpdatePrompt(String installedVersion, ReleaseCandidate candidate) {
+        Minecraft minecraft = Minecraft.getInstance();
+        minecraft.execute(() -> minecraft.setScreen(new UpdatePromptScreen(minecraft.screen, installedVersion, candidate)));
+    }
+
+    void requestMinecraftStop() {
+        Minecraft.getInstance().execute(() -> Minecraft.getInstance().stop());
+    }
+
+    void sendNotification(String message) {
+        notify(message);
+    }
+
+    void sendClickableNotification(String text, String url) {
+        notifyClickable(text, url);
+    }
+
+    void openBrowser(String url) throws Exception {
+        Desktop.getDesktop().browse(URI.create(url));
     }
 
     private void registerShutdownHookIfNeeded() {
@@ -403,7 +446,7 @@ public class UpdateManager implements NotificationAccessor {
         return "java";
     }
 
-    private boolean isWindows() {
+    boolean isWindows() {
         String osName = System.getProperty("os.name", "").toLowerCase();
         return osName.contains("win");
     }
@@ -470,7 +513,7 @@ public class UpdateManager implements NotificationAccessor {
                 .orElse("unknown");
     }
 
-    private boolean isNewer(String latest, String installed) {
+    static boolean isNewer(String latest, String installed) {
         Matcher latestMatcher = STRICT_TAG_PATTERN.matcher(latest);
         if (!latestMatcher.matches()) {
             return false;
@@ -506,7 +549,7 @@ public class UpdateManager implements NotificationAccessor {
         return HexFormat.of().formatHex(digest.digest());
     }
 
-    private String parseChecksum(String raw) {
+    static String parseChecksum(String raw) {
         String trimmed = raw == null ? "" : raw.trim();
         if (trimmed.isEmpty()) {
             throw new IllegalStateException("Checksum file was empty.");
@@ -518,7 +561,7 @@ public class UpdateManager implements NotificationAccessor {
         return split[0];
     }
 
-    private String getString(JsonObject object, String key) {
+    static String getString(JsonObject object, String key) {
         if (!object.has(key)) {
             return null;
         }
@@ -529,7 +572,7 @@ public class UpdateManager implements NotificationAccessor {
         return element.getAsString();
     }
 
-    private String rootCauseMessage(Throwable throwable) {
+    static String rootCauseMessage(Throwable throwable) {
         Throwable cursor = throwable;
         while (cursor.getCause() != null) {
             cursor = cursor.getCause();
