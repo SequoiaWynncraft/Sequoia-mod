@@ -10,6 +10,7 @@ import java.util.Objects;
 import org.sequoia.seq.model.Activity;
 import org.sequoia.seq.model.Listing;
 import org.sequoia.seq.model.PartyMode;
+import org.sequoia.seq.model.PartyRegion;
 
 /**
  * Adapter class wrapping {@link Listing} with public mutable fields
@@ -42,6 +43,7 @@ public class PartyListing {
      * raids).
      */
     private static final Map<String, String> DISPLAY_TO_ASSET = new LinkedHashMap<>();
+
     private static final List<String> ACTIVITY_COMMAND_ALIASES;
     private static final List<String> ACTIVITY_DISPLAY_NAMES;
 
@@ -60,10 +62,7 @@ public class PartyListing {
         ACTIVITY_DISPLAY_NAMES = List.copyOf(DISPLAY_TO_BACKEND.keySet());
     }
 
-    private static void register(
-            String displayName,
-            String backendName,
-            String assetKey) {
+    private static void register(String displayName, String backendName, String assetKey) {
         DISPLAY_TO_BACKEND.put(displayName, backendName);
         BACKEND_TO_DISPLAY.put(backendName, displayName);
         if (assetKey != null) {
@@ -133,9 +132,7 @@ public class PartyListing {
         return ACTIVITY_DISPLAY_NAMES;
     }
 
-    private static String lookupIgnoreCase(
-            Map<String, String> map,
-            String key) {
+    private static String lookupIgnoreCase(Map<String, String> map, String key) {
         String direct = map.get(key);
         if (direct != null) {
             return direct;
@@ -167,14 +164,10 @@ public class PartyListing {
         this.maxSize = listing.maxPartySize();
         this.occupiedSlots = listing.occupiedSlotCount();
         List<PartyMember> adaptedMembers = new ArrayList<>();
-        safeMembers(listing)
-                .stream()
+        safeMembers(listing).stream()
                 .map(m -> new PartyMember(m, listing.leaderUUID()))
                 .forEach(adaptedMembers::add);
-        safeReservedSlots(listing)
-                .stream()
-                .map(PartyMember::reserved)
-                .forEach(adaptedMembers::add);
+        safeReservedSlots(listing).stream().map(PartyMember::reserved).forEach(adaptedMembers::add);
         this.members = List.copyOf(adaptedMembers);
         this.tags = buildTags(listing);
     }
@@ -198,13 +191,18 @@ public class PartyListing {
     private static List<String> buildTags(Listing listing) {
         List<String> t = new ArrayList<>();
         t.addAll(getDisplayActivityNames(listing));
+        t.add(regionLabel(listing));
         t.add(listing.mode() == PartyMode.CHILL ? "Chill" : "Grind");
         return Collections.unmodifiableList(t);
     }
 
+    private static String regionLabel(Listing listing) {
+        PartyRegion region = listing.region();
+        return (region != null ? region : PartyRegion.NA).name();
+    }
+
     private static List<String> getDisplayActivityNames(Listing listing) {
-        List<String> displayNames = listing.resolvedActivities()
-                .stream()
+        List<String> displayNames = listing.resolvedActivities().stream()
                 .filter(Objects::nonNull)
                 .map(Activity::name)
                 .filter(Objects::nonNull)
@@ -256,7 +254,7 @@ public class PartyListing {
             modeLabel += " (Strict)";
         }
         String displayNames = String.join(", ", getDisplayActivityNames(backing));
-        return modeLabel + " · " + displayNames;
+        return regionLabel(backing) + " · " + modeLabel + " · " + displayNames;
     }
 
     /**
@@ -268,21 +266,17 @@ public class PartyListing {
         if (backing.mode() == PartyMode.GRIND && backing.strict()) {
             modeLabel += " (Strict)";
         }
-        List<String> shortNames = getDisplayActivityNames(backing)
-                .stream()
+        List<String> shortNames = getDisplayActivityNames(backing).stream()
                 .map(PartyListing::displayNameToBackendName)
                 .map(name -> name == null ? "" : name.trim())
                 .filter(name -> !name.isEmpty())
                 .toList();
-        return modeLabel + " · " + (shortNames.isEmpty() ? "Unknown Activity" : String.join(", ", shortNames));
+        return regionLabel(backing) + " · " + modeLabel + " · "
+                + (shortNames.isEmpty() ? "Unknown Activity" : String.join(", ", shortNames));
     }
 
     public PartyMember getLeader() {
-        return members
-                .stream()
-                .filter(m -> m.isLeader)
-                .findFirst()
-                .orElse(members.isEmpty() ? null : members.get(0));
+        return members.stream().filter(m -> m.isLeader).findFirst().orElse(members.isEmpty() ? null : members.get(0));
     }
 
     public Listing getBacking() {

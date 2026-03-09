@@ -27,8 +27,7 @@ public class PartyFinderManager implements NotificationAccessor {
 
     private static final Gson GSON = new GsonBuilder()
             .registerTypeAdapter(
-                    Instant.class,
-                    (JsonDeserializer<Instant>) (json, type, ctx) -> Instant.parse(json.getAsString()))
+                    Instant.class, (JsonDeserializer<Instant>) (json, type, ctx) -> Instant.parse(json.getAsString()))
             .create();
     private static final long INVITE_NAME_LOOKUP_TIMEOUT_SECONDS = 3L;
     private static final String GAME_PARTY_CREATE_COMMAND = "party create";
@@ -55,17 +54,12 @@ public class PartyFinderManager implements NotificationAccessor {
 
     /** Cached adapter list (avoids recreating wrappers every frame). */
     private List<PartyListing> cachedParties;
+
     private volatile int listingsVersion = 0;
     private int cachedVersion = -1;
     private volatile String latestPartyError;
 
-    public record InviteAllResult(
-            boolean success,
-            boolean sentAny,
-            int sentCount,
-            int skippedCount,
-            String message) {
-    }
+    public record InviteAllResult(boolean success, boolean sentAny, int sentCount, int skippedCount, String message) {}
 
     public record CommandResult<T>(boolean success, String message, T data) {
         public static <T> CommandResult<T> success(String message, T data) {
@@ -77,27 +71,13 @@ public class PartyFinderManager implements NotificationAccessor {
         }
     }
 
-    private record ActivityResolution(
-            List<Long> activityIds,
-            List<String> unresolved,
-            List<String> displayNames) {
-    }
+    private record ActivityResolution(List<Long> activityIds, List<String> unresolved, List<String> displayNames) {}
 
-    private record ListingMemberTarget(
-            Listing listing,
-            UUID targetUUID,
-            String username) {
-    }
+    private record ListingMemberTarget(Listing listing, UUID targetUUID, String username) {}
 
-    private record InviteAllCandidate(
-            String memberUUID,
-            CompletableFuture<String> usernameFuture) {
-    }
+    private record InviteAllCandidate(String memberUUID, CompletableFuture<String> usernameFuture) {}
 
-    private record ResolvedInviteTarget(
-            String memberUUID,
-            String username) {
-    }
+    private record ResolvedInviteTarget(String memberUUID, String username) {}
 
     public PartyFinderManager() {
         SeqClient.LOGGER.info("[PartyFinderWS] Registering party finder websocket handlers");
@@ -107,9 +87,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     "[PartyFinderWS] Received update callback action={} hasListingJson={}",
                     update.action(),
                     update.listingJson() != null);
-            Listing listing = GSON.fromJson(
-                    update.listingJson(),
-                    Listing.class);
+            Listing listing = GSON.fromJson(update.listingJson(), Listing.class);
             handlePartyFinderUpdate(update.action(), listing);
         });
 
@@ -124,11 +102,7 @@ public class PartyFinderManager implements NotificationAccessor {
             if (invite.listingJson() != null) {
                 listing = GSON.fromJson(invite.listingJson(), Listing.class);
             }
-            handlePartyFinderInvite(
-                    invite.listingId(),
-                    invite.inviterUUID(),
-                    invite.inviteToken(),
-                    listing);
+            handlePartyFinderInvite(invite.listingId(), invite.inviterUUID(), invite.inviteToken(), listing);
         });
 
         ConnectionManager.onPartyFinderStaleWarning(warning -> {
@@ -137,10 +111,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     warning.listingId(),
                     warning.disbandAt(),
                     warning.minutesRemaining());
-            handlePartyFinderStaleWarning(
-                    warning.listingId(),
-                    warning.disbandAt(),
-                    warning.minutesRemaining());
+            handlePartyFinderStaleWarning(warning.listingId(), warning.disbandAt(), warning.minutesRemaining());
         });
     }
 
@@ -164,9 +135,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 });
     }
 
-    public CompletableFuture<List<Listing>> loadListings(
-            Long activityId,
-            PartyRegion region) {
+    public CompletableFuture<List<Listing>> loadListings(Long activityId, PartyRegion region) {
         return ApiClient.getInstance()
                 .getListings(activityId, region)
                 .thenApply(result -> {
@@ -220,87 +189,81 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<CommandResult<Listing>> createPartyFromCommand(List<String> activityInputs) {
-        return refreshListingsForCommand()
-                .thenCompose(listingsResult -> {
-                    if (!listingsResult.success()) {
-                        return completedCommandFailure(listingsResult.message());
-                    }
-                    if (currentListing != null) {
-                        return completedCommandFailure("You are already in party #" + currentListing.id()
-                                + ". Use /seq p update or leave/disband it first.");
-                    }
-                    return ensureActivitiesLoadedForCommand()
-                            .thenCompose(activitiesResult -> {
-                                if (!activitiesResult.success()) {
-                                    return completedCommandFailure(activitiesResult.message());
-                                }
+        return refreshListingsForCommand().thenCompose(listingsResult -> {
+            if (!listingsResult.success()) {
+                return completedCommandFailure(listingsResult.message());
+            }
+            if (currentListing != null) {
+                return completedCommandFailure("You are already in party #" + currentListing.id()
+                        + ". Use /seq p update or leave/disband it first.");
+            }
+            return ensureActivitiesLoadedForCommand().thenCompose(activitiesResult -> {
+                if (!activitiesResult.success()) {
+                    return completedCommandFailure(activitiesResult.message());
+                }
 
-                                CommandResult<ActivityResolution> selectionResult = resolveActivitiesForCommand(
-                                        activityInputs,
-                                        true);
-                                if (!selectionResult.success()) {
-                                    return completedCommandFailure(selectionResult.message());
-                                }
+                CommandResult<ActivityResolution> selectionResult = resolveActivitiesForCommand(activityInputs, true);
+                if (!selectionResult.success()) {
+                    return completedCommandFailure(selectionResult.message());
+                }
 
-                                ActivityResolution resolution = selectionResult.data();
-                                return executeListingCommand(
-                                        ApiClient.getInstance().createListing(
-                                                resolution.activityIds(),
-                                                PartyMode.CHILL,
-                                                false,
-                                                PartyRegion.NA,
-                                                PartyRole.DPS,
-                                                null),
-                                        listing -> applyCreatedListingState(listing),
-                                        "Unable to create party",
-                                        "Failed to create party",
-                                        listing -> "Created party #" + listing.id() + " for "
-                                                + formatActivityNames(resolution.displayNames()) + ".");
-                            });
-                });
+                ActivityResolution resolution = selectionResult.data();
+                return executeListingCommand(
+                        ApiClient.getInstance()
+                                .createListing(
+                                        resolution.activityIds(),
+                                        PartyMode.CHILL,
+                                        false,
+                                        PartyRegion.NA,
+                                        PartyRole.DPS,
+                                        null),
+                        listing -> applyCreatedListingState(listing),
+                        "Unable to create party",
+                        "Failed to create party",
+                        listing -> "Created party #" + listing.id() + " for "
+                                + formatActivityNames(resolution.displayNames()) + ".");
+            });
+        });
     }
 
     public CompletableFuture<CommandResult<Listing>> updatePartyFromCommand(List<String> activityInputs) {
-        return ensureCurrentListingForCommand()
-                .thenCompose(currentResult -> {
-                    if (!currentResult.success()) {
-                        return completedCommandFailure(currentResult.message());
-                    }
-                    if (!isPartyLeader()) {
-                        return completedCommandFailure("Only the party leader can update the Sequoia listing.");
-                    }
+        return ensureCurrentListingForCommand().thenCompose(currentResult -> {
+            if (!currentResult.success()) {
+                return completedCommandFailure(currentResult.message());
+            }
+            if (!isPartyLeader()) {
+                return completedCommandFailure("Only the party leader can update the Sequoia listing.");
+            }
 
-                    Listing listing = currentResult.data();
-                    return ensureActivitiesLoadedForCommand()
-                            .thenCompose(activitiesResult -> {
-                                if (!activitiesResult.success()) {
-                                    return completedCommandFailure(activitiesResult.message());
-                                }
+            Listing listing = currentResult.data();
+            return ensureActivitiesLoadedForCommand().thenCompose(activitiesResult -> {
+                if (!activitiesResult.success()) {
+                    return completedCommandFailure(activitiesResult.message());
+                }
 
-                                CommandResult<ActivityResolution> selectionResult = resolveActivitiesForCommand(
-                                        activityInputs,
-                                        true);
-                                if (!selectionResult.success()) {
-                                    return completedCommandFailure(selectionResult.message());
-                                }
+                CommandResult<ActivityResolution> selectionResult = resolveActivitiesForCommand(activityInputs, true);
+                if (!selectionResult.success()) {
+                    return completedCommandFailure(selectionResult.message());
+                }
 
-                                ActivityResolution resolution = selectionResult.data();
-                                PartyRegion region = listing.region() != null ? listing.region() : PartyRegion.NA;
-                                return executeListingCommand(
-                                        ApiClient.getInstance().updateListing(
-                                                listing.id(),
-                                                resolution.activityIds(),
-                                                listing.mode(),
-                                                listing.strict(),
-                                                region,
-                                                listing.note()),
-                                        this::applyUpdatedCurrentListingState,
-                                        "Unable to update party",
-                                        "Failed to update party",
-                                        updatedListing -> "Updated party #" + updatedListing.id() + " to "
-                                                + formatActivityNames(resolution.displayNames()) + ".");
-                            });
-                });
+                ActivityResolution resolution = selectionResult.data();
+                PartyRegion region = listing.region() != null ? listing.region() : PartyRegion.NA;
+                return executeListingCommand(
+                        ApiClient.getInstance()
+                                .updateListing(
+                                        listing.id(),
+                                        resolution.activityIds(),
+                                        listing.mode(),
+                                        listing.strict(),
+                                        region,
+                                        listing.note()),
+                        this::applyUpdatedCurrentListingState,
+                        "Unable to update party",
+                        "Failed to update party",
+                        updatedListing -> "Updated party #" + updatedListing.id() + " to "
+                                + formatActivityNames(resolution.displayNames()) + ".");
+            });
+        });
     }
 
     public CompletableFuture<CommandResult<Listing>> joinPartyFromCommand(long listingId, PartyRole role) {
@@ -308,95 +271,88 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<CommandResult<Listing>> joinPartyFromCommand(
-            long listingId,
-            PartyRole role,
-            String inviteToken) {
+            long listingId, PartyRole role, String inviteToken) {
         PartyRole resolvedRole = role != null ? role : PartyRole.DPS;
         String normalizedInviteToken = inviteToken;
         if (normalizedInviteToken != null && normalizedInviteToken.isBlank()) {
             return completedCommandFailure("Invite token missing.");
         }
 
-        return refreshListingsForCommand()
-                .thenCompose(listingsResult -> {
-                    if (!listingsResult.success()) {
-                        return completedCommandFailure(listingsResult.message());
-                    }
-                    if (currentListing != null) {
-                        return completedCommandFailure("You are already in party #" + currentListing.id()
-                                + ". Leave it before joining another listing.");
-                    }
+        return refreshListingsForCommand().thenCompose(listingsResult -> {
+            if (!listingsResult.success()) {
+                return completedCommandFailure(listingsResult.message());
+            }
+            if (currentListing != null) {
+                return completedCommandFailure("You are already in party #" + currentListing.id()
+                        + ". Leave it before joining another listing.");
+            }
 
-                    CompletableFuture<Listing> joinFuture = normalizedInviteToken == null
-                            ? ApiClient.getInstance().joinListing(listingId, resolvedRole)
-                            : ApiClient.getInstance().joinListing(listingId, resolvedRole, normalizedInviteToken);
+            CompletableFuture<Listing> joinFuture = normalizedInviteToken == null
+                    ? ApiClient.getInstance().joinListing(listingId, resolvedRole)
+                    : ApiClient.getInstance().joinListing(listingId, resolvedRole, normalizedInviteToken);
 
-                    return executeListingCommand(
-                            joinFuture,
-                            this::applyJoinedListingState,
-                            "Unable to join party",
-                            "Failed to join party",
-                            listing -> "Joined party #" + listing.id() + " as " + formatRoleName(resolvedRole) + ".");
-                });
+            return executeListingCommand(
+                    joinFuture,
+                    this::applyJoinedListingState,
+                    "Unable to join party",
+                    "Failed to join party",
+                    listing -> "Joined party #" + listing.id() + " as " + formatRoleName(resolvedRole) + ".");
+        });
     }
 
     public CompletableFuture<CommandResult<Listing>> leavePartyFromCommand() {
-        return ensureCurrentListingForCommand()
-                .thenCompose(currentResult -> {
-                    if (!currentResult.success()) {
-                        return completedCommandFailure(currentResult.message());
-                    }
+        return ensureCurrentListingForCommand().thenCompose(currentResult -> {
+            if (!currentResult.success()) {
+                return completedCommandFailure(currentResult.message());
+            }
 
-                    Listing listing = currentResult.data();
-                    return executeListingCommand(
-                            ApiClient.getInstance().leaveListing(listing.id()),
-                            this::applyLeftListingState,
-                            "Unable to leave party",
-                            "Failed to leave party",
-                            ignored -> "Left party #" + listing.id() + ".");
-                });
+            Listing listing = currentResult.data();
+            return executeListingCommand(
+                    ApiClient.getInstance().leaveListing(listing.id()),
+                    this::applyLeftListingState,
+                    "Unable to leave party",
+                    "Failed to leave party",
+                    ignored -> "Left party #" + listing.id() + ".");
+        });
     }
 
     public CompletableFuture<CommandResult<Void>> createInviteFromCommand(String username) {
-        return ensureCurrentListingForCommand()
-                .thenCompose(currentResult -> {
-                    if (!currentResult.success()) {
-                        return completedCommandFailureVoid(currentResult.message());
-                    }
-                    if (!isPartyLeader()) {
-                        return completedCommandFailureVoid("Only the party leader can invite players.");
-                    }
+        return ensureCurrentListingForCommand().thenCompose(currentResult -> {
+            if (!currentResult.success()) {
+                return completedCommandFailureVoid(currentResult.message());
+            }
+            if (!isPartyLeader()) {
+                return completedCommandFailureVoid("Only the party leader can invite players.");
+            }
 
-                    String validationMessage = validateUsername(username, false);
-                    if (validationMessage != null) {
-                        return completedCommandFailureVoid(validationMessage);
-                    }
+            String validationMessage = validateUsername(username, false);
+            if (validationMessage != null) {
+                return completedCommandFailureVoid(validationMessage);
+            }
 
-                    String normalizedUsername = username.trim();
-                    Listing listing = currentResult.data();
-                    String reservedSlotError = validateReservedSlotsForInvite(listing);
-                    if (reservedSlotError != null) {
-                        return completedCommandFailureVoid(reservedSlotError);
-                    }
-                    return resolveUuidForCommand(normalizedUsername)
-                            .thenCompose(uuidResult -> {
-                                if (!uuidResult.success()) {
-                                    return completedCommandFailureVoid(uuidResult.message());
-                                }
+            String normalizedUsername = username.trim();
+            Listing listing = currentResult.data();
+            String reservedSlotError = validateReservedSlotsForInvite(listing);
+            if (reservedSlotError != null) {
+                return completedCommandFailureVoid(reservedSlotError);
+            }
+            return resolveUuidForCommand(normalizedUsername).thenCompose(uuidResult -> {
+                if (!uuidResult.success()) {
+                    return completedCommandFailureVoid(uuidResult.message());
+                }
 
-                                UUID targetUUID = uuidResult.data();
-                                if (uuidEquals(getLocalPlayerUUID(), targetUUID.toString())) {
-                                    return completedCommandFailureVoid("You cannot invite yourself.");
-                                }
+                UUID targetUUID = uuidResult.data();
+                if (uuidEquals(getLocalPlayerUUID(), targetUUID.toString())) {
+                    return completedCommandFailureVoid("You cannot invite yourself.");
+                }
 
-                                return executeVoidCommand(
-                                        ApiClient.getInstance().createInvite(listing.id(), targetUUID),
-                                        "Unable to create party invite",
-                                        "Failed to create invite",
-                                        "Created Sequoia invite for " + normalizedUsername + " on party #"
-                                                + listing.id() + ".");
-                            });
-                });
+                return executeVoidCommand(
+                        ApiClient.getInstance().createInvite(listing.id(), targetUUID),
+                        "Unable to create party invite",
+                        "Failed to create invite",
+                        "Created Sequoia invite for " + normalizedUsername + " on party #" + listing.id() + ".");
+            });
+        });
     }
 
     public CompletableFuture<CommandResult<Listing>> setReservedSlotTargetFromCommand(int requestedReservedSlots) {
@@ -404,38 +360,35 @@ public class PartyFinderManager implements NotificationAccessor {
             return completedCommandFailure("Reserved slot target cannot be negative.");
         }
 
-        return ensureCurrentListingForCommand()
-                .thenCompose(currentResult -> {
-                    if (!currentResult.success()) {
-                        return completedCommandFailure(currentResult.message());
-                    }
-                    if (!isPartyLeader()) {
-                        return completedCommandFailure("Only the party leader can reserve slots.");
-                    }
+        return ensureCurrentListingForCommand().thenCompose(currentResult -> {
+            if (!currentResult.success()) {
+                return completedCommandFailure(currentResult.message());
+            }
+            if (!isPartyLeader()) {
+                return completedCommandFailure("Only the party leader can reserve slots.");
+            }
 
-                    Listing listing = currentResult.data();
-                    int currentReservedSlots = inferReservedSlotCount(listing);
-                    int delta = requestedReservedSlots - currentReservedSlots;
-                    if (delta == 0) {
-                        return CompletableFuture.completedFuture(
-                                CommandResult.success(
-                                        "Reserved slots already set to " + requestedReservedSlots + " on party #"
-                                                + listing.id() + ".",
-                                        listing));
-                    }
+            Listing listing = currentResult.data();
+            int currentReservedSlots = inferReservedSlotCount(listing);
+            int delta = requestedReservedSlots - currentReservedSlots;
+            if (delta == 0) {
+                return CompletableFuture.completedFuture(CommandResult.success(
+                        "Reserved slots already set to " + requestedReservedSlots + " on party #" + listing.id() + ".",
+                        listing));
+            }
 
-                    CompletableFuture<Listing> reserveFuture = delta > 0
-                            ? ApiClient.getInstance().reserveSlots(listing.id(), delta)
-                            : ApiClient.getInstance().unreserveSlots(listing.id(), -delta);
-                    String verb = requestedReservedSlots == 1 ? "slot" : "slots";
-                    return executeListingCommand(
-                            reserveFuture,
-                            this::applyUpdatedCurrentListingState,
-                            "Unable to adjust reserved slots",
-                            "Failed to adjust reserved slots",
-                            updatedListing -> "Set reserved slots to " + requestedReservedSlots + " " + verb
-                                    + " on party #" + updatedListing.id() + ".");
-                });
+            CompletableFuture<Listing> reserveFuture = delta > 0
+                    ? ApiClient.getInstance().reserveSlots(listing.id(), delta)
+                    : ApiClient.getInstance().unreserveSlots(listing.id(), -delta);
+            String verb = requestedReservedSlots == 1 ? "slot" : "slots";
+            return executeListingCommand(
+                    reserveFuture,
+                    this::applyUpdatedCurrentListingState,
+                    "Unable to adjust reserved slots",
+                    "Failed to adjust reserved slots",
+                    updatedListing -> "Set reserved slots to " + requestedReservedSlots + " " + verb + " on party #"
+                            + updatedListing.id() + ".");
+        });
     }
 
     public CompletableFuture<CommandResult<Listing>> reopenPartyFromCommand() {
@@ -473,63 +426,59 @@ public class PartyFinderManager implements NotificationAccessor {
 
     public CompletableFuture<CommandResult<Listing>> changeRoleFromCommand(PartyRole role) {
         PartyRole resolvedRole = role != null ? role : PartyRole.DPS;
-        return ensureCurrentListingForCommand()
-                .thenCompose(currentResult -> {
-                    if (!currentResult.success()) {
-                        return completedCommandFailure(currentResult.message());
-                    }
+        return ensureCurrentListingForCommand().thenCompose(currentResult -> {
+            if (!currentResult.success()) {
+                return completedCommandFailure(currentResult.message());
+            }
 
-                    return executeListingCommand(
-                            ApiClient.getInstance().changeMyRole(resolvedRole),
-                            this::applyUpdatedCurrentListingState,
-                            "Unable to change role",
-                            "Failed to change role",
-                            updatedListing -> "Changed your party role to " + formatRoleName(resolvedRole) + ".");
-                });
+            return executeListingCommand(
+                    ApiClient.getInstance().changeMyRole(resolvedRole),
+                    this::applyUpdatedCurrentListingState,
+                    "Unable to change role",
+                    "Failed to change role",
+                    updatedListing -> "Changed your party role to " + formatRoleName(resolvedRole) + ".");
+        });
     }
 
     public CompletableFuture<CommandResult<Listing>> kickMemberFromCommand(String username) {
-        return resolveCurrentMemberTargetForCommand(username, true)
-                .thenCompose(targetResult -> {
-                    if (!targetResult.success()) {
-                        return completedCommandFailure(targetResult.message());
-                    }
+        return resolveCurrentMemberTargetForCommand(username, true).thenCompose(targetResult -> {
+            if (!targetResult.success()) {
+                return completedCommandFailure(targetResult.message());
+            }
 
-                    ListingMemberTarget target = targetResult.data();
-                    if (uuidEquals(target.listing().leaderUUID(), target.targetUUID().toString())) {
-                        return completedCommandFailure("You cannot kick the party leader.");
-                    }
+            ListingMemberTarget target = targetResult.data();
+            if (uuidEquals(target.listing().leaderUUID(), target.targetUUID().toString())) {
+                return completedCommandFailure("You cannot kick the party leader.");
+            }
 
-                    return executeListingCommand(
-                            ApiClient.getInstance().kickMember(target.listing().id(), target.targetUUID()),
-                            this::applyUpdatedCurrentListingState,
-                            "Unable to kick member",
-                            "Failed to kick member",
-                            updatedListing -> "Kicked " + target.username() + " from party #" + updatedListing.id()
-                                    + ".");
-                });
+            return executeListingCommand(
+                    ApiClient.getInstance().kickMember(target.listing().id(), target.targetUUID()),
+                    this::applyUpdatedCurrentListingState,
+                    "Unable to kick member",
+                    "Failed to kick member",
+                    updatedListing -> "Kicked " + target.username() + " from party #" + updatedListing.id() + ".");
+        });
     }
 
     public CompletableFuture<CommandResult<Listing>> promoteMemberFromCommand(String username) {
-        return resolveCurrentMemberTargetForCommand(username, true)
-                .thenCompose(targetResult -> {
-                    if (!targetResult.success()) {
-                        return completedCommandFailure(targetResult.message());
-                    }
+        return resolveCurrentMemberTargetForCommand(username, true).thenCompose(targetResult -> {
+            if (!targetResult.success()) {
+                return completedCommandFailure(targetResult.message());
+            }
 
-                    ListingMemberTarget target = targetResult.data();
-                    if (uuidEquals(target.listing().leaderUUID(), target.targetUUID().toString())) {
-                        return completedCommandFailure(target.username() + " is already the party leader.");
-                    }
+            ListingMemberTarget target = targetResult.data();
+            if (uuidEquals(target.listing().leaderUUID(), target.targetUUID().toString())) {
+                return completedCommandFailure(target.username() + " is already the party leader.");
+            }
 
-                    return executeListingCommand(
-                            ApiClient.getInstance().transferLeadership(target.listing().id(), target.targetUUID()),
-                            this::applyUpdatedCurrentListingState,
-                            "Unable to promote member",
-                            "Failed to transfer leadership",
-                            updatedListing -> "Transferred party #" + updatedListing.id() + " leadership to "
-                                    + target.username() + ".");
-                });
+            return executeListingCommand(
+                    ApiClient.getInstance().transferLeadership(target.listing().id(), target.targetUUID()),
+                    this::applyUpdatedCurrentListingState,
+                    "Unable to promote member",
+                    "Failed to transfer leadership",
+                    updatedListing ->
+                            "Transferred party #" + updatedListing.id() + " leadership to " + target.username() + ".");
+        });
     }
 
     public CompletableFuture<CommandResult<Void>> createGamePartyFromCommand() {
@@ -541,17 +490,16 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<CommandResult<Void>> inviteAllCurrentMembersFromCommand() {
-        return ensureCurrentListingForCommand()
-                .thenCompose(currentResult -> {
-                    if (!currentResult.success()) {
-                        return completedCommandFailureVoid(currentResult.message());
-                    }
+        return ensureCurrentListingForCommand().thenCompose(currentResult -> {
+            if (!currentResult.success()) {
+                return completedCommandFailureVoid(currentResult.message());
+            }
 
-                    return inviteAllCurrentMembersInternal(false)
-                            .thenApply(inviteAllResult -> inviteAllResult.success()
-                                    ? CommandResult.success("Invite all: " + inviteAllResult.message(), null)
-                                    : CommandResult.failure("Invite all: " + inviteAllResult.message()));
-                });
+            return inviteAllCurrentMembersInternal(false)
+                    .thenApply(inviteAllResult -> inviteAllResult.success()
+                            ? CommandResult.success("Invite all: " + inviteAllResult.message(), null)
+                            : CommandResult.failure("Invite all: " + inviteAllResult.message()));
+        });
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -559,21 +507,12 @@ public class PartyFinderManager implements NotificationAccessor {
     // ══════════════════════════════════════════════════════════════
 
     public CompletableFuture<Listing> createParty(
-            long activityId,
-            PartyMode mode,
-            PartyRegion region,
-            PartyRole role,
-            String note) {
+            long activityId, PartyMode mode, PartyRegion region, PartyRole role, String note) {
         return createParty(List.of(activityId), mode, false, region, role, note);
     }
 
     public CompletableFuture<Listing> createParty(
-            List<Long> activityIds,
-            PartyMode mode,
-            boolean strict,
-            PartyRegion region,
-            PartyRole role,
-            String note) {
+            List<Long> activityIds, PartyMode mode, boolean strict, PartyRegion region, PartyRole role, String note) {
         return ApiClient.getInstance()
                 .createListing(activityIds, mode, strict, region, role, note)
                 .thenApply(listing -> {
@@ -586,9 +525,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 });
     }
 
-    public CompletableFuture<Listing> joinParty(
-            long listingId,
-            PartyRole role) {
+    public CompletableFuture<Listing> joinParty(long listingId, PartyRole role) {
         return ApiClient.getInstance()
                 .joinListing(listingId, role)
                 .thenApply(listing -> {
@@ -603,10 +540,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 });
     }
 
-    public CompletableFuture<Listing> joinPartyWithInviteToken(
-            long listingId,
-            PartyRole role,
-            String inviteToken) {
+    public CompletableFuture<Listing> joinPartyWithInviteToken(long listingId, PartyRole role, String inviteToken) {
         return ApiClient.getInstance()
                 .joinListing(listingId, role, inviteToken)
                 .thenApply(listing -> {
@@ -684,9 +618,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 });
     }
 
-    public CompletableFuture<Listing> kickMember(
-            long listingId,
-            UUID targetUUID) {
+    public CompletableFuture<Listing> kickMember(long listingId, UUID targetUUID) {
         return ApiClient.getInstance()
                 .kickMember(listingId, targetUUID)
                 .thenApply(listing -> {
@@ -718,10 +650,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 });
     }
 
-    public CompletableFuture<Listing> reassignRole(
-            long listingId,
-            UUID targetUUID,
-            PartyRole role) {
+    public CompletableFuture<Listing> reassignRole(long listingId, UUID targetUUID, PartyRole role) {
         return ApiClient.getInstance()
                 .reassignRole(listingId, targetUUID, role)
                 .thenApply(listing -> {
@@ -734,9 +663,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 });
     }
 
-    public CompletableFuture<Listing> transferLeadership(
-            long listingId,
-            UUID targetUUID) {
+    public CompletableFuture<Listing> transferLeadership(long listingId, UUID targetUUID) {
         return ApiClient.getInstance()
                 .transferLeadership(listingId, targetUUID)
                 .thenApply(listing -> {
@@ -758,8 +685,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public boolean isPartyLeader() {
-        if (currentListing == null)
-            return false;
+        if (currentListing == null) return false;
         String myUUID = getLocalPlayerUUID();
         return uuidEquals(myUUID, currentListing.leaderUUID());
     }
@@ -797,8 +723,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 synchronized (listingsLock) {
                     listings.removeIf(l -> l.id() == listing.id());
                 }
-                if (currentListing != null &&
-                        currentListing.id() == listing.id()) {
+                if (currentListing != null && currentListing.id() == listing.id()) {
                     currentListing = null;
                 }
                 listingsVersion++;
@@ -808,16 +733,11 @@ public class PartyFinderManager implements NotificationAccessor {
 
         // Fire event for the UI
         if (SeqClient.getEventBus() != null) {
-            SeqClient.getEventBus().dispatch(
-                    new PartyFinderUpdateEvent(action, listing));
+            SeqClient.getEventBus().dispatch(new PartyFinderUpdateEvent(action, listing));
         }
     }
 
-    public void handlePartyFinderInvite(
-            long listingId,
-            String inviterUUID,
-            String inviteToken,
-            Listing listing) {
+    public void handlePartyFinderInvite(long listingId, String inviterUUID, String inviteToken, Listing listing) {
         SeqClient.LOGGER.info(
                 "[PartyFinderWS] handlePartyFinderInvite listingId={} inviterUUID={} tokenPresent={} hasListing={}",
                 listingId,
@@ -836,9 +756,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 .whenComplete((resolvedName, error) -> {
                     String inviterName = formatInviterName(resolvedName);
                     SeqClient.LOGGER.info(
-                            "[PartyFinderWS] Resolved inviter name='{}' for uuid={}",
-                            inviterName,
-                            inviterUUID);
+                            "[PartyFinderWS] Resolved inviter name='{}' for uuid={}", inviterName, inviterUUID);
 
                     if (inviteToken == null || inviteToken.isBlank()) {
                         SeqClient.LOGGER.info(
@@ -850,9 +768,7 @@ public class PartyFinderManager implements NotificationAccessor {
                                 "[PartyFinderWS] Invite token present; sending clickable invite notification for listing {}",
                                 listingId);
                         notifyInviteWithJoinAction(
-                                "Party Finder invite from " + inviterName + ".",
-                                listingId,
-                                inviteToken);
+                                "Party Finder invite from " + inviterName + ".", listingId, inviteToken);
                     }
                 });
 
@@ -872,15 +788,10 @@ public class PartyFinderManager implements NotificationAccessor {
 
         long safeMinutesRemaining = Math.max(0, minutesRemaining);
 
-        notify("Your Party Finder listing will auto-disband in "
-                + safeMinutesRemaining
-                + " minutes.");
+        notify("Your Party Finder listing will auto-disband in " + safeMinutesRemaining + " minutes.");
     }
 
-    private void notifyInviteWithJoinAction(
-            String message,
-            long listingId,
-            String inviteToken) {
+    private void notifyInviteWithJoinAction(String message, long listingId, String inviteToken) {
         SeqClient.LOGGER.info(
                 "[PartyFinderWS] Queueing clickable invite chat message listingId={} tokenLength={}",
                 listingId,
@@ -894,8 +805,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 return;
             }
 
-            String joinCommand = "/seq p join " + listingId + " token "
-                    + quoteForCommand(inviteToken);
+            String joinCommand = "/seq p join " + listingId + " token " + quoteForCommand(inviteToken);
             String denyCommand = "/seq p deny " + listingId;
 
             ClickEvent joinClickEvent = new ClickEvent.RunCommand(joinCommand);
@@ -905,16 +815,10 @@ public class PartyFinderManager implements NotificationAccessor {
                     .append(Component.literal(String.valueOf(message)).withStyle(ChatFormatting.GRAY));
             MutableComponent actionMessage = Component.empty()
                     .append(NotificationAccessor.wynnPill(
-                            "join",
-                            ChatFormatting.GREEN,
-                            ChatFormatting.WHITE,
-                            joinClickEvent))
+                            "join", ChatFormatting.GREEN, ChatFormatting.WHITE, joinClickEvent))
                     .append(Component.literal(" "))
                     .append(NotificationAccessor.wynnPill(
-                            "deny",
-                            ChatFormatting.RED,
-                            ChatFormatting.WHITE,
-                            denyClickEvent));
+                            "deny", ChatFormatting.RED, ChatFormatting.WHITE, denyClickEvent));
 
             SeqClient.LOGGER.info(
                     "[PartyFinderWS] Displaying invite chat message listingId={} player={} joinCommand={} denyCommand={}",
@@ -931,9 +835,7 @@ public class PartyFinderManager implements NotificationAccessor {
         if (value == null) {
             return "\"\"";
         }
-        return "\"" + value
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"") + "\"";
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     private static String formatInviterName(String inviterName) {
@@ -963,8 +865,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 }
             }
             // Rebuild cache
-            cachedParties = listings
-                    .stream()
+            cachedParties = listings.stream()
                     .map(l -> {
                         PartyListing pl = new PartyListing(l);
                         pl.expanded = expandedStates.getOrDefault(l.id(), false);
@@ -978,12 +879,10 @@ public class PartyFinderManager implements NotificationAccessor {
 
     /** Index of the listing the local player has joined, or -1. */
     public int getJoinedPartyIndex() {
-        if (currentListing == null)
-            return -1;
+        if (currentListing == null) return -1;
         List<PartyListing> parties = getParties();
         for (int i = 0; i < parties.size(); i++) {
-            if (parties.get(i).id == currentListing.id())
-                return i;
+            if (parties.get(i).id == currentListing.id()) return i;
         }
         return -1;
     }
@@ -1014,19 +913,16 @@ public class PartyFinderManager implements NotificationAccessor {
     public void setRole(String role) {
         if (role != null) {
             PartyRole pr = mapDisplayRole(role);
-            if (pr != null)
-                changeMyRole(pr);
+            if (pr != null) changeMyRole(pr);
         }
     }
 
     /** Transfers leadership by party/member index. */
     public void promoteMember(int partyIndex, int memberIndex) {
         List<PartyListing> parties = getParties();
-        if (partyIndex < 0 || partyIndex >= parties.size())
-            return;
+        if (partyIndex < 0 || partyIndex >= parties.size()) return;
         PartyListing party = parties.get(partyIndex);
-        if (memberIndex < 0 || memberIndex >= party.members.size())
-            return;
+        if (memberIndex < 0 || memberIndex >= party.members.size()) return;
         PartyMember member = party.members.get(memberIndex);
         try {
             String formattedTargetUuid = PlayerNameCache.formatUUID(member.playerUUID);
@@ -1034,20 +930,14 @@ public class PartyFinderManager implements NotificationAccessor {
                 throw new IllegalArgumentException("Unparseable member UUID");
             }
             UUID targetUUID = UUID.fromString(formattedTargetUuid);
-            transferLeadership(party.id, targetUUID)
-                    .thenAccept(listing -> {
-                        if (listing != null) {
-                            sendGamePartyCommandForUuid(targetUUID, GAME_PARTY_PROMOTE_PREFIX);
-                            sendGameDirectMessage(
-                                    targetUUID,
-                                    "You were promoted to party leader.");
-                        }
-                    });
+            transferLeadership(party.id, targetUUID).thenAccept(listing -> {
+                if (listing != null) {
+                    sendGamePartyCommandForUuid(targetUUID, GAME_PARTY_PROMOTE_PREFIX);
+                    sendGameDirectMessage(targetUUID, "You were promoted to party leader.");
+                }
+            });
         } catch (IllegalArgumentException e) {
-            SeqClient.LOGGER.error(
-                    "Invalid UUID for promote: {}",
-                    member.playerUUID,
-                    e);
+            SeqClient.LOGGER.error("Invalid UUID for promote: {}", member.playerUUID, e);
         }
     }
 
@@ -1056,11 +946,9 @@ public class PartyFinderManager implements NotificationAccessor {
      */
     public void kickMember(int partyIndex, int memberIndex) {
         List<PartyListing> parties = getParties();
-        if (partyIndex < 0 || partyIndex >= parties.size())
-            return;
+        if (partyIndex < 0 || partyIndex >= parties.size()) return;
         PartyListing party = parties.get(partyIndex);
-        if (memberIndex < 0 || memberIndex >= party.members.size())
-            return;
+        if (memberIndex < 0 || memberIndex >= party.members.size()) return;
         PartyMember member = party.members.get(memberIndex);
         try {
             String formattedTargetUuid = PlayerNameCache.formatUUID(member.playerUUID);
@@ -1068,32 +956,24 @@ public class PartyFinderManager implements NotificationAccessor {
                 throw new IllegalArgumentException("Unparseable member UUID");
             }
             UUID targetUUID = UUID.fromString(formattedTargetUuid);
-            kickMember(party.id, targetUUID)
-                    .thenAccept(listing -> {
-                        if (listing != null) {
-                            sendGamePartyCommandForUuid(targetUUID, GAME_PARTY_KICK_PREFIX);
-                            sendGameDirectMessage(
-                                    targetUUID,
-                                    "You were kicked from the party.");
-                        }
-                    });
+            kickMember(party.id, targetUUID).thenAccept(listing -> {
+                if (listing != null) {
+                    sendGamePartyCommandForUuid(targetUUID, GAME_PARTY_KICK_PREFIX);
+                    sendGameDirectMessage(targetUUID, "You were kicked from the party.");
+                }
+            });
         } catch (IllegalArgumentException e) {
-            SeqClient.LOGGER.error(
-                    "Invalid UUID for kick: {}",
-                    member.playerUUID,
-                    e);
+            SeqClient.LOGGER.error("Invalid UUID for kick: {}", member.playerUUID, e);
         }
     }
 
     /** Joins a party by index with a display-name role string. */
     public void joinParty(int partyIndex, String roleString) {
         List<PartyListing> parties = getParties();
-        if (partyIndex < 0 || partyIndex >= parties.size())
-            return;
+        if (partyIndex < 0 || partyIndex >= parties.size()) return;
         PartyListing party = parties.get(partyIndex);
         PartyRole role = mapDisplayRole(roleString);
-        if (role == null)
-            role = PartyRole.DPS;
+        if (role == null) role = PartyRole.DPS;
         joinParty(party.id, role);
     }
 
@@ -1132,9 +1012,8 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         var player = SeqClient.mc.player;
-        String myUsername = player != null && player.getName() != null
-                ? player.getName().getString()
-                : null;
+        String myUsername =
+                player != null && player.getName() != null ? player.getName().getString() : null;
         if (myUsername != null && myUsername.equalsIgnoreCase(normalizedUsername)) {
             pushUiError("You cannot invite yourself.");
             return;
@@ -1222,47 +1101,27 @@ public class PartyFinderManager implements NotificationAccessor {
 
     private CompletableFuture<InviteAllResult> inviteAllCurrentMembersInternal(boolean notifyPlayer) {
         if (currentListing == null) {
-            return CompletableFuture.completedFuture(finishInviteAll(
-                    false,
-                    false,
-                    0,
-                    0,
-                    "no active party found.",
-                    notifyPlayer));
+            return CompletableFuture.completedFuture(
+                    finishInviteAll(false, false, 0, 0, "no active party found.", notifyPlayer));
         }
 
         if (!isPartyLeader()) {
-            return CompletableFuture.completedFuture(finishInviteAll(
-                    false,
-                    false,
-                    0,
-                    0,
-                    "only the party leader can use this.",
-                    notifyPlayer));
+            return CompletableFuture.completedFuture(
+                    finishInviteAll(false, false, 0, 0, "only the party leader can use this.", notifyPlayer));
         }
 
         var player = SeqClient.mc.player;
         if (player == null || player.connection == null) {
-            return CompletableFuture.completedFuture(finishInviteAll(
-                    false,
-                    false,
-                    0,
-                    0,
-                    "client connection unavailable.",
-                    notifyPlayer));
+            return CompletableFuture.completedFuture(
+                    finishInviteAll(false, false, 0, 0, "client connection unavailable.", notifyPlayer));
         }
 
         Listing listingSnapshot = currentListing;
         long listingId = listingSnapshot.id();
         List<Member> members = listingSnapshot.members();
         if (members == null || members.isEmpty()) {
-            return CompletableFuture.completedFuture(finishInviteAll(
-                    true,
-                    false,
-                    0,
-                    0,
-                    "no valid party members to invite.",
-                    notifyPlayer));
+            return CompletableFuture.completedFuture(
+                    finishInviteAll(true, false, 0, 0, "no valid party members to invite.", notifyPlayer));
         }
 
         String myUUID = getLocalPlayerUUID();
@@ -1286,18 +1145,12 @@ public class PartyFinderManager implements NotificationAccessor {
             }
 
             inviteCandidates.add(new InviteAllCandidate(
-                    memberUUID,
-                    PlayerNameCache.resolveAsync(memberUUID).exceptionally(ignored -> null)));
+                    memberUUID, PlayerNameCache.resolveAsync(memberUUID).exceptionally(ignored -> null)));
         }
 
         if (inviteCandidates.isEmpty()) {
             return CompletableFuture.completedFuture(finishInviteAll(
-                    true,
-                    false,
-                    0,
-                    skippedCount,
-                    formatInviteAllMessage(0, skippedCount),
-                    notifyPlayer));
+                    true, false, 0, skippedCount, formatInviteAllMessage(0, skippedCount), notifyPlayer));
         }
 
         int baseSkippedCount = skippedCount;
@@ -1421,7 +1274,8 @@ public class PartyFinderManager implements NotificationAccessor {
      * Creates a party from the modal's tag list + role string.
      * Extracts activityIds from raid tags, mode from Chill/Grind tag.
      */
-    public void createParty(List<String> tags, String role, int reservedSlots, boolean strictRoles) {
+    public void createParty(
+            List<String> tags, String role, int reservedSlots, boolean strictRoles, PartyRegion region) {
         // Separate party-mode tags from raid/activity display names
         PartyMode mode = PartyMode.CHILL;
         List<String> raidDisplayNames = new ArrayList<>();
@@ -1448,8 +1302,7 @@ public class PartyFinderManager implements NotificationAccessor {
 
             final String normalizedDisplayName = activityDisplayName.trim();
             final String searchName = PartyListing.displayNameToBackendName(normalizedDisplayName);
-            Activity activity = activities
-                    .stream()
+            Activity activity = activities.stream()
                     .filter(a -> matchesActivityName(a, normalizedDisplayName, searchName))
                     .findFirst()
                     .orElse(null);
@@ -1481,23 +1334,19 @@ public class PartyFinderManager implements NotificationAccessor {
         PartyRole mappedCreateRole = mapDisplayRole(role);
         final PartyRole createRole = mappedCreateRole != null ? mappedCreateRole : PartyRole.DPS;
         final boolean strict = mode == PartyMode.GRIND && strictRoles;
+        final PartyRegion selectedRegion = region != null ? region : PartyRegion.NA;
 
-        // Default region to NA (no region selector in current UI)
         int requestedReservedSlots = Math.max(0, reservedSlots);
-        createParty(activityIds, mode, strict, PartyRegion.NA, createRole, null)
-                .thenAccept(listing -> {
-                    if (listing == null || requestedReservedSlots <= 0) {
-                        return;
-                    }
-                    applyReservedSlotTarget(
-                            listing.id(),
-                            0,
-                            requestedReservedSlots,
-                            "create");
-                });
+        createParty(activityIds, mode, strict, selectedRegion, createRole, null).thenAccept(listing -> {
+            if (listing == null || requestedReservedSlots <= 0) {
+                return;
+            }
+            applyReservedSlotTarget(listing.id(), 0, requestedReservedSlots, "create");
+        });
     }
 
-    public void updateParty(List<String> tags, String role, int reservedSlots, boolean strictRoles) {
+    public void updateParty(
+            List<String> tags, String role, int reservedSlots, boolean strictRoles, PartyRegion region) {
         if (currentListing == null) {
             pushUiError("Unable to update party: no active listing.");
             return;
@@ -1529,8 +1378,7 @@ public class PartyFinderManager implements NotificationAccessor {
 
             final String normalizedDisplayName = activityDisplayName.trim();
             final String searchName = PartyListing.displayNameToBackendName(normalizedDisplayName);
-            Activity activity = activities
-                    .stream()
+            Activity activity = activities.stream()
                     .filter(a -> matchesActivityName(a, normalizedDisplayName, searchName))
                     .findFirst()
                     .orElse(null);
@@ -1545,24 +1393,15 @@ public class PartyFinderManager implements NotificationAccessor {
             return;
         }
 
-        PartyRegion region = currentListing.region() != null ? currentListing.region() : PartyRegion.NA;
+        PartyRegion selectedRegion =
+                region != null ? region : (currentListing.region() != null ? currentListing.region() : PartyRegion.NA);
         boolean strict = mode == PartyMode.GRIND && strictRoles;
         ApiClient.getInstance()
-                .updateListing(
-                        currentListing.id(),
-                        activityIds,
-                        mode,
-                        strict,
-                        region,
-                        currentListing.note())
+                .updateListing(currentListing.id(), activityIds, mode, strict, selectedRegion, currentListing.note())
                 .thenAccept(listing -> {
                     if (listing != null) {
                         applyUpdatedCurrentListingState(listing);
-                        applyReservedSlotTarget(
-                                listing.id(),
-                                currentReservedSlots,
-                                requestedReservedSlots,
-                                "update");
+                        applyReservedSlotTarget(listing.id(), currentReservedSlots, requestedReservedSlots, "update");
                     }
                 })
                 .exceptionally(e -> {
@@ -1638,9 +1477,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return new ArrayList<>(unique.values());
     }
 
-    private static String extractUserFriendlyApiError(
-            Throwable throwable,
-            String fallbackMessage) {
+    private static String extractUserFriendlyApiError(Throwable throwable, String fallbackMessage) {
         ApiClient.ApiException apiException = findApiException(throwable);
         if (apiException == null) {
             return fallbackMessage;
@@ -1662,7 +1499,9 @@ public class PartyFinderManager implements NotificationAccessor {
             if (parsed.isJsonObject()) {
                 JsonObject obj = parsed.getAsJsonObject();
                 JsonElement error = obj.get("error");
-                if (error != null && error.isJsonPrimitive() && error.getAsJsonPrimitive().isString()) {
+                if (error != null
+                        && error.isJsonPrimitive()
+                        && error.getAsJsonPrimitive().isString()) {
                     return error.getAsString();
                 }
             }
@@ -1700,22 +1539,14 @@ public class PartyFinderManager implements NotificationAccessor {
         return null;
     }
 
-    private void handleActionError(
-            Throwable throwable,
-            String fallbackMessage,
-            String logMessage) {
+    private void handleActionError(Throwable throwable, String fallbackMessage, String logMessage) {
         String errorMessage = extractUserFriendlyApiError(throwable, fallbackMessage);
         SeqClient.LOGGER.warn("{}: {}", logMessage, errorMessage);
         pushUiError(errorMessage);
     }
 
     private InviteAllResult finishInviteAll(
-            boolean success,
-            boolean sentAny,
-            int sentCount,
-            int skippedCount,
-            String message,
-            boolean notifyPlayer) {
+            boolean success, boolean sentAny, int sentCount, int skippedCount, String message, boolean notifyPlayer) {
         if (notifyPlayer) {
             notify(message);
         }
@@ -1745,10 +1576,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return CompletableFuture.completedFuture(CommandResult.failure(message));
     }
 
-    private <T> CommandResult<T> commandFailure(
-            Throwable throwable,
-            String fallbackMessage,
-            String logMessage) {
+    private <T> CommandResult<T> commandFailure(Throwable throwable, String fallbackMessage, String logMessage) {
         String errorMessage = extractUserFriendlyApiError(throwable, fallbackMessage);
         SeqClient.LOGGER.warn("{}: {}", logMessage, errorMessage);
         return CommandResult.failure(errorMessage);
@@ -1769,51 +1597,43 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     private CompletableFuture<CommandResult<Void>> executeVoidCommand(
-            CompletableFuture<Void> apiFuture,
-            String fallbackMessage,
-            String logMessage,
-            String successMessage) {
+            CompletableFuture<Void> apiFuture, String fallbackMessage, String logMessage, String successMessage) {
         return apiFuture
                 .thenApply(ignored -> CommandResult.<Void>success(successMessage, null))
                 .exceptionally(e -> commandFailure(e, fallbackMessage, logMessage));
     }
 
     private CompletableFuture<CommandResult<Listing>> runLeaderListingCommand(
-            String notLeaderMessage,
-            Function<Listing, CompletableFuture<CommandResult<Listing>>> action) {
-        return ensureCurrentListingForCommand()
-                .thenCompose(currentResult -> {
-                    if (!currentResult.success()) {
-                        return completedCommandFailure(currentResult.message());
-                    }
-                    if (!isPartyLeader()) {
-                        return completedCommandFailure(notLeaderMessage);
-                    }
-                    return action.apply(currentResult.data());
-                });
+            String notLeaderMessage, Function<Listing, CompletableFuture<CommandResult<Listing>>> action) {
+        return ensureCurrentListingForCommand().thenCompose(currentResult -> {
+            if (!currentResult.success()) {
+                return completedCommandFailure(currentResult.message());
+            }
+            if (!isPartyLeader()) {
+                return completedCommandFailure(notLeaderMessage);
+            }
+            return action.apply(currentResult.data());
+        });
     }
 
     private CompletableFuture<CommandResult<Listing>> ensureCurrentListingForCommand() {
         if (currentListing != null) {
-            return CompletableFuture.completedFuture(
-                    CommandResult.success("Current listing ready.", currentListing));
+            return CompletableFuture.completedFuture(CommandResult.success("Current listing ready.", currentListing));
         }
 
-        return refreshListingsForCommand()
-                .thenApply(result -> {
-                    if (!result.success()) {
-                        return CommandResult.failure(result.message());
-                    }
-                    if (currentListing == null) {
-                        return CommandResult.failure("You are not currently in a Sequoia party.");
-                    }
-                    return CommandResult.success("Current listing loaded.", currentListing);
-                });
+        return refreshListingsForCommand().thenApply(result -> {
+            if (!result.success()) {
+                return CommandResult.failure(result.message());
+            }
+            if (currentListing == null) {
+                return CommandResult.failure("You are not currently in a Sequoia party.");
+            }
+            return CommandResult.success("Current listing loaded.", currentListing);
+        });
     }
 
     private CommandResult<ActivityResolution> resolveActivitiesForCommand(
-            Collection<String> activityInputs,
-            boolean rejectUnresolved) {
+            Collection<String> activityInputs, boolean rejectUnresolved) {
         if (activityInputs == null || activityInputs.isEmpty()) {
             return CommandResult.failure("Provide at least one activity.");
         }
@@ -1839,8 +1659,7 @@ public class PartyFinderManager implements NotificationAccessor {
 
         for (String activityInput : normalizedInputs) {
             String searchName = PartyListing.displayNameToBackendName(activityInput);
-            Activity activity = activities
-                    .stream()
+            Activity activity = activities.stream()
                     .filter(candidate -> matchesActivityName(candidate, activityInput, searchName))
                     .findFirst()
                     .orElse(null);
@@ -1870,73 +1689,62 @@ public class PartyFinderManager implements NotificationAccessor {
 
         return CommandResult.success(
                 "Resolved " + displayNames.size() + " activities.",
-                new ActivityResolution(
-                        List.copyOf(activityIds),
-                        List.copyOf(unresolved),
-                        List.copyOf(displayNames)));
+                new ActivityResolution(List.copyOf(activityIds), List.copyOf(unresolved), List.copyOf(displayNames)));
     }
 
     private CompletableFuture<CommandResult<UUID>> resolveUuidForCommand(String username) {
-        return PlayerNameCache.resolveUUID(username)
-                .thenApply(resolvedUuid -> {
-                    if (resolvedUuid == null || resolvedUuid.isBlank()) {
-                        return CommandResult.failure("Unable to find a UUID for " + username + ".");
-                    }
+        return PlayerNameCache.resolveUUID(username).thenApply(resolvedUuid -> {
+            if (resolvedUuid == null || resolvedUuid.isBlank()) {
+                return CommandResult.failure("Unable to find a UUID for " + username + ".");
+            }
 
-                    String formattedResolvedUuid = PlayerNameCache.formatUUID(resolvedUuid);
-                    if (formattedResolvedUuid == null) {
-                        SeqClient.LOGGER.warn("Unable to normalize resolved UUID {}", resolvedUuid);
-                        return CommandResult.failure("Unable to resolve a valid UUID for " + username + ".");
-                    }
+            String formattedResolvedUuid = PlayerNameCache.formatUUID(resolvedUuid);
+            if (formattedResolvedUuid == null) {
+                SeqClient.LOGGER.warn("Unable to normalize resolved UUID {}", resolvedUuid);
+                return CommandResult.failure("Unable to resolve a valid UUID for " + username + ".");
+            }
 
-                    try {
-                        return CommandResult.success(
-                                "Resolved UUID.",
-                                UUID.fromString(formattedResolvedUuid));
-                    } catch (IllegalArgumentException e) {
-                        SeqClient.LOGGER.warn("Unable to parse resolved UUID {}", resolvedUuid, e);
-                        return CommandResult.failure("Unable to resolve a valid UUID for " + username + ".");
-                    }
-                });
+            try {
+                return CommandResult.success("Resolved UUID.", UUID.fromString(formattedResolvedUuid));
+            } catch (IllegalArgumentException e) {
+                SeqClient.LOGGER.warn("Unable to parse resolved UUID {}", resolvedUuid, e);
+                return CommandResult.failure("Unable to resolve a valid UUID for " + username + ".");
+            }
+        });
     }
 
     private CompletableFuture<CommandResult<ListingMemberTarget>> resolveCurrentMemberTargetForCommand(
-            String username,
-            boolean requireLeader) {
+            String username, boolean requireLeader) {
         String validationMessage = validateUsername(username, false);
         if (validationMessage != null) {
             return completedCommandFailure(validationMessage);
         }
 
         String normalizedUsername = username.trim();
-        return ensureCurrentListingForCommand()
-                .thenCompose(currentResult -> {
-                    if (!currentResult.success()) {
-                        return completedCommandFailure(currentResult.message());
-                    }
-                    if (requireLeader && !isPartyLeader()) {
-                        return completedCommandFailure("Only the party leader can manage party members.");
-                    }
+        return ensureCurrentListingForCommand().thenCompose(currentResult -> {
+            if (!currentResult.success()) {
+                return completedCommandFailure(currentResult.message());
+            }
+            if (requireLeader && !isPartyLeader()) {
+                return completedCommandFailure("Only the party leader can manage party members.");
+            }
 
-                    Listing listing = currentResult.data();
-                    return resolveUuidForCommand(normalizedUsername)
-                            .thenApply(uuidResult -> {
-                                if (!uuidResult.success()) {
-                                    return CommandResult.failure(uuidResult.message());
-                                }
+            Listing listing = currentResult.data();
+            return resolveUuidForCommand(normalizedUsername).thenApply(uuidResult -> {
+                if (!uuidResult.success()) {
+                    return CommandResult.failure(uuidResult.message());
+                }
 
-                                UUID targetUUID = uuidResult.data();
-                                Member targetMember = findMemberByUuid(listing, targetUUID);
-                                if (targetMember == null) {
-                                    return CommandResult.failure(
-                                            normalizedUsername + " is not in your Sequoia party.");
-                                }
+                UUID targetUUID = uuidResult.data();
+                Member targetMember = findMemberByUuid(listing, targetUUID);
+                if (targetMember == null) {
+                    return CommandResult.failure(normalizedUsername + " is not in your Sequoia party.");
+                }
 
-                                return CommandResult.success(
-                                        "Resolved target member.",
-                                        new ListingMemberTarget(listing, targetUUID, normalizedUsername));
-                            });
-                });
+                return CommandResult.success(
+                        "Resolved target member.", new ListingMemberTarget(listing, targetUUID, normalizedUsername));
+            });
+        });
     }
 
     private static Member findMemberByUuid(Listing listing, UUID targetUUID) {
@@ -1993,8 +1801,8 @@ public class PartyFinderManager implements NotificationAccessor {
                             || "Loading...".equalsIgnoreCase(resolvedName)
                             || "Unknown".equalsIgnoreCase(resolvedName)
                             || !resolvedName.matches("[A-Za-z0-9_]{3,16}")) {
-                        SeqClient.LOGGER.warn("Skipping party command '{}' for unresolved UUID {}", commandPrefix,
-                                targetUUID);
+                        SeqClient.LOGGER.warn(
+                                "Skipping party command '{}' for unresolved UUID {}", commandPrefix, targetUUID);
                         return;
                     }
 
@@ -2035,9 +1843,7 @@ public class PartyFinderManager implements NotificationAccessor {
         if (displayNames == null || displayNames.isEmpty()) {
             return "Unknown Activity";
         }
-        return displayNames.stream()
-                .map(PartyListing::displayNameToBackendName)
-                .collect(Collectors.joining(", "));
+        return displayNames.stream().map(PartyListing::displayNameToBackendName).collect(Collectors.joining(", "));
     }
 
     private static String formatRoleName(PartyRole role) {
@@ -2122,10 +1928,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     private void applyReservedSlotTarget(
-            long listingId,
-            int currentReservedSlots,
-            int requestedReservedSlots,
-            String context) {
+            long listingId, int currentReservedSlots, int requestedReservedSlots, String context) {
         int clampedCurrent = Math.max(0, currentReservedSlots);
         int clampedRequested = Math.max(0, requestedReservedSlots);
         int delta = clampedRequested - clampedCurrent;
@@ -2202,8 +2005,7 @@ public class PartyFinderManager implements NotificationAccessor {
             return;
         }
 
-        currentListing = listings
-                .stream()
+        currentListing = listings.stream()
                 .filter(l -> listingContainsPlayer(l, myUUID))
                 .findFirst()
                 .orElse(null);
@@ -2320,8 +2122,7 @@ public class PartyFinderManager implements NotificationAccessor {
      * values.
      */
     private static PartyRole mapDisplayRole(String displayRole) {
-        if (displayRole == null)
-            return null;
+        if (displayRole == null) return null;
         return switch (displayRole.toUpperCase()) {
             case "DPS" -> PartyRole.DPS;
             case "HEALER" -> PartyRole.HEALER;
@@ -2330,10 +2131,7 @@ public class PartyFinderManager implements NotificationAccessor {
         };
     }
 
-    private static boolean matchesActivityName(
-            Activity activity,
-            String displayName,
-            String backendSearchName) {
+    private static boolean matchesActivityName(Activity activity, String displayName, String backendSearchName) {
         if (activity == null || activity.name() == null) {
             return false;
         }

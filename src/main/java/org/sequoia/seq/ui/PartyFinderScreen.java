@@ -21,6 +21,7 @@ import org.sequoia.seq.managers.PartyListing;
 import org.sequoia.seq.managers.PartyMember;
 import org.sequoia.seq.model.Activity;
 import org.sequoia.seq.model.PartyMode;
+import org.sequoia.seq.model.PartyRegion;
 import org.sequoia.seq.model.PartyStatus;
 import org.sequoia.seq.utils.rendering.nvg.NVGContext;
 import org.sequoia.seq.utils.rendering.nvg.NVGWrapper;
@@ -29,13 +30,16 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     // ── Raid types & Party tags ──
     private static final String[] RAID_TYPES = {
-            "Nest of the Grootslangs",
-            "Nexus of Light",
-            "The Canyon Colossus",
-            "The Nameless Anomaly",
-            "Prelude to Annihilation",
+        "Nest of the Grootslangs",
+        "Nexus of Light",
+        "The Canyon Colossus",
+        "The Nameless Anomaly",
+        "Prelude to Annihilation",
     };
-    private static final String[] PARTY_TAGS = { "Chill", "Grind" };
+    private static final String[] PARTY_TAGS = {"Chill", "Grind"};
+    private static final PartyRegion[] PARTY_REGIONS = {
+        PartyRegion.NA, PartyRegion.EU, PartyRegion.AS,
+    };
 
     // ── Layout ──
     private static final float SIDEBAR_WIDTH = 140;
@@ -73,12 +77,15 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     // Modal layout
     private static final float MODAL_WIDTH = 300;
     private static final float MODAL_HEIGHT = 200;
+    private static final float PARTY_MODAL_HEIGHT = 248;
     private static final float RAID_CIRCLE_SIZE = 36;
     private static final float RAID_CIRCLE_SPACING = 12;
     private static final float MODAL_DROPDOWN_W = 80;
     private static final float MODAL_DROPDOWN_H = 20;
     private static final float MODAL_BUTTON_W = 80;
     private static final float MODAL_BUTTON_H = 24;
+    private static final float REGION_BUTTON_W = 40;
+    private static final float REGION_BUTTON_SPACING = 8;
 
     // Tag selector/filter overlay layout
     private static final float TAG_OVERLAY_WIDTH = 260;
@@ -120,65 +127,29 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
     private static final Color DIVIDER_COLOR = new Color(40, 40, 55, 255);
 
-    private static final Color SIDEBAR_BUTTON_COLOR = new Color(
-            30,
-            30,
-            42,
-            110);
-    private static final Color SIDEBAR_BUTTON_HOVER = new Color(
-            42,
-            42,
-            58,
-            120);
-    private static final Color SIDEBAR_BUTTON_ACTIVE = new Color(
-            80,
-            50,
-            140,
-            120);
+    private static final Color SIDEBAR_BUTTON_COLOR = new Color(30, 30, 42, 110);
+    private static final Color SIDEBAR_BUTTON_HOVER = new Color(42, 42, 58, 120);
+    private static final Color SIDEBAR_BUTTON_ACTIVE = new Color(80, 50, 140, 120);
 
     private static final Color SEARCH_BG = new Color(30, 30, 40, 255);
     private static final Color SEARCH_ACTIVE_BG = new Color(40, 40, 55, 255);
     private static final Color SEARCH_BORDER = new Color(130, 100, 200, 180);
-    private static final Color SEARCH_PLACEHOLDER = new Color(
-            100,
-            100,
-            120,
-            200);
+    private static final Color SEARCH_PLACEHOLDER = new Color(100, 100, 120, 200);
 
     private static final Color CARD_BG = new Color(30, 30, 42, 110);
     private static final Color CARD_EXPANDED_BG = new Color(26, 26, 36, 120);
-    private static final Color MEMBER_TEXT_COLOR = new Color(
-            220,
-            220,
-            230,
-            255);
+    private static final Color MEMBER_TEXT_COLOR = new Color(220, 220, 230, 255);
     private static final Color MEMBER_DIM_COLOR = new Color(120, 120, 140, 180);
     private static final Color ROLE_TEXT_COLOR = new Color(160, 160, 180, 255);
 
     private static final Color PARTY_TYPE_TEXT = new Color(180, 180, 200, 255);
-    private static final Color EXPAND_ARROW_COLOR = new Color(
-            140,
-            140,
-            160,
-            255);
+    private static final Color EXPAND_ARROW_COLOR = new Color(140, 140, 160, 255);
 
-    private static final Color JOIN_BUTTON_COLOR = new Color(
-            160,
-            130,
-            220,
-            255);
-    private static final Color JOIN_BUTTON_HOVER = new Color(
-            180,
-            150,
-            240,
-            255);
+    private static final Color JOIN_BUTTON_COLOR = new Color(160, 130, 220, 255);
+    private static final Color JOIN_BUTTON_HOVER = new Color(180, 150, 240, 255);
     private static final Color NEW_PARTY_COLOR = new Color(160, 130, 220, 200);
     private static final Color NEW_PARTY_HOVER = new Color(180, 150, 240, 220);
-    private static final Color MANAGE_PARTY_COLOR = new Color(
-            160,
-            130,
-            220,
-            200);
+    private static final Color MANAGE_PARTY_COLOR = new Color(160, 130, 220, 200);
     private static final Color DELIST_PARTY_COLOR = new Color(200, 60, 60, 200);
     private static final Color DELIST_PARTY_HOVER = new Color(220, 80, 80, 220);
     private static final Color OPEN_CLOSE_PARTY_COLOR = new Color(100, 70, 160, 200);
@@ -188,11 +159,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final Color DROPDOWN_HOVER = new Color(55, 55, 75, 240);
     private static final Color DROPDOWN_BORDER = new Color(80, 80, 100, 200);
 
-    private static final Color TYPE_ICON_SELECTED = new Color(
-            TITLE_COLOR.getRed(),
-            TITLE_COLOR.getGreen(),
-            TITLE_COLOR.getBlue(),
-            120);
+    private static final Color TYPE_ICON_SELECTED =
+            new Color(TITLE_COLOR.getRed(), TITLE_COLOR.getGreen(), TITLE_COLOR.getBlue(), 120);
 
     private static final Color ERROR_POPUP_BG = new Color(55, 25, 90, 235);
     private static final Color ERROR_POPUP_BORDER = new Color(160, 130, 220, 255);
@@ -204,18 +172,14 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final Color MODAL_BORDER = new Color(80, 80, 100, 255);
     private static final Color MODAL_OVERLAY = new Color(0, 0, 0, 160);
     private static final Color MODAL_DROPDOWN_BG = new Color(35, 35, 48, 255);
-    private static final Color MODAL_DROPDOWN_BORDER = new Color(
-            80,
-            80,
-            100,
-            200);
+    private static final Color MODAL_DROPDOWN_BORDER = new Color(80, 80, 100, 200);
 
     private static final Color TAG_CHIP_BG = new Color(40, 40, 55, 220);
     private static final Color TAG_CHIP_HOVER = new Color(55, 55, 75, 240);
     private static final Color FILTER_BOX_BG = new Color(15, 15, 22, 240);
 
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
-    private static final String[] ROLES = { "DPS", "Healer", "Tank" };
+    private static final String[] ROLES = {"DPS", "Healer", "Tank"};
 
     // All possible tags = RAID_TYPES + PARTY_TAGS
     private static final String[] ALL_TAGS;
@@ -223,16 +187,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     static {
         ALL_TAGS = new String[RAID_TYPES.length + PARTY_TAGS.length];
         System.arraycopy(RAID_TYPES, 0, ALL_TAGS, 0, RAID_TYPES.length);
-        System.arraycopy(
-                PARTY_TAGS,
-                0,
-                ALL_TAGS,
-                RAID_TYPES.length,
-                PARTY_TAGS.length);
+        System.arraycopy(PARTY_TAGS, 0, ALL_TAGS, RAID_TYPES.length, PARTY_TAGS.length);
     }
 
-    private static final Set<String> RAID_TYPE_SET = new HashSet<>(
-            Arrays.asList(RAID_TYPES));
+    private static final Set<String> RAID_TYPE_SET = new HashSet<>(Arrays.asList(RAID_TYPES));
 
     // ── State ──
     private final Screen parent;
@@ -260,6 +218,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private final Set<String> modalSelectedRaids = new LinkedHashSet<>();
     private int modalReservedSlots = 0;
     private boolean modalStrictRoles = false;
+    private PartyRegion modalSelectedRegion = PartyRegion.NA;
     private boolean reservedSlotsFocused = false;
     private String reservedSlotsInput = "0";
     private long nextLoadingNameRefreshAtMs = 0L;
@@ -313,8 +272,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
     }
 
-    private record HeaderButtonBounds(float x, float y, float w, float h) {
-    }
+    private record HeaderButtonBounds(float x, float y, float w, float h) {}
 
     private record HeaderControlsLayout(
             HeaderButtonBounds searchBar,
@@ -324,8 +282,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             HeaderButtonBounds delistButton,
             HeaderButtonBounds inviteAllButton,
             HeaderButtonBounds newPartyButton,
-            HeaderButtonBounds roleDropdown) {
-    }
+            HeaderButtonBounds roleDropdown) {}
 
     public PartyFinderScreen(Screen parent) {
         super(Component.literal("Party Finder"));
@@ -350,11 +307,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     // ══════════════════════════════ RENDER ══════════════════════════════
 
     @Override
-    public void render(
-            GuiGraphics guiGraphics,
-            int mouseX,
-            int mouseY,
-            float partialTick) {
+    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
         double guiScale = SeqClient.mc.getWindow().getGuiScale();
@@ -372,20 +325,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float panelX = SIDEBAR_WIDTH;
             float panelWidth = screenWidth - SIDEBAR_WIDTH;
 
-            NVGWrapper.drawRect(
-                    nvg,
-                    panelX,
-                    0,
-                    panelWidth,
-                    screenHeight,
-                    PANEL_COLOR);
-            NVGWrapper.drawRect(
-                    nvg,
-                    panelX,
-                    0,
-                    panelWidth,
-                    HEADER_HEIGHT,
-                    HEADER_COLOR);
+            NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, PANEL_COLOR);
+            NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, HEADER_HEIGHT, HEADER_COLOR);
             renderHeaderControls(nvg, fontName, panelX, panelWidth);
 
             nvgFontFace(nvg, fontName);
@@ -393,11 +334,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
             var titleCol = NVGContext.nvgColor(TITLE_COLOR);
             nvgFillColor(nvg, titleCol);
-            nvgText(
-                    nvg,
-                    panelX + panelWidth - SEARCH_BAR_MARGIN,
-                    HEADER_HEIGHT / 2f,
-                    "Party Finder");
+            nvgText(nvg, panelX + panelWidth - SEARCH_BAR_MARGIN, HEADER_HEIGHT / 2f, "Party Finder");
             titleCol.free();
 
             // Content area
@@ -420,65 +357,34 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float cursorY = contentY - scrollOffset + PADDING;
             for (int i = 0; i < party().getParties().size(); i++) {
                 PartyListing party = party().getParties().get(i);
-                if (!matchesFilters(party))
-                    continue;
+                if (!matchesFilters(party)) continue;
 
                 float cardH = party.expanded
-                        ? CARD_HEADER_HEIGHT +
-                                party.members.size() * MEMBER_ROW_HEIGHT +
-                                CARD_PADDING
+                        ? CARD_HEADER_HEIGHT + party.members.size() * MEMBER_ROW_HEIGHT + CARD_PADDING
                         : COLLAPSED_ROW_HEIGHT;
 
                 renderPartyCard(
-                        nvg,
-                        fontName,
-                        contentX + PADDING,
-                        cursorY,
-                        contentWidth - PADDING * 2 - 6,
-                        cardH,
-                        party,
-                        i);
+                        nvg, fontName, contentX + PADDING, cursorY, contentWidth - PADDING * 2 - 6, cardH, party, i);
                 cursorY += cardH + CARD_SPACING;
             }
 
-            maxScroll = Math.max(
-                    0,
-                    cursorY + scrollOffset - contentY - contentHeight);
+            maxScroll = Math.max(0, cursorY + scrollOffset - contentY - contentHeight);
             nvgRestore(nvg);
 
             // Scrollbar
             if (maxScroll > 0) {
                 float scrollbarX = panelX + panelWidth - 5;
-                NVGWrapper.drawRect(
-                        nvg,
-                        scrollbarX,
-                        contentY,
-                        4,
-                        contentHeight,
-                        SCROLLBAR_TRACK);
+                NVGWrapper.drawRect(nvg, scrollbarX, contentY, 4, contentHeight, SCROLLBAR_TRACK);
                 float thumbRatio = contentHeight / (contentHeight + maxScroll);
                 float thumbH = Math.max(20, contentHeight * thumbRatio);
-                float thumbY = contentY +
-                        (scrollOffset / maxScroll) * (contentHeight - thumbH);
-                NVGWrapper.drawRect(
-                        nvg,
-                        scrollbarX,
-                        thumbY,
-                        4,
-                        thumbH,
-                        SCROLLBAR_THUMB);
+                float thumbY = contentY + (scrollOffset / maxScroll) * (contentHeight - thumbH);
+                NVGWrapper.drawRect(nvg, scrollbarX, thumbY, 4, thumbH, SCROLLBAR_THUMB);
             }
 
             // Filter + button (bottom right of content area)
             float filterX = panelX + panelWidth - FILTER_BUTTON_W - FILTER_BUTTON_MARGIN;
             float filterY = screenHeight - FILTER_BUTTON_H - FILTER_BUTTON_MARGIN;
-            boolean filterHovered = isHovered(
-                    nvgMouseX,
-                    nvgMouseY,
-                    filterX,
-                    filterY,
-                    FILTER_BUTTON_W,
-                    FILTER_BUTTON_H);
+            boolean filterHovered = isHovered(nvgMouseX, nvgMouseY, filterX, filterY, FILTER_BUTTON_W, FILTER_BUTTON_H);
             NVGWrapper.drawRect(
                     nvg,
                     filterX,
@@ -491,11 +397,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
             var ftc = NVGContext.nvgColor(TEXT_COLOR);
             nvgFillColor(nvg, ftc);
-            nvgText(
-                    nvg,
-                    filterX + FILTER_BUTTON_W / 2f,
-                    filterY + FILTER_BUTTON_H / 2f,
-                    "Filter +");
+            nvgText(nvg, filterX + FILTER_BUTTON_W / 2f, filterY + FILTER_BUTTON_H / 2f, "Filter +");
             ftc.free();
 
             // Role dropdown overlay
@@ -514,12 +416,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
             // Filter+ screen overlay (highest priority)
             if (filterScreenOpen) {
-                renderFilterScreen(
-                        nvg,
-                        fontName,
-                        panelX,
-                        panelWidth,
-                        screenHeight);
+                renderFilterScreen(nvg, fontName, panelX, panelWidth, screenHeight);
             }
 
             renderStatusBanner(nvg, fontName, panelX, panelWidth, screenHeight);
@@ -548,12 +445,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         showStatusBanner(message);
     }
 
-    private void renderStatusBanner(
-            long nvg,
-            String fontName,
-            float panelX,
-            float panelWidth,
-            float screenHeight) {
+    private void renderStatusBanner(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
         if (activeStatusBannerMessage == null || activeStatusBannerMessage.isBlank()) {
             return;
         }
@@ -575,36 +467,19 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float popupY = screenHeight - STATUS_BANNER_H - 10;
 
         NVGWrapper.drawRoundedRect(nvg, popupX, popupY, popupW, STATUS_BANNER_H, 6, ERROR_POPUP_BG);
-        NVGWrapper.drawRectOutline(
-                nvg,
-                popupX,
-                popupY,
-                popupW,
-                STATUS_BANNER_H,
-                1,
-                ERROR_POPUP_BORDER);
+        NVGWrapper.drawRectOutline(nvg, popupX, popupY, popupW, STATUS_BANNER_H, 1, ERROR_POPUP_BORDER);
 
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         var text = NVGContext.nvgColor(TEXT_COLOR);
         nvgFillColor(nvg, text);
-        nvgText(
-                nvg,
-                popupX + popupW / 2f,
-                popupY + STATUS_BANNER_H / 2f,
-                activeStatusBannerMessage);
+        nvgText(nvg, popupX + popupW / 2f, popupY + STATUS_BANNER_H / 2f, activeStatusBannerMessage);
         text.free();
     }
 
     // ── Sidebar ──
 
     private void renderSidebar(long nvg, String fontName, float screenHeight) {
-        NVGWrapper.drawRect(
-                nvg,
-                0,
-                0,
-                SIDEBAR_WIDTH,
-                screenHeight,
-                SIDEBAR_COLOR);
+        NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, SIDEBAR_TITLE_SIZE);
@@ -614,13 +489,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgText(nvg, SIDEBAR_WIDTH / 2f, 22, "Sequoia");
         col.free();
 
-        NVGWrapper.drawRect(
-                nvg,
-                SIDEBAR_PADDING,
-                40,
-                SIDEBAR_WIDTH - SIDEBAR_PADDING * 2,
-                1,
-                DIVIDER_COLOR);
+        NVGWrapper.drawRect(nvg, SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, DIVIDER_COLOR);
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
@@ -628,13 +497,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         drawSidebarButton(nvg, fontName, btnX, btnY, btnW, "Partyfinder", true);
         drawSidebarButton(
-                nvg,
-                fontName,
-                btnX,
-                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING),
-                btnW,
-                "Settings",
-                false);
+                nvg, fontName, btnX, btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING), btnW, "Settings", false);
         drawSidebarButton(
                 nvg,
                 fontName,
@@ -645,24 +508,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 false);
     }
 
-    private void drawSidebarButton(
-            long nvg,
-            String fontName,
-            float x,
-            float y,
-            float w,
-            String label,
-            boolean active) {
-        boolean hovered = isHovered(
-                nvgMouseX,
-                nvgMouseY,
-                x,
-                y,
-                w,
-                SIDEBAR_BUTTON_HEIGHT);
-        Color bg = active
-                ? SIDEBAR_BUTTON_ACTIVE
-                : (hovered ? SIDEBAR_BUTTON_HOVER : SIDEBAR_BUTTON_COLOR);
+    private void drawSidebarButton(long nvg, String fontName, float x, float y, float w, String label, boolean active) {
+        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
+        Color bg = active ? SIDEBAR_BUTTON_ACTIVE : (hovered ? SIDEBAR_BUTTON_HOVER : SIDEBAR_BUTTON_COLOR);
         NVGWrapper.drawRect(nvg, x, y, w, SIDEBAR_BUTTON_HEIGHT, bg);
 
         nvgFontFace(nvg, fontName);
@@ -676,11 +524,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     // ── Header ──
 
-    private void renderHeaderControls(
-            long nvg,
-            String fontName,
-            float panelX,
-            float panelWidth) {
+    private void renderHeaderControls(long nvg, String fontName, float panelX, float panelWidth) {
         searchCursorBlink++;
         HeaderControlsLayout layout = computeHeaderControlsLayout(panelX);
         HeaderButtonBounds searchBar = layout.searchBar();
@@ -688,22 +532,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float searchY = searchBar.y();
 
         Color searchBg = searchFocused ? SEARCH_ACTIVE_BG : SEARCH_BG;
-        NVGWrapper.drawRect(
-                nvg,
-                searchX,
-                searchY,
-                searchBar.w(),
-                searchBar.h(),
-                searchBg);
+        NVGWrapper.drawRect(nvg, searchX, searchY, searchBar.w(), searchBar.h(), searchBg);
         if (searchFocused) {
-            NVGWrapper.drawRectOutline(
-                    nvg,
-                    searchX,
-                    searchY,
-                    searchBar.w(),
-                    searchBar.h(),
-                    1,
-                    SEARCH_BORDER);
+            NVGWrapper.drawRectOutline(nvg, searchX, searchY, searchBar.w(), searchBar.h(), 1, SEARCH_BORDER);
         }
 
         nvgFontFace(nvg, fontName);
@@ -715,20 +546,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         if (searchQuery.isEmpty() && !searchFocused) {
             var ph = NVGContext.nvgColor(SEARCH_PLACEHOLDER);
             nvgFillColor(nvg, ph);
-            nvgText(
-                    nvg,
-                    searchX + 6,
-                    searchY + SEARCH_BAR_HEIGHT / 2f,
-                    "Search...");
+            nvgText(nvg, searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, "Search...");
             ph.free();
         } else {
             var tc = NVGContext.nvgColor(TEXT_COLOR);
             nvgFillColor(nvg, tc);
-            nvgText(
-                    nvg,
-                    searchX + 6,
-                    searchY + SEARCH_BAR_HEIGHT / 2f,
-                    searchQuery);
+            nvgText(nvg, searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, searchQuery);
             tc.free();
         }
         nvgRestore(nvg);
@@ -737,36 +560,14 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float[] bounds = new float[4];
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, SEARCH_FONT_SIZE);
-            float textW = searchQuery.isEmpty()
-                    ? 0
-                    : nvgTextBounds(nvg, 0, 0, searchQuery, bounds);
-            NVGWrapper.drawRect(
-                    nvg,
-                    searchX + 6 + textW + 1,
-                    searchY + 3,
-                    1,
-                    searchBar.h() - 6,
-                    TEXT_COLOR);
+            float textW = searchQuery.isEmpty() ? 0 : nvgTextBounds(nvg, 0, 0, searchQuery, bounds);
+            NVGWrapper.drawRect(nvg, searchX + 6 + textW + 1, searchY + 3, 1, searchBar.h() - 6, TEXT_COLOR);
         }
 
         if (party().isPartyLeader()) {
-            String manageLabel = party().hasListedParty()
-                    ? "Manage Party"
-                    : "New party +";
-            drawHeaderButton(
-                    nvg,
-                    fontName,
-                    layout.manageButton(),
-                    manageLabel,
-                    MANAGE_PARTY_COLOR,
-                    NEW_PARTY_HOVER);
-            drawHeaderButton(
-                    nvg,
-                    fontName,
-                    layout.inviteButton(),
-                    "Invite",
-                    NEW_PARTY_COLOR,
-                    NEW_PARTY_HOVER);
+            String manageLabel = party().hasListedParty() ? "Manage Party" : "New party +";
+            drawHeaderButton(nvg, fontName, layout.manageButton(), manageLabel, MANAGE_PARTY_COLOR, NEW_PARTY_HOVER);
+            drawHeaderButton(nvg, fontName, layout.inviteButton(), "Invite", NEW_PARTY_COLOR, NEW_PARTY_HOVER);
             String openCloseLabel = isCurrentListingClosed() ? "Open party" : "Close party";
             drawHeaderButton(
                     nvg,
@@ -776,55 +577,23 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     OPEN_CLOSE_PARTY_COLOR,
                     OPEN_CLOSE_PARTY_HOVER);
             drawHeaderButton(
-                    nvg,
-                    fontName,
-                    layout.delistButton(),
-                    "Delist party",
-                    DELIST_PARTY_COLOR,
-                    DELIST_PARTY_HOVER);
-            drawHeaderButton(
-                    nvg,
-                    fontName,
-                    layout.inviteAllButton(),
-                    "Invite all",
-                    NEW_PARTY_COLOR,
-                    NEW_PARTY_HOVER);
+                    nvg, fontName, layout.delistButton(), "Delist party", DELIST_PARTY_COLOR, DELIST_PARTY_HOVER);
+            drawHeaderButton(nvg, fontName, layout.inviteAllButton(), "Invite all", NEW_PARTY_COLOR, NEW_PARTY_HOVER);
         } else {
             boolean inPartyAsMember = party().getJoinedPartyIndex() >= 0;
-            Color newBg = inPartyAsMember
-                    ? new Color(60, 60, 70, 180)
-                    : NEW_PARTY_COLOR;
-            Color newHover = inPartyAsMember
-                    ? new Color(60, 60, 70, 180)
-                    : NEW_PARTY_HOVER;
-            drawHeaderButton(
-                    nvg,
-                    fontName,
-                    layout.newPartyButton(),
-                    "New party +",
-                    newBg,
-                    newHover);
+            Color newBg = inPartyAsMember ? new Color(60, 60, 70, 180) : NEW_PARTY_COLOR;
+            Color newHover = inPartyAsMember ? new Color(60, 60, 70, 180) : NEW_PARTY_HOVER;
+            drawHeaderButton(nvg, fontName, layout.newPartyButton(), "New party +", newBg, newHover);
         }
 
         dropdownRenderX = layout.roleDropdown().x();
         dropdownRenderY = layout.roleDropdown().y();
         dropdownRenderW = layout.roleDropdown().w();
-        renderRoleDropdownButton(
-                nvg,
-                fontName,
-                layout.roleDropdown());
+        renderRoleDropdownButton(nvg, fontName, layout.roleDropdown());
     }
 
     private void drawHeaderButton(
-            long nvg,
-            String fontName,
-            float x,
-            float y,
-            float w,
-            float h,
-            String label,
-            Color bg,
-            Color hoverBg) {
+            long nvg, String fontName, float x, float y, float w, float h, String label, Color bg, Color hoverBg) {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
         NVGWrapper.drawRect(nvg, x, y, w, h, hovered ? hoverBg : bg);
 
@@ -838,35 +607,17 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     }
 
     private void drawHeaderButton(
-            long nvg,
-            String fontName,
-            HeaderButtonBounds bounds,
-            String label,
-            Color bg,
-            Color hoverBg) {
+            long nvg, String fontName, HeaderButtonBounds bounds, String label, Color bg, Color hoverBg) {
         if (bounds == null) {
             return;
         }
-        drawHeaderButton(
-                nvg,
-                fontName,
-                bounds.x(),
-                bounds.y(),
-                bounds.w(),
-                bounds.h(),
-                label,
-                bg,
-                hoverBg);
+        drawHeaderButton(nvg, fontName, bounds.x(), bounds.y(), bounds.w(), bounds.h(), label, bg, hoverBg);
     }
 
     private HeaderControlsLayout computeHeaderControlsLayout(float panelX) {
         float searchX = panelX + SEARCH_BAR_MARGIN;
         float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
-        HeaderButtonBounds searchBar = new HeaderButtonBounds(
-                searchX,
-                searchY,
-                SEARCH_BAR_WIDTH,
-                SEARCH_BAR_HEIGHT);
+        HeaderButtonBounds searchBar = new HeaderButtonBounds(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT);
 
         float nextButtonX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
         HeaderButtonBounds manageButton = null;
@@ -877,54 +628,29 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         HeaderButtonBounds newPartyButton = null;
 
         if (party().isPartyLeader()) {
-            manageButton = new HeaderButtonBounds(
-                    nextButtonX,
-                    searchY,
-                    HEADER_MANAGE_BUTTON_W,
-                    SEARCH_BAR_HEIGHT);
+            manageButton = new HeaderButtonBounds(nextButtonX, searchY, HEADER_MANAGE_BUTTON_W, SEARCH_BAR_HEIGHT);
             nextButtonX += HEADER_MANAGE_BUTTON_W + HEADER_BUTTON_SPACING;
 
-            inviteButton = new HeaderButtonBounds(
-                    nextButtonX,
-                    searchY,
-                    HEADER_INVITE_BUTTON_W,
-                    SEARCH_BAR_HEIGHT);
+            inviteButton = new HeaderButtonBounds(nextButtonX, searchY, HEADER_INVITE_BUTTON_W, SEARCH_BAR_HEIGHT);
             nextButtonX += HEADER_INVITE_BUTTON_W + HEADER_BUTTON_SPACING;
 
-            openCloseButton = new HeaderButtonBounds(
-                    nextButtonX,
-                    searchY,
-                    HEADER_OPEN_CLOSE_BUTTON_W,
-                    SEARCH_BAR_HEIGHT);
+            openCloseButton =
+                    new HeaderButtonBounds(nextButtonX, searchY, HEADER_OPEN_CLOSE_BUTTON_W, SEARCH_BAR_HEIGHT);
             nextButtonX += HEADER_OPEN_CLOSE_BUTTON_W + HEADER_BUTTON_SPACING;
 
-            delistButton = new HeaderButtonBounds(
-                    nextButtonX,
-                    searchY,
-                    HEADER_DELIST_BUTTON_W,
-                    SEARCH_BAR_HEIGHT);
+            delistButton = new HeaderButtonBounds(nextButtonX, searchY, HEADER_DELIST_BUTTON_W, SEARCH_BAR_HEIGHT);
             nextButtonX += HEADER_DELIST_BUTTON_W + HEADER_BUTTON_SPACING;
 
-            inviteAllButton = new HeaderButtonBounds(
-                    nextButtonX,
-                    searchY,
-                    HEADER_INVITE_ALL_BUTTON_W,
-                    SEARCH_BAR_HEIGHT);
+            inviteAllButton =
+                    new HeaderButtonBounds(nextButtonX, searchY, HEADER_INVITE_ALL_BUTTON_W, SEARCH_BAR_HEIGHT);
             nextButtonX += HEADER_INVITE_ALL_BUTTON_W + HEADER_BUTTON_SPACING;
         } else {
-            newPartyButton = new HeaderButtonBounds(
-                    nextButtonX,
-                    searchY,
-                    HEADER_NEW_PARTY_BUTTON_W,
-                    SEARCH_BAR_HEIGHT);
+            newPartyButton = new HeaderButtonBounds(nextButtonX, searchY, HEADER_NEW_PARTY_BUTTON_W, SEARCH_BAR_HEIGHT);
             nextButtonX += HEADER_NEW_PARTY_BUTTON_W + HEADER_BUTTON_SPACING;
         }
 
-        HeaderButtonBounds roleDropdown = new HeaderButtonBounds(
-                nextButtonX,
-                searchY,
-                HEADER_ROLE_DROPDOWN_W,
-                SEARCH_BAR_HEIGHT);
+        HeaderButtonBounds roleDropdown =
+                new HeaderButtonBounds(nextButtonX, searchY, HEADER_ROLE_DROPDOWN_W, SEARCH_BAR_HEIGHT);
         return new HeaderControlsLayout(
                 searchBar,
                 manageButton,
@@ -938,22 +664,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     // ── Role dropdown ──
 
-    private void renderRoleDropdownButton(
-            long nvg,
-            String fontName,
-            HeaderButtonBounds bounds) {
+    private void renderRoleDropdownButton(long nvg, String fontName, HeaderButtonBounds bounds) {
         float x = bounds.x();
         float y = bounds.y();
         float w = bounds.w();
         float h = bounds.h();
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
-        NVGWrapper.drawRect(
-                nvg,
-                x,
-                y,
-                w,
-                h,
-                hovered ? SEARCH_ACTIVE_BG : SEARCH_BG);
+        NVGWrapper.drawRect(nvg, x, y, w, h, hovered ? SEARCH_ACTIVE_BG : SEARCH_BG);
         NVGWrapper.drawRectOutline(nvg, x, y, w, h, 1, DROPDOWN_BORDER);
 
         String label = selectedRole != null ? selectedRole : "Your role";
@@ -980,21 +697,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         for (int i = 0; i < ROLES.length; i++) {
             float itemY = y + i * itemH;
-            boolean itemHovered = isHovered(
-                    nvgMouseX,
-                    nvgMouseY,
-                    x,
-                    itemY,
-                    w,
-                    itemH);
-            if (itemHovered)
-                NVGWrapper.drawRect(
-                        nvg,
-                        x,
-                        itemY,
-                        w,
-                        itemH,
-                        DROPDOWN_HOVER);
+            boolean itemHovered = isHovered(nvgMouseX, nvgMouseY, x, itemY, w, itemH);
+            if (itemHovered) NVGWrapper.drawRect(nvg, x, itemY, w, itemH, DROPDOWN_HOVER);
 
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, MEMBER_FONT_SIZE);
@@ -1009,34 +713,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     // ── Party cards ──
 
     private void renderPartyCard(
-            long nvg,
-            String fontName,
-            float x,
-            float y,
-            float w,
-            float h,
-            PartyListing party,
-            int partyIndex) {
+            long nvg, String fontName, float x, float y, float w, float h, PartyListing party, int partyIndex) {
         boolean isJoined = party().getJoinedPartyIndex() == partyIndex;
-        NVGWrapper.drawRect(
-                nvg,
-                x,
-                y,
-                w,
-                h,
-                party.expanded ? CARD_EXPANDED_BG : CARD_BG);
+        NVGWrapper.drawRect(nvg, x, y, w, h, party.expanded ? CARD_EXPANDED_BG : CARD_BG);
 
         if (party.expanded) {
-            renderExpandedCard(
-                    nvg,
-                    fontName,
-                    x,
-                    y,
-                    w,
-                    h,
-                    party,
-                    partyIndex,
-                    isJoined);
+            renderExpandedCard(nvg, fontName, x, y, w, h, party, partyIndex, isJoined);
         } else {
             renderCollapsedCard(nvg, fontName, x, y, w, party);
         }
@@ -1056,12 +738,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         List<String> raidTags = party.getRaidTags();
 
         drawRaidIconCircle(
-                nvg,
-                fontName,
-                rowX,
-                y + (CARD_HEADER_HEIGHT - TYPE_ICON_SIZE) / 2f,
-                TYPE_ICON_SIZE,
-                raidTags);
+                nvg, fontName, rowX, y + (CARD_HEADER_HEIGHT - TYPE_ICON_SIZE) / 2f, TYPE_ICON_SIZE, raidTags);
         rowX += TYPE_ICON_SIZE + 6;
 
         nvgFontFace(nvg, fontName);
@@ -1069,11 +746,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         var countCol = NVGContext.nvgColor(TEXT_COLOR);
         nvgFillColor(nvg, countCol);
-        nvgText(
-                nvg,
-                rowX,
-                y + CARD_HEADER_HEIGHT / 2f,
-                party.occupiedSlots + "/" + party.maxSize);
+        nvgText(nvg, rowX, y + CARD_HEADER_HEIGHT / 2f, party.occupiedSlots + "/" + party.maxSize);
         countCol.free();
 
         // Collapse arrow
@@ -1107,47 +780,24 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Join/Leave/Joined
         float joinX = x + w - CARD_PADDING - JOIN_BUTTON_WIDTH;
-        float joinY = memberY -
-                MEMBER_ROW_HEIGHT +
-                (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
+        float joinY = memberY - MEMBER_ROW_HEIGHT + (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
         boolean showJoinedDisabled = isMyParty;
         boolean alreadyInParty = party().getJoinedPartyIndex() >= 0 && !isJoined;
         boolean buttonDisabled = showJoinedDisabled || alreadyInParty;
-        boolean joinHovered = !buttonDisabled &&
-                isHovered(
-                        nvgMouseX,
-                        nvgMouseY,
-                        joinX,
-                        joinY,
-                        JOIN_BUTTON_WIDTH,
-                        BUTTON_HEIGHT);
-        Color joinBg = buttonDisabled
-                ? new Color(60, 60, 70, 180)
-                : (joinHovered ? JOIN_BUTTON_HOVER : JOIN_BUTTON_COLOR);
-        NVGWrapper.drawRect(
-                nvg,
-                joinX,
-                joinY,
-                JOIN_BUTTON_WIDTH,
-                BUTTON_HEIGHT,
-                joinBg);
+        boolean joinHovered =
+                !buttonDisabled && isHovered(nvgMouseX, nvgMouseY, joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT);
+        Color joinBg =
+                buttonDisabled ? new Color(60, 60, 70, 180) : (joinHovered ? JOIN_BUTTON_HOVER : JOIN_BUTTON_COLOR);
+        NVGWrapper.drawRect(nvg, joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT, joinBg);
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        Color textCol = buttonDisabled
-                ? new Color(120, 120, 130, 200)
-                : TEXT_COLOR;
-        String actionText = showJoinedDisabled
-                ? "Joined"
-                : (isJoined ? "Leave" : "Join");
+        Color textCol = buttonDisabled ? new Color(120, 120, 130, 200) : TEXT_COLOR;
+        String actionText = showJoinedDisabled ? "Joined" : (isJoined ? "Leave" : "Join");
         var jtc = NVGContext.nvgColor(textCol);
         nvgFillColor(nvg, jtc);
-        nvgText(
-                nvg,
-                joinX + JOIN_BUTTON_WIDTH / 2f,
-                joinY + BUTTON_HEIGHT / 2f,
-                actionText);
+        nvgText(nvg, joinX + JOIN_BUTTON_WIDTH / 2f, joinY + BUTTON_HEIGHT / 2f, actionText);
         jtc.free();
 
         // Tag label
@@ -1160,24 +810,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         ptc.free();
     }
 
-    private void renderCollapsedCard(
-            long nvg,
-            String fontName,
-            float x,
-            float y,
-            float w,
-            PartyListing party) {
+    private void renderCollapsedCard(long nvg, String fontName, float x, float y, float w, PartyListing party) {
         float rowX = x + CARD_PADDING;
         float centerY = y + COLLAPSED_ROW_HEIGHT / 2f;
         List<String> raidTags = party.getRaidTags();
 
         drawRaidIconCircle(
-                nvg,
-                fontName,
-                rowX,
-                y + (COLLAPSED_ROW_HEIGHT - TYPE_ICON_SIZE) / 2f,
-                TYPE_ICON_SIZE,
-                raidTags);
+                nvg, fontName, rowX, y + (COLLAPSED_ROW_HEIGHT - TYPE_ICON_SIZE) / 2f, TYPE_ICON_SIZE, raidTags);
         rowX += TYPE_ICON_SIZE + 6;
 
         nvgFontFace(nvg, fontName);
@@ -1195,14 +834,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             AssetManager.Asset starIcon = getClassIcon("star");
             if (starIcon != null) {
                 float starY = centerY - STAR_ICON_SIZE / 2f;
-                NVGWrapper.drawImage(
-                        nvg,
-                        starIcon,
-                        rowX,
-                        starY,
-                        STAR_ICON_SIZE,
-                        STAR_ICON_SIZE,
-                        255);
+                NVGWrapper.drawImage(nvg, starIcon, rowX, starY, STAR_ICON_SIZE, STAR_ICON_SIZE, 255);
             }
             rowX += STAR_ICON_SIZE + 4;
 
@@ -1228,19 +860,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         rightX -= 22;
 
         for (int j = party.members.size() - 1; j >= 0; j--) {
-            AssetManager.Asset icon = getClassIcon(
-                    party.members.get(j).className);
+            AssetManager.Asset icon = getClassIcon(party.members.get(j).className);
             if (icon != null) {
                 float iconX = rightX - CLASS_ICON_SIZE;
                 float iconY = y + (COLLAPSED_ROW_HEIGHT - CLASS_ICON_SIZE) / 2f;
-                NVGWrapper.drawImage(
-                        nvg,
-                        icon,
-                        iconX,
-                        iconY,
-                        CLASS_ICON_SIZE,
-                        CLASS_ICON_SIZE,
-                        255);
+                NVGWrapper.drawImage(nvg, icon, iconX, iconY, CLASS_ICON_SIZE, CLASS_ICON_SIZE, 255);
                 rightX -= CLASS_ICON_SIZE + 4;
             }
         }
@@ -1282,14 +906,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             AssetManager.Asset starIcon = getClassIcon("star");
             if (starIcon != null) {
                 float starY = centerY - STAR_ICON_SIZE / 2f;
-                NVGWrapper.drawImage(
-                        nvg,
-                        starIcon,
-                        rowX,
-                        starY,
-                        STAR_ICON_SIZE,
-                        STAR_ICON_SIZE,
-                        255);
+                NVGWrapper.drawImage(nvg, starIcon, rowX, starY, STAR_ICON_SIZE, STAR_ICON_SIZE, 255);
             }
         }
         rowX += STAR_ICON_SIZE + 4;
@@ -1298,9 +915,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        Color nameColor = isHoveredMember
-                ? MEMBER_DIM_COLOR
-                : MEMBER_TEXT_COLOR;
+        Color nameColor = isHoveredMember ? MEMBER_DIM_COLOR : MEMBER_TEXT_COLOR;
         String memberName = member.displayName();
         var nc = NVGContext.nvgColor(nameColor);
         nvgFillColor(nvg, nc);
@@ -1326,24 +941,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             hoveredKickIconY = iconY;
 
             if (starupIcon != null) {
-                NVGWrapper.drawImage(
-                        nvg,
-                        starupIcon,
-                        promoteX,
-                        iconY,
-                        LEADER_ICON_SIZE,
-                        LEADER_ICON_SIZE,
-                        255);
+                NVGWrapper.drawImage(nvg, starupIcon, promoteX, iconY, LEADER_ICON_SIZE, LEADER_ICON_SIZE, 255);
             }
             if (crossIcon != null) {
-                NVGWrapper.drawImage(
-                        nvg,
-                        crossIcon,
-                        crossX,
-                        iconY,
-                        LEADER_ICON_SIZE,
-                        LEADER_ICON_SIZE,
-                        255);
+                NVGWrapper.drawImage(nvg, crossIcon, crossX, iconY, LEADER_ICON_SIZE, LEADER_ICON_SIZE, 255);
             }
         }
 
@@ -1352,14 +953,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         AssetManager.Asset icon = getClassIcon(member.className);
         if (icon != null) {
             float iconY = y + (MEMBER_ROW_HEIGHT - CLASS_ICON_SIZE) / 2f;
-            NVGWrapper.drawImage(
-                    nvg,
-                    icon,
-                    rowX,
-                    iconY,
-                    CLASS_ICON_SIZE,
-                    CLASS_ICON_SIZE,
-                    255);
+            NVGWrapper.drawImage(nvg, icon, rowX, iconY, CLASS_ICON_SIZE, CLASS_ICON_SIZE, 255);
             rowX += CLASS_ICON_SIZE + 6;
         }
 
@@ -1376,13 +970,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     // ── Small triangle arrow (pointing up or down) ──
 
-    private void drawTriangle(
-            long nvg,
-            float cx,
-            float cy,
-            float size,
-            boolean up,
-            Color color) {
+    private void drawTriangle(long nvg, float cx, float cy, float size, boolean up, Color color) {
         float half = size / 2f;
         nvgBeginPath(nvg);
         if (up) {
@@ -1403,13 +991,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     // ── Pizza-slice raid icon circle ──
 
-    private void drawRaidIconCircle(
-            long nvg,
-            String fontName,
-            float x,
-            float y,
-            float size,
-            List<String> raidTags) {
+    private void drawRaidIconCircle(long nvg, String fontName, float x, float y, float size, List<String> raidTags) {
         float cx = x + size / 2f;
         float cy = y + size / 2f;
         float radius = size / 2f - 1;
@@ -1420,8 +1002,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Check if this raid has no icon asset (text fallback, e.g. Prelude to
         // Annihilation)
-        if (raidTags.size() == 1 &&
-                PartyListing.displayNameToAssetKey(raidTags.get(0)) == null) {
+        if (raidTags.size() == 1 && PartyListing.displayNameToAssetKey(raidTags.get(0)) == null) {
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, RAID_LABEL_SIZE);
             nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -1475,16 +1056,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     nvgBeginPath(nvg);
                     nvgCircle(nvg, cx, cy, radius);
                     try (NVGPaint paint = NVGPaint.calloc()) {
-                        nvgImagePattern(
-                                nvg,
-                                x,
-                                y,
-                                size,
-                                size,
-                                0,
-                                raidIcon.getImage(),
-                                1.0f,
-                                paint);
+                        nvgImagePattern(nvg, x, y, size, size, 0, raidIcon.getImage(), 1.0f, paint);
                         nvgFillPaint(nvg, paint);
                         nvgFill(nvg);
                     }
@@ -1514,16 +1086,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
                 if (raidIcon != null) {
                     try (NVGPaint paint = NVGPaint.calloc()) {
-                        nvgImagePattern(
-                                nvg,
-                                x,
-                                y,
-                                size,
-                                size,
-                                0,
-                                raidIcon.getImage(),
-                                1.0f,
-                                paint);
+                        nvgImagePattern(nvg, x, y, size, size, 0, raidIcon.getImage(), 1.0f, paint);
                         nvgFillPaint(nvg, paint);
                         nvgFill(nvg);
                     }
@@ -1544,16 +1107,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
                 if (raidIcon != null) {
                     try (NVGPaint paint = NVGPaint.calloc()) {
-                        nvgImagePattern(
-                                nvg,
-                                x,
-                                y,
-                                size,
-                                size,
-                                0,
-                                raidIcon.getImage(),
-                                1.0f,
-                                paint);
+                        nvgImagePattern(nvg, x, y, size, size, 0, raidIcon.getImage(), 1.0f, paint);
                         nvgFillPaint(nvg, paint);
                         nvgFill(nvg);
                     }
@@ -1599,40 +1153,16 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     // ── Create/Manage Party Modal ──
 
-    private void renderModal(
-            long nvg,
-            String fontName,
-            float panelX,
-            float panelWidth,
-            float screenHeight) {
+    private void renderModal(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
         // Darken background
-        NVGWrapper.drawRect(
-                nvg,
-                panelX,
-                0,
-                panelWidth,
-                screenHeight,
-                MODAL_OVERLAY);
+        NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, MODAL_OVERLAY);
 
         // Modal centered in main panel area
         modalX = panelX + (panelWidth - MODAL_WIDTH) / 2f;
-        modalY = (screenHeight - MODAL_HEIGHT) / 2f;
+        modalY = (screenHeight - PARTY_MODAL_HEIGHT) / 2f;
 
-        NVGWrapper.drawRect(
-                nvg,
-                modalX,
-                modalY,
-                MODAL_WIDTH,
-                MODAL_HEIGHT,
-                MODAL_BG);
-        NVGWrapper.drawRectOutline(
-                nvg,
-                modalX,
-                modalY,
-                MODAL_WIDTH,
-                MODAL_HEIGHT,
-                1,
-                MODAL_BORDER);
+        NVGWrapper.drawRect(nvg, modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, MODAL_BG);
+        NVGWrapper.drawRectOutline(nvg, modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, 1, MODAL_BORDER);
 
         // Title
         nvgFontFace(nvg, fontName);
@@ -1645,8 +1175,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         tc.free();
 
         // Raid type icons row
-        float totalCirclesW = RAID_TYPES.length * RAID_CIRCLE_SIZE +
-                (RAID_TYPES.length - 1) * RAID_CIRCLE_SPACING;
+        float totalCirclesW = RAID_TYPES.length * RAID_CIRCLE_SIZE + (RAID_TYPES.length - 1) * RAID_CIRCLE_SPACING;
         float circleStartX = modalX + (MODAL_WIDTH - totalCirclesW) / 2f;
         float circleY = modalY + 38;
 
@@ -1687,8 +1216,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 nvgFontFace(nvg, fontName);
                 nvgFontSize(nvg, RAID_LABEL_SIZE);
                 nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-                var lc = NVGContext.nvgColor(
-                        selected ? TEXT_COLOR : PARTY_TYPE_TEXT);
+                var lc = NVGContext.nvgColor(selected ? TEXT_COLOR : PARTY_TYPE_TEXT);
                 nvgFillColor(nvg, lc);
                 nvgText(nvg, rcx, rcy, rt);
                 lc.free();
@@ -1711,20 +1239,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         // Edit tags button (same color as Filter+)
         float etBtnX = leftColX - MODAL_DROPDOWN_W / 2f;
         float etBtnY = rowY + 12;
-        boolean etHovered = isHovered(
-                nvgMouseX,
-                nvgMouseY,
-                etBtnX,
-                etBtnY,
-                MODAL_DROPDOWN_W,
-                MODAL_DROPDOWN_H);
+        boolean etHovered = isHovered(nvgMouseX, nvgMouseY, etBtnX, etBtnY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H);
         NVGWrapper.drawRect(
-                nvg,
-                etBtnX,
-                etBtnY,
-                MODAL_DROPDOWN_W,
-                MODAL_DROPDOWN_H,
-                etHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
+                nvg, etBtnX, etBtnY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H, etHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
 
         nvgFontSize(nvg, MODAL_LABEL_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -1741,16 +1258,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float arrowX = rsBoxX + rsFieldW;
         float halfArrowH = MODAL_DROPDOWN_H / 2f;
 
-        Color rsFieldBg = reservedSlotsFocused
-                ? SEARCH_ACTIVE_BG
-                : MODAL_DROPDOWN_BG;
-        NVGWrapper.drawRect(
-                nvg,
-                rsBoxX,
-                rsBoxY,
-                rsFieldW,
-                MODAL_DROPDOWN_H,
-                rsFieldBg);
+        Color rsFieldBg = reservedSlotsFocused ? SEARCH_ACTIVE_BG : MODAL_DROPDOWN_BG;
+        NVGWrapper.drawRect(nvg, rsBoxX, rsBoxY, rsFieldW, MODAL_DROPDOWN_H, rsFieldBg);
         NVGWrapper.drawRectOutline(
                 nvg,
                 rsBoxX,
@@ -1769,76 +1278,72 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 nvg,
                 rsBoxX + rsFieldW / 2f,
                 rsBoxY + MODAL_DROPDOWN_H / 2f,
-                reservedSlotsFocused
-                        ? reservedSlotsInput
-                        : String.valueOf(modalReservedSlots));
+                reservedSlotsFocused ? reservedSlotsInput : String.valueOf(modalReservedSlots));
         rsc.free();
 
         // Up arrow button
-        boolean upHovered = isHovered(
-                nvgMouseX,
-                nvgMouseY,
-                arrowX,
-                rsBoxY,
-                arrowW,
-                halfArrowH);
-        NVGWrapper.drawRect(
-                nvg,
-                arrowX,
-                rsBoxY,
-                arrowW,
-                halfArrowH,
-                upHovered ? DROPDOWN_HOVER : MODAL_DROPDOWN_BG);
-        NVGWrapper.drawRectOutline(
-                nvg,
-                arrowX,
-                rsBoxY,
-                arrowW,
-                halfArrowH,
-                1,
-                MODAL_DROPDOWN_BORDER);
-        drawTriangle(
-                nvg,
-                arrowX + arrowW / 2f,
-                rsBoxY + halfArrowH / 2f,
-                4,
-                true,
-                TEXT_COLOR);
+        boolean upHovered = isHovered(nvgMouseX, nvgMouseY, arrowX, rsBoxY, arrowW, halfArrowH);
+        NVGWrapper.drawRect(nvg, arrowX, rsBoxY, arrowW, halfArrowH, upHovered ? DROPDOWN_HOVER : MODAL_DROPDOWN_BG);
+        NVGWrapper.drawRectOutline(nvg, arrowX, rsBoxY, arrowW, halfArrowH, 1, MODAL_DROPDOWN_BORDER);
+        drawTriangle(nvg, arrowX + arrowW / 2f, rsBoxY + halfArrowH / 2f, 4, true, TEXT_COLOR);
 
         // Down arrow button
-        boolean downHovered = isHovered(
-                nvgMouseX,
-                nvgMouseY,
-                arrowX,
-                rsBoxY + halfArrowH,
-                arrowW,
-                halfArrowH);
+        boolean downHovered = isHovered(nvgMouseX, nvgMouseY, arrowX, rsBoxY + halfArrowH, arrowW, halfArrowH);
         NVGWrapper.drawRect(
-                nvg,
-                arrowX,
-                rsBoxY + halfArrowH,
-                arrowW,
-                halfArrowH,
-                downHovered ? DROPDOWN_HOVER : MODAL_DROPDOWN_BG);
-        NVGWrapper.drawRectOutline(
-                nvg,
-                arrowX,
-                rsBoxY + halfArrowH,
-                arrowW,
-                halfArrowH,
-                1,
-                MODAL_DROPDOWN_BORDER);
-        drawTriangle(
-                nvg,
-                arrowX + arrowW / 2f,
-                rsBoxY + halfArrowH + halfArrowH / 2f,
-                4,
-                false,
-                TEXT_COLOR);
+                nvg, arrowX, rsBoxY + halfArrowH, arrowW, halfArrowH, downHovered ? DROPDOWN_HOVER : MODAL_DROPDOWN_BG);
+        NVGWrapper.drawRectOutline(nvg, arrowX, rsBoxY + halfArrowH, arrowW, halfArrowH, 1, MODAL_DROPDOWN_BORDER);
+        drawTriangle(nvg, arrowX + arrowW / 2f, rsBoxY + halfArrowH + halfArrowH / 2f, 4, false, TEXT_COLOR);
+
+        float regionLabelY = rsBoxY + MODAL_DROPDOWN_H + 18;
+        nvgFontFace(nvg, fontName);
+        nvgFontSize(nvg, MODAL_LABEL_SIZE);
+        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        var regionLabelColor = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        nvgFillColor(nvg, regionLabelColor);
+        nvgText(nvg, modalX + MODAL_WIDTH / 2f, regionLabelY, "Region");
+        regionLabelColor.free();
+
+        float regionButtonsY = regionLabelY + 12;
+        float totalRegionButtonsW =
+                PARTY_REGIONS.length * REGION_BUTTON_W + (PARTY_REGIONS.length - 1) * REGION_BUTTON_SPACING;
+        float regionStartX = modalX + (MODAL_WIDTH - totalRegionButtonsW) / 2f;
+        PartyRegion selectedRegion = modalSelectedRegion != null ? modalSelectedRegion : PartyRegion.NA;
+
+        for (int i = 0; i < PARTY_REGIONS.length; i++) {
+            PartyRegion region = PARTY_REGIONS[i];
+            float regionX = regionStartX + i * (REGION_BUTTON_W + REGION_BUTTON_SPACING);
+            boolean regionHovered =
+                    isHovered(nvgMouseX, nvgMouseY, regionX, regionButtonsY, REGION_BUTTON_W, MODAL_DROPDOWN_H);
+            boolean regionSelected = selectedRegion == region;
+
+            NVGWrapper.drawRect(
+                    nvg,
+                    regionX,
+                    regionButtonsY,
+                    REGION_BUTTON_W,
+                    MODAL_DROPDOWN_H,
+                    regionSelected ? TYPE_ICON_SELECTED : (regionHovered ? DROPDOWN_HOVER : MODAL_DROPDOWN_BG));
+            NVGWrapper.drawRectOutline(
+                    nvg,
+                    regionX,
+                    regionButtonsY,
+                    REGION_BUTTON_W,
+                    MODAL_DROPDOWN_H,
+                    1,
+                    regionSelected ? SEARCH_BORDER : MODAL_DROPDOWN_BORDER);
+
+            nvgFontFace(nvg, fontName);
+            nvgFontSize(nvg, MODAL_LABEL_SIZE);
+            nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            var regionTextColor = NVGContext.nvgColor(TEXT_COLOR);
+            nvgFillColor(nvg, regionTextColor);
+            nvgText(nvg, regionX + REGION_BUTTON_W / 2f, regionButtonsY + MODAL_DROPDOWN_H / 2f, region.name());
+            regionTextColor.free();
+        }
 
         boolean grindSelected = isModalGrindSelected();
         if (grindSelected) {
-            float strictLabelY = rsBoxY + MODAL_DROPDOWN_H + 12;
+            float strictLabelY = regionButtonsY + MODAL_DROPDOWN_H + 18;
             float checkboxSize = 12;
             float checkboxX = modalX + MODAL_WIDTH / 2f - 72;
             float checkboxY = strictLabelY - checkboxSize / 2f;
@@ -1846,21 +1351,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             Color checkboxBg = modalStrictRoles ? TYPE_ICON_SELECTED : MODAL_DROPDOWN_BG;
             Color checkboxBorder = modalStrictRoles ? SEARCH_BORDER : MODAL_DROPDOWN_BORDER;
 
-            NVGWrapper.drawRect(
-                    nvg,
-                    checkboxX,
-                    checkboxY,
-                    checkboxSize,
-                    checkboxSize,
-                    checkboxBg);
-            NVGWrapper.drawRectOutline(
-                    nvg,
-                    checkboxX,
-                    checkboxY,
-                    checkboxSize,
-                    checkboxSize,
-                    1,
-                    checkboxBorder);
+            NVGWrapper.drawRect(nvg, checkboxX, checkboxY, checkboxSize, checkboxSize, checkboxBg);
+            NVGWrapper.drawRectOutline(nvg, checkboxX, checkboxY, checkboxSize, checkboxSize, 1, checkboxBorder);
 
             if (modalStrictRoles) {
                 float innerInset = 3f;
@@ -1878,25 +1370,15 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
             var strictLabelCol = NVGContext.nvgColor(PARTY_TYPE_TEXT);
             nvgFillColor(nvg, strictLabelCol);
-            nvgText(
-                    nvg,
-                    checkboxX + checkboxSize + 8,
-                    strictLabelY,
-                    "Strict roles");
+            nvgText(nvg, checkboxX + checkboxSize + 8, strictLabelY, "Strict roles");
             strictLabelCol.free();
         }
 
         // Create/Update button
         float createBtnX = modalX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
-        float createBtnY = modalY + MODAL_HEIGHT - MODAL_BUTTON_H - 14;
+        float createBtnY = modalY + PARTY_MODAL_HEIGHT - MODAL_BUTTON_H - 14;
         String createLabel = party().hasListedParty() ? "Update party" : "Create party";
-        boolean createHovered = isHovered(
-                nvgMouseX,
-                nvgMouseY,
-                createBtnX,
-                createBtnY,
-                MODAL_BUTTON_W,
-                MODAL_BUTTON_H);
+        boolean createHovered = isHovered(nvgMouseX, nvgMouseY, createBtnX, createBtnY, MODAL_BUTTON_W, MODAL_BUTTON_H);
         NVGWrapper.drawRect(
                 nvg,
                 createBtnX,
@@ -1909,11 +1391,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         var cbc = NVGContext.nvgColor(TEXT_COLOR);
         nvgFillColor(nvg, cbc);
-        nvgText(
-                nvg,
-                createBtnX + MODAL_BUTTON_W / 2f,
-                createBtnY + MODAL_BUTTON_H / 2f,
-                createLabel);
+        nvgText(nvg, createBtnX + MODAL_BUTTON_W / 2f, createBtnY + MODAL_BUTTON_H / 2f, createLabel);
         cbc.free();
 
         // Edit tags sub-overlay (on top of modal)
@@ -1922,47 +1400,22 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     nvg,
                     fontName,
                     panelX,
-                    panelX +
-                            (SeqClient.mc.getWindow().getWidth() / 2f - SIDEBAR_WIDTH),
+                    panelX + (SeqClient.mc.getWindow().getWidth() / 2f - SIDEBAR_WIDTH),
                     screenHeight);
         }
     }
 
     // ── Edit Tags Sub-Overlay (in modal) — same layout as Filter+ screen ──
 
-    private void renderEditTagsOverlay(
-            long nvg,
-            String fontName,
-            float panelX,
-            float panelWidth,
-            float screenHeight) {
+    private void renderEditTagsOverlay(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
         float overlayW = TAG_OVERLAY_WIDTH;
         float overlayH = TAG_OVERLAY_HEIGHT;
         float overlayX = modalX + (MODAL_WIDTH - overlayW) / 2f;
-        float overlayY = modalY + (MODAL_HEIGHT - overlayH) / 2f;
+        float overlayY = modalY + (PARTY_MODAL_HEIGHT - overlayH) / 2f;
 
-        NVGWrapper.drawRect(
-                nvg,
-                modalX,
-                modalY,
-                MODAL_WIDTH,
-                MODAL_HEIGHT,
-                MODAL_OVERLAY);
-        NVGWrapper.drawRect(
-                nvg,
-                overlayX,
-                overlayY,
-                overlayW,
-                overlayH,
-                MODAL_BG);
-        NVGWrapper.drawRectOutline(
-                nvg,
-                overlayX,
-                overlayY,
-                overlayW,
-                overlayH,
-                1,
-                MODAL_BORDER);
+        NVGWrapper.drawRect(nvg, modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, MODAL_OVERLAY);
+        NVGWrapper.drawRect(nvg, overlayX, overlayY, overlayW, overlayH, MODAL_BG);
+        NVGWrapper.drawRectOutline(nvg, overlayX, overlayY, overlayW, overlayH, 1, MODAL_BORDER);
 
         // Title
         nvgFontFace(nvg, fontName);
@@ -2025,20 +1478,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float backH = 20;
         float backX = overlayX + (overlayW - backW) / 2f;
         float backY = overlayY + overlayH - backH - 8;
-        boolean backHovered = isHovered(
-                nvgMouseX,
-                nvgMouseY,
-                backX,
-                backY,
-                backW,
-                backH);
-        NVGWrapper.drawRect(
-                nvg,
-                backX,
-                backY,
-                backW,
-                backH,
-                backHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
+        boolean backHovered = isHovered(nvgMouseX, nvgMouseY, backX, backY, backW, backH);
+        NVGWrapper.drawRect(nvg, backX, backY, backW, backH, backHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
 
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -2050,19 +1491,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     // ── Filter+ Screen ──
 
-    private void renderFilterScreen(
-            long nvg,
-            String fontName,
-            float panelX,
-            float panelWidth,
-            float screenHeight) {
-        NVGWrapper.drawRect(
-                nvg,
-                panelX,
-                0,
-                panelWidth,
-                screenHeight,
-                MODAL_OVERLAY);
+    private void renderFilterScreen(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
+        NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, MODAL_OVERLAY);
 
         float filterW = TAG_OVERLAY_WIDTH;
         float filterH = TAG_OVERLAY_HEIGHT;
@@ -2070,14 +1500,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float filterY = (screenHeight - filterH) / 2f;
 
         NVGWrapper.drawRect(nvg, filterX, filterY, filterW, filterH, MODAL_BG);
-        NVGWrapper.drawRectOutline(
-                nvg,
-                filterX,
-                filterY,
-                filterW,
-                filterH,
-                1,
-                MODAL_BORDER);
+        NVGWrapper.drawRectOutline(nvg, filterX, filterY, filterW, filterH, 1, MODAL_BORDER);
 
         // Title
         nvgFontFace(nvg, fontName);
@@ -2085,11 +1508,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         var tc = NVGContext.nvgColor(TEXT_COLOR);
         nvgFillColor(nvg, tc);
-        nvgText(
-                nvg,
-                filterX + filterW / 2f,
-                filterY + 18,
-                "Tag filter selection");
+        nvgText(nvg, filterX + filterW / 2f, filterY + 18, "Tag filter selection");
         tc.free();
 
         float boxPadding = 12;
@@ -2144,20 +1563,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float backH = 20;
         float backX = filterX + (filterW - backW) / 2f;
         float backY = filterY + filterH - backH - 8;
-        boolean backHovered = isHovered(
-                nvgMouseX,
-                nvgMouseY,
-                backX,
-                backY,
-                backW,
-                backH);
-        NVGWrapper.drawRect(
-                nvg,
-                backX,
-                backY,
-                backW,
-                backH,
-                backHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
+        boolean backHovered = isHovered(nvgMouseX, nvgMouseY, backX, backY, backW, backH);
+        NVGWrapper.drawRect(nvg, backX, backY, backW, backH, backHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
 
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -2190,12 +1597,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         // Sort: raid tags first, then non-raid tags
         List<String> sorted = new ArrayList<>(tags.size());
         for (String tag : tags) {
-            if (RAID_TYPE_SET.contains(tag))
-                sorted.add(tag);
+            if (RAID_TYPE_SET.contains(tag)) sorted.add(tag);
         }
         for (String tag : tags) {
-            if (!RAID_TYPE_SET.contains(tag))
-                sorted.add(tag);
+            if (!RAID_TYPE_SET.contains(tag)) sorted.add(tag);
         }
 
         nvgFontFace(nvg, fontName);
@@ -2223,9 +1628,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     float amplitude = 15f;
                     float freq = 12f;
                     float damping = 4f;
-                    angle = (float) (amplitude *
-                            Math.sin(freq * elapsed) *
-                            Math.exp(-damping * elapsed));
+                    angle = (float) (amplitude * Math.sin(freq * elapsed) * Math.exp(-damping * elapsed));
                 } else {
                     animStartTimes.remove(tag);
                 }
@@ -2241,28 +1644,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 nvgTranslate(nvg, -chipCenterX, -chipCenterY);
             }
 
-            boolean chipHovered = isHovered(
-                    nvgMouseX,
-                    nvgMouseY,
-                    curX,
-                    curY,
-                    chipW,
-                    chipH);
-            NVGWrapper.drawRoundedRect(
-                    nvg,
-                    curX,
-                    curY,
-                    chipW,
-                    chipH,
-                    4,
-                    chipHovered ? TAG_CHIP_HOVER : TAG_CHIP_BG);
+            boolean chipHovered = isHovered(nvgMouseX, nvgMouseY, curX, curY, chipW, chipH);
+            NVGWrapper.drawRoundedRect(nvg, curX, curY, chipW, chipH, 4, chipHovered ? TAG_CHIP_HOVER : TAG_CHIP_BG);
 
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, TAG_CHIP_FONT_SIZE);
             nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            Color chipTextColor = RAID_TYPE_SET.contains(tag)
-                    ? TITLE_COLOR
-                    : TEXT_COLOR;
+            Color chipTextColor = RAID_TYPE_SET.contains(tag) ? TITLE_COLOR : TEXT_COLOR;
             var cc = NVGContext.nvgColor(chipTextColor);
             nvgFillColor(nvg, cc);
             nvgText(nvg, chipCenterX, chipCenterY, label);
@@ -2288,8 +1676,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     // ── Helpers ──
 
     private AssetManager.Asset getClassIcon(String className) {
-        if (className == null || SeqClient.assetManager == null)
-            return null;
+        if (className == null || SeqClient.assetManager == null) return null;
         return SeqClient.assetManager.getAsset(className);
     }
 
@@ -2316,8 +1703,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     break;
                 }
             }
-            if (!matches && !tagMatch)
-                return false;
+            if (!matches && !tagMatch) return false;
         }
 
         // Tag filter: party must have at least one tag in activeFilterTags
@@ -2329,8 +1715,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     break;
                 }
             }
-            if (!hasActiveTag)
-                return false;
+            if (!hasActiveTag) return false;
         }
 
         return true;
@@ -2364,13 +1749,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
     }
 
-    private boolean isHovered(
-            float mx,
-            float my,
-            float bx,
-            float by,
-            float bw,
-            float bh) {
+    private boolean isHovered(float mx, float my, float bx, float by, float bw, float bh) {
         return mx >= bx && mx <= bx + bw && my >= by && my <= by + bh;
     }
 
@@ -2381,13 +1760,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     // ══════════════════════════════ INPUT ══════════════════════════════
 
     @Override
-    public boolean mouseClicked(
-            @NotNull MouseButtonEvent click,
-            boolean outsideScreen) {
-        if (click.button() != 0)
-            return super.mouseClicked(
-                    click,
-                    outsideScreen);
+    public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
+        if (click.button() != 0) return super.mouseClicked(click, outsideScreen);
 
         double guiScale = SeqClient.mc.getWindow().getGuiScale();
         float mx = (float) ((click.x() * guiScale) / 2.0);
@@ -2416,16 +1790,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float menuY = dropdownRenderY + SEARCH_BAR_HEIGHT;
             for (int i = 0; i < ROLES.length; i++) {
                 float itemY = menuY + i * itemH;
-                if (isHovered(
-                        mx,
-                        my,
-                        dropdownRenderX,
-                        itemY,
-                        dropdownRenderW,
-                        itemH)) {
-                    selectedRole = ROLES[i].equals(selectedRole)
-                            ? null
-                            : ROLES[i];
+                if (isHovered(mx, my, dropdownRenderX, itemY, dropdownRenderW, itemH)) {
+                    selectedRole = ROLES[i].equals(selectedRole) ? null : ROLES[i];
                     roleDropdownOpen = false;
                     if (selectedRole != null) {
                         party().setRole(selectedRole);
@@ -2441,8 +1807,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
         float btnStartY = 50;
 
-        if (isHovered(mx, my, btnX, btnStartY, btnW, SIDEBAR_BUTTON_HEIGHT))
-            return true;
+        if (isHovered(mx, my, btnX, btnStartY, btnW, SIDEBAR_BUTTON_HEIGHT)) return true;
         if (isHovered(
                 mx,
                 my,
@@ -2457,13 +1822,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 mx,
                 my,
                 btnX,
-                btnStartY +
-                        (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
+                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
                 btnW,
                 SIDEBAR_BUTTON_HEIGHT)) {
             try {
-                java.awt.Desktop.getDesktop().browse(
-                        java.net.URI.create(GITHUB_URL));
+                java.awt.Desktop.getDesktop().browse(java.net.URI.create(GITHUB_URL));
             } catch (Exception ignored) {
             }
             return true;
@@ -2507,8 +1870,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             }
             if (isHovered(mx, my, headerLayout.inviteAllButton())) {
                 showStatusBanner("Preparing party invites...");
-                party().inviteAllCurrentMembers().thenAccept(inviteAllResult -> SeqClient.mc.execute(() ->
-                        showStatusBanner(inviteAllResult.message())));
+                party().inviteAllCurrentMembers()
+                        .thenAccept(inviteAllResult ->
+                                SeqClient.mc.execute(() -> showStatusBanner(inviteAllResult.message())));
                 return true;
             }
         } else {
@@ -2528,13 +1892,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         // ── Filter button ──
         float filterX = panelX + panelWidth - FILTER_BUTTON_W - FILTER_BUTTON_MARGIN;
         float filterY = screenHeight - FILTER_BUTTON_H - FILTER_BUTTON_MARGIN;
-        if (isHovered(
-                mx,
-                my,
-                filterX,
-                filterY,
-                FILTER_BUTTON_W,
-                FILTER_BUTTON_H)) {
+        if (isHovered(mx, my, filterX, filterY, FILTER_BUTTON_W, FILTER_BUTTON_H)) {
             filterScreenOpen = true;
             return true;
         }
@@ -2558,24 +1916,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // ── Leader management icon clicks ──
         if (hoveredMemberPartyIndex >= 0 && hoveredMemberIndex >= 0) {
-            if (isHovered(
-                    mx,
-                    my,
-                    hoveredPromoteIconX,
-                    hoveredPromoteIconY,
-                    LEADER_ICON_SIZE,
-                    LEADER_ICON_SIZE)) {
+            if (isHovered(mx, my, hoveredPromoteIconX, hoveredPromoteIconY, LEADER_ICON_SIZE, LEADER_ICON_SIZE)) {
                 party().promoteMember(hoveredMemberPartyIndex, hoveredMemberIndex);
                 return true;
             }
 
-            if (isHovered(
-                    mx,
-                    my,
-                    hoveredKickIconX,
-                    hoveredKickIconY,
-                    LEADER_ICON_SIZE,
-                    LEADER_ICON_SIZE)) {
+            if (isHovered(mx, my, hoveredKickIconX, hoveredKickIconY, LEADER_ICON_SIZE, LEADER_ICON_SIZE)) {
                 party().kickMember(hoveredMemberPartyIndex, hoveredMemberIndex);
                 return true;
             }
@@ -2587,33 +1933,23 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         for (int i = 0; i < party().getParties().size(); i++) {
             PartyListing party = party().getParties().get(i);
-            if (!matchesFilters(party))
-                continue;
+            if (!matchesFilters(party)) continue;
 
             float cardX = panelX + PADDING;
             float cardW = contentWidth - PADDING * 2 - 6;
             float cardH;
 
             if (party.expanded) {
-                cardH = CARD_HEADER_HEIGHT +
-                        party.members.size() * MEMBER_ROW_HEIGHT +
-                        CARD_PADDING;
+                cardH = CARD_HEADER_HEIGHT + party.members.size() * MEMBER_ROW_HEIGHT + CARD_PADDING;
 
                 boolean isMyParty = i == party().getMyPartyIndex() && party().isPartyLeader();
 
                 float joinBtnX = cardX + cardW - CARD_PADDING - JOIN_BUTTON_WIDTH;
-                float joinBtnY = cursorY +
-                        CARD_HEADER_HEIGHT +
-                        (party.members.size() - 1) * MEMBER_ROW_HEIGHT +
-                        (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
-                if (!isMyParty &&
-                        isHovered(
-                                mx,
-                                my,
-                                joinBtnX,
-                                joinBtnY,
-                                JOIN_BUTTON_WIDTH,
-                                BUTTON_HEIGHT)) {
+                float joinBtnY = cursorY
+                        + CARD_HEADER_HEIGHT
+                        + (party.members.size() - 1) * MEMBER_ROW_HEIGHT
+                        + (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
+                if (!isMyParty && isHovered(mx, my, joinBtnX, joinBtnY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT)) {
                     if (party().getJoinedPartyIndex() == i) {
                         party().leaveParty();
                     } else if (party().getJoinedPartyIndex() < 0) {
@@ -2662,6 +1998,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         modalInactiveTags.clear();
         modalInactiveTags.add("Grind");
         modalStrictRoles = false;
+        modalSelectedRegion = PartyRegion.NA;
     }
 
     private Set<String> getCurrentListingRaidTags() {
@@ -2700,7 +2037,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             modalInactiveTags.add("Grind");
         }
 
-        modalStrictRoles = party().getCurrentListing() != null && party().getCurrentListing().strict();
+        modalStrictRoles = party().getCurrentListing() != null
+                && party().getCurrentListing().strict();
+        modalSelectedRegion = party().getCurrentListing() != null
+                        && party().getCurrentListing().region() != null
+                ? party().getCurrentListing().region()
+                : PartyRegion.NA;
     }
 
     private boolean isModalGrindSelected() {
@@ -2716,38 +2058,14 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         inviteUsernameInput = "";
     }
 
-    private void renderInviteModal(
-            long nvg,
-            String fontName,
-            float panelX,
-            float panelWidth,
-            float screenHeight) {
-        NVGWrapper.drawRect(
-                nvg,
-                panelX,
-                0,
-                panelWidth,
-                screenHeight,
-                MODAL_OVERLAY);
+    private void renderInviteModal(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
+        NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, MODAL_OVERLAY);
 
         float inviteModalX = panelX + (panelWidth - MODAL_WIDTH) / 2f;
         float inviteModalY = (screenHeight - MODAL_HEIGHT) / 2f;
 
-        NVGWrapper.drawRect(
-                nvg,
-                inviteModalX,
-                inviteModalY,
-                MODAL_WIDTH,
-                MODAL_HEIGHT,
-                MODAL_BG);
-        NVGWrapper.drawRectOutline(
-                nvg,
-                inviteModalX,
-                inviteModalY,
-                MODAL_WIDTH,
-                MODAL_HEIGHT,
-                1,
-                MODAL_BORDER);
+        NVGWrapper.drawRect(nvg, inviteModalX, inviteModalY, MODAL_WIDTH, MODAL_HEIGHT, MODAL_BG);
+        NVGWrapper.drawRectOutline(nvg, inviteModalX, inviteModalY, MODAL_WIDTH, MODAL_HEIGHT, 1, MODAL_BORDER);
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MODAL_TITLE_SIZE);
@@ -2771,27 +2089,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float inputY = labelY + 12;
 
         NVGWrapper.drawRect(
-                nvg,
-                inputX,
-                inputY,
-                inputW,
-                inputH,
-                inviteUsernameFocused ? SEARCH_ACTIVE_BG : MODAL_DROPDOWN_BG);
+                nvg, inputX, inputY, inputW, inputH, inviteUsernameFocused ? SEARCH_ACTIVE_BG : MODAL_DROPDOWN_BG);
         NVGWrapper.drawRectOutline(
-                nvg,
-                inputX,
-                inputY,
-                inputW,
-                inputH,
-                1,
-                inviteUsernameFocused ? SEARCH_BORDER : MODAL_DROPDOWN_BORDER);
+                nvg, inputX, inputY, inputW, inputH, 1, inviteUsernameFocused ? SEARCH_BORDER : MODAL_DROPDOWN_BORDER);
 
-        String inputText = inviteUsernameInput.isBlank() && !inviteUsernameFocused
-                ? "Enter username"
-                : inviteUsernameInput;
-        Color inputColor = inviteUsernameInput.isBlank() && !inviteUsernameFocused
-                ? PARTY_TYPE_TEXT
-                : TEXT_COLOR;
+        String inputText =
+                inviteUsernameInput.isBlank() && !inviteUsernameFocused ? "Enter username" : inviteUsernameInput;
+        Color inputColor = inviteUsernameInput.isBlank() && !inviteUsernameFocused ? PARTY_TYPE_TEXT : TEXT_COLOR;
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MODAL_LABEL_SIZE);
@@ -2803,13 +2107,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         float sendBtnX = inviteModalX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
         float sendBtnY = inviteModalY + MODAL_HEIGHT - MODAL_BUTTON_H - 14;
-        boolean sendHovered = isHovered(
-                nvgMouseX,
-                nvgMouseY,
-                sendBtnX,
-                sendBtnY,
-                MODAL_BUTTON_W,
-                MODAL_BUTTON_H);
+        boolean sendHovered = isHovered(nvgMouseX, nvgMouseY, sendBtnX, sendBtnY, MODAL_BUTTON_W, MODAL_BUTTON_H);
         NVGWrapper.drawRect(
                 nvg,
                 sendBtnX,
@@ -2822,11 +2120,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         var sendTextColor = NVGContext.nvgColor(TEXT_COLOR);
         nvgFillColor(nvg, sendTextColor);
-        nvgText(
-                nvg,
-                sendBtnX + MODAL_BUTTON_W / 2f,
-                sendBtnY + MODAL_BUTTON_H / 2f,
-                "Send");
+        nvgText(nvg, sendBtnX + MODAL_BUTTON_W / 2f, sendBtnY + MODAL_BUTTON_H / 2f, "Send");
         sendTextColor.free();
     }
 
@@ -2864,11 +2158,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         return count;
     }
 
-    private boolean handleInviteModalClick(
-            float mx,
-            float my,
-            float screenWidth,
-            float screenHeight) {
+    private boolean handleInviteModalClick(float mx, float my, float screenWidth, float screenHeight) {
         float panelX = SIDEBAR_WIDTH;
         float panelWidth = screenWidth - SIDEBAR_WIDTH;
         float mX = panelX + (panelWidth - MODAL_WIDTH) / 2f;
@@ -2915,15 +2205,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         inviteUsernameFocused = false;
     }
 
-    private boolean handleModalClick(
-            float mx,
-            float my,
-            float screenWidth,
-            float screenHeight) {
+    private boolean handleModalClick(float mx, float my, float screenWidth, float screenHeight) {
         float panelX = SIDEBAR_WIDTH;
         float panelWidth = screenWidth - SIDEBAR_WIDTH;
         float mX = panelX + (panelWidth - MODAL_WIDTH) / 2f;
-        float mY = (screenHeight - MODAL_HEIGHT) / 2f;
+        float mY = (screenHeight - PARTY_MODAL_HEIGHT) / 2f;
 
         // Edit tags sub-overlay (highest priority within modal)
         if (editTagsScreenOpen) {
@@ -2931,7 +2217,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         // Click outside modal closes it
-        if (!isHovered(mx, my, mX, mY, MODAL_WIDTH, MODAL_HEIGHT)) {
+        if (!isHovered(mx, my, mX, mY, MODAL_WIDTH, PARTY_MODAL_HEIGHT)) {
             modalOpen = false;
             editTagsScreenOpen = false;
             reservedSlotsFocused = false;
@@ -2939,21 +2225,14 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         // Raid type circles
-        float totalCirclesW = RAID_TYPES.length * RAID_CIRCLE_SIZE +
-                (RAID_TYPES.length - 1) * RAID_CIRCLE_SPACING;
+        float totalCirclesW = RAID_TYPES.length * RAID_CIRCLE_SIZE + (RAID_TYPES.length - 1) * RAID_CIRCLE_SPACING;
         float circleStartX = mX + (MODAL_WIDTH - totalCirclesW) / 2f;
         float circleY = mY + 38;
 
         for (int i = 0; i < RAID_TYPES.length; i++) {
             String rt = RAID_TYPES[i];
             float cx = circleStartX + i * (RAID_CIRCLE_SIZE + RAID_CIRCLE_SPACING);
-            if (isHovered(
-                    mx,
-                    my,
-                    cx,
-                    circleY,
-                    RAID_CIRCLE_SIZE,
-                    RAID_CIRCLE_SIZE)) {
+            if (isHovered(mx, my, cx, circleY, RAID_CIRCLE_SIZE, RAID_CIRCLE_SIZE)) {
                 if (modalSelectedRaids.contains(rt)) {
                     modalSelectedRaids.remove(rt);
                 } else {
@@ -2978,13 +2257,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float etBtnX = leftColX - MODAL_DROPDOWN_W / 2f;
         float etBtnY = rowY + 12;
 
-        if (isHovered(
-                mx,
-                my,
-                etBtnX,
-                etBtnY,
-                MODAL_DROPDOWN_W,
-                MODAL_DROPDOWN_H)) {
+        if (isHovered(mx, my, etBtnX, etBtnY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H)) {
             editTagsScreenOpen = true;
             return true;
         }
@@ -2997,9 +2270,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float rsBoxY = etBtnY;
         float arrowX = rsBoxX + rsFieldW;
         float halfArrowH = MODAL_DROPDOWN_H / 2f;
-        int maxSlots = modalSelectedRaids.contains("Prelude to Annihilation")
-                ? 9
-                : 3;
+        int maxSlots = modalSelectedRaids.contains("Prelude to Annihilation") ? 9 : 3;
 
         if (isHovered(mx, my, arrowX, rsBoxY, arrowW, halfArrowH)) {
             modalReservedSlots = Math.min(maxSlots, modalReservedSlots + 1);
@@ -3023,8 +2294,23 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             reservedSlotsFocused = false;
         }
 
+        float regionLabelY = rsBoxY + MODAL_DROPDOWN_H + 18;
+        float regionButtonsY = regionLabelY + 12;
+        float totalRegionButtonsW =
+                PARTY_REGIONS.length * REGION_BUTTON_W + (PARTY_REGIONS.length - 1) * REGION_BUTTON_SPACING;
+        float regionStartX = mX + (MODAL_WIDTH - totalRegionButtonsW) / 2f;
+        for (int i = 0; i < PARTY_REGIONS.length; i++) {
+            PartyRegion region = PARTY_REGIONS[i];
+            float regionX = regionStartX + i * (REGION_BUTTON_W + REGION_BUTTON_SPACING);
+            if (isHovered(mx, my, regionX, regionButtonsY, REGION_BUTTON_W, MODAL_DROPDOWN_H)) {
+                modalSelectedRegion = region;
+                reservedSlotsFocused = false;
+                return true;
+            }
+        }
+
         if (isModalGrindSelected()) {
-            float strictLabelY = rsBoxY + MODAL_DROPDOWN_H + 12;
+            float strictLabelY = regionButtonsY + MODAL_DROPDOWN_H + 18;
             float checkboxSize = 12;
             float checkboxX = mX + MODAL_WIDTH / 2f - 72;
             float checkboxY = strictLabelY - checkboxSize / 2f;
@@ -3038,14 +2324,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Create/Update button
         float createBtnX = mX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
-        float createBtnY = mY + MODAL_HEIGHT - MODAL_BUTTON_H - 14;
-        if (isHovered(
-                mx,
-                my,
-                createBtnX,
-                createBtnY,
-                MODAL_BUTTON_W,
-                MODAL_BUTTON_H)) {
+        float createBtnY = mY + PARTY_MODAL_HEIGHT - MODAL_BUTTON_H - 14;
+        if (isHovered(mx, my, createBtnX, createBtnY, MODAL_BUTTON_W, MODAL_BUTTON_H)) {
             boolean updatingParty = party().getMyPartyIndex() >= 0;
 
             Set<String> selectedRaids = new LinkedHashSet<>(modalSelectedRaids);
@@ -3072,9 +2352,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             boolean strictRoles = isModalGrindSelected() && modalStrictRoles;
 
             if (updatingParty) {
-                party().updateParty(tags, selectedRole, modalReservedSlots, strictRoles);
+                party().updateParty(tags, selectedRole, modalReservedSlots, strictRoles, modalSelectedRegion);
             } else {
-                party().createParty(tags, selectedRole, modalReservedSlots, strictRoles);
+                party().createParty(tags, selectedRole, modalReservedSlots, strictRoles, modalSelectedRegion);
             }
 
             modalOpen = false;
@@ -3087,15 +2367,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         return true;
     }
 
-    private boolean handleEditTagsClick(
-            float mx,
-            float my,
-            float modalX,
-            float modalY) {
+    private boolean handleEditTagsClick(float mx, float my, float modalX, float modalY) {
         float overlayW = TAG_OVERLAY_WIDTH;
         float overlayH = TAG_OVERLAY_HEIGHT;
         float overlayX = modalX + (MODAL_WIDTH - overlayW) / 2f;
-        float overlayY = modalY + (MODAL_HEIGHT - overlayH) / 2f;
+        float overlayY = modalY + (PARTY_MODAL_HEIGHT - overlayH) / 2f;
 
         // Back button
         float backW = 70;
@@ -3115,57 +2391,40 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Check tag chip clicks
         // Active tags area
-        String clickedActiveTag = findClickedTagChip(
-                mx,
-                my,
-                renderedModalActiveChipBounds);
+        String clickedActiveTag = findClickedTagChip(mx, my, renderedModalActiveChipBounds);
         if (clickedActiveTag != null) {
             modalActiveTags.remove(clickedActiveTag);
             modalInactiveTags.add(clickedActiveTag);
-            modalTagAnimStartTimes.put(
-                    clickedActiveTag,
-                    System.currentTimeMillis());
+            modalTagAnimStartTimes.put(clickedActiveTag, System.currentTimeMillis());
             return true;
         }
 
         // Inactive tags area
-        String clickedInactiveTag = findClickedTagChip(
-                mx,
-                my,
-                renderedModalInactiveChipBounds);
+        String clickedInactiveTag = findClickedTagChip(mx, my, renderedModalInactiveChipBounds);
         if (clickedInactiveTag != null) {
             modalInactiveTags.remove(clickedInactiveTag);
             modalActiveTags.add(clickedInactiveTag);
             // Enforce single party tag: activating one deactivates the others
             if (Arrays.asList(PARTY_TAGS).contains(clickedInactiveTag)) {
                 for (String pt : PARTY_TAGS) {
-                    if (!pt.equals(clickedInactiveTag) &&
-                            modalActiveTags.contains(pt)) {
+                    if (!pt.equals(clickedInactiveTag) && modalActiveTags.contains(pt)) {
                         modalActiveTags.remove(pt);
                         modalInactiveTags.add(pt);
-                        modalTagAnimStartTimes.put(
-                                pt,
-                                System.currentTimeMillis());
+                        modalTagAnimStartTimes.put(pt, System.currentTimeMillis());
                     }
                 }
             }
             if (!isModalGrindSelected()) {
                 modalStrictRoles = false;
             }
-            modalTagAnimStartTimes.put(
-                    clickedInactiveTag,
-                    System.currentTimeMillis());
+            modalTagAnimStartTimes.put(clickedInactiveTag, System.currentTimeMillis());
             return true;
         }
 
         return true;
     }
 
-    private boolean handleFilterScreenClick(
-            float mx,
-            float my,
-            float screenWidth,
-            float screenHeight) {
+    private boolean handleFilterScreenClick(float mx, float my, float screenWidth, float screenHeight) {
         float panelX = SIDEBAR_WIDTH;
         float panelWidth = screenWidth - SIDEBAR_WIDTH;
         float filterW = TAG_OVERLAY_WIDTH;
@@ -3190,40 +2449,27 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         // Active tags area
-        String clickedActive = findClickedTagChip(
-                mx,
-                my,
-                renderedFilterActiveChipBounds);
+        String clickedActive = findClickedTagChip(mx, my, renderedFilterActiveChipBounds);
         if (clickedActive != null) {
             activeFilterTags.remove(clickedActive);
             inactiveFilterTags.add(clickedActive);
-            filterTagAnimStartTimes.put(
-                    clickedActive,
-                    System.currentTimeMillis());
+            filterTagAnimStartTimes.put(clickedActive, System.currentTimeMillis());
             return true;
         }
 
         // Inactive tags area
-        String clickedInactive = findClickedTagChip(
-                mx,
-                my,
-                renderedFilterInactiveChipBounds);
+        String clickedInactive = findClickedTagChip(mx, my, renderedFilterInactiveChipBounds);
         if (clickedInactive != null) {
             inactiveFilterTags.remove(clickedInactive);
             activeFilterTags.add(clickedInactive);
-            filterTagAnimStartTimes.put(
-                    clickedInactive,
-                    System.currentTimeMillis());
+            filterTagAnimStartTimes.put(clickedInactive, System.currentTimeMillis());
             return true;
         }
 
         return true;
     }
 
-    private String findClickedTagChip(
-            float mx,
-            float my,
-            List<TagChipHitbox> renderedChipBounds) {
+    private String findClickedTagChip(float mx, float my, List<TagChipHitbox> renderedChipBounds) {
         for (TagChipHitbox chip : renderedChipBounds) {
             if (chip.contains(mx, my)) {
                 return chip.tag;
@@ -3254,10 +2500,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     }
 
     @Override
-    public boolean mouseDragged(
-            MouseButtonEvent click,
-            double deltaX,
-            double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (scrollbarDragging && maxScroll > 0) {
             double guiScale = SeqClient.mc.getWindow().getGuiScale();
             float my = (float) ((click.y() * guiScale) / 2.0);
@@ -3277,13 +2520,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     }
 
     @Override
-    public boolean mouseScrolled(
-            double mouseX,
-            double mouseY,
-            double scrollX,
-            double scrollY) {
-        if (modalOpen || inviteModalOpen || filterScreenOpen)
-            return true;
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (modalOpen || inviteModalOpen || filterScreenOpen) return true;
         scrollOffset -= (float) scrollY * SCROLL_SPEED;
         scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset));
         return true;
@@ -3311,9 +2549,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             }
             if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
                 if (!inviteUsernameInput.isEmpty()) {
-                    inviteUsernameInput = inviteUsernameInput.substring(
-                            0,
-                            inviteUsernameInput.length() - 1);
+                    inviteUsernameInput = inviteUsernameInput.substring(0, inviteUsernameInput.length() - 1);
                 }
                 return true;
             }
@@ -3323,17 +2559,14 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             if (keyCode >= GLFW.GLFW_KEY_A && keyCode <= GLFW.GLFW_KEY_Z) {
                 boolean shift = (keyEvent.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0;
                 char letter = (char) ('a' + (keyCode - GLFW.GLFW_KEY_A));
-                inviteUsernameInput += shift
-                        ? Character.toUpperCase(letter)
-                        : letter;
+                inviteUsernameInput += shift ? Character.toUpperCase(letter) : letter;
                 return true;
             }
             if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
                 inviteUsernameInput += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
                 return true;
             }
-            if (keyCode == GLFW.GLFW_KEY_MINUS &&
-                    (keyEvent.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
+            if (keyCode == GLFW.GLFW_KEY_MINUS && (keyEvent.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
                 inviteUsernameInput += '_';
                 return true;
             }
@@ -3354,40 +2587,32 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 return true;
             }
             if (reservedSlotsFocused) {
-                if (keyCode == GLFW.GLFW_KEY_ENTER ||
-                        keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                     commitReservedSlotsInput();
                     reservedSlotsFocused = false;
                     return true;
                 }
                 if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
                     if (!reservedSlotsInput.isEmpty()) {
-                        reservedSlotsInput = reservedSlotsInput.substring(
-                                0,
-                                reservedSlotsInput.length() - 1);
+                        reservedSlotsInput = reservedSlotsInput.substring(0, reservedSlotsInput.length() - 1);
                     }
                     return true;
                 }
                 if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
                     if (reservedSlotsInput.length() < 2) {
-                        reservedSlotsInput += (char) ('0' +
-                                (keyCode - GLFW.GLFW_KEY_0));
+                        reservedSlotsInput += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
                     }
                     return true;
                 }
-                if (keyCode >= GLFW.GLFW_KEY_KP_0 &&
-                        keyCode <= GLFW.GLFW_KEY_KP_9) {
+                if (keyCode >= GLFW.GLFW_KEY_KP_0 && keyCode <= GLFW.GLFW_KEY_KP_9) {
                     if (reservedSlotsInput.length() < 2) {
-                        reservedSlotsInput += (char) ('0' +
-                                (keyCode - GLFW.GLFW_KEY_KP_0));
+                        reservedSlotsInput += (char) ('0' + (keyCode - GLFW.GLFW_KEY_KP_0));
                     }
                     return true;
                 }
                 if (keyCode == GLFW.GLFW_KEY_UP) {
                     int maxSlots = modalSelectedRaids.contains("Prelude to Annihilation") ? 9 : 3;
-                    modalReservedSlots = Math.min(
-                            maxSlots,
-                            modalReservedSlots + 1);
+                    modalReservedSlots = Math.min(maxSlots, modalReservedSlots + 1);
                     reservedSlotsInput = String.valueOf(modalReservedSlots);
                     return true;
                 }
@@ -3407,9 +2632,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             }
             if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
                 if (!searchQuery.isEmpty()) {
-                    searchQuery = searchQuery.substring(
-                            0,
-                            searchQuery.length() - 1);
+                    searchQuery = searchQuery.substring(0, searchQuery.length() - 1);
                     scrollOffset = 0;
                 }
                 return true;
