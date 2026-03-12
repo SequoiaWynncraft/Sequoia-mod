@@ -7,34 +7,36 @@ import java.util.stream.Stream;
 
 /**
  * Helper process for Windows update installs.
- * Args: modsDir pendingJar finalJar helperJar
+ * Args: modsDir currentJar pendingJar finalJar helperJar
  */
 public final class UpdateApplier {
     private UpdateApplier() {
     }
 
     public static void main(String[] args) {
-        if (args.length < 4) {
+        if (args.length < 5) {
             return;
         }
 
         Path modsDir = Path.of(args[0]);
-        Path pendingJar = Path.of(args[1]);
-        Path finalJar = Path.of(args[2]);
-        Path helperJar = Path.of(args[3]);
+        Path currentJar = Path.of(args[1]);
+        Path pendingJar = Path.of(args[2]);
+        Path finalJar = Path.of(args[3]);
+        Path helperJar = Path.of(args[4]);
 
-        boolean installed = applyWithRetries(modsDir, pendingJar, finalJar);
+        boolean installed = applyWithRetries(modsDir, currentJar, pendingJar, finalJar);
         if (installed) {
             deleteQuietly(pendingJar);
         }
         deleteQuietly(helperJar);
     }
 
-    private static boolean applyWithRetries(Path modsDir, Path pendingJar, Path finalJar) {
+    private static boolean applyWithRetries(Path modsDir, Path currentJar, Path pendingJar, Path finalJar) {
         for (int attempt = 0; attempt < 40; attempt++) {
             try {
-                deleteExistingSequoiaJars(modsDir);
+                deleteReplacedJar(currentJar, finalJar);
                 Files.move(pendingJar, finalJar, StandardCopyOption.REPLACE_EXISTING);
+                deleteStaleSequoiaJars(modsDir, finalJar);
                 return true;
             } catch (Exception ignored) {
                 sleep(1500);
@@ -43,10 +45,18 @@ public final class UpdateApplier {
         return false;
     }
 
-    private static void deleteExistingSequoiaJars(Path modsDir) {
+    private static void deleteReplacedJar(Path currentJar, Path finalJar) throws Exception {
+        if (currentJar.equals(finalJar)) {
+            return;
+        }
+        Files.deleteIfExists(currentJar);
+    }
+
+    private static void deleteStaleSequoiaJars(Path modsDir, Path finalJar) {
         try (Stream<Path> stream = Files.list(modsDir)) {
             stream.filter(path -> path.getFileName().toString().startsWith("sequoia-"))
                     .filter(path -> path.getFileName().toString().endsWith(".jar"))
+                    .filter(path -> !path.equals(finalJar))
                     .forEach(UpdateApplier::deleteQuietly);
         } catch (Exception ignored) {
         }
