@@ -27,3 +27,29 @@ jobs:
 
       - name: Build
         run: ./gradlew clean build remapJar --stacktrace
+
+  windows-updater-tests:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Run updater tests on Windows
+        run: .\gradlew.bat test --tests org.sequoia.seq.update.UpdateManagerTest --tests org.sequoia.seq.update.UpdateApplierTest --stacktrace
+
+      - name: Upload Windows updater test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-updater-test-reports
+          path: |
+            build/reports/tests/test
+            build/test-results/test

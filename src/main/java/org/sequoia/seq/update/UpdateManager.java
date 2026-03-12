@@ -365,10 +365,14 @@ public class UpdateManager implements NotificationAccessor {
         if (!shutdownHookRegistered.compareAndSet(false, true)) {
             return;
         }
-        Runtime.getRuntime().addShutdownHook(new Thread(this::applyPendingInstallOnShutdown, "seq-update-shutdown"));
+        addShutdownHook(new Thread(this::applyPendingInstallOnShutdown, "seq-update-shutdown"));
     }
 
-    private void applyPendingInstallOnShutdown() {
+    void addShutdownHook(Thread thread) {
+        Runtime.getRuntime().addShutdownHook(thread);
+    }
+
+    void applyPendingInstallOnShutdown() {
         PendingInstall install = pendingInstall;
         if (install == null || !Files.exists(install.pendingJar())) {
             return;
@@ -399,18 +403,13 @@ public class UpdateManager implements NotificationAccessor {
             Path helperJar = updatesDir.resolve("seq-update-helper.jar");
             Files.copy(sourceJar, helperJar, StandardCopyOption.REPLACE_EXISTING);
 
-            String javaExe = resolveJavaExecutable();
-            new ProcessBuilder(
-                            javaExe,
-                            "-cp",
-                            helperJar.toString(),
-                            UpdateApplier.class.getName(),
-                            install.modsDir().toString(),
-                        install.currentJar().toString(),
-                            install.pendingJar().toString(),
-                            install.finalJar().toString(),
-                            helperJar.toString())
-                    .start();
+            launchUpdateHelperProcess(
+                    resolveJavaExecutable(),
+                    helperJar,
+                    install.modsDir(),
+                    install.currentJar(),
+                    install.pendingJar(),
+                    install.finalJar());
 
             SeqClient.LOGGER.info("Launched Windows update helper for {}", install.tagName());
         } catch (Exception e) {
@@ -418,7 +417,23 @@ public class UpdateManager implements NotificationAccessor {
         }
     }
 
-    private Path resolveCurrentModJarPath() {
+    void launchUpdateHelperProcess(
+            String javaExe, Path helperJar, Path modsDir, Path currentJar, Path pendingJar, Path finalJar)
+            throws IOException {
+        new ProcessBuilder(
+                        javaExe,
+                        "-cp",
+                        helperJar.toString(),
+                        UpdateApplier.class.getName(),
+                        modsDir.toString(),
+                        currentJar.toString(),
+                        pendingJar.toString(),
+                        finalJar.toString(),
+                        helperJar.toString())
+                .start();
+    }
+
+    Path resolveCurrentModJarPath() {
         try {
             URI location = UpdateManager.class
                     .getProtectionDomain()
@@ -436,7 +451,7 @@ public class UpdateManager implements NotificationAccessor {
         }
     }
 
-    private String resolveJavaExecutable() {
+    String resolveJavaExecutable() {
         String javaHome = System.getProperty("java.home");
         if (javaHome != null && !javaHome.isBlank()) {
             Path javaExe = Path.of(javaHome, "bin", "java.exe");
@@ -550,7 +565,7 @@ public class UpdateManager implements NotificationAccessor {
         }
     }
 
-    private String resolveInstalledVersion() {
+    String resolveInstalledVersion() {
         return FabricLoader.getInstance()
                 .getModContainer(MOD_ID)
                 .map(container -> container.getMetadata().getVersion().getFriendlyString())
@@ -657,5 +672,5 @@ public class UpdateManager implements NotificationAccessor {
         }
     }
 
-    private record PendingInstall(Path pendingJar, Path finalJar, Path modsDir, String tagName, Path currentJar) {}
+    record PendingInstall(Path pendingJar, Path finalJar, Path modsDir, String tagName, Path currentJar) {}
 }
