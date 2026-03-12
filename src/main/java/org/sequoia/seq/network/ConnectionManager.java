@@ -65,6 +65,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private volatile int authAttempt;
     private volatile long nextPrivilegedSendAtMs;
     private volatile boolean connectInProgress;
+    private volatile boolean userInitiatedConnectFlow;
 
     // Reconnect state
     private static boolean autoReconnect = true;
@@ -98,15 +99,24 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     @Override
     public void connect() {
-        connectInternal(AuthFlow.CONNECT);
+        connectInternal(AuthFlow.CONNECT, false);
+    }
+
+    public void connectManually() {
+        connectInternal(AuthFlow.CONNECT, true);
     }
 
     public void link() {
-        connectInternal(AuthFlow.LINK);
+        connectInternal(AuthFlow.LINK, false);
     }
 
-    private void connectInternal(AuthFlow authFlow) {
+    public void linkManually() {
+        connectInternal(AuthFlow.LINK, true);
+    }
+
+    private void connectInternal(AuthFlow authFlow, boolean userInitiated) {
         pendingAuthFlow = authFlow;
+        userInitiatedConnectFlow = userInitiated;
         autoReconnect = true;
         SeqClient.LOGGER.info(
                 "[WebSocket] connectInternal() called flow={} open={} authenticated={} autoReconnect={} configuredUrl={} clientUri={}",
@@ -118,37 +128,49 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 getURI());
         if (isOpen()) {
             if (authFlow == AuthFlow.LINK) {
-                notify("Refreshing backend authentication...");
+                notifyConnectionStatus("Refreshing backend authentication...");
                 refreshAuthentication();
             } else {
-                notify("Already connected/connecting.");
+                notifyConnectionStatus("Already connected/connecting.");
+                finishConnectFlow();
             }
             return;
         }
         if (connectInProgress) {
-            notify("Already connected/connecting.");
+            notifyConnectionStatus("Already connected/connecting.");
             return;
         }
 
         if (authFlow == AuthFlow.LINK) {
-            notify("Authenticating your Minecraft account on " + BuildConfig.ENVIRONMENT + "...");
+            notifyConnectionStatus("Authenticating your Minecraft account on " + BuildConfig.ENVIRONMENT + "...");
         } else {
-            notify("Connecting to " + BuildConfig.ENVIRONMENT + "...");
+            notifyConnectionStatus("Connecting to " + BuildConfig.ENVIRONMENT + "...");
         }
         prepareAuthenticatedConnection(authFlow == AuthFlow.LINK);
     }
 
     public void disconnect() {
+        disconnectInternal(false);
+    }
+
+    public void disconnectManually() {
+        disconnectInternal(true);
+    }
+
+    private void disconnectInternal(boolean userInitiated) {
         SeqClient.LOGGER.info(
                 "[WebSocket] disconnect() called open={} authenticated={} autoReconnect={}",
                 isOpen(),
                 authenticated,
                 autoReconnect);
+        finishConnectFlow();
         autoReconnect = false;
         cancelReconnect();
         connectInProgress = false;
         if (!isOpen()) {
-            notify("Not connected");
+            if (userInitiated) {
+                notify("Not connected");
+            }
             return;
         }
         close();
@@ -156,7 +178,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         authFailed = false;
         notInGuild = false;
         connectedSince = null;
-        notify("Disconnected");
+        if (userInitiated) {
+            notify("Disconnected");
+        }
     }
 
     // ── WebSocket lifecycle ──
@@ -181,17 +205,17 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
         String username = SeqClient.getConfigManager().getMinecraftUsername();
         if (pendingAuthFlow == AuthFlow.LINK) {
-            notify(
+            notifyConnectionStatus(
                     username != null && !username.isBlank()
                             ? "Authenticated Minecraft account: " + username
                             : "Authenticated Minecraft account.");
         } else {
-            notify(
+            notifyConnectionStatus(
                     username != null && !username.isBlank()
                             ? "Connected as " + username
                             : "Connected to " + BuildConfig.ENVIRONMENT + ".");
         }
-        pendingAuthFlow = AuthFlow.CONNECT;
+        finishConnectFlow();
         sendLocalPartyClassUpdate();
     }
 
@@ -228,6 +252,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     code,
                     remote,
                     reason);
+            finishConnectFlow();
         }
     }
 
@@ -240,7 +265,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 ex != null ? ex.getMessage() : "null",
                 ex);
         connectInProgress = false;
-        notify("Connection error: " + (ex != null ? ex.getMessage() : "unknown"));
+        notifyConnectionFailure("Connection error: " + (ex != null ? ex.getMessage() : "unknown"), false);
+        finishConnectFlow();
     }
 
     // ── Auto-reconnect ──
@@ -280,6 +306,23 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
     }
 
+    private void notifyConnectionStatus(String message) {
+        if (userInitiatedConnectFlow) {
+            notify(message);
+        }
+    }
+
+    private void notifyConnectionFailure(String message, boolean requiresManualIntervention) {
+        if (requiresManualIntervention || userInitiatedConnectFlow) {
+            notify(message);
+        }
+    }
+
+    private void finishConnectFlow() {
+        userInitiatedConnectFlow = false;
+        pendingAuthFlow = AuthFlow.CONNECT;
+    }
+
     private static boolean shouldReconnectAfterClose(int code, boolean remote) {
         if (remote) {
             return true;
@@ -294,8 +337,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             var player = Minecraft.getInstance().player;
             if (player != null) {
                 player.displayClientMessage(
-                        NotificationAccessor.prefixed(
-                                "Could not reconnect automatically. Run /seq connect manually (or /seq link if needed)."),
+                    java.util.Objects.requireNonNull(NotificationAccessor.prefixed(
+                        "Could not reconnect automatically. Run /seq connect manually (or /seq link if needed).")),
                         false);
             }
         });
@@ -332,7 +375,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                 authException.getStableCode(),
                                 authException.getMessage(),
                                 authException);
-                        notify(authException.getMessage());
+                        notifyConnectionFailure(authException.getMessage(), !authException.isRetryable());
+                        finishConnectFlow();
                         if (authException.isRetryable() && autoReconnect) {
                             scheduleReconnect();
                         }
@@ -345,8 +389,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     } catch (Exception exception) {
                         connectInProgress = false;
                         SeqClient.LOGGER.error("Failed to connect", exception);
-                        notify("Failed to connect: " + exception.getMessage());
+                        notifyConnectionFailure("Failed to connect: " + exception.getMessage(), false);
                         instance = null;
+                        finishConnectFlow();
                         scheduleReconnect();
                     }
                 }));
@@ -362,15 +407,17 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                 authException.getStableCode(),
                                 authException.getMessage(),
                                 authException);
-                        notify(authException.getMessage());
+                        notifyConnectionFailure(authException.getMessage(), !authException.isRetryable());
+                        finishConnectFlow();
                         return;
                     }
 
-                    notify(
+                        notifyConnectionStatus(
                             session.minecraftUsername() != null
                                             && !session.minecraftUsername().isBlank()
                                     ? "Refreshed backend token for " + session.minecraftUsername()
                                     : "Refreshed backend token.");
+                        finishConnectFlow();
                 }));
     }
 
@@ -428,7 +475,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         normalizedReason.contains("expired")
                                 ? "Backend token expired. Re-authenticating."
                                 : "Backend rejected websocket authentication. Re-authenticating.");
-        notify(SeqClient.getAuthService().getLastError().getMessage());
+        notifyConnectionFailure(SeqClient.getAuthService().getLastError().getMessage(), false);
         registerAuthFailure();
     }
 
@@ -579,7 +626,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     if (json.has("discord_username")
                             && json.get("discord_username").isJsonPrimitive()) {
                         String discordUser = json.get("discord_username").getAsString();
-                        notify("Connected as " + discordUser);
+                        notifyConnectionStatus("Connected as " + discordUser);
                     }
                     sendLocalPartyClassUpdate();
                 }
@@ -771,7 +818,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
         long waitMs = nextAllowedAuthAttemptAtMs - now;
         SeqClient.LOGGER.warn("[WebSocket] Auth attempt throttled waitMs={}", waitMs);
-        notify("Auth throttled. Retrying in " + Math.max(1, waitMs / 1000) + "s.");
+        notifyConnectionFailure("Auth throttled. Retrying in " + Math.max(1, waitMs / 1000) + "s.", false);
         return false;
     }
 

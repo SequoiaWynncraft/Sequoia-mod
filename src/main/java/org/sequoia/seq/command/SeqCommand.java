@@ -25,7 +25,6 @@ import org.sequoia.seq.model.Activity;
 import org.sequoia.seq.model.Listing;
 import org.sequoia.seq.model.PartyRole;
 import org.sequoia.seq.network.ConnectionManager;
-import org.sequoia.seq.network.auth.AuthState;
 import org.sequoia.seq.ui.PartyFinderScreen;
 import org.sequoia.seq.utils.PlayerNameCache;
 
@@ -47,17 +46,17 @@ public class SeqCommand {
                                 })
                                 .then(ClientCommandManager.literal("connect")
                                                 .executes(ctx -> {
-                                                        ConnectionManager.getInstance().connect();
+                                                        ConnectionManager.getInstance().connectManually();
                                                         return 1;
                                                 }))
                                 .then(ClientCommandManager.literal("link")
                                                 .executes(ctx -> {
-                                                        ConnectionManager.getInstance().link();
+                                                        ConnectionManager.getInstance().linkManually();
                                                         return 1;
                                                 }))
                                 .then(ClientCommandManager.literal("disconnect")
                                                 .executes(ctx -> {
-                                                        ConnectionManager.getInstance().disconnect();
+                                                        ConnectionManager.getInstance().disconnectManually();
                                                         return 1;
                                                 }))
                                 .then(ClientCommandManager.literal("connected")
