@@ -43,6 +43,47 @@ Wynntils is optional but is necessary for many features.
 - `/seq p create <activities>`: create a party listing
 - `/seq p join <listingId> [role]`: join a listing
 
+<details>
+
+  
+<summary>Full command list</summary>
+
+## 
+
+  - /seq
+  - /seq connect
+  - /seq link
+  - /seq disconnect
+  - /seq connected
+  - /seq status
+  - /seq logout
+  - /seq party
+  - /seq p
+  - /seq party list
+  - /seq party status
+  - /seq party create <activities>
+  - /seq party update <activities>
+  - /seq party join <listingId>
+  - /seq party join <listingId> token <inviteToken>
+  - /seq party join <listingId> <role>
+  - /seq party join <listingId> <role> token <inviteToken>
+  - /seq party deny <listingId>
+  - /seq party leave
+  - /seq party invite <username>
+  - /seq party reserve <count>
+  - /seq party open
+  - /seq party close
+  - /seq party disband
+  - /seq party role <role>
+  - /seq party kick <username>
+  - /seq party promote <username>
+  - /seq party game create
+  - /seq party game invite <username>
+  - /seq party game invite-all
+
+</details>
+  
+
 ## Settings
 
 The settings screen has toggles for:
@@ -59,6 +100,9 @@ The settings screen has toggles for:
 3. Install Fabric API.
 4. Install [Wynntils](https://wynntils.com) for improved class detection.
 5. Start the game and press `O`, or run `/seq`.
+
+
+
 
 ## License
 
