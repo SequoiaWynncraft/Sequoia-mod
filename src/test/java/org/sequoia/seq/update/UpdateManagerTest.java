@@ -758,9 +758,13 @@ class UpdateManagerTest {
             Path helperJar = gameDir.resolve("updates").resolve("seq-update-helper.jar");
 
             awaitCondition(
-                    () -> Files.exists(finalJar) && !Files.exists(pendingJar) && !Files.exists(helperJar),
+                    () -> Files.exists(finalJar) && !Files.exists(pendingJar),
                     20,
-                    "Timed out waiting for the Windows helper process to finish.");
+                    "Timed out waiting for the Windows helper process to install the update.");
+            awaitCondition(
+                    () -> !Files.exists(helperJar),
+                    10,
+                    "Timed out waiting for the Windows helper process to clean up its helper jar.");
 
             assertEquals(1, manager.helperLaunches.size());
             assertArrayEquals(jarBytes, Files.readAllBytes(finalJar));

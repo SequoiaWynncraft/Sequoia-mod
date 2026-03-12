@@ -3,6 +3,7 @@ package org.sequoia.seq.update;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Locale;
 import java.util.stream.Stream;
 
 /**
@@ -42,7 +43,7 @@ public final class UpdateApplier {
         if (installed) {
             deleteQuietly(pendingJar);
         }
-        deleteQuietly(helperJar);
+        cleanupHelperJar(helperJar);
     }
 
     static boolean applyWithRetries(
@@ -80,6 +81,28 @@ public final class UpdateApplier {
     private static void deleteQuietly(Path path) {
         try {
             Files.deleteIfExists(path);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void cleanupHelperJar(Path helperJar) {
+        deleteQuietly(helperJar);
+        if (Files.exists(helperJar) && isWindows()) {
+            scheduleWindowsDelete(helperJar);
+        }
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+    }
+
+    private static void scheduleWindowsDelete(Path path) {
+        try {
+            new ProcessBuilder(
+                            "cmd.exe",
+                            "/c",
+                            "ping 127.0.0.1 -n 3 > nul && del /f /q \"" + path + "\"")
+                    .start();
         } catch (Exception ignored) {
         }
     }
