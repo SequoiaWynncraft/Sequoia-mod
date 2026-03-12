@@ -39,8 +39,8 @@ public class UpdateManager implements NotificationAccessor {
     private static final String MOD_ID = "seq";
     private static final String REPO_OWNER = "SequoiaWynncraft";
     private static final String REPO_NAME = "Sequoia-mod";
-    private static final URI DEFAULT_RELEASES_LATEST_API = URI.create(
-        "https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME + "/releases/latest");
+    private static final URI DEFAULT_RELEASES_LATEST_API =
+            URI.create("https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME + "/releases/latest");
     private static final Pattern STRICT_TAG_PATTERN = Pattern.compile("^v(\\d+)\\.(\\d+)\\.(\\d+)$");
 
     private static UpdateManager instance;
@@ -212,7 +212,8 @@ public class UpdateManager implements NotificationAccessor {
                 .GET()
                 .build();
 
-        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+        return httpClient
+                .sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenApply(response -> {
                     if (response.statusCode() >= 400) {
                         throw new IllegalStateException("GitHub API returned " + response.statusCode());
@@ -339,7 +340,8 @@ public class UpdateManager implements NotificationAccessor {
 
     void showUpdatePrompt(String installedVersion, ReleaseCandidate candidate) {
         Minecraft minecraft = Minecraft.getInstance();
-        minecraft.execute(() -> minecraft.setScreen(new UpdatePromptScreen(minecraft.screen, installedVersion, candidate)));
+        minecraft.execute(
+                () -> minecraft.setScreen(new UpdatePromptScreen(minecraft.screen, installedVersion, candidate)));
     }
 
     void requestMinecraftStop() {
@@ -398,14 +400,14 @@ public class UpdateManager implements NotificationAccessor {
 
             String javaExe = resolveJavaExecutable();
             new ProcessBuilder(
-                    javaExe,
-                    "-cp",
-                    helperJar.toString(),
-                    UpdateApplier.class.getName(),
-                    install.modsDir().toString(),
-                    install.pendingJar().toString(),
-                    install.finalJar().toString(),
-                    helperJar.toString())
+                            javaExe,
+                            "-cp",
+                            helperJar.toString(),
+                            UpdateApplier.class.getName(),
+                            install.modsDir().toString(),
+                            install.pendingJar().toString(),
+                            install.finalJar().toString(),
+                            helperJar.toString())
                     .start();
 
             SeqClient.LOGGER.info("Launched Windows update helper for {}", install.tagName());
@@ -454,17 +456,18 @@ public class UpdateManager implements NotificationAccessor {
 
     private void downloadToFile(String url, Path targetFile) throws IOException, InterruptedException {
         HttpRequest request = buildDownloadRequest(URI.create(url), Duration.ofSeconds(60), null);
-        HttpResponse<InputStream> response = sendFollowingRedirects(request, HttpResponse.BodyHandlers.ofInputStream(), MAX_REDIRECTS);
+        HttpResponse<InputStream> response =
+                sendFollowingRedirects(request, HttpResponse.BodyHandlers.ofInputStream(), MAX_REDIRECTS);
         try (InputStream input = response.body()) {
             Files.copy(input, targetFile, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
     private String downloadToString(String url) throws IOException, InterruptedException {
-        HttpRequest request = buildDownloadRequest(URI.create(url), Duration.ofSeconds(30), StandardCharsets.UTF_8.name());
-        HttpResponse<String> response = sendFollowingRedirects(request,
-                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8),
-                MAX_REDIRECTS);
+        HttpRequest request =
+                buildDownloadRequest(URI.create(url), Duration.ofSeconds(30), StandardCharsets.UTF_8.name());
+        HttpResponse<String> response = sendFollowingRedirects(
+                request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8), MAX_REDIRECTS);
         return response.body();
     }
 
@@ -481,9 +484,8 @@ public class UpdateManager implements NotificationAccessor {
     }
 
     private <T> HttpResponse<T> sendFollowingRedirects(
-            HttpRequest request,
-            HttpResponse.BodyHandler<T> bodyHandler,
-            int redirectsRemaining) throws IOException, InterruptedException {
+            HttpRequest request, HttpResponse.BodyHandler<T> bodyHandler, int redirectsRemaining)
+            throws IOException, InterruptedException {
         HttpResponse<T> response = httpClient.send(request, bodyHandler);
         int status = response.statusCode();
         if (status >= 300 && status < 400) {
@@ -611,9 +613,7 @@ public class UpdateManager implements NotificationAccessor {
             return null;
         }
 
-        String normalized = trimmed.regionMatches(true, 0, "sha256:", 0, 7)
-                ? trimmed.substring(7)
-                : trimmed;
+        String normalized = trimmed.regionMatches(true, 0, "sha256:", 0, 7) ? trimmed.substring(7) : trimmed;
 
         if (normalized.length() != 64 || !normalized.chars().allMatch(UpdateManager::isHexCharacter)) {
             return null;
@@ -623,9 +623,7 @@ public class UpdateManager implements NotificationAccessor {
     }
 
     private static boolean isHexCharacter(int value) {
-        return (value >= '0' && value <= '9')
-                || (value >= 'a' && value <= 'f')
-                || (value >= 'A' && value <= 'F');
+        return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f') || (value >= 'A' && value <= 'F');
     }
 
     static String getString(JsonObject object, String key) {
@@ -648,9 +646,8 @@ public class UpdateManager implements NotificationAccessor {
         return message == null || message.isBlank() ? cursor.getClass().getSimpleName() : message;
     }
 
-    public record ReleaseCandidate(String tagName, String releasePageUrl, ReleaseAsset jarAsset,
-            ReleaseAsset checksumAsset) {
-    }
+    public record ReleaseCandidate(
+            String tagName, String releasePageUrl, ReleaseAsset jarAsset, ReleaseAsset checksumAsset) {}
 
     public record ReleaseAsset(String name, String downloadUrl, String sha256) {
         public ReleaseAsset(String name, String downloadUrl) {
@@ -658,6 +655,5 @@ public class UpdateManager implements NotificationAccessor {
         }
     }
 
-    private record PendingInstall(Path pendingJar, Path finalJar, Path modsDir, String tagName) {
-    }
+    private record PendingInstall(Path pendingJar, Path finalJar, Path modsDir, String tagName) {}
 }

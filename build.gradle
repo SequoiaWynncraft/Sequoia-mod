@@ -7,8 +7,14 @@ plugins {
 version = project.mod_version
 group = project.maven_group
 
+def sanitizedArchiveVersion = project.version.toString().replaceFirst(/^v/, "")
+
 base {
     archivesName = project.archives_base_name
+}
+
+tasks.withType(AbstractArchiveTask).configureEach {
+    archiveVersion.set(project.provider { sanitizedArchiveVersion })
 }
 
 loom {

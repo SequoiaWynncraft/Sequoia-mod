@@ -56,9 +56,7 @@ class UpdateManagerTest {
     @Test
     void fetchLatestReleaseParsesJarAndChecksumAssets(@TempDir Path gameDir) throws Exception {
         try (TestHttpServer server = new TestHttpServer()) {
-            server.respondJson(
-                    "/releases/latest",
-                    """
+            server.respondJson("/releases/latest", """
                             {
                               "tag_name": "v0.1.1",
                               "html_url": "https://example.invalid/releases/v0.1.1",
@@ -74,8 +72,9 @@ class UpdateManagerTest {
                                 }
                               ]
                             }
-                            """.formatted(server.uri("/downloads/sequoia-0.1.1.jar"),
-                                                        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                            """.formatted(
+                            server.uri("/downloads/sequoia-0.1.1.jar"),
+                            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                             server.uri("/downloads/sequoia-0.1.1.jar.sha256")));
 
             ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -87,13 +86,17 @@ class UpdateManagerTest {
                         gameDir,
                         false);
 
-                UpdateManager.ReleaseCandidate release = manager.fetchLatestRelease().join();
+                UpdateManager.ReleaseCandidate release =
+                        manager.fetchLatestRelease().join();
 
                 assertNotNull(release);
                 assertEquals("v0.1.1", release.tagName());
                 assertEquals("sequoia-0.1.1.jar", release.jarAsset().name());
-                assertEquals(server.uri("/downloads/sequoia-0.1.1.jar").toString(), release.jarAsset().downloadUrl());
-                assertEquals("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                assertEquals(
+                        server.uri("/downloads/sequoia-0.1.1.jar").toString(),
+                        release.jarAsset().downloadUrl());
+                assertEquals(
+                        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                         release.jarAsset().sha256());
                 assertEquals("sequoia-0.1.1.jar.sha256", release.checksumAsset().name());
             } finally {
@@ -132,7 +135,8 @@ class UpdateManagerTest {
                                 server.uri("/downloads/sequoia-0.1.1.jar").toString()),
                         new UpdateManager.ReleaseAsset(
                                 "sequoia-0.1.1.jar.sha256",
-                                server.uri("/downloads/sequoia-0.1.1.jar.sha256").toString()));
+                                server.uri("/downloads/sequoia-0.1.1.jar.sha256")
+                                        .toString()));
 
                 manager.applyRelease(release, false);
 
@@ -176,9 +180,11 @@ class UpdateManagerTest {
                                 server.uri("/downloads/sequoia-0.1.1.jar").toString()),
                         new UpdateManager.ReleaseAsset(
                                 "sequoia-0.1.1.jar.sha256",
-                                server.uri("/downloads/sequoia-0.1.1.jar.sha256").toString()));
+                                server.uri("/downloads/sequoia-0.1.1.jar.sha256")
+                                        .toString()));
 
-                RuntimeException error = assertThrows(RuntimeException.class, () -> manager.applyRelease(release, false));
+                RuntimeException error =
+                        assertThrows(RuntimeException.class, () -> manager.applyRelease(release, false));
 
                 assertEquals("Checksum mismatch for downloaded update.", UpdateManager.rootCauseMessage(error));
                 assertFalse(Files.exists(gameDir.resolve("updates").resolve("sequoia-0.1.1.jar.download")));
@@ -197,10 +203,7 @@ class UpdateManagerTest {
             server.redirect("/downloads/sequoia-0.1.1.jar", "/storage/sequoia-0.1.1.jar");
             server.respondBytes("/storage/sequoia-0.1.1.jar", jarBytes, "application/java-archive");
             server.redirect("/downloads/sequoia-0.1.1.jar.sha256", "/storage/sequoia-0.1.1.jar.sha256");
-            server.respondText(
-                    "/storage/sequoia-0.1.1.jar.sha256",
-                    checksum + "  sequoia-0.1.1.jar\n",
-                    "text/plain");
+            server.respondText("/storage/sequoia-0.1.1.jar.sha256", checksum + "  sequoia-0.1.1.jar\n", "text/plain");
 
             Path modsDir = gameDir.resolve("mods");
             Files.createDirectories(modsDir);
@@ -222,7 +225,8 @@ class UpdateManagerTest {
                                 server.uri("/downloads/sequoia-0.1.1.jar").toString()),
                         new UpdateManager.ReleaseAsset(
                                 "sequoia-0.1.1.jar.sha256",
-                                server.uri("/downloads/sequoia-0.1.1.jar.sha256").toString()));
+                                server.uri("/downloads/sequoia-0.1.1.jar.sha256")
+                                        .toString()));
 
                 manager.applyRelease(release, false);
 
@@ -265,7 +269,8 @@ class UpdateManagerTest {
                                 checksum),
                         new UpdateManager.ReleaseAsset(
                                 "sequoia-0.1.1.jar.sha256",
-                                server.uri("/downloads/sequoia-0.1.1.jar.sha256").toString()));
+                                server.uri("/downloads/sequoia-0.1.1.jar.sha256")
+                                        .toString()));
 
                 manager.applyRelease(release, false);
 
@@ -290,11 +295,7 @@ class UpdateManagerTest {
         private final List<String> notifications = new ArrayList<>();
 
         private TestableUpdateManager(
-                HttpClient httpClient,
-                ExecutorService executor,
-                URI latestReleaseApi,
-                Path gameDir,
-                boolean windows) {
+                HttpClient httpClient, ExecutorService executor, URI latestReleaseApi, Path gameDir, boolean windows) {
             super(httpClient, executor, new Gson(), latestReleaseApi);
             this.gameDir = gameDir;
             this.windows = windows;
@@ -311,12 +312,10 @@ class UpdateManagerTest {
         }
 
         @Override
-        void showUpdatePrompt(String installedVersion, ReleaseCandidate candidate) {
-        }
+        void showUpdatePrompt(String installedVersion, ReleaseCandidate candidate) {}
 
         @Override
-        void requestMinecraftStop() {
-        }
+        void requestMinecraftStop() {}
 
         @Override
         void sendNotification(String message) {

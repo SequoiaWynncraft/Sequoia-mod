@@ -27,7 +27,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build release jar
-        run: ./gradlew clean build remapJar --stacktrace
+        run: ./gradlew clean build remapJar --stacktrace -Pbackend_environment=production
 
       - name: Generate SHA-256 files
         shell: bash
