@@ -18,9 +18,7 @@
 - Fabric Loader `0.18.4` or newer
 - Fabric API `0.141.2+1.21.11`
 - Java `21`
-- Wynntils
-
-Wynntils is optional but is necessary for many features.
+- Wynntils (Optional)
 
 ## Setup for new users
 
