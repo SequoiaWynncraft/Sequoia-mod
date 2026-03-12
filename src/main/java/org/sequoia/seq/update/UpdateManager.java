@@ -306,8 +306,9 @@ public class UpdateManager implements NotificationAccessor {
             }
 
             if (isWindows()) {
+                Path currentJar = resolveCurrentModJarPath();
                 moveAtomically(tempJar, pendingJar);
-                pendingInstall = new PendingInstall(pendingJar, finalJar, modsDir, release.tagName());
+                pendingInstall = new PendingInstall(pendingJar, finalJar, modsDir, release.tagName(), currentJar);
                 registerShutdownHookIfNeeded();
                 pendingRelease = null;
                 statusLine = "Downloaded " + release.tagName() + ". It will install on exit.";
@@ -405,6 +406,7 @@ public class UpdateManager implements NotificationAccessor {
                             helperJar.toString(),
                             UpdateApplier.class.getName(),
                             install.modsDir().toString(),
+                        install.currentJar().toString(),
                             install.pendingJar().toString(),
                             install.finalJar().toString(),
                             helperJar.toString())
@@ -655,5 +657,5 @@ public class UpdateManager implements NotificationAccessor {
         }
     }
 
-    private record PendingInstall(Path pendingJar, Path finalJar, Path modsDir, String tagName) {}
+    private record PendingInstall(Path pendingJar, Path finalJar, Path modsDir, String tagName, Path currentJar) {}
 }
