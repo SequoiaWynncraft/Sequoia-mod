@@ -47,6 +47,13 @@ class UpdateManagerTest {
     }
 
     @Test
+    void parseSha256DigestAcceptsGitHubDigestFormat() {
+        String checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+        assertEquals(checksum, UpdateManager.parseSha256Digest("sha256:" + checksum.toUpperCase()));
+    }
+
+    @Test
     void fetchLatestReleaseParsesJarAndChecksumAssets(@TempDir Path gameDir) throws Exception {
         try (TestHttpServer server = new TestHttpServer()) {
             server.respondJson(
@@ -58,7 +65,8 @@ class UpdateManagerTest {
                               "assets": [
                                 {
                                   "name": "sequoia-0.1.1.jar",
-                                  "browser_download_url": "%s"
+                                                                    "browser_download_url": "%s",
+                                                                    "digest": "sha256:%s"
                                 },
                                 {
                                   "name": "sequoia-0.1.1.jar.sha256",
@@ -67,6 +75,7 @@ class UpdateManagerTest {
                               ]
                             }
                             """.formatted(server.uri("/downloads/sequoia-0.1.1.jar"),
+                                                        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                             server.uri("/downloads/sequoia-0.1.1.jar.sha256")));
 
             ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -84,6 +93,8 @@ class UpdateManagerTest {
                 assertEquals("v0.1.1", release.tagName());
                 assertEquals("sequoia-0.1.1.jar", release.jarAsset().name());
                 assertEquals(server.uri("/downloads/sequoia-0.1.1.jar").toString(), release.jarAsset().downloadUrl());
+                assertEquals("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                        release.jarAsset().sha256());
                 assertEquals("sequoia-0.1.1.jar.sha256", release.checksumAsset().name());
             } finally {
                 executor.shutdownNow();
@@ -177,6 +188,96 @@ class UpdateManagerTest {
         }
     }
 
+    @Test
+    void applyReleaseFollowsRedirectsForJarAndChecksumDownloads(@TempDir Path gameDir) throws Exception {
+        byte[] jarBytes = "fake-jar-binary".getBytes(StandardCharsets.UTF_8);
+        String checksum = sha256(jarBytes);
+
+        try (TestHttpServer server = new TestHttpServer()) {
+            server.redirect("/downloads/sequoia-0.1.1.jar", "/storage/sequoia-0.1.1.jar");
+            server.respondBytes("/storage/sequoia-0.1.1.jar", jarBytes, "application/java-archive");
+            server.redirect("/downloads/sequoia-0.1.1.jar.sha256", "/storage/sequoia-0.1.1.jar.sha256");
+            server.respondText(
+                    "/storage/sequoia-0.1.1.jar.sha256",
+                    checksum + "  sequoia-0.1.1.jar\n",
+                    "text/plain");
+
+            Path modsDir = gameDir.resolve("mods");
+            Files.createDirectories(modsDir);
+
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try {
+                TestableUpdateManager manager = new TestableUpdateManager(
+                        HttpClient.newBuilder().executor(executor).build(),
+                        executor,
+                        server.uri("/releases/latest"),
+                        gameDir,
+                        false);
+
+                UpdateManager.ReleaseCandidate release = new UpdateManager.ReleaseCandidate(
+                        "v0.1.1",
+                        "https://example.invalid/releases/v0.1.1",
+                        new UpdateManager.ReleaseAsset(
+                                "sequoia-0.1.1.jar",
+                                server.uri("/downloads/sequoia-0.1.1.jar").toString()),
+                        new UpdateManager.ReleaseAsset(
+                                "sequoia-0.1.1.jar.sha256",
+                                server.uri("/downloads/sequoia-0.1.1.jar.sha256").toString()));
+
+                manager.applyRelease(release, false);
+
+                Path installedJar = modsDir.resolve("sequoia-0.1.1.jar");
+                assertTrue(Files.exists(installedJar));
+                assertArrayEquals(jarBytes, Files.readAllBytes(installedJar));
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+    }
+
+    @Test
+    void applyReleaseUsesEmbeddedDigestWhenChecksumFileIsEmpty(@TempDir Path gameDir) throws Exception {
+        byte[] jarBytes = "fake-jar-binary".getBytes(StandardCharsets.UTF_8);
+        String checksum = sha256(jarBytes);
+
+        try (TestHttpServer server = new TestHttpServer()) {
+            server.respondBytes("/downloads/sequoia-0.1.1.jar", jarBytes, "application/java-archive");
+            server.respondText("/downloads/sequoia-0.1.1.jar.sha256", "", "text/plain");
+
+            Path modsDir = gameDir.resolve("mods");
+            Files.createDirectories(modsDir);
+
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try {
+                TestableUpdateManager manager = new TestableUpdateManager(
+                        HttpClient.newBuilder().executor(executor).build(),
+                        executor,
+                        server.uri("/releases/latest"),
+                        gameDir,
+                        false);
+
+                UpdateManager.ReleaseCandidate release = new UpdateManager.ReleaseCandidate(
+                        "v0.1.1",
+                        "https://example.invalid/releases/v0.1.1",
+                        new UpdateManager.ReleaseAsset(
+                                "sequoia-0.1.1.jar",
+                                server.uri("/downloads/sequoia-0.1.1.jar").toString(),
+                                checksum),
+                        new UpdateManager.ReleaseAsset(
+                                "sequoia-0.1.1.jar.sha256",
+                                server.uri("/downloads/sequoia-0.1.1.jar.sha256").toString()));
+
+                manager.applyRelease(release, false);
+
+                Path installedJar = modsDir.resolve("sequoia-0.1.1.jar");
+                assertTrue(Files.exists(installedJar));
+                assertArrayEquals(jarBytes, Files.readAllBytes(installedJar));
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+    }
+
     private static String sha256(byte[] bytes) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         digest.update(bytes);
@@ -250,6 +351,15 @@ class UpdateManagerTest {
 
         void respondBytes(String path, byte[] body, String contentType) {
             server.createContext(path, exchange -> writeResponse(exchange, body, contentType));
+        }
+
+        void redirect(String path, String location) {
+            server.createContext(path, exchange -> {
+                try (exchange) {
+                    exchange.getResponseHeaders().add("Location", location);
+                    exchange.sendResponseHeaders(302, -1);
+                }
+            });
         }
 
         private void writeResponse(HttpExchange exchange, byte[] body, String contentType) throws IOException {

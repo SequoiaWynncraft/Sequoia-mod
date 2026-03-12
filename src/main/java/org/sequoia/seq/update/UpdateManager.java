@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -34,6 +35,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 public class UpdateManager implements NotificationAccessor {
+    private static final int MAX_REDIRECTS = 5;
     private static final String MOD_ID = "seq";
     private static final String REPO_OWNER = "SequoiaWynncraft";
     private static final String REPO_NAME = "Sequoia-mod";
@@ -245,7 +247,7 @@ public class UpdateManager implements NotificationAccessor {
                         }
                         String url = getString(assetObj, "browser_download_url");
                         if (url != null) {
-                            jarAsset = new ReleaseAsset(name, url);
+                            jarAsset = new ReleaseAsset(name, url, parseSha256Digest(getString(assetObj, "digest")));
                             break;
                         }
                     }
@@ -295,8 +297,7 @@ public class UpdateManager implements NotificationAccessor {
             Path finalJar = modsDir.resolve(release.jarAsset().name());
 
             downloadToFile(release.jarAsset().downloadUrl(), tempJar);
-            String checksumFile = downloadToString(release.checksumAsset().downloadUrl());
-            String expectedChecksum = parseChecksum(checksumFile);
+            String expectedChecksum = resolveExpectedChecksum(release);
             String actualChecksum = sha256(tempJar);
             if (!expectedChecksum.equalsIgnoreCase(actualChecksum)) {
                 Files.deleteIfExists(tempJar);
@@ -452,31 +453,70 @@ public class UpdateManager implements NotificationAccessor {
     }
 
     private void downloadToFile(String url, Path targetFile) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("User-Agent", "Sequoia-Updater")
-                .timeout(Duration.ofSeconds(60))
-                .GET()
-                .build();
-        HttpResponse<Path> response = httpClient.send(request, HttpResponse.BodyHandlers.ofFile(targetFile));
-        if (response.statusCode() >= 400) {
-            throw new IllegalStateException("Download failed with status " + response.statusCode());
+        HttpRequest request = buildDownloadRequest(URI.create(url), Duration.ofSeconds(60), null);
+        HttpResponse<InputStream> response = sendFollowingRedirects(request, HttpResponse.BodyHandlers.ofInputStream(), MAX_REDIRECTS);
+        try (InputStream input = response.body()) {
+            Files.copy(input, targetFile, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
     private String downloadToString(String url) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("User-Agent", "Sequoia-Updater")
-                .timeout(Duration.ofSeconds(30))
-                .GET()
-                .build();
-        HttpResponse<String> response = httpClient.send(request,
-                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (response.statusCode() >= 400) {
-            throw new IllegalStateException("Checksum fetch failed with status " + response.statusCode());
-        }
+        HttpRequest request = buildDownloadRequest(URI.create(url), Duration.ofSeconds(30), StandardCharsets.UTF_8.name());
+        HttpResponse<String> response = sendFollowingRedirects(request,
+                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8),
+                MAX_REDIRECTS);
         return response.body();
+    }
+
+    private HttpRequest buildDownloadRequest(URI uri, Duration timeout, String acceptHeader) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(uri)
+                .header("User-Agent", "Sequoia-Updater")
+                .timeout(timeout)
+                .GET();
+        if (acceptHeader != null) {
+            builder.header("Accept", acceptHeader);
+        }
+        return builder.build();
+    }
+
+    private <T> HttpResponse<T> sendFollowingRedirects(
+            HttpRequest request,
+            HttpResponse.BodyHandler<T> bodyHandler,
+            int redirectsRemaining) throws IOException, InterruptedException {
+        HttpResponse<T> response = httpClient.send(request, bodyHandler);
+        int status = response.statusCode();
+        if (status >= 300 && status < 400) {
+            if (redirectsRemaining == 0) {
+                throw new IllegalStateException("Download failed: too many redirects.");
+            }
+            URI redirectUri = resolveRedirectUri(request.uri(), response.headers());
+            HttpRequest redirected = buildDownloadRequest(
+                    redirectUri,
+                    request.timeout().orElse(Duration.ofSeconds(30)),
+                    request.headers().firstValue("Accept").orElse(null));
+            return sendFollowingRedirects(redirected, bodyHandler, redirectsRemaining - 1);
+        }
+        if (status >= 400) {
+            throw new IllegalStateException("Download failed with status " + status);
+        }
+        return response;
+    }
+
+    private URI resolveRedirectUri(URI originalUri, HttpHeaders headers) {
+        String location = headers.firstValue("Location")
+                .orElseThrow(() -> new IllegalStateException("Download redirect missing Location header."));
+        return originalUri.resolve(location);
+    }
+
+    private String resolveExpectedChecksum(ReleaseCandidate release) throws IOException, InterruptedException {
+        String embeddedChecksum = release.jarAsset().sha256();
+        if (embeddedChecksum != null) {
+            return embeddedChecksum;
+        }
+
+        String checksumFile = downloadToString(release.checksumAsset().downloadUrl());
+        return parseChecksum(checksumFile);
     }
 
     private void deleteExistingSequoiaJars(Path modsDir) throws IOException {
@@ -561,6 +601,33 @@ public class UpdateManager implements NotificationAccessor {
         return split[0];
     }
 
+    static String parseSha256Digest(String raw) {
+        if (raw == null) {
+            return null;
+        }
+
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+
+        String normalized = trimmed.regionMatches(true, 0, "sha256:", 0, 7)
+                ? trimmed.substring(7)
+                : trimmed;
+
+        if (normalized.length() != 64 || !normalized.chars().allMatch(UpdateManager::isHexCharacter)) {
+            return null;
+        }
+
+        return normalized.toLowerCase();
+    }
+
+    private static boolean isHexCharacter(int value) {
+        return (value >= '0' && value <= '9')
+                || (value >= 'a' && value <= 'f')
+                || (value >= 'A' && value <= 'F');
+    }
+
     static String getString(JsonObject object, String key) {
         if (!object.has(key)) {
             return null;
@@ -585,7 +652,10 @@ public class UpdateManager implements NotificationAccessor {
             ReleaseAsset checksumAsset) {
     }
 
-    public record ReleaseAsset(String name, String downloadUrl) {
+    public record ReleaseAsset(String name, String downloadUrl, String sha256) {
+        public ReleaseAsset(String name, String downloadUrl) {
+            this(name, downloadUrl, null);
+        }
     }
 
     private record PendingInstall(Path pendingJar, Path finalJar, Path modsDir, String tagName) {
