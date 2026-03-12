@@ -3,6 +3,7 @@ package org.sequoia.seq.update;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Locale;
 import java.util.stream.Stream;
 
 /**
@@ -10,6 +11,9 @@ import java.util.stream.Stream;
  * Args: modsDir currentJar pendingJar finalJar helperJar
  */
 public final class UpdateApplier {
+    private static final int DEFAULT_RETRY_ATTEMPTS = 40;
+    private static final long DEFAULT_RETRY_DELAY_MILLIS = 1500;
+
     private UpdateApplier() {
     }
 
@@ -24,22 +28,34 @@ public final class UpdateApplier {
         Path finalJar = Path.of(args[3]);
         Path helperJar = Path.of(args[4]);
 
-        boolean installed = applyWithRetries(modsDir, currentJar, pendingJar, finalJar);
+        run(modsDir, currentJar, pendingJar, finalJar, helperJar, DEFAULT_RETRY_ATTEMPTS, DEFAULT_RETRY_DELAY_MILLIS);
+    }
+
+    static void run(
+            Path modsDir,
+            Path currentJar,
+            Path pendingJar,
+            Path finalJar,
+            Path helperJar,
+            int retryAttempts,
+            long retryDelayMillis) {
+        boolean installed = applyWithRetries(modsDir, currentJar, pendingJar, finalJar, retryAttempts, retryDelayMillis);
         if (installed) {
             deleteQuietly(pendingJar);
         }
-        deleteQuietly(helperJar);
+        cleanupHelperJar(helperJar);
     }
 
-    private static boolean applyWithRetries(Path modsDir, Path currentJar, Path pendingJar, Path finalJar) {
-        for (int attempt = 0; attempt < 40; attempt++) {
+    static boolean applyWithRetries(
+            Path modsDir, Path currentJar, Path pendingJar, Path finalJar, int retryAttempts, long retryDelayMillis) {
+        for (int attempt = 0; attempt < retryAttempts; attempt++) {
             try {
                 deleteReplacedJar(currentJar, finalJar);
                 Files.move(pendingJar, finalJar, StandardCopyOption.REPLACE_EXISTING);
                 deleteStaleSequoiaJars(modsDir, finalJar);
                 return true;
             } catch (Exception ignored) {
-                sleep(1500);
+                sleep(retryDelayMillis);
             }
         }
         return false;
@@ -65,6 +81,28 @@ public final class UpdateApplier {
     private static void deleteQuietly(Path path) {
         try {
             Files.deleteIfExists(path);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static void cleanupHelperJar(Path helperJar) {
+        deleteQuietly(helperJar);
+        if (Files.exists(helperJar) && isWindows()) {
+            scheduleWindowsDelete(helperJar);
+        }
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+    }
+
+    private static void scheduleWindowsDelete(Path path) {
+        try {
+            new ProcessBuilder(
+                            "cmd.exe",
+                            "/c",
+                            "ping 127.0.0.1 -n 3 > nul && del /f /q \"" + path + "\"")
+                    .start();
         } catch (Exception ignored) {
         }
     }
