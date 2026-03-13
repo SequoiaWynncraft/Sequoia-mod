@@ -3,30 +3,33 @@ package org.sequoia.seq.network;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import lombok.Getter;
-import net.minecraft.client.Minecraft;
-import org.sequoia.seq.accessors.NotificationAccessor;
-import org.sequoia.seq.client.SeqClient;
-import org.java_websocket.client.WebSocketClient;
-import org.java_websocket.handshake.ServerHandshake;
-import org.sequoia.seq.model.WynnClassType;
-import org.sequoia.seq.network.auth.AuthErrorCode;
-import org.sequoia.seq.network.auth.AuthException;
-import org.sequoia.seq.utils.WynnClassCache;
-
+import java.awt.Desktop;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.regex.Pattern;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
+import lombok.Getter;
+import net.minecraft.client.Minecraft;
+import org.java_websocket.client.WebSocketClient;
+import org.java_websocket.handshake.ServerHandshake;
+import org.sequoia.seq.accessors.NotificationAccessor;
+import org.sequoia.seq.client.SeqClient;
+import org.sequoia.seq.model.WynnClassType;
+import org.sequoia.seq.network.auth.AuthErrorCode;
+import org.sequoia.seq.network.auth.AuthException;
+import org.sequoia.seq.network.auth.StoredAuthSession;
+import org.sequoia.seq.utils.WynnClassCache;
 
 public class ConnectionManager extends WebSocketClient implements NotificationAccessor {
 
@@ -66,6 +69,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private volatile long nextPrivilegedSendAtMs;
     private volatile boolean connectInProgress;
     private volatile boolean userInitiatedConnectFlow;
+    private volatile boolean pendingDiscordLinkRequest;
 
     // Reconnect state
     private static boolean autoReconnect = true;
@@ -116,6 +120,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     private void connectInternal(AuthFlow authFlow, boolean userInitiated) {
         pendingAuthFlow = authFlow;
+        pendingDiscordLinkRequest = authFlow == AuthFlow.LINK;
         userInitiatedConnectFlow = userInitiated;
         autoReconnect = true;
         SeqClient.LOGGER.info(
@@ -128,8 +133,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 getURI());
         if (isOpen()) {
             if (authFlow == AuthFlow.LINK) {
-                notifyConnectionStatus("Refreshing backend authentication...");
-                refreshAuthentication();
+                if (authenticated && !authFailed && !notInGuild) {
+                    notifyConnectionStatus("Starting Discord OAuth link flow...");
+                    requestDiscordLink(true);
+                    finishConnectFlow();
+                } else {
+                    notifyConnectionStatus("Refreshing backend authentication...");
+                    refreshAuthentication();
+                }
             } else {
                 notifyConnectionStatus("Already connected/connecting.");
                 finishConnectFlow();
@@ -168,6 +179,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         cancelReconnect();
         connectInProgress = false;
         if (!isOpen()) {
+            pendingDiscordLinkRequest = false;
             if (userInitiated) {
                 notify("Not connected");
             }
@@ -209,6 +221,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     username != null && !username.isBlank()
                             ? "Authenticated Minecraft account: " + username
                             : "Authenticated Minecraft account.");
+            requestDiscordLink(true);
         } else {
             notifyConnectionStatus(
                     username != null && !username.isBlank()
@@ -321,6 +334,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private void finishConnectFlow() {
         userInitiatedConnectFlow = false;
         pendingAuthFlow = AuthFlow.CONNECT;
+        if (!isOpen()) {
+            pendingDiscordLinkRequest = false;
+        }
     }
 
     private static boolean shouldReconnectAfterClose(int code, boolean remote) {
@@ -337,8 +353,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             var player = Minecraft.getInstance().player;
             if (player != null) {
                 player.displayClientMessage(
-                    java.util.Objects.requireNonNull(NotificationAccessor.prefixed(
-                        "Could not reconnect automatically. Run /seq connect manually (or /seq link if needed).")),
+                        java.util.Objects.requireNonNull(
+                                NotificationAccessor.prefixed(
+                                        "Could not reconnect automatically. Run /seq connect manually (or /seq link if needed).")),
                         false);
             }
         });
@@ -412,12 +429,15 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         return;
                     }
 
-                        notifyConnectionStatus(
+                    notifyConnectionStatus(
                             session.minecraftUsername() != null
                                             && !session.minecraftUsername().isBlank()
                                     ? "Refreshed backend token for " + session.minecraftUsername()
                                     : "Refreshed backend token.");
-                        finishConnectFlow();
+                    if (pendingDiscordLinkRequest && isOpen() && authenticated && !authFailed && !notInGuild) {
+                        requestDiscordLink(true);
+                    }
+                    finishConnectFlow();
                 }));
     }
 
@@ -437,6 +457,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     static String buildAuthorizationHeaderValue(String token) {
         return "Bearer " + token.trim();
+    }
+
+    static JsonObject buildLinkRequestPayload(boolean allowRelink) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("allow_relink", allowRelink);
+        return payload;
     }
 
     private AuthException unwrapAuthException(Throwable throwable) {
@@ -628,8 +654,13 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         String discordUser = json.get("discord_username").getAsString();
                         notifyConnectionStatus("Connected as " + discordUser);
                     }
+                    if (pendingDiscordLinkRequest) {
+                        requestDiscordLink(true);
+                    }
                     sendLocalPartyClassUpdate();
                 }
+                case "auth_challenge" -> handleAuthChallenge(json);
+                case "auth_success" -> handleAuthSuccess(json);
                 case "connected_users" -> {
                     List<String> users = new ArrayList<>();
                     json.getAsJsonArray("users").forEach(el -> users.add(el.getAsString()));
@@ -752,6 +783,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         return;
                     }
 
+                    if (normalized.contains("already linked")) {
+                        notify(error);
+                        return;
+                    }
+
                     if (isPartyFinderError(json, normalized)) {
                         SeqClient.getPartyFinderManager().pushUiError(error);
                         return;
@@ -853,7 +889,112 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return "guild_chat".equals(type)
                 || "guild_raid_announcement".equals(type)
                 || "party_class_update".equals(type)
+                || "link_request".equals(type)
                 || "get_connected".equals(type);
+    }
+
+    private void requestDiscordLink(boolean allowRelink) {
+        if (!isOpen() || !authenticated || authFailed || notInGuild) {
+            return;
+        }
+
+        send("link_request", buildLinkRequestPayload(allowRelink));
+        pendingDiscordLinkRequest = false;
+    }
+
+    private void handleAuthChallenge(JsonObject json) {
+        String url = extractPrimitiveString(json, "url");
+        String code = extractPrimitiveString(json, "code");
+        if (url == null) {
+            notify("Backend returned an invalid Discord OAuth link challenge.");
+            return;
+        }
+
+        if (code != null) {
+            notify("Discord link code: " + code);
+        }
+
+        notifyClickable("Click to link Discord", url);
+        if (openBrowser(url)) {
+            notify("Opened Discord OAuth in your browser.");
+        } else {
+            notify("Could not open browser automatically. Click the link shown in chat.");
+        }
+    }
+
+    private void handleAuthSuccess(JsonObject json) {
+        String token = extractPrimitiveString(json, "token");
+        if (token == null) {
+            notify("Discord link completed, but backend did not return a token.");
+            return;
+        }
+
+        String minecraftUsername = extractPrimitiveString(json, "minecraft_username");
+        String discordUsername = extractPrimitiveString(json, "discord_username");
+        storeAuthSuccessSession(token, minecraftUsername);
+        if (discordUsername != null) {
+            notify("Discord account linked as " + discordUsername + ".");
+        } else {
+            notify("Discord account linked.");
+        }
+    }
+
+    private void storeAuthSuccessSession(String token, String minecraftUsername) {
+        StoredAuthSession current = SeqClient.getConfigManager().getStoredAuthSession();
+        String minecraftUuid = current != null
+                ? current.minecraftUuid()
+                : SeqClient.getConfigManager().getMinecraftUuid();
+        String resolvedUsername = minecraftUsername;
+        if (resolvedUsername == null || resolvedUsername.isBlank()) {
+            resolvedUsername = current != null
+                    ? current.minecraftUsername()
+                    : SeqClient.getConfigManager().getMinecraftUsername();
+        }
+
+        Instant expiresAt = extractJwtExpiration(token);
+        SeqClient.getConfigManager()
+                .setAuthSession(new StoredAuthSession(token, expiresAt, minecraftUuid, resolvedUsername));
+    }
+
+    private boolean openBrowser(String url) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+
+        if (!Desktop.isDesktopSupported()) {
+            return false;
+        }
+
+        try {
+            Desktop.getDesktop().browse(URI.create(url));
+            return true;
+        } catch (Exception exception) {
+            SeqClient.LOGGER.warn("[WebSocket] Failed to open browser for Discord OAuth", exception);
+            return false;
+        }
+    }
+
+    private static Instant extractJwtExpiration(String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+
+        try {
+            String[] parts = token.split("\\.");
+            if (parts.length < 2) {
+                return null;
+            }
+
+            String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+            JsonObject payload = GSON.fromJson(payloadJson, JsonObject.class);
+            if (payload == null || !payload.has("exp") || !payload.get("exp").isJsonPrimitive()) {
+                return null;
+            }
+
+            return Instant.ofEpochSecond(payload.get("exp").getAsLong());
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private static String sanitizeAvatarUrl(String avatarUrl) {
