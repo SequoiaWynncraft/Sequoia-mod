@@ -88,10 +88,28 @@ dependencies {
     modImplementation "maven.modrinth:wynntils:v${project.wynntils_version}-fabric"
     modRuntimeOnly "maven.modrinth:wynntils:v${project.wynntils_version}-fabric"
 
-    // Compile against NanoVG, but do not bundle LWJGL into the mod jar.
-    // Minecraft/launcher runtime already provides LWJGL, and bundling can
-    // create classloader ABI mismatches (for example NVGColor <-> Struct).
-    compileOnly("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}")
+    // Ship NanoVG explicitly (API + natives). Keep dependencies non-transitive
+    // so we do not bundle LWJGL core modules that Minecraft already provides.
+    implementation("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}") {
+        transitive = false
+    }
+    include("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}")
+
+    runtimeOnly("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}:${natives}") {
+        transitive = false
+    }
+    include("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}:${natives}")
+
+    include("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}:natives-linux")
+    include("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}:natives-linux-arm64")
+    include("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}:natives-linux-arm32")
+
+    include("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}:natives-macos-arm64")
+    include("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}:natives-macos")
+
+    include("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}:natives-windows")
+    include("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}:natives-windows-x86")
+    include("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}:natives-windows-arm64")
 
     if (enableDevAuth) {
         modRuntimeOnly("me.djtheredstoner:DevAuth-fabric:1.2.1")

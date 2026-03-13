@@ -28,6 +28,8 @@ public class NVGContext {
 
     @Getter
     private static long context = -1L;
+    private static boolean available = true;
+    private static boolean fatalErrorLogged = false;
 
     private static final Queue<LongConsumer> deferredDrawCalls = new ArrayDeque<>();
 
@@ -39,6 +41,9 @@ public class NVGContext {
      * Flushed by InGameHudMixin at the tail of Gui.render().
      */
     public static void renderDeferred(LongConsumer drawCall) {
+        if (!available) {
+            return;
+        }
         deferredDrawCalls.add(drawCall);
     }
 
@@ -46,6 +51,10 @@ public class NVGContext {
      * Executes all deferred draw calls. Called from InGameHudMixin after HUD rendering.
      */
     public static void flushDeferred() {
+        if (!available) {
+            deferredDrawCalls.clear();
+            return;
+        }
         LongConsumer drawCall;
         while ((drawCall = deferredDrawCalls.poll()) != null) {
             render(drawCall);
@@ -53,11 +62,17 @@ public class NVGContext {
     }
 
     public static void init() {
-        context = NanoVGGL3.nvgCreate(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
-        if (context == 0 || context == -1L) {
-            SeqClient.LOGGER.error("Couldn't initialize NanoVG");
-        } else {
-            SeqClient.LOGGER.info("NVG LOADED");
+        try {
+            context = NanoVGGL3.nvgCreate(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
+            if (context == 0 || context == -1L) {
+                available = false;
+                SeqClient.LOGGER.error("Couldn't initialize NanoVG");
+            } else {
+                available = true;
+                SeqClient.LOGGER.info("NVG LOADED");
+            }
+        } catch (Throwable t) {
+            disableNanoVG("NanoVG initialization failed; disabling NVG rendering", t);
         }
     }
 
@@ -74,10 +89,16 @@ public class NVGContext {
     }
 
     public static void render(LongConsumer drawCall) {
+        if (!available || context <= 0L) {
+            return;
+        }
         renderWithScale(drawCall, 2f);
     }
 
     public static void renderWithScale(LongConsumer drawCall, float fixedScale) {
+        if (!available || context <= 0L) {
+            return;
+        }
         RenderSystem.assertOnRenderThread();
         float width = (int) (mc.getWindow().getWidth() / fixedScale);
         float height = (int) (mc.getWindow().getHeight() / fixedScale);
@@ -185,9 +206,13 @@ public class NVGContext {
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
 
-        nvgBeginFrame(context, width, height, fixedScale);
-        drawCall.accept(context);
-        nvgEndFrame(context);
+        try {
+            nvgBeginFrame(context, width, height, fixedScale);
+            drawCall.accept(context);
+            nvgEndFrame(context);
+        } catch (LinkageError e) {
+            disableNanoVG("NanoVG linkage error during render; disabling NVG rendering", e);
+        }
         GlStateManager._glBindFramebuffer(GlConst.GL_FRAMEBUFFER, prevFramebuffer);
         GL11.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
         if (prevDepthTest) {
@@ -252,14 +277,21 @@ public class NVGContext {
     }
 
     public static void renderText(LongConsumer drawCall) {
+        if (!available || context <= 0L) {
+            return;
+        }
         float contentscale = mc.getWindow().getGuiScale();
         float width = (int) (mc.getWindow().getWidth() / contentscale);
         float height = (int) (mc.getWindow().getHeight() / contentscale);
-        nvgSave(context);
-        nvgBeginFrame(context, width, height, contentscale);
+        try {
+            nvgSave(context);
+            nvgBeginFrame(context, width, height, contentscale);
 
-        drawCall.accept(context);
-        nvgEndFrame(context);
+            drawCall.accept(context);
+            nvgEndFrame(context);
+        } catch (LinkageError e) {
+            disableNanoVG("NanoVG linkage error during text render; disabling NVG rendering", e);
+        }
 
     }
 
@@ -278,6 +310,16 @@ public class NVGContext {
         GlStateManager._enableBlend();
         GlStateManager._blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ZERO, GL11.GL_ONE);
 
+    }
+
+    private static void disableNanoVG(String message, Throwable t) {
+        available = false;
+        context = -1L;
+        deferredDrawCalls.clear();
+        if (!fatalErrorLogged) {
+            SeqClient.LOGGER.error(message, t);
+            fatalErrorLogged = true;
+        }
     }
 
 }
