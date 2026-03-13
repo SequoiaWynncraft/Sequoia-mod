@@ -1484,36 +1484,26 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         int statusCode = apiException.getStatusCode();
-        String statusMapped = mapStatusError(statusCode, apiException.getResponseBody());
+        String responseBody = apiException.getResponseBody();
+        String backendError = extractApiErrorMessage(responseBody);
+        String statusMapped = mapStatusError(statusCode, responseBody, backendError);
         if (statusMapped != null) {
             return statusMapped;
         }
 
-        String responseBody = apiException.getResponseBody();
-        if (responseBody == null || responseBody.isBlank()) {
-            return fallbackMessage;
-        }
-
-        try {
-            JsonElement parsed = JsonParser.parseString(responseBody);
-            if (parsed.isJsonObject()) {
-                JsonObject obj = parsed.getAsJsonObject();
-                JsonElement error = obj.get("error");
-                if (error != null
-                        && error.isJsonPrimitive()
-                        && error.getAsJsonPrimitive().isString()) {
-                    return error.getAsString();
-                }
-            }
-        } catch (Exception ignored) {
+        if (backendError != null) {
+            return backendError;
         }
 
         return fallbackMessage;
     }
 
-    private static String mapStatusError(int statusCode, String responseBody) {
+    private static String mapStatusError(int statusCode, String responseBody, String backendError) {
         String body = responseBody == null ? "" : responseBody.toLowerCase(Locale.ROOT);
-        if (statusCode == 400) {
+        if (statusCode == 400 || statusCode == 422) {
+            if (backendError != null) {
+                return backendError;
+            }
             return "Request rejected by backend validation. Check your inputs.";
         }
         if (statusCode == 401) {
@@ -1523,9 +1513,52 @@ public class PartyFinderManager implements NotificationAccessor {
             if (body.contains("guild") || body.contains("not in guild")) {
                 return "Access denied: your account is not in the guild.";
             }
+            if (backendError != null) {
+                return backendError;
+            }
             return "Access denied by backend authorization.";
         }
         return null;
+    }
+
+    private static String extractApiErrorMessage(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return null;
+        }
+
+        try {
+            JsonElement parsed = JsonParser.parseString(responseBody);
+            if (!parsed.isJsonObject()) {
+                return null;
+            }
+
+            JsonObject obj = parsed.getAsJsonObject();
+            String error = getJsonString(obj, "error");
+            if (error != null) {
+                return error;
+            }
+
+            String message = getJsonString(obj, "message");
+            if (message != null) {
+                return message;
+            }
+
+            return getJsonString(obj, "detail");
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static String getJsonString(JsonObject obj, String key) {
+        JsonElement element = obj.get(key);
+        if (element == null || !element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) {
+            return null;
+        }
+        String value = element.getAsString();
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value;
     }
 
     private static ApiClient.ApiException findApiException(Throwable throwable) {

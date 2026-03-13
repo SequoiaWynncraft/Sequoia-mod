@@ -711,9 +711,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     }
                 }
                 case "error" -> {
-                    String error = json.has("message") && json.get("message").isJsonPrimitive()
-                            ? json.get("message").getAsString()
-                            : "Unknown backend error";
+                    String error = extractBackendErrorMessage(json);
                     int status = extractStatusCode(json);
                     String normalized = error.toLowerCase(Locale.ROOT);
                     SeqClient.LOGGER.warn("[WebSocket] Backend error status={} message={}", status, error);
@@ -754,13 +752,17 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         return;
                     }
 
-                    if (normalized.contains("validation")) {
-                        notify("Request rejected by backend validation. Please check your input.");
+                    if (isPartyFinderError(json, normalized)) {
+                        SeqClient.getPartyFinderManager().pushUiError(error);
                         return;
                     }
 
-                    if (isPartyFinderError(json, normalized)) {
-                        SeqClient.getPartyFinderManager().pushUiError(error);
+                    if (normalized.contains("validation")) {
+                        if ("Unknown backend error".equals(error)) {
+                            notify("Request rejected by backend validation. Please check your input.");
+                        } else {
+                            notify(error);
+                        }
                         return;
                     }
 
@@ -916,6 +918,40 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             }
         }
         return -1;
+    }
+
+    private static String extractBackendErrorMessage(JsonObject json) {
+        if (json == null) {
+            return "Unknown backend error";
+        }
+        String message = extractPrimitiveString(json, "message");
+        if (message != null) {
+            return message;
+        }
+        message = extractPrimitiveString(json, "error");
+        if (message != null) {
+            return message;
+        }
+        message = extractPrimitiveString(json, "detail");
+        if (message != null) {
+            return message;
+        }
+        return "Unknown backend error";
+    }
+
+    private static String extractPrimitiveString(JsonObject json, String key) {
+        if (!json.has(key) || !json.get(key).isJsonPrimitive()) {
+            return null;
+        }
+        try {
+            String value = json.get(key).getAsString();
+            if (value == null || value.isBlank()) {
+                return null;
+            }
+            return value;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private static boolean isPartyFinderError(JsonObject json, String normalizedMessage) {
