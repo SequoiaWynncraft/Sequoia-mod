@@ -12,12 +12,33 @@ class MinecraftAuthServiceTest {
     @Test
     void validateChallengeRejectsExpiredChallenge() {
         MinecraftAuthChallengeResponse challenge = new MinecraftAuthChallengeResponse(
-                "challenge-1", "server-1", Instant.now().minusSeconds(1));
+                "challenge-1", "1a2b3c", Instant.now().minusSeconds(1));
 
         AuthException exception =
                 assertThrows(AuthException.class, () -> MinecraftAuthService.validateChallenge(challenge));
 
         assertEquals(AuthErrorCode.CHALLENGE_EXPIRED, exception.getCode());
+    }
+
+    @Test
+    void validateChallengeNormalizesBase64UrlServerId() {
+        MinecraftAuthChallengeResponse challenge = new MinecraftAuthChallengeResponse(
+                "challenge-1", "ZRUOgk626zsp_mVLVzH1ruw3K9K7AvSb", Instant.now().plusSeconds(60));
+
+        MinecraftAuthChallengeResponse validated = MinecraftAuthService.validateChallenge(challenge);
+
+        assertEquals("-671ac3219113b404f6f40fff33710d4390e69ffa", validated.serverId());
+    }
+
+    @Test
+    void validateChallengeRejectsInvalidServerIdEncoding() {
+        MinecraftAuthChallengeResponse challenge = new MinecraftAuthChallengeResponse(
+                "challenge-1", "not-base64!", Instant.now().plusSeconds(60));
+
+        AuthException exception =
+                assertThrows(AuthException.class, () -> MinecraftAuthService.validateChallenge(challenge));
+
+        assertEquals(AuthErrorCode.MALFORMED_RESPONSE, exception.getCode());
     }
 
     @Test

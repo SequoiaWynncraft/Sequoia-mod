@@ -13,19 +13,25 @@ import org.sequoia.seq.network.ApiClient;
 import org.sequoia.seq.network.BuildConfig;
 
 import java.lang.reflect.Method;
+import java.math.BigInteger;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Pattern;
 
 public class MinecraftAuthService {
 
     private static final Duration TOKEN_REFRESH_SKEW = Duration.ofSeconds(30);
     private static final Gson GSON = new Gson();
+    private static final Pattern MOJANG_SERVER_ID_PATTERN = Pattern.compile("^-?[0-9a-f]{1,40}$");
 
     private static MinecraftAuthService instance;
 
@@ -159,7 +165,9 @@ public class MinecraftAuthService {
             throw new AuthException(
                     AuthErrorCode.CHALLENGE_EXPIRED, "Backend returned an already expired Minecraft auth challenge.");
         }
-        return response;
+
+        return new MinecraftAuthChallengeResponse(
+                response.challengeId(), normalizeServerId(response.serverId()), response.expiresAt());
     }
 
     static StoredAuthSession toStoredSession(MinecraftAuthCompleteResponse response) {
@@ -388,6 +396,60 @@ public class MinecraftAuthService {
         }
     }
 
+    private static String normalizeServerId(String rawServerId) {
+        String trimmed = rawServerId.trim();
+        String lowercase = trimmed.toLowerCase(Locale.ROOT);
+        if (isMojangServerId(lowercase)) {
+            return lowercase;
+        }
+
+        byte[] decoded;
+        try {
+            decoded = decodeBase64Url(trimmed);
+        } catch (IllegalArgumentException exception) {
+            throw new AuthException(
+                    AuthErrorCode.MALFORMED_RESPONSE,
+                    "Backend returned an invalid Minecraft auth server_id format.",
+                    false,
+                    exception);
+        }
+
+        String signedHex = toSignedHexSha1(decoded).toLowerCase(Locale.ROOT);
+        if (!isMojangServerId(signedHex)) {
+            throw new AuthException(
+                    AuthErrorCode.MALFORMED_RESPONSE, "Backend returned an invalid Minecraft auth server_id format.");
+        }
+        return signedHex;
+    }
+
+    private static boolean isMojangServerId(String value) {
+        return value != null && MOJANG_SERVER_ID_PATTERN.matcher(value).matches();
+    }
+
+    private static byte[] decodeBase64Url(String value) {
+        return Base64.getUrlDecoder().decode(padBase64(value));
+    }
+
+    private static String padBase64(String value) {
+        int remainder = value.length() % 4;
+        if (remainder == 0) {
+            return value;
+        }
+        if (remainder == 1) {
+            throw new IllegalArgumentException("Invalid base64url length for server_id.");
+        }
+        return value + "=".repeat(4 - remainder);
+    }
+
+    private static String toSignedHexSha1(byte[] source) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-1");
+            return new BigInteger(digest.digest(source)).toString(16);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-1 algorithm is unavailable for server_id conversion.", exception);
+        }
+    }
+
     private static MinecraftSessionService resolveSessionService(Minecraft minecraft) {
         if (minecraft == null) {
             throw new AuthException(AuthErrorCode.MINECRAFT_SESSION_INVALID, "Minecraft client is not available.");
@@ -418,7 +480,8 @@ public class MinecraftAuthService {
                 if (apiServices == null) {
                     continue;
                 }
-                for (String sessionMethodName : new String[] {"sessionService", "getSessionService", "getMinecraftSessionService"}) {
+                for (String sessionMethodName :
+                        new String[] {"sessionService", "getSessionService", "getMinecraftSessionService"}) {
                     try {
                         Method sessionServiceMethod = apiServices.getClass().getMethod(sessionMethodName);
                         if (MinecraftSessionService.class.isAssignableFrom(sessionServiceMethod.getReturnType())) {
