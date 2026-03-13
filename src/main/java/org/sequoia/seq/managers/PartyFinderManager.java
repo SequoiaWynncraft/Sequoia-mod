@@ -34,6 +34,7 @@ public class PartyFinderManager implements NotificationAccessor {
     private static final String GAME_PARTY_INVITE_PREFIX = "party invite ";
     private static final String GAME_PARTY_KICK_PREFIX = "pa kick ";
     private static final String GAME_PARTY_PROMOTE_PREFIX = "pa promote ";
+    private static final String SEQ_INVITE_ALL_COMMAND = "/seq p game invite-all";
 
     @Getter
     private final List<Activity> activities = new CopyOnWriteArrayList<>();
@@ -700,15 +701,21 @@ public class PartyFinderManager implements NotificationAccessor {
     // ══════════════════════════════════════════════════════════════
 
     public void handlePartyFinderUpdate(String action, Listing listing) {
+        if (listing == null) {
+            SeqClient.LOGGER.warn("[PartyFinderWS] Ignoring party update action={} because listing is null", action);
+            return;
+        }
+
         String myUUID = getLocalPlayerUUID();
+        Listing previousListing = findListingById(listing.id());
         SeqClient.LOGGER.info(
                 "[PartyFinderWS] handlePartyFinderUpdate action={} listingId={} myUUID={} containsMe={} reservedForMe={} reservedSlotCount={}",
                 action,
-                listing != null ? listing.id() : -1,
+                listing.id(),
                 myUUID,
                 listingContainsPlayer(listing, myUUID),
                 listingHasReservedSlotForPlayer(listing, myUUID),
-                listing != null ? listing.reservedSlotCount() : -1);
+                listing.reservedSlotCount());
 
         switch (action) {
             case "CREATED" -> {
@@ -730,6 +737,7 @@ public class PartyFinderManager implements NotificationAccessor {
             }
         }
         refreshCurrentListing();
+        notifyPartyActionUx(action, previousListing, listing, myUUID);
 
         // Fire event for the UI
         if (SeqClient.getEventBus() != null) {
@@ -827,6 +835,240 @@ public class PartyFinderManager implements NotificationAccessor {
                     joinCommand,
                     denyCommand);
             player.displayClientMessage(inviteMessage, false);
+            player.displayClientMessage(actionMessage, false);
+        });
+    }
+
+    private void notifyPartyActionUx(String action, Listing previousListing, Listing updatedListing, String myUUID) {
+        if (updatedListing == null || myUUID == null || myUUID.isBlank()) {
+            return;
+        }
+
+        if ("DISBANDED".equals(action)) {
+            boolean wasInParty = listingContainsPlayer(previousListing, myUUID)
+                    || listingContainsPlayer(updatedListing, myUUID)
+                    || uuidEquals(myUUID, updatedListing.leaderUUID());
+            if (wasInParty) {
+                notify("Your party was disbanded.");
+            }
+            return;
+        }
+
+        if (!"UPDATED".equals(action) || previousListing == null) {
+            return;
+        }
+
+        notifyLocalPartyUpdateUx(previousListing, updatedListing, myUUID);
+        notifyLeaderPartyUpdateUx(previousListing, updatedListing, myUUID);
+    }
+
+    private void notifyLocalPartyUpdateUx(Listing previousListing, Listing updatedListing, String myUUID) {
+        boolean wasInParty = listingContainsPlayer(previousListing, myUUID);
+        boolean isInParty = listingContainsPlayer(updatedListing, myUUID);
+
+        if (wasInParty && !isInParty) {
+            notify("You are no longer in party #" + updatedListing.id() + ".");
+            return;
+        }
+
+        if (!wasInParty && isInParty) {
+            notify("You joined party #" + updatedListing.id() + ".");
+        }
+
+        if (!isInParty) {
+            return;
+        }
+
+        if (!uuidEquals(previousListing.leaderUUID(), updatedListing.leaderUUID())) {
+            if (uuidEquals(myUUID, updatedListing.leaderUUID())) {
+                notify("You are now party leader.");
+            } else if (uuidEquals(myUUID, previousListing.leaderUUID())) {
+                notifyResolvedPlayerMessage(
+                        updatedListing.leaderUUID(),
+                        "A player is now party leader.",
+                        " is now party leader.");
+            }
+        }
+
+        PartyRole previousRole = resolveMemberRole(previousListing, myUUID);
+        PartyRole updatedRole = resolveMemberRole(updatedListing, myUUID);
+        if (previousRole != null && updatedRole != null && previousRole != updatedRole) {
+            notify("Your role is now " + formatRoleName(updatedRole) + ".");
+        }
+
+        if (previousListing.status() != updatedListing.status()) {
+            switch (updatedListing.status()) {
+                case OPEN -> notify("Party is now open.");
+                case CLOSED -> notify("Party is now closed.");
+                case FULL -> {
+                    if (!uuidEquals(myUUID, updatedListing.leaderUUID())) {
+                        notify("Party is now full.");
+                    }
+                }
+                default -> {
+                }
+            }
+        }
+    }
+
+    private void notifyLeaderPartyUpdateUx(Listing previousListing, Listing updatedListing, String myUUID) {
+        if (!uuidEquals(myUUID, updatedListing.leaderUUID())) {
+            return;
+        }
+
+        List<String> joinedMembers = collectJoinedMemberUUIDs(previousListing, updatedListing, myUUID);
+        if (!joinedMembers.isEmpty()) {
+            notifyLeaderAboutJoinedMembers(joinedMembers);
+        }
+
+        List<String> departedMembers = collectDepartedMemberUUIDs(previousListing, updatedListing, myUUID);
+        if (!departedMembers.isEmpty()) {
+            notifyLeaderAboutDepartedMembers(departedMembers);
+        }
+
+        if (!isListingFull(previousListing) && isListingFull(updatedListing)) {
+            notifyPartyFullWithInviteAllAction();
+        }
+    }
+
+    private List<String> collectJoinedMemberUUIDs(Listing previousListing, Listing updatedListing, String localUUID) {
+        if (previousListing == null || updatedListing == null || updatedListing.members() == null || updatedListing.members().isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> previousMembers = collectListingMemberKeys(previousListing);
+        List<String> joinedMembers = new ArrayList<>();
+        for (Member member : updatedListing.members()) {
+            if (member == null) {
+                continue;
+            }
+
+            String memberUUID = member.playerUUID();
+            if (memberUUID == null || memberUUID.isBlank() || uuidEquals(localUUID, memberUUID)) {
+                continue;
+            }
+
+            String memberKey = normalizeUuidLike(memberUUID);
+            if (memberKey == null || previousMembers.contains(memberKey)) {
+                continue;
+            }
+            joinedMembers.add(memberUUID);
+        }
+        return joinedMembers;
+    }
+
+    private List<String> collectDepartedMemberUUIDs(Listing previousListing, Listing updatedListing, String localUUID) {
+        if (previousListing == null || previousListing.members() == null || previousListing.members().isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> updatedMembers = collectListingMemberKeys(updatedListing);
+        List<String> departedMembers = new ArrayList<>();
+        for (Member member : previousListing.members()) {
+            if (member == null) {
+                continue;
+            }
+
+            String memberUUID = member.playerUUID();
+            if (memberUUID == null || memberUUID.isBlank() || uuidEquals(localUUID, memberUUID)) {
+                continue;
+            }
+
+            String memberKey = normalizeUuidLike(memberUUID);
+            if (memberKey == null || updatedMembers.contains(memberKey)) {
+                continue;
+            }
+            departedMembers.add(memberUUID);
+        }
+        return departedMembers;
+    }
+
+    private void notifyLeaderAboutJoinedMembers(List<String> joinedMemberUUIDs) {
+        if (joinedMemberUUIDs == null || joinedMemberUUIDs.isEmpty()) {
+            return;
+        }
+
+        if (joinedMemberUUIDs.size() > 1) {
+            notify(joinedMemberUUIDs.size() + " players joined your party.");
+            return;
+        }
+
+        String joinedMemberUUID = joinedMemberUUIDs.get(0);
+        notifyResolvedPlayerMessage(joinedMemberUUID, "Player joined your party.", " joined your party.");
+    }
+
+    private void notifyLeaderAboutDepartedMembers(List<String> departedMemberUUIDs) {
+        if (departedMemberUUIDs == null || departedMemberUUIDs.isEmpty()) {
+            return;
+        }
+
+        if (departedMemberUUIDs.size() > 1) {
+            notify(departedMemberUUIDs.size() + " players left your party.");
+            return;
+        }
+
+        String departedMemberUUID = departedMemberUUIDs.get(0);
+        notifyResolvedPlayerMessage(departedMemberUUID, "Player left your party.", " left your party.");
+    }
+
+    private void notifyResolvedPlayerMessage(String playerUUID, String fallbackMessage, String suffixMessage) {
+        if (playerUUID == null || playerUUID.isBlank()) {
+            notify(fallbackMessage);
+            return;
+        }
+
+        PlayerNameCache.resolveAsync(playerUUID)
+                .completeOnTimeout(null, INVITE_NAME_LOOKUP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .whenComplete((resolvedName, error) -> {
+                    String memberName = formatInviterName(resolvedName);
+                    if ("a player".equals(memberName)) {
+                        notify(fallbackMessage);
+                        return;
+                    }
+                    notify(memberName + suffixMessage);
+                });
+    }
+
+    private static PartyRole resolveMemberRole(Listing listing, String playerUUID) {
+        if (listing == null || playerUUID == null || playerUUID.isBlank() || listing.members() == null) {
+            return null;
+        }
+
+        for (Member member : listing.members()) {
+            if (member == null) {
+                continue;
+            }
+
+            if (uuidEquals(playerUUID, member.playerUUID())) {
+                return member.role();
+            }
+        }
+        return null;
+    }
+
+    private void notifyPartyFullWithInviteAllAction() {
+        SeqClient.mc.execute(() -> {
+            var player = SeqClient.mc.player;
+            if (player == null) {
+                return;
+            }
+
+            ClickEvent inviteAllClickEvent = new ClickEvent.RunCommand(SEQ_INVITE_ALL_COMMAND);
+            MutableComponent fullMessage = NotificationAccessor.prefixComponent()
+                    .append(Component.literal("Party is now full.").withStyle(ChatFormatting.GRAY))
+                    .append(Component.literal(" "))
+                    .append(Component.literal("Click ").withStyle(ChatFormatting.GRAY))
+                    .append(Component.literal("Invite all")
+                            .withStyle(style -> style
+                                    .withColor(ChatFormatting.AQUA)
+                                    .withUnderlined(true)
+                                    .withClickEvent(inviteAllClickEvent)))
+                    .append(Component.literal(" to start.").withStyle(ChatFormatting.GRAY));
+
+            MutableComponent actionMessage = Component.empty().append(NotificationAccessor.wynnPill(
+                    "invite all", ChatFormatting.GREEN, ChatFormatting.WHITE, inviteAllClickEvent));
+
+            player.displayClientMessage(fullMessage, false);
             player.displayClientMessage(actionMessage, false);
         });
     }
@@ -1238,6 +1480,18 @@ public class PartyFinderManager implements NotificationAccessor {
                             return;
                         }
 
+                        CommandResult<Void> gamePartyCreateResult = sendGamePartyCreateCommand();
+                        if (!gamePartyCreateResult.success()) {
+                            dispatchFuture.complete(finishInviteAll(
+                                    false,
+                                    false,
+                                    0,
+                                    finalSkippedCount,
+                                    gamePartyCreateResult.message(),
+                                    notifyPlayer));
+                            return;
+                        }
+
                         Set<String> activeMemberKeys = collectListingMemberKeys(currentListing);
                         int sentCount = 0;
                         int skippedAtDispatch = finalSkippedCount;
@@ -1484,36 +1738,26 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         int statusCode = apiException.getStatusCode();
-        String statusMapped = mapStatusError(statusCode, apiException.getResponseBody());
+        String responseBody = apiException.getResponseBody();
+        String backendError = extractApiErrorMessage(responseBody);
+        String statusMapped = mapStatusError(statusCode, responseBody, backendError);
         if (statusMapped != null) {
             return statusMapped;
         }
 
-        String responseBody = apiException.getResponseBody();
-        if (responseBody == null || responseBody.isBlank()) {
-            return fallbackMessage;
-        }
-
-        try {
-            JsonElement parsed = JsonParser.parseString(responseBody);
-            if (parsed.isJsonObject()) {
-                JsonObject obj = parsed.getAsJsonObject();
-                JsonElement error = obj.get("error");
-                if (error != null
-                        && error.isJsonPrimitive()
-                        && error.getAsJsonPrimitive().isString()) {
-                    return error.getAsString();
-                }
-            }
-        } catch (Exception ignored) {
+        if (backendError != null) {
+            return backendError;
         }
 
         return fallbackMessage;
     }
 
-    private static String mapStatusError(int statusCode, String responseBody) {
+    private static String mapStatusError(int statusCode, String responseBody, String backendError) {
         String body = responseBody == null ? "" : responseBody.toLowerCase(Locale.ROOT);
-        if (statusCode == 400) {
+        if (statusCode == 400 || statusCode == 422) {
+            if (backendError != null) {
+                return backendError;
+            }
             return "Request rejected by backend validation. Check your inputs.";
         }
         if (statusCode == 401) {
@@ -1523,9 +1767,52 @@ public class PartyFinderManager implements NotificationAccessor {
             if (body.contains("guild") || body.contains("not in guild")) {
                 return "Access denied: your account is not in the guild.";
             }
+            if (backendError != null) {
+                return backendError;
+            }
             return "Access denied by backend authorization.";
         }
         return null;
+    }
+
+    private static String extractApiErrorMessage(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return null;
+        }
+
+        try {
+            JsonElement parsed = JsonParser.parseString(responseBody);
+            if (!parsed.isJsonObject()) {
+                return null;
+            }
+
+            JsonObject obj = parsed.getAsJsonObject();
+            String error = getJsonString(obj, "error");
+            if (error != null) {
+                return error;
+            }
+
+            String message = getJsonString(obj, "message");
+            if (message != null) {
+                return message;
+            }
+
+            return getJsonString(obj, "detail");
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static String getJsonString(JsonObject obj, String key) {
+        JsonElement element = obj.get(key);
+        if (element == null || !element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) {
+            return null;
+        }
+        String value = element.getAsString();
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value;
     }
 
     private static ApiClient.ApiException findApiException(Throwable throwable) {
@@ -1996,6 +2283,28 @@ public class PartyFinderManager implements NotificationAccessor {
             return null;
         }
         return "Add at least one reserved slot before creating a party finder invite.";
+    }
+
+    private static boolean isListingFull(Listing listing) {
+        if (listing == null) {
+            return false;
+        }
+        if (listing.status() == PartyStatus.FULL) {
+            return true;
+        }
+        int maxPartySize = listing.maxPartySize();
+        return maxPartySize > 0 && listing.occupiedSlotCount() >= maxPartySize;
+    }
+
+    private Listing findListingById(long listingId) {
+        synchronized (listingsLock) {
+            for (Listing existing : listings) {
+                if (existing != null && existing.id() == listingId) {
+                    return existing;
+                }
+            }
+        }
+        return null;
     }
 
     private void refreshCurrentListing() {
