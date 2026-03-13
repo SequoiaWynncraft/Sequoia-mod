@@ -88,22 +88,10 @@ dependencies {
     modImplementation "maven.modrinth:wynntils:v${project.wynntils_version}-fabric"
     modRuntimeOnly "maven.modrinth:wynntils:v${project.wynntils_version}-fabric"
 
-    implementation(platform("org.lwjgl:lwjgl-bom:3.3.3"))
-    runtimeOnly("org.lwjgl:lwjgl-nanovg::${natives}")
-    include(implementation("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}"))
-
-    include(implementation("org.lwjgl:lwjgl-nanovg::${natives}"))
-
-    include(implementation("org.lwjgl:lwjgl-nanovg::natives-linux"))
-    include(implementation("org.lwjgl:lwjgl-nanovg::natives-linux-arm64"))
-    include(implementation("org.lwjgl:lwjgl-nanovg::natives-linux-arm32"))
-
-    include(implementation("org.lwjgl:lwjgl-nanovg::natives-macos-arm64"))
-    include(implementation("org.lwjgl:lwjgl-nanovg::natives-macos"))
-
-    include(implementation("org.lwjgl:lwjgl-nanovg::natives-windows"))
-    include(implementation("org.lwjgl:lwjgl-nanovg::natives-windows-x86"))
-    include(implementation("org.lwjgl:lwjgl-nanovg::natives-windows-arm64"))
+    // Compile against NanoVG, but do not bundle LWJGL into the mod jar.
+    // Minecraft/launcher runtime already provides LWJGL, and bundling can
+    // create classloader ABI mismatches (for example NVGColor <-> Struct).
+    compileOnly("org.lwjgl:lwjgl-nanovg:${project.nanovg_version}")
 
     if (enableDevAuth) {
         modRuntimeOnly("me.djtheredstoner:DevAuth-fabric:1.2.1")
