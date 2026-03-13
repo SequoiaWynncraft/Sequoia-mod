@@ -884,9 +884,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 notify("You are now party leader.");
             } else if (uuidEquals(myUUID, previousListing.leaderUUID())) {
                 notifyResolvedPlayerMessage(
-                        updatedListing.leaderUUID(),
-                        "A player is now party leader.",
-                        " is now party leader.");
+                        updatedListing.leaderUUID(), "A player is now party leader.", " is now party leader.");
             }
         }
 
@@ -905,8 +903,7 @@ public class PartyFinderManager implements NotificationAccessor {
                         notify("Party is now full.");
                     }
                 }
-                default -> {
-                }
+                default -> {}
             }
         }
     }
@@ -932,7 +929,10 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     private List<String> collectJoinedMemberUUIDs(Listing previousListing, Listing updatedListing, String localUUID) {
-        if (previousListing == null || updatedListing == null || updatedListing.members() == null || updatedListing.members().isEmpty()) {
+        if (previousListing == null
+                || updatedListing == null
+                || updatedListing.members() == null
+                || updatedListing.members().isEmpty()) {
             return List.of();
         }
 
@@ -958,7 +958,9 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     private List<String> collectDepartedMemberUUIDs(Listing previousListing, Listing updatedListing, String localUUID) {
-        if (previousListing == null || previousListing.members() == null || previousListing.members().isEmpty()) {
+        if (previousListing == null
+                || previousListing.members() == null
+                || previousListing.members().isEmpty()) {
             return List.of();
         }
 
@@ -1058,15 +1060,14 @@ public class PartyFinderManager implements NotificationAccessor {
                     .append(Component.literal("Party is now full.").withStyle(ChatFormatting.GRAY))
                     .append(Component.literal(" "))
                     .append(Component.literal("Click ").withStyle(ChatFormatting.GRAY))
-                    .append(Component.literal("Invite all")
-                            .withStyle(style -> style
-                                    .withColor(ChatFormatting.AQUA)
-                                    .withUnderlined(true)
-                                    .withClickEvent(inviteAllClickEvent)))
+                    .append(Component.literal("Invite all").withStyle(style -> style.withColor(ChatFormatting.AQUA)
+                            .withUnderlined(true)
+                            .withClickEvent(inviteAllClickEvent)))
                     .append(Component.literal(" to start.").withStyle(ChatFormatting.GRAY));
 
-            MutableComponent actionMessage = Component.empty().append(NotificationAccessor.wynnPill(
-                    "invite all", ChatFormatting.GREEN, ChatFormatting.WHITE, inviteAllClickEvent));
+            MutableComponent actionMessage = Component.empty()
+                    .append(NotificationAccessor.wynnPill(
+                            "invite all", ChatFormatting.GREEN, ChatFormatting.WHITE, inviteAllClickEvent));
 
             player.displayClientMessage(fullMessage, false);
             player.displayClientMessage(actionMessage, false);
@@ -1481,15 +1482,17 @@ public class PartyFinderManager implements NotificationAccessor {
                         }
 
                         CommandResult<Void> gamePartyCreateResult = sendGamePartyCreateCommand();
-                        if (!gamePartyCreateResult.success()) {
+                        if (!gamePartyCreateResult.success()
+                                && !isExistingPartyCreateFailure(gamePartyCreateResult.message())) {
                             dispatchFuture.complete(finishInviteAll(
-                                    false,
-                                    false,
-                                    0,
-                                    finalSkippedCount,
-                                    gamePartyCreateResult.message(),
-                                    notifyPlayer));
+                                    false, false, 0, finalSkippedCount, gamePartyCreateResult.message(), notifyPlayer));
                             return;
+                        }
+
+                        if (!gamePartyCreateResult.success()) {
+                            SeqClient.LOGGER.info(
+                                    "[PartyFinderWS] Continuing invite-all despite party create failure: {}",
+                                    gamePartyCreateResult.message());
                         }
 
                         Set<String> activeMemberKeys = collectListingMemberKeys(currentListing);
@@ -1805,7 +1808,9 @@ public class PartyFinderManager implements NotificationAccessor {
 
     private static String getJsonString(JsonObject obj, String key) {
         JsonElement element = obj.get(key);
-        if (element == null || !element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) {
+        if (element == null
+                || !element.isJsonPrimitive()
+                || !element.getAsJsonPrimitive().isString()) {
             return null;
         }
         String value = element.getAsString();
@@ -2142,6 +2147,15 @@ public class PartyFinderManager implements NotificationAccessor {
             case HEALER -> "Healer";
             case TANK -> "Tank";
         };
+    }
+
+    private static boolean isExistingPartyCreateFailure(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+
+        String normalized = message.toLowerCase(Locale.ROOT);
+        return normalized.contains("already") && normalized.contains("party");
     }
 
     private void applyCreatedListingState(Listing listing) {
