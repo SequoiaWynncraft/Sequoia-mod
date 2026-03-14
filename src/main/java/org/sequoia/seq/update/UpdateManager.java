@@ -309,8 +309,10 @@ public class UpdateManager implements NotificationAccessor {
 
             if (isWindows()) {
                 Path currentJar = resolveInstalledModJarPath();
+                Path helperSourceJar = resolveWindowsHelperSourceJarPath(currentJar);
                 moveAtomically(tempJar, pendingJar);
-                pendingInstall = new PendingInstall(pendingJar, finalJar, modsDir, release.tagName(), currentJar);
+                pendingInstall =
+                        new PendingInstall(pendingJar, finalJar, modsDir, release.tagName(), currentJar, helperSourceJar);
                 registerShutdownHookIfNeeded();
                 pendingRelease = null;
                 statusLine = "Downloaded " + release.tagName() + ". It will install on exit.";
@@ -401,7 +403,7 @@ public class UpdateManager implements NotificationAccessor {
                 throw new IllegalStateException("Missing updates directory for pending install.");
             }
 
-            Path sourceJar = resolveCurrentModJarPath();
+            Path sourceJar = install.helperSourceJar();
             Path helperJar = updatesDir.resolve("seq-update-helper.jar");
             Files.copy(sourceJar, helperJar, StandardCopyOption.REPLACE_EXISTING);
 
@@ -433,6 +435,16 @@ public class UpdateManager implements NotificationAccessor {
                         finalJar.toString(),
                         helperJar.toString())
                 .start();
+    }
+
+    Path resolveWindowsHelperSourceJarPath(Path installedJar) {
+        try {
+            return resolveCurrentModJarPath();
+        } catch (Exception e) {
+            SeqClient.LOGGER.warn(
+                    "Falling back to installed mod jar for Windows helper source resolution", e);
+            return installedJar;
+        }
     }
 
     Path resolveInstalledModJarPath() {
@@ -701,5 +713,6 @@ public class UpdateManager implements NotificationAccessor {
         }
     }
 
-    record PendingInstall(Path pendingJar, Path finalJar, Path modsDir, String tagName, Path currentJar) {}
+    record PendingInstall(
+            Path pendingJar, Path finalJar, Path modsDir, String tagName, Path currentJar, Path helperSourceJar) {}
 }
