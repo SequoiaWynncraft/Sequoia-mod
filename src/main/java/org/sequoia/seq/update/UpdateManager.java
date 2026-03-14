@@ -5,6 +5,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.fabricmc.loader.api.FabricLoader;
+import net.fabricmc.loader.api.ModContainer;
+import net.fabricmc.loader.api.metadata.ModOrigin;
 import net.minecraft.client.Minecraft;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
@@ -306,7 +308,7 @@ public class UpdateManager implements NotificationAccessor {
             }
 
             if (isWindows()) {
-                Path currentJar = resolveCurrentModJarPath();
+                Path currentJar = resolveInstalledModJarPath();
                 moveAtomically(tempJar, pendingJar);
                 pendingInstall = new PendingInstall(pendingJar, finalJar, modsDir, release.tagName(), currentJar);
                 registerShutdownHookIfNeeded();
@@ -431,6 +433,33 @@ public class UpdateManager implements NotificationAccessor {
                         finalJar.toString(),
                         helperJar.toString())
                 .start();
+    }
+
+    Path resolveInstalledModJarPath() {
+        try {
+            return FabricLoader.getInstance()
+                    .getModContainer(MOD_ID)
+                    .map(this::resolveInstalledModJarPath)
+                    .orElseGet(this::resolveCurrentModJarPath);
+        } catch (Exception e) {
+            SeqClient.LOGGER.warn("Falling back to runtime updater jar path for installed mod resolution", e);
+            return resolveCurrentModJarPath();
+        }
+    }
+
+    private Path resolveInstalledModJarPath(ModContainer container) {
+        ModOrigin origin = container.getOrigin();
+        if (origin.getKind() != ModOrigin.Kind.PATH) {
+            throw new IllegalStateException("Fabric Loader mod origin was " + origin.getKind() + ", expected PATH.");
+        }
+
+        for (Path path : origin.getPaths()) {
+            if (Files.isRegularFile(path) && path.getFileName().toString().endsWith(".jar")) {
+                return path.toAbsolutePath().normalize();
+            }
+        }
+
+        throw new IllegalStateException("Fabric Loader mod origin did not expose an installed jar path.");
     }
 
     Path resolveCurrentModJarPath() {
