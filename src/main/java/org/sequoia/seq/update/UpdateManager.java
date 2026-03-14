@@ -5,6 +5,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.fabricmc.loader.api.FabricLoader;
+import net.fabricmc.loader.api.ModContainer;
+import net.fabricmc.loader.api.metadata.ModOrigin;
 import net.minecraft.client.Minecraft;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
@@ -306,9 +308,11 @@ public class UpdateManager implements NotificationAccessor {
             }
 
             if (isWindows()) {
-                Path currentJar = resolveCurrentModJarPath();
+                Path currentJar = resolveInstalledModJarPath();
+                Path helperSourceJar = resolveWindowsHelperSourceJarPath(currentJar);
                 moveAtomically(tempJar, pendingJar);
-                pendingInstall = new PendingInstall(pendingJar, finalJar, modsDir, release.tagName(), currentJar);
+                pendingInstall =
+                        new PendingInstall(pendingJar, finalJar, modsDir, release.tagName(), currentJar, helperSourceJar);
                 registerShutdownHookIfNeeded();
                 pendingRelease = null;
                 statusLine = "Downloaded " + release.tagName() + ". It will install on exit.";
@@ -399,7 +403,7 @@ public class UpdateManager implements NotificationAccessor {
                 throw new IllegalStateException("Missing updates directory for pending install.");
             }
 
-            Path sourceJar = resolveCurrentModJarPath();
+            Path sourceJar = install.helperSourceJar();
             Path helperJar = updatesDir.resolve("seq-update-helper.jar");
             Files.copy(sourceJar, helperJar, StandardCopyOption.REPLACE_EXISTING);
 
@@ -431,6 +435,43 @@ public class UpdateManager implements NotificationAccessor {
                         finalJar.toString(),
                         helperJar.toString())
                 .start();
+    }
+
+    Path resolveWindowsHelperSourceJarPath(Path installedJar) {
+        try {
+            return resolveCurrentModJarPath();
+        } catch (Exception e) {
+            SeqClient.LOGGER.warn(
+                    "Falling back to installed mod jar for Windows helper source resolution", e);
+            return installedJar;
+        }
+    }
+
+    Path resolveInstalledModJarPath() {
+        try {
+            return FabricLoader.getInstance()
+                    .getModContainer(MOD_ID)
+                    .map(this::resolveInstalledModJarPath)
+                    .orElseGet(this::resolveCurrentModJarPath);
+        } catch (Exception e) {
+            SeqClient.LOGGER.warn("Falling back to runtime updater jar path for installed mod resolution", e);
+            return resolveCurrentModJarPath();
+        }
+    }
+
+    private Path resolveInstalledModJarPath(ModContainer container) {
+        ModOrigin origin = container.getOrigin();
+        if (origin.getKind() != ModOrigin.Kind.PATH) {
+            throw new IllegalStateException("Fabric Loader mod origin was " + origin.getKind() + ", expected PATH.");
+        }
+
+        for (Path path : origin.getPaths()) {
+            if (Files.isRegularFile(path) && path.getFileName().toString().endsWith(".jar")) {
+                return path.toAbsolutePath().normalize();
+            }
+        }
+
+        throw new IllegalStateException("Fabric Loader mod origin did not expose an installed jar path.");
     }
 
     Path resolveCurrentModJarPath() {
@@ -672,5 +713,6 @@ public class UpdateManager implements NotificationAccessor {
         }
     }
 
-    record PendingInstall(Path pendingJar, Path finalJar, Path modsDir, String tagName, Path currentJar) {}
+    record PendingInstall(
+            Path pendingJar, Path finalJar, Path modsDir, String tagName, Path currentJar, Path helperSourceJar) {}
 }

@@ -710,7 +710,10 @@ class UpdateManagerTest {
 
             TestableUpdateManager manager = newDirectManager(gameDir);
             manager.windows = true;
-            manager.currentModJarPath = Files.writeString(gameDir.resolve("seq-current.jar"), "packaged jar");
+            manager.currentModJarPath = Files.writeString(gameDir.resolve("seq-runtime.jar"), "packaged helper source");
+            Files.createDirectories(gameDir.resolve("mods"));
+            manager.installedModJarPath = Files.writeString(
+                    gameDir.resolve("mods").resolve("sequoia-0.1.0.jar"), "installed mod jar");
             manager.javaExecutable = "java-test";
             manager.applyRelease(
                     release("v0.1.1", server.uri("/downloads/sequoia-0.1.1.jar"), server.uri("/downloads/sequoia-0.1.1.jar.sha256")),
@@ -722,11 +725,44 @@ class UpdateManagerTest {
             HelperLaunch launch = manager.helperLaunches.getFirst();
             assertEquals("java-test", launch.javaExecutable());
             assertEquals(gameDir.resolve("mods"), launch.modsDir());
+            assertEquals(manager.installedModJarPath, launch.currentJar());
             assertEquals(gameDir.resolve("updates").resolve("sequoia-0.1.1.jar.pending"), launch.pendingJar());
             assertEquals(gameDir.resolve("mods").resolve("sequoia-0.1.1.jar"), launch.finalJar());
             assertEquals(gameDir.resolve("updates").resolve("seq-update-helper.jar"), launch.helperJar());
             assertArrayEquals(
                     Files.readAllBytes(manager.currentModJarPath),
+                    Files.readAllBytes(gameDir.resolve("updates").resolve("seq-update-helper.jar")));
+        }
+    }
+
+    @Test
+    void applyPendingInstallOnShutdownFallsBackToInstalledJarWhenRuntimeJarResolutionFails(@TempDir Path gameDir)
+            throws Exception {
+        byte[] jarBytes = "fake-jar-binary".getBytes(StandardCharsets.UTF_8);
+        String checksum = sha256(jarBytes);
+
+        try (TestHttpServer server = new TestHttpServer()) {
+            server.respondBytes("/downloads/sequoia-0.1.1.jar", jarBytes, "application/java-archive");
+            server.respondText("/downloads/sequoia-0.1.1.jar.sha256", checksum + "  sequoia-0.1.1.jar\n", "text/plain");
+
+            TestableUpdateManager manager = newDirectManager(gameDir);
+            manager.windows = true;
+            Files.createDirectories(gameDir.resolve("mods"));
+            manager.installedModJarPath = Files.writeString(
+                    gameDir.resolve("mods").resolve("sequoia-0.1.0.jar"), "installed mod jar");
+            manager.currentModJarPathFailure = new IllegalStateException("runtime jar unavailable");
+            manager.javaExecutable = "java-test";
+            manager.applyRelease(
+                    release("v0.1.1", server.uri("/downloads/sequoia-0.1.1.jar"), server.uri("/downloads/sequoia-0.1.1.jar.sha256")),
+                    false);
+
+            manager.applyPendingInstallOnShutdown();
+
+            assertEquals(1, manager.helperLaunches.size());
+            HelperLaunch launch = manager.helperLaunches.getFirst();
+            assertEquals(manager.installedModJarPath, launch.currentJar());
+            assertArrayEquals(
+                    Files.readAllBytes(manager.installedModJarPath),
                     Files.readAllBytes(gameDir.resolve("updates").resolve("seq-update-helper.jar")));
         }
     }
@@ -895,6 +931,8 @@ class UpdateManagerTest {
         private volatile CountDownLatch applyStarted;
         private volatile CountDownLatch allowApplyToFinish;
         private volatile Path currentModJarPath;
+        private volatile RuntimeException currentModJarPathFailure;
+        private volatile Path installedModJarPath;
         private volatile String javaExecutable;
         private volatile boolean useRealHelperLaunch;
 
@@ -965,7 +1003,21 @@ class UpdateManagerTest {
 
         @Override
         Path resolveCurrentModJarPath() {
+            if (currentModJarPathFailure != null) {
+                throw currentModJarPathFailure;
+            }
             return currentModJarPath != null ? currentModJarPath : super.resolveCurrentModJarPath();
+        }
+
+        @Override
+        Path resolveInstalledModJarPath() {
+            if (installedModJarPath != null) {
+                return installedModJarPath;
+            }
+            if (currentModJarPath != null) {
+                return currentModJarPath;
+            }
+            return super.resolveInstalledModJarPath();
         }
 
         @Override
