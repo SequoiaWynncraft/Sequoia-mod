@@ -2182,18 +2182,16 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         int count = 0;
         for (org.sequoia.seq.model.Member member : listing.members()) {
             if (member == null) {
-                count++;
                 continue;
             }
 
             String playerUUID = member.playerUUID();
             if (playerUUID == null || playerUUID.isBlank()) {
-                count++;
                 continue;
             }
 
             String normalized = playerUUID.trim().toLowerCase(Locale.ROOT);
-            if ("anonymous".equals(normalized) || "reserved".equals(normalized)) {
+            if ("reserved".equals(normalized)) {
                 count++;
             }
         }

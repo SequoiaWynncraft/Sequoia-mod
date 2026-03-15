@@ -370,23 +370,12 @@ public class PartyFinderManager implements NotificationAccessor {
             }
 
             Listing listing = currentResult.data();
-            int currentReservedSlots = inferReservedSlotCount(listing);
-            int delta = requestedReservedSlots - currentReservedSlots;
-            if (delta == 0) {
-                return CompletableFuture.completedFuture(CommandResult.success(
-                        "Reserved slots already set to " + requestedReservedSlots + " on party #" + listing.id() + ".",
-                        listing));
-            }
-
-            CompletableFuture<Listing> reserveFuture = delta > 0
-                    ? ApiClient.getInstance().reserveSlots(listing.id(), delta)
-                    : ApiClient.getInstance().unreserveSlots(listing.id(), -delta);
             String verb = requestedReservedSlots == 1 ? "slot" : "slots";
             return executeListingCommand(
-                    reserveFuture,
+                    ApiClient.getInstance().reserveSlots(listing.id(), requestedReservedSlots),
                     this::applyUpdatedCurrentListingState,
-                    "Unable to adjust reserved slots",
-                    "Failed to adjust reserved slots",
+                    "Unable to set reserved slots",
+                    "Failed to set reserved slots",
                     updatedListing -> "Set reserved slots to " + requestedReservedSlots + " " + verb + " on party #"
                             + updatedListing.id() + ".");
         });
@@ -1593,12 +1582,12 @@ public class PartyFinderManager implements NotificationAccessor {
         final boolean strict = mode == PartyMode.GRIND && strictRoles;
         final PartyRegion selectedRegion = region != null ? region : PartyRegion.NA;
 
-        int requestedReservedSlots = Math.max(0, reservedSlots);
+        int requestedReservedSlots = reservedSlots;
         createParty(activityIds, mode, strict, selectedRegion, createRole, null).thenAccept(listing -> {
-            if (listing == null || requestedReservedSlots <= 0) {
+            if (listing == null) {
                 return;
             }
-            applyReservedSlotTarget(listing.id(), 0, requestedReservedSlots, "create");
+            applyReservedSlotTarget(listing.id(), requestedReservedSlots, "create");
         });
     }
 
@@ -1609,8 +1598,7 @@ public class PartyFinderManager implements NotificationAccessor {
             return;
         }
 
-        int requestedReservedSlots = Math.max(0, reservedSlots);
-        int currentReservedSlots = inferReservedSlotCount(currentListing);
+        int requestedReservedSlots = reservedSlots;
 
         PartyMode mode = PartyMode.CHILL;
         List<String> raidDisplayNames = new ArrayList<>();
@@ -1658,7 +1646,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 .thenAccept(listing -> {
                     if (listing != null) {
                         applyUpdatedCurrentListingState(listing);
-                        applyReservedSlotTarget(listing.id(), currentReservedSlots, requestedReservedSlots, "update");
+                        applyReservedSlotTarget(listing.id(), requestedReservedSlots, "update");
                     }
                 })
                 .exceptionally(e -> {
@@ -2228,19 +2216,9 @@ public class PartyFinderManager implements NotificationAccessor {
         });
     }
 
-    private void applyReservedSlotTarget(
-            long listingId, int currentReservedSlots, int requestedReservedSlots, String context) {
-        int clampedCurrent = Math.max(0, currentReservedSlots);
-        int clampedRequested = Math.max(0, requestedReservedSlots);
-        int delta = clampedRequested - clampedCurrent;
-
-        if (delta == 0) {
-            return;
-        }
-
-        CompletableFuture<Listing> adjustFuture = delta > 0
-                ? ApiClient.getInstance().reserveSlots(listingId, delta)
-                : ApiClient.getInstance().unreserveSlots(listingId, -delta);
+    private void applyReservedSlotTarget(long listingId, int requestedReservedSlots, String context) {
+        CompletableFuture<Listing> adjustFuture =
+                ApiClient.getInstance().reserveSlots(listingId, requestedReservedSlots);
 
         adjustFuture
                 .thenAccept(updatedListing -> {
@@ -2249,10 +2227,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     }
                 })
                 .exceptionally(e -> {
-                    handleActionError(
-                            e,
-                            "Unable to adjust reserved slots",
-                            "Failed to " + (delta > 0 ? "reserve" : "unreserve") + " slots on " + context);
+                    handleActionError(e, "Unable to set reserved slots", "Failed to set reserved slots on " + context);
                     return null;
                 });
     }
@@ -2274,18 +2249,16 @@ public class PartyFinderManager implements NotificationAccessor {
         int count = 0;
         for (Member member : listing.members()) {
             if (member == null) {
-                count++;
                 continue;
             }
 
             String playerUUID = member.playerUUID();
             if (playerUUID == null || playerUUID.isBlank()) {
-                count++;
                 continue;
             }
 
             String normalized = playerUUID.trim().toLowerCase(Locale.ROOT);
-            if ("anonymous".equals(normalized) || "reserved".equals(normalized)) {
+            if ("reserved".equals(normalized)) {
                 count++;
             }
         }
