@@ -1044,16 +1044,10 @@ public class PartyFinderManager implements NotificationAccessor {
                 return;
             }
 
-            ClickEvent inviteAllClickEvent = new ClickEvent.RunCommand(SEQ_INVITE_ALL_COMMAND);
             MutableComponent fullMessage = NotificationAccessor.prefixComponent()
-                    .append(Component.literal("Party is now full.").withStyle(ChatFormatting.GRAY))
-                    .append(Component.literal(" "))
-                    .append(Component.literal("Click ").withStyle(ChatFormatting.GRAY))
-                    .append(Component.literal("Invite all").withStyle(style -> style.withColor(ChatFormatting.AQUA)
-                            .withUnderlined(true)
-                            .withClickEvent(inviteAllClickEvent)))
-                    .append(Component.literal(" to start.").withStyle(ChatFormatting.GRAY));
+                    .append(Component.literal("Party is now full.").withStyle(ChatFormatting.GRAY));
 
+            ClickEvent inviteAllClickEvent = new ClickEvent.RunCommand(SEQ_INVITE_ALL_COMMAND);
             MutableComponent actionMessage = Component.empty()
                     .append(NotificationAccessor.wynnPill(
                             "invite all", ChatFormatting.GREEN, ChatFormatting.WHITE, inviteAllClickEvent));
