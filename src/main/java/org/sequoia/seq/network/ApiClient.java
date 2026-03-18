@@ -367,6 +367,7 @@ public class ApiClient {
     private HttpRequest.Builder newRequest(String resolvedBaseUrl, String path, boolean includeAuthHeader) {
         HttpRequest.Builder builder =
                 HttpRequest.newBuilder().uri(URI.create(resolvedBaseUrl + path)).timeout(Duration.ofSeconds(15));
+        builder.header(ClientVersion.MOD_VERSION_HEADER, ClientVersion.resolveInstalledVersion());
         String token = SeqClient.getConfigManager().getToken();
         if (includeAuthHeader && token != null && !token.isBlank()) {
             builder.header("Authorization", "Bearer " + token);

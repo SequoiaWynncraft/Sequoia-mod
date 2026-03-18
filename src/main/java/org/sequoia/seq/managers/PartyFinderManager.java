@@ -1819,6 +1819,16 @@ public class PartyFinderManager implements NotificationAccessor {
 
     private static String mapStatusError(int statusCode, String responseBody, String backendError) {
         String body = responseBody == null ? "" : responseBody.toLowerCase(Locale.ROOT);
+        if (statusCode == 426 || body.contains("mod_version_unsupported")) {
+            String minimumSafeVersion = extractApiField(responseBody, "minimum_safe_version");
+            if (minimumSafeVersion != null) {
+                return "Update Sequoia to at least " + minimumSafeVersion + ".";
+            }
+            if (backendError != null) {
+                return backendError;
+            }
+            return "Update Sequoia to a newer version.";
+        }
         if (statusCode == 400 || statusCode == 422) {
             if (backendError != null) {
                 return backendError;
@@ -1863,6 +1873,22 @@ public class PartyFinderManager implements NotificationAccessor {
             }
 
             return getJsonString(obj, "detail");
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static String extractApiField(String responseBody, String key) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return null;
+        }
+
+        try {
+            JsonElement parsed = JsonParser.parseString(responseBody);
+            if (!parsed.isJsonObject()) {
+                return null;
+            }
+            return getJsonString(parsed.getAsJsonObject(), key);
         } catch (Exception ignored) {
             return null;
         }

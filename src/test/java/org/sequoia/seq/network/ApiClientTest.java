@@ -3,6 +3,7 @@ package org.sequoia.seq.network;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ApiClientTest {
 
@@ -30,5 +31,11 @@ class ApiClientTest {
                 new ApiClient.ApiException(500, "{\"message\":\"internal error\"}");
 
         assertEquals(false, ApiClient.shouldRetryAuthAtAlternateBase(exception));
+    }
+
+    @Test
+    void modVersionHeaderConstantMatchesBackendContract() {
+        assertEquals("X-Sequoia-Mod-Version", ClientVersion.MOD_VERSION_HEADER);
+        assertTrue(ClientVersion.MOD_VERSION_HEADER.startsWith("X-"));
     }
 }

@@ -448,9 +448,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     static Map<String, String> buildHandshakeHeaders(String token) {
+        return buildHandshakeHeaders(token, ClientVersion.resolveInstalledVersion());
+    }
+
+    static Map<String, String> buildHandshakeHeaders(String token, String modVersion) {
         Map<String, String> headers = new LinkedHashMap<>();
         if (token != null && !token.isBlank()) {
             headers.put("Authorization", buildAuthorizationHeaderValue(token));
+        }
+        if (modVersion != null && !modVersion.isBlank()) {
+            headers.put(ClientVersion.MOD_VERSION_HEADER, modVersion.trim());
         }
         return headers;
     }
@@ -789,9 +796,21 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 }
                 case "error" -> {
                     String error = extractBackendErrorMessage(json);
+                    String backendCode = extractBackendErrorCode(json);
+                    String minimumSafeVersion = extractMinimumSafeVersion(json);
                     int status = extractStatusCode(json);
                     String normalized = error.toLowerCase(Locale.ROOT);
-                    SeqClient.LOGGER.warn("[WebSocket] Backend error status={} message={}", status, error);
+                    SeqClient.LOGGER.warn(
+                            "[WebSocket] Backend error status={} code={} message={}", status, backendCode, error);
+
+                    if ("mod_version_unsupported".equalsIgnoreCase(backendCode) || status == 426) {
+                        autoReconnect = false;
+                        String targetVersion = minimumSafeVersion != null && !minimumSafeVersion.isBlank()
+                                ? minimumSafeVersion
+                                : "the required version";
+                        notify("Update Sequoia to at least " + targetVersion + ".");
+                        return;
+                    }
 
                     if (status == 400 || normalized.contains("invalid auth request")) {
                         authFailed = true;
@@ -1108,6 +1127,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return -1;
     }
 
+    private static String extractBackendErrorCode(JsonObject json) {
+        return extractPrimitiveString(json, "code");
+    }
+
     private static String extractBackendErrorMessage(JsonObject json) {
         if (json == null) {
             return "Unknown backend error";
@@ -1125,6 +1148,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return message;
         }
         return "Unknown backend error";
+    }
+
+    private static String extractMinimumSafeVersion(JsonObject json) {
+        return extractPrimitiveString(json, "minimum_safe_version");
     }
 
     private static String extractPrimitiveString(JsonObject json, String key) {
