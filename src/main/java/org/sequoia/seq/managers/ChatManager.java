@@ -252,6 +252,17 @@ public class ChatManager {
         return usernames.get(0);
     }
 
+    static String resolvePacketUsername(Component component, String displayedName) {
+        String realUsername = findRealUsername(component, displayedName);
+        if (realUsername != null && realUsername.matches("[a-zA-Z0-9_]{3,16}")) {
+            return realUsername;
+        }
+        if (displayedName != null && displayedName.matches("[a-zA-Z0-9_]{3,16}")) {
+            return displayedName;
+        }
+        return null;
+    }
+
     public static List<String> extractRealUsernames(Component component) {
         if (component == null) {
             return List.of();

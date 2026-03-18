@@ -19,7 +19,7 @@ public final class GuildBankTracker {
             "^(.+?)\\s+(deposited|withdrew)\\s+(.+?)\\s+(to|from)\\s+the Guild Bank\\s+\\((.+)\\)$",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern QUANTITY_PATTERN = Pattern.compile("^(?:(\\d+)x\\s+)?(.+)$");
-    private static final Pattern CHARGES_PATTERN = Pattern.compile("^(.*?)(?:\\s+\\[(\\d+/\\d+)\\])?$");
+    private static final Pattern CHARGES_PATTERN = Pattern.compile("^(.*?)(?:\\s+\\[([^\\]]+)\\])?$");
     private static final Duration DEDUPE_WINDOW = Duration.ofSeconds(2);
 
     private static GuildBankTracker instance;
@@ -57,7 +57,32 @@ public final class GuildBankTracker {
         if (message == null) {
             return null;
         }
-        return parseEvent(message.getString());
+
+        GuildBankEvent parsed = parseEvent(message.getString());
+        if (parsed == null) {
+            return null;
+        }
+
+        String resolvedPlayer = ChatManager.resolvePacketUsername(message, parsed.player());
+        if (resolvedPlayer == null) {
+            SeqClient.LOGGER.warn(
+                    "[GuildBank] Dropping guild-bank message: no real username for displayed player '{}'",
+                    parsed.player());
+            return null;
+        }
+
+        if (resolvedPlayer.equals(parsed.player())) {
+            return parsed;
+        }
+
+        return new GuildBankEvent(
+                parsed.action(),
+                resolvedPlayer,
+                parsed.quantity(),
+                parsed.itemName(),
+                parsed.charges(),
+                parsed.accessTier(),
+                parsed.rawMessage());
     }
 
     GuildBankEvent parseEvent(String rawText) {
