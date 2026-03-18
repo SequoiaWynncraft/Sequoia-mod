@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -43,6 +44,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static final long PRIVILEGED_SEND_THROTTLE_MS = 150;
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Pattern URL_PATTERN = Pattern.compile("^(https?://).+", Pattern.CASE_INSENSITIVE);
+    private static final Map<String, Integer> VERSION_REMINDER_INTERVALS = Map.of(
+            "guild_chat", 20,
+            "guild_raid_announcement", 5,
+            "guild_bank_event", 10);
 
     private static ConnectionManager instance;
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -86,6 +91,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static Consumer<PartyFinderUpdateMessage> partyFinderUpdateHandler;
     private static Consumer<PartyFinderInviteMessage> partyFinderInviteHandler;
     private static Consumer<PartyFinderStaleWarningMessage> partyFinderStaleWarningHandler;
+    private static final Map<String, Integer> versionRejectionCounts = new ConcurrentHashMap<>();
     private volatile AuthFlow pendingAuthFlow = AuthFlow.CONNECT;
 
     public static ConnectionManager getInstance() {
@@ -798,6 +804,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     String error = extractBackendErrorMessage(json);
                     String backendCode = extractBackendErrorCode(json);
                     String minimumSafeVersion = extractMinimumSafeVersion(json);
+                    String capability = extractCapability(json);
                     int status = extractStatusCode(json);
                     String normalized = error.toLowerCase(Locale.ROOT);
                     SeqClient.LOGGER.warn(
@@ -805,10 +812,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
                     if ("mod_version_unsupported".equalsIgnoreCase(backendCode) || status == 426) {
                         autoReconnect = false;
-                        String targetVersion = minimumSafeVersion != null && !minimumSafeVersion.isBlank()
-                                ? minimumSafeVersion
-                                : "the required version";
-                        notify("Update Sequoia to at least " + targetVersion + ".");
+                        maybeNotifyVersionRejection(capability, minimumSafeVersion, error);
                         return;
                     }
 
@@ -1152,6 +1156,42 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     private static String extractMinimumSafeVersion(JsonObject json) {
         return extractPrimitiveString(json, "minimum_safe_version");
+    }
+
+    private static String extractCapability(JsonObject json) {
+        return extractPrimitiveString(json, "capability");
+    }
+
+    private void maybeNotifyVersionRejection(String capability, String minimumSafeVersion, String backendMessage) {
+        String scope = capability == null || capability.isBlank() ? "general" : capability;
+        int count = versionRejectionCounts.merge(scope, 1, Integer::sum);
+        int interval = VERSION_REMINDER_INTERVALS.getOrDefault(scope, Integer.MAX_VALUE);
+        if (count != 1 && (interval == Integer.MAX_VALUE || count % interval != 0)) {
+            return;
+        }
+
+        if (count == 1) {
+            if (backendMessage != null && !backendMessage.isBlank() && !"Unknown backend error".equals(backendMessage)) {
+                notify(backendMessage);
+                return;
+            }
+            String targetVersion = minimumSafeVersion != null && !minimumSafeVersion.isBlank()
+                    ? minimumSafeVersion
+                    : "the required version";
+            notify("Update Sequoia to at least " + targetVersion + ".");
+            return;
+        }
+
+        String feature = switch (scope) {
+            case "guild_chat" -> "guild chat relays";
+            case "guild_raid_announcement" -> "raid completion relays";
+            case "guild_bank_event" -> "guild bank relays";
+            default -> "some Sequoia features";
+        };
+        String targetVersion = minimumSafeVersion != null && !minimumSafeVersion.isBlank()
+                ? minimumSafeVersion
+                : "a newer version";
+        notify("Sequoia is outdated. Some " + feature + " may not work until you update to " + targetVersion + ".");
     }
 
     private static String extractPrimitiveString(JsonObject json, String key) {

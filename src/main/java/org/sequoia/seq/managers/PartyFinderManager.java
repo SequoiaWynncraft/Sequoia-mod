@@ -1810,8 +1810,9 @@ public class PartyFinderManager implements NotificationAccessor {
             return statusMapped;
         }
 
-        if (backendError != null) {
-            return backendError;
+        String translatedBackendError = translatePartyFinderBackendError(backendError);
+        if (translatedBackendError != null) {
+            return translatedBackendError;
         }
 
         return fallbackMessage;
@@ -1820,18 +1821,19 @@ public class PartyFinderManager implements NotificationAccessor {
     private static String mapStatusError(int statusCode, String responseBody, String backendError) {
         String body = responseBody == null ? "" : responseBody.toLowerCase(Locale.ROOT);
         if (statusCode == 426 || body.contains("mod_version_unsupported")) {
-            String minimumSafeVersion = extractApiField(responseBody, "minimum_safe_version");
-            if (minimumSafeVersion != null) {
-                return "Update Sequoia to at least " + minimumSafeVersion + ".";
-            }
             if (backendError != null) {
                 return backendError;
+            }
+            String minimumSafeVersion = extractApiField(responseBody, "minimum_safe_version");
+            if (minimumSafeVersion != null && !minimumSafeVersion.isBlank()) {
+                return "Update Sequoia to at least " + minimumSafeVersion + ".";
             }
             return "Update Sequoia to a newer version.";
         }
         if (statusCode == 400 || statusCode == 422) {
-            if (backendError != null) {
-                return backendError;
+            String translatedBackendError = translatePartyFinderBackendError(backendError);
+            if (translatedBackendError != null) {
+                return translatedBackendError;
             }
             return "Request rejected by backend validation. Check your inputs.";
         }
@@ -1848,6 +1850,36 @@ public class PartyFinderManager implements NotificationAccessor {
             return "Access denied by backend authorization.";
         }
         return null;
+    }
+
+    private static String translatePartyFinderBackendError(String backendError) {
+        if (backendError == null || backendError.isBlank()) {
+            return null;
+        }
+
+        String normalized = backendError.toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "listing is not open for new members" -> "This party is currently closed by the leader.";
+            case "party is already full" -> "This party is already full.";
+            case "invite has expired" -> "This invite has expired.";
+            case "invite is no longer active" -> "This invite is no longer active.";
+            case "this invite was not intended for your linked account" ->
+                "This invite was sent to a different linked account.";
+            case "role is required" -> "Choose a role before joining this party.";
+            case "listing has been disbanded", "listing has already been disbanded" ->
+                "This party has already been disbanded.";
+            case "listing is already closed" -> "This party is already closed.";
+            case "only a closed listing can be reopened" -> "This party is not currently closed.";
+            case "only the party leader can close the listing" -> "Only the party leader can close the party.";
+            case "only the party leader can reopen the listing" -> "Only the party leader can reopen the party.";
+            case "only the party leader can disband the listing" -> "Only the party leader can disband the party.";
+            case "you are not a member of this party" -> "You are not in this party.";
+            case "strict grind party allows at most 1 healer" -> "This strict grind party already has a healer.";
+            case "strict grind party must include at least 1 tank" -> "This strict grind party still needs a tank.";
+            case "strict grind party has too many dps slots filled" ->
+                "This strict grind party has no DPS slots left.";
+            default -> backendError;
+        };
     }
 
     private static String extractApiErrorMessage(String responseBody) {
