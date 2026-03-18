@@ -686,8 +686,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     }
                 }
                 case "party_finder_update" -> {
+                    String action = json.has("action") && !json.get("action").isJsonNull()
+                            ? json.get("action").getAsString()
+                            : "unknown";
                     if (partyFinderUpdateHandler != null) {
-                        String action = json.get("action").getAsString();
                         JsonObject listingJson = json.getAsJsonObject("listing");
                         SeqClient.LOGGER.info(
                                 "[WebSocket] Dispatching party_finder_update action={} hasListing={}",

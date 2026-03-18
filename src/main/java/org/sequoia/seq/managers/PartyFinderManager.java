@@ -833,6 +833,14 @@ public class PartyFinderManager implements NotificationAccessor {
             return;
         }
 
+        if ("CREATED".equals(action)) {
+            String announcementLeaderUUID = createdListingNotificationTarget(updatedListing, myUUID);
+            if (announcementLeaderUUID != null) {
+                notifyNewPartyListing(announcementLeaderUUID, updatedListing);
+            }
+            return;
+        }
+
         if ("DISBANDED".equals(action)) {
             boolean wasInParty = listingContainsPlayer(previousListing, myUUID)
                     || listingContainsPlayer(updatedListing, myUUID)
@@ -849,6 +857,52 @@ public class PartyFinderManager implements NotificationAccessor {
 
         notifyLocalPartyUpdateUx(previousListing, updatedListing, myUUID);
         notifyLeaderPartyUpdateUx(previousListing, updatedListing, myUUID);
+    }
+
+    private String createdListingNotificationTarget(Listing listing, String myUUID) {
+        if (listing == null || myUUID == null || myUUID.isBlank()) {
+            return null;
+        }
+
+        if (uuidEquals(myUUID, listing.leaderUUID()) || listingContainsPlayer(listing, myUUID)) {
+            return null;
+        }
+
+        return listing.leaderUUID();
+    }
+
+    private void notifyNewPartyListing(String leaderUUID, Listing listing) {
+        if (leaderUUID == null || leaderUUID.isBlank() || listing == null) {
+            return;
+        }
+
+        PlayerNameCache.resolveAsync(leaderUUID)
+                .completeOnTimeout(null, INVITE_NAME_LOOKUP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .whenComplete((resolvedName, error) -> {
+                    String leaderName = formatInviterName(resolvedName);
+                    String activitiesLabel = formatActivitySummary(listing);
+                    String message = leaderName + " started "
+                            + (activitiesLabel.isBlank() ? "a party!" : "a " + activitiesLabel + " party!");
+                    notifyNewPartyListingWithJoinAction(message, listing.id());
+                });
+    }
+
+    private void notifyNewPartyListingWithJoinAction(String message, long listingId) {
+        SeqClient.mc.execute(() -> {
+            var player = SeqClient.mc.player;
+            if (player == null) {
+                return;
+            }
+
+            ClickEvent joinClickEvent = new ClickEvent.RunCommand("/seq p join " + listingId);
+            MutableComponent announcement = NotificationAccessor.prefixComponent()
+                    .append(Component.literal(String.valueOf(message)).withStyle(ChatFormatting.GRAY))
+                    .append(Component.literal(" "))
+                    .append(NotificationAccessor.wynnPill(
+                            "JOIN", ChatFormatting.GREEN, ChatFormatting.WHITE, joinClickEvent));
+
+            player.displayClientMessage(announcement, false);
+        });
     }
 
     private void notifyLocalPartyUpdateUx(Listing previousListing, Listing updatedListing, String myUUID) {
@@ -1072,6 +1126,32 @@ public class PartyFinderManager implements NotificationAccessor {
             return "a player";
         }
         return inviterName;
+    }
+
+    private static String formatActivitySummary(Listing listing) {
+        if (listing == null) {
+            return "";
+        }
+
+        return listing.resolvedActivities().stream()
+                .map(Activity::name)
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(name -> !name.isBlank())
+                .map(PartyFinderManager::abbreviateActivityName)
+                .distinct()
+                .collect(Collectors.joining("/"));
+    }
+
+    private static String abbreviateActivityName(String activityName) {
+        return switch (activityName) {
+            case "Nest of the Grootslangs" -> "NOG";
+            case "The Nameless Anomaly" -> "TNA";
+            case "The Canyon Colossus" -> "TCC";
+            case "Nexus of Light" -> "NOL";
+            case "Prelude to Annihilation" -> "ANNI";
+            default -> activityName;
+        };
     }
 
     // ══════════════════════════════════════════════════════════════
