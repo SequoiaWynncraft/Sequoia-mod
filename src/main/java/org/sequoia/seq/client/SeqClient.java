@@ -70,6 +70,9 @@ public class SeqClient implements ClientModInitializer {
     @Getter
     public static Setting.BooleanSetting checkUpdatesSetting;
 
+    @Getter
+    public static Setting.BooleanSetting easterEggsSetting;
+
     private static KeyMapping openScreenKey;
     private static WynnClassType lastBroadcastPartyClass;
     private static boolean wasInPartyFinder;
@@ -147,10 +150,12 @@ public class SeqClient implements ClientModInitializer {
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
+        easterEggsSetting = new Setting.BooleanSetting("enable_easter_eggs", "ui", true);
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
         getConfigManager().register(checkUpdatesSetting);
+        getConfigManager().register(easterEggsSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.

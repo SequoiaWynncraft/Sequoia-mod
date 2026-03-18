@@ -101,6 +101,8 @@ public class SettingsScreen extends Screen {
 
         categories.clear();
         categories.putAll(temp);
+        collapsedCategories.clear();
+        collapsedCategories.addAll(categories.keySet());
     }
 
     private SettingWidget<?> createWidget(Setting<?> setting) {

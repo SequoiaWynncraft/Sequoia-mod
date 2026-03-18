@@ -17,6 +17,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("show_discord_bridge", "Show Discord chat");
         DISPLAY_NAME_OVERRIDES.put("auto_announce", "Auto announce raids");
         DISPLAY_NAME_OVERRIDES.put("check_updates", "Check for updates on startup");
+        DISPLAY_NAME_OVERRIDES.put("enable_easter_eggs", "Enable easter eggs");
 
         TOKEN_REPLACEMENTS.put("discord", "Discord");
         TOKEN_REPLACEMENTS.put("bridge", "Chat");

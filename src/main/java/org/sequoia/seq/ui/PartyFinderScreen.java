@@ -1709,6 +1709,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     }
 
     private boolean hasGazEarsMember(PartyListing party) {
+        if (SeqClient.getEasterEggsSetting() == null || !SeqClient.getEasterEggsSetting().getValue()) {
+            return false;
+        }
+
         if (party == null) {
             return false;
         }
