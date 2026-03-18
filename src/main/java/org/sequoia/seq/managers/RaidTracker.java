@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 import net.minecraft.network.chat.Component;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.network.ConnectionManager;
+import org.sequoia.seq.utils.PacketTextNormalizer;
 
 /**
  * Detects raid completions from Wynncraft chat and announces them to the guild.
@@ -42,7 +43,6 @@ public class RaidTracker {
             "(.+?)\\s+finished\\s+(.+?)\\s+and claimed\\s+(\\d+)x Aspects,\\s+(\\d+)x Emeralds,\\s+(?:and\\s+)?\\+([\\d.]+)m Guild Experience(?:,\\s+and\\s+\\+(\\d+)\\s+Seasonal Rating)?");
     private static final Pattern USERNAME_PATTERN = Pattern.compile("[a-zA-Z0-9_]{3,16}");
     private static final Pattern COMMA_SPACING_PATTERN = Pattern.compile("\\s*,\\s*");
-
     /**
      * Called from {@link org.sequoia.seq.mixins.ClientPacketListenerMixin} at the
      * packet level for every non-overlay system chat message.
@@ -53,18 +53,40 @@ public class RaidTracker {
         if (!SeqClient.getRaidAutoAnnounceSetting().getValue())
             return;
 
+        ParsedRaidCompletion completion = parseRaidCompletion(message);
+        if (completion == null) {
+            return;
+        }
+
+        ConnectionManager instance = ConnectionManager.getInstance();
+        if (instance != null && !completion.partyMembers().isEmpty()) {
+            instance.sendRaidAnnouncement(
+                    completion.partyMembers(),
+                    completion.raidName(),
+                    completion.aspects(),
+                    completion.emeralds(),
+                    completion.guildExp(),
+                    completion.seasonalRating());
+        }
+    }
+
+    static ParsedRaidCompletion parseRaidCompletion(Component message) {
+        if (message == null) {
+            return null;
+        }
+
         String plain = message.getString();
 
         // Quick keyword gate — skip cleanup & regex for the vast majority of messages.
         // Seasonal Rating is optional, so gate on core raid-completion tokens only.
         if (!plain.contains("finished") || !plain.contains("and claimed") || !plain.contains("Guild Experience"))
-            return;
+            return null;
 
         String cleaned = normalizeForRaidParsing(plain);
 
         Matcher matcher = RAID_FINISH_PATTERN.matcher(cleaned);
         if (!matcher.find())
-            return;
+            return null;
 
         List<String> parsedDisplayedNames = parseDisplayedNames(matcher.group(1));
 
@@ -74,7 +96,7 @@ public class RaidTracker {
         if (partyMembers.isEmpty()) {
             SeqClient.LOGGER
                     .warn("[RaidTracker] Dropping raid announcement: no valid usernames found in completion message");
-            return;
+            return null;
         }
 
         String raidName = matcher.group(2);
@@ -85,25 +107,11 @@ public class RaidTracker {
         double guildExp = Double.parseDouble(matcher.group(5)) / 1000.0;
         int seasonalRating = matcher.group(6) != null ? Integer.parseInt(matcher.group(6)) : 0;
 
-        ConnectionManager instance = ConnectionManager.getInstance();
-        if (instance != null && !partyMembers.isEmpty()) {
-            instance.sendRaidAnnouncement(
-                    partyMembers,
-                    raidName,
-                    aspects,
-                    emeralds,
-                    guildExp,
-                    seasonalRating);
-        }
+        return new ParsedRaidCompletion(partyMembers, raidName, aspects, emeralds, guildExp, seasonalRating);
     }
 
-    private static String normalizeForRaidParsing(String rawText) {
-        return COMMA_SPACING_PATTERN.matcher(rawText
-                .replaceAll("[\\n\\r]+", " ")
-                .replaceAll("[\\p{C}\\p{Co}]", "")
-                .replaceAll(" {2,}", " ")
-                .trim())
-                .replaceAll(", ")
+    static String normalizeForRaidParsing(String rawText) {
+        return PacketTextNormalizer.normalizeForParsing(rawText)
                 .replace(",and ", ", and ");
     }
 
@@ -121,28 +129,53 @@ public class RaidTracker {
 
     private static List<String> resolvePartyMembers(List<String> parsedDisplayedNames,
             List<String> extractedRealNames) {
-        int expectedSize = parsedDisplayedNames.size();
+        List<String> validExtractedNames = extractedRealNames == null
+                ? List.of()
+                : extractedRealNames.stream()
+                        .filter(name -> USERNAME_PATTERN.matcher(name).matches())
+                        .toList();
 
-        List<String> parsedUsernames = parsedDisplayedNames.stream()
-                .filter(name -> USERNAME_PATTERN.matcher(name).matches())
-                .toList();
-
-        if (extractedRealNames == null || extractedRealNames.isEmpty()) {
-            return parsedUsernames;
+        if (validExtractedNames.isEmpty()) {
+            return parsedDisplayedNames.stream()
+                    .filter(name -> USERNAME_PATTERN.matcher(name).matches())
+                    .toList();
         }
 
-        Set<String> merged = new LinkedHashSet<>();
+        int invalidDisplayedCount = (int) parsedDisplayedNames.stream()
+                .filter(name -> !USERNAME_PATTERN.matcher(name).matches())
+                .count();
+        int usernameLikeReplacementBudget = Math.max(0, validExtractedNames.size() - invalidDisplayedCount);
+        int extractedIndex = 0;
 
-        extractedRealNames.stream()
-                .filter(name -> USERNAME_PATTERN.matcher(name).matches())
-                .forEach(merged::add);
+        Set<String> resolved = new LinkedHashSet<>();
+        for (String displayedName : parsedDisplayedNames) {
+            boolean usernameLike = USERNAME_PATTERN.matcher(displayedName).matches();
 
-        parsedUsernames.forEach(merged::add);
+            if (!usernameLike) {
+                if (extractedIndex < validExtractedNames.size()) {
+                    resolved.add(validExtractedNames.get(extractedIndex++));
+                }
+                continue;
+            }
 
-        if (expectedSize > 0 && merged.size() > expectedSize) {
-            return new ArrayList<>(merged).subList(0, expectedSize);
+            if (usernameLikeReplacementBudget > 0 && extractedIndex < validExtractedNames.size()) {
+                resolved.add(validExtractedNames.get(extractedIndex++));
+                usernameLikeReplacementBudget--;
+                continue;
+            }
+
+            resolved.add(displayedName);
         }
 
-        return List.copyOf(merged);
+        return List.copyOf(new ArrayList<>(resolved));
+    }
+
+    record ParsedRaidCompletion(
+            List<String> partyMembers,
+            String raidName,
+            int aspects,
+            int emeralds,
+            double guildExp,
+            int seasonalRating) {
     }
 }

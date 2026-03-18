@@ -51,6 +51,27 @@ class GuildBankTrackerTest {
     }
 
     @Test
+    void parseRealPacketExamplesHandlesSplitGuildBankPhrases() {
+        GuildBankTracker tracker = new GuildBankTracker();
+
+        GuildBankTracker.GuildBankEvent withdrawal = tracker.parseEvent(
+                "󏿼󏿿󏿾 Purprated withdrew 1x Gelibord Teleportation Scroll [3/3]\n"
+                        + "󏿼󐀆 from the Guild Bank (Everyone)");
+        GuildBankTracker.GuildBankEvent deposit = tracker.parseEvent(
+                "󏿼󏿿󏿾 Purprated deposited 1x Gelibord Teleportation Scroll\n"
+                        + "󏿼󐀆 [2/3] to the Guild Bank (Everyone)");
+
+        assertNotNull(withdrawal);
+        assertEquals("Gelibord Teleportation Scroll", withdrawal.itemName());
+        assertEquals("3/3", withdrawal.charges());
+        assertEquals("Everyone", withdrawal.accessTier());
+
+        assertNotNull(deposit);
+        assertEquals("Gelibord Teleportation Scroll", deposit.itemName());
+        assertEquals("2/3", deposit.charges());
+    }
+
+    @Test
     void ignoresNonBankMessages() {
         GuildBankTracker tracker = new GuildBankTracker();
 

@@ -8,6 +8,7 @@ import java.util.regex.Pattern;
 import net.minecraft.network.chat.Component;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.network.ConnectionManager;
+import org.sequoia.seq.utils.PacketTextNormalizer;
 
 /**
  * Detects Wynncraft guild-bank messages and forwards structured events to the
@@ -110,12 +111,7 @@ public final class GuildBankTracker {
     }
 
     static String normalizeForParsing(String rawText) {
-        return rawText
-                .replaceAll("[\\n\\r]+", " ")
-                .replaceAll("[\\p{C}\\p{Co}]", "")
-                .replace('§', ' ')
-                .replaceAll(" +", " ")
-                .trim();
+        return PacketTextNormalizer.normalizeForParsing(rawText);
     }
 
     private synchronized boolean isDuplicate(String rawMessage, Instant now) {

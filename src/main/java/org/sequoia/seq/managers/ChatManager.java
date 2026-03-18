@@ -9,6 +9,7 @@ import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.events.DiscordChatEvent;
 import org.sequoia.seq.network.ConnectionManager;
+import org.sequoia.seq.utils.PacketTextNormalizer;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -43,10 +44,9 @@ public class ChatManager {
     private static final int GUILD_CHAT_COLOR = 0x55FFFF;
     // Nicknames may contain spaces (e.g. "Emanant Force"), so allow spaces in the
     // display-name capture group. DOTALL so the message group captures across \n.
-    // The leading \\S+ skips the guild/rank icon prefix so we only match the first
-    // "Name: message" occurrence, not something like "Server:" buried in the text.
+    // Packet-level normalization strips the icon/banner glyph spam before matching.
     private static final Pattern CHAT_PATTERN = Pattern.compile(
-            "\\S+\\s+([a-zA-Z0-9_][a-zA-Z0-9_ ]*[a-zA-Z0-9_]|[a-zA-Z0-9_]{3,16}):\\s*(.*)",
+            "^([a-zA-Z0-9_][a-zA-Z0-9_ ]*[a-zA-Z0-9_]|[a-zA-Z0-9_]{3,16})\\s*:\\s*(.*)$",
             Pattern.DOTALL);
     private static final Pattern HOVER_REAL_NAME_PATTERN = Pattern.compile(
             // Wynntils format: "<nick>'s real name is <username>"
@@ -127,20 +127,15 @@ public class ChatManager {
      * in the Style's insertion field (used for shift-click @mentions). We look for
      * the component with a valid username insertion to identify the speaker.
      */
-    private static ParsedMessage parseGuildMessage(Component message) {
-        String rawText = message.getString();
-        Matcher matcher = CHAT_PATTERN.matcher(rawText);
+    static ParsedMessage parseGuildMessage(Component message) {
+        String cleaned = PacketTextNormalizer.normalizeForParsing(message == null ? null : message.getString());
+        Matcher matcher = CHAT_PATTERN.matcher(cleaned);
 
         if (!matcher.find())
             return null;
 
-        String displayedName = matcher.group(1);
-        String content = matcher.group(2)
-                .replaceAll("[\\n\\r]+", " ") // collapse newlines into spaces
-                .replaceAll("\\p{C}", "") // strip all Unicode "Other" chars (control, format, private-use, surrogates,
-                                          // unassigned)
-                .replaceAll(" {2,}", " ") // collapse multiple spaces
-                .trim();
+        String displayedName = matcher.group(1).trim();
+        String content = matcher.group(2).trim();
 
         if (content.isEmpty())
             return null;
@@ -324,6 +319,6 @@ public class ChatManager {
         });
     }
 
-    private record ParsedMessage(String username, String nickname, String message, String avatarUrl) {
+    record ParsedMessage(String username, String nickname, String message, String avatarUrl) {
     }
 }
