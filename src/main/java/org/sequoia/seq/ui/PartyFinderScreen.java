@@ -181,6 +181,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
     private static final String GAZ_EARS_ASSET = "gaz_ears";
     private static final String GAZ_EARS_UUID = "66efb975-31b4-499e-9b46-a34980edd8ee";
+    private static final String LEA_UUID = "7792daec-00d8-49ce-b44e-fe97c5ec4e75";
+    private static final String NEXUS_OF_LIGHT = "Nexus of Light";
+    private static final String NEXUS_OF_LEA = "Nexus of Lea";
     private static final String[] ROLES = {"DPS", "Healer", "Tank"};
 
     // All possible tags = RAID_TYPES + PARTY_TAGS
@@ -737,7 +740,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             int partyIndex,
             boolean isJoined) {
         float rowX = x + CARD_PADDING;
-        List<String> raidTags = party.getRaidTags();
+        List<String> raidTags = getRenderedRaidTags(party);
 
         drawRaidIconCircle(
                 nvg,
@@ -814,14 +817,14 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         var ptc = NVGContext.nvgColor(PARTY_TYPE_TEXT);
         nvgFillColor(nvg, ptc);
-        nvgText(nvg, labelRightX, lastMemberCenterY, party.displayShortLabel());
+        nvgText(nvg, labelRightX, lastMemberCenterY, getPartyCardLabel(party));
         ptc.free();
     }
 
     private void renderCollapsedCard(long nvg, String fontName, float x, float y, float w, PartyListing party) {
         float rowX = x + CARD_PADDING;
         float centerY = y + COLLAPSED_ROW_HEIGHT / 2f;
-        List<String> raidTags = party.getRaidTags();
+        List<String> raidTags = getRenderedRaidTags(party);
 
         drawRaidIconCircle(
                 nvg,
@@ -889,7 +892,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         var tc = NVGContext.nvgColor(PARTY_TYPE_TEXT);
         nvgFillColor(nvg, tc);
-        nvgText(nvg, rightX, centerY, party.displayShortLabel());
+        nvgText(nvg, rightX, centerY, getPartyCardLabel(party));
         tc.free();
     }
 
@@ -1023,7 +1026,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Check if this raid has no icon asset (text fallback, e.g. Prelude to
         // Annihilation)
-        if (raidTags.size() == 1 && PartyListing.displayNameToAssetKey(raidTags.get(0)) == null) {
+        if (raidTags.size() == 1 && PartyListing.displayNameToAssetKey(canonicalizeRaidTag(raidTags.get(0))) == null) {
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, RAID_LABEL_SIZE);
             nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -1037,7 +1040,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         int count = raidTags.size();
         List<String> renderTags = raidTags;
         if (count == 3) {
-            int nolIndex = raidTags.indexOf("Nexus of Light");
+            int nolIndex = indexOfCanonicalNexusOfLight(raidTags);
             if (nolIndex > 0) {
                 List<String> reordered = new ArrayList<>(count);
                 for (int i = 0; i < count; i++) {
@@ -1064,7 +1067,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         for (int i = 0; i < count; i++) {
             String tag = renderTags.get(i);
-            String assetKey = PartyListing.displayNameToAssetKey(tag);
+            String assetKey = PartyListing.displayNameToAssetKey(canonicalizeRaidTag(tag));
             AssetManager.Asset raidIcon = assetKey != null ? getClassIcon(assetKey) : null;
 
             float sliceStart = startAngle + i * anglePerSlice;
@@ -1719,6 +1722,62 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         for (PartyMember member : party.members) {
             if (member != null && member.playerUUID != null && member.playerUUID.equalsIgnoreCase(GAZ_EARS_UUID)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private List<String> getRenderedRaidTags(PartyListing party) {
+        List<String> raidTags = party.getRaidTags();
+        if (!hasLeaMember(party)) {
+            return raidTags;
+        }
+
+        List<String> rendered = new ArrayList<>(raidTags.size());
+        for (String raidTag : raidTags) {
+            rendered.add(getRenderedRaidTag(raidTag));
+        }
+        return rendered;
+    }
+
+    private String getRenderedRaidTag(String raidTag) {
+        return NEXUS_OF_LIGHT.equals(raidTag) ? NEXUS_OF_LEA : raidTag;
+    }
+
+    private String canonicalizeRaidTag(String raidTag) {
+        return NEXUS_OF_LEA.equals(raidTag) ? NEXUS_OF_LIGHT : raidTag;
+    }
+
+    private String getPartyCardLabel(PartyListing party) {
+        String label = party.getRaidTags().size() == 1 ? party.displayLabel() : party.displayShortLabel();
+        if (!hasLeaMember(party)) {
+            return label;
+        }
+        return label.replace(NEXUS_OF_LIGHT, NEXUS_OF_LEA);
+    }
+
+    private int indexOfCanonicalNexusOfLight(List<String> raidTags) {
+        for (int i = 0; i < raidTags.size(); i++) {
+            if (NEXUS_OF_LIGHT.equals(canonicalizeRaidTag(raidTags.get(i)))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private boolean hasLeaMember(PartyListing party) {
+        if (SeqClient.getEasterEggsSetting() == null || !SeqClient.getEasterEggsSetting().getValue()) {
+            return false;
+        }
+
+        if (party == null) {
+            return false;
+        }
+
+        for (PartyMember member : party.members) {
+            if (member != null && member.playerUUID != null && member.playerUUID.equalsIgnoreCase(LEA_UUID)) {
                 return true;
             }
         }
