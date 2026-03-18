@@ -4,6 +4,7 @@ import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
 import org.sequoia.seq.managers.ChatManager;
+import org.sequoia.seq.managers.GuildBankTracker;
 import org.sequoia.seq.managers.RaidTracker;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -28,5 +29,6 @@ public class ClientPacketListenerMixin {
         Component content = packet.content();
         ChatManager.onSystemChat(content);
         RaidTracker.onSystemChat(content);
+        GuildBankTracker.getInstance().onSystemChat(content);
     }
 }

@@ -600,6 +600,50 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         send("guild_raid_announcement", msg);
     }
 
+    public void sendGuildBankEvent(
+            String action,
+            String player,
+            Integer quantity,
+            String itemName,
+            String charges,
+            String accessTier,
+            String rawMessage) {
+        if (!authenticated || !isOpen()) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildBankEvent dropped open={} authenticated={}", isOpen(), authenticated);
+            return;
+        }
+        if (authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildBankEvent dropped authFailed={} notInGuild={}", authFailed, notInGuild);
+            return;
+        }
+        if (action == null || action.isBlank() || player == null || player.isBlank() || itemName == null
+                || itemName.isBlank() || accessTier == null || accessTier.isBlank() || rawMessage == null
+                || rawMessage.isBlank()) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildBankEvent dropped: invalid payload");
+            return;
+        }
+
+        JsonObject msg = new JsonObject();
+        msg.addProperty("action", action);
+        msg.addProperty("player", player.trim());
+        if (quantity != null) {
+            msg.addProperty("quantity", quantity);
+        }
+        msg.addProperty("item_name", itemName.trim());
+        if (charges != null && !charges.isBlank()) {
+            msg.addProperty("charges", charges.trim());
+        }
+        msg.addProperty("access_tier", accessTier.trim());
+        msg.addProperty("raw_message", rawMessage.trim());
+        SeqClient.LOGGER.info(
+                "[WebSocket] Sending guild_bank_event action={} player='{}' item='{}'",
+                action,
+                player,
+                itemName);
+        send("guild_bank_event", msg);
+    }
+
     public void sendPartyClassUpdate(WynnClassType classType) {
         if (!authenticated || !isOpen() || classType == null) {
             SeqClient.LOGGER.warn(
@@ -890,6 +934,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static boolean isPrivilegedType(String type) {
         return "guild_chat".equals(type)
                 || "guild_raid_announcement".equals(type)
+                || "guild_bank_event".equals(type)
                 || "party_class_update".equals(type)
                 || "link_request".equals(type)
                 || "get_connected".equals(type);
