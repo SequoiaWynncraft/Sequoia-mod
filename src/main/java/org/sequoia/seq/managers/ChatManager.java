@@ -269,42 +269,91 @@ public class ChatManager {
         }
 
         Set<String> usernames = new LinkedHashSet<>();
-        collectRealUsernames(component, usernames);
+        collectHoverRealUsernames(component, usernames);
+        collectInsertionUsernames(component, usernames);
         return List.copyOf(new ArrayList<>(usernames));
     }
 
-    private static void collectRealUsernames(Component component, Set<String> usernames) {
-        collectRealUsernames(component, usernames, 0);
+    public static List<String> extractHoverRealUsernames(Component component) {
+        if (component == null) {
+            return List.of();
+        }
+
+        Set<String> usernames = new LinkedHashSet<>();
+        collectHoverRealUsernames(component, usernames);
+        return List.copyOf(new ArrayList<>(usernames));
     }
 
-    private static void collectRealUsernames(Component component, Set<String> usernames, int depth) {
+    public static List<String> extractInsertionUsernames(Component component) {
+        if (component == null) {
+            return List.of();
+        }
+
+        Set<String> usernames = new LinkedHashSet<>();
+        collectInsertionUsernames(component, usernames);
+        return List.copyOf(new ArrayList<>(usernames));
+    }
+
+    private static void collectHoverRealUsernames(Component component, Set<String> usernames) {
         if (component == null) {
             return;
         }
 
-        Style style = component.getStyle();
-
-        String insertion = style.getInsertion();
-        HoverEvent hoverEvent = style.getHoverEvent();
-
-        if (hoverEvent instanceof HoverEvent.ShowText showTextEvent) {
-            Component hoverComponent = showTextEvent.value();
-            if (hoverComponent != null) {
-                String hoverText = hoverComponent.getString();
-                Matcher matcher = HOVER_REAL_NAME_PATTERN.matcher(hoverText);
-                if (matcher.find()) {
-                    usernames.add(matcher.group(1));
-                }
-            }
-        }
-
-        if (insertion != null && insertion.matches("[a-zA-Z0-9_]{3,16}")) {
-            usernames.add(insertion);
+        String hoverUsername = extractHoverRealUsername(component.getStyle());
+        if (hoverUsername != null) {
+            usernames.add(hoverUsername);
         }
 
         for (Component sibling : component.getSiblings()) {
-            collectRealUsernames(sibling, usernames, depth + 1);
+            collectHoverRealUsernames(sibling, usernames);
         }
+    }
+
+    private static void collectInsertionUsernames(Component component, Set<String> usernames) {
+        if (component == null) {
+            return;
+        }
+
+        String insertionUsername = extractInsertionUsername(component.getStyle());
+        if (insertionUsername != null) {
+            usernames.add(insertionUsername);
+        }
+
+        for (Component sibling : component.getSiblings()) {
+            collectInsertionUsernames(sibling, usernames);
+        }
+    }
+
+    static String extractHoverRealUsername(Style style) {
+        if (style == null) {
+            return null;
+        }
+
+        HoverEvent hoverEvent = style.getHoverEvent();
+        if (!(hoverEvent instanceof HoverEvent.ShowText showTextEvent)) {
+            return null;
+        }
+
+        Component hoverComponent = showTextEvent.value();
+        if (hoverComponent == null) {
+            return null;
+        }
+
+        String hoverText = hoverComponent.getString();
+        Matcher matcher = HOVER_REAL_NAME_PATTERN.matcher(hoverText);
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    static String extractInsertionUsername(Style style) {
+        if (style == null) {
+            return null;
+        }
+
+        String insertion = style.getInsertion();
+        if (insertion == null || !insertion.matches("[a-zA-Z0-9_]{3,16}")) {
+            return null;
+        }
+        return insertion;
     }
 
     // ── Incoming: Discord → backend → WS → MC chat ──

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.List;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
 import org.junit.jupiter.api.Test;
 
@@ -80,6 +81,54 @@ class RaidTrackerTest {
         assertNotNull(parsed);
         assertEquals(List.of("AAA", "BBB", "CCC", "DDD"), parsed.partyMembers());
         assertEquals(410, parsed.seasonalRating());
+    }
+
+    @Test
+    void parseRaidCompletionPrefersDisplayedUsernamesWhenAllDisplayedNamesAreValid() {
+        Component message = Component.empty()
+                .append(Component.literal("Tannslee").withStyle(Style.EMPTY.withInsertion("eep")))
+                .append(Component.literal(", 99922, wisedrag, and nessabarrett finished The Canyon Colossus and claimed "
+                        + "2x Aspects, 2048x Emeralds, and +10367m Guild Experience"));
+
+        RaidTracker.ParsedRaidCompletion parsed = RaidTracker.parseRaidCompletion(message);
+
+        assertNotNull(parsed);
+        assertEquals(List.of("Tannslee", "99922", "wisedrag", "nessabarrett"), parsed.partyMembers());
+        assertEquals("The Canyon Colossus", parsed.raidName());
+        assertEquals(10.367, parsed.guildExp(), 0.000001);
+    }
+
+    @Test
+    void parseRaidCompletionPrefersHoverRealNamesOverUsernameLikeDisplayedNicknames() {
+        Style nickStyle = Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
+                Component.literal("Tannslee's real name is eep")));
+        Component message = Component.empty()
+                .append(Component.literal("Tannslee").withStyle(nickStyle))
+                .append(Component.literal(", 99922, wisedrag, and nessabarrett finished The Canyon Colossus and claimed "
+                        + "2x Aspects, 2048x Emeralds, and +10367m Guild Experience"));
+
+        RaidTracker.ParsedRaidCompletion parsed = RaidTracker.parseRaidCompletion(message);
+
+        assertNotNull(parsed);
+        assertEquals(List.of("eep", "99922", "wisedrag", "nessabarrett"), parsed.partyMembers());
+        assertEquals("The Canyon Colossus", parsed.raidName());
+    }
+
+    @Test
+    void parseRaidCompletionPrefersHoverRealNameWhenInsertionContainsNickname() {
+        Style nickStyle = Style.EMPTY
+                .withInsertion("eep")
+                .withHoverEvent(new HoverEvent.ShowText(Component.literal("eep's real name is wisedrag")));
+        Component message = Component.empty()
+                .append(Component.literal("eep").withStyle(nickStyle))
+                .append(Component.literal(", 99922, Tannslee, and nessabarrett finished The Canyon Colossus and claimed "
+                        + "2x Aspects, 2048x Emeralds, and +10367m Guild Experience"));
+
+        RaidTracker.ParsedRaidCompletion parsed = RaidTracker.parseRaidCompletion(message);
+
+        assertNotNull(parsed);
+        assertEquals(List.of("wisedrag", "99922", "Tannslee", "nessabarrett"), parsed.partyMembers());
+        assertEquals("The Canyon Colossus", parsed.raidName());
     }
 
     @Test

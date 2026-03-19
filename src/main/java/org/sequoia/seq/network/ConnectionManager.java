@@ -596,11 +596,21 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return;
         }
         if (usernames == null || usernames.isEmpty() || raidType == null || raidType.isBlank()) {
-            SeqClient.LOGGER.warn("[WebSocket] sendRaidAnnouncement dropped: invalid payload");
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendRaidAnnouncement dropped: invalid payload usernames={} raidType='{}' aspects={} emeralds={} experience={} sr={}",
+                    usernames,
+                    raidType,
+                    aspectCount,
+                    emeraldCount,
+                    experienceCount,
+                    srCount);
             return;
         }
         SeqClient.LOGGER.info(
-                "[WebSocket] Sending guild_raid_announcement type={} usernames={}", raidType, usernames.size());
+                "[WebSocket] Sending guild_raid_announcement type={} usernames={} payloadMembers={}",
+                raidType,
+                usernames.size(),
+                usernames);
         JsonObject msg = new JsonObject();
         JsonArray names = new JsonArray();
         usernames.forEach(names::add);
