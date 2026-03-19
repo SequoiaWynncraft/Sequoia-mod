@@ -150,7 +150,7 @@ public class SeqClient implements ClientModInitializer {
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
-        easterEggsSetting = new Setting.BooleanSetting("enable_easter_eggs", "ui", false);
+        easterEggsSetting = new Setting.BooleanSetting("enable_easter_eggs", "ui", true);
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
