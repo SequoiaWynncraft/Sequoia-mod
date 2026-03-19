@@ -956,6 +956,8 @@ public class PartyFinderManager implements NotificationAccessor {
             return;
         }
 
+        maybeQueueLeaderStatusBanner(previousListing, updatedListing);
+
         List<String> joinedMembers = collectJoinedMemberUUIDs(previousListing, updatedListing, myUUID);
         if (!joinedMembers.isEmpty()) {
             notifyLeaderAboutJoinedMembers(joinedMembers);
@@ -968,6 +970,20 @@ public class PartyFinderManager implements NotificationAccessor {
 
         if (!isListingFull(previousListing) && isListingFull(updatedListing)) {
             notifyPartyFullWithInviteAllAction();
+        }
+    }
+
+    private void maybeQueueLeaderStatusBanner(Listing previousListing, Listing updatedListing) {
+        boolean wasAutoCapacityClosed = isAutoCapacityClosed(previousListing);
+        boolean isAutoCapacityClosed = isAutoCapacityClosed(updatedListing);
+
+        if (!wasAutoCapacityClosed && isAutoCapacityClosed) {
+            pushUiStatus("Party auto-closed at capacity. It will reopen when a slot frees up.");
+            return;
+        }
+
+        if (wasAutoCapacityClosed && updatedListing.status() == PartyStatus.OPEN) {
+            pushUiStatus("Party auto-opened after a slot freed up.");
         }
     }
 
@@ -1729,11 +1745,19 @@ public class PartyFinderManager implements NotificationAccessor {
                 });
     }
 
-    public void pushUiError(String message) {
+    private void pushUiBanner(String message) {
         if (message == null || message.isBlank()) {
             return;
         }
         latestPartyError = message;
+    }
+
+    public void pushUiError(String message) {
+        pushUiBanner(message);
+    }
+
+    public void pushUiStatus(String message) {
+        pushUiBanner(message);
     }
 
     public String consumeLatestPartyError() {
@@ -2413,6 +2437,12 @@ public class PartyFinderManager implements NotificationAccessor {
         }
         int maxPartySize = listing.maxPartySize();
         return maxPartySize > 0 && listing.occupiedSlotCount() >= maxPartySize;
+    }
+
+    private static boolean isAutoCapacityClosed(Listing listing) {
+        return listing != null
+                && listing.status() == PartyStatus.CLOSED
+                && listing.closeReason() == PartyCloseReason.AUTO_CAPACITY;
     }
 
     private Listing findListingById(long listingId) {

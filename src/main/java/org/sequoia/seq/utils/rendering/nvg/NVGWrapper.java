@@ -62,6 +62,18 @@ public class NVGWrapper {
         nvgColor.free();
     }
 
+    public static void drawRoundedRectOutline(
+            long context, float x, float y, float w, float h, float radius, float thickness, Color color) {
+        nvgBeginPath(context);
+        nvgRoundedRect(context, x, y, w, h, radius);
+        NVGColor nvgColor = nvgColor(color);
+        nvgStrokeWidth(context, thickness);
+        nvgStrokeColor(context, nvgColor);
+        nvgStroke(context);
+        nvgClosePath(context);
+        nvgColor.free();
+    }
+
     public static void drawHorizontalLine(long context, float x, float width, float y, Color color) {
         nvgBeginPath(context);
         nvgRect(context, x, y, width, 1);

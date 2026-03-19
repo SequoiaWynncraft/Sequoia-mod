@@ -9,8 +9,10 @@ import java.util.Map;
 import java.util.Objects;
 import org.sequoia.seq.model.Activity;
 import org.sequoia.seq.model.Listing;
+import org.sequoia.seq.model.PartyCloseReason;
 import org.sequoia.seq.model.PartyMode;
 import org.sequoia.seq.model.PartyRegion;
+import org.sequoia.seq.model.PartyStatus;
 
 /**
  * Adapter class wrapping {@link Listing} with public mutable fields
@@ -154,12 +156,16 @@ public class PartyListing {
     public final List<String> tags;
     public final long id;
     public final String leaderUUID;
+    public final PartyStatus status;
+    public final PartyCloseReason closeReason;
     private final Listing backing;
 
     public PartyListing(Listing listing) {
         this.backing = listing;
         this.id = listing.id();
         this.leaderUUID = listing.leaderUUID();
+        this.status = listing.status();
+        this.closeReason = listing.closeReason();
         this.expanded = false; // managed externally by PartyFinderManager's expanded state map
         this.maxSize = listing.maxPartySize();
         this.occupiedSlots = listing.occupiedSlotCount();
@@ -281,5 +287,13 @@ public class PartyListing {
 
     public Listing getBacking() {
         return backing;
+    }
+
+    public boolean isJoinable() {
+        return status == PartyStatus.OPEN;
+    }
+
+    public boolean isAutoCapacityClosed() {
+        return status == PartyStatus.CLOSED && closeReason == PartyCloseReason.AUTO_CAPACITY;
     }
 }

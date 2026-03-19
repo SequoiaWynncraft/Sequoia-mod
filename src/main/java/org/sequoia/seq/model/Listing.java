@@ -12,10 +12,40 @@ public record Listing(
         boolean strict,
         PartyRegion region,
         PartyStatus status,
+        PartyCloseReason closeReason,
         String note,
         List<Member> members,
         List<Member> reservedSlots,
         Instant createdAt) {
+    public Listing(
+            long id,
+            List<Activity> activities,
+            Activity activity,
+            String leaderUUID,
+            PartyMode mode,
+            boolean strict,
+            PartyRegion region,
+            PartyStatus status,
+            String note,
+            List<Member> members,
+            List<Member> reservedSlots,
+            Instant createdAt) {
+        this(
+                id,
+                activities,
+                activity,
+                leaderUUID,
+                mode,
+                strict,
+                region,
+                status,
+                null,
+                note,
+                members,
+                reservedSlots,
+                createdAt);
+    }
+
     /**
      * Whether this listing's expand state is toggled in the UI (client-only, not
      * from backend).

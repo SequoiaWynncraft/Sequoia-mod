@@ -73,6 +73,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float TYPE_ICON_SIZE = 48;
     private static final float BUTTON_HEIGHT = 24;
     private static final float JOIN_BUTTON_WIDTH = 64;
+    private static final float STATUS_BADGE_H = 18;
+    private static final float STATUS_BADGE_W = 58;
 
     // Modal layout
     private static final float MODAL_WIDTH = 300;
@@ -154,6 +156,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final Color DELIST_PARTY_HOVER = new Color(220, 80, 80, 220);
     private static final Color OPEN_CLOSE_PARTY_COLOR = new Color(100, 70, 160, 200);
     private static final Color OPEN_CLOSE_PARTY_HOVER = new Color(120, 90, 180, 220);
+    private static final Color DISABLED_BUTTON_COLOR = new Color(60, 60, 70, 180);
+    private static final Color DISABLED_BUTTON_TEXT = new Color(120, 120, 130, 200);
 
     private static final Color DROPDOWN_BG = new Color(40, 40, 55, 240);
     private static final Color DROPDOWN_HOVER = new Color(55, 55, 75, 240);
@@ -177,6 +181,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final Color TAG_CHIP_BG = new Color(40, 40, 55, 220);
     private static final Color TAG_CHIP_HOVER = new Color(55, 55, 75, 240);
     private static final Color FILTER_BOX_BG = new Color(15, 15, 22, 240);
+    private static final Color STATUS_OPEN_BG = new Color(56, 140, 88, 220);
+    private static final Color STATUS_OPEN_BORDER = new Color(88, 196, 122, 255);
+    private static final Color STATUS_CLOSED_BG = new Color(148, 108, 44, 220);
+    private static final Color STATUS_CLOSED_BORDER = new Color(220, 176, 88, 255);
+    private static final Color STATUS_FULL_BG = new Color(160, 64, 72, 220);
+    private static final Color STATUS_FULL_BORDER = new Color(226, 108, 118, 255);
 
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
     private static final String GAZ_EARS_ASSET = "gaz_ears";
@@ -472,7 +482,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float popupY = screenHeight - STATUS_BANNER_H - 10;
 
         NVGWrapper.drawRoundedRect(nvg, popupX, popupY, popupW, STATUS_BANNER_H, 6, ERROR_POPUP_BG);
-        NVGWrapper.drawRectOutline(nvg, popupX, popupY, popupW, STATUS_BANNER_H, 1, ERROR_POPUP_BORDER);
+        NVGWrapper.drawRoundedRectOutline(nvg, popupX, popupY, popupW, STATUS_BANNER_H, 6, 1, ERROR_POPUP_BORDER);
 
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         var text = NVGContext.nvgColor(TEXT_COLOR);
@@ -573,14 +583,17 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             String manageLabel = party().hasListedParty() ? "Manage Party" : "New party +";
             drawHeaderButton(nvg, fontName, layout.manageButton(), manageLabel, MANAGE_PARTY_COLOR, NEW_PARTY_HOVER);
             drawHeaderButton(nvg, fontName, layout.inviteButton(), "Invite", NEW_PARTY_COLOR, NEW_PARTY_HOVER);
-            String openCloseLabel = isCurrentListingClosed() ? "Open party" : "Close party";
+            boolean autoClosed = isCurrentListingAutoClosed();
+            String openCloseLabel = autoClosed ? "Auto-closed" : (isCurrentListingClosed() ? "Open party" : "Close party");
+            Color openCloseBg = autoClosed ? DISABLED_BUTTON_COLOR : OPEN_CLOSE_PARTY_COLOR;
+            Color openCloseHover = autoClosed ? DISABLED_BUTTON_COLOR : OPEN_CLOSE_PARTY_HOVER;
             drawHeaderButton(
                     nvg,
                     fontName,
                     layout.openCloseButton(),
                     openCloseLabel,
-                    OPEN_CLOSE_PARTY_COLOR,
-                    OPEN_CLOSE_PARTY_HOVER);
+                    openCloseBg,
+                    openCloseHover);
             drawHeaderButton(
                     nvg, fontName, layout.delistButton(), "Delist party", DELIST_PARTY_COLOR, DELIST_PARTY_HOVER);
             drawHeaderButton(nvg, fontName, layout.inviteAllButton(), "Invite all", NEW_PARTY_COLOR, NEW_PARTY_HOVER);
@@ -617,6 +630,68 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             return;
         }
         drawHeaderButton(nvg, fontName, bounds.x(), bounds.y(), bounds.w(), bounds.h(), label, bg, hoverBg);
+    }
+
+    private void drawStatusBadge(
+            long nvg,
+            String fontName,
+            HeaderButtonBounds bounds,
+            PartyStatus status,
+            org.sequoia.seq.model.PartyCloseReason closeReason) {
+        if (bounds == null) {
+            return;
+        }
+        drawStatusBadge(nvg, fontName, bounds.x(), bounds.y(), bounds.w(), bounds.h(), status, closeReason);
+    }
+
+    private void drawStatusBadge(
+            long nvg,
+            String fontName,
+            float x,
+            float y,
+            float w,
+            float h,
+            PartyStatus status,
+            org.sequoia.seq.model.PartyCloseReason closeReason) {
+        Color bg = statusBadgeBackground(status);
+        Color border = statusBadgeBorder(status);
+        NVGWrapper.drawRoundedRect(nvg, x, y, w, h, 6, bg);
+        NVGWrapper.drawRoundedRectOutline(nvg, x, y, w, h, 6, 1, border);
+
+        nvgFontFace(nvg, fontName);
+        nvgFontSize(nvg, HEADER_BUTTON_SIZE);
+        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        var tc = NVGContext.nvgColor(TEXT_COLOR);
+        nvgFillColor(nvg, tc);
+        nvgText(nvg, x + w / 2f, y + h / 2f, statusBadgeLabel(status, closeReason));
+        tc.free();
+    }
+
+    private Color statusBadgeBackground(PartyStatus status) {
+        return switch (status) {
+            case OPEN -> STATUS_OPEN_BG;
+            case FULL -> STATUS_FULL_BG;
+            case CLOSED -> STATUS_CLOSED_BG;
+            default -> DROPDOWN_BG;
+        };
+    }
+
+    private Color statusBadgeBorder(PartyStatus status) {
+        return switch (status) {
+            case OPEN -> STATUS_OPEN_BORDER;
+            case FULL -> STATUS_FULL_BORDER;
+            case CLOSED -> STATUS_CLOSED_BORDER;
+            default -> DROPDOWN_BORDER;
+        };
+    }
+
+    private String statusBadgeLabel(PartyStatus status, org.sequoia.seq.model.PartyCloseReason closeReason) {
+        return switch (status) {
+            case OPEN -> "OPEN";
+            case FULL -> "FULL";
+            case CLOSED -> "CLOSED";
+            default -> status.name();
+        };
     }
 
     private HeaderControlsLayout computeHeaderControlsLayout(float panelX) {
@@ -759,6 +834,17 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFillColor(nvg, countCol);
         nvgText(nvg, rowX, y + CARD_HEADER_HEIGHT / 2f, party.occupiedSlots + "/" + party.maxSize);
         countCol.free();
+        rowX += 46;
+
+        drawStatusBadge(
+                nvg,
+                fontName,
+                rowX,
+                y + (CARD_HEADER_HEIGHT - STATUS_BADGE_H) / 2f,
+                STATUS_BADGE_W,
+                STATUS_BADGE_H,
+                party.status,
+                party.closeReason);
 
         // Collapse arrow
         nvgFontSize(nvg, 16);
@@ -794,18 +880,21 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float joinY = memberY - MEMBER_ROW_HEIGHT + (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
         boolean showJoinedDisabled = isMyParty;
         boolean alreadyInParty = party().getJoinedPartyIndex() >= 0 && !isJoined;
-        boolean buttonDisabled = showJoinedDisabled || alreadyInParty;
+        boolean listingUnavailable = !isJoined && !party.isJoinable();
+        boolean buttonDisabled = showJoinedDisabled || alreadyInParty || listingUnavailable;
         boolean joinHovered =
                 !buttonDisabled && isHovered(nvgMouseX, nvgMouseY, joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT);
         Color joinBg =
-                buttonDisabled ? new Color(60, 60, 70, 180) : (joinHovered ? JOIN_BUTTON_HOVER : JOIN_BUTTON_COLOR);
+                buttonDisabled ? DISABLED_BUTTON_COLOR : (joinHovered ? JOIN_BUTTON_HOVER : JOIN_BUTTON_COLOR);
         NVGWrapper.drawRect(nvg, joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT, joinBg);
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        Color textCol = buttonDisabled ? new Color(120, 120, 130, 200) : TEXT_COLOR;
-        String actionText = showJoinedDisabled ? "Joined" : (isJoined ? "Leave" : "Join");
+        Color textCol = buttonDisabled ? DISABLED_BUTTON_TEXT : TEXT_COLOR;
+        String actionText = showJoinedDisabled
+                ? "Joined"
+                : (isJoined ? "Leave" : partyActionLabel(party));
         var jtc = NVGContext.nvgColor(textCol);
         nvgFillColor(nvg, jtc);
         nvgText(nvg, joinX + JOIN_BUTTON_WIDTH / 2f, joinY + BUTTON_HEIGHT / 2f, actionText);
@@ -844,6 +933,17 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgText(nvg, rowX, centerY, party.occupiedSlots + "/" + party.maxSize);
         cc.free();
         rowX += 42;
+
+        drawStatusBadge(
+                nvg,
+                fontName,
+                rowX,
+                centerY - STATUS_BADGE_H / 2f,
+                STATUS_BADGE_W,
+                STATUS_BADGE_H,
+                party.status,
+                party.closeReason);
+        rowX += STATUS_BADGE_W + 8;
 
         PartyMember leader = party.getLeader();
         if (leader != null) {
@@ -1790,6 +1890,24 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 && party().getCurrentListing().status() == PartyStatus.CLOSED;
     }
 
+    private boolean isCurrentListingAutoClosed() {
+        return party().getCurrentListing() != null
+                && party().getCurrentListing().status() == PartyStatus.CLOSED
+                && party().getCurrentListing().closeReason() == org.sequoia.seq.model.PartyCloseReason.AUTO_CAPACITY;
+    }
+
+    private String partyActionLabel(PartyListing party) {
+        if (party == null || party.status == null) {
+            return "Join";
+        }
+        return switch (party.status) {
+            case OPEN -> "Join";
+            case CLOSED -> "Closed";
+            case FULL -> "Full";
+            default -> "Join";
+        };
+    }
+
     private boolean matchesFilters(PartyListing party) {
         // Search filter
         if (!searchQuery.isEmpty()) {
@@ -1962,6 +2080,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             if (isHovered(mx, my, headerLayout.openCloseButton())) {
                 if (party().getCurrentListing() == null) {
                     showErrorPopup("Unable to update party state: no active listing.");
+                } else if (isCurrentListingAutoClosed()) {
+                    showStatusBanner("Party is auto-closed at capacity and will reopen when a slot frees.");
                 } else if (isCurrentListingClosed()) {
                     party().reopenParty(party().getCurrentListing().id());
                 } else {
