@@ -14,7 +14,6 @@ import static org.lwjgl.nanovg.NanoVG.*;
 
 @UtilityClass
 public class NVGWrapper {
-
     public void drawRect(long context, float x, float y, float w, float h, Color color) {
         nvgBeginPath(context);
         nvgRect(context, x, y, w, h);

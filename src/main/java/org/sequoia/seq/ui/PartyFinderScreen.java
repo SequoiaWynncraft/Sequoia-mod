@@ -655,8 +655,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             org.sequoia.seq.model.PartyCloseReason closeReason) {
         Color bg = statusBadgeBackground(status);
         Color border = statusBadgeBorder(status);
-        NVGWrapper.drawRoundedRect(nvg, x, y, w, h, 6, bg);
-        NVGWrapper.drawRoundedRectOutline(nvg, x, y, w, h, 6, 1, border);
+        NVGWrapper.drawRect(nvg, x, y, w, h, bg);
+        NVGWrapper.drawRectOutline(nvg, x, y, w, h, 1, border);
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, HEADER_BUTTON_SIZE);
