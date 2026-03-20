@@ -184,22 +184,11 @@ public class SeqCommand {
                                                                 "username",
                                                                 StringArgumentType.word())
                                                                 .executes(SeqCommand::runPartyPromote)))
-                                .then(ClientCommandManager.literal("game")
-                                                .then(ClientCommandManager.literal("create")
-                                                                .executes(ctx -> relayCommandResult(
-                                                                                ctx,
-                                                                                SeqClient.getPartyFinderManager()
-                                                                                                .createGamePartyFromCommand())))
-                                                .then(ClientCommandManager.literal("invite")
-                                                                .then(ClientCommandManager.argument(
-                                                                                "username",
-                                                                                StringArgumentType.word())
-                                                                                .executes(SeqCommand::runGameInvite)))
-                                                .then(ClientCommandManager.literal("invite-all")
-                                                                .executes(ctx -> relayCommandResult(
-                                                                                ctx,
-                                                                                SeqClient.getPartyFinderManager()
-                                                                                                .inviteAllCurrentMembersFromCommand()))));
+                                .then(ClientCommandManager.literal("invite-all")
+                                                .executes(ctx -> relayCommandResult(
+                                                                ctx,
+                                                                SeqClient.getPartyFinderManager()
+                                                                                .inviteAllCurrentMembersFromCommand())));
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildPartyJoinCommand() {
@@ -391,13 +380,6 @@ public class SeqCommand {
                 return relayCommandResult(
                                 ctx,
                                 SeqClient.getPartyFinderManager().promoteMemberFromCommand(username));
-        }
-
-        private static int runGameInvite(CommandContext<FabricClientCommandSource> ctx) {
-                String username = StringArgumentType.getString(ctx, "username");
-                return relayCommandResult(
-                                ctx,
-                                SeqClient.getPartyFinderManager().inviteGamePlayerFromCommand(username));
         }
 
         private static <T> int relayCommandResult(

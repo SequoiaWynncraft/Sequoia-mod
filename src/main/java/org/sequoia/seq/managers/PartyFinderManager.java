@@ -33,10 +33,10 @@ public class PartyFinderManager implements NotificationAccessor {
             .create();
     private static final long INVITE_NAME_LOOKUP_TIMEOUT_SECONDS = 3L;
     private static final String GAME_PARTY_CREATE_COMMAND = "party create";
-    private static final String GAME_PARTY_INVITE_PREFIX = "party invite ";
-    private static final String GAME_PARTY_KICK_PREFIX = "pa kick ";
-    private static final String GAME_PARTY_PROMOTE_PREFIX = "pa promote ";
-    private static final String SEQ_INVITE_ALL_COMMAND = "/seq p game invite-all";
+    private static final String GAME_PARTY_INVITE_PREFIX = "party ";
+    private static final String GAME_PARTY_KICK_PREFIX = "party kick ";
+    private static final String GAME_PARTY_PROMOTE_PREFIX = "party promote ";
+    private static final String SEQ_INVITE_ALL_COMMAND = "/seq p invite-all";
     private static final ChatFormatting OPEN_PARTY_REMINDER_TEXT_COLOR = ChatFormatting.GRAY;
 
     @Getter
@@ -488,14 +488,6 @@ public class PartyFinderManager implements NotificationAccessor {
                     updatedListing ->
                             "Transferred party #" + updatedListing.id() + " leadership to " + target.username() + ".");
         });
-    }
-
-    public CompletableFuture<CommandResult<Void>> createGamePartyFromCommand() {
-        return CompletableFuture.completedFuture(sendGamePartyCreateCommand());
-    }
-
-    public CompletableFuture<CommandResult<Void>> inviteGamePlayerFromCommand(String username) {
-        return CompletableFuture.completedFuture(sendGamePartyInviteCommand(username));
     }
 
     public CompletableFuture<CommandResult<Void>> inviteAllCurrentMembersFromCommand() {
@@ -1655,20 +1647,6 @@ public class PartyFinderManager implements NotificationAccessor {
                             return;
                         }
 
-                        CommandResult<Void> gamePartyCreateResult = sendGamePartyCreateCommand();
-                        if (!gamePartyCreateResult.success()
-                                && !isExistingPartyCreateFailure(gamePartyCreateResult.message())) {
-                            dispatchFuture.complete(finishInviteAll(
-                                    false, false, 0, finalSkippedCount, gamePartyCreateResult.message(), notifyPlayer));
-                            return;
-                        }
-
-                        if (!gamePartyCreateResult.success()) {
-                            SeqClient.LOGGER.info(
-                                    "[PartyFinderWS] Continuing invite-all despite party create failure: {}",
-                                    gamePartyCreateResult.message());
-                        }
-
                         Set<String> activeMemberKeys = collectListingMemberKeys(currentListing);
                         int sentCount = 0;
                         int skippedAtDispatch = finalSkippedCount;
@@ -2493,15 +2471,6 @@ public class PartyFinderManager implements NotificationAccessor {
             case HEALER -> "Healer";
             case TANK -> "Tank";
         };
-    }
-
-    private static boolean isExistingPartyCreateFailure(String message) {
-        if (message == null || message.isBlank()) {
-            return false;
-        }
-
-        String normalized = message.toLowerCase(Locale.ROOT);
-        return normalized.contains("already") && normalized.contains("party");
     }
 
     private void applyCreatedListingState(Listing listing) {
