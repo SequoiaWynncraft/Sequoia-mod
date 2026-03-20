@@ -73,6 +73,12 @@ public class SeqClient implements ClientModInitializer {
     @Getter
     public static Setting.BooleanSetting easterEggsSetting;
 
+    @Getter
+    public static Setting.BooleanSetting announceOpenPartiesSetting;
+
+    @Getter
+    public static Setting.IntSetting announceOpenPartiesIntervalMinutesSetting;
+
     private static KeyMapping openScreenKey;
     private static WynnClassType lastBroadcastPartyClass;
     private static boolean wasInPartyFinder;
@@ -106,6 +112,10 @@ public class SeqClient implements ClientModInitializer {
                 if (client.screen == null) {
                     openMainScreen();
                 }
+            }
+
+            if (partyFinderManager != null) {
+                partyFinderManager.tickOpenPartyAnnouncements();
             }
 
             boolean inPartyFinder = partyFinderManager != null && partyFinderManager.isInParty();
@@ -151,11 +161,16 @@ public class SeqClient implements ClientModInitializer {
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         easterEggsSetting = new Setting.BooleanSetting("enable_easter_eggs", "ui", true);
+        announceOpenPartiesSetting = new Setting.BooleanSetting("announce_open_parties", "party_finder", true);
+        announceOpenPartiesIntervalMinutesSetting =
+                new Setting.IntSetting("announce_open_parties_interval_minutes", "party_finder", 5, 1, 60);
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
         getConfigManager().register(checkUpdatesSetting);
         getConfigManager().register(easterEggsSetting);
+        getConfigManager().register(announceOpenPartiesSetting);
+        getConfigManager().register(announceOpenPartiesIntervalMinutesSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.

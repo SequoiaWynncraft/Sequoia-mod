@@ -7,6 +7,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -35,6 +36,7 @@ public class PartyFinderManager implements NotificationAccessor {
     private static final String GAME_PARTY_KICK_PREFIX = "pa kick ";
     private static final String GAME_PARTY_PROMOTE_PREFIX = "pa promote ";
     private static final String SEQ_INVITE_ALL_COMMAND = "/seq p game invite-all";
+    private static final ChatFormatting OPEN_PARTY_REMINDER_TEXT_COLOR = ChatFormatting.GRAY;
 
     @Getter
     private final List<Activity> activities = new CopyOnWriteArrayList<>();
@@ -59,6 +61,8 @@ public class PartyFinderManager implements NotificationAccessor {
     private volatile int listingsVersion = 0;
     private int cachedVersion = -1;
     private volatile String latestPartyError;
+    private volatile long nextOpenPartyAnnouncementAtMs;
+    private volatile boolean openPartyAnnouncementRefreshInFlight;
 
     public record InviteAllResult(boolean success, boolean sentAny, int sentCount, int skippedCount, String message) {}
 
@@ -69,6 +73,20 @@ public class PartyFinderManager implements NotificationAccessor {
 
         public static <T> CommandResult<T> failure(String message) {
             return new CommandResult<>(false, message, null);
+        }
+    }
+
+    record OpenPartyAnnouncementEntry(
+            long listingId,
+            String activitySummary,
+            int occupiedSlots,
+            int maxPartySize,
+            String leaderName,
+            String joinCommand) {}
+
+    record OpenPartyAnnouncementSummary(List<OpenPartyAnnouncementEntry> entries) {
+        boolean isEmpty() {
+            return entries == null || entries.isEmpty();
         }
     }
 
@@ -674,6 +692,39 @@ public class PartyFinderManager implements NotificationAccessor {
         return currentListing != null;
     }
 
+    public void tickOpenPartyAnnouncements() {
+        if (!shouldRunOpenPartyAnnouncements()) {
+            nextOpenPartyAnnouncementAtMs = 0L;
+            return;
+        }
+
+        long intervalMs = resolveOpenPartyAnnouncementIntervalMs();
+        long now = System.currentTimeMillis();
+        if (nextOpenPartyAnnouncementAtMs <= 0L) {
+            nextOpenPartyAnnouncementAtMs = now + intervalMs;
+            return;
+        }
+
+        if (now < nextOpenPartyAnnouncementAtMs || openPartyAnnouncementRefreshInFlight) {
+            return;
+        }
+
+        nextOpenPartyAnnouncementAtMs = now + intervalMs;
+        openPartyAnnouncementRefreshInFlight = true;
+        refreshListingsForAnnouncements().whenComplete((refreshedListings, error) -> {
+            openPartyAnnouncementRefreshInFlight = false;
+            if (error != null) {
+                SeqClient.LOGGER.warn("[PartyFinderWS] Open party reminder refresh failed", error);
+                return;
+            }
+            if (refreshedListings == null || refreshedListings.isEmpty()) {
+                return;
+            }
+
+            SeqClient.mc.execute(() -> announceOpenPartySummary(refreshedListings));
+        });
+    }
+
     public boolean isPartyLeader() {
         if (currentListing == null) return false;
         String myUUID = getLocalPlayerUUID();
@@ -903,6 +954,49 @@ public class PartyFinderManager implements NotificationAccessor {
 
             player.displayClientMessage(announcement, false);
         });
+    }
+
+    private void announceOpenPartySummary(List<Listing> refreshedListings) {
+        var player = SeqClient.mc.player;
+        String myUUID = getLocalPlayerUUID();
+        if (player == null || myUUID == null || !shouldRunOpenPartyAnnouncements()) {
+            return;
+        }
+
+        List<Listing> candidates = selectOpenPartyAnnouncementCandidates(refreshedListings, myUUID);
+        if (candidates.isEmpty()) {
+            return;
+        }
+
+        OpenPartyAnnouncementSummary summary =
+                buildOpenPartyAnnouncementSummary(candidates, PartyFinderManager::resolveReminderLeaderName);
+        if (summary.isEmpty()) {
+            return;
+        }
+
+        MutableComponent message = NotificationAccessor.prefixComponent().append(
+                Component.literal("Open Sequoia parties (" + summary.entries().size() + "):")
+                        .withStyle(OPEN_PARTY_REMINDER_TEXT_COLOR));
+
+        for (OpenPartyAnnouncementEntry entry : summary.entries()) {
+            message.append(Component.literal("\n"));
+            message.append(Component.literal(entry.activitySummary()
+                            + " "
+                            + entry.occupiedSlots()
+                            + "/"
+                            + entry.maxPartySize()
+                            + " | "
+                            + entry.leaderName()
+                            + " ")
+                    .withStyle(OPEN_PARTY_REMINDER_TEXT_COLOR));
+            message.append(NotificationAccessor.wynnPill(
+                    "JOIN #" + entry.listingId(),
+                    ChatFormatting.GREEN,
+                    ChatFormatting.WHITE,
+                    new ClickEvent.RunCommand(entry.joinCommand())));
+        }
+
+        player.displayClientMessage(message, false);
     }
 
     private void notifyLocalPartyUpdateUx(Listing previousListing, Listing updatedListing, String myUUID) {
@@ -1771,9 +1865,35 @@ public class PartyFinderManager implements NotificationAccessor {
         loadActivities().thenRun(() -> loadListings(null, null));
     }
 
+    CompletableFuture<List<Listing>> refreshListingsForAnnouncements() {
+        return refreshListingsSnapshot(null, null, (message, error) ->
+                SeqClient.LOGGER.warn("[PartyFinderWS] Failed to refresh listings for open-party reminders: {}", message, error));
+    }
+
     // ══════════════════════════════════════════════════════════════
     // Internal helpers
     // ══════════════════════════════════════════════════════════════
+
+    private boolean shouldRunOpenPartyAnnouncements() {
+        if (SeqClient.getAnnounceOpenPartiesSetting() == null
+                || SeqClient.getAnnounceOpenPartiesIntervalMinutesSetting() == null) {
+            return false;
+        }
+
+        if (!SeqClient.getAnnounceOpenPartiesSetting().getValue()) {
+            return false;
+        }
+
+        return ConnectionManager.isConnected() && !isInParty();
+    }
+
+    private long resolveOpenPartyAnnouncementIntervalMs() {
+        int intervalMinutes = 5;
+        if (SeqClient.getAnnounceOpenPartiesIntervalMinutesSetting() != null) {
+            intervalMinutes = SeqClient.getAnnounceOpenPartiesIntervalMinutesSetting().getValue();
+        }
+        return Math.max(1L, intervalMinutes) * 60_000L;
+    }
 
     private void replaceListing(Listing updated) {
         upsertListing(updated, false);
@@ -1818,6 +1938,84 @@ public class PartyFinderManager implements NotificationAccessor {
             unique.putIfAbsent(listing.id(), listing);
         }
         return new ArrayList<>(unique.values());
+    }
+
+    private CompletableFuture<List<Listing>> refreshListingsSnapshot(
+            Long activityId, PartyRegion region, BiConsumer<String, Throwable> failureHandler) {
+        return ApiClient.getInstance()
+                .getListings(activityId, region)
+                .thenApply(result -> {
+                    List<Listing> deduped = deduplicateById(result);
+                    synchronized (listingsLock) {
+                        listings.clear();
+                        listings.addAll(deduped);
+                    }
+                    refreshCurrentListing();
+                    listingsVersion++;
+                    return List.copyOf(deduped);
+                })
+                .exceptionally(e -> {
+                    String message = extractUserFriendlyApiError(e, "Failed to load listings");
+                    if (failureHandler != null) {
+                        failureHandler.accept(message, e);
+                    }
+                    return null;
+                });
+    }
+
+    static List<Listing> selectOpenPartyAnnouncementCandidates(List<Listing> source, String myUUID) {
+        if (source == null || source.isEmpty() || myUUID == null || myUUID.isBlank()) {
+            return List.of();
+        }
+
+        return source.stream()
+                .filter(Objects::nonNull)
+                .filter(listing -> listing.status() == PartyStatus.OPEN)
+                .filter(listing -> listing.occupiedSlotCount() < listing.maxPartySize())
+                .filter(listing -> !uuidEquals(myUUID, listing.leaderUUID()))
+                .filter(listing -> !listingContainsPlayer(listing, myUUID))
+                .filter(listing -> !listingHasReservedSlotForPlayer(listing, myUUID))
+                .sorted(Comparator.comparing(Listing::createdAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
+    }
+
+    static OpenPartyAnnouncementSummary buildOpenPartyAnnouncementSummary(
+            List<Listing> candidates, Function<String, String> leaderNameResolver) {
+        if (candidates == null || candidates.isEmpty()) {
+            return new OpenPartyAnnouncementSummary(List.of());
+        }
+
+        Function<String, String> resolver = leaderNameResolver != null
+                ? leaderNameResolver
+                : PartyFinderManager::resolveReminderLeaderName;
+
+        List<OpenPartyAnnouncementEntry> entries = candidates.stream()
+                .filter(Objects::nonNull)
+                .map(listing -> new OpenPartyAnnouncementEntry(
+                        listing.id(),
+                        defaultReminderActivitySummary(formatActivitySummary(listing)),
+                        listing.occupiedSlotCount(),
+                        listing.maxPartySize(),
+                        resolver.apply(listing.leaderUUID()),
+                        "/seq p join " + listing.id()))
+                .toList();
+
+        return new OpenPartyAnnouncementSummary(entries);
+    }
+
+    private static String defaultReminderActivitySummary(String summary) {
+        if (summary == null || summary.isBlank()) {
+            return "Party";
+        }
+        return summary;
+    }
+
+    private static String resolveReminderLeaderName(String leaderUUID) {
+        String resolved = PlayerNameCache.resolve(leaderUUID);
+        if (resolved == null || resolved.isBlank()) {
+            return "Unknown";
+        }
+        return resolved;
     }
 
     private static String extractUserFriendlyApiError(Throwable throwable, String fallbackMessage) {
