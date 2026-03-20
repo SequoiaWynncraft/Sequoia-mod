@@ -149,7 +149,7 @@ processResources {
 def buildConfigDir = layout.buildDirectory.dir("generated/sources/buildConfig/java/main")
 
 def generateBuildConfig = tasks.register("generateBuildConfig") {
-    def env = project.findProperty("backend_environment") ?: "staging"
+    def env = project.findProperty("backend_environment") ?: "production"
     def wsUrl, apiUrl
     switch (env) {
         case "production":
