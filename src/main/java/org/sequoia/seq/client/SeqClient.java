@@ -24,8 +24,9 @@ import org.sequoia.seq.managers.FontManager;
 import org.sequoia.seq.managers.GameManager;
 import org.sequoia.seq.managers.PartyFinderManager;
 import org.sequoia.seq.model.WynnClassType;
-import org.sequoia.seq.network.auth.MinecraftAuthService;
 import org.sequoia.seq.network.ConnectionManager;
+import org.sequoia.seq.network.WynncraftServerPolicy;
+import org.sequoia.seq.network.auth.MinecraftAuthService;
 import org.sequoia.seq.ui.SequoiaScreen;
 import org.sequoia.seq.utils.WynnClassCache;
 import org.sequoia.seq.update.UpdateManager;
@@ -114,6 +115,13 @@ public class SeqClient implements ClientModInitializer {
                 }
             }
 
+            if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
+                ConnectionManager.disconnectForBlockedServer();
+                wasInPartyFinder = false;
+                lastBroadcastPartyClass = null;
+                return;
+            }
+
             if (partyFinderManager != null) {
                 partyFinderManager.tickOpenPartyAnnouncements();
             }
@@ -174,7 +182,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.
-        if (autoConnectSetting.getValue()) {
+        if (autoConnectSetting.getValue() && WynncraftServerPolicy.isCurrentServerAllowed()) {
             ConnectionManager.getInstance().connect();
         }
     }

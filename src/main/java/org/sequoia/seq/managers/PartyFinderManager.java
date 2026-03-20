@@ -22,6 +22,7 @@ import org.sequoia.seq.events.PartyFinderUpdateEvent;
 import org.sequoia.seq.model.*;
 import org.sequoia.seq.network.ApiClient;
 import org.sequoia.seq.network.ConnectionManager;
+import org.sequoia.seq.network.WynncraftServerPolicy;
 import org.sequoia.seq.utils.PlayerNameCache;
 
 public class PartyFinderManager implements NotificationAccessor {
@@ -2042,6 +2043,9 @@ public class PartyFinderManager implements NotificationAccessor {
 
     private static String mapStatusError(int statusCode, String responseBody, String backendError) {
         String body = responseBody == null ? "" : responseBody.toLowerCase(Locale.ROOT);
+        if (body.contains("main_server_only")) {
+            return WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE;
+        }
         if (statusCode == 426 || body.contains("mod_version_unsupported")) {
             if (backendError != null) {
                 return backendError;

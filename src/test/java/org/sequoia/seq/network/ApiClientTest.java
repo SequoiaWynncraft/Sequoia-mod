@@ -34,6 +34,15 @@ class ApiClientTest {
     }
 
     @Test
+    void mainServerOnlyExceptionUsesExpectedStatusAndMessage() {
+        ApiClient.ApiException exception = ApiClient.mainServerOnlyException();
+
+        assertEquals(403, exception.getStatusCode());
+        assertTrue(exception.getResponseBody().contains("main_server_only"));
+        assertTrue(exception.getResponseBody().contains(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE));
+    }
+
+    @Test
     void modVersionHeaderConstantMatchesBackendContract() {
         assertEquals("X-Sequoia-Mod-Version", ClientVersion.MOD_VERSION_HEADER);
         assertTrue(ClientVersion.MOD_VERSION_HEADER.startsWith("X-"));

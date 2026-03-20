@@ -30,6 +30,11 @@ import org.sequoia.seq.utils.WynnClassCache;
  */
 public class ApiClient {
 
+    private static final String MAIN_SERVER_ONLY_ERROR =
+            "{\"error\":\"main_server_only\",\"message\":\""
+                    + WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE
+                    + "\"}";
+
     private static ApiClient instance;
 
     private final HttpClient httpClient;
@@ -421,6 +426,9 @@ public class ApiClient {
     }
 
     private <T> CompletableFuture<T> sendAsync(HttpRequest request, java.lang.reflect.Type type) {
+        if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
+            return CompletableFuture.failedFuture(mainServerOnlyException());
+        }
         return httpClient
                 .sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenApply(resp -> {
@@ -430,6 +438,10 @@ public class ApiClient {
                     if (type == Void.class || resp.body().isBlank()) return gson.fromJson("null", type);
                     return gson.fromJson(resp.body(), type);
                 });
+    }
+
+    static ApiException mainServerOnlyException() {
+        return new ApiException(403, MAIN_SERVER_ONLY_ERROR);
     }
 
     // ── Exception ──

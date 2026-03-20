@@ -105,6 +105,26 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         super(URI.create(BuildConfig.WS_URL));
     }
 
+    public static void disconnectForBlockedServer() {
+        if (WynncraftServerPolicy.isCurrentServerAllowed()) {
+            return;
+        }
+
+        autoReconnect = false;
+        cancelReconnect();
+
+        ConnectionManager current = instance;
+        if (current == null) {
+            return;
+        }
+
+        boolean shouldNotify = current.isOpen() || current.connectInProgress;
+        current.disconnectInternal(false);
+        if (shouldNotify) {
+            current.notify(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE);
+        }
+    }
+
     // ── Connect / Disconnect ──
 
     @Override
@@ -125,6 +145,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private void connectInternal(AuthFlow authFlow, boolean userInitiated) {
+        if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
+            autoReconnect = false;
+            cancelReconnect();
+            pendingDiscordLinkRequest = false;
+            connectInProgress = false;
+            finishConnectFlow();
+            if (userInitiated) {
+                notify(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE);
+            }
+            SeqClient.LOGGER.info("[WebSocket] Blocking {} outside main Wynncraft host", authFlow);
+            return;
+        }
+
         pendingAuthFlow = authFlow;
         pendingDiscordLinkRequest = authFlow == AuthFlow.LINK;
         userInitiatedConnectFlow = userInitiated;
@@ -291,6 +324,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // ── Auto-reconnect ──
 
     private static void scheduleReconnect() {
+        if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
+            autoReconnect = false;
+            cancelReconnect();
+            SeqClient.LOGGER.info("[WebSocket] Auto reconnect suppressed outside main Wynncraft host");
+            return;
+        }
         if (reconnectAttempt >= MAX_AUTO_RECONNECT_ATTEMPTS) {
             autoReconnect = false;
             cancelReconnect();
@@ -370,6 +409,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // ── Outgoing messages ──
 
     private void send(String type, JsonObject payload) {
+        if (isPrivilegedType(type) && !WynncraftServerPolicy.isCurrentServerAllowed()) {
+            SeqClient.LOGGER.warn("[WebSocket] Dropping {} outside main Wynncraft host", type);
+            return;
+        }
         if (isPrivilegedType(type) && !canSendPrivileged(type)) {
             return;
         }
@@ -380,6 +423,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private void prepareAuthenticatedConnection(boolean forceRefresh) {
+        if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
+            connectInProgress = false;
+            autoReconnect = false;
+            cancelReconnect();
+            notifyConnectionFailure(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE, false);
+            finishConnectFlow();
+            return;
+        }
         if (!forceRefresh && !canAttemptAuthNow()) {
             return;
         }
@@ -407,6 +458,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     }
 
                     try {
+                        if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
+                            connectInProgress = false;
+                            autoReconnect = false;
+                            cancelReconnect();
+                            notifyConnectionFailure(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE, false);
+                            finishConnectFlow();
+                            return;
+                        }
                         configureHandshakeAuthorization(token);
                         super.connect();
                     } catch (Exception exception) {
@@ -520,7 +579,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     public void requestConnectedUsers(Consumer<List<String>> callback) {
         SeqClient.LOGGER.info("[WebSocket] requestConnectedUsers open={} authenticated={}", isOpen(), authenticated);
-        if (!isOpen() || !authenticated || authFailed || notInGuild) {
+        if (!isOpen() || !authenticated || authFailed || notInGuild || !WynncraftServerPolicy.isCurrentServerAllowed()) {
             callback.accept(List.of());
             return;
         }
