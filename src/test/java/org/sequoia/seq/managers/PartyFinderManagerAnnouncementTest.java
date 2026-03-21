@@ -16,6 +16,7 @@ import org.sequoia.seq.model.PartyRegion;
 import org.sequoia.seq.model.PartyRole;
 import org.sequoia.seq.model.PartyStatus;
 import org.sequoia.seq.model.WynnClassType;
+import org.sequoia.seq.network.auth.StoredAuthSession;
 
 class PartyFinderManagerAnnouncementTest {
 
@@ -80,6 +81,28 @@ class PartyFinderManagerAnnouncementTest {
                 PartyFinderManager.buildOpenPartyAnnouncementSummary(List.of(), uuid -> "ignored");
 
         assertTrue(summary.isEmpty());
+    }
+
+    @Test
+    void resolveIdentityUuid_prefersAuthenticatedSessionUuid() {
+        StoredAuthSession session = new StoredAuthSession(
+                "token",
+                BASE_TIME.plusSeconds(600),
+                "00000000-0000-0000-0000-00000000abcd",
+                "LinkedPlayer");
+
+        String resolved = PartyFinderManager.resolveIdentityUuid(LOCAL_UUID, session);
+
+        assertEquals("00000000-0000-0000-0000-00000000abcd", resolved);
+    }
+
+    @Test
+    void resolveIdentityUuid_fallsBackToCurrentPlayerUuidWhenSessionMissingUuid() {
+        StoredAuthSession session = new StoredAuthSession("token", BASE_TIME.plusSeconds(600), "", "LinkedPlayer");
+
+        String resolved = PartyFinderManager.resolveIdentityUuid(LOCAL_UUID, session);
+
+        assertEquals(LOCAL_UUID, resolved);
     }
 
     private static Listing listing(

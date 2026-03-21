@@ -23,6 +23,7 @@ import org.sequoia.seq.model.*;
 import org.sequoia.seq.network.ApiClient;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.network.WynncraftServerPolicy;
+import org.sequoia.seq.network.auth.StoredAuthSession;
 import org.sequoia.seq.utils.PlayerNameCache;
 
 public class PartyFinderManager implements NotificationAccessor {
@@ -725,8 +726,14 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public String getLocalPlayerUUID() {
+        String currentPlayerUuid = null;
         var player = SeqClient.mc.player;
-        return player != null ? player.getUUID().toString() : null;
+        if (player != null) {
+            currentPlayerUuid = player.getUUID().toString();
+        }
+        return resolveIdentityUuid(
+                currentPlayerUuid,
+                SeqClient.getConfigManager() != null ? SeqClient.getConfigManager().getStoredAuthSession() : null);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -2241,6 +2248,11 @@ public class PartyFinderManager implements NotificationAccessor {
             if (!result.success()) {
                 return CommandResult.failure(result.message());
             }
+            Listing fallbackListing = findActiveLedListingForCommand();
+            if (fallbackListing != null) {
+                currentListing = fallbackListing;
+                return CommandResult.success("Resolved your led listing.", fallbackListing);
+            }
             if (currentListing == null) {
                 return CommandResult.failure("You are not currently in a Sequoia party.");
             }
@@ -2627,6 +2639,28 @@ public class PartyFinderManager implements NotificationAccessor {
         return null;
     }
 
+    private Listing findActiveLedListingForCommand() {
+        String myUUID = getLocalPlayerUUID();
+        if (myUUID == null || myUUID.isBlank()) {
+            return null;
+        }
+
+        synchronized (listingsLock) {
+            for (Listing listing : listings) {
+                if (listing == null) {
+                    continue;
+                }
+                if (listing.status() == PartyStatus.DISBANDED) {
+                    continue;
+                }
+                if (uuidEquals(myUUID, listing.leaderUUID())) {
+                    return listing;
+                }
+            }
+        }
+        return null;
+    }
+
     private void refreshCurrentListing() {
         String myUUID = getLocalPlayerUUID();
         if (myUUID == null) {
@@ -2744,6 +2778,16 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         return trimmed.toLowerCase(Locale.ROOT);
+    }
+
+    static String resolveIdentityUuid(String currentPlayerUuid, StoredAuthSession storedAuthSession) {
+        if (storedAuthSession != null) {
+            String authenticatedUuid = storedAuthSession.minecraftUuid();
+            if (authenticatedUuid != null && !authenticatedUuid.isBlank()) {
+                return authenticatedUuid;
+            }
+        }
+        return currentPlayerUuid;
     }
 
     /**
