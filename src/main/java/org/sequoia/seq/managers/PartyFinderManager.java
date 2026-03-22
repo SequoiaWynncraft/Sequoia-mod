@@ -128,11 +128,13 @@ public class PartyFinderManager implements NotificationAccessor {
 
         ConnectionManager.onPartyFinderStaleWarning(warning -> {
             SeqClient.LOGGER.info(
-                    "[PartyFinderWS] Received stale warning callback listingId={} disbandAt={} minutesRemaining={}",
+                    "[PartyFinderWS] Received stale warning callback reason={} listingId={} disbandAt={} minutesRemaining={}",
+                    warning.reason(),
                     warning.listingId(),
                     warning.disbandAt(),
                     warning.minutesRemaining());
-            handlePartyFinderStaleWarning(warning.listingId(), warning.disbandAt(), warning.minutesRemaining());
+            handlePartyFinderStaleWarning(
+                    warning.reason(), warning.listingId(), warning.disbandAt(), warning.minutesRemaining());
         });
     }
 
@@ -827,16 +829,20 @@ public class PartyFinderManager implements NotificationAccessor {
                 inviteToken != null && !inviteToken.isBlank());
     }
 
-    public void handlePartyFinderStaleWarning(long listingId, Instant disbandAt, long minutesRemaining) {
+    public void handlePartyFinderStaleWarning(String reason, long listingId, Instant disbandAt, long minutesRemaining) {
         SeqClient.LOGGER.info(
-                "[PartyFinderWS] handlePartyFinderStaleWarning listingId={} disbandAt={} minutesRemaining={}",
+                "[PartyFinderWS] handlePartyFinderStaleWarning reason={} listingId={} disbandAt={} minutesRemaining={}",
+                reason,
                 listingId,
                 disbandAt,
                 minutesRemaining);
 
         long safeMinutesRemaining = Math.max(0, minutesRemaining);
-
-        notify("Your Party Finder listing will auto-disband in " + safeMinutesRemaining + " minutes.");
+        if ("heartbeat_lost".equals(reason)) {
+            notify("Your Party Finder listing will auto-disband in " + safeMinutesRemaining + " minutes.");
+            return;
+        }
+        notify("Your Party Finder listing is still solo and has not changed in a while.");
     }
 
     private void notifyInviteWithJoinAction(String message, long listingId, String inviteToken) {

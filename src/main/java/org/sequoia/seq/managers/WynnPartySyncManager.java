@@ -39,10 +39,12 @@ public class WynnPartySyncManager {
             Pattern.compile("^Your party has been disbanded\\.?$", Pattern.CASE_INSENSITIVE);
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Duration DUPLICATE_WINDOW = Duration.ofMillis(750);
+    private static final Duration HEARTBEAT_RESEND_INTERVAL = Duration.ofSeconds(60);
     private static final String OPEN_CREATE_UI_COMMAND = "/seq party create-ui";
 
     private final ObservedWynnPartyState observedState = new ObservedWynnPartyState();
     private String lastSentSnapshotKey;
+    private Instant lastSentSnapshotAt = Instant.EPOCH;
     private String lastEventKey;
     private Instant lastEventAt = Instant.EPOCH;
 
@@ -121,6 +123,7 @@ public class WynnPartySyncManager {
     public void tick() {
         if (!ConnectionManager.isConnected()) {
             lastSentSnapshotKey = null;
+            lastSentSnapshotAt = Instant.EPOCH;
             return;
         }
         if (SeqClient.getSyncWynnPartySetting() == null || !SeqClient.getSyncWynnPartySetting().getValue()) {
@@ -138,8 +141,10 @@ public class WynnPartySyncManager {
             return;
         }
 
+        Instant now = Instant.now();
         String snapshotKey = buildSnapshotKey(currentListing.id());
-        if (snapshotKey.equals(lastSentSnapshotKey)) {
+        boolean heartbeatDue = Duration.between(lastSentSnapshotAt, now).compareTo(HEARTBEAT_RESEND_INTERVAL) >= 0;
+        if (snapshotKey.equals(lastSentSnapshotKey) && !heartbeatDue) {
             return;
         }
 
@@ -156,12 +161,14 @@ public class WynnPartySyncManager {
                     observedState.leaderUsername,
                     observedState.memberUsernames);
             lastSentSnapshotKey = snapshotKey;
+            lastSentSnapshotAt = now;
         }
     }
 
     public void reset() {
         observedState.reset();
         lastSentSnapshotKey = null;
+        lastSentSnapshotAt = Instant.EPOCH;
         lastEventKey = null;
         lastEventAt = Instant.EPOCH;
     }

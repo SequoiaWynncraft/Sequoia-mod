@@ -892,18 +892,24 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 }
                 case "party_finder_stale_warning" -> {
                     if (partyFinderStaleWarningHandler != null) {
+                        String reason = extractPrimitiveString(json, "reason");
                         long listingId = json.get("listing_id").getAsLong();
-                        Instant disbandAt = Instant.parse(json.get("disband_at").getAsString());
-                        long minutesRemaining = json.get("minutes_remaining").getAsLong();
+                        Instant disbandAt = json.has("disband_at") && !json.get("disband_at").isJsonNull()
+                                ? Instant.parse(json.get("disband_at").getAsString())
+                                : null;
+                        long minutesRemaining = json.has("minutes_remaining")
+                                ? json.get("minutes_remaining").getAsLong()
+                                : 0L;
 
                         SeqClient.LOGGER.info(
-                                "[WebSocket] Dispatching party_finder_stale_warning listingId={} disbandAt={} minutesRemaining={}",
+                                "[WebSocket] Dispatching party_finder_stale_warning reason={} listingId={} disbandAt={} minutesRemaining={}",
+                                reason,
                                 listingId,
                                 disbandAt,
                                 minutesRemaining);
 
                         partyFinderStaleWarningHandler.accept(
-                                new PartyFinderStaleWarningMessage(listingId, disbandAt, minutesRemaining));
+                                new PartyFinderStaleWarningMessage(reason, listingId, disbandAt, minutesRemaining));
                     } else {
                         SeqClient.LOGGER.warn(
                                 "[WebSocket] Received party_finder_stale_warning but handler is not registered");
@@ -1369,5 +1375,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     public record PartyFinderInviteMessage(
             long listingId, String inviterUUID, String inviteToken, JsonObject listingJson) {}
 
-    public record PartyFinderStaleWarningMessage(long listingId, Instant disbandAt, long minutesRemaining) {}
+    public record PartyFinderStaleWarningMessage(
+            String reason, long listingId, Instant disbandAt, long minutesRemaining) {}
 }
