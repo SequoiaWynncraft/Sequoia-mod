@@ -481,8 +481,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float popupX = panelX + (panelWidth - popupW) / 2f;
         float popupY = screenHeight - STATUS_BANNER_H - 10;
 
-        NVGWrapper.drawRoundedRect(nvg, popupX, popupY, popupW, STATUS_BANNER_H, 6, ERROR_POPUP_BG);
-        NVGWrapper.drawRoundedRectOutline(nvg, popupX, popupY, popupW, STATUS_BANNER_H, 6, 1, ERROR_POPUP_BORDER);
+        NVGWrapper.drawRect(nvg, popupX, popupY, popupW, STATUS_BANNER_H, ERROR_POPUP_BG);
+        NVGWrapper.drawRectOutline(nvg, popupX, popupY, popupW, STATUS_BANNER_H, 1, ERROR_POPUP_BORDER);
 
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         var text = NVGContext.nvgColor(TEXT_COLOR);
