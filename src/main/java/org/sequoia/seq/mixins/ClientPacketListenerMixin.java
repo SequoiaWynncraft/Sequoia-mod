@@ -6,6 +6,7 @@ import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
 import org.sequoia.seq.managers.ChatManager;
 import org.sequoia.seq.managers.GuildBankTracker;
 import org.sequoia.seq.managers.RaidTracker;
+import org.sequoia.seq.client.SeqClient;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -30,5 +31,8 @@ public class ClientPacketListenerMixin {
         ChatManager.onSystemChat(content);
         RaidTracker.onSystemChat(content);
         GuildBankTracker.getInstance().onSystemChat(content);
+        if (SeqClient.getWynnPartySyncManager() != null) {
+            SeqClient.getWynnPartySyncManager().onSystemChat(content);
+        }
     }
 }

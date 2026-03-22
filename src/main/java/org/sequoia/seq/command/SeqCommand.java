@@ -116,6 +116,8 @@ public class SeqCommand {
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildPartyCommand(String literalName) {
                 return ClientCommandManager.literal(literalName)
                                 .executes(ctx -> openPartyScreen())
+                                .then(ClientCommandManager.literal("create-ui")
+                                                .executes(ctx -> openPartyCreateScreen()))
                                 .then(ClientCommandManager.literal("list")
                                                 .executes(SeqCommand::runPartyList))
                                 .then(ClientCommandManager.literal("status")
@@ -217,6 +219,11 @@ public class SeqCommand {
 
         private static int openPartyScreen() {
                 SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new PartyFinderScreen(SeqClient.mc.screen)));
+                return 1;
+        }
+
+        private static int openPartyCreateScreen() {
+                SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new PartyFinderScreen(SeqClient.mc.screen, true)));
                 return 1;
         }
 

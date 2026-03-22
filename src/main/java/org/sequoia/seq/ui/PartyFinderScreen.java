@@ -209,6 +209,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     // ── State ──
     private final Screen parent;
+    private final boolean openCreateModalOnInit;
     private float nvgMouseX, nvgMouseY;
     private float scrollOffset = 0;
     private float maxScroll = 0;
@@ -300,8 +301,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             HeaderButtonBounds roleDropdown) {}
 
     public PartyFinderScreen(Screen parent) {
+        this(parent, false);
+    }
+
+    public PartyFinderScreen(Screen parent, boolean openCreateModalOnInit) {
         super(Component.literal("Party Finder"));
         this.parent = parent;
+        this.openCreateModalOnInit = openCreateModalOnInit;
         // Initialize filter: all tags active
         for (String tag : ALL_TAGS) {
             activeFilterTags.add(tag);
@@ -317,6 +323,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     protected void init() {
         super.init();
         party().refreshData();
+        if (openCreateModalOnInit && party().getJoinedPartyIndex() < 0 && !party().hasListedParty()) {
+            openModal(false);
+        }
     }
 
     // ══════════════════════════════ RENDER ══════════════════════════════

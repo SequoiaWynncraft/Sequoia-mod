@@ -23,6 +23,7 @@ import org.sequoia.seq.managers.ChatManager;
 import org.sequoia.seq.managers.FontManager;
 import org.sequoia.seq.managers.GameManager;
 import org.sequoia.seq.managers.PartyFinderManager;
+import org.sequoia.seq.managers.WynnPartySyncManager;
 import org.sequoia.seq.model.WynnClassType;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.network.WynncraftServerPolicy;
@@ -80,6 +81,12 @@ public class SeqClient implements ClientModInitializer {
     @Getter
     public static Setting.IntSetting announceOpenPartiesIntervalMinutesSetting;
 
+    @Getter
+    public static Setting.BooleanSetting syncWynnPartySetting;
+
+    @Getter
+    public static WynnPartySyncManager wynnPartySyncManager;
+
     private static KeyMapping openScreenKey;
     private static WynnClassType lastBroadcastPartyClass;
     private static boolean wasInPartyFinder;
@@ -95,6 +102,7 @@ public class SeqClient implements ClientModInitializer {
         fontManager = new FontManager();
         gameManager = new GameManager();
         partyFinderManager = new PartyFinderManager();
+        wynnPartySyncManager = new WynnPartySyncManager();
         chatManager = new ChatManager();
         configManager = new ConfigManager();
         configManager.load();
@@ -119,11 +127,17 @@ public class SeqClient implements ClientModInitializer {
                 ConnectionManager.disconnectForBlockedServer();
                 wasInPartyFinder = false;
                 lastBroadcastPartyClass = null;
+                if (wynnPartySyncManager != null) {
+                    wynnPartySyncManager.reset();
+                }
                 return;
             }
 
             if (partyFinderManager != null) {
                 partyFinderManager.tickOpenPartyAnnouncements();
+            }
+            if (wynnPartySyncManager != null) {
+                wynnPartySyncManager.tick();
             }
 
             boolean inPartyFinder = partyFinderManager != null && partyFinderManager.isInParty();
@@ -172,6 +186,7 @@ public class SeqClient implements ClientModInitializer {
         announceOpenPartiesSetting = new Setting.BooleanSetting("announce_open_parties", "party_finder", true);
         announceOpenPartiesIntervalMinutesSetting =
                 new Setting.IntSetting("announce_open_parties_interval_minutes", "party_finder", 5, 1, 60);
+        syncWynnPartySetting = new Setting.BooleanSetting("sync_with_wynn_party", "party_finder", true);
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
@@ -179,6 +194,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(easterEggsSetting);
         getConfigManager().register(announceOpenPartiesSetting);
         getConfigManager().register(announceOpenPartiesIntervalMinutesSetting);
+        getConfigManager().register(syncWynnPartySetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.

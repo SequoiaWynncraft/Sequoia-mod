@@ -746,6 +746,46 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         send("party_class_update", msg);
     }
 
+    public boolean sendPartySyncSnapshot(boolean active, String leaderUsername, List<String> memberUsernames) {
+        if (!authenticated || !isOpen()) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendPartySyncSnapshot dropped open={} authenticated={}",
+                    isOpen(),
+                    authenticated);
+            return false;
+        }
+        if (authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendPartySyncSnapshot dropped authFailed={} notInGuild={}",
+                    authFailed,
+                    notInGuild);
+            return false;
+        }
+
+        JsonObject msg = new JsonObject();
+        msg.addProperty("active", active);
+        if (leaderUsername != null && !leaderUsername.isBlank()) {
+            msg.addProperty("leader_username", leaderUsername);
+        }
+        JsonArray usernames = new JsonArray();
+        if (memberUsernames != null) {
+            for (String memberUsername : memberUsernames) {
+                if (memberUsername != null && !memberUsername.isBlank()) {
+                    usernames.add(memberUsername);
+                }
+            }
+        }
+        msg.add("member_usernames", usernames);
+        SeqClient.LOGGER.info(
+                "[WebSocket] Sending party_sync_snapshot active={} leader={} members={} usernames={}",
+                active,
+                leaderUsername,
+                usernames.size(),
+                memberUsernames);
+        send("party_sync_snapshot", msg);
+        return true;
+    }
+
     public void sendLocalPartyClassUpdate() {
         WynnClassType classType = WynnClassCache.resolveLocalClassType();
         if (classType == null) {
@@ -1028,6 +1068,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)
                 || "party_class_update".equals(type)
+                || "party_sync_snapshot".equals(type)
                 || "link_request".equals(type)
                 || "get_connected".equals(type);
     }
