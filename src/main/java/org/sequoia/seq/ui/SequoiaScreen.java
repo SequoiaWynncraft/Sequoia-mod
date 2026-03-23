@@ -67,8 +67,9 @@ public class SequoiaScreen extends Screen {
             float centerX = screenWidth / 2f - BUTTON_WIDTH / 2f;
 
             drawButton(nvg, centerX, startY, "Partyfinder");
-            drawButton(nvg, centerX, startY + BUTTON_HEIGHT + BUTTON_SPACING, "Settings");
-            drawButton(nvg, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 2, "Github");
+            drawButton(nvg, centerX, startY + BUTTON_HEIGHT + BUTTON_SPACING, "Authentication");
+            drawButton(nvg, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 2, "Settings");
+            drawButton(nvg, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 3, "Github");
         });
     }
 
@@ -106,8 +107,10 @@ public class SequoiaScreen extends Screen {
             if (isInButton(mx, my, centerX, startY)) {
                 SeqClient.mc.setScreen(new PartyFinderScreen(this));
             } else if (isInButton(mx, my, centerX, startY + BUTTON_HEIGHT + BUTTON_SPACING)) {
-                SeqClient.mc.setScreen(new SettingsScreen(this));
+                SeqClient.mc.setScreen(new AuthenticationScreen(this));
             } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 2)) {
+                SeqClient.mc.setScreen(new SettingsScreen(this));
+            } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 3)) {
                 try {
                     java.net.URI uri = java.net.URI.create(GITHUB_URL);
                     java.awt.Desktop.getDesktop().browse(uri);

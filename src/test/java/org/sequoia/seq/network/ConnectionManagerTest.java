@@ -33,4 +33,11 @@ class ConnectionManagerTest {
         assertTrue(payload.has("allow_relink"));
         assertTrue(payload.get("allow_relink").getAsBoolean());
     }
+
+    @Test
+    void discordUsernamePresenceTreatsBlankValuesAsUnlinked() {
+        assertTrue(ConnectionManager.hasDiscordUsername("SequoiaUser"));
+        assertEquals(false, ConnectionManager.hasDiscordUsername(""));
+        assertEquals(false, ConnectionManager.hasDiscordUsername("   "));
+    }
 }

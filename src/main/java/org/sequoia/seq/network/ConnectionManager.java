@@ -818,7 +818,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     if (json.has("discord_username")
                             && json.get("discord_username").isJsonPrimitive()) {
                         String discordUser = json.get("discord_username").getAsString();
+                        storeDiscordUsername(discordUser);
                         notifyConnectionStatus("Connected as " + discordUser);
+                    } else {
+                        clearDiscordUsername();
                     }
                     if (pendingDiscordLinkRequest) {
                         requestDiscordLink(true);
@@ -1033,6 +1036,21 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return instance != null && instance.isOpen() && instance.authenticated;
     }
 
+    public boolean isDiscordLinked() {
+        return hasDiscordUsername(getLinkedDiscordUsername());
+    }
+
+    public String getLinkedDiscordUsername() {
+        return SeqClient.getConfigManager().getDiscordUsername();
+    }
+
+    public void unlinkLocally() {
+        disconnectInternal(false);
+        SeqClient.getAuthService().clearSession();
+        clearDiscordUsername();
+        notify("Authentication cleared.");
+    }
+
     private boolean canAttemptAuthNow() {
         long now = System.currentTimeMillis();
         if (now >= nextAllowedAuthAttemptAtMs) {
@@ -1118,6 +1136,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         String minecraftUsername = extractPrimitiveString(json, "minecraft_username");
         String discordUsername = extractPrimitiveString(json, "discord_username");
         storeAuthSuccessSession(token, minecraftUsername);
+        storeDiscordUsername(discordUsername);
         if (discordUsername != null) {
             notify("Discord account linked as " + discordUsername + ".");
         } else {
@@ -1364,6 +1383,20 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         if (hours > 0) return hours + "h " + mins + "m";
         if (mins > 0) return mins + "m " + secs + "s";
         return secs + "s";
+    }
+
+    static boolean hasDiscordUsername(String discordUsername) {
+        return discordUsername != null && !discordUsername.isBlank();
+    }
+
+    private void storeDiscordUsername(String discordUsername) {
+        if (hasDiscordUsername(discordUsername)) {
+            SeqClient.getConfigManager().setDiscordUsername(discordUsername);
+        }
+    }
+
+    private void clearDiscordUsername() {
+        SeqClient.getConfigManager().clearDiscordUsername();
     }
 
     // ── Message records ──

@@ -521,12 +521,26 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         drawSidebarButton(nvg, fontName, btnX, btnY, btnW, "Partyfinder", true);
         drawSidebarButton(
-                nvg, fontName, btnX, btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING), btnW, "Settings", false);
+                nvg,
+                fontName,
+                btnX,
+                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING),
+                btnW,
+                "Authentication",
+                false);
         drawSidebarButton(
                 nvg,
                 fontName,
                 btnX,
                 btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
+                btnW,
+                "Settings",
+                false);
+        drawSidebarButton(
+                nvg,
+                fontName,
+                btnX,
+                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
                 btnW,
                 "Github",
                 false);
@@ -2047,7 +2061,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING),
                 btnW,
                 SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new SettingsScreen(this));
+            SeqClient.mc.setScreen(new AuthenticationScreen(this));
             return true;
         }
         if (isHovered(
@@ -2055,6 +2069,16 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 my,
                 btnX,
                 btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
+                btnW,
+                SIDEBAR_BUTTON_HEIGHT)) {
+            SeqClient.mc.setScreen(new SettingsScreen(this));
+            return true;
+        }
+        if (isHovered(
+                mx,
+                my,
+                btnX,
+                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
                 btnW,
                 SIDEBAR_BUTTON_HEIGHT)) {
             try {
