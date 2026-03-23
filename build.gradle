@@ -7,7 +7,6 @@ plugins {
 version = project.mod_version
 group = project.maven_group
 
-def sanitizedArchiveVersion = project.version.toString().replaceFirst(/^v/, "")
 def requestedTaskNames = gradle.startParameter.taskNames.collect { it.toLowerCase(Locale.ROOT) }
 def enableDevAuth = providers.gradleProperty("enable_devauth")
         .map { it.toBoolean() }
@@ -20,7 +19,7 @@ base {
 }
 
 tasks.withType(AbstractArchiveTask).configureEach {
-    archiveVersion.set(project.provider { sanitizedArchiveVersion })
+    archiveVersion.set(project.provider { project.version.toString() })
 }
 
 loom {

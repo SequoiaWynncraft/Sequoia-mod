@@ -43,7 +43,7 @@ public class UpdateManager implements NotificationAccessor {
     private static final String REPO_NAME = "Sequoia-mod";
     private static final URI DEFAULT_RELEASES_LATEST_API =
             URI.create("https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME + "/releases/latest");
-    private static final Pattern STRICT_TAG_PATTERN = Pattern.compile("^v(\\d+)\\.(\\d+)\\.(\\d+)$");
+    private static final Pattern SEMVER_PATTERN = Pattern.compile("^v?(\\d+)\\.(\\d+)\\.(\\d+)$");
 
     private static UpdateManager instance;
 
@@ -223,7 +223,7 @@ public class UpdateManager implements NotificationAccessor {
                     JsonObject root = gson.fromJson(response.body(), JsonObject.class);
 
                     String tagName = getString(root, "tag_name");
-                    if (tagName == null || !STRICT_TAG_PATTERN.matcher(tagName).matches()) {
+                    if (tagName == null || !SEMVER_PATTERN.matcher(tagName).matches()) {
                         throw new IllegalStateException("Release has invalid tag name: " + tagName);
                     }
 
@@ -614,12 +614,12 @@ public class UpdateManager implements NotificationAccessor {
     }
 
     static boolean isNewer(String latest, String installed) {
-        Matcher latestMatcher = STRICT_TAG_PATTERN.matcher(latest);
+        Matcher latestMatcher = SEMVER_PATTERN.matcher(latest);
         if (!latestMatcher.matches()) {
             return false;
         }
 
-        Matcher installedMatcher = STRICT_TAG_PATTERN.matcher(installed);
+        Matcher installedMatcher = SEMVER_PATTERN.matcher(installed);
         if (!installedMatcher.matches()) {
             return !latest.equals(installed);
         }

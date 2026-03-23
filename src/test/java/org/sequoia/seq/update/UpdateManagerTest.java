@@ -206,7 +206,7 @@ class UpdateManagerTest {
         TestableUpdateManager manager = newDirectManager(gameDir);
         UpdateManager.ReleaseCandidate release = release("v0.1.1");
 
-        manager.installedVersion = "v0.1.0";
+        manager.installedVersion = "0.1.0";
         manager.enqueueFetchResult(CompletableFuture.completedFuture(release));
         manager.checkForUpdatesManually();
         assertEquals(1, manager.prompts.size());
@@ -834,7 +834,7 @@ class UpdateManagerTest {
     }
 
     private static UpdateManager.ReleaseCandidate release(String tagName) {
-        String version = tagName.substring(1);
+        String version = tagName.startsWith("v") ? tagName.substring(1) : tagName;
         String jarName = "sequoia-" + version + ".jar";
         return new UpdateManager.ReleaseCandidate(
                 tagName,
@@ -923,7 +923,7 @@ class UpdateManagerTest {
         private final AtomicInteger stopRequests = new AtomicInteger();
         private final AtomicInteger browserOpenCount = new AtomicInteger();
 
-        private volatile String installedVersion = "v0.1.0";
+        private volatile String installedVersion = "0.1.0";
         private volatile boolean windows;
         private volatile boolean browserShouldFail;
         private volatile boolean skipRealApply;
