@@ -93,7 +93,7 @@ public class WynnPartySyncManager {
                     "[WynnPartySync] Detected Wynn party kick displayed='{}' resolved='{}'",
                     kickedMatcher.group(1),
                     observedUsername);
-            handleMemberLeft(observedUsername);
+            handleMemberKicked(observedUsername);
             return;
         }
 
@@ -208,7 +208,25 @@ public class WynnPartySyncManager {
         if (observedState.memberUsernames.isEmpty()) {
             observedState.active = false;
         }
+        sendExplicitRemoval(username, "left");
         logObservedState("leave");
+    }
+
+    private void handleMemberKicked(String username) {
+        ensureObservedPartyActive();
+        if (username == null) {
+            SeqClient.LOGGER.warn("[WynnPartySync] Ignoring kick event because username could not be resolved");
+            return;
+        }
+        observedState.memberUsernames.removeIf(existing -> existing.equalsIgnoreCase(username));
+        if (observedState.leaderUsername != null && observedState.leaderUsername.equalsIgnoreCase(username)) {
+            observedState.leaderUsername = null;
+        }
+        if (observedState.memberUsernames.isEmpty()) {
+            observedState.active = false;
+        }
+        sendExplicitRemoval(username, "kicked");
+        logObservedState("kick");
     }
 
     private void handleLeaderChanged(String username) {
@@ -343,6 +361,22 @@ public class WynnPartySyncManager {
                 observedState.active,
                 observedState.leaderUsername,
                 observedState.memberUsernames);
+    }
+
+    private void sendExplicitRemoval(String username, String reason) {
+        if (SeqClient.getSyncWynnPartySetting() == null || !SeqClient.getSyncWynnPartySetting().getValue()) {
+            return;
+        }
+        Listing currentListing =
+                SeqClient.getPartyFinderManager() != null ? SeqClient.getPartyFinderManager().getCurrentListing() : null;
+        if (currentListing == null) {
+            SeqClient.LOGGER.debug(
+                    "[WynnPartySync] Skipping explicit removal send: no active Sequoia listing username={} reason={}",
+                    username,
+                    reason);
+            return;
+        }
+        ConnectionManager.getInstance().sendPartySyncMemberRemoved(username, reason);
     }
 
     static final class ObservedWynnPartyState {

@@ -786,6 +786,34 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return true;
     }
 
+    public boolean sendPartySyncMemberRemoved(String username, String reason) {
+        if (!authenticated || !isOpen()) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendPartySyncMemberRemoved dropped open={} authenticated={}",
+                    isOpen(),
+                    authenticated);
+            return false;
+        }
+        if (authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendPartySyncMemberRemoved dropped authFailed={} notInGuild={}",
+                    authFailed,
+                    notInGuild);
+            return false;
+        }
+        if (username == null || username.isBlank() || reason == null || reason.isBlank()) {
+            SeqClient.LOGGER.warn("[WebSocket] sendPartySyncMemberRemoved dropped invalid payload");
+            return false;
+        }
+
+        JsonObject msg = new JsonObject();
+        msg.addProperty("username", username);
+        msg.addProperty("reason", reason);
+        SeqClient.LOGGER.info("[WebSocket] Sending party_sync_member_removed username={} reason={}", username, reason);
+        send("party_sync_member_removed", msg);
+        return true;
+    }
+
     public void sendLocalPartyClassUpdate() {
         WynnClassType classType = WynnClassCache.resolveLocalClassType();
         if (classType == null) {
@@ -1093,6 +1121,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_bank_event".equals(type)
                 || "party_class_update".equals(type)
                 || "party_sync_snapshot".equals(type)
+                || "party_sync_member_removed".equals(type)
                 || "link_request".equals(type)
                 || "get_connected".equals(type);
     }
