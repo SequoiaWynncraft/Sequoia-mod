@@ -23,6 +23,8 @@ import org.sequoia.seq.model.Activity;
 import org.sequoia.seq.model.PartyMode;
 import org.sequoia.seq.model.PartyRegion;
 import org.sequoia.seq.model.PartyStatus;
+import org.sequoia.seq.utils.TextInputFilters;
+import org.sequoia.seq.utils.TextInputHelper;
 import org.sequoia.seq.utils.rendering.nvg.NVGContext;
 import org.sequoia.seq.utils.rendering.nvg.NVGWrapper;
 
@@ -2812,18 +2814,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             if (inviteUsernameInput.length() >= 16) {
                 return true;
             }
-            if (keyCode >= GLFW.GLFW_KEY_A && keyCode <= GLFW.GLFW_KEY_Z) {
-                boolean shift = (keyEvent.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0;
-                char letter = (char) ('a' + (keyCode - GLFW.GLFW_KEY_A));
-                inviteUsernameInput += shift ? Character.toUpperCase(letter) : letter;
-                return true;
-            }
-            if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
-                inviteUsernameInput += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
-                return true;
-            }
-            if (keyCode == GLFW.GLFW_KEY_MINUS && (keyEvent.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
-                inviteUsernameInput += '_';
+            Character typedCharacter = TextInputHelper.getTypedCharacter(keyEvent);
+            if (typedCharacter != null && TextInputFilters.isMinecraftUsernameCharacter(typedCharacter)) {
+                inviteUsernameInput += typedCharacter;
                 return true;
             }
             return true;
@@ -2893,20 +2886,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 }
                 return true;
             }
-            if (keyCode >= GLFW.GLFW_KEY_A && keyCode <= GLFW.GLFW_KEY_Z) {
-                boolean shift = (keyEvent.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0;
-                char letter = (char) ('a' + (keyCode - GLFW.GLFW_KEY_A));
-                searchQuery += shift ? Character.toUpperCase(letter) : letter;
-                scrollOffset = 0;
-                return true;
-            }
-            if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
-                searchQuery += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
-                scrollOffset = 0;
-                return true;
-            }
-            if (keyCode == GLFW.GLFW_KEY_SPACE) {
-                searchQuery += ' ';
+            Character typedCharacter = TextInputHelper.getTypedCharacter(keyEvent);
+            if (typedCharacter != null && TextInputHelper.isPrintableCharacter(typedCharacter)) {
+                searchQuery += typedCharacter;
                 scrollOffset = 0;
                 return true;
             }

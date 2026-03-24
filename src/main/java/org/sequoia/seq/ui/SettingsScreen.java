@@ -10,6 +10,7 @@ import org.lwjgl.glfw.GLFW;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.config.Setting;
 import org.sequoia.seq.ui.widget.*;
+import org.sequoia.seq.utils.TextInputHelper;
 import org.sequoia.seq.utils.rendering.nvg.NVGContext;
 import org.sequoia.seq.utils.rendering.nvg.NVGWrapper;
 
@@ -540,20 +541,9 @@ public class SettingsScreen extends Screen {
                 }
                 return true;
             }
-            if (keyCode >= GLFW.GLFW_KEY_A && keyCode <= GLFW.GLFW_KEY_Z) {
-                boolean shift = (keyEvent.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0;
-                char letter = (char) ('a' + (keyCode - GLFW.GLFW_KEY_A));
-                searchQuery += shift ? Character.toUpperCase(letter) : letter;
-                scrollOffset = 0;
-                return true;
-            }
-            if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
-                searchQuery += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
-                scrollOffset = 0;
-                return true;
-            }
-            if (keyCode == GLFW.GLFW_KEY_SPACE) {
-                searchQuery += ' ';
+            Character typedCharacter = TextInputHelper.getTypedCharacter(keyEvent);
+            if (typedCharacter != null && TextInputHelper.isPrintableCharacter(typedCharacter)) {
+                searchQuery += typedCharacter;
                 scrollOffset = 0;
                 return true;
             }
