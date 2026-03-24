@@ -24,8 +24,8 @@
 
 1. **Join the guild** - you need to be a member of [Sequoia](https://discord.gg/seq) on Wynncraft for backend features to work.
 2. **Install the mod** using the steps below.
-3. **Link your account** - run `/seq link` in-game on first launch to authenticate with the backend.
-4. **Connect** - the mod auto-connects on startup if enabled, or run `/seq connect`.
+3. **Link your account** - open the Sequoia Mod menu (`O` by default) and navigate to the Authentication section.
+4. **Connect** - the mod auto-connects on startup if enabled, or by using a button in the Authentication section.
 5. **Check status** - run `/seq status` to make sure you're connected.
 6. **Configure** - press `O` and open settings to toggle Discord chat, raid announcements, etc.
 
