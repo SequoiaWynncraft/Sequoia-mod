@@ -76,6 +76,24 @@ class PartyFinderManagerAnnouncementTest {
     }
 
     @Test
+    void buildOpenPartyAnnouncementSummary_abbreviatesBackendNexusAlias() {
+        Listing listing = listingWithActivities(
+                32L,
+                "leader-3",
+                PartyStatus.OPEN,
+                1,
+                0,
+                BASE_TIME.minusSeconds(15),
+                List.of(new Activity(2L, "The Orphion's Nexus of Light", 4)));
+
+        PartyFinderManager.OpenPartyAnnouncementSummary summary = PartyFinderManager.buildOpenPartyAnnouncementSummary(
+                List.of(listing),
+                uuid -> "name-" + uuid);
+
+        assertEquals("NOL", summary.entries().get(0).activitySummary());
+    }
+
+    @Test
     void buildOpenPartyAnnouncementSummary_returnsEmptyForNoCandidates() {
         PartyFinderManager.OpenPartyAnnouncementSummary summary =
                 PartyFinderManager.buildOpenPartyAnnouncementSummary(List.of(), uuid -> "ignored");
@@ -112,7 +130,36 @@ class PartyFinderManagerAnnouncementTest {
             int memberCount,
             int reservedCount,
             Instant createdAt) {
-        return listing(id, leaderUuid, status, memberCount, reservedCount, createdAt, members(leaderUuid, memberCount), reserved(reservedCount, createdAt));
+        return listing(
+                id,
+                leaderUuid,
+                status,
+                memberCount,
+                reservedCount,
+                createdAt,
+                List.of(new Activity(1L, "Nest of the Grootslangs", 4)),
+                members(leaderUuid, memberCount),
+                reserved(reservedCount, createdAt));
+    }
+
+    private static Listing listingWithActivities(
+            long id,
+            String leaderUuid,
+            PartyStatus status,
+            int memberCount,
+            int reservedCount,
+            Instant createdAt,
+            List<Activity> activities) {
+        return listing(
+                id,
+                leaderUuid,
+                status,
+                memberCount,
+                reservedCount,
+                createdAt,
+                activities,
+                members(leaderUuid, memberCount),
+                reserved(reservedCount, createdAt));
     }
 
     private static Listing listing(
@@ -123,7 +170,16 @@ class PartyFinderManagerAnnouncementTest {
             int reservedCount,
             Instant createdAt,
             List<Member> reservedSlots) {
-        return listing(id, leaderUuid, status, memberCount, reservedCount, createdAt, members(leaderUuid, memberCount), reservedSlots);
+        return listing(
+                id,
+                leaderUuid,
+                status,
+                memberCount,
+                reservedCount,
+                createdAt,
+                List.of(new Activity(1L, "Nest of the Grootslangs", 4)),
+                members(leaderUuid, memberCount),
+                reservedSlots);
     }
 
     private static Listing listing(
@@ -133,11 +189,12 @@ class PartyFinderManagerAnnouncementTest {
             int memberCount,
             int reservedCount,
             Instant createdAt,
+            List<Activity> activities,
             List<Member> members,
             List<Member> reservedSlots) {
         return new Listing(
                 id,
-                List.of(new Activity(1L, "Nest of the Grootslangs", 4)),
+                activities,
                 null,
                 leaderUuid,
                 PartyMode.CHILL,

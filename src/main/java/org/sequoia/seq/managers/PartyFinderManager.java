@@ -1260,13 +1260,14 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     private static String abbreviateActivityName(String activityName) {
-        return switch (activityName) {
+        String normalizedName = PartyListing.backendNameToDisplayName(activityName);
+        return switch (normalizedName) {
             case "Nest of the Grootslangs" -> "NOG";
             case "The Nameless Anomaly" -> "TNA";
             case "The Canyon Colossus" -> "TCC";
             case "Nexus of Light" -> "NOL";
             case "Prelude to Annihilation" -> "ANNI";
-            default -> activityName;
+            default -> normalizedName;
         };
     }
 
