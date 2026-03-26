@@ -18,6 +18,10 @@ public final class GuildBankTracker {
     private static final Pattern GUILD_BANK_PATTERN = Pattern.compile(
             "^(.+?)\\s+(deposited|withdrew)\\s+(.+?)\\s+(to|from)\\s+the Guild Bank\\s+\\((.+)\\)$",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern GUILD_PATTERN = Pattern.compile(
+            "^(.+?)\\s+(deposited|withdrew)\\s+(.+?)\\s+(to|from)\\s+the Guild$",
+            Pattern.CASE_INSENSITIVE);
+    private static final String DEFAULT_ACCESS_TIER = "Unknown";
     private static final Pattern QUANTITY_PATTERN = Pattern.compile("^(?:(\\d+)x\\s+)?(.+)$");
     private static final Pattern CHARGES_PATTERN = Pattern.compile("^(.*?)(?:\\s+\\[([^\\]]+)\\])?$");
     private static final Duration DEDUPE_WINDOW = Duration.ofSeconds(2);
@@ -89,23 +93,33 @@ public final class GuildBankTracker {
         if (rawText == null || rawText.isBlank()) {
             return null;
         }
-        if (!rawText.contains("Guild Bank")) {
+        if (!rawText.contains("Guild")) {
             return null;
         }
         if (!rawText.contains("deposited") && !rawText.contains("withdrew")) {
             return null;
         }
 
-        String cleaned = normalizeForParsing(rawText);
+        String cleaned = stripGuildChatPrefix(normalizeForParsing(rawText));
+
         Matcher matcher = GUILD_BANK_PATTERN.matcher(cleaned);
-        if (!matcher.matches()) {
-            return null;
+        String accessTier;
+        if (matcher.matches()) {
+            accessTier = matcher.group(5).trim();
+        } else {
+            matcher = GUILD_PATTERN.matcher(cleaned);
+            if (!matcher.matches()) {
+                return null;
+            }
+            accessTier = DEFAULT_ACCESS_TIER;
         }
 
         String player = matcher.group(1).trim();
         String actionToken = matcher.group(2).toLowerCase();
         String itemBlock = matcher.group(3).trim();
-        String accessTier = matcher.group(5).trim();
+        if (player.isEmpty() || itemBlock.isEmpty()) {
+            return null;
+        }
 
         Matcher quantityMatcher = QUANTITY_PATTERN.matcher(itemBlock);
         if (!quantityMatcher.matches()) {
@@ -137,6 +151,14 @@ public final class GuildBankTracker {
 
     static String normalizeForParsing(String rawText) {
         return PacketTextNormalizer.normalizeForParsing(rawText);
+    }
+
+    private static String stripGuildChatPrefix(String rawText) {
+        int chatPrefixIndex = rawText.indexOf("[CHAT/GUILD]");
+        if (chatPrefixIndex >= 0) {
+            return rawText.substring(chatPrefixIndex + "[CHAT/GUILD]".length()).trim();
+        }
+        return rawText;
     }
 
     private synchronized boolean isDuplicate(String rawMessage, Instant now) {
