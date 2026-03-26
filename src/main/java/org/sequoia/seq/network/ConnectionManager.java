@@ -118,6 +118,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return;
         }
 
+        if (!current.hasConnectionState()) {
+            instance = null;
+            return;
+        }
+
         boolean shouldNotify = current.isOpen() || current.connectInProgress;
         current.disconnectInternal(false);
         if (shouldNotify) {
@@ -208,17 +213,36 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private void disconnectInternal(boolean userInitiated) {
+        boolean open = isOpen();
+        boolean hadConnectionState = hasConnectionState();
+        boolean hadAutoReconnect = autoReconnect;
+        if (!hadConnectionState && !hadAutoReconnect) {
+            pendingDiscordLinkRequest = false;
+            connectInProgress = false;
+            connectedSince = null;
+            instance = null;
+            if (userInitiated) {
+                notify("Not connected");
+            }
+            return;
+        }
+
         SeqClient.LOGGER.info(
                 "[WebSocket] disconnect() called open={} authenticated={} autoReconnect={}",
-                isOpen(),
+                open,
                 authenticated,
                 autoReconnect);
         finishConnectFlow();
         autoReconnect = false;
         cancelReconnect();
         connectInProgress = false;
-        if (!isOpen()) {
+        if (!open) {
+            authenticated = false;
+            authFailed = false;
+            notInGuild = false;
+            connectedSince = null;
             pendingDiscordLinkRequest = false;
+            instance = null;
             if (userInitiated) {
                 notify("Not connected");
             }
@@ -384,13 +408,36 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
     }
 
-    private static boolean shouldReconnectAfterClose(int code, boolean remote) {
+    static boolean shouldReconnectAfterClose(int code, boolean remote) {
         if (remote) {
             return true;
         }
         // Local clean close (1000) is treated as intentional; do not auto-reconnect.
         // Handshake/protocol close failures (e.g. 1002 from HTTP 502) should retry.
         return code != 1000;
+    }
+
+    private boolean hasConnectionState() {
+        return isOpen()
+                || connectInProgress
+                || authenticated
+                || authFailed
+                || notInGuild
+                || connectedSince != null
+                || reconnectTask != null
+                || userInitiatedConnectFlow
+                || pendingDiscordLinkRequest;
+    }
+
+    static boolean hasReconnectTask() {
+        return reconnectTask != null;
+    }
+
+    static void resetForTest() {
+        autoReconnect = true;
+        reconnectAttempt = 0;
+        cancelReconnect();
+        instance = null;
     }
 
     private static void notifyManualConnectRequired() {

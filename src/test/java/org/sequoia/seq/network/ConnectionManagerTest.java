@@ -1,5 +1,6 @@
 package org.sequoia.seq.network;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -39,5 +40,23 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.hasDiscordUsername("SequoiaUser"));
         assertEquals(false, ConnectionManager.hasDiscordUsername(""));
         assertEquals(false, ConnectionManager.hasDiscordUsername("   "));
+    }
+
+    @Test
+    void localCleanCloseDoesNotReconnect() {
+        assertFalse(ConnectionManager.shouldReconnectAfterClose(1000, false));
+    }
+
+    @Test
+    void remoteCloseStillReconnects() {
+        assertTrue(ConnectionManager.shouldReconnectAfterClose(1000, true));
+    }
+
+    @Test
+    void resetForTestClearsReconnectState() {
+        ConnectionManager.resetForTest();
+
+        assertFalse(ConnectionManager.hasReconnectTask());
+        assertFalse(ConnectionManager.isConnected());
     }
 }
