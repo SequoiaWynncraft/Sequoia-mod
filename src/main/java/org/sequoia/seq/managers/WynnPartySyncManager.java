@@ -140,6 +140,12 @@ public class WynnPartySyncManager {
                     observedState.memberUsernames);
             return;
         }
+        if (!observedState.initialized) {
+            SeqClient.LOGGER.debug(
+                    "[WynnPartySync] Skipping snapshot send: observed party state is still unknown for listingId={}",
+                    currentListing.id());
+            return;
+        }
 
         Instant now = Instant.now();
         String snapshotKey = buildSnapshotKey(currentListing.id());
@@ -175,6 +181,7 @@ public class WynnPartySyncManager {
 
     private void handlePartyCreated() {
         observedState.reset();
+        observedState.initialized = true;
         observedState.active = true;
         String localUsername = getLocalUsername();
         if (localUsername != null) {
@@ -241,6 +248,7 @@ public class WynnPartySyncManager {
     }
 
     private void handlePartyDisbanded() {
+        observedState.initialized = true;
         observedState.active = false;
         observedState.leaderUsername = null;
         observedState.memberUsernames.clear();
@@ -255,6 +263,7 @@ public class WynnPartySyncManager {
         if (observedState.active) {
             return;
         }
+        observedState.initialized = true;
         observedState.active = true;
         String localUsername = getLocalUsername();
         if (localUsername != null) {
@@ -380,12 +389,14 @@ public class WynnPartySyncManager {
     }
 
     static final class ObservedWynnPartyState {
+        private boolean initialized;
         private boolean active;
         private String leaderUsername;
         private final Set<String> memberUsernames = new LinkedHashSet<>();
         private boolean createPromptShown;
 
         private void reset() {
+            initialized = false;
             active = false;
             leaderUsername = null;
             memberUsernames.clear();
@@ -394,7 +405,7 @@ public class WynnPartySyncManager {
 
         @Override
         public int hashCode() {
-            return Objects.hash(active, leaderUsername, memberUsernames, createPromptShown);
+            return Objects.hash(initialized, active, leaderUsername, memberUsernames, createPromptShown);
         }
     }
 }
