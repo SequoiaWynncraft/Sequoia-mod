@@ -10,7 +10,7 @@ public record GuildWarSubmission(
         List<String> warrers,
         TowerStats stats,
         int seasonRating,
-        boolean completed) {
+        String completedAt) {
 
     public record TowerStats(long damageLow, long damageHigh, double attackSpeed, long health, double defence) {}
 }

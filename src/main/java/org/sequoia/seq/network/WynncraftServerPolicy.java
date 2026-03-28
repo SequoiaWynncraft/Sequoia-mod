@@ -15,13 +15,19 @@ public final class WynncraftServerPolicy {
     private WynncraftServerPolicy() {}
 
     public static boolean isCurrentServerAllowed() {
-        return classifyAddress(currentServerAddress()) == Scope.MAIN;
+        return currentScope() == Scope.MAIN;
+    }
+
+    public static Scope currentScope() {
+        Minecraft minecraft = Minecraft.getInstance();
+        return classifyCurrentServer(
+                currentServerAddress(), minecraft.isLocalServer(), minecraft.hasSingleplayerServer(), minecraft.getConnection() != null);
     }
 
     static Scope classifyAddress(String serverAddress) {
         String normalizedHost = normalizeHost(serverAddress);
         if (normalizedHost == null) {
-            return Scope.BLOCKED;
+            return Scope.UNKNOWN;
         }
         if ("wynncraft.com".equals(normalizedHost)) {
             return Scope.MAIN;
@@ -32,6 +38,25 @@ public final class WynncraftServerPolicy {
         if (normalizedHost.endsWith(".wynncraft.com")) {
             return Scope.MAIN;
         }
+        return Scope.BLOCKED;
+    }
+
+    static Scope classifyCurrentServer(
+            String serverAddress, boolean localServer, boolean singleplayerServer, boolean multiplayerConnectionPresent) {
+        if (localServer || singleplayerServer) {
+            return Scope.BLOCKED;
+        }
+
+        Scope addressScope = classifyAddress(serverAddress);
+        if (addressScope != Scope.UNKNOWN) {
+            return addressScope;
+        }
+
+        // Server transfers can briefly clear the current host before the next Wynncraft host is known.
+        if (multiplayerConnectionPresent) {
+            return Scope.UNKNOWN;
+        }
+
         return Scope.BLOCKED;
     }
 
@@ -76,8 +101,9 @@ public final class WynncraftServerPolicy {
         return serverData != null ? serverData.ip : null;
     }
 
-    enum Scope {
+    public enum Scope {
         MAIN,
+        UNKNOWN,
         BLOCKED
     }
 }

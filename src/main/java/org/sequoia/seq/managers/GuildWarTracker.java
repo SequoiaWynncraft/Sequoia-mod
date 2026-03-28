@@ -124,6 +124,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
 
         activeContext.seasonRating = sr;
         activeContext.completedFromChat = true;
+        activeContext.completedAtEpochMs = clock.getAsLong();
         SeqClient.LOGGER.info(
                 "[GuildWarTracker] Captured completion chat territory='{}' sr={}",
                 activeContext.info != null ? activeContext.info.getTerritory() : territory,
@@ -178,6 +179,9 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
 
             activeContext.lastKnownState = info.getCurrentState();
             if (!activeContext.submissionSent && isTowerDestroyed(activeContext.lastKnownState)) {
+                if (activeContext.completedAtEpochMs == null) {
+                    activeContext.completedAtEpochMs = completionEpoch(activeContext.lastKnownState);
+                }
                 requestSubmission(info, activeContext, false);
             }
             return;
@@ -249,12 +253,13 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         String startTime = toRfc3339(context.startEpochMs > 0 ? context.startEpochMs : submittedAtMillis);
         WarTowerState completionState = context.lastKnownState != null ? context.lastKnownState : info.getCurrentState();
         boolean completed = context.completedFromChat || isTowerDestroyed(completionState);
+        String completedAt = context.completedAtEpochMs != null ? toRfc3339(context.completedAtEpochMs) : null;
         int seasonRating = context.seasonRating != null ? context.seasonRating : 0;
         SeqClient.LOGGER.info(
-                "[GuildWarTracker] Submitting war territory='{}' warrers={} completed={} sr={}",
+                "[GuildWarTracker] Submitting war territory='{}' warrers={} completedAt={} sr={}",
                 summary.territory(),
                 warrers,
-                completed,
+                completedAt,
                 seasonRating);
 
         GuildWarSubmission submission = new GuildWarSubmission(
@@ -265,7 +270,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
                 warrers,
                 summary.stats(),
                 seasonRating,
-                completed);
+                completed ? completedAt : null);
 
         if (submissionPublisher.publish(submission)) {
             context.submissionSent = true;
@@ -273,10 +278,10 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             return;
         }
         SeqClient.LOGGER.warn(
-                "[GuildWarTracker] Submission failed territory='{}' warrers={} completed={} sr={}",
+                "[GuildWarTracker] Submission failed territory='{}' warrers={} completedAt={} sr={}",
                 summary.territory(),
                 warrers,
-                completed,
+                completedAt,
                 seasonRating);
     }
 
@@ -367,6 +372,13 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         return state != null && state.health() <= 0;
     }
 
+    private long completionEpoch(WarTowerState state) {
+        if (state != null && state.timestamp() > 0) {
+            return state.timestamp();
+        }
+        return clock.getAsLong();
+    }
+
     private boolean isValidUsername(String name) {
         return trimToNull(name) != null && VALID_USERNAME.matcher(name.trim()).matches();
     }
@@ -442,6 +454,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         private List<String> warrers;
         private WarTowerState lastKnownState;
         private Integer seasonRating;
+        private Long completedAtEpochMs;
         private boolean pendingSubmission;
         private boolean completedFromChat;
         private boolean submissionSent;

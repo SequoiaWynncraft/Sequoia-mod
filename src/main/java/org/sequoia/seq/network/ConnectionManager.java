@@ -111,7 +111,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     public static void disconnectForBlockedServer() {
-        if (WynncraftServerPolicy.isCurrentServerAllowed()) {
+        WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+        if (serverScope != WynncraftServerPolicy.Scope.BLOCKED) {
             return;
         }
 
@@ -155,16 +156,24 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private void connectInternal(AuthFlow authFlow, boolean userInitiated) {
-        if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
-            autoReconnect = false;
-            cancelReconnect();
+        WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+        if (serverScope != WynncraftServerPolicy.Scope.MAIN) {
             pendingDiscordLinkRequest = false;
             connectInProgress = false;
             finishConnectFlow();
-            if (userInitiated) {
-                notify(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE);
+            if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
+                autoReconnect = false;
+                cancelReconnect();
+                if (userInitiated) {
+                    notify(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE);
+                }
+                SeqClient.LOGGER.info("[WebSocket] Blocking {} outside main Wynncraft host", authFlow);
+            } else {
+                if (userInitiated) {
+                    notify("Waiting until Wynncraft server transfer finishes.");
+                }
+                SeqClient.LOGGER.info("[WebSocket] Delaying {} until Wynncraft host is confirmed", authFlow);
             }
-            SeqClient.LOGGER.info("[WebSocket] Blocking {} outside main Wynncraft host", authFlow);
             return;
         }
 
@@ -354,7 +363,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // ── Auto-reconnect ──
 
     private static void scheduleReconnect() {
-        if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
+        WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+        if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
             autoReconnect = false;
             cancelReconnect();
             SeqClient.LOGGER.info("[WebSocket] Auto reconnect suppressed outside main Wynncraft host");
@@ -375,6 +385,21 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 () -> {
                     instance = null;
                     try {
+                        WynncraftServerPolicy.Scope reconnectScope = WynncraftServerPolicy.currentScope();
+                        if (reconnectScope == WynncraftServerPolicy.Scope.BLOCKED) {
+                            autoReconnect = false;
+                            cancelReconnect();
+                            SeqClient.LOGGER.info("[WebSocket] Cancelled reconnect because current host is blocked");
+                            return;
+                        }
+                        if (reconnectScope != WynncraftServerPolicy.Scope.MAIN) {
+                            reconnectAttempt = Math.max(0, reconnectAttempt - 1);
+                            SeqClient.LOGGER.info(
+                                    "[WebSocket] Delaying reconnect attempt {} until Wynncraft host is confirmed",
+                                    reconnectAttempt);
+                            scheduleReconnect();
+                            return;
+                        }
                         SeqClient.LOGGER.info("[WebSocket] Running scheduled reconnect attempt {}", reconnectAttempt);
                         getInstance().connect();
                     } catch (Exception e) {
@@ -462,8 +487,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // ── Outgoing messages ──
 
     private void send(String type, JsonObject payload) {
-        if (isPrivilegedType(type) && !WynncraftServerPolicy.isCurrentServerAllowed()) {
-            SeqClient.LOGGER.warn("[WebSocket] Dropping {} outside main Wynncraft host", type);
+        if (isPrivilegedType(type) && WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
+            SeqClient.LOGGER.warn("[WebSocket] Dropping {} outside confirmed main Wynncraft host", type);
             return;
         }
         if (isPrivilegedType(type) && !canSendPrivileged(type)) {
@@ -480,11 +505,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private void prepareAuthenticatedConnection(boolean forceRefresh) {
-        if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
+        WynncraftServerPolicy.Scope initialScope = WynncraftServerPolicy.currentScope();
+        if (initialScope != WynncraftServerPolicy.Scope.MAIN) {
             connectInProgress = false;
-            autoReconnect = false;
-            cancelReconnect();
-            notifyConnectionFailure(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE, false);
+            if (initialScope == WynncraftServerPolicy.Scope.BLOCKED) {
+                autoReconnect = false;
+                cancelReconnect();
+                notifyConnectionFailure(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE, false);
+            } else if (autoReconnect) {
+                scheduleReconnect();
+            }
             finishConnectFlow();
             return;
         }
@@ -515,11 +545,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     }
 
                     try {
-                        if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
+                        WynncraftServerPolicy.Scope currentScope = WynncraftServerPolicy.currentScope();
+                        if (currentScope != WynncraftServerPolicy.Scope.MAIN) {
                             connectInProgress = false;
-                            autoReconnect = false;
-                            cancelReconnect();
-                            notifyConnectionFailure(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE, false);
+                            if (currentScope == WynncraftServerPolicy.Scope.BLOCKED) {
+                                autoReconnect = false;
+                                cancelReconnect();
+                                notifyConnectionFailure(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE, false);
+                            } else if (autoReconnect) {
+                                scheduleReconnect();
+                            }
                             finishConnectFlow();
                             return;
                         }
@@ -622,7 +657,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         payload.add("results", results);
 
         payload.addProperty("sr", submission.seasonRating());
-        payload.addProperty("completed", submission.completed());
+        if (submission.completedAt() != null && !submission.completedAt().isBlank()) {
+            payload.addProperty("completed_at", submission.completedAt());
+        }
         return payload;
     }
 
@@ -839,6 +876,17 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             }
         }
 
+        WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+        if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarSubmission dropped outside main Wynncraft host");
+            return false;
+        }
+        if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
+            SeqClient.LOGGER.warn("[WebSocket] Queueing guild_war_submission until Wynncraft host is confirmed");
+            pendingGuildWarSubmissions.addLast(submission);
+            return true;
+        }
+
         if (!authenticated || !isOpen()) {
             SeqClient.LOGGER.warn(
                     "[WebSocket] Queueing guild_war_submission until websocket is ready open={} authenticated={}",
@@ -872,7 +920,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || !authenticated
                 || authFailed
                 || notInGuild
-                || !WynncraftServerPolicy.isCurrentServerAllowed()) {
+                || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
             return;
         }
 
@@ -892,11 +940,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         JsonObject payload = buildGuildWarSubmissionPayload(submission);
         SeqClient.LOGGER.info(
                 replay
-                        ? "[WebSocket] Replaying queued guild_war_submission territory='{}' warrers={} completed={} sr={}"
-                        : "[WebSocket] Sending guild_war_submission territory='{}' warrers={} completed={} sr={}",
+                        ? "[WebSocket] Replaying queued guild_war_submission territory='{}' warrers={} completedAt={} sr={}"
+                        : "[WebSocket] Sending guild_war_submission territory='{}' warrers={} completedAt={} sr={}",
                 submission.territory(),
                 submission.warrers(),
-                submission.completed(),
+                submission.completedAt(),
                 submission.seasonRating());
         sendPrepared("guild_war_submission", payload);
         return true;

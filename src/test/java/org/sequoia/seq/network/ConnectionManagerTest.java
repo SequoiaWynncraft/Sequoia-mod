@@ -46,7 +46,7 @@ class ConnectionManagerTest {
                 java.util.List.of("Alpha", "Bravo"),
                 new GuildWarSubmission.TowerStats(1200, 1800, 2.5, 450000, 0.35),
                 410,
-                true);
+                "2026-03-28T00:58:00Z");
 
         var payload = ConnectionManager.buildGuildWarSubmissionPayload(submission);
 
@@ -62,7 +62,7 @@ class ConnectionManagerTest {
                 .getAsLong());
         assertEquals(0.35, payload.getAsJsonObject("results").getAsJsonObject("stats").get("defence").getAsDouble());
         assertEquals(410, payload.get("sr").getAsInt());
-        assertTrue(payload.get("completed").getAsBoolean());
+        assertEquals("2026-03-28T00:58:00Z", payload.get("completed_at").getAsString());
     }
 
     @Test

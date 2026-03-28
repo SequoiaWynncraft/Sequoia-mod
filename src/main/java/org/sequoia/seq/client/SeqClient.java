@@ -132,7 +132,8 @@ public class SeqClient implements ClientModInitializer {
                 }
             }
 
-            if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
+            WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+            if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
                 ConnectionManager.disconnectForBlockedServer();
                 wasInPartyFinder = false;
                 lastBroadcastPartyClass = null;
@@ -142,6 +143,10 @@ public class SeqClient implements ClientModInitializer {
                 if (guildWarTracker != null) {
                     guildWarTracker.reset();
                 }
+                return;
+            }
+            if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
+                ConnectionManager.flushPendingOutbound();
                 return;
             }
 
@@ -216,7 +221,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.
-        if (autoConnectSetting.getValue() && WynncraftServerPolicy.isCurrentServerAllowed()) {
+        if (autoConnectSetting.getValue() && WynncraftServerPolicy.currentScope() == WynncraftServerPolicy.Scope.MAIN) {
             ConnectionManager.getInstance().connect();
         }
     }

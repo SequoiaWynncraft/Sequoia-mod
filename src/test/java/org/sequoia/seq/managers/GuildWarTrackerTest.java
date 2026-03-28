@@ -2,6 +2,7 @@ package org.sequoia.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wynntils.models.war.type.WarBattleInfo;
@@ -42,7 +43,7 @@ class GuildWarTrackerTest {
         assertEquals(List.of("LocalUser", "Alpha", "Bravo", "Charlie"), submission.warrers());
         assertEquals(450_000L, submission.stats().health());
         assertEquals(410, submission.seasonRating());
-        assertTrue(submission.completed());
+        assertEquals("2024-03-28T01:06:40Z", submission.completedAt());
     }
 
     @Test
@@ -65,7 +66,7 @@ class GuildWarTrackerTest {
         assertEquals(1, publisher.submissions.size());
         GuildWarSubmission submission = publisher.submissions.getFirst();
         assertEquals(0, submission.seasonRating());
-        assertTrue(submission.completed());
+        assertEquals("1970-01-01T00:00:02Z", submission.completedAt());
     }
 
     @Test
@@ -85,7 +86,7 @@ class GuildWarTrackerTest {
         assertEquals(1, publisher.submissions.size());
         GuildWarSubmission submission = publisher.submissions.getFirst();
         assertEquals(0, submission.seasonRating());
-        assertFalse(submission.completed());
+        assertNull(submission.completedAt());
         assertEquals(350_000L, submission.stats().health());
     }
 

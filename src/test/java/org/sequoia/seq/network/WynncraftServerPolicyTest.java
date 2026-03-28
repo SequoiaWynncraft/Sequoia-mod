@@ -28,7 +28,31 @@ class WynncraftServerPolicyTest {
     void classifyAddressBlocksUnknownHosts() {
         assertEquals(WynncraftServerPolicy.Scope.BLOCKED, WynncraftServerPolicy.classifyAddress("localhost:25565"));
         assertEquals(WynncraftServerPolicy.Scope.BLOCKED, WynncraftServerPolicy.classifyAddress("example.com"));
-        assertEquals(WynncraftServerPolicy.Scope.BLOCKED, WynncraftServerPolicy.classifyAddress(null));
+        assertEquals(WynncraftServerPolicy.Scope.UNKNOWN, WynncraftServerPolicy.classifyAddress(null));
+    }
+
+    @Test
+    void classifyCurrentServerTreatsSingleplayerAsBlocked() {
+        assertEquals(
+                WynncraftServerPolicy.Scope.BLOCKED,
+                WynncraftServerPolicy.classifyCurrentServer(null, false, true, false));
+        assertEquals(
+                WynncraftServerPolicy.Scope.BLOCKED,
+                WynncraftServerPolicy.classifyCurrentServer("play.wynncraft.com", true, false, true));
+    }
+
+    @Test
+    void classifyCurrentServerTreatsMultiplayerTransferAsUnknown() {
+        assertEquals(
+                WynncraftServerPolicy.Scope.UNKNOWN,
+                WynncraftServerPolicy.classifyCurrentServer(null, false, false, true));
+    }
+
+    @Test
+    void classifyCurrentServerTreatsMenuWithoutServerAsBlocked() {
+        assertEquals(
+                WynncraftServerPolicy.Scope.BLOCKED,
+                WynncraftServerPolicy.classifyCurrentServer(null, false, false, false));
     }
 
     @Test
