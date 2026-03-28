@@ -16,6 +16,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("auto_connect", "Auto connect to Sequoia backend");
         DISPLAY_NAME_OVERRIDES.put("show_discord_bridge", "Show Discord chat");
         DISPLAY_NAME_OVERRIDES.put("auto_announce", "Auto announce raids");
+        DISPLAY_NAME_OVERRIDES.put("track_guild_wars", "Track guild wars");
         DISPLAY_NAME_OVERRIDES.put("check_updates", "Check for updates on startup");
         DISPLAY_NAME_OVERRIDES.put("enable_easter_eggs", "Enable easter eggs");
 

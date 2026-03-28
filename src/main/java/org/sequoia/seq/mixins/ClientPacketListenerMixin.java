@@ -31,6 +31,9 @@ public class ClientPacketListenerMixin {
         ChatManager.onSystemChat(content);
         RaidTracker.onSystemChat(content);
         GuildBankTracker.getInstance().onSystemChat(content);
+        if (SeqClient.getGuildWarTracker() != null) {
+            SeqClient.getGuildWarTracker().onSystemChat(content);
+        }
         if (SeqClient.getWynnPartySyncManager() != null) {
             SeqClient.getWynnPartySyncManager().onSystemChat(content);
         }

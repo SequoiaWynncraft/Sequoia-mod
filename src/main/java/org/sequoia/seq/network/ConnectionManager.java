@@ -26,6 +26,7 @@ import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
+import org.sequoia.seq.model.GuildWarSubmission;
 import org.sequoia.seq.model.WynnClassType;
 import org.sequoia.seq.network.auth.AuthErrorCode;
 import org.sequoia.seq.network.auth.AuthException;
@@ -47,7 +48,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static final Map<String, Integer> VERSION_REMINDER_INTERVALS = Map.of(
             "guild_chat", 20,
             "guild_raid_announcement", 5,
-            "guild_bank_event", 10);
+            "guild_bank_event", 10,
+            "guild_war_submission", 5);
 
     private static ConnectionManager instance;
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -584,6 +586,38 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return payload;
     }
 
+    static JsonObject buildGuildWarSubmissionPayload(GuildWarSubmission submission) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("territory", submission.territory());
+        payload.addProperty("submitted_by", submission.submittedBy());
+        payload.addProperty("submitted_at", submission.submittedAt());
+        payload.addProperty("start_time", submission.startTime());
+
+        JsonArray warrers = new JsonArray();
+        for (String warrer : submission.warrers()) {
+            warrers.add(warrer);
+        }
+        payload.add("warrers", warrers);
+
+        JsonObject damage = new JsonObject();
+        damage.addProperty("low", submission.stats().damageLow());
+        damage.addProperty("high", submission.stats().damageHigh());
+
+        JsonObject stats = new JsonObject();
+        stats.add("damage", damage);
+        stats.addProperty("attack", submission.stats().attackSpeed());
+        stats.addProperty("health", submission.stats().health());
+        stats.addProperty("defence", submission.stats().defence());
+
+        JsonObject results = new JsonObject();
+        results.add("stats", stats);
+        payload.add("results", results);
+
+        payload.addProperty("sr", submission.seasonRating());
+        payload.addProperty("completed", submission.completed());
+        return payload;
+    }
+
     private AuthException unwrapAuthException(Throwable throwable) {
         Throwable cause = throwable;
         while (cause instanceof java.util.concurrent.CompletionException && cause.getCause() != null) {
@@ -771,6 +805,51 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 player,
                 itemName);
         send("guild_bank_event", msg);
+    }
+
+    public boolean sendGuildWarSubmission(GuildWarSubmission submission) {
+        if (!authenticated || !isOpen()) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildWarSubmission dropped open={} authenticated={}", isOpen(), authenticated);
+            return false;
+        }
+        if (authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildWarSubmission dropped authFailed={} notInGuild={}", authFailed, notInGuild);
+            return false;
+        }
+        if (submission == null
+                || submission.territory() == null
+                || submission.territory().isBlank()
+                || submission.submittedBy() == null
+                || submission.submittedBy().isBlank()
+                || submission.submittedAt() == null
+                || submission.submittedAt().isBlank()
+                || submission.startTime() == null
+                || submission.startTime().isBlank()
+                || submission.warrers() == null
+                || submission.warrers().isEmpty()
+                || submission.stats() == null) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarSubmission dropped: invalid payload");
+            return false;
+        }
+
+        for (String warrer : submission.warrers()) {
+            if (warrer == null || !MC_USERNAME_PATTERN.matcher(warrer).matches()) {
+                SeqClient.LOGGER.warn("[WebSocket] sendGuildWarSubmission dropped invalid warrer={}", warrer);
+                return false;
+            }
+        }
+
+        JsonObject payload = buildGuildWarSubmissionPayload(submission);
+        SeqClient.LOGGER.info(
+                "[WebSocket] Sending guild_war_submission territory='{}' warrers={} completed={} sr={}",
+                submission.territory(),
+                submission.warrers(),
+                submission.completed(),
+                submission.seasonRating());
+        send("guild_war_submission", payload);
+        return true;
     }
 
     public void sendPartyClassUpdate(WynnClassType classType) {
@@ -1166,6 +1245,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return "guild_chat".equals(type)
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)
+                || "guild_war_submission".equals(type)
                 || "party_class_update".equals(type)
                 || "party_sync_snapshot".equals(type)
                 || "party_sync_member_removed".equals(type)
@@ -1397,6 +1477,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             case "guild_chat" -> "guild chat relays";
             case "guild_raid_announcement" -> "raid completion relays";
             case "guild_bank_event" -> "guild bank relays";
+            case "guild_war_submission" -> "guild war tracking";
             default -> "some Sequoia features";
         };
         String targetVersion = minimumSafeVersion != null && !minimumSafeVersion.isBlank()

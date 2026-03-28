@@ -22,6 +22,8 @@ import org.sequoia.seq.managers.AssetManager;
 import org.sequoia.seq.managers.ChatManager;
 import org.sequoia.seq.managers.FontManager;
 import org.sequoia.seq.managers.GameManager;
+import org.sequoia.seq.managers.GuildWarTrackerHandle;
+import org.sequoia.seq.managers.GuildWarTrackers;
 import org.sequoia.seq.managers.PartyFinderManager;
 import org.sequoia.seq.managers.WynnPartySyncManager;
 import org.sequoia.seq.model.WynnClassType;
@@ -70,6 +72,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting raidAutoAnnounceSetting;
 
     @Getter
+    public static Setting.BooleanSetting trackGuildWarsSetting;
+
+    @Getter
     public static Setting.BooleanSetting checkUpdatesSetting;
 
     @Getter
@@ -87,6 +92,9 @@ public class SeqClient implements ClientModInitializer {
     @Getter
     public static WynnPartySyncManager wynnPartySyncManager;
 
+    @Getter
+    public static GuildWarTrackerHandle guildWarTracker;
+
     private static KeyMapping openScreenKey;
     private static WynnClassType lastBroadcastPartyClass;
     private static boolean wasInPartyFinder;
@@ -103,6 +111,7 @@ public class SeqClient implements ClientModInitializer {
         gameManager = new GameManager();
         partyFinderManager = new PartyFinderManager();
         wynnPartySyncManager = new WynnPartySyncManager();
+        guildWarTracker = GuildWarTrackers.createIfAvailable();
         chatManager = new ChatManager();
         configManager = new ConfigManager();
         configManager.load();
@@ -130,6 +139,9 @@ public class SeqClient implements ClientModInitializer {
                 if (wynnPartySyncManager != null) {
                     wynnPartySyncManager.reset();
                 }
+                if (guildWarTracker != null) {
+                    guildWarTracker.reset();
+                }
                 return;
             }
 
@@ -138,6 +150,9 @@ public class SeqClient implements ClientModInitializer {
             }
             if (wynnPartySyncManager != null) {
                 wynnPartySyncManager.tick();
+            }
+            if (guildWarTracker != null) {
+                guildWarTracker.tick();
             }
 
             boolean inPartyFinder = partyFinderManager != null && partyFinderManager.isInParty();
@@ -181,6 +196,7 @@ public class SeqClient implements ClientModInitializer {
         autoConnectSetting = new Setting.BooleanSetting("auto_connect", "network", true);
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
+        trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         easterEggsSetting = new Setting.BooleanSetting("enable_easter_eggs", "ui", true);
         announceOpenPartiesSetting = new Setting.BooleanSetting("announce_open_parties", "party_finder", true);
@@ -190,6 +206,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
+        getConfigManager().register(trackGuildWarsSetting);
         getConfigManager().register(checkUpdatesSetting);
         getConfigManager().register(easterEggsSetting);
         getConfigManager().register(announceOpenPartiesSetting);
