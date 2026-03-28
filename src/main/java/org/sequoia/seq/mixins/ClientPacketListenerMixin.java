@@ -7,6 +7,7 @@ import org.sequoia.seq.managers.ChatManager;
 import org.sequoia.seq.managers.GuildBankTracker;
 import org.sequoia.seq.managers.RaidTracker;
 import org.sequoia.seq.client.SeqClient;
+import org.sequoia.seq.utils.PacketTextNormalizer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -33,6 +34,12 @@ public class ClientPacketListenerMixin {
         GuildBankTracker.getInstance().onSystemChat(content);
         if (SeqClient.getGuildWarTracker() != null) {
             SeqClient.getGuildWarTracker().onSystemChat(content);
+        } else {
+            String cleaned = PacketTextNormalizer.normalizeForParsing(content.getString());
+            if (cleaned.contains("Territory Captured")) {
+                SeqClient.LOGGER.warn(
+                        "[GuildWarTracker] Ignoring completion chat because no guild war tracker is available");
+            }
         }
         if (SeqClient.getWynnPartySyncManager() != null) {
             SeqClient.getWynnPartySyncManager().onSystemChat(content);

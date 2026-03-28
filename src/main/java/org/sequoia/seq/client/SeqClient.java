@@ -154,6 +154,7 @@ public class SeqClient implements ClientModInitializer {
             if (guildWarTracker != null) {
                 guildWarTracker.tick();
             }
+            ConnectionManager.flushPendingOutbound();
 
             boolean inPartyFinder = partyFinderManager != null && partyFinderManager.isInParty();
             if (!inPartyFinder) {

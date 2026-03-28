@@ -9,11 +9,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -77,6 +79,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private volatile boolean connectInProgress;
     private volatile boolean userInitiatedConnectFlow;
     private volatile boolean pendingDiscordLinkRequest;
+    private final Deque<GuildWarSubmission> pendingGuildWarSubmissions = new ConcurrentLinkedDeque<>();
 
     // Reconnect state
     private static boolean autoReconnect = true;
@@ -294,6 +297,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                             : "Connected to " + BuildConfig.ENVIRONMENT + ".");
         }
         finishConnectFlow();
+        flushPendingGuildWarSubmissions();
         sendLocalPartyClassUpdate();
     }
 
@@ -465,6 +469,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         if (isPrivilegedType(type) && !canSendPrivileged(type)) {
             return;
         }
+        sendPrepared(type, payload);
+    }
+
+    private void sendPrepared(String type, JsonObject payload) {
         if (payload == null) payload = new JsonObject();
         payload.addProperty("type", type);
         SeqClient.LOGGER.debug("[WebSocket] send type={} payload={}", type, truncate(payload.toString(), 512));
@@ -808,16 +816,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     public boolean sendGuildWarSubmission(GuildWarSubmission submission) {
-        if (!authenticated || !isOpen()) {
-            SeqClient.LOGGER.warn(
-                    "[WebSocket] sendGuildWarSubmission dropped open={} authenticated={}", isOpen(), authenticated);
-            return false;
-        }
-        if (authFailed || notInGuild) {
-            SeqClient.LOGGER.warn(
-                    "[WebSocket] sendGuildWarSubmission dropped authFailed={} notInGuild={}", authFailed, notInGuild);
-            return false;
-        }
         if (submission == null
                 || submission.territory() == null
                 || submission.territory().isBlank()
@@ -841,14 +839,66 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             }
         }
 
+        if (!authenticated || !isOpen()) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] Queueing guild_war_submission until websocket is ready open={} authenticated={}",
+                    isOpen(),
+                    authenticated);
+            pendingGuildWarSubmissions.addLast(submission);
+            return true;
+        }
+        if (authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] Queueing guild_war_submission until auth recovers authFailed={} notInGuild={}",
+                    authFailed,
+                    notInGuild);
+            pendingGuildWarSubmissions.addLast(submission);
+            return true;
+        }
+
+        return sendGuildWarSubmissionNow(submission, false);
+    }
+
+    public static void flushPendingOutbound() {
+        if (instance == null) {
+            return;
+        }
+        instance.flushPendingGuildWarSubmissions();
+    }
+
+    private void flushPendingGuildWarSubmissions() {
+        if (pendingGuildWarSubmissions.isEmpty()
+                || !isOpen()
+                || !authenticated
+                || authFailed
+                || notInGuild
+                || !WynncraftServerPolicy.isCurrentServerAllowed()) {
+            return;
+        }
+
+        GuildWarSubmission pending = pendingGuildWarSubmissions.peekFirst();
+        if (pending == null) {
+            return;
+        }
+        if (sendGuildWarSubmissionNow(pending, true)) {
+            pendingGuildWarSubmissions.pollFirst();
+        }
+    }
+
+    private boolean sendGuildWarSubmissionNow(GuildWarSubmission submission, boolean replay) {
+        if (!canSendPrivileged("guild_war_submission")) {
+            return false;
+        }
         JsonObject payload = buildGuildWarSubmissionPayload(submission);
         SeqClient.LOGGER.info(
-                "[WebSocket] Sending guild_war_submission territory='{}' warrers={} completed={} sr={}",
+                replay
+                        ? "[WebSocket] Replaying queued guild_war_submission territory='{}' warrers={} completed={} sr={}"
+                        : "[WebSocket] Sending guild_war_submission territory='{}' warrers={} completed={} sr={}",
                 submission.territory(),
                 submission.warrers(),
                 submission.completed(),
                 submission.seasonRating());
-        send("guild_war_submission", payload);
+        sendPrepared("guild_war_submission", payload);
         return true;
     }
 
@@ -980,6 +1030,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     if (pendingDiscordLinkRequest) {
                         requestDiscordLink(true);
                     }
+                    flushPendingGuildWarSubmissions();
                     sendLocalPartyClassUpdate();
                 }
                 case "auth_challenge" -> handleAuthChallenge(json);

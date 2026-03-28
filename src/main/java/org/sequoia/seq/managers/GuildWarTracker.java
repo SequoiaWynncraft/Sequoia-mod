@@ -55,7 +55,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
                 () -> SeqClient.getTrackGuildWarsSetting() == null
                         || SeqClient.getTrackGuildWarsSetting().getValue(),
                 System::currentTimeMillis,
-                true);
+                false);
     }
 
     GuildWarTracker(
@@ -71,11 +71,12 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         this.trackingEnabled = Objects.requireNonNull(trackingEnabled, "trackingEnabled");
         this.clock = Objects.requireNonNull(clock, "clock");
         if (registerDeathListener) {
-            registerWynnDeathListener();
+            ensureDeathListenerRegistered();
         }
     }
 
     public void tick() {
+        ensureDeathListenerRegistered();
         if (!trackingEnabled.getAsBoolean()) {
             reset();
             return;
@@ -84,12 +85,16 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     }
 
     public void onSystemChat(Component message) {
-        if (!trackingEnabled.getAsBoolean() || message == null || activeContext == null || activeContext.submissionSent) {
+        if (message == null) {
             return;
         }
 
         String cleaned = PacketTextNormalizer.normalizeForParsing(message.getString());
         if (cleaned.isEmpty() || !TERRITORY_CAPTURED.matcher(cleaned).find()) {
+            return;
+        }
+        if (!trackingEnabled.getAsBoolean()) {
+            SeqClient.LOGGER.warn("[GuildWarTracker] Ignoring completion chat because track_guild_wars is disabled");
             return;
         }
 
@@ -99,12 +104,30 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         }
 
         String territory = parseCapturedTerritory(cleaned);
+        if (activeContext == null) {
+            SeqClient.LOGGER.warn(
+                    "[GuildWarTracker] Ignoring completion chat territory='{}' sr={} because no active war context exists",
+                    territory != null ? territory : "unknown",
+                    sr);
+            return;
+        }
+        if (activeContext.submissionSent) {
+            return;
+        }
         if (territory != null && !territoryMatches(activeContext, territory)) {
+            SeqClient.LOGGER.warn(
+                    "[GuildWarTracker] Ignoring completion chat territory='{}' because active war is '{}'",
+                    territory,
+                    activeContext.info != null ? activeContext.info.getTerritory() : "unknown");
             return;
         }
 
         activeContext.seasonRating = sr;
         activeContext.completedFromChat = true;
+        SeqClient.LOGGER.info(
+                "[GuildWarTracker] Captured completion chat territory='{}' sr={}",
+                activeContext.info != null ? activeContext.info.getTerritory() : territory,
+                sr);
         if (activeContext.pendingSubmission) {
             requestSubmission(activeContext.info, activeContext, false);
         }
@@ -145,6 +168,10 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             if (activeContext == null || !battleId.equals(activeContext.id)) {
                 activeContext =
                         new WarContext(battleId, info, determineStartEpoch(info), collectCurrentWarrers());
+                SeqClient.LOGGER.info(
+                        "[GuildWarTracker] Tracking war territory='{}' warrers={}",
+                        activeContext.info.getTerritory(),
+                        activeContext.warrers);
             } else {
                 activeContext.info = info;
             }
@@ -164,12 +191,19 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         }
     }
 
-    private void registerWynnDeathListener() {
+    private void ensureDeathListenerRegistered() {
         if (wynnDeathListenerRegistered) {
             return;
         }
-        WynntilsMod.registerEventListener(this);
-        wynnDeathListenerRegistered = true;
+        try {
+            WynntilsMod.registerEventListener(this);
+            wynnDeathListenerRegistered = true;
+            SeqClient.LOGGER.info("[GuildWarTracker] Registered Wynntils death listener.");
+        } catch (Throwable throwable) {
+            SeqClient.LOGGER.debug(
+                    "[GuildWarTracker] Wynntils death listener not ready yet: {}",
+                    throwable.toString());
+        }
     }
 
     private void requestSubmission(WarBattleInfo info, WarContext context, boolean force) {
@@ -178,6 +212,9 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         }
         if (!force && context.seasonRating == null) {
             context.pendingSubmission = true;
+            SeqClient.LOGGER.info(
+                    "[GuildWarTracker] War territory='{}' completed but SR not seen yet; waiting for capture chat",
+                    context.info != null ? context.info.getTerritory() : "unknown");
             return;
         }
         submitWar(info, context);
@@ -213,6 +250,12 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         WarTowerState completionState = context.lastKnownState != null ? context.lastKnownState : info.getCurrentState();
         boolean completed = context.completedFromChat || isTowerDestroyed(completionState);
         int seasonRating = context.seasonRating != null ? context.seasonRating : 0;
+        SeqClient.LOGGER.info(
+                "[GuildWarTracker] Submitting war territory='{}' warrers={} completed={} sr={}",
+                summary.territory(),
+                warrers,
+                completed,
+                seasonRating);
 
         GuildWarSubmission submission = new GuildWarSubmission(
                 summary.territory(),
@@ -227,7 +270,14 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         if (submissionPublisher.publish(submission)) {
             context.submissionSent = true;
             context.pendingSubmission = false;
+            return;
         }
+        SeqClient.LOGGER.warn(
+                "[GuildWarTracker] Submission failed territory='{}' warrers={} completed={} sr={}",
+                summary.territory(),
+                warrers,
+                completed,
+                seasonRating);
     }
 
     private WarSummary buildSummary(WarBattleInfo info) {

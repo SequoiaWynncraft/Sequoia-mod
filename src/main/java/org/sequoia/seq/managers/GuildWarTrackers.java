@@ -23,6 +23,7 @@ public final class GuildWarTrackers {
             Object tracker = Class.forName("org.sequoia.seq.managers.GuildWarTracker")
                     .getDeclaredConstructor()
                     .newInstance();
+            SeqClient.LOGGER.info("[GuildWarTracker] Wynntils detected; guild war tracking enabled.");
             return (GuildWarTrackerHandle) tracker;
         } catch (Throwable throwable) {
             warnOnce("Wynntils guild war tracker unavailable; guild war tracking is disabled.", throwable);
