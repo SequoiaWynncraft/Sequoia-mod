@@ -131,20 +131,23 @@ public final class GuildStorageTracker implements NotificationAccessor {
         if (!trackingEnabled.getAsBoolean() || message == null) {
             return;
         }
-
-        RaidTracker.ParsedRaidCompletion completion = RaidTracker.parseRaidCompletion(message);
-        if (completion == null) {
-            RewardGrant rewardGrant = parseRewardGrant(message);
-            if (rewardGrant == null) {
-                return;
-            }
-
-            applyStorageDelta(rewardGrant.emeraldDelta(), rewardGrant.aspectDelta());
-            recordRewardGrant(rewardGrant);
+        if (SeqClient.mc != null && !SeqClient.mc.isSameThread()) {
             return;
         }
 
-        applyStorageDelta(completion.emeralds(), completion.aspects());
+        RaidTracker.ParsedRaidCompletion completion = RaidTracker.parseRaidCompletion(message);
+        if (completion != null) {
+            applyStorageDelta(completion.emeralds(), completion.aspects());
+            return;
+        }
+
+        RewardGrant rewardGrant = parseRewardGrant(message);
+        if (rewardGrant == null) {
+            return;
+        }
+
+        applyStorageDelta(rewardGrant.emeraldDelta(), rewardGrant.aspectDelta());
+        recordRewardGrant(rewardGrant);
     }
 
     public void reset() {
