@@ -158,6 +158,18 @@ public final class GuildStorageTracker implements NotificationAccessor {
     }
 
     void applyObservedSnapshot(StorageSnapshot snapshot) {
+        applySnapshot(snapshot, true);
+    }
+
+    public void applyRemoteSnapshot(long emeraldCurrent, long emeraldMax, long aspectCurrent, long aspectMax) {
+        applySnapshot(
+                new StorageSnapshot(
+                        new ResourceSnapshot(emeraldCurrent, emeraldMax),
+                        new ResourceSnapshot(aspectCurrent, aspectMax)),
+                false);
+    }
+
+    private void applySnapshot(StorageSnapshot snapshot, boolean publishUpdate) {
         if (snapshot == null) {
             return;
         }
@@ -170,7 +182,9 @@ public final class GuildStorageTracker implements NotificationAccessor {
             maybeNotifyThresholdCrossing(previous, snapshot, ResourceType.ASPECTS, aspectThresholdPercent.getAsInt());
         }
 
-        publishSnapshotIfNeeded(snapshot);
+        if (publishUpdate) {
+            publishSnapshotIfNeeded(snapshot);
+        }
     }
 
     void applyRaidRewards(long emeraldDelta, long aspectDelta) {

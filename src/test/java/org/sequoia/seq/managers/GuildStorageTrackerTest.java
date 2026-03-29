@@ -123,6 +123,32 @@ class GuildStorageTrackerTest {
     }
 
     @Test
+    void applyRemoteSnapshotUpdatesLocalStateWithoutPublishingSnapshot() {
+        List<GuildStorageTracker.StorageSnapshot> published = new ArrayList<>();
+        List<String> notifications = new ArrayList<>();
+        GuildStorageTracker tracker = new GuildStorageTracker(
+                published::add,
+                reward -> {},
+                notifications::add,
+                () -> true,
+                () -> 80,
+                () -> 80,
+                System::currentTimeMillis);
+
+        tracker.applyRemoteSnapshot(24_000, 30_720, 20, 40);
+        tracker.applyRemoteSnapshot(25_000, 30_720, 32, 40);
+
+        assertEquals(25_000L, tracker.currentSnapshot().emeralds().current());
+        assertEquals(32L, tracker.currentSnapshot().aspects().current());
+        assertEquals(List.of(), published);
+        assertEquals(
+                List.of(
+                        "Emeralds storage reached 80% (25000/30720).",
+                        "Aspects storage reached 80% (32/40)."),
+                notifications);
+    }
+
+    @Test
     void parseRewardGrantResolvesNicknameToUsername() {
         Style senderStyle = Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
                 Component.literal("Total Obliteration's real name is Dwoc")));

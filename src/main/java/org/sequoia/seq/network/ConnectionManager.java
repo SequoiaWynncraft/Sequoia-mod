@@ -28,6 +28,7 @@ import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
+import org.sequoia.seq.managers.GuildStorageTracker;
 import org.sequoia.seq.model.GuildWarSubmission;
 import org.sequoia.seq.model.WynnClassType;
 import org.sequoia.seq.network.auth.AuthErrorCode;
@@ -1189,6 +1190,20 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     } else {
                         SeqClient.LOGGER.warn("[WebSocket] connected_users had no callback listener");
                     }
+                }
+                case "guild_storage_snapshot" -> {
+                    long emeraldCurrent = json.get("emerald_current").getAsLong();
+                    long emeraldMax = json.get("emerald_max").getAsLong();
+                    long aspectCurrent = json.get("aspect_current").getAsLong();
+                    long aspectMax = json.get("aspect_max").getAsLong();
+                    SeqClient.LOGGER.info(
+                            "[WebSocket] Applying guild_storage_snapshot emerald={}/{} aspect={}/{}",
+                            emeraldCurrent,
+                            emeraldMax,
+                            aspectCurrent,
+                            aspectMax);
+                    Minecraft.getInstance().execute(() -> GuildStorageTracker.getInstance().applyRemoteSnapshot(
+                            emeraldCurrent, emeraldMax, aspectCurrent, aspectMax));
                 }
                 case "discord_chat" -> {
                     if (discordChatHandler != null) {
