@@ -5,6 +5,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
 import org.sequoia.seq.managers.ChatManager;
 import org.sequoia.seq.managers.GuildBankTracker;
+import org.sequoia.seq.managers.GuildStorageTracker;
 import org.sequoia.seq.managers.RaidTracker;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.utils.PacketTextNormalizer;
@@ -31,6 +32,7 @@ public class ClientPacketListenerMixin {
         Component content = packet.content();
         ChatManager.onSystemChat(content);
         RaidTracker.onSystemChat(content);
+        GuildStorageTracker.getInstance().onSystemChat(content);
         GuildBankTracker.getInstance().onSystemChat(content);
         if (SeqClient.getGuildWarTracker() != null) {
             SeqClient.getGuildWarTracker().onSystemChat(content);

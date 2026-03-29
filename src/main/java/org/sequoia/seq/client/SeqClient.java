@@ -22,6 +22,7 @@ import org.sequoia.seq.managers.AssetManager;
 import org.sequoia.seq.managers.ChatManager;
 import org.sequoia.seq.managers.FontManager;
 import org.sequoia.seq.managers.GameManager;
+import org.sequoia.seq.managers.GuildStorageTracker;
 import org.sequoia.seq.managers.GuildWarTrackerHandle;
 import org.sequoia.seq.managers.GuildWarTrackers;
 import org.sequoia.seq.managers.PartyFinderManager;
@@ -78,6 +79,15 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting checkUpdatesSetting;
 
     @Getter
+    public static Setting.BooleanSetting trackGuildStorageSetting;
+
+    @Getter
+    public static Setting.IntSetting guildStorageEmeraldNotifyValueSetting;
+
+    @Getter
+    public static Setting.IntSetting guildStorageAspectNotifyValueSetting;
+
+    @Getter
     public static Setting.BooleanSetting easterEggsSetting;
 
     @Getter
@@ -94,6 +104,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static GuildWarTrackerHandle guildWarTracker;
+
+    @Getter
+    public static GuildStorageTracker guildStorageTracker;
 
     private static KeyMapping openScreenKey;
     private static WynnClassType lastBroadcastPartyClass;
@@ -112,6 +125,7 @@ public class SeqClient implements ClientModInitializer {
         partyFinderManager = new PartyFinderManager();
         wynnPartySyncManager = new WynnPartySyncManager();
         guildWarTracker = GuildWarTrackers.createIfAvailable();
+        guildStorageTracker = GuildStorageTracker.getInstance();
         chatManager = new ChatManager();
         configManager = new ConfigManager();
         configManager.load();
@@ -143,6 +157,9 @@ public class SeqClient implements ClientModInitializer {
                 if (guildWarTracker != null) {
                     guildWarTracker.reset();
                 }
+                if (guildStorageTracker != null) {
+                    guildStorageTracker.reset();
+                }
                 return;
             }
             if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
@@ -158,6 +175,9 @@ public class SeqClient implements ClientModInitializer {
             }
             if (guildWarTracker != null) {
                 guildWarTracker.tick();
+            }
+            if (guildStorageTracker != null) {
+                guildStorageTracker.tick();
             }
             ConnectionManager.flushPendingOutbound();
 
@@ -204,6 +224,11 @@ public class SeqClient implements ClientModInitializer {
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
+        trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
+        guildStorageEmeraldNotifyValueSetting =
+                new Setting.IntSetting("guild_storage_emerald_threshold_percent", "guild_storage", 100, 0, 100);
+        guildStorageAspectNotifyValueSetting =
+                new Setting.IntSetting("guild_storage_aspect_threshold_percent", "guild_storage", 100, 0, 100);
         easterEggsSetting = new Setting.BooleanSetting("enable_easter_eggs", "ui", true);
         announceOpenPartiesSetting = new Setting.BooleanSetting("announce_open_parties", "party_finder", true);
         announceOpenPartiesIntervalMinutesSetting =
@@ -214,6 +239,9 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(raidAutoAnnounceSetting);
         getConfigManager().register(trackGuildWarsSetting);
         getConfigManager().register(checkUpdatesSetting);
+        getConfigManager().register(trackGuildStorageSetting);
+        getConfigManager().register(guildStorageEmeraldNotifyValueSetting);
+        getConfigManager().register(guildStorageAspectNotifyValueSetting);
         getConfigManager().register(easterEggsSetting);
         getConfigManager().register(announceOpenPartiesSetting);
         getConfigManager().register(announceOpenPartiesIntervalMinutesSetting);

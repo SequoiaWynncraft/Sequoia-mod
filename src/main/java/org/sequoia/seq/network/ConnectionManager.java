@@ -51,6 +51,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             "guild_chat", 20,
             "guild_raid_announcement", 5,
             "guild_bank_event", 10,
+            "guild_storage_snapshot", 10,
+            "guild_storage_reward", 10,
             "guild_war_submission", 5);
 
     private static ConnectionManager instance;
@@ -850,6 +852,97 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 player,
                 itemName);
         send("guild_bank_event", msg);
+    }
+
+    public void sendGuildStorageSnapshot(long emeraldCurrent, long emeraldMax, long aspectCurrent, long aspectMax) {
+        if (!authenticated || !isOpen()) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildStorageSnapshot dropped open={} authenticated={}", isOpen(), authenticated);
+            return;
+        }
+        if (authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildStorageSnapshot dropped authFailed={} notInGuild={}", authFailed, notInGuild);
+            return;
+        }
+        if (emeraldCurrent < 0 || emeraldMax <= 0 || aspectCurrent < 0 || aspectMax <= 0) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildStorageSnapshot dropped invalid payload emerald={}/{} aspect={}/{}",
+                    emeraldCurrent,
+                    emeraldMax,
+                    aspectCurrent,
+                    aspectMax);
+            return;
+        }
+
+        JsonObject msg = new JsonObject();
+        msg.addProperty("emerald_current", emeraldCurrent);
+        msg.addProperty("emerald_max", emeraldMax);
+        msg.addProperty("aspect_current", aspectCurrent);
+        msg.addProperty("aspect_max", aspectMax);
+        SeqClient.LOGGER.info(
+                "[WebSocket] Sending guild_storage_snapshot emerald={}/{} aspect={}/{}",
+                emeraldCurrent,
+                emeraldMax,
+                aspectCurrent,
+                aspectMax);
+        send("guild_storage_snapshot", msg);
+    }
+
+    public void sendGuildStorageReward(
+            String senderUsername,
+            String recipientUsername,
+            String resourceType,
+            long amount,
+            int count,
+            Instant windowStartedAt) {
+        if (!authenticated || !isOpen()) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildStorageReward dropped open={} authenticated={}", isOpen(), authenticated);
+            return;
+        }
+        if (authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildStorageReward dropped authFailed={} notInGuild={}", authFailed, notInGuild);
+            return;
+        }
+
+        String safeSender = sanitizeMinecraftUsername(senderUsername);
+        String safeRecipient = sanitizeMinecraftUsername(recipientUsername);
+        String normalizedResourceType = resourceType == null ? "" : resourceType.trim().toLowerCase(Locale.ROOT);
+        if (safeSender == null
+                || safeRecipient == null
+                || count <= 0
+                || amount <= 0
+                || windowStartedAt == null
+                || (!normalizedResourceType.equals("emeralds") && !normalizedResourceType.equals("aspects"))) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildStorageReward dropped invalid payload sender='{}' recipient='{}' resource='{}' amount={} count={} windowStartedAt={}",
+                    senderUsername,
+                    recipientUsername,
+                    resourceType,
+                    amount,
+                    count,
+                    windowStartedAt);
+            return;
+        }
+
+        JsonObject msg = new JsonObject();
+        msg.addProperty("sender_username", safeSender);
+        msg.addProperty("recipient_username", safeRecipient);
+        msg.addProperty("resource_type", normalizedResourceType);
+        msg.addProperty("amount", amount);
+        msg.addProperty("count", count);
+        msg.addProperty("window_started_at", windowStartedAt.toString());
+        SeqClient.LOGGER.info(
+                "[WebSocket] Sending guild_storage_reward sender='{}' recipient='{}' resource='{}' amount={} count={} windowStartedAt={}",
+                safeSender,
+                safeRecipient,
+                normalizedResourceType,
+                amount,
+                count,
+                windowStartedAt);
+        send("guild_storage_reward", msg);
     }
 
     public boolean sendGuildWarSubmission(GuildWarSubmission submission) {
