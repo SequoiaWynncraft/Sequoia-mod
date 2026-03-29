@@ -193,17 +193,24 @@ public class WynnPartySyncManager {
     }
 
     private void handleMemberJoined(String username) {
-        ensureObservedPartyActive();
+        if (!observedState.initialized) {
+            SeqClient.LOGGER.debug("[WynnPartySync] Ignoring join event before party creation");
+            return;
+        }
         if (username == null) {
             SeqClient.LOGGER.warn("[WynnPartySync] Ignoring join event because username could not be resolved");
             return;
         }
+        observedState.active = true;
         observedState.memberUsernames.add(username);
         logObservedState("join");
     }
 
     private void handleMemberLeft(String username) {
-        ensureObservedPartyActive();
+        if (!observedState.initialized) {
+            SeqClient.LOGGER.debug("[WynnPartySync] Ignoring leave event before party creation");
+            return;
+        }
         if (username == null) {
             SeqClient.LOGGER.warn("[WynnPartySync] Ignoring leave event because username could not be resolved");
             return;
@@ -220,7 +227,10 @@ public class WynnPartySyncManager {
     }
 
     private void handleMemberKicked(String username) {
-        ensureObservedPartyActive();
+        if (!observedState.initialized) {
+            SeqClient.LOGGER.debug("[WynnPartySync] Ignoring kick event before party creation");
+            return;
+        }
         if (username == null) {
             SeqClient.LOGGER.warn("[WynnPartySync] Ignoring kick event because username could not be resolved");
             return;
@@ -237,17 +247,25 @@ public class WynnPartySyncManager {
     }
 
     private void handleLeaderChanged(String username) {
-        ensureObservedPartyActive();
+        if (!observedState.initialized) {
+            SeqClient.LOGGER.debug("[WynnPartySync] Ignoring leader event before party creation");
+            return;
+        }
         if (username == null) {
             SeqClient.LOGGER.warn("[WynnPartySync] Ignoring leader event because username could not be resolved");
             return;
         }
+        observedState.active = true;
         observedState.memberUsernames.add(username);
         observedState.leaderUsername = username;
         logObservedState("leader");
     }
 
     private void handlePartyDisbanded() {
+        if (!observedState.initialized) {
+            SeqClient.LOGGER.debug("[WynnPartySync] Ignoring disband event before party creation");
+            return;
+        }
         observedState.initialized = true;
         observedState.active = false;
         observedState.leaderUsername = null;
@@ -257,21 +275,6 @@ public class WynnPartySyncManager {
 
     private void handleLocalPartyLeft() {
         handlePartyDisbanded();
-    }
-
-    private void ensureObservedPartyActive() {
-        if (observedState.active) {
-            return;
-        }
-        observedState.initialized = true;
-        observedState.active = true;
-        String localUsername = getLocalUsername();
-        if (localUsername != null) {
-            observedState.memberUsernames.add(localUsername);
-            if (observedState.leaderUsername == null) {
-                observedState.leaderUsername = localUsername;
-            }
-        }
     }
 
     private void maybeShowCreatePrompt() {

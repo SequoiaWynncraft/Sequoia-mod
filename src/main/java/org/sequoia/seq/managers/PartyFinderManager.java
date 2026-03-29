@@ -838,11 +838,12 @@ public class PartyFinderManager implements NotificationAccessor {
                 minutesRemaining);
 
         long safeMinutesRemaining = Math.max(0, minutesRemaining);
-        if ("heartbeat_lost".equals(reason)) {
-            notify("Your Party Finder listing will auto-disband in " + safeMinutesRemaining + " minutes.");
-            return;
-        }
-        notify("Your Party Finder listing is still solo and has not changed in a while.");
+        String unit = safeMinutesRemaining == 1 ? "minute" : "minutes";
+        notify("Your Party Finder listing looks inactive and will be removed in "
+                + safeMinutesRemaining
+                + " "
+                + unit
+                + " unless activity resumes.");
     }
 
     private void notifyInviteWithJoinAction(String message, long listingId, String inviteToken) {
