@@ -2,6 +2,7 @@ package org.sequoia.seq.managers;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -18,6 +19,8 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.contents.PlainTextContents;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
@@ -35,6 +38,9 @@ import org.sequoia.seq.utils.PacketTextNormalizer;
 public final class GuildStorageTracker implements NotificationAccessor {
     static final long REWARD_BURST_IDLE_GAP_MS = 2_000L;
     static final long REWARD_BURST_MAX_WINDOW_MS = 30_000L;
+    static final long REWARD_PACKET_OBSERVATION_WINDOW_MS = 2_000L;
+    static final long LOCAL_SNAPSHOT_AUTHORITY_WINDOW_MS = 5_000L;
+    private static final int MAX_RECENT_REWARD_OBSERVATIONS = 256;
     private static final Pattern EMERALDS_PATTERN =
             Pattern.compile("(?i)^emeralds:\\s*([\\d, ]+)\\s*/\\s*([\\d, ]+)$");
     private static final Pattern ASPECTS_PATTERN =
@@ -53,9 +59,11 @@ public final class GuildStorageTracker implements NotificationAccessor {
     private final IntSupplier emeraldThresholdPercent;
     private final IntSupplier aspectThresholdPercent;
     private final LongSupplier clockMsSupplier;
+    private final RewardPacketObservationTracker rewardPacketObservationTracker;
 
     private StorageSnapshot currentSnapshot;
     private StorageSnapshot lastPublishedSnapshot;
+    private long lastObservedSnapshotAtMs;
     private final Map<RewardBurstKey, RewardBurstAccumulator> pendingRewardBursts = new LinkedHashMap<>();
 
     public static synchronized GuildStorageTracker getInstance() {
@@ -106,6 +114,7 @@ public final class GuildStorageTracker implements NotificationAccessor {
         this.emeraldThresholdPercent = Objects.requireNonNull(emeraldThresholdPercent, "emeraldThresholdPercent");
         this.aspectThresholdPercent = Objects.requireNonNull(aspectThresholdPercent, "aspectThresholdPercent");
         this.clockMsSupplier = Objects.requireNonNull(clockMsSupplier, "clockMsSupplier");
+        this.rewardPacketObservationTracker = new RewardPacketObservationTracker(clockMsSupplier);
     }
 
     public void tick() {
@@ -135,6 +144,13 @@ public final class GuildStorageTracker implements NotificationAccessor {
             return;
         }
 
+        RewardMessageDescriptor descriptor = RewardMessageDescriptor.describe(message);
+        RewardPacketObservation observation = null;
+        if (descriptor != null) {
+            observation = rewardPacketObservationTracker.observe(descriptor);
+            logObservedRewardPacket(observation);
+        }
+
         RaidTracker.ParsedRaidCompletion completion = RaidTracker.parseRaidCompletion(message);
         if (completion != null) {
             applyStorageDelta(completion.emeralds(), completion.aspects());
@@ -146,27 +162,53 @@ public final class GuildStorageTracker implements NotificationAccessor {
             return;
         }
 
+        StorageSnapshot before = currentSnapshot;
         applyStorageDelta(rewardGrant.emeraldDelta(), rewardGrant.aspectDelta());
         recordRewardGrant(rewardGrant);
+        StorageSnapshot after = currentSnapshot;
+        SeqClient.LOGGER.info(
+                "[GuildStorage] Reward grant parsed fingerprint={} occurrenceCount={} deltaSinceLastMs={} sender='{}' recipient='{}' resource='{}' amount={} seeded={} normalized='{}' before={} after={} burstCount={}",
+                observation != null ? observation.fingerprint() : "unknown",
+                observation != null ? observation.occurrenceCount() : 0,
+                observation != null ? observation.deltaSinceLastMs() : -1,
+                rewardGrant.senderUsername(),
+                rewardGrant.recipientUsername(),
+                rewardGrant.resourceType().wireValue(),
+                rewardGrant.amount(),
+                before != null,
+                descriptor != null ? abbreviateForLog(descriptor.normalizedText()) : "unknown",
+                formatSnapshot(before),
+                formatSnapshot(after),
+                currentBurstCount(rewardGrant));
     }
 
     public void reset() {
         flushReadyRewardBursts(true);
         currentSnapshot = null;
         lastPublishedSnapshot = null;
+        lastObservedSnapshotAtMs = 0L;
         pendingRewardBursts.clear();
     }
 
     void applyObservedSnapshot(StorageSnapshot snapshot) {
+        lastObservedSnapshotAtMs = clockMsSupplier.getAsLong();
         applySnapshot(snapshot, true);
     }
 
     public void applyRemoteSnapshot(long emeraldCurrent, long emeraldMax, long aspectCurrent, long aspectMax) {
-        applySnapshot(
-                new StorageSnapshot(
-                        new ResourceSnapshot(emeraldCurrent, emeraldMax),
-                        new ResourceSnapshot(aspectCurrent, aspectMax)),
-                false);
+        StorageSnapshot snapshot = new StorageSnapshot(
+                new ResourceSnapshot(emeraldCurrent, emeraldMax),
+                new ResourceSnapshot(aspectCurrent, aspectMax));
+        if (shouldIgnoreRemoteSnapshot(snapshot)) {
+            SeqClient.LOGGER.info(
+                    "[GuildStorage] Ignoring remote snapshot emerald={}/{} aspect={}/{} due to recent local GUI observation",
+                    emeraldCurrent,
+                    emeraldMax,
+                    aspectCurrent,
+                    aspectMax);
+            return;
+        }
+        applySnapshot(snapshot, false);
     }
 
     private void applySnapshot(StorageSnapshot snapshot, boolean publishUpdate) {
@@ -199,14 +241,38 @@ public final class GuildStorageTracker implements NotificationAccessor {
             return;
         }
 
+        ResourceSnapshot nextEmeralds = currentSnapshot.emeralds().addClampedToZero(emeraldDelta);
+        ResourceSnapshot nextAspects = currentSnapshot.aspects().addClampedToZero(aspectDelta);
+        logDepletionOvershoot(ResourceType.EMERALDS, currentSnapshot.emeralds(), emeraldDelta, nextEmeralds);
+        logDepletionOvershoot(ResourceType.ASPECTS, currentSnapshot.aspects(), aspectDelta, nextAspects);
+
         StorageSnapshot next = new StorageSnapshot(
-                currentSnapshot.emeralds().add(emeraldDelta),
-                currentSnapshot.aspects().add(aspectDelta));
+                nextEmeralds,
+                nextAspects);
         StorageSnapshot previous = currentSnapshot;
         currentSnapshot = next;
 
         maybeNotifyThresholdCrossing(previous, next, ResourceType.EMERALDS, emeraldThresholdPercent.getAsInt());
         maybeNotifyThresholdCrossing(previous, next, ResourceType.ASPECTS, aspectThresholdPercent.getAsInt());
+    }
+
+    private void logDepletionOvershoot(
+            ResourceType resourceType, ResourceSnapshot before, long attemptedDelta, ResourceSnapshot after) {
+        if (before == null || attemptedDelta >= 0) {
+            return;
+        }
+        if (before.current() + attemptedDelta >= 0) {
+            return;
+        }
+
+        SeqClient.LOGGER.warn(
+                "[GuildStorage][WARN] %s reward burst would overshoot tracked storage before=%d/%d attemptedDelta=%d after=%d/%d",
+                resourceType.wireValue(),
+                before.current(),
+                before.max(),
+                attemptedDelta,
+                after.current(),
+                after.max());
     }
 
     StorageSnapshot currentSnapshot() {
@@ -386,6 +452,39 @@ public final class GuildStorageTracker implements NotificationAccessor {
         rewardPublisher.accept(burst.toRewardBurst());
     }
 
+    private void logObservedRewardPacket(RewardPacketObservation observation) {
+        String levelPrefix = observation.occurrenceCount() > 1 ? "[GuildStorage][WARN]" : "[GuildStorage]";
+        String logMessage =
+                "%s Reward candidate observed fingerprint=%s occurrenceCount=%d deltaSinceLastMs=%d parsed=%s sender='%s' recipient='%s' resource='%s' amount=%d normalized='%s'"
+                        .formatted(
+                                levelPrefix,
+                                observation.fingerprint(),
+                                observation.occurrenceCount(),
+                                observation.deltaSinceLastMs(),
+                                observation.parsedRewardKey() != null,
+                                observation.parsedRewardKey() != null ? observation.parsedRewardKey().senderUsername() : "",
+                                observation.parsedRewardKey() != null ? observation.parsedRewardKey().recipientUsername() : "",
+                                observation.parsedRewardKey() != null
+                                        ? observation.parsedRewardKey().resourceType().wireValue()
+                                        : "",
+                                observation.parsedRewardKey() != null ? observation.parsedRewardKey().amount() : 0L,
+                                abbreviateForLog(observation.normalizedText()));
+        if (observation.occurrenceCount() > 1) {
+            SeqClient.LOGGER.warn(logMessage);
+            return;
+        }
+        SeqClient.LOGGER.info(logMessage);
+    }
+
+    private int currentBurstCount(RewardGrant rewardGrant) {
+        RewardBurstAccumulator accumulator = pendingRewardBursts.get(new RewardBurstKey(
+                rewardGrant.senderUsername(),
+                rewardGrant.recipientUsername(),
+                rewardGrant.resourceType(),
+                rewardGrant.amount()));
+        return accumulator == null ? 0 : accumulator.count;
+    }
+
     private void maybeNotifyThresholdCrossing(
             StorageSnapshot previous, StorageSnapshot current, ResourceType resourceType, int thresholdPercent) {
         if (thresholdPercent < 0) {
@@ -412,6 +511,14 @@ public final class GuildStorageTracker implements NotificationAccessor {
                         currentResource.max()));
     }
 
+    private boolean shouldIgnoreRemoteSnapshot(StorageSnapshot snapshot) {
+        if (snapshot == null || currentSnapshot == null || currentSnapshot.equals(snapshot)) {
+            return false;
+        }
+        long ageMs = clockMsSupplier.getAsLong() - lastObservedSnapshotAtMs;
+        return ageMs >= 0 && ageMs <= LOCAL_SNAPSHOT_AUTHORITY_WINDOW_MS;
+    }
+
     private static String normalizeLine(String rawLine) {
         return PacketTextNormalizer.normalizeForParsing(rawLine);
     }
@@ -429,6 +536,32 @@ public final class GuildStorageTracker implements NotificationAccessor {
             return 1;
         }
         return parseNumber(rawValue);
+    }
+
+    private static String formatSnapshot(StorageSnapshot snapshot) {
+        if (snapshot == null) {
+            return "unseeded";
+        }
+        return "emeralds=%d/%d aspects=%d/%d"
+                .formatted(
+                        snapshot.emeralds().current(),
+                        snapshot.emeralds().max(),
+                        snapshot.aspects().current(),
+                        snapshot.aspects().max());
+    }
+
+    private static String abbreviateForLog(String value) {
+        if (value == null) {
+            return "null";
+        }
+        return value.length() <= 512 ? value : value.substring(0, 512) + "...";
+    }
+
+    private static String extractFragmentText(Component fragment) {
+        if (fragment.getContents() instanceof PlainTextContents plainTextContents) {
+            return plainTextContents.text();
+        }
+        return fragment.getString();
     }
 
     enum ResourceType {
@@ -455,6 +588,10 @@ public final class GuildStorageTracker implements NotificationAccessor {
     record ResourceSnapshot(long current, long max) {
         ResourceSnapshot add(long delta) {
             return new ResourceSnapshot(current + delta, max);
+        }
+
+        ResourceSnapshot addClampedToZero(long delta) {
+            return new ResourceSnapshot(Math.max(0L, current + delta), max);
         }
 
         double fractionFilled() {
@@ -494,6 +631,15 @@ public final class GuildStorageTracker implements NotificationAccessor {
             int count,
             Instant windowStartedAt) {}
 
+    record RewardPacketObservation(
+            String fingerprint,
+            String normalizedText,
+            RewardGrant parsedRewardKey,
+            int occurrenceCount,
+            long firstSeenAtMs,
+            long lastSeenAtMs,
+            long deltaSinceLastMs) {}
+
     private static final class RewardBurstAccumulator {
         private final RewardBurstKey key;
         private final long windowStartedAtMs;
@@ -528,6 +674,128 @@ public final class GuildStorageTracker implements NotificationAccessor {
                     key.amount(),
                     count,
                     Instant.ofEpochMilli(windowStartedAtMs));
+        }
+    }
+
+    static final class RewardPacketObservationTracker {
+        private final LongSupplier clockMsSupplier;
+        private final Map<String, RewardPacketObservationAccumulator> recentObservations = new LinkedHashMap<>();
+
+        RewardPacketObservationTracker(LongSupplier clockMsSupplier) {
+            this.clockMsSupplier = Objects.requireNonNull(clockMsSupplier, "clockMsSupplier");
+        }
+
+        RewardPacketObservation observe(RewardMessageDescriptor descriptor) {
+            long now = clockMsSupplier.getAsLong();
+            evictExpired(now);
+
+            RewardPacketObservationAccumulator existing = recentObservations.get(descriptor.key());
+            if (existing == null) {
+                recentObservations.put(descriptor.key(), new RewardPacketObservationAccumulator(descriptor, now));
+                trimToCapacity();
+                return recentObservations.get(descriptor.key()).snapshot();
+            }
+
+            existing.observe(now);
+            return existing.snapshot();
+        }
+
+        RewardPacketObservation lookup(RewardMessageDescriptor descriptor) {
+            long now = clockMsSupplier.getAsLong();
+            evictExpired(now);
+            RewardPacketObservationAccumulator existing = recentObservations.get(descriptor.key());
+            return existing == null ? null : existing.snapshot();
+        }
+
+        private void evictExpired(long now) {
+            Iterator<Map.Entry<String, RewardPacketObservationAccumulator>> iterator = recentObservations.entrySet()
+                    .iterator();
+            while (iterator.hasNext()) {
+                Map.Entry<String, RewardPacketObservationAccumulator> entry = iterator.next();
+                if (now - entry.getValue().lastSeenAtMs > REWARD_PACKET_OBSERVATION_WINDOW_MS) {
+                    iterator.remove();
+                }
+            }
+        }
+
+        private void trimToCapacity() {
+            while (recentObservations.size() > MAX_RECENT_REWARD_OBSERVATIONS) {
+                Iterator<String> iterator = recentObservations.keySet().iterator();
+                if (!iterator.hasNext()) {
+                    return;
+                }
+                iterator.next();
+                iterator.remove();
+            }
+        }
+    }
+
+    record RewardMessageDescriptor(String key, String fingerprint, String normalizedText, RewardGrant parsedRewardKey) {
+        static RewardMessageDescriptor describe(Component message) {
+            if (message == null) {
+                return null;
+            }
+
+            String normalizedText = PacketTextNormalizer.normalizeForParsing(message.getString());
+            RewardGrant parsedRewardKey = parseRewardGrant(message);
+            boolean rewardCandidate = parsedRewardKey != null
+                    || (normalizedText.toLowerCase(Locale.ROOT).contains(" rewarded ")
+                            && normalizedText.toLowerCase(Locale.ROOT).contains(" to "));
+            if (!rewardCandidate) {
+                return null;
+            }
+
+            StringBuilder canonical = new StringBuilder(normalizedText.length() + 64);
+            canonical.append(normalizedText);
+            for (Component fragment : message.toFlatList()) {
+                String fragmentText = extractFragmentText(fragment);
+                if (fragmentText.isEmpty()) {
+                    continue;
+                }
+                Style style = fragment.getStyle();
+                canonical.append("|text=").append(PacketTextNormalizer.normalizeForParsing(fragmentText));
+                canonical.append("|hover=").append(ChatManager.extractHoverRealUsername(style));
+                canonical.append("|insertion=").append(ChatManager.extractInsertionUsername(style));
+                canonical.append("|color=")
+                        .append(style.getColor() != null ? style.getColor().getValue() : "none");
+            }
+
+            String key = canonical.toString();
+            String fingerprint = Integer.toHexString(key.hashCode()) + ":" + key.length();
+            return new RewardMessageDescriptor(key, fingerprint, normalizedText, parsedRewardKey);
+        }
+    }
+
+    private static final class RewardPacketObservationAccumulator {
+        private final RewardMessageDescriptor descriptor;
+        private final long firstSeenAtMs;
+        private long lastSeenAtMs;
+        private long deltaSinceLastMs;
+        private int occurrenceCount;
+
+        private RewardPacketObservationAccumulator(RewardMessageDescriptor descriptor, long now) {
+            this.descriptor = descriptor;
+            this.firstSeenAtMs = now;
+            this.lastSeenAtMs = now;
+            this.occurrenceCount = 1;
+            this.deltaSinceLastMs = 0L;
+        }
+
+        private void observe(long now) {
+            deltaSinceLastMs = now - lastSeenAtMs;
+            lastSeenAtMs = now;
+            occurrenceCount++;
+        }
+
+        private RewardPacketObservation snapshot() {
+            return new RewardPacketObservation(
+                    descriptor.fingerprint(),
+                    descriptor.normalizedText(),
+                    descriptor.parsedRewardKey(),
+                    occurrenceCount,
+                    firstSeenAtMs,
+                    lastSeenAtMs,
+                    deltaSinceLastMs);
         }
     }
 }

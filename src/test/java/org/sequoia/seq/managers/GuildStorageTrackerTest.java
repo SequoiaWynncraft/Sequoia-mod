@@ -1,6 +1,7 @@
 package org.sequoia.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -149,6 +150,41 @@ class GuildStorageTrackerTest {
     }
 
     @Test
+    void applyRemoteSnapshotDoesNotOverrideFreshLocalGuiObservation() {
+        List<GuildStorageTracker.StorageSnapshot> published = new ArrayList<>();
+        List<String> notifications = new ArrayList<>();
+        AtomicLong now = new AtomicLong(1_000L);
+        GuildStorageTracker tracker = new GuildStorageTracker(
+                published::add,
+                reward -> {},
+                notifications::add,
+                () -> true,
+                () -> 80,
+                () -> 80,
+                now::get);
+
+        tracker.applyObservedSnapshot(new GuildStorageTracker.StorageSnapshot(
+                new GuildStorageTracker.ResourceSnapshot(30_000, 30_720),
+                new GuildStorageTracker.ResourceSnapshot(39, 40)));
+        published.clear();
+        notifications.clear();
+
+        tracker.applyRemoteSnapshot(25_000, 30_720, 32, 40);
+
+        assertEquals(30_000L, tracker.currentSnapshot().emeralds().current());
+        assertEquals(39L, tracker.currentSnapshot().aspects().current());
+        assertEquals(List.of(), published);
+        assertEquals(List.of(), notifications);
+
+        now.addAndGet(GuildStorageTracker.LOCAL_SNAPSHOT_AUTHORITY_WINDOW_MS + 1);
+        tracker.applyRemoteSnapshot(25_000, 30_720, 32, 40);
+
+        assertEquals(25_000L, tracker.currentSnapshot().emeralds().current());
+        assertEquals(32L, tracker.currentSnapshot().aspects().current());
+        assertEquals(List.of(), notifications);
+    }
+
+    @Test
     void parseRewardGrantResolvesNicknameToUsername() {
         Style senderStyle = Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
                 Component.literal("Total Obliteration's real name is Dwoc")));
@@ -164,6 +200,78 @@ class GuildStorageTrackerTest {
         assertEquals("cinfrascitizen", grant.recipientUsername());
         assertEquals(GuildStorageTracker.ResourceType.EMERALDS, grant.resourceType());
         assertEquals(1_024L, grant.amount());
+    }
+
+    @Test
+    void rewardMessageDescriptorProducesStableFingerprintForEquivalentPackets() {
+        Style senderStyle = Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
+                Component.literal("Total Obliteration's real name is Dwoc")));
+        Component first = Component.empty()
+                .append(Component.literal("󏿼󐀆 "))
+                .append(Component.literal("Total Obliteration").withStyle(senderStyle))
+                .append(Component.literal(" rewarded 1024 Emeralds to cinfrascitizen"));
+        Component second = Component.empty()
+                .append(Component.literal("󏿼󐀆 "))
+                .append(Component.literal("Total Obliteration").withStyle(senderStyle))
+                .append(Component.literal(" rewarded 1024 Emeralds to cinfrascitizen"));
+
+        GuildStorageTracker.RewardMessageDescriptor firstDescriptor = GuildStorageTracker.RewardMessageDescriptor.describe(first);
+        GuildStorageTracker.RewardMessageDescriptor secondDescriptor =
+                GuildStorageTracker.RewardMessageDescriptor.describe(second);
+
+        assertNotNull(firstDescriptor);
+        assertNotNull(secondDescriptor);
+        assertEquals(firstDescriptor.fingerprint(), secondDescriptor.fingerprint());
+        assertEquals(firstDescriptor.key(), secondDescriptor.key());
+    }
+
+    @Test
+    void rewardMessageDescriptorChangesFingerprintWhenResolvedIdentityOrAmountChanges() {
+        Style firstSenderStyle = Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
+                Component.literal("Total Obliteration's real name is Dwoc")));
+        Style secondSenderStyle = Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
+                Component.literal("Total Obliteration's real name is AnotherDwoc")));
+        Component first = Component.empty()
+                .append(Component.literal("Total Obliteration").withStyle(firstSenderStyle))
+                .append(Component.literal(" rewarded 1024 Emeralds to cinfrascitizen"));
+        Component second = Component.empty()
+                .append(Component.literal("Total Obliteration").withStyle(secondSenderStyle))
+                .append(Component.literal(" rewarded 1024 Emeralds to cinfrascitizen"));
+        Component third = Component.empty()
+                .append(Component.literal("Total Obliteration").withStyle(firstSenderStyle))
+                .append(Component.literal(" rewarded 2048 Emeralds to cinfrascitizen"));
+
+        GuildStorageTracker.RewardMessageDescriptor firstDescriptor = GuildStorageTracker.RewardMessageDescriptor.describe(first);
+        GuildStorageTracker.RewardMessageDescriptor secondDescriptor =
+                GuildStorageTracker.RewardMessageDescriptor.describe(second);
+        GuildStorageTracker.RewardMessageDescriptor thirdDescriptor = GuildStorageTracker.RewardMessageDescriptor.describe(third);
+
+        assertNotNull(firstDescriptor);
+        assertNotNull(secondDescriptor);
+        assertNotNull(thirdDescriptor);
+        assertNotEquals(firstDescriptor.fingerprint(), secondDescriptor.fingerprint());
+        assertNotEquals(firstDescriptor.fingerprint(), thirdDescriptor.fingerprint());
+    }
+
+    @Test
+    void rewardPacketObservationTrackerCountsDuplicatesWithinWindowAndExpiresOldEntries() {
+        AtomicLong now = new AtomicLong(Instant.parse("2026-03-29T20:00:00Z").toEpochMilli());
+        GuildStorageTracker.RewardPacketObservationTracker tracker =
+                new GuildStorageTracker.RewardPacketObservationTracker(now::get);
+        GuildStorageTracker.RewardMessageDescriptor descriptor = GuildStorageTracker.RewardMessageDescriptor.describe(
+                Component.literal("Dwoc rewarded 1024 Emeralds to cinfrascitizen"));
+
+        GuildStorageTracker.RewardPacketObservation first = tracker.observe(descriptor);
+        now.addAndGet(125L);
+        GuildStorageTracker.RewardPacketObservation second = tracker.observe(descriptor);
+        now.addAndGet(GuildStorageTracker.REWARD_PACKET_OBSERVATION_WINDOW_MS + 1);
+        GuildStorageTracker.RewardPacketObservation expired = tracker.lookup(descriptor);
+
+        assertEquals(1, first.occurrenceCount());
+        assertEquals(0L, first.deltaSinceLastMs());
+        assertEquals(2, second.occurrenceCount());
+        assertEquals(125L, second.deltaSinceLastMs());
+        assertNull(expired);
     }
 
     @Test
@@ -202,6 +310,37 @@ class GuildStorageTrackerTest {
         assertEquals(1_024L, burst.amount());
         assertEquals(3, burst.count());
         assertEquals(Instant.parse("2026-03-29T20:00:00Z"), burst.windowStartedAt());
+    }
+
+    @Test
+    void onSystemChatClampsRewardDrainAtZero() {
+        AtomicLong now = new AtomicLong(Instant.parse("2026-03-29T20:02:00Z").toEpochMilli());
+        GuildStorageTracker tracker = new GuildStorageTracker(
+                snapshot -> {},
+                reward -> {},
+                message -> {},
+                () -> true,
+                () -> 100,
+                () -> 100,
+                now::get);
+
+        tracker.applyObservedSnapshot(new GuildStorageTracker.StorageSnapshot(
+                new GuildStorageTracker.ResourceSnapshot(2_048, 30_720),
+                new GuildStorageTracker.ResourceSnapshot(2, 40)));
+
+        Component emeraldReward = Component.literal("Dwoc rewarded 1024 Emeralds to cinfrascitizen");
+        tracker.onSystemChat(emeraldReward);
+        tracker.onSystemChat(emeraldReward);
+        tracker.onSystemChat(emeraldReward);
+
+        assertEquals(0L, tracker.currentSnapshot().emeralds().current());
+
+        Component aspectReward = Component.literal("Dwoc rewarded an Aspect to cinfrascitizen");
+        tracker.onSystemChat(aspectReward);
+        tracker.onSystemChat(aspectReward);
+        tracker.onSystemChat(aspectReward);
+
+        assertEquals(0L, tracker.currentSnapshot().aspects().current());
     }
 
     @Test
