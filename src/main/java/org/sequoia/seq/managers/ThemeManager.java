@@ -13,63 +13,63 @@ import org.sequoia.seq.utils.ThemeReader;
 
 public class ThemeManager {
 
-	private static Theme currentTheme;
-	private final static ArrayList<Theme> loadedThemes = new ArrayList<Theme>();
+    private static Theme currentTheme;
+    private final static ArrayList<Theme> loadedThemes = new ArrayList<Theme>();
 
-	public static Theme getCurrentTheme() {
-		return currentTheme;
-	}
+    public static Theme getCurrentTheme() {
+        return currentTheme;
+    }
 
-	public static ArrayList<String> getLoadedThemeNames() {
-		ArrayList<String> names = new ArrayList<String>();
+    public static ArrayList<String> getLoadedThemeNames() {
+        ArrayList<String> names = new ArrayList<String>();
 
-		for (Theme theme : loadedThemes) {
-			names.add(theme.NAME);
-		}
+        for (Theme theme : loadedThemes) {
+            names.add(theme.NAME);
+        }
 
-		return names;
-	}
+        return names;
+    }
 
-	public static void setCurrentTheme(String themeName) {
-		for (Theme theme : loadedThemes) {
-			if (theme.NAME.equals(themeName)) {
-				currentTheme = theme; 
-			}
-		}
-	}
+    public static void setCurrentTheme(String themeName) {
+        for (Theme theme : loadedThemes) {
+            if (theme.NAME.equals(themeName)) {
+                currentTheme = theme; 
+            }
+        }
+    }
 
-	private static void loadFromPath(Path path) {
-		ThemeReader themeReader = new ThemeReader();
+    private static void loadFromPath(Path path) {
+        ThemeReader themeReader = new ThemeReader();
 
-		try {
-			loadedThemes.add(themeReader.fromFile(path));
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-	}
+        try {
+            loadedThemes.add(themeReader.fromFile(path));
+        } catch (IOException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+    }
 
-	public static void loadThemes() {
-		URI uri;
+    public static void loadThemes() {
+        URI uri;
 
-		try {
-			uri = ThemeManager.class.getClassLoader().getResource("assets/seq/themes").toURI();
-		} catch (URISyntaxException e) {
-			e.printStackTrace(); // TODO Auto-generated catch block
-			return;
-		}
-		
-		Path themesPath = Paths.get(uri);
+        try {
+            uri = ThemeManager.class.getClassLoader().getResource("assets/seq/themes").toURI();
+        } catch (URISyntaxException e) {
+            e.printStackTrace(); // TODO Auto-generated catch block
+            return;
+        }
+        
+        Path themesPath = Paths.get(uri);
 
-		try {
-			Files.walk(themesPath).filter(Files::isRegularFile).forEach(ThemeManager::loadFromPath);
-		} catch (IOException e) {
-			e.printStackTrace();
-			return;
-		}
-	}
+        try {
+            Files.walk(themesPath).filter(Files::isRegularFile).forEach(ThemeManager::loadFromPath);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return;
+        }
+    }
 
-	public static void unloadThemes() {
-		loadedThemes.clear();
-	}
+    public static void unloadThemes() {
+        loadedThemes.clear();
+    }
 }
