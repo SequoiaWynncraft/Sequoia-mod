@@ -121,72 +121,73 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float TAG_CHIP_FONT_SIZE = 11;
 
     // ── Colors ──
-    private static final Color BG_COLOR = new Color(10, 10, 16, 100);
-    private static final Color SIDEBAR_COLOR = new Color(18, 18, 26, 200);
-    private static final Color PANEL_COLOR = new Color(22, 22, 30, 100);
-    private static final Color HEADER_COLOR = new Color(26, 26, 36, 110);
-    private static final Color TITLE_COLOR = new Color(160, 130, 220, 255);
-    private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
-    private static final Color DIVIDER_COLOR = new Color(40, 40, 55, 255);
+    private static final Color BG_COLOR = new Color(10, 10, 16, 100);                           // NEW || OVERLAY +
+    private static final Color SIDEBAR_COLOR = new Color(18, 18, 26, 200);                      // NEW || SIDEBAR +
+    private static final Color PANEL_COLOR = new Color(22, 22, 30, 100);                        // NEW || BODY +
+    private static final Color HEADER_COLOR = new Color(26, 26, 36, 110);                       // NEW || HEADER +
+    private static final Color TITLE_COLOR = new Color(160, 130, 220, 255);                     // NEW || MAIN_ACCENT_LIGHT +
+    private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);                      // NEW || PRIMARY_TEXT +
+    private static final Color DIVIDER_COLOR = new Color(40, 40, 55, 255);                      // NEW || ALT_ACCENT_DARK +
 
-    private static final Color SIDEBAR_BUTTON_COLOR = new Color(30, 30, 42, 110);
-    private static final Color SIDEBAR_BUTTON_HOVER = new Color(42, 42, 58, 120);
-    private static final Color SIDEBAR_BUTTON_ACTIVE = new Color(80, 50, 140, 120);
+    private static final Color SIDEBAR_BUTTON_COLOR = new Color(30, 30, 42, 110);               // DEPRECATE || ALT_DARK
+    private static final Color SIDEBAR_BUTTON_HOVER = new Color(42, 42, 58, 120);               // DEPRECATE || ALT_LIGHT
+    private static final Color SIDEBAR_BUTTON_ACTIVE = new Color(60, 30, 120, 255);             // NEW || MAIN_DARK +
 
-    private static final Color SEARCH_BG = new Color(30, 30, 40, 255);
-    private static final Color SEARCH_ACTIVE_BG = new Color(40, 40, 55, 255);
-    private static final Color SEARCH_BORDER = new Color(130, 100, 200, 180);
-    private static final Color SEARCH_PLACEHOLDER = new Color(100, 100, 120, 200);
+    private static final Color SEARCH_BG = new Color(30, 30, 40, 255);                          // DEPRECATE || Replace with INPUT_PRIMARY
+    private static final Color SEARCH_ACTIVE_BG = new Color(40, 40, 55, 255);                   // DEPRECATE || Replace with INPUT_HOVER
+    private static final Color SEARCH_BORDER = new Color(130, 100, 200, 180);                   // DEPRECATE || Replace with MAIN_ACCENT_DARK
+    private static final Color SEARCH_PLACEHOLDER = new Color(100, 100, 120, 200);              // DEPRECATE || Replace with INACTIVE_TEXT
 
-    private static final Color CARD_BG = new Color(30, 30, 42, 110);
-    private static final Color CARD_EXPANDED_BG = new Color(26, 26, 36, 120);
-    private static final Color MEMBER_TEXT_COLOR = new Color(220, 220, 230, 255);
-    private static final Color MEMBER_DIM_COLOR = new Color(120, 120, 140, 180);
-    private static final Color ROLE_TEXT_COLOR = new Color(160, 160, 180, 255);
+    private static final Color CARD_BG = new Color(30, 30, 42, 110);                            // NEW || CONTENT +
+    private static final Color CARD_EXPANDED_BG = new Color(26, 26, 36, 120);                   // NEW || CONTENT_FOCUSED +
+    private static final Color MEMBER_TEXT_COLOR = new Color(220, 220, 230, 255);               // NEW || PLEASANT_TEXT +
+    private static final Color MEMBER_DIM_COLOR = new Color(120, 120, 140, 180);                // DEPRECATE || Replace with INACTIVE_TEXT
+    private static final Color ROLE_TEXT_COLOR = new Color(160, 160, 180, 255);                 // NEW || FAINT_TEXT +
 
-    private static final Color PARTY_TYPE_TEXT = new Color(180, 180, 200, 255);
-    private static final Color EXPAND_ARROW_COLOR = new Color(140, 140, 160, 255);
+    private static final Color PARTY_TYPE_TEXT = new Color(180, 180, 200, 255);                 // DEPRECATE || Replace with FAINT_TEXT
+    private static final Color EXPAND_ARROW_COLOR = new Color(140, 140, 160, 255);              // NEW || ALT_ACCENT_LIGHT +
 
-    private static final Color JOIN_BUTTON_COLOR = new Color(160, 130, 220, 255);
-    private static final Color JOIN_BUTTON_HOVER = new Color(180, 150, 240, 255);
-    private static final Color NEW_PARTY_COLOR = new Color(160, 130, 220, 200);
-    private static final Color NEW_PARTY_HOVER = new Color(180, 150, 240, 220);
-    private static final Color MANAGE_PARTY_COLOR = new Color(160, 130, 220, 200);
-    private static final Color DELIST_PARTY_COLOR = new Color(200, 60, 60, 200);
-    private static final Color DELIST_PARTY_HOVER = new Color(220, 80, 80, 220);
-    private static final Color OPEN_CLOSE_PARTY_COLOR = new Color(100, 70, 160, 200);
-    private static final Color OPEN_CLOSE_PARTY_HOVER = new Color(120, 90, 180, 220);
-    private static final Color DISABLED_BUTTON_COLOR = new Color(60, 60, 70, 180);
-    private static final Color DISABLED_BUTTON_TEXT = new Color(120, 120, 130, 200);
+    private static final Color JOIN_BUTTON_COLOR = new Color(160, 130, 220, 255);               // DEPRECATE || Replace with MAIN_ACCENT_LIGHT
+    private static final Color JOIN_BUTTON_HOVER = new Color(180, 150, 240, 255);               // NEW || Replace with MAIN_ACCENT_LIGHT_HOVER
+    private static final Color NEW_PARTY_COLOR = new Color(160, 130, 220, 200);                 // DEPRECATE || Replace with MAIN_ACCENT_LIGHT
+    private static final Color NEW_PARTY_HOVER = new Color(180, 150, 240, 220);                 // DEPRECATE || Replace with MAIN_ACCENT_LIGHT_HOVER
+    private static final Color MANAGE_PARTY_COLOR = new Color(160, 130, 220, 200);              // DEPRECATE || Replace with MAIN_ACCENT_LIGHT
+    private static final Color DELIST_PARTY_COLOR = new Color(200, 60, 60, 200);                // NEW || DANGER_PRIMARY +
+    private static final Color DELIST_PARTY_HOVER = new Color(220, 80, 80, 220);                // NEW || DANGER_HOVER +
+    private static final Color OPEN_CLOSE_PARTY_COLOR = new Color(100, 70, 160, 200);           // DEPRECATE || Replace with MAIN_ACCENT_LIGHT
+    private static final Color OPEN_CLOSE_PARTY_HOVER = new Color(120, 90, 180, 220);           // DEPRECATE || Replace with MAIN_ACCENT_LIGHT_HOVER
+    private static final Color DISABLED_BUTTON_COLOR = new Color(60, 60, 70, 255);              // NEW || INACTIVE_MAIN_ACCENT +
+    private static final Color DISABLED_BUTTON_TEXT = new Color(120, 120, 130, 255);            // NEW || INACTIVE_TEXT +
 
+                                                                                                // Move all three to new enum widget
     private static final Color DROPDOWN_BG = new Color(40, 40, 55, 240);
-    private static final Color DROPDOWN_HOVER = new Color(55, 55, 75, 240);
-    private static final Color DROPDOWN_BORDER = new Color(80, 80, 100, 200);
+    private static final Color DROPDOWN_HOVER = new Color(55, 55, 75, 255);                     // NEW || INPUT_HOVER +
+    private static final Color DROPDOWN_BORDER = new Color(80, 80, 100, 200); 
 
     private static final Color TYPE_ICON_SELECTED =
-            new Color(TITLE_COLOR.getRed(), TITLE_COLOR.getGreen(), TITLE_COLOR.getBlue(), 120);
+            new Color(TITLE_COLOR.getRed(), TITLE_COLOR.getGreen(), TITLE_COLOR.getBlue(), 120);// DEPRECATE || Replace with MAIN_ACCENT_LIGHT
 
-    private static final Color ERROR_POPUP_BG = new Color(55, 25, 90, 235);
-    private static final Color ERROR_POPUP_BORDER = new Color(160, 130, 220, 255);
+    private static final Color ERROR_POPUP_BG = new Color(55, 25, 90, 235);                     // DEPRECATE || Popup notif main body || MAIN_ACCENT_DARK
+    private static final Color ERROR_POPUP_BORDER = new Color(160, 130, 220, 255);              // DEPRECATE || Popup notif border || MAIN_ACCENT_LIGHT
 
-    private static final Color SCROLLBAR_TRACK = new Color(30, 30, 42, 255);
-    private static final Color SCROLLBAR_THUMB = new Color(160, 130, 220, 150);
+    private static final Color SCROLLBAR_TRACK = new Color(30, 30, 42, 255);                    // DEPRECATE || Replace with MAIN_ACCENT_DARK
+    private static final Color SCROLLBAR_THUMB = new Color(160, 130, 220, 150);                 // DEPRECATE || Replace with ALT_LIGHT
 
-    private static final Color MODAL_BG = new Color(20, 20, 30, 255);
-    private static final Color MODAL_BORDER = new Color(80, 80, 100, 255);
-    private static final Color MODAL_OVERLAY = new Color(0, 0, 0, 160);
-    private static final Color MODAL_DROPDOWN_BG = new Color(35, 35, 48, 255);
-    private static final Color MODAL_DROPDOWN_BORDER = new Color(80, 80, 100, 200);
+    private static final Color MODAL_BG = new Color(20, 20, 30, 255);                           // NEW || BODY_OPAQUE +
+    private static final Color MODAL_BORDER = new Color(80, 80, 100, 255);                      // DEPRECATE || ALT_LIGHT
+    private static final Color MODAL_OVERLAY = new Color(0, 0, 0, 160);                         // DEPRECATE|| Replace with OVERLAY
+    private static final Color MODAL_DROPDOWN_BG = new Color(35, 35, 48, 255);                  // NEW || INPUT_PRIMARY +
+    private static final Color MODAL_DROPDOWN_BORDER = new Color(80, 80, 100, 255);             // NEW || INPUT_SECONDARY +
 
-    private static final Color TAG_CHIP_BG = new Color(40, 40, 55, 220);
-    private static final Color TAG_CHIP_HOVER = new Color(55, 55, 75, 240);
-    private static final Color FILTER_BOX_BG = new Color(15, 15, 22, 240);
-    private static final Color STATUS_OPEN_BG = new Color(56, 140, 88, 220);
-    private static final Color STATUS_OPEN_BORDER = new Color(88, 196, 122, 255);
-    private static final Color STATUS_CLOSED_BG = new Color(148, 108, 44, 220);
-    private static final Color STATUS_CLOSED_BORDER = new Color(220, 176, 88, 255);
-    private static final Color STATUS_FULL_BG = new Color(160, 64, 72, 220);
-    private static final Color STATUS_FULL_BORDER = new Color(226, 108, 118, 255);
+    private static final Color TAG_CHIP_BG = new Color(40, 40, 55, 220);                        // DEPRECATE || Replace with ALT_DARK
+    private static final Color TAG_CHIP_HOVER = new Color(55, 55, 75, 240);                     // DEPRECATE || Replace with ALT_LIGHT
+    private static final Color FILTER_BOX_BG = new Color(15, 15, 22, 240);                      // DEPRECATE || Replace with BODY_OPAQUE
+    private static final Color STATUS_OPEN_BG = new Color(56, 140, 88, 220);                    // DEPRECATE || Replace with GOOD_PRIMARY
+    private static final Color STATUS_OPEN_BORDER = new Color(88, 196, 122, 255);               // NEW || GOOD_PRIMARY +
+    private static final Color STATUS_CLOSED_BG = new Color(148, 108, 44, 220);                 // DEPRECATE || Replace with WARNING_PRIMARY
+    private static final Color STATUS_CLOSED_BORDER = new Color(220, 176, 88, 255);             // NEW || WARNING_PRIMARY +
+    private static final Color STATUS_FULL_BG = new Color(160, 64, 72, 220);                    // DEPRECATE || Replace with DANGER_PRIMARY
+    private static final Color STATUS_FULL_BORDER = new Color(226, 108, 118, 255);              // DEPRECATE || Replace with DANGER_PRIMARY
 
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
     private static final String GAZ_EARS_ASSET = "gaz_ears";
