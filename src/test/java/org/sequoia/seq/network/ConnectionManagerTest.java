@@ -89,4 +89,22 @@ class ConnectionManagerTest {
         assertFalse(ConnectionManager.hasReconnectTask());
         assertFalse(ConnectionManager.isConnected());
     }
+
+    @Test
+    void automaticConnectStaysSuppressedAfterManualDisconnect() {
+        assertFalse(ConnectionManager.shouldAttemptAutomaticConnect(false, false, false, false, true));
+    }
+
+    @Test
+    void automaticConnectSkipsWhileReconnectAlreadyScheduled() {
+        assertFalse(ConnectionManager.shouldAttemptAutomaticConnect(false, false, false, true, false));
+    }
+
+    @Test
+    void automaticConnectRunsOnlyWhenSocketIsIdle() {
+        assertTrue(ConnectionManager.shouldAttemptAutomaticConnect(false, false, false, false, false));
+        assertFalse(ConnectionManager.shouldAttemptAutomaticConnect(true, false, false, false, false));
+        assertFalse(ConnectionManager.shouldAttemptAutomaticConnect(false, true, false, false, false));
+        assertFalse(ConnectionManager.shouldAttemptAutomaticConnect(false, false, true, false, false));
+    }
 }

@@ -88,6 +88,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static boolean autoReconnect = true;
     private static int reconnectAttempt = 0;
     private static ScheduledFuture<?> reconnectTask;
+    private static boolean autoConnectSuppressedByManualDisconnect;
 
     private enum AuthFlow {
         CONNECT,
@@ -159,6 +160,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private void connectInternal(AuthFlow authFlow, boolean userInitiated) {
+        if (userInitiated) {
+            autoConnectSuppressedByManualDisconnect = false;
+        }
         WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
         if (serverScope != WynncraftServerPolicy.Scope.MAIN) {
             pendingDiscordLinkRequest = false;
@@ -230,6 +234,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private void disconnectInternal(boolean userInitiated) {
+        if (userInitiated) {
+            autoConnectSuppressedByManualDisconnect = true;
+        }
         boolean open = isOpen();
         boolean hadConnectionState = hasConnectionState();
         boolean hadAutoReconnect = autoReconnect;
@@ -467,11 +474,39 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return reconnectTask != null;
     }
 
+    public static boolean canAutoConnectNow() {
+        ConnectionManager current = instance;
+        return shouldAttemptAutomaticConnect(
+                current != null && current.isOpen(),
+                current != null && current.authenticated,
+                current != null && current.connectInProgress,
+                reconnectTask != null,
+                autoConnectSuppressedByManualDisconnect);
+    }
+
+    public static boolean isAutoConnectSuppressedByManualDisconnect() {
+        return autoConnectSuppressedByManualDisconnect;
+    }
+
     static void resetForTest() {
         autoReconnect = true;
         reconnectAttempt = 0;
+        autoConnectSuppressedByManualDisconnect = false;
         cancelReconnect();
         instance = null;
+    }
+
+    static boolean shouldAttemptAutomaticConnect(
+            boolean socketOpen,
+            boolean authenticated,
+            boolean connectInProgress,
+            boolean reconnectScheduled,
+            boolean manualDisconnectSuppressed) {
+        return !manualDisconnectSuppressed
+                && !socketOpen
+                && !authenticated
+                && !connectInProgress
+                && !reconnectScheduled;
     }
 
     private static void notifyManualConnectRequired() {

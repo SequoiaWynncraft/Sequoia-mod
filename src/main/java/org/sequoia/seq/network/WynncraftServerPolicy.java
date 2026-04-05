@@ -24,6 +24,10 @@ public final class WynncraftServerPolicy {
                 currentServerAddress(), minecraft.isLocalServer(), minecraft.hasSingleplayerServer(), minecraft.getConnection() != null);
     }
 
+    public static String currentNormalizedHost() {
+        return normalizeHost(currentServerAddress());
+    }
+
     static Scope classifyAddress(String serverAddress) {
         String normalizedHost = normalizeHost(serverAddress);
         if (normalizedHost == null) {

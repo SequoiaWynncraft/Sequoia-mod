@@ -5,6 +5,7 @@ import com.collarmc.pounce.Preference;
 import com.collarmc.pounce.Subscribe;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.logging.LogUtils;
+import java.util.Objects;
 import lombok.Getter;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -38,6 +39,8 @@ import org.sequoia.seq.utils.rendering.nvg.NVGContext;
 import org.slf4j.Logger;
 
 public class SeqClient implements ClientModInitializer {
+    private static final long MAIN_SCOPE_RECOVERY_INTERVAL_MS = 60_000L;
+
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public static final Minecraft mc = Minecraft.getInstance();
@@ -111,6 +114,9 @@ public class SeqClient implements ClientModInitializer {
     private static KeyMapping openScreenKey;
     private static WynnClassType lastBroadcastPartyClass;
     private static boolean wasInPartyFinder;
+    private static WynncraftServerPolicy.Scope lastServerScope = WynncraftServerPolicy.Scope.BLOCKED;
+    private static String lastServerHost;
+    private static long lastProductionRecoveryAttemptAtMs;
 
     @Override
     public void onInitializeClient() {
@@ -147,6 +153,9 @@ public class SeqClient implements ClientModInitializer {
             }
 
             WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+            String currentHost = WynncraftServerPolicy.currentNormalizedHost();
+            WynncraftServerPolicy.Scope previousServerScope = lastServerScope;
+            logServerScopeChange(serverScope, currentHost);
             if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
                 ConnectionManager.disconnectForBlockedServer();
                 wasInPartyFinder = false;
@@ -166,6 +175,8 @@ public class SeqClient implements ClientModInitializer {
                 ConnectionManager.flushPendingOutbound();
                 return;
             }
+
+            maybeRecoverProductionConnection(serverScope, previousServerScope, currentHost);
 
             if (partyFinderManager != null) {
                 partyFinderManager.tickOpenPartyAnnouncements();
@@ -205,6 +216,91 @@ public class SeqClient implements ClientModInitializer {
             }
             wasInPartyFinder = true;
         });
+    }
+
+    private static void logServerScopeChange(WynncraftServerPolicy.Scope serverScope, String currentHost) {
+        if (serverScope == lastServerScope && Objects.equals(currentHost, lastServerHost)) {
+            return;
+        }
+        LOGGER.info(
+                "[Seq] Wynncraft scope changed {} -> {} host={} previousHost={}",
+                lastServerScope,
+                serverScope,
+                currentHost,
+                lastServerHost);
+        lastServerScope = serverScope;
+        lastServerHost = currentHost;
+    }
+
+    private static void maybeRecoverProductionConnection(
+            WynncraftServerPolicy.Scope serverScope,
+            WynncraftServerPolicy.Scope previousScope,
+            String currentHost) {
+        if (serverScope != WynncraftServerPolicy.Scope.MAIN || autoConnectSetting == null || !autoConnectSetting.getValue()) {
+            return;
+        }
+
+        if (ConnectionManager.isConnected()) {
+            lastProductionRecoveryAttemptAtMs = System.currentTimeMillis();
+            return;
+        }
+
+        if (!ConnectionManager.canAutoConnectNow()) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        AutoConnectTrigger trigger = determineAutoConnectTrigger(
+                true,
+                serverScope,
+                previousScope,
+                true,
+                now,
+                lastProductionRecoveryAttemptAtMs,
+                MAIN_SCOPE_RECOVERY_INTERVAL_MS);
+        if (trigger == AutoConnectTrigger.NONE) {
+            return;
+        }
+
+        lastProductionRecoveryAttemptAtMs = now;
+        LOGGER.info(
+                "[Seq] Triggering production reconnect reason={} host={} manualSuppressed={}",
+                trigger.logName,
+                currentHost,
+                ConnectionManager.isAutoConnectSuppressedByManualDisconnect());
+        ConnectionManager.getInstance().connect();
+    }
+
+    enum AutoConnectTrigger {
+        NONE("none"),
+        SCOPE_RECOVERY("scope_recovery"),
+        PERIODIC_RECOVERY("periodic_recovery");
+
+        private final String logName;
+
+        AutoConnectTrigger(String logName) {
+            this.logName = logName;
+        }
+    }
+
+    static AutoConnectTrigger determineAutoConnectTrigger(
+            boolean autoConnectEnabled,
+            WynncraftServerPolicy.Scope currentScope,
+            WynncraftServerPolicy.Scope previousScope,
+            boolean canAutoConnectNow,
+            long nowMs,
+            long lastRecoveryAttemptAtMs,
+            long recoveryIntervalMs) {
+        if (!autoConnectEnabled || currentScope != WynncraftServerPolicy.Scope.MAIN || !canAutoConnectNow) {
+            return AutoConnectTrigger.NONE;
+        }
+        if (previousScope != WynncraftServerPolicy.Scope.MAIN) {
+            return AutoConnectTrigger.SCOPE_RECOVERY;
+        }
+        if (nowMs - lastRecoveryAttemptAtMs >= recoveryIntervalMs) {
+            return AutoConnectTrigger.PERIODIC_RECOVERY;
+        }
+        return AutoConnectTrigger.NONE;
     }
 
     public static void openMainScreen() {
