@@ -2,7 +2,9 @@ package org.sequoia.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
@@ -76,5 +78,20 @@ class ChatManagerTest {
                 "󏿼󏿿󏿾 Territory Gelibord is producing more resources than it\n󏿼󐀆 can store!")));
         assertNull(ChatManager.parseGuildMessage(Component.literal(
                 "󏿼󐀆 Purprated rewarded 1024 Emeralds to cinfrascitizen")));
+    }
+
+    @Test
+    void detectsUpdatedWynncraftWelcomeBanner() {
+        Component message = Component.literal(
+                "\n󐁙Welcome to Wynncraft!\n󐀻play.wynncraft.com -/- wynncraft.com\n\n󐁄WYNNCRAFT: FRUMA EXPANSION\n󐂁OUT NOW!\n󐂚\n󐀲Discover Fruma: wynncraft.com/fruma");
+
+        assertTrue(ChatManager.isWynncraftWelcomeMessage(message));
+    }
+
+    @Test
+    void doesNotTreatOrdinaryChatMentionAsWelcomeBanner() {
+        Component message = Component.literal("Frieren: Welcome to Wynncraft! meet me on EU7");
+
+        assertFalse(ChatManager.isWynncraftWelcomeMessage(message));
     }
 }

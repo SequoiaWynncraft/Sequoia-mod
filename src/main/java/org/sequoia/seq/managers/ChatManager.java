@@ -59,7 +59,8 @@ public class ChatManager {
     private static volatile String lastOutgoingKey;
     private static volatile Instant lastOutgoingAt = Instant.EPOCH;
 
-    private static final Pattern WYNNCRAFT_WELCOME_PATTERN = Pattern.compile("§6§lWelcome to Wynncraft!");
+    private static final Pattern WYNNCRAFT_WELCOME_PATTERN = Pattern.compile("Welcome to Wynncraft!",
+            Pattern.CASE_INSENSITIVE);
 
     private static boolean firstConnect = true;
 
@@ -76,8 +77,7 @@ public class ChatManager {
      */
     public static void onSystemChat(Component message) {
         // Bumliotech goon parser to auto goon.
-        Matcher welcomeMatcher = WYNNCRAFT_WELCOME_PATTERN.matcher(message.getString());
-        if (SeqClient.getAutoConnectSetting().getValue() && welcomeMatcher.find() && mc.player != null
+        if (SeqClient.getAutoConnectSetting().getValue() && isWynncraftWelcomeMessage(message) && mc.player != null
                 && !ConnectionManager.getInstance().isOpen() && firstConnect) {
             firstConnect = !firstConnect;
             mc.execute(() -> mc.player.connection.sendCommand("seq connect"));
@@ -164,6 +164,16 @@ public class ChatManager {
                 + "/128";
         String nickname = deriveNickname(displayedName, avatarUsername);
         return new ParsedMessage(avatarUsername, nickname, content, avatarUrl);
+    }
+
+    static boolean isWynncraftWelcomeMessage(Component message) {
+        String normalized = PacketTextNormalizer.normalizeForParsing(message == null ? null : message.getString());
+        if (normalized.isEmpty()) {
+            return false;
+        }
+
+        Matcher welcomeMatcher = WYNNCRAFT_WELCOME_PATTERN.matcher(normalized);
+        return welcomeMatcher.find() && normalized.contains("play.wynncraft.com");
     }
 
     private static String deriveNickname(String displayedName, String actualUsername) {
