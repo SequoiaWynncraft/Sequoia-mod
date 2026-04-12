@@ -1267,6 +1267,7 @@ public class PartyFinderManager implements NotificationAccessor {
             case "The Nameless Anomaly" -> "TNA";
             case "The Canyon Colossus" -> "TCC";
             case "Nexus of Light" -> "NOL";
+            case "The Wartorn Palace" -> "TWP";
             case "Prelude to Annihilation" -> "ANNI";
             default -> normalizedName;
         };

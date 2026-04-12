@@ -30,6 +30,7 @@ public class AssetManager {
         "nol.png",
         "tcc.png",
         "tna.png",
+        "twp.png",
         "annihilation.png",
         "starup.png",
         "cross.png",

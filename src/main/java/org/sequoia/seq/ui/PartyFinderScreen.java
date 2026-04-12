@@ -36,6 +36,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         "Nexus of Light",
         "The Canyon Colossus",
         "The Nameless Anomaly",
+        "The Wartorn Palace",
         "Prelude to Annihilation",
     };
     private static final String[] PARTY_TAGS = {"Chill", "Grind"};
@@ -2746,6 +2747,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             case "The Nameless Anomaly" -> "TNA";
             case "The Canyon Colossus" -> "TCC";
             case "Nexus of Light" -> "NOL";
+            case "The Wartorn Palace" -> "TWP";
             case "Prelude to Annihilation" -> "PTA";
             default -> tag;
         };
