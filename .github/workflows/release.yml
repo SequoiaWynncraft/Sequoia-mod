@@ -11,6 +11,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      MODRINTH_PROJECT_SLUG: sequoia
 
     steps:
       - name: Checkout
@@ -29,6 +31,45 @@ jobs:
       - name: Build release jar
         run: ./gradlew clean build remapJar --stacktrace -Pbackend_environment=production
 
+      - name: Resolve release metadata
+        id: release_metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version_number="${GITHUB_REF_NAME#v}"
+          minecraft_version="$(sed -n 's/^minecraft_version=//p' gradle.properties)"
+          changelog="$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")"
+
+          mapfile -t release_jars < <(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' | sort)
+          if [[ "${#release_jars[@]}" -ne 1 ]]; then
+            echo "Expected exactly one release jar, found ${#release_jars[@]}" >&2
+            printf 'Found jars:\n%s\n' "${release_jars[@]}" >&2
+            exit 1
+          fi
+
+          version_type="release"
+          normalized_version="${version_number,,}"
+          if [[ "$normalized_version" == *alpha* ]]; then
+            version_type="alpha"
+          elif [[ "$normalized_version" == *beta* ]]; then
+            version_type="beta"
+          fi
+
+          if [[ -z "$changelog" || "$changelog" == "$GITHUB_REF_NAME" ]]; then
+            changelog="GitHub release notes: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"
+          fi
+
+          {
+            echo "mod_jar=${release_jars[0]}"
+            echo "minecraft_version=${minecraft_version}"
+            echo "version_number=${version_number}"
+            echo "version_type=${version_type}"
+            echo "changelog<<EOF"
+            echo "${changelog}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Generate SHA-256 files
         shell: bash
         run: |
@@ -44,3 +85,53 @@ jobs:
           files: |
             build/libs/*.jar
             build/libs/*.jar.sha256
+
+      - name: Publish to Modrinth
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${MODRINTH_TOKEN}" ]]; then
+            echo "MODRINTH_TOKEN secret is required to publish tagged releases to Modrinth." >&2
+            exit 1
+          fi
+
+          project_id="$(curl --fail --show-error --silent \
+            -H "User-Agent: SequoiaWynncraft/sequoia-mod-release-workflow" \
+            "https://api.modrinth.com/v2/project/${MODRINTH_PROJECT_SLUG}" | jq -r '.id')"
+
+          if [[ -z "${project_id}" || "${project_id}" == "null" ]]; then
+            echo "Failed to resolve Modrinth project ID for slug ${MODRINTH_PROJECT_SLUG}." >&2
+            exit 1
+          fi
+
+          payload="$(jq -cn \
+            --arg name "Sequoia ${{ steps.release_metadata.outputs.version_number }}" \
+            --arg version_number "${{ steps.release_metadata.outputs.version_number }}" \
+            --arg changelog "${{ steps.release_metadata.outputs.changelog }}" \
+            --arg project_id "${project_id}" \
+            --arg minecraft_version "${{ steps.release_metadata.outputs.minecraft_version }}" \
+            --arg version_type "${{ steps.release_metadata.outputs.version_type }}" \
+            '{
+              name: $name,
+              version_number: $version_number,
+              changelog: $changelog,
+              project_id: $project_id,
+              game_versions: [$minecraft_version],
+              version_type: $version_type,
+              loaders: ["fabric"],
+              featured: true,
+              status: "listed",
+              file_parts: ["primary"],
+              primary_file: "primary"
+            }'
+          )"
+
+          curl --fail-with-body --show-error --silent \
+            -X POST "https://api.modrinth.com/v2/version" \
+            -H "Authorization: ${MODRINTH_TOKEN}" \
+            -H "User-Agent: SequoiaWynncraft/sequoia-mod-release-workflow" \
+            --form-string "data=${payload}" \
+            -F "primary=@${{ steps.release_metadata.outputs.mod_jar }}"
