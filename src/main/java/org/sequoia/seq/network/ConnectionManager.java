@@ -294,10 +294,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 handshake != null ? handshake.getHttpStatusMessage() : "null");
         connectInProgress = false;
         reconnectAttempt = 0;
-        authenticated = true;
+        authenticated = false;
         authFailed = false;
         notInGuild = false;
-        connectedSince = Instant.now();
+        connectedSince = null;
         autoReconnect = true;
         authAttempt = 0;
         nextAllowedAuthAttemptAtMs = 0;
@@ -306,18 +306,15 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         if (pendingAuthFlow == AuthFlow.LINK) {
             notifyConnectionStatus(
                     username != null && !username.isBlank()
-                            ? "Authenticated Minecraft account: " + username
-                            : "Authenticated Minecraft account.");
-            requestDiscordLink(true);
+                            ? "Connected websocket for " + username + ". Waiting for backend authentication..."
+                            : "Connected websocket. Waiting for backend authentication...");
         } else {
             notifyConnectionStatus(
                     username != null && !username.isBlank()
-                            ? "Connected as " + username
-                            : "Connected to " + BuildConfig.ENVIRONMENT + ".");
+                            ? "Connected websocket for " + username + ". Waiting for backend authentication..."
+                            : "Connected websocket to " + BuildConfig.ENVIRONMENT + ". Waiting for backend authentication...");
         }
         finishConnectFlow();
-        flushPendingGuildWarSubmissions();
-        sendLocalPartyClassUpdate();
     }
 
     @Override
@@ -366,6 +363,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 ex != null ? ex.getMessage() : "null",
                 ex);
         connectInProgress = false;
+        authenticated = false;
+        connectedSince = null;
         notifyConnectionFailure("Connection error: " + (ex != null ? ex.getMessage() : "unknown"), false);
         finishConnectFlow();
     }
