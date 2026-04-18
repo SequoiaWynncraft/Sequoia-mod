@@ -971,6 +971,17 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 party.closeReason);
         rowX += STATUS_BADGE_W + 8;
 
+        float rightX = x + w - CARD_PADDING;
+        float reservedRightWidth = 22;
+        for (int j = 0; j < party.members.size(); j++) {
+            if (getClassIcon(party.members.get(j).className) != null) {
+                reservedRightWidth += CLASS_ICON_SIZE + 4;
+            }
+        }
+        reservedRightWidth += 6;
+        reservedRightWidth += nvgTextBounds(nvg, 0, 0, getPartyCardLabel(party), new float[4]);
+        float leaderTextMaxX = rightX - reservedRightWidth;
+
         PartyMember leader = party.getLeader();
         if (leader != null) {
             String leaderName = leader.displayName();
@@ -986,11 +997,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
             var nc = NVGContext.nvgColor(MEMBER_TEXT_COLOR);
             nvgFillColor(nvg, nc);
-            nvgText(nvg, rowX, centerY, leaderName);
+            String clippedLeaderName = fitTextToWidth(nvg, leaderName, Math.max(0, leaderTextMaxX - rowX));
+            if (!clippedLeaderName.isEmpty()) {
+                nvgText(nvg, rowX, centerY, clippedLeaderName);
+            }
             nc.free();
         }
-
-        float rightX = x + w - CARD_PADDING;
 
         // Expand "+"
         nvgFontFace(nvg, fontName);
@@ -1020,6 +1032,32 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFillColor(nvg, tc);
         nvgText(nvg, rightX, centerY, getPartyCardLabel(party));
         tc.free();
+    }
+
+    private String fitTextToWidth(long nvg, String text, float maxWidth) {
+        if (text == null || text.isEmpty() || maxWidth <= 0) {
+            return "";
+        }
+
+        float fullWidth = nvgTextBounds(nvg, 0, 0, text, new float[4]);
+        if (fullWidth <= maxWidth) {
+            return text;
+        }
+
+        String ellipsis = "...";
+        float ellipsisWidth = nvgTextBounds(nvg, 0, 0, ellipsis, new float[4]);
+        if (ellipsisWidth > maxWidth) {
+            return "";
+        }
+
+        for (int end = text.length() - 1; end > 0; end--) {
+            String candidate = text.substring(0, end) + ellipsis;
+            if (nvgTextBounds(nvg, 0, 0, candidate, new float[4]) <= maxWidth) {
+                return candidate;
+            }
+        }
+
+        return ellipsis;
     }
 
     private void renderMemberRow(
