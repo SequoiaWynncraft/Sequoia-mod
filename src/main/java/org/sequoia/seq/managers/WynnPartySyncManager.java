@@ -37,6 +37,8 @@ public class WynnPartySyncManager {
             Pattern.compile("^(.+?) is now the Party Leader!$", Pattern.CASE_INSENSITIVE);
     private static final Pattern PARTY_DISBANDED_PATTERN =
             Pattern.compile("^Your party has been disbanded\\.?$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PARTY_MEMBERS_PATTERN =
+            Pattern.compile("^Party members:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Duration DUPLICATE_WINDOW = Duration.ofMillis(750);
     private static final Duration HEARTBEAT_RESEND_INTERVAL = Duration.ofSeconds(60);
@@ -112,6 +114,19 @@ public class WynnPartySyncManager {
                     observedUsername);
             handleLeaderChanged(observedUsername);
             return;
+        }
+
+        Matcher membersMatcher = PARTY_MEMBERS_PATTERN.matcher(normalized);
+        if (membersMatcher.matches()) {
+            List<String> snapshotMembers = parseAuthoritativeMembersSnapshot(membersMatcher.group(1));
+            if (!snapshotMembers.isEmpty()) {
+                SeqClient.LOGGER.info(
+                        "[WynnPartySync] Detected authoritative party members snapshot members={}",
+                        snapshotMembers);
+                handleAuthoritativeMembersSnapshot(snapshotMembers);
+                return;
+            }
+            SeqClient.LOGGER.debug("[WynnPartySync] Ignoring invalid party members snapshot raw='{}'", normalized);
         }
 
         if (PARTY_DISBANDED_PATTERN.matcher(normalized).matches()) {
@@ -261,6 +276,17 @@ public class WynnPartySyncManager {
         logObservedState("leader");
     }
 
+    private void handleAuthoritativeMembersSnapshot(List<String> usernames) {
+        observedState.initialized = true;
+        observedState.active = true;
+
+        String preservedLeader = findMatchingUsername(usernames, observedState.leaderUsername);
+        observedState.memberUsernames.clear();
+        observedState.memberUsernames.addAll(usernames);
+        observedState.leaderUsername = preservedLeader != null ? preservedLeader : usernames.get(0);
+        logObservedState("members_snapshot");
+    }
+
     private void handlePartyDisbanded() {
         if (!observedState.initialized) {
             SeqClient.LOGGER.debug("[WynnPartySync] Ignoring disband event before party creation");
@@ -350,9 +376,47 @@ public class WynnPartySyncManager {
         return null;
     }
 
+    private List<String> parseAuthoritativeMembersSnapshot(String rawMembersTail) {
+        if (rawMembersTail == null || rawMembersTail.isBlank()) {
+            return List.of();
+        }
+
+        String membersTail = rawMembersTail;
+        int inviteMarkerIndex = membersTail.toLowerCase(Locale.ROOT).indexOf("click to invite:");
+        if (inviteMarkerIndex >= 0) {
+            membersTail = membersTail.substring(0, inviteMarkerIndex);
+        }
+        membersTail = membersTail.trim();
+        if (membersTail.isBlank()) {
+            return List.of();
+        }
+
+        String[] tokens = membersTail.split("\\s*,\\s*(?:and\\s+)?|\\s+and\\s+");
+        List<String> usernames = new ArrayList<>();
+        for (String token : tokens) {
+            String username = token == null ? "" : token.trim();
+            if (MC_USERNAME_PATTERN.matcher(username).matches()) {
+                usernames.add(username);
+            }
+        }
+        return usernames;
+    }
+
+    private String findMatchingUsername(List<String> usernames, String expectedUsername) {
+        if (expectedUsername == null || expectedUsername.isBlank()) {
+            return null;
+        }
+        for (String username : usernames) {
+            if (username.equalsIgnoreCase(expectedUsername)) {
+                return username;
+            }
+        }
+        return null;
+    }
+
     private String getLocalUsername() {
         String localUsername = null;
-        if (SeqClient.mc.player != null && SeqClient.mc.player.getName() != null) {
+        if (SeqClient.mc != null && SeqClient.mc.player != null && SeqClient.mc.player.getName() != null) {
             localUsername = SeqClient.mc.player.getName().getString();
         }
         if (localUsername == null || localUsername.isBlank()) {
