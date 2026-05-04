@@ -121,6 +121,7 @@ jobs:
               project_id: $project_id,
               game_versions: [$minecraft_version],
               version_type: $version_type,
+              dependencies: [],
               loaders: ["fabric"],
               featured: true,
               status: "listed",
