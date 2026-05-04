@@ -9,6 +9,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.IntSupplier;
@@ -306,6 +307,11 @@ public final class GuildStorageTracker implements NotificationAccessor {
         }
 
         return Optional.empty();
+    }
+
+    public static OptionalLong extractCurrentEmeralds(AbstractContainerMenu menu) {
+        return extractSnapshot(menu).map(snapshot -> OptionalLong.of(snapshot.emeralds().current()))
+                .orElseGet(OptionalLong::empty);
     }
 
     static StorageSnapshot parseSnapshot(ItemStack stack) {
