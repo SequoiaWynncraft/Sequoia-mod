@@ -105,7 +105,6 @@ public final class GuildStorageShortcutOverlay {
                 SEND_EMERALDS_HOTBAR_BUTTON,
                 ClickType.SWAP,
                 minecraft.player);
-        NotificationAccessor.notifyPlayer("Sending guild storage emeralds to " + RECIPIENT + ".");
         SeqClient.LOGGER.info(
                 "[GuildStorage] Shortcut pressed hotbar button {} on slot {} for {}",
                 SEND_EMERALDS_HOTBAR_BUTTON,
