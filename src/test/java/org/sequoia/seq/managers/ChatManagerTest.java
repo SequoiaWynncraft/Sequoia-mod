@@ -10,6 +10,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
 import org.junit.jupiter.api.Test;
+import org.sequoia.seq.integrations.WynntilsGuildRankAccess;
 
 class ChatManagerTest {
 
@@ -93,5 +94,29 @@ class ChatManagerTest {
         Component message = Component.literal("Frieren: Welcome to Wynncraft! meet me on EU7");
 
         assertFalse(ChatManager.isWynncraftWelcomeMessage(message));
+    }
+
+    @Test
+    void relaysGuildChatWhenWynntilsMembershipIsUnavailable() {
+        WynntilsGuildRankAccess.GuildMembership membership =
+                new WynntilsGuildRankAccess.GuildMembership(false, false, null);
+
+        assertTrue(ChatManager.shouldRelayForGuild(membership));
+    }
+
+    @Test
+    void relaysGuildChatForExpectedWynntilsGuild() {
+        WynntilsGuildRankAccess.GuildMembership membership =
+                new WynntilsGuildRankAccess.GuildMembership(true, true, "Sequoia");
+
+        assertTrue(ChatManager.shouldRelayForGuild(membership));
+    }
+
+    @Test
+    void dropsGuildChatForOtherKnownWynntilsGuild() {
+        WynntilsGuildRankAccess.GuildMembership membership =
+                new WynntilsGuildRankAccess.GuildMembership(true, false, "Other Guild");
+
+        assertFalse(ChatManager.shouldRelayForGuild(membership));
     }
 }

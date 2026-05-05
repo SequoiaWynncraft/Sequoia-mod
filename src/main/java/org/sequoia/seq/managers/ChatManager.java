@@ -8,6 +8,7 @@ import net.minecraft.network.chat.Style;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.events.DiscordChatEvent;
+import org.sequoia.seq.integrations.WynntilsGuildRankAccess;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.utils.PacketTextNormalizer;
 
@@ -42,6 +43,7 @@ public class ChatManager {
      * shout uses §#bd45ffff, territory/battle info uses §c, etc.
      */
     private static final int GUILD_CHAT_COLOR = 0x55FFFF;
+    private static final String BACKEND_GUILD_NAME = "Sequoia";
     // Nicknames may contain spaces (e.g. "Emanant Force"), so allow spaces in the
     // display-name capture group. DOTALL so the message group captures across \n.
     // Packet-level normalization strips the icon/banner glyph spam before matching.
@@ -93,6 +95,9 @@ public class ChatManager {
         if (!ConnectionManager.isConnected())
             return;
 
+        if (!shouldRelayForLocalGuild())
+            return;
+
         ParsedMessage parsed = parseGuildMessage(message);
         if (parsed == null)
             return;
@@ -117,6 +122,23 @@ public class ChatManager {
                 parsed.nickname(),
                 parsed.message(),
                 parsed.avatarUrl());
+    }
+
+    private static boolean shouldRelayForLocalGuild() {
+        WynntilsGuildRankAccess.GuildMembership membership =
+                WynntilsGuildRankAccess.guildMembership(BACKEND_GUILD_NAME);
+        boolean shouldRelay = shouldRelayForGuild(membership);
+        if (!shouldRelay) {
+            SeqClient.LOGGER.debug(
+                    "[GuildChat] Dropping guild chat relay: local Wynntils guild='{}' expected='{}'",
+                    membership.currentGuildName(),
+                    BACKEND_GUILD_NAME);
+        }
+        return shouldRelay;
+    }
+
+    static boolean shouldRelayForGuild(WynntilsGuildRankAccess.GuildMembership membership) {
+        return membership == null || !membership.available() || membership.inExpectedGuild();
     }
 
     /**
