@@ -185,6 +185,72 @@ class GuildStorageTrackerTest {
     }
 
     @Test
+    void publishSnapshotIfNeededSendsFirstChangeImmediatelyAndDebouncesRapidChanges() {
+        List<GuildStorageTracker.StorageSnapshot> published = new ArrayList<>();
+        AtomicLong now = new AtomicLong(10_000L);
+        GuildStorageTracker tracker = new GuildStorageTracker(
+                published::add,
+                reward -> {},
+                message -> {},
+                () -> true,
+                () -> 100,
+                () -> 100,
+                now::get);
+        GuildStorageTracker.StorageSnapshot first = new GuildStorageTracker.StorageSnapshot(
+                new GuildStorageTracker.ResourceSnapshot(20_000, 92_160),
+                new GuildStorageTracker.ResourceSnapshot(10, 120));
+        GuildStorageTracker.StorageSnapshot second = new GuildStorageTracker.StorageSnapshot(
+                new GuildStorageTracker.ResourceSnapshot(20_001, 92_160),
+                new GuildStorageTracker.ResourceSnapshot(10, 120));
+        GuildStorageTracker.StorageSnapshot latest = new GuildStorageTracker.StorageSnapshot(
+                new GuildStorageTracker.ResourceSnapshot(20_002, 92_160),
+                new GuildStorageTracker.ResourceSnapshot(11, 120));
+
+        tracker.publishSnapshotIfNeeded(first, true);
+        now.addAndGet(200L);
+        tracker.publishSnapshotIfNeeded(second, true);
+        now.addAndGet(200L);
+        tracker.publishSnapshotIfNeeded(latest, true);
+        tracker.flushPendingSnapshotIfReady(false, true);
+
+        assertEquals(List.of(first), published);
+
+        now.addAndGet(GuildStorageTracker.STORAGE_SNAPSHOT_PUBLISH_INTERVAL_MS);
+        tracker.flushPendingSnapshotIfReady(false, true);
+
+        assertEquals(List.of(first, latest), published);
+    }
+
+    @Test
+    void resetClearsPendingSnapshotPublish() {
+        List<GuildStorageTracker.StorageSnapshot> published = new ArrayList<>();
+        AtomicLong now = new AtomicLong(10_000L);
+        GuildStorageTracker tracker = new GuildStorageTracker(
+                published::add,
+                reward -> {},
+                message -> {},
+                () -> true,
+                () -> 100,
+                () -> 100,
+                now::get);
+        GuildStorageTracker.StorageSnapshot first = new GuildStorageTracker.StorageSnapshot(
+                new GuildStorageTracker.ResourceSnapshot(20_000, 92_160),
+                new GuildStorageTracker.ResourceSnapshot(10, 120));
+        GuildStorageTracker.StorageSnapshot pending = new GuildStorageTracker.StorageSnapshot(
+                new GuildStorageTracker.ResourceSnapshot(20_001, 92_160),
+                new GuildStorageTracker.ResourceSnapshot(10, 120));
+
+        tracker.publishSnapshotIfNeeded(first, true);
+        now.addAndGet(200L);
+        tracker.publishSnapshotIfNeeded(pending, true);
+        tracker.reset();
+        now.addAndGet(GuildStorageTracker.STORAGE_SNAPSHOT_PUBLISH_INTERVAL_MS);
+        tracker.flushPendingSnapshotIfReady(true, true);
+
+        assertEquals(List.of(first), published);
+    }
+
+    @Test
     void parseRewardGrantResolvesNicknameToUsername() {
         Style senderStyle = Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
                 Component.literal("Total Obliteration's real name is Dwoc")));

@@ -41,6 +41,7 @@ public final class GuildStorageTracker implements NotificationAccessor {
     static final long REWARD_BURST_MAX_WINDOW_MS = 30_000L;
     static final long REWARD_PACKET_OBSERVATION_WINDOW_MS = 2_000L;
     static final long LOCAL_SNAPSHOT_AUTHORITY_WINDOW_MS = 5_000L;
+    static final long STORAGE_SNAPSHOT_PUBLISH_INTERVAL_MS = 1_000L;
     private static final int MAX_RECENT_REWARD_OBSERVATIONS = 256;
     private static final Pattern EMERALDS_PATTERN =
             Pattern.compile("(?i)^emeralds:\\s*([\\d, ]+)\\s*/\\s*([\\d, ]+)$");
@@ -65,6 +66,8 @@ public final class GuildStorageTracker implements NotificationAccessor {
     private StorageSnapshot currentSnapshot;
     private StorageSnapshot lastPublishedSnapshot;
     private long lastObservedSnapshotAtMs;
+    private long lastPublishedSnapshotAtMs;
+    private StorageSnapshot pendingSnapshot;
     private final Map<RewardBurstKey, RewardBurstAccumulator> pendingRewardBursts = new LinkedHashMap<>();
 
     public static synchronized GuildStorageTracker getInstance() {
@@ -120,14 +123,17 @@ public final class GuildStorageTracker implements NotificationAccessor {
 
     public void tick() {
         if (!trackingEnabled.getAsBoolean()) {
+            clearPendingSnapshot();
             return;
         }
 
         if (!ConnectionManager.isConnected()) {
             lastPublishedSnapshot = null;
+            clearPendingSnapshot();
         }
 
         flushReadyRewardBursts(false);
+        flushPendingSnapshotIfReady(false, ConnectionManager.isConnected());
 
         StorageSnapshot observed = observeCurrentSnapshot();
         if (observed == null) {
@@ -187,7 +193,9 @@ public final class GuildStorageTracker implements NotificationAccessor {
         flushReadyRewardBursts(true);
         currentSnapshot = null;
         lastPublishedSnapshot = null;
+        lastPublishedSnapshotAtMs = 0L;
         lastObservedSnapshotAtMs = 0L;
+        clearPendingSnapshot();
         pendingRewardBursts.clear();
     }
 
@@ -226,7 +234,7 @@ public final class GuildStorageTracker implements NotificationAccessor {
         }
 
         if (publishUpdate) {
-            publishSnapshotIfNeeded(snapshot);
+            publishSnapshotIfNeeded(snapshot, ConnectionManager.isConnected());
         }
     }
 
@@ -402,16 +410,58 @@ public final class GuildStorageTracker implements NotificationAccessor {
         return new RewardGrant(senderUsername, recipientUsername, ResourceType.ASPECTS, amount);
     }
 
-    private void publishSnapshotIfNeeded(StorageSnapshot snapshot) {
-        if (!ConnectionManager.isConnected()) {
+    void publishSnapshotIfNeeded(StorageSnapshot snapshot, boolean connected) {
+        if (!connected) {
+            clearPendingSnapshot();
             return;
         }
         if (snapshot.equals(lastPublishedSnapshot)) {
+            if (snapshot.equals(pendingSnapshot)) {
+                pendingSnapshot = null;
+            }
             return;
         }
 
+        long now = clockMsSupplier.getAsLong();
+        if (lastPublishedSnapshot == null
+                || now - lastPublishedSnapshotAtMs >= STORAGE_SNAPSHOT_PUBLISH_INTERVAL_MS) {
+            publishSnapshotNow(snapshot, now);
+            return;
+        }
+
+        pendingSnapshot = snapshot;
+    }
+
+    void flushPendingSnapshotIfReady(boolean force, boolean connected) {
+        if (pendingSnapshot == null) {
+            return;
+        }
+        if (!connected) {
+            clearPendingSnapshot();
+            return;
+        }
+
+        long now = clockMsSupplier.getAsLong();
+        if (!force && now - lastPublishedSnapshotAtMs < STORAGE_SNAPSHOT_PUBLISH_INTERVAL_MS) {
+            return;
+        }
+
+        StorageSnapshot snapshot = pendingSnapshot;
+        pendingSnapshot = null;
+        if (!snapshot.equals(lastPublishedSnapshot)) {
+            publishSnapshotNow(snapshot, now);
+        }
+    }
+
+    private void publishSnapshotNow(StorageSnapshot snapshot, long now) {
         snapshotPublisher.accept(snapshot);
         lastPublishedSnapshot = snapshot;
+        lastPublishedSnapshotAtMs = now;
+        pendingSnapshot = null;
+    }
+
+    private void clearPendingSnapshot() {
+        pendingSnapshot = null;
     }
 
     private void recordRewardGrant(RewardGrant rewardGrant) {

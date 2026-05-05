@@ -107,4 +107,19 @@ class ConnectionManagerTest {
         assertFalse(ConnectionManager.shouldAttemptAutomaticConnect(false, true, false, false, false));
         assertFalse(ConnectionManager.shouldAttemptAutomaticConnect(false, false, true, false, false));
     }
+
+    @Test
+    void guildStorageMessagesAreServerScopedAuthenticatedOutbound() {
+        assertTrue(ConnectionManager.isServerScopedType("guild_storage_snapshot"));
+        assertTrue(ConnectionManager.isServerScopedType("guild_storage_reward"));
+        assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_storage_snapshot"));
+        assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_storage_reward"));
+    }
+
+    @Test
+    void guildStorageMessagesDoNotUseGenericPrivilegedThrottle() {
+        assertFalse(ConnectionManager.isThrottleLimitedType("guild_storage_snapshot"));
+        assertFalse(ConnectionManager.isThrottleLimitedType("guild_storage_reward"));
+        assertTrue(ConnectionManager.isThrottleLimitedType("guild_chat"));
+    }
 }

@@ -524,11 +524,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // ── Outgoing messages ──
 
     private void send(String type, JsonObject payload) {
-        if (isPrivilegedType(type) && WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
+        if (isServerScopedType(type) && WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
             SeqClient.LOGGER.warn("[WebSocket] Dropping {} outside confirmed main Wynncraft host", type);
             return;
         }
-        if (isPrivilegedType(type) && !canSendPrivileged(type)) {
+        if (isAuthenticatedOutboundType(type) && !canSendAuthenticated(type)) {
+            return;
+        }
+        if (isThrottleLimitedType(type) && !canSendThrottleLimited(type)) {
             return;
         }
         sendPrepared(type, payload);
@@ -1062,7 +1065,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private boolean sendGuildWarSubmissionNow(GuildWarSubmission submission, boolean replay) {
-        if (!canSendPrivileged("guild_war_submission")) {
+        if (!canSendAuthenticated("guild_war_submission") || !canSendThrottleLimited("guild_war_submission")) {
             return false;
         }
         JsonObject payload = buildGuildWarSubmissionPayload(submission);
@@ -1463,7 +1466,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         nextAllowedAuthAttemptAtMs = System.currentTimeMillis() + delay;
     }
 
-    private boolean canSendPrivileged(String type) {
+    private boolean canSendAuthenticated(String type) {
         if (!authenticated || authFailed || notInGuild) {
             SeqClient.LOGGER.warn(
                     "[WebSocket] Dropping {}: authenticated={} authFailed={} notInGuild={}",
@@ -1473,6 +1476,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     notInGuild);
             return false;
         }
+        return true;
+    }
+
+    private boolean canSendThrottleLimited(String type) {
         long now = System.currentTimeMillis();
         if (now < nextPrivilegedSendAtMs) {
             SeqClient.LOGGER.debug("[WebSocket] Throttled {} send", type);
@@ -1482,7 +1489,25 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return true;
     }
 
-    private static boolean isPrivilegedType(String type) {
+    static boolean isAuthenticatedOutboundType(String type) {
+        return isServerScopedType(type);
+    }
+
+    static boolean isServerScopedType(String type) {
+        return "guild_chat".equals(type)
+                || "guild_raid_announcement".equals(type)
+                || "guild_bank_event".equals(type)
+                || "guild_storage_snapshot".equals(type)
+                || "guild_storage_reward".equals(type)
+                || "guild_war_submission".equals(type)
+                || "party_class_update".equals(type)
+                || "party_sync_snapshot".equals(type)
+                || "party_sync_member_removed".equals(type)
+                || "link_request".equals(type)
+                || "get_connected".equals(type);
+    }
+
+    static boolean isThrottleLimitedType(String type) {
         return "guild_chat".equals(type)
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)
