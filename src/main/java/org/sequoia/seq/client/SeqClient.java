@@ -20,6 +20,7 @@ import org.sequoia.seq.events.GameStartEvent;
 import org.sequoia.seq.events.MinecraftFinishedLoading;
 import org.sequoia.seq.command.SeqCommand;
 import org.sequoia.seq.managers.AssetManager;
+import org.sequoia.seq.managers.BombShareManager;
 import org.sequoia.seq.managers.ChatManager;
 import org.sequoia.seq.managers.FontManager;
 import org.sequoia.seq.managers.GameManager;
@@ -65,6 +66,9 @@ public class SeqClient implements ClientModInitializer {
 
     public static ChatManager chatManager;
 
+    @Getter
+    public static BombShareManager bombShareManager;
+
     // ── Network config settings ──
     @Getter
     public static Setting.BooleanSetting autoConnectSetting;
@@ -106,6 +110,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting syncWynnPartySetting;
 
     @Getter
+    public static Setting.BooleanSetting receiveBombShareRequestsSetting;
+
+    @Getter
     public static WynnPartySyncManager wynnPartySyncManager;
 
     @Getter
@@ -115,6 +122,7 @@ public class SeqClient implements ClientModInitializer {
     public static GuildStorageTracker guildStorageTracker;
 
     private static KeyMapping openScreenKey;
+    private static KeyMapping shareBombsKey;
     private static WynnClassType lastBroadcastPartyClass;
     private static boolean wasInPartyFinder;
     private static WynncraftServerPolicy.Scope lastServerScope = WynncraftServerPolicy.Scope.BLOCKED;
@@ -136,6 +144,7 @@ public class SeqClient implements ClientModInitializer {
         guildWarTracker = GuildWarTrackers.createIfAvailable();
         guildStorageTracker = GuildStorageTracker.getInstance();
         chatManager = new ChatManager();
+        bombShareManager = new BombShareManager();
         configManager = new ConfigManager();
         configManager.load();
         configManager.migrateToken();
@@ -147,11 +156,18 @@ public class SeqClient implements ClientModInitializer {
 
         openScreenKey = KeyBindingHelper.registerKeyBinding(
                 new KeyMapping("key.sequoia-mod.open_settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O, category));
+        shareBombsKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                "key.sequoia-mod.share_bombs", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openScreenKey.consumeClick()) {
                 if (client.screen == null) {
                     openMainScreen();
+                }
+            }
+            while (shareBombsKey.consumeClick()) {
+                if (bombShareManager != null) {
+                    bombShareManager.tryHotkeyShareLatestPendingPrompt();
                 }
             }
 
@@ -310,6 +326,10 @@ public class SeqClient implements ClientModInitializer {
         mc.execute(() -> mc.setScreen(new SequoiaScreen()));
     }
 
+    public static boolean isBombShareHotkeyDown() {
+        return shareBombsKey != null && shareBombsKey.isDown();
+    }
+
     @Subscribe(Preference.CALLER) // to stay in thread
     public void onMinecraftFinishedLoading(MinecraftFinishedLoading ignored) {
         // after minecraft done loading
@@ -334,6 +354,7 @@ public class SeqClient implements ClientModInitializer {
         announceOpenPartiesIntervalMinutesSetting =
                 new Setting.IntSetting("announce_open_parties_interval_minutes", "party_finder", 5, 1, 60);
         syncWynnPartySetting = new Setting.BooleanSetting("sync_with_wynn_party", "party_finder", true);
+        receiveBombShareRequestsSetting = new Setting.BooleanSetting("receive_bomb_share_requests", "network", true);
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
@@ -347,6 +368,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(announceOpenPartiesSetting);
         getConfigManager().register(announceOpenPartiesIntervalMinutesSetting);
         getConfigManager().register(syncWynnPartySetting);
+        getConfigManager().register(receiveBombShareRequestsSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.

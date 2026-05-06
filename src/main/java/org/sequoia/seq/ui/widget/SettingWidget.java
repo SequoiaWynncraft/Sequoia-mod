@@ -19,6 +19,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("track_guild_wars", "Track guild wars");
         DISPLAY_NAME_OVERRIDES.put("guild_wars", "Wars");
         DISPLAY_NAME_OVERRIDES.put("track_guild_storage", "Track guild storage");
+        DISPLAY_NAME_OVERRIDES.put("receive_bomb_share_requests", "Receive bomb share requests");
         DISPLAY_NAME_OVERRIDES.put("guild_storage_emerald_threshold_percent", "Guild storage emerald threshold %");
         DISPLAY_NAME_OVERRIDES.put("guild_storage_aspect_threshold_percent", "Guild storage aspect threshold %");
         DISPLAY_NAME_OVERRIDES.put("check_updates", "Check for updates on startup");

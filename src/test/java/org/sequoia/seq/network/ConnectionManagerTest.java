@@ -122,4 +122,14 @@ class ConnectionManagerTest {
         assertFalse(ConnectionManager.isThrottleLimitedType("guild_storage_reward"));
         assertTrue(ConnectionManager.isThrottleLimitedType("guild_chat"));
     }
+
+    @Test
+    void bombShareMessagesAreScopedAuthenticatedAndThrottleLimited() {
+        assertTrue(ConnectionManager.isServerScopedType("bomb_share_request"));
+        assertTrue(ConnectionManager.isServerScopedType("bomb_share_submit"));
+        assertTrue(ConnectionManager.isAuthenticatedOutboundType("bomb_share_request"));
+        assertTrue(ConnectionManager.isAuthenticatedOutboundType("bomb_share_submit"));
+        assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_request"));
+        assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_submit"));
+    }
 }

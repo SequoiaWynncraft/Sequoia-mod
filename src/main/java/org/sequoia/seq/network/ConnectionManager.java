@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Executors;
@@ -29,6 +30,7 @@ import org.java_websocket.handshake.ServerHandshake;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.managers.GuildStorageTracker;
+import org.sequoia.seq.model.BombShareType;
 import org.sequoia.seq.model.GuildWarSubmission;
 import org.sequoia.seq.model.WynnClassType;
 import org.sequoia.seq.network.auth.AuthErrorCode;
@@ -49,6 +51,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Pattern URL_PATTERN = Pattern.compile("^(https?://).+", Pattern.CASE_INSENSITIVE);
     private static final Map<String, Integer> VERSION_REMINDER_INTERVALS = Map.of(
+            "bomb_share_request", 5,
+            "bomb_share_submit", 5,
             "guild_chat", 20,
             "guild_raid_announcement", 5,
             "guild_bank_event", 10,
@@ -100,7 +104,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static Consumer<PartyFinderUpdateMessage> partyFinderUpdateHandler;
     private static Consumer<PartyFinderInviteMessage> partyFinderInviteHandler;
     private static Consumer<PartyFinderStaleWarningMessage> partyFinderStaleWarningHandler;
+    private static Consumer<BombSharePromptMessage> bombSharePromptHandler;
+    private static Consumer<BombShareResultMessage> bombShareResultHandler;
     private static final Map<String, Integer> versionRejectionCounts = new ConcurrentHashMap<>();
+    private final Map<String, BombSharePromptMessage> pendingBombSharePrompts = new ConcurrentHashMap<>();
     private volatile AuthFlow pendingAuthFlow = AuthFlow.CONNECT;
 
     public static ConnectionManager getInstance() {
@@ -703,6 +710,36 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return payload;
     }
 
+    static JsonObject buildBombShareRequestPayload(String canonicalKey, List<BombShareType> requestedTypes) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("canonical_key", canonicalKey);
+        JsonArray types = new JsonArray();
+        if (requestedTypes != null) {
+            for (BombShareType requestedType : requestedTypes) {
+                if (requestedType != null) {
+                    types.add(requestedType.name());
+                }
+            }
+        }
+        payload.add("requested_types", types);
+        return payload;
+    }
+
+    static JsonObject buildBombShareSubmitPayload(String requestId, List<String> worlds) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("request_id", requestId);
+        JsonArray worldArray = new JsonArray();
+        if (worlds != null) {
+            for (String world : worlds) {
+                if (world != null && !world.isBlank()) {
+                    worldArray.add(world.trim());
+                }
+            }
+        }
+        payload.add("worlds", worldArray);
+        return payload;
+    }
+
     private AuthException unwrapAuthException(Throwable throwable) {
         Throwable cause = throwable;
         while (cause instanceof java.util.concurrent.CompletionException && cause.getCause() != null) {
@@ -751,6 +788,44 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
         this.connectedUsersCallback = callback;
         send("get_connected", null);
+    }
+
+    public boolean sendBombShareRequest(String canonicalKey, List<BombShareType> requestedTypes) {
+        if (!isOpen() || !authenticated || authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendBombShareRequest dropped open={} authenticated={} authFailed={} notInGuild={}",
+                    isOpen(),
+                    authenticated,
+                    authFailed,
+                    notInGuild);
+            return false;
+        }
+        if (canonicalKey == null || canonicalKey.isBlank() || requestedTypes == null || requestedTypes.isEmpty()) {
+            SeqClient.LOGGER.warn("[WebSocket] sendBombShareRequest dropped invalid payload canonicalKey={}", canonicalKey);
+            return false;
+        }
+
+        send("bomb_share_request", buildBombShareRequestPayload(canonicalKey, requestedTypes));
+        return true;
+    }
+
+    public boolean sendBombShareSubmit(String requestId, List<String> worlds) {
+        if (!isOpen() || !authenticated || authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendBombShareSubmit dropped open={} authenticated={} authFailed={} notInGuild={}",
+                    isOpen(),
+                    authenticated,
+                    authFailed,
+                    notInGuild);
+            return false;
+        }
+        if (requestId == null || requestId.isBlank() || worlds == null || worlds.isEmpty()) {
+            SeqClient.LOGGER.warn("[WebSocket] sendBombShareSubmit dropped invalid payload requestId={}", requestId);
+            return false;
+        }
+
+        send("bomb_share_submit", buildBombShareSubmitPayload(requestId, worlds));
+        return true;
     }
 
     public void sendGuildChat(String username, String nickname, String message, String avatarUrl) {
@@ -1228,6 +1303,47 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         SeqClient.LOGGER.warn("[WebSocket] connected_users had no callback listener");
                     }
                 }
+                case "bomb_share_prompt" -> {
+                    List<BombShareType> requestedTypes =
+                            parseBombShareTypes(json.has("requested_types") ? json.getAsJsonArray("requested_types") : null);
+                    BombSharePromptMessage prompt = new BombSharePromptMessage(
+                            extractPrimitiveString(json, "request_id"),
+                            extractPrimitiveString(json, "requester_username"),
+                            extractPrimitiveString(json, "canonical_key"),
+                            requestedTypes,
+                            json.has("expires_at") && !json.get("expires_at").isJsonNull()
+                                    ? Instant.parse(json.get("expires_at").getAsString())
+                                    : null,
+                            json.has("first_prompt")
+                                    && json.get("first_prompt").isJsonPrimitive()
+                                    && json.get("first_prompt").getAsBoolean());
+                    if (prompt.requestId() != null) {
+                        pendingBombSharePrompts.put(prompt.requestId(), prompt);
+                    }
+                    if (bombSharePromptHandler != null) {
+                        bombSharePromptHandler.accept(prompt);
+                    } else {
+                        SeqClient.LOGGER.warn("[WebSocket] Received bomb_share_prompt but handler is not registered");
+                    }
+                }
+                case "bomb_share_result" -> {
+                    BombShareResultMessage result = new BombShareResultMessage(
+                            extractPrimitiveString(json, "request_id"),
+                            extractPrimitiveString(json, "canonical_key"),
+                            parseBombShareTypes(json.has("requested_types") ? json.getAsJsonArray("requested_types") : null),
+                            parsePrimitiveStringArray(json.has("worlds") ? json.getAsJsonArray("worlds") : null),
+                            json.has("share_count") && json.get("share_count").isJsonPrimitive()
+                                    ? json.get("share_count").getAsInt()
+                                    : 0);
+                    if (result.requestId() != null) {
+                        pendingBombSharePrompts.remove(result.requestId());
+                    }
+                    if (bombShareResultHandler != null) {
+                        bombShareResultHandler.accept(result);
+                    } else {
+                        SeqClient.LOGGER.warn("[WebSocket] Received bomb_share_result but handler is not registered");
+                    }
+                }
                 case "guild_storage_snapshot" -> {
                     long emeraldCurrent = json.get("emerald_current").getAsLong();
                     long emeraldMax = json.get("emerald_max").getAsLong();
@@ -1418,6 +1534,34 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         partyFinderStaleWarningHandler = handler;
     }
 
+    public static void onBombSharePrompt(Consumer<BombSharePromptMessage> handler) {
+        SeqClient.LOGGER.info("[WebSocket] Registering bomb_share_prompt handler present={}", handler != null);
+        bombSharePromptHandler = handler;
+    }
+
+    public static void onBombShareResult(Consumer<BombShareResultMessage> handler) {
+        SeqClient.LOGGER.info("[WebSocket] Registering bomb_share_result handler present={}", handler != null);
+        bombShareResultHandler = handler;
+    }
+
+    public Optional<BombSharePromptMessage> getPendingBombSharePrompt(String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(pendingBombSharePrompts.get(requestId));
+    }
+
+    public Optional<BombSharePromptMessage> removePendingBombSharePrompt(String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(pendingBombSharePrompts.remove(requestId));
+    }
+
+    public boolean hasPendingBombSharePrompt(String requestId) {
+        return requestId != null && !requestId.isBlank() && pendingBombSharePrompts.containsKey(requestId);
+    }
+
     private static String truncate(String input, int maxLength) {
         if (input == null) {
             return "null";
@@ -1494,7 +1638,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     static boolean isServerScopedType(String type) {
-        return "guild_chat".equals(type)
+        return "bomb_share_request".equals(type)
+                || "bomb_share_submit".equals(type)
+                || "guild_chat".equals(type)
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)
                 || "guild_storage_snapshot".equals(type)
@@ -1508,7 +1654,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     static boolean isThrottleLimitedType(String type) {
-        return "guild_chat".equals(type)
+        return "bomb_share_request".equals(type)
+                || "bomb_share_submit".equals(type)
+                || "guild_chat".equals(type)
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)
                 || "guild_war_submission".equals(type)
@@ -1740,6 +1888,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
 
         String feature = switch (scope) {
+            case "bomb_share_request", "bomb_share_submit" -> "bomb share relays";
             case "guild_chat" -> "guild chat relays";
             case "guild_raid_announcement" -> "raid completion relays";
             case "guild_bank_event" -> "guild bank relays";
@@ -1765,6 +1914,37 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private static List<BombShareType> parseBombShareTypes(JsonArray requestedTypesJson) {
+        if (requestedTypesJson == null) {
+            return List.of();
+        }
+
+        List<BombShareType> requestedTypes = new ArrayList<>();
+        requestedTypesJson.forEach(element -> BombShareType.fromWireValue(element.getAsString()).ifPresent(type -> {
+            if (!requestedTypes.contains(type)) {
+                requestedTypes.add(type);
+            }
+        }));
+        return List.copyOf(requestedTypes);
+    }
+
+    private static List<String> parsePrimitiveStringArray(JsonArray jsonArray) {
+        if (jsonArray == null) {
+            return List.of();
+        }
+
+        List<String> values = new ArrayList<>();
+        jsonArray.forEach(element -> {
+            if (element != null && element.isJsonPrimitive()) {
+                String value = element.getAsString();
+                if (value != null && !value.isBlank()) {
+                    values.add(value.trim());
+                }
+            }
+        });
+        return List.copyOf(values);
     }
 
     private static boolean isPartyFinderError(JsonObject json, String normalizedMessage) {
@@ -1833,4 +2013,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     public record PartyFinderStaleWarningMessage(
             String reason, long listingId, Instant disbandAt, long minutesRemaining) {}
+
+    public record BombSharePromptMessage(
+            String requestId,
+            String requesterUsername,
+            String canonicalKey,
+            List<BombShareType> requestedTypes,
+            Instant expiresAt,
+            boolean firstPrompt) {}
+
+    public record BombShareResultMessage(
+            String requestId,
+            String canonicalKey,
+            List<BombShareType> requestedTypes,
+            List<String> worlds,
+            int shareCount) {}
 }
