@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
@@ -28,6 +29,23 @@ class ChatManagerTest {
         assertEquals("Purprated", parsed.username());
         assertEquals("Emanant Force", parsed.nickname());
         assertEquals("any raids?", parsed.message());
+    }
+
+    @Test
+    void parseGuildMessageHandlesWynnPrestigePrefixBeforeSpeaker() {
+        Component message = Component.empty()
+                .append(Component.literal("󏿼󐀆 "))
+                .append(Component.literal("󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿄"))
+                .append(Component.literal("󐀂 "))
+                .append(Component.literal("<1>Commander Lilacs").withStyle(Style.EMPTY.withInsertion("RealLilacs")))
+                .append(Component.literal(": tna/wtp 1/4"));
+
+        ChatManager.ParsedMessage parsed = ChatManager.parseGuildMessage(message);
+
+        assertNotNull(parsed);
+        assertEquals("RealLilacs", parsed.username());
+        assertEquals("Commander Lilacs", parsed.nickname());
+        assertEquals("tna/wtp 1/4", parsed.message());
     }
 
     @Test
@@ -118,5 +136,23 @@ class ChatManagerTest {
                 new WynntilsGuildRankAccess.GuildMembership(true, false, "Other Guild");
 
         assertFalse(ChatManager.shouldRelayForGuild(membership));
+    }
+
+    @Test
+    void detectsGuildChatWhenOnlyLeadingFragmentIsGuildColored() {
+        Component message = Component.empty()
+                .append(Component.literal("󏿼󐀆 ").withStyle(ChatFormatting.AQUA))
+                .append(Component.literal("ilyhug: what").withStyle(ChatFormatting.DARK_AQUA));
+
+        assertTrue(ChatManager.hasLeadingGuildChatColor(message));
+    }
+
+    @Test
+    void rejectsInfoChatWithLaterGuildColoredFragment() {
+        Component message = Component.empty()
+                .append(Component.literal("󏿼󏿿󏿾 Party Finder: ").withStyle(ChatFormatting.DARK_PURPLE))
+                .append(Component.literal("The Nameless Anomaly").withStyle(ChatFormatting.AQUA));
+
+        assertFalse(ChatManager.hasLeadingGuildChatColor(message));
     }
 }

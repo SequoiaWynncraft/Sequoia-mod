@@ -11,13 +11,17 @@ import com.wynntils.models.items.properties.LeveledItemProperty;
 import com.wynntils.models.items.properties.NamedItemProperty;
 import com.wynntils.models.items.properties.PowderedItemProperty;
 import com.wynntils.models.items.properties.RerollableItemProperty;
+import com.wynntils.models.stats.StatCalculator;
 import com.wynntils.models.stats.type.StatActualValue;
+import com.wynntils.models.stats.type.StatPossibleValues;
 import com.wynntils.utils.EncodedByteBuffer;
 import com.wynntils.utils.type.CappedValue;
 import com.wynntils.utils.type.ErrorOr;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import net.fabricmc.loader.api.FabricLoader;
@@ -79,7 +83,8 @@ public final class WynntilsItemPreviewAccess {
         Integer color = color(item);
         List<String> attributes = attributes(item);
         List<String> statLines = statLines(item);
-        return Optional.of(new ChatItemPreview(name, subtitle, color, attributes, statLines));
+        List<ChatItemPreview.StatRoll> statRolls = statRolls(item);
+        return Optional.of(new ChatItemPreview(name, subtitle, color, attributes, statLines, statRolls));
     }
 
     private static String subtitle(WynnItem item) {
@@ -132,24 +137,111 @@ public final class WynntilsItemPreviewAccess {
 
     private static List<String> statLines(WynnItem item) {
         List<StatActualValue> identifications;
+        List<StatPossibleValues> possibleValues;
         if (item instanceof IdentifiableItemProperty<?, ?> identifiableItem) {
             identifications = identifiableItem.getIdentifications();
+            possibleValues = identifiableItem.getPossibleValues();
         } else if (item instanceof CraftedItemProperty craftedItem) {
             identifications = craftedItem.getIdentifications();
+            possibleValues = craftedItem.getPossibleValues();
         } else {
             return List.of();
         }
 
+        Map<Object, StatPossibleValues> possibleValuesByType = possibleValuesByType(possibleValues);
         return identifications.stream()
                 .limit(MAX_STAT_LINES)
-                .map(WynntilsItemPreviewAccess::formatStatLine)
+                .map(stat -> formatStatLine(stat, possibleValuesByType.get(stat.statType())))
                 .toList();
     }
 
-    private static String formatStatLine(StatActualValue stat) {
+    private static Map<Object, StatPossibleValues> possibleValuesByType(List<StatPossibleValues> possibleValues) {
+        if (possibleValues == null || possibleValues.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Object, StatPossibleValues> byType = new HashMap<>();
+        for (StatPossibleValues possibleValue : possibleValues) {
+            if (possibleValue != null && possibleValue.statType() != null) {
+                byType.putIfAbsent(possibleValue.statType(), possibleValue);
+            }
+        }
+        return byType;
+    }
+
+    private static String formatStatLine(StatActualValue stat, StatPossibleValues possibleValue) {
         String sign = stat.value() > 0 ? "+" : "";
         String stars = stat.stars() > 0 ? " " + "✦".repeat(stat.stars()) : "";
-        return sign + stat.value() + " " + stat.statType().getDisplayName() + stars;
+        String percentage = formatRollPercentage(stat, possibleValue);
+        return sign + stat.value() + " " + stat.statType().getDisplayName() + stars + percentage;
+    }
+
+    private static String formatRollPercentage(StatActualValue stat, StatPossibleValues possibleValue) {
+        if (stat == null || possibleValue == null) {
+            return "";
+        }
+
+        try {
+            float percentage = StatCalculator.getPercentage(stat, possibleValue);
+            if (!Float.isFinite(percentage)) {
+                return "";
+            }
+            return " [" + formatPercentage(percentage) + "]";
+        } catch (RuntimeException e) {
+            SeqClient.LOGGER.debug("[Wynntils] Failed to calculate stat roll percentage", e);
+            return "";
+        }
+    }
+
+    private static String formatPercentage(float percentage) {
+        float rounded = Math.round(percentage * 10.0f) / 10.0f;
+        if (Math.abs(rounded - Math.round(rounded)) < 0.05f) {
+            return String.format(Locale.ROOT, "%.0f%%", rounded);
+        }
+        return String.format(Locale.ROOT, "%.1f%%", rounded);
+    }
+
+    private static List<ChatItemPreview.StatRoll> statRolls(WynnItem item) {
+        List<StatActualValue> identifications;
+        List<StatPossibleValues> possibleValues;
+        if (item instanceof IdentifiableItemProperty<?, ?> identifiableItem) {
+            identifications = identifiableItem.getIdentifications();
+            possibleValues = identifiableItem.getPossibleValues();
+        } else if (item instanceof CraftedItemProperty craftedItem) {
+            identifications = craftedItem.getIdentifications();
+            possibleValues = craftedItem.getPossibleValues();
+        } else {
+            return List.of();
+        }
+
+        Map<Object, StatPossibleValues> possibleValuesByType = possibleValuesByType(possibleValues);
+        return identifications.stream()
+                .map(stat -> statRoll(stat, possibleValuesByType.get(stat.statType())))
+                .flatMap(Optional::stream)
+                .toList();
+    }
+
+    private static Optional<ChatItemPreview.StatRoll> statRoll(
+            StatActualValue stat, StatPossibleValues possibleValue) {
+        if (stat == null || stat.statType() == null || possibleValue == null) {
+            return Optional.empty();
+        }
+
+        try {
+            float percentage = StatCalculator.getPercentage(stat, possibleValue);
+            if (!Float.isFinite(percentage)) {
+                return Optional.empty();
+            }
+            return Optional.of(new ChatItemPreview.StatRoll(
+                    stat.statType().getApiName(),
+                    stat.statType().getKey(),
+                    stat.statType().getDisplayName(),
+                    stat.value(),
+                    percentage));
+        } catch (RuntimeException e) {
+            SeqClient.LOGGER.debug("[Wynntils] Failed to calculate structured stat roll percentage", e);
+            return Optional.empty();
+        }
     }
 
     private static String formatEnumName(Object value) {

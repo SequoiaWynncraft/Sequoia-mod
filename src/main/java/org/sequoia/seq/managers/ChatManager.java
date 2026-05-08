@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.time.Duration;
 import java.time.Instant;
@@ -50,7 +51,7 @@ public class ChatManager {
     // display-name capture group. DOTALL so the message group captures across \n.
     // Packet-level normalization strips the icon/banner glyph spam before matching.
     private static final Pattern CHAT_PATTERN = Pattern.compile(
-            "^([a-zA-Z0-9_][a-zA-Z0-9_ ]*[a-zA-Z0-9_]|[a-zA-Z0-9_]{3,16})\\s*:\\s*(.*)$",
+            "^(?:<\\d+>\\s*)?([a-zA-Z0-9_][a-zA-Z0-9_ ]*[a-zA-Z0-9_]|[a-zA-Z0-9_]{3,16})\\s*:\\s*(.*)$",
             Pattern.DOTALL);
     private static final Pattern HOVER_REAL_NAME_PATTERN = Pattern.compile(
             // Wynntils format: "<nick>'s real name is <username>"
@@ -90,8 +91,7 @@ public class ChatManager {
         // Guild chat uses aqua color (§b / 0x55FFFF) per Wynntils' RecipientType.GUILD.
         // This cleanly rejects DMs, party, shout, territory, and other message types
         // that share the \uDAFF\uDFFC icon prefix but use different colors.
-        var color = message.getStyle().getColor();
-        if (color == null || color.getValue() != GUILD_CHAT_COLOR)
+        if (!hasLeadingGuildChatColor(message))
             return;
 
         if (!ConnectionManager.isConnected())
@@ -142,6 +142,26 @@ public class ChatManager {
 
     static boolean shouldRelayForGuild(WynntilsGuildRankAccess.GuildMembership membership) {
         return membership == null || !membership.available() || membership.inExpectedGuild();
+    }
+
+    static boolean hasLeadingGuildChatColor(Component message) {
+        if (message == null) {
+            return false;
+        }
+
+        var rootColor = message.getStyle().getColor();
+        if (rootColor != null) {
+            return rootColor.getValue() == GUILD_CHAT_COLOR;
+        }
+
+        Optional<Boolean> leadingColorIsGuild = message.visit((style, text) -> {
+            if (text == null || text.isBlank()) {
+                return Optional.empty();
+            }
+            var color = style.getColor();
+            return Optional.of(color != null && color.getValue() == GUILD_CHAT_COLOR);
+        }, Style.EMPTY);
+        return leadingColorIsGuild.orElse(false);
     }
 
     /**
