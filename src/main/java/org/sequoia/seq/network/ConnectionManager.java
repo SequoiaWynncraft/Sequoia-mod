@@ -913,9 +913,39 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             if (statLines.size() > 0) {
                 json.add("stat_lines", statLines);
             }
+            JsonArray statRolls = statRollArray(preview.statRolls());
+            if (statRolls.size() > 0) {
+                json.add("stat_rolls", statRolls);
+            }
             previews.add(json);
         }
         return previews;
+    }
+
+    private static JsonArray statRollArray(List<ChatItemPreview.StatRoll> statRolls) {
+        JsonArray array = new JsonArray();
+        if (statRolls == null || statRolls.isEmpty()) {
+            return array;
+        }
+        for (ChatItemPreview.StatRoll statRoll : statRolls) {
+            if (statRoll == null || statRoll.percentage() == null) {
+                continue;
+            }
+            JsonObject json = new JsonObject();
+            if (statRoll.apiName() != null && !statRoll.apiName().isBlank()) {
+                json.addProperty("api_name", statRoll.apiName());
+            }
+            if (statRoll.key() != null && !statRoll.key().isBlank()) {
+                json.addProperty("key", statRoll.key());
+            }
+            if (statRoll.displayName() != null && !statRoll.displayName().isBlank()) {
+                json.addProperty("display_name", statRoll.displayName());
+            }
+            json.addProperty("value", statRoll.value());
+            json.addProperty("percentage", statRoll.percentage());
+            array.add(json);
+        }
+        return array;
     }
 
     private static JsonArray stringArray(List<String> values) {
