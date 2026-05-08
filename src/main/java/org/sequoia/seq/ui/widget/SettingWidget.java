@@ -23,6 +23,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("guild_storage_aspect_threshold_percent", "Guild storage aspect threshold %");
         DISPLAY_NAME_OVERRIDES.put("check_updates", "Check for updates on startup");
         DISPLAY_NAME_OVERRIDES.put("enable_easter_eggs", "Enable easter eggs");
+        DISPLAY_NAME_OVERRIDES.put("startup_video", "Startup video");
 
         TOKEN_REPLACEMENTS.put("discord", "Discord");
         TOKEN_REPLACEMENTS.put("bridge", "Chat");

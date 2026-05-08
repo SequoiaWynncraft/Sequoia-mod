@@ -94,6 +94,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting easterEggsSetting;
 
     @Getter
+    public static Setting.BooleanSetting startupVideoSetting;
+
+    @Getter
     public static Setting.BooleanSetting announceOpenPartiesSetting;
 
     @Getter
@@ -326,6 +329,7 @@ public class SeqClient implements ClientModInitializer {
         guildStorageAspectNotifyValueSetting =
                 new Setting.IntSetting("guild_storage_aspect_threshold_percent", "guild_storage", 100, 0, 100);
         easterEggsSetting = new Setting.BooleanSetting("enable_easter_eggs", "ui", true);
+        startupVideoSetting = new Setting.BooleanSetting("startup_video", "ui", false);
         announceOpenPartiesSetting = new Setting.BooleanSetting("announce_open_parties", "party_finder", true);
         announceOpenPartiesIntervalMinutesSetting =
                 new Setting.IntSetting("announce_open_parties_interval_minutes", "party_finder", 5, 1, 60);
@@ -339,6 +343,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(guildStorageEmeraldNotifyValueSetting);
         getConfigManager().register(guildStorageAspectNotifyValueSetting);
         getConfigManager().register(easterEggsSetting);
+        getConfigManager().register(startupVideoSetting);
         getConfigManager().register(announceOpenPartiesSetting);
         getConfigManager().register(announceOpenPartiesIntervalMinutesSetting);
         getConfigManager().register(syncWynnPartySetting);
