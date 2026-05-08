@@ -9,6 +9,8 @@ import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.events.DiscordChatEvent;
 import org.sequoia.seq.integrations.WynntilsGuildRankAccess;
+import org.sequoia.seq.integrations.WynntilsItemPreviewAccess;
+import org.sequoia.seq.model.ChatItemPreview;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.utils.PacketTextNormalizer;
 
@@ -121,7 +123,8 @@ public class ChatManager {
                 parsed.username(),
                 parsed.nickname(),
                 parsed.message(),
-                parsed.avatarUrl());
+                parsed.avatarUrl(),
+                parsed.itemPreviews());
     }
 
     private static boolean shouldRelayForLocalGuild() {
@@ -158,6 +161,12 @@ public class ChatManager {
 
         String displayedName = matcher.group(1).trim();
         String content = matcher.group(2).trim();
+        WynntilsItemPreviewAccess.Result itemPreviewResult =
+                WynntilsItemPreviewAccess.extract(extractRawContent(message.getString()));
+        String previewCleanedContent = PacketTextNormalizer.normalizeForParsing(itemPreviewResult.message());
+        if (!previewCleanedContent.isBlank()) {
+            content = previewCleanedContent;
+        }
 
         if (content.isEmpty())
             return null;
@@ -185,7 +194,18 @@ public class ChatManager {
                 + URLEncoder.encode(avatarUsername, StandardCharsets.UTF_8).replace("+", "%20")
                 + "/128";
         String nickname = deriveNickname(displayedName, avatarUsername);
-        return new ParsedMessage(avatarUsername, nickname, content, avatarUrl);
+        return new ParsedMessage(avatarUsername, nickname, content, avatarUrl, itemPreviewResult.previews());
+    }
+
+    private static String extractRawContent(String rawText) {
+        if (rawText == null || rawText.isBlank()) {
+            return "";
+        }
+        int colonIndex = rawText.indexOf(':');
+        if (colonIndex < 0 || colonIndex == rawText.length() - 1) {
+            return "";
+        }
+        return rawText.substring(colonIndex + 1).trim();
     }
 
     static boolean isWynncraftWelcomeMessage(Component message) {
@@ -411,6 +431,7 @@ public class ChatManager {
         });
     }
 
-    record ParsedMessage(String username, String nickname, String message, String avatarUrl) {
+    record ParsedMessage(
+            String username, String nickname, String message, String avatarUrl, List<ChatItemPreview> itemPreviews) {
     }
 }
