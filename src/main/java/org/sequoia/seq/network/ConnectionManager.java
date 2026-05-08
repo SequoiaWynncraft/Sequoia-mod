@@ -28,6 +28,7 @@ import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
+import org.sequoia.seq.model.ChatItemPreview;
 import org.sequoia.seq.managers.GuildStorageTracker;
 import org.sequoia.seq.model.GuildWarSubmission;
 import org.sequoia.seq.model.WynnClassType;
@@ -754,6 +755,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     public void sendGuildChat(String username, String nickname, String message, String avatarUrl) {
+        sendGuildChat(username, nickname, message, avatarUrl, List.of());
+    }
+
+    public void sendGuildChat(
+            String username, String nickname, String message, String avatarUrl, List<ChatItemPreview> itemPreviews) {
         if (!isOpen()) {
             SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat dropped: socket not open uri={}", getURI());
             return;
@@ -800,7 +806,54 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
         msg.addProperty("message", cleanedMessage);
         if (safeAvatarUrl != null) msg.addProperty("avatar_url", safeAvatarUrl);
+        JsonArray itemPreviewArray = itemPreviewArray(itemPreviews);
+        if (itemPreviewArray.size() > 0) {
+            msg.add("item_previews", itemPreviewArray);
+        }
         send("guild_chat", msg);
+    }
+
+    private static JsonArray itemPreviewArray(List<ChatItemPreview> itemPreviews) {
+        JsonArray previews = new JsonArray();
+        if (itemPreviews == null || itemPreviews.isEmpty()) {
+            return previews;
+        }
+        for (ChatItemPreview preview : itemPreviews) {
+            if (preview == null || preview.name() == null || preview.name().isBlank()) {
+                continue;
+            }
+            JsonObject json = new JsonObject();
+            json.addProperty("name", preview.name());
+            if (preview.subtitle() != null && !preview.subtitle().isBlank()) {
+                json.addProperty("subtitle", preview.subtitle());
+            }
+            if (preview.color() != null) {
+                json.addProperty("color", preview.color());
+            }
+            JsonArray attributes = stringArray(preview.attributes());
+            if (attributes.size() > 0) {
+                json.add("attributes", attributes);
+            }
+            JsonArray statLines = stringArray(preview.statLines());
+            if (statLines.size() > 0) {
+                json.add("stat_lines", statLines);
+            }
+            previews.add(json);
+        }
+        return previews;
+    }
+
+    private static JsonArray stringArray(List<String> values) {
+        JsonArray array = new JsonArray();
+        if (values == null) {
+            return array;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                array.add(value);
+            }
+        }
+        return array;
     }
 
     public void sendRaidAnnouncement(
