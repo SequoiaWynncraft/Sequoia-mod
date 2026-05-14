@@ -134,14 +134,14 @@ public class ChatManager {
         if (!shouldRelay) {
             SeqClient.LOGGER.debug(
                     "[GuildChat] Dropping guild chat relay: local Wynntils guild='{}' expected='{}'",
-                    membership.currentGuildName(),
+                    membership == null ? null : membership.currentGuildName(),
                     BACKEND_GUILD_NAME);
         }
         return shouldRelay;
     }
 
     static boolean shouldRelayForGuild(WynntilsGuildRankAccess.GuildMembership membership) {
-        return membership == null || !membership.available() || membership.inExpectedGuild();
+        return membership != null && membership.available() && membership.inExpectedGuild();
     }
 
     static boolean hasLeadingGuildChatColor(Component message) {

@@ -1203,6 +1203,17 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         instance.flushPendingGuildWarSubmissions();
     }
 
+    public static void resetForAccountChange() {
+        ConnectionManager current = instance;
+        if (current == null) {
+            return;
+        }
+
+        current.pendingGuildWarSubmissions.clear();
+        current.pendingBombSharePrompts.clear();
+        current.disconnectInternal(false);
+    }
+
     private void flushPendingGuildWarSubmissions() {
         if (pendingGuildWarSubmissions.isEmpty()
                 || !isOpen()

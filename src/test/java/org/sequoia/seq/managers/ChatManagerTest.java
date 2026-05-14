@@ -115,11 +115,16 @@ class ChatManagerTest {
     }
 
     @Test
-    void relaysGuildChatWhenWynntilsMembershipIsUnavailable() {
+    void dropsGuildChatWhenWynntilsMembershipIsUnavailable() {
         WynntilsGuildRankAccess.GuildMembership membership =
                 new WynntilsGuildRankAccess.GuildMembership(false, false, null);
 
-        assertTrue(ChatManager.shouldRelayForGuild(membership));
+        assertFalse(ChatManager.shouldRelayForGuild(membership));
+    }
+
+    @Test
+    void dropsGuildChatWhenWynntilsMembershipIsMissing() {
+        assertFalse(ChatManager.shouldRelayForGuild(null));
     }
 
     @Test

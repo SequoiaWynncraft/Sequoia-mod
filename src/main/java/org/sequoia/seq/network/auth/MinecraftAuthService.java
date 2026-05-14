@@ -58,6 +58,15 @@ public class MinecraftAuthService {
 
     public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
         StoredAuthSession current = getCurrentSession();
+        UUID activeProfileId = activeMinecraftProfileId();
+        if (current != null && !sessionMatchesActiveProfile(current, activeProfileId)) {
+            SeqClient.LOGGER.warn(
+                    "[Auth] Clearing stored Minecraft auth session for inactive account storedUuid={} activeUuid={}",
+                    current.minecraftUuid(),
+                    activeProfileId);
+            clearSession();
+            current = null;
+        }
         if (!forceRefresh && current != null && !current.expiresWithin(TOKEN_REFRESH_SKEW, Instant.now())) {
             return CompletableFuture.completedFuture(current.token());
         }
@@ -149,6 +158,32 @@ public class MinecraftAuthService {
     public void invalidateSession(AuthErrorCode code, String message) {
         SeqClient.getConfigManager().clearAuthSession();
         setState(AuthState.FAILED, new AuthException(code, message, true));
+    }
+
+    public void clearSessionIfNotActiveProfile(UUID activeProfileId) {
+        StoredAuthSession session = getCurrentSession();
+        if (session != null && !sessionMatchesActiveProfile(session, activeProfileId)) {
+            SeqClient.LOGGER.warn(
+                    "[Auth] Clearing stored Minecraft auth session after account change storedUuid={} activeUuid={}",
+                    session.minecraftUuid(),
+                    activeProfileId);
+            clearSession();
+        }
+    }
+
+    static boolean sessionMatchesActiveProfile(StoredAuthSession session, UUID activeProfileId) {
+        if (session == null || activeProfileId == null) {
+            return false;
+        }
+        String storedUuid = session.minecraftUuid();
+        if (storedUuid == null || storedUuid.isBlank()) {
+            return false;
+        }
+        try {
+            return UUID.fromString(storedUuid).equals(activeProfileId);
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
     }
 
     static MinecraftAuthChallengeResponse validateChallenge(MinecraftAuthChallengeResponse response) {
@@ -251,6 +286,11 @@ public class MinecraftAuthService {
                     }
                 },
                 executor);
+    }
+
+    private UUID activeMinecraftProfileId() {
+        User user = Minecraft.getInstance().getUser();
+        return user == null ? null : user.getProfileId();
     }
 
     private MinecraftAuthCompleteResponse unwrapCompleteResponse(MinecraftAuthCompleteResponse response) {

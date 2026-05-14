@@ -6,6 +6,7 @@ import com.collarmc.pounce.Subscribe;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.logging.LogUtils;
 import java.util.Objects;
+import java.util.UUID;
 import lombok.Getter;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -128,6 +129,7 @@ public class SeqClient implements ClientModInitializer {
     private static WynncraftServerPolicy.Scope lastServerScope = WynncraftServerPolicy.Scope.BLOCKED;
     private static String lastServerHost;
     private static long lastProductionRecoveryAttemptAtMs;
+    private static UUID lastSeenMinecraftProfileId;
 
     @Override
     public void onInitializeClient() {
@@ -195,6 +197,10 @@ public class SeqClient implements ClientModInitializer {
                 return;
             }
 
+            if (handleMinecraftAccountChange()) {
+                return;
+            }
+
             maybeRecoverProductionConnection(serverScope, previousServerScope, currentHost);
 
             if (partyFinderManager != null) {
@@ -235,6 +241,49 @@ public class SeqClient implements ClientModInitializer {
             }
             wasInPartyFinder = true;
         });
+    }
+
+    private static boolean handleMinecraftAccountChange() {
+        UUID currentProfileId = currentMinecraftProfileId();
+        if (currentProfileId == null) {
+            return false;
+        }
+        if (lastSeenMinecraftProfileId == null) {
+            lastSeenMinecraftProfileId = currentProfileId;
+            return false;
+        }
+        if (lastSeenMinecraftProfileId.equals(currentProfileId)) {
+            return false;
+        }
+
+        LOGGER.warn(
+                "[Seq] Active Minecraft account changed {} -> {}; clearing connection state",
+                lastSeenMinecraftProfileId,
+                currentProfileId);
+        lastSeenMinecraftProfileId = currentProfileId;
+        ConnectionManager.resetForAccountChange();
+        if (authService != null) {
+            authService.clearSessionIfNotActiveProfile(currentProfileId);
+        }
+        wasInPartyFinder = false;
+        lastBroadcastPartyClass = null;
+        if (wynnPartySyncManager != null) {
+            wynnPartySyncManager.reset();
+        }
+        if (guildWarTracker != null) {
+            guildWarTracker.reset();
+        }
+        if (guildStorageTracker != null) {
+            guildStorageTracker.reset();
+        }
+        return true;
+    }
+
+    private static UUID currentMinecraftProfileId() {
+        if (mc == null || mc.getUser() == null) {
+            return null;
+        }
+        return mc.getUser().getProfileId();
     }
 
     private static void logServerScopeChange(WynncraftServerPolicy.Scope serverScope, String currentHost) {
