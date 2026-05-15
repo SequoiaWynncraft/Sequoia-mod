@@ -12,8 +12,10 @@ import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.network.ApiClient;
 import org.sequoia.seq.network.BuildConfig;
 
+import java.awt.Desktop;
 import java.lang.reflect.Method;
 import java.math.BigInteger;
+import java.net.URI;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -30,6 +32,7 @@ import java.util.regex.Pattern;
 public class MinecraftAuthService {
 
     private static final Duration TOKEN_REFRESH_SKEW = Duration.ofSeconds(30);
+    private static final Duration OAUTH_POLL_INTERVAL = Duration.ofSeconds(2);
     private static final Gson GSON = new Gson();
     private static final Pattern MOJANG_SERVER_ID_PATTERN = Pattern.compile("^-?[0-9a-f]{1,40}$");
 
@@ -58,15 +61,6 @@ public class MinecraftAuthService {
 
     public CompletableFuture<String> ensureValidToken(boolean forceRefresh) {
         StoredAuthSession current = getCurrentSession();
-        UUID activeProfileId = activeMinecraftProfileId();
-        if (current != null && !sessionMatchesActiveProfile(current, activeProfileId)) {
-            SeqClient.LOGGER.warn(
-                    "[Auth] Clearing stored Minecraft auth session for inactive account storedUuid={} activeUuid={}",
-                    current.minecraftUuid(),
-                    activeProfileId);
-            clearSession();
-            current = null;
-        }
         if (!forceRefresh && current != null && !current.expiresWithin(TOKEN_REFRESH_SKEW, Instant.now())) {
             return CompletableFuture.completedFuture(current.token());
         }
@@ -88,10 +82,9 @@ public class MinecraftAuthService {
 
             setState(AuthState.REQUESTING_CHALLENGE, null);
             CompletableFuture<StoredAuthSession> future = ApiClient.getInstance()
-                    .requestMinecraftAuthChallenge()
-                    .thenApply(MinecraftAuthService::validateChallenge)
-                    .thenCompose(challenge -> performMinecraftSessionJoin(challenge)
-                            .thenCompose(username -> completeAuthentication(challenge.challengeId(), username)))
+                    .startWynnOAuthAuthentication()
+                    .thenApply(MinecraftAuthService::validateWynnOAuthStart)
+                    .thenCompose(this::completeWynnOAuthInBrowser)
                     .thenApply(this::storeSession)
                     .handle((session, throwable) -> {
                         if (throwable != null) {
@@ -133,6 +126,115 @@ public class MinecraftAuthService {
                 .completeMinecraftAuthentication(new MinecraftAuthCompleteRequest(challengeId, username));
     }
 
+    private CompletableFuture<MinecraftAuthCompleteResponse> completeWynnOAuthInBrowser(WynnOAuthStartResponse start) {
+        setState(AuthState.WAITING_FOR_BROWSER, null);
+        notifyClickable("Click to authorize Sequoia with Wynncraft", start.authorizationUrl());
+        if (openBrowser(start.authorizationUrl())) {
+            notifyPlayer("Opened Wynn OAuth in your browser.");
+        } else {
+            notifyPlayer("Could not open browser automatically. Click the Wynn OAuth link in chat.");
+        }
+        return pollWynnOAuthStatus(start);
+    }
+
+    private CompletableFuture<MinecraftAuthCompleteResponse> pollWynnOAuthStatus(WynnOAuthStartResponse start) {
+        return CompletableFuture.supplyAsync(
+                () -> {
+                    setState(AuthState.POLLING_OAUTH_STATUS, null);
+                    while (Instant.now().isBefore(start.expiresAt())) {
+                        try {
+                            WynnOAuthStatusResponse status =
+                                    ApiClient.getInstance().getWynnOAuthStatus(start.pollToken()).join();
+                            if ("COMPLETE".equalsIgnoreCase(status.status())) {
+                                return new MinecraftAuthCompleteResponse(
+                                        status.token(),
+                                        resolveJwtExpiry(status.token()),
+                                        new AuthenticatedMinecraftUser(status.minecraftUuid(), status.minecraftUsername()));
+                            }
+                            if ("FAILED".equalsIgnoreCase(status.status()) || "EXPIRED".equalsIgnoreCase(status.status())) {
+                                String message = status.errorMessage() != null && !status.errorMessage().isBlank()
+                                        ? status.errorMessage()
+                                        : "Wynn OAuth authentication failed.";
+                                throw new AuthException(AuthErrorCode.BACKEND_VERIFICATION_FAILED, message);
+                            }
+                            Thread.sleep(OAUTH_POLL_INTERVAL.toMillis());
+                        } catch (AuthException exception) {
+                            throw exception;
+                        } catch (InterruptedException exception) {
+                            Thread.currentThread().interrupt();
+                            throw new AuthException(AuthErrorCode.NETWORK_FAILURE, "Wynn OAuth polling was interrupted.", true, exception);
+                        } catch (Exception exception) {
+                            throw new AuthException(AuthErrorCode.NETWORK_FAILURE, "Failed to poll Wynn OAuth status.", true, exception);
+                        }
+                    }
+                    throw new AuthException(AuthErrorCode.CHALLENGE_EXPIRED, "Wynn OAuth authentication expired.");
+                },
+                executor);
+    }
+
+    static WynnOAuthStartResponse validateWynnOAuthStart(WynnOAuthStartResponse response) {
+        if (response == null
+                || response.authorizationUrl() == null
+                || response.authorizationUrl().isBlank()
+                || response.pollToken() == null
+                || response.pollToken().isBlank()
+                || response.expiresAt() == null) {
+            throw new AuthException(AuthErrorCode.MALFORMED_RESPONSE, "Backend returned a malformed Wynn OAuth start response.");
+        }
+        if (!response.expiresAt().isAfter(Instant.now())) {
+            throw new AuthException(AuthErrorCode.CHALLENGE_EXPIRED, "Backend returned an already expired Wynn OAuth flow.");
+        }
+        return response;
+    }
+
+    private static Instant resolveJwtExpiry(String token) {
+        if (token == null || token.isBlank()) {
+            return Instant.now().minusSeconds(1);
+        }
+        try {
+            String[] parts = token.split("\\.");
+            JsonObject payload = GSON.fromJson(
+                    new String(Base64.getUrlDecoder().decode(padBase64(parts[1])), java.nio.charset.StandardCharsets.UTF_8),
+                    JsonObject.class);
+            if (payload != null && payload.has("exp")) {
+                return Instant.ofEpochSecond(payload.get("exp").getAsLong());
+            }
+        } catch (Exception ignored) {
+        }
+        return Instant.now().plus(Duration.ofMinutes(5));
+    }
+
+    private boolean openBrowser(String url) {
+        try {
+            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                Desktop.getDesktop().browse(URI.create(url));
+                return true;
+            }
+        } catch (Exception exception) {
+            SeqClient.LOGGER.warn("[Auth] Failed to open Wynn OAuth URL", exception);
+        }
+        return false;
+    }
+
+    private void notifyClickable(String label, String url) {
+        Minecraft.getInstance().execute(() -> {
+            var player = Minecraft.getInstance().player;
+            if (player != null) {
+                player.displayClientMessage(
+                        net.minecraft.network.chat.Component.literal("[Sequoia] " + label + ": " + url), false);
+            }
+        });
+    }
+
+    private void notifyPlayer(String message) {
+        Minecraft.getInstance().execute(() -> {
+            var player = Minecraft.getInstance().player;
+            if (player != null) {
+                player.displayClientMessage(net.minecraft.network.chat.Component.literal("[Sequoia] " + message), false);
+            }
+        });
+    }
+
     public String getCurrentToken() {
         StoredAuthSession session = getCurrentSession();
         if (session == null || session.isExpired(Instant.now())) {
@@ -161,14 +263,8 @@ public class MinecraftAuthService {
     }
 
     public void clearSessionIfNotActiveProfile(UUID activeProfileId) {
-        StoredAuthSession session = getCurrentSession();
-        if (session != null && !sessionMatchesActiveProfile(session, activeProfileId)) {
-            SeqClient.LOGGER.warn(
-                    "[Auth] Clearing stored Minecraft auth session after account change storedUuid={} activeUuid={}",
-                    session.minecraftUuid(),
-                    activeProfileId);
-            clearSession();
-        }
+        // Wynn OAuth binds Sequoia to the user's primary Wynn profile, which may differ from the local Minecraft
+        // profile used by the launcher. Keep the Sequoia JWT until it expires or the user logs out.
     }
 
     static boolean sessionMatchesActiveProfile(StoredAuthSession session, UUID activeProfileId) {

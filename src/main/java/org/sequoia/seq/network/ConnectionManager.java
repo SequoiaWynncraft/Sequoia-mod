@@ -193,7 +193,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
 
         pendingAuthFlow = authFlow;
-        pendingDiscordLinkRequest = authFlow == AuthFlow.LINK;
+        pendingDiscordLinkRequest = false;
         userInitiatedConnectFlow = userInitiated;
         autoReconnect = true;
         SeqClient.LOGGER.info(
@@ -206,14 +206,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 getURI());
         if (isOpen()) {
             if (authFlow == AuthFlow.LINK) {
-                if (authenticated && !authFailed && !notInGuild) {
-                    notifyConnectionStatus("Starting Discord OAuth link flow...");
-                    requestDiscordLink(true);
-                    finishConnectFlow();
-                } else {
-                    notifyConnectionStatus("Refreshing backend authentication...");
-                    refreshAuthentication();
-                }
+                notifyConnectionStatus("Refreshing Wynn OAuth authentication...");
+                refreshAuthentication();
             } else {
                 notifyConnectionStatus("Already connected/connecting.");
                 finishConnectFlow();
@@ -226,7 +220,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
 
         if (authFlow == AuthFlow.LINK) {
-            notifyConnectionStatus("Authenticating your Minecraft account on " + BuildConfig.ENVIRONMENT + "...");
+            notifyConnectionStatus("Reauthorizing Sequoia with Wynn OAuth on " + BuildConfig.ENVIRONMENT + "...");
         } else {
             notifyConnectionStatus("Connecting to " + BuildConfig.ENVIRONMENT + "...");
         }
@@ -639,9 +633,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                             && !session.minecraftUsername().isBlank()
                                     ? "Refreshed backend token for " + session.minecraftUsername()
                                     : "Refreshed backend token.");
-                    if (pendingDiscordLinkRequest && isOpen() && authenticated && !authFailed && !notInGuild) {
-                        requestDiscordLink(true);
-                    }
                     finishConnectFlow();
                 }));
     }
@@ -1374,9 +1365,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         notifyConnectionStatus("Connected as " + discordUser);
                     } else {
                         clearDiscordUsername();
-                    }
-                    if (pendingDiscordLinkRequest) {
-                        requestDiscordLink(true);
                     }
                     flushPendingGuildWarSubmissions();
                     sendLocalPartyClassUpdate();

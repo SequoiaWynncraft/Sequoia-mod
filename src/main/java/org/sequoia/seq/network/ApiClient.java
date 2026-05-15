@@ -22,6 +22,8 @@ import org.sequoia.seq.model.*;
 import org.sequoia.seq.network.auth.MinecraftAuthChallengeResponse;
 import org.sequoia.seq.network.auth.MinecraftAuthCompleteRequest;
 import org.sequoia.seq.network.auth.MinecraftAuthCompleteResponse;
+import org.sequoia.seq.network.auth.WynnOAuthStartResponse;
+import org.sequoia.seq.network.auth.WynnOAuthStatusResponse;
 import org.sequoia.seq.utils.WynnClassCache;
 
 /**
@@ -260,6 +262,18 @@ public class ApiClient {
             body,
             MinecraftAuthCompleteResponse.class,
             false);
+    }
+
+    public CompletableFuture<WynnOAuthStartResponse> startWynnOAuthAuthentication() {
+        return postWithFallback(authRequestBaseUrls(), "/auth/wynn/start", null, WynnOAuthStartResponse.class, false);
+    }
+
+    public CompletableFuture<WynnOAuthStatusResponse> getWynnOAuthStatus(String pollToken) {
+        String encodedToken = URLEncoder.encode(pollToken, StandardCharsets.UTF_8);
+        HttpRequest request = newRequest(authRequestBaseUrls().get(0), "/auth/wynn/status/" + encodedToken, false)
+                .GET()
+                .build();
+        return sendAsync(request, WynnOAuthStatusResponse.class);
     }
 
     // ── HTTP helpers ──
