@@ -11,6 +11,7 @@ import com.wynntils.models.items.properties.LeveledItemProperty;
 import com.wynntils.models.items.properties.NamedItemProperty;
 import com.wynntils.models.items.properties.PowderedItemProperty;
 import com.wynntils.models.items.properties.RerollableItemProperty;
+import com.wynntils.models.items.properties.ShinyItemProperty;
 import com.wynntils.models.stats.StatCalculator;
 import com.wynntils.models.stats.type.StatActualValue;
 import com.wynntils.models.stats.type.StatPossibleValues;
@@ -19,6 +20,7 @@ import com.wynntils.utils.type.CappedValue;
 import com.wynntils.utils.type.ErrorOr;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -31,8 +33,8 @@ import org.sequoia.seq.model.ChatItemPreview;
 
 public final class WynntilsItemPreviewAccess {
     private static final String WYNNTILS_MOD_ID = "wynntils";
-    private static final int MAX_ITEM_PREVIEWS = 5;
-    private static final int MAX_STAT_LINES = 6;
+    private static final int MAX_ITEM_PREVIEWS = 10;
+    private static final int MAX_STAT_LINES = 10;
 
     private WynntilsItemPreviewAccess() {}
 
@@ -48,14 +50,12 @@ public final class WynntilsItemPreviewAccess {
 
             Matcher matcher = Models.ItemEncoding.getEncodedDataPattern().matcher(message);
             StringBuffer cleaned = new StringBuffer();
-            List<ChatItemPreview> previews = new ArrayList<>();
+            Map<String, ChatItemPreview> previews = new LinkedHashMap<>();
 
             while (matcher.find()) {
-                Optional<ChatItemPreview> preview = previews.size() < MAX_ITEM_PREVIEWS
-                        ? decodePreview(matcher.group("data"), matcher.group("name"))
-                        : Optional.empty();
+                Optional<ChatItemPreview> preview = decodePreview(matcher.group("data"), matcher.group("name"));
                 if (preview.isPresent()) {
-                    previews.add(preview.get());
+                    previews.putIfAbsent(previewKey(preview.get()), preview.get());
                     matcher.appendReplacement(cleaned, Matcher.quoteReplacement("[" + preview.get().name() + "]"));
                 } else {
                     matcher.appendReplacement(cleaned, Matcher.quoteReplacement(matcher.group()));
@@ -63,7 +63,7 @@ public final class WynntilsItemPreviewAccess {
             }
             matcher.appendTail(cleaned);
 
-            return new Result(cleaned.toString(), List.copyOf(previews));
+            return new Result(cleaned.toString(), previews.values().stream().limit(MAX_ITEM_PREVIEWS).toList());
         } catch (LinkageError | RuntimeException e) {
             SeqClient.LOGGER.debug("[Wynntils] Item preview extraction failed", e);
             return new Result(message, List.of());
@@ -79,12 +79,67 @@ public final class WynntilsItemPreviewAccess {
 
         WynnItem item = decoded.getValue();
         String name = item instanceof NamedItemProperty namedItem ? namedItem.getName() : item.getClass().getSimpleName();
+        Optional<com.wynntils.models.stats.type.ShinyStat> shinyStat = shinyStat(item);
+        if (shinyStat.isPresent()) {
+            name = "Shiny " + name;
+        }
         String subtitle = subtitle(item);
         Integer color = color(item);
         List<String> attributes = attributes(item);
         List<String> statLines = statLines(item);
         List<ChatItemPreview.StatRoll> statRolls = statRolls(item);
-        return Optional.of(new ChatItemPreview(name, subtitle, color, attributes, statLines, statRolls));
+        ChatItemPreview.ShinyStat shinyStatPreview =
+                shinyStat.map(WynntilsItemPreviewAccess::shinyStatPreview).orElse(null);
+        return Optional.of(new ChatItemPreview(
+                name, subtitle, color, attributes, statLines, statRolls, shinyStatPreview));
+    }
+
+    private static String previewKey(ChatItemPreview preview) {
+        return String.join(
+                "\u001F",
+                normalizePreviewPart(preview.name()),
+                normalizePreviewPart(preview.subtitle()),
+                normalizePreviewPart(preview.attributes()),
+                normalizePreviewPart(preview.statLines()),
+                normalizeShinyStat(preview.shinyStat()));
+    }
+
+    private static String normalizePreviewPart(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizePreviewPart(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return "";
+        }
+        return values.stream().map(WynntilsItemPreviewAccess::normalizePreviewPart).toList().toString();
+    }
+
+    private static String normalizeShinyStat(ChatItemPreview.ShinyStat shinyStat) {
+        if (shinyStat == null) {
+            return "";
+        }
+        return String.join(
+                "\u001F",
+                normalizePreviewPart(shinyStat.key()),
+                normalizePreviewPart(shinyStat.displayName()),
+                String.valueOf(shinyStat.value()),
+                String.valueOf(shinyStat.rerolls()));
+    }
+
+    private static Optional<com.wynntils.models.stats.type.ShinyStat> shinyStat(WynnItem item) {
+        if (item instanceof ShinyItemProperty shinyItem) {
+            return shinyItem.getShinyStat();
+        }
+        return Optional.empty();
+    }
+
+    private static ChatItemPreview.ShinyStat shinyStatPreview(com.wynntils.models.stats.type.ShinyStat shinyStat) {
+        return new ChatItemPreview.ShinyStat(
+                shinyStat.statType().key(),
+                shinyStat.statType().displayName(),
+                shinyStat.value(),
+                shinyStat.shinyRerolls());
     }
 
     private static String subtitle(WynnItem item) {

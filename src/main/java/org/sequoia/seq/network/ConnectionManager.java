@@ -908,9 +908,25 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             if (statRolls.size() > 0) {
                 json.add("stat_rolls", statRolls);
             }
+            if (preview.shinyStat() != null) {
+                json.add("shiny_stat", shinyStatJson(preview.shinyStat()));
+            }
             previews.add(json);
         }
         return previews;
+    }
+
+    private static JsonObject shinyStatJson(ChatItemPreview.ShinyStat shinyStat) {
+        JsonObject json = new JsonObject();
+        if (shinyStat.key() != null && !shinyStat.key().isBlank()) {
+            json.addProperty("key", shinyStat.key());
+        }
+        if (shinyStat.displayName() != null && !shinyStat.displayName().isBlank()) {
+            json.addProperty("display_name", shinyStat.displayName());
+        }
+        json.addProperty("value", shinyStat.value());
+        json.addProperty("rerolls", shinyStat.rerolls());
+        return json;
     }
 
     private static JsonArray statRollArray(List<ChatItemPreview.StatRoll> statRolls) {
