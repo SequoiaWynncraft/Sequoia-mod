@@ -2105,7 +2105,7 @@ public class PartyFinderManager implements NotificationAccessor {
             return "Request rejected by backend validation. Check your inputs.";
         }
         if (statusCode == 401) {
-            return "Authentication required. Please relink/login with /seq link.";
+            return "Authentication required. Run /seq link to reauthorize with Wynncraft.";
         }
         if (statusCode == 403) {
             if (body.contains("guild") || body.contains("not in guild")) {

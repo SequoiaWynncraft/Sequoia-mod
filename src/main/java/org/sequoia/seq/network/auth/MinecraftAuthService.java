@@ -130,9 +130,9 @@ public class MinecraftAuthService {
         setState(AuthState.WAITING_FOR_BROWSER, null);
         notifyClickable("Click to authorize Sequoia with Wynncraft", start.authorizationUrl());
         if (openBrowser(start.authorizationUrl())) {
-            notifyPlayer("Opened Wynn OAuth in your browser.");
+            notifyPlayer("Opened Wynn authorization in your browser.");
         } else {
-            notifyPlayer("Could not open browser automatically. Click the Wynn OAuth link in chat.");
+            notifyPlayer("Could not open browser automatically. Click the Wynn authorization link in chat.");
         }
         return pollWynnOAuthStatus(start);
     }
@@ -154,7 +154,7 @@ public class MinecraftAuthService {
                             if ("FAILED".equalsIgnoreCase(status.status()) || "EXPIRED".equalsIgnoreCase(status.status())) {
                                 String message = status.errorMessage() != null && !status.errorMessage().isBlank()
                                         ? status.errorMessage()
-                                        : "Wynn OAuth authentication failed.";
+                                        : "Wynn authorization failed.";
                                 throw new AuthException(AuthErrorCode.BACKEND_VERIFICATION_FAILED, message);
                             }
                             Thread.sleep(OAUTH_POLL_INTERVAL.toMillis());
@@ -162,12 +162,12 @@ public class MinecraftAuthService {
                             throw exception;
                         } catch (InterruptedException exception) {
                             Thread.currentThread().interrupt();
-                            throw new AuthException(AuthErrorCode.NETWORK_FAILURE, "Wynn OAuth polling was interrupted.", true, exception);
+                            throw new AuthException(AuthErrorCode.NETWORK_FAILURE, "Wynn authorization polling was interrupted.", true, exception);
                         } catch (Exception exception) {
-                            throw new AuthException(AuthErrorCode.NETWORK_FAILURE, "Failed to poll Wynn OAuth status.", true, exception);
+                            throw new AuthException(AuthErrorCode.NETWORK_FAILURE, "Failed to poll Wynn authorization status.", true, exception);
                         }
                     }
-                    throw new AuthException(AuthErrorCode.CHALLENGE_EXPIRED, "Wynn OAuth authentication expired.");
+                    throw new AuthException(AuthErrorCode.CHALLENGE_EXPIRED, "Wynn authorization expired.");
                 },
                 executor);
     }
@@ -179,10 +179,10 @@ public class MinecraftAuthService {
                 || response.pollToken() == null
                 || response.pollToken().isBlank()
                 || response.expiresAt() == null) {
-            throw new AuthException(AuthErrorCode.MALFORMED_RESPONSE, "Backend returned a malformed Wynn OAuth start response.");
+            throw new AuthException(AuthErrorCode.MALFORMED_RESPONSE, "Backend returned a malformed Wynn authorization start response.");
         }
         if (!response.expiresAt().isAfter(Instant.now())) {
-            throw new AuthException(AuthErrorCode.CHALLENGE_EXPIRED, "Backend returned an already expired Wynn OAuth flow.");
+            throw new AuthException(AuthErrorCode.CHALLENGE_EXPIRED, "Backend returned an already expired Wynn authorization flow.");
         }
         return response;
     }
@@ -492,15 +492,15 @@ public class MinecraftAuthService {
 
     private static String defaultMessageFor(AuthErrorCode code, int status) {
         return switch (code) {
-            case CHALLENGE_EXPIRED -> "Minecraft auth challenge expired before it could be completed.";
-            case CHALLENGE_USED -> "Minecraft auth challenge was already used.";
+            case CHALLENGE_EXPIRED -> "Wynn authorization expired before it could be completed.";
+            case CHALLENGE_USED -> "Wynn authorization was already used.";
             case MINECRAFT_SESSION_INVALID -> "Minecraft session is invalid. Re-log in and try again.";
             case TOKEN_INVALID -> "Stored backend token is invalid. Re-authentication is required.";
             case TOKEN_EXPIRED -> "Stored backend token expired. Re-authentication is required.";
             case RATE_LIMITED -> "Authentication was rate limited. Please wait and try again.";
             case TRANSPORT_INSECURE -> "Refusing authentication over insecure transport.";
             case BACKEND_UNAVAILABLE -> "Backend is unavailable right now.";
-            case BACKEND_VERIFICATION_FAILED -> "Backend could not verify the Minecraft session.";
+            case BACKEND_VERIFICATION_FAILED -> "Backend could not complete Wynn authorization.";
             case WEBSOCKET_AUTH_REJECTED -> "Websocket authentication was rejected by the backend.";
             case PLAYER_NOT_LOGGED_IN -> "Minecraft account is not logged in.";
             case SESSION_JOIN_FAILED -> "Minecraft session join failed. Re-log in and try again.";

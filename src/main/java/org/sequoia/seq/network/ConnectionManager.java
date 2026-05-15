@@ -517,7 +517,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 player.displayClientMessage(
                         java.util.Objects.requireNonNull(
                                 NotificationAccessor.prefixed(
-                                        "Could not reconnect automatically. Run /seq connect manually (or /seq link if needed).")),
+                                        "Could not reconnect automatically. Run /seq connect manually, or /seq link to reauthorize.")),
                         false);
             }
         });
@@ -1534,7 +1534,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         authFailed = true;
                         authenticated = false;
                         registerAuthFailure();
-                        notify("Invalid auth request. Check username/UUID/session, then run /seq link.");
+                        notify("Invalid auth request. Run /seq link to reauthorize with Wynncraft.");
                         return;
                     }
 
@@ -1762,17 +1762,17 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         String url = extractPrimitiveString(json, "url");
         String code = extractPrimitiveString(json, "code");
         if (url == null) {
-            notify("Backend returned an invalid Discord OAuth link challenge.");
+            notify("Backend returned an invalid Wynn authorization request.");
             return;
         }
 
         if (code != null) {
-            notify("Discord link code: " + code);
+            notify("Wynn authorization code: " + code);
         }
 
-        notifyClickable("Click to link Discord", url);
+        notifyClickable("Click to authorize with Wynncraft", url);
         if (openBrowser(url)) {
-            notify("Opened Discord OAuth in your browser.");
+            notify("Opened Wynn authorization in your browser.");
         } else {
             notify("Could not open browser automatically. Click the link shown in chat.");
         }
@@ -1781,7 +1781,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private void handleAuthSuccess(JsonObject json) {
         String token = extractPrimitiveString(json, "token");
         if (token == null) {
-            notify("Discord link completed, but backend did not return a token.");
+            notify("Wynn authorization completed, but backend did not return a token.");
             return;
         }
 
@@ -1790,9 +1790,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         storeAuthSuccessSession(token, minecraftUsername);
         storeDiscordUsername(discordUsername);
         if (discordUsername != null) {
-            notify("Discord account linked as " + discordUsername + ".");
+            notify("Wynn authorization complete for linked Discord account " + discordUsername + ".");
         } else {
-            notify("Discord account linked.");
+            notify("Wynn authorization complete.");
         }
     }
 
@@ -1826,7 +1826,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             Desktop.getDesktop().browse(URI.create(url));
             return true;
         } catch (Exception exception) {
-            SeqClient.LOGGER.warn("[WebSocket] Failed to open browser for Discord OAuth", exception);
+            SeqClient.LOGGER.warn("[WebSocket] Failed to open browser for Wynn authorization", exception);
             return false;
         }
     }
