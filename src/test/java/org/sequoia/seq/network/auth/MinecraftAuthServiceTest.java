@@ -3,6 +3,7 @@ package org.sequoia.seq.network.auth;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -53,5 +54,36 @@ class MinecraftAuthServiceTest {
         assertEquals("backend-token", session.token());
         assertEquals("123e4567-e89b-12d3-a456-426614174000", session.minecraftUuid());
         assertEquals("VerifiedPlayer", session.minecraftUsername());
+    }
+
+    @Test
+    void sessionMatchesActiveProfileRequiresMatchingUuid() {
+        UUID activeUuid = UUID.fromString("123e4567-e89b-12d3-a456-426614174000");
+        StoredAuthSession session = new StoredAuthSession(
+                "backend-token",
+                Instant.now().plusSeconds(300),
+                "123e4567-e89b-12d3-a456-426614174000",
+                "VerifiedPlayer");
+
+        assertEquals(true, MinecraftAuthService.sessionMatchesActiveProfile(session, activeUuid));
+        assertEquals(
+                false,
+                MinecraftAuthService.sessionMatchesActiveProfile(
+                        session, UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")));
+    }
+
+    @Test
+    void sessionMatchesActiveProfileRejectsMissingOrInvalidStoredUuid() {
+        UUID activeUuid = UUID.fromString("123e4567-e89b-12d3-a456-426614174000");
+
+        assertEquals(
+                false,
+                MinecraftAuthService.sessionMatchesActiveProfile(
+                        new StoredAuthSession("token", Instant.now().plusSeconds(300), null, "Player"), activeUuid));
+        assertEquals(
+                false,
+                MinecraftAuthService.sessionMatchesActiveProfile(
+                        new StoredAuthSession("token", Instant.now().plusSeconds(300), "not-a-uuid", "Player"),
+                        activeUuid));
     }
 }

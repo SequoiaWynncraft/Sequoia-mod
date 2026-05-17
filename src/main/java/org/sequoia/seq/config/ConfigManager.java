@@ -22,6 +22,7 @@ public class ConfigManager {
     private static final String MINECRAFT_UUID_KEY = "_minecraft_uuid";
     private static final String MINECRAFT_USERNAME_KEY = "_minecraft_username";
     private static final String DISCORD_USERNAME_KEY = "_discord_username";
+    private static final String BOMB_SHARE_PROMPT_SEEN_KEY = "_bomb_share_prompt_seen";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private final List<Setting<?>> settings = new ArrayList<>();
     private String authToken;
@@ -29,6 +30,7 @@ public class ConfigManager {
     private String minecraftUuid;
     private String minecraftUsername;
     private String discordUsername;
+    private boolean bombSharePromptSeen;
 
     public ConfigManager() {
         Runtime.getRuntime().addShutdownHook(new Thread(this::save));
@@ -58,6 +60,10 @@ public class ConfigManager {
 
     public String getDiscordUsername() {
         return discordUsername;
+    }
+
+    public boolean isBombSharePromptSeen() {
+        return bombSharePromptSeen;
     }
 
     public StoredAuthSession getStoredAuthSession() {
@@ -108,6 +114,11 @@ public class ConfigManager {
         save();
     }
 
+    public void setBombSharePromptSeen(boolean bombSharePromptSeen) {
+        this.bombSharePromptSeen = bombSharePromptSeen;
+        save();
+    }
+
     /** Migrate token from legacy ~/.seq_token into sequoia.json on first run. */
     public void migrateToken() {
         if (authToken != null) return;
@@ -146,6 +157,7 @@ public class ConfigManager {
             if (discordUsername != null) {
                 root.addProperty(DISCORD_USERNAME_KEY, discordUsername);
             }
+            root.addProperty(BOMB_SHARE_PROMPT_SEEN_KEY, bombSharePromptSeen);
             for (Setting<?> setting : settings) {
                 String key = setting.getCategory() + "." + setting.getName();
                 root.add(key, setting.serialize());
@@ -192,6 +204,15 @@ public class ConfigManager {
             }
             if (root != null && root.has(DISCORD_USERNAME_KEY) && root.get(DISCORD_USERNAME_KEY).isJsonPrimitive()) {
                 discordUsername = root.get(DISCORD_USERNAME_KEY).getAsString();
+            }
+            if (root != null
+                    && root.has(BOMB_SHARE_PROMPT_SEEN_KEY)
+                    && root.get(BOMB_SHARE_PROMPT_SEEN_KEY).isJsonPrimitive()) {
+                try {
+                    bombSharePromptSeen = root.get(BOMB_SHARE_PROMPT_SEEN_KEY).getAsBoolean();
+                } catch (Exception ignored) {
+                    bombSharePromptSeen = false;
+                }
             }
 
             for (Setting<?> setting : settings) {

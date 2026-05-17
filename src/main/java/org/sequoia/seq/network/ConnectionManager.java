@@ -9,11 +9,14 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -26,6 +29,10 @@ import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
+import org.sequoia.seq.model.ChatItemPreview;
+import org.sequoia.seq.managers.GuildStorageTracker;
+import org.sequoia.seq.model.BombShareType;
+import org.sequoia.seq.model.GuildWarSubmission;
 import org.sequoia.seq.model.WynnClassType;
 import org.sequoia.seq.network.auth.AuthErrorCode;
 import org.sequoia.seq.network.auth.AuthException;
@@ -45,9 +52,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Pattern URL_PATTERN = Pattern.compile("^(https?://).+", Pattern.CASE_INSENSITIVE);
     private static final Map<String, Integer> VERSION_REMINDER_INTERVALS = Map.of(
+            "bomb_share_request", 5,
+            "bomb_share_submit", 5,
             "guild_chat", 20,
             "guild_raid_announcement", 5,
-            "guild_bank_event", 10);
+            "guild_bank_event", 10,
+            "guild_storage_snapshot", 10,
+            "guild_storage_reward", 10,
+            "guild_war_submission", 5);
 
     private static ConnectionManager instance;
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -75,11 +87,13 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private volatile boolean connectInProgress;
     private volatile boolean userInitiatedConnectFlow;
     private volatile boolean pendingDiscordLinkRequest;
+    private final Deque<GuildWarSubmission> pendingGuildWarSubmissions = new ConcurrentLinkedDeque<>();
 
     // Reconnect state
     private static boolean autoReconnect = true;
     private static int reconnectAttempt = 0;
     private static ScheduledFuture<?> reconnectTask;
+    private static boolean autoConnectSuppressedByManualDisconnect;
 
     private enum AuthFlow {
         CONNECT,
@@ -91,7 +105,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static Consumer<PartyFinderUpdateMessage> partyFinderUpdateHandler;
     private static Consumer<PartyFinderInviteMessage> partyFinderInviteHandler;
     private static Consumer<PartyFinderStaleWarningMessage> partyFinderStaleWarningHandler;
+    private static Consumer<BombSharePromptMessage> bombSharePromptHandler;
+    private static Consumer<BombShareResultMessage> bombShareResultHandler;
     private static final Map<String, Integer> versionRejectionCounts = new ConcurrentHashMap<>();
+    private final Map<String, BombSharePromptMessage> pendingBombSharePrompts = new ConcurrentHashMap<>();
     private volatile AuthFlow pendingAuthFlow = AuthFlow.CONNECT;
 
     public static ConnectionManager getInstance() {
@@ -106,7 +123,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     public static void disconnectForBlockedServer() {
-        if (WynncraftServerPolicy.isCurrentServerAllowed()) {
+        WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+        if (serverScope != WynncraftServerPolicy.Scope.BLOCKED) {
             return;
         }
 
@@ -115,6 +133,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
         ConnectionManager current = instance;
         if (current == null) {
+            return;
+        }
+
+        if (!current.hasConnectionState()) {
+            instance = null;
             return;
         }
 
@@ -145,21 +168,32 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private void connectInternal(AuthFlow authFlow, boolean userInitiated) {
-        if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
-            autoReconnect = false;
-            cancelReconnect();
+        if (userInitiated) {
+            autoConnectSuppressedByManualDisconnect = false;
+        }
+        WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+        if (serverScope != WynncraftServerPolicy.Scope.MAIN) {
             pendingDiscordLinkRequest = false;
             connectInProgress = false;
             finishConnectFlow();
-            if (userInitiated) {
-                notify(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE);
+            if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
+                autoReconnect = false;
+                cancelReconnect();
+                if (userInitiated) {
+                    notify(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE);
+                }
+                SeqClient.LOGGER.info("[WebSocket] Blocking {} outside main Wynncraft host", authFlow);
+            } else {
+                if (userInitiated) {
+                    notify("Waiting until Wynncraft server transfer finishes.");
+                }
+                SeqClient.LOGGER.info("[WebSocket] Delaying {} until Wynncraft host is confirmed", authFlow);
             }
-            SeqClient.LOGGER.info("[WebSocket] Blocking {} outside main Wynncraft host", authFlow);
             return;
         }
 
         pendingAuthFlow = authFlow;
-        pendingDiscordLinkRequest = authFlow == AuthFlow.LINK;
+        pendingDiscordLinkRequest = false;
         userInitiatedConnectFlow = userInitiated;
         autoReconnect = true;
         SeqClient.LOGGER.info(
@@ -172,14 +206,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 getURI());
         if (isOpen()) {
             if (authFlow == AuthFlow.LINK) {
-                if (authenticated && !authFailed && !notInGuild) {
-                    notifyConnectionStatus("Starting Discord OAuth link flow...");
-                    requestDiscordLink(true);
-                    finishConnectFlow();
-                } else {
-                    notifyConnectionStatus("Refreshing backend authentication...");
-                    refreshAuthentication();
-                }
+                notifyConnectionStatus("Refreshing Wynn OAuth authentication...");
+                refreshAuthentication();
             } else {
                 notifyConnectionStatus("Already connected/connecting.");
                 finishConnectFlow();
@@ -192,7 +220,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
 
         if (authFlow == AuthFlow.LINK) {
-            notifyConnectionStatus("Authenticating your Minecraft account on " + BuildConfig.ENVIRONMENT + "...");
+            notifyConnectionStatus("Reauthorizing Sequoia with Wynn OAuth on " + BuildConfig.ENVIRONMENT + "...");
         } else {
             notifyConnectionStatus("Connecting to " + BuildConfig.ENVIRONMENT + "...");
         }
@@ -208,17 +236,39 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private void disconnectInternal(boolean userInitiated) {
+        if (userInitiated) {
+            autoConnectSuppressedByManualDisconnect = true;
+        }
+        boolean open = isOpen();
+        boolean hadConnectionState = hasConnectionState();
+        boolean hadAutoReconnect = autoReconnect;
+        if (!hadConnectionState && !hadAutoReconnect) {
+            pendingDiscordLinkRequest = false;
+            connectInProgress = false;
+            connectedSince = null;
+            instance = null;
+            if (userInitiated) {
+                notify("Not connected");
+            }
+            return;
+        }
+
         SeqClient.LOGGER.info(
                 "[WebSocket] disconnect() called open={} authenticated={} autoReconnect={}",
-                isOpen(),
+                open,
                 authenticated,
                 autoReconnect);
         finishConnectFlow();
         autoReconnect = false;
         cancelReconnect();
         connectInProgress = false;
-        if (!isOpen()) {
+        if (!open) {
+            authenticated = false;
+            authFailed = false;
+            notInGuild = false;
+            connectedSince = null;
             pendingDiscordLinkRequest = false;
+            instance = null;
             if (userInitiated) {
                 notify("Not connected");
             }
@@ -246,10 +296,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 handshake != null ? handshake.getHttpStatusMessage() : "null");
         connectInProgress = false;
         reconnectAttempt = 0;
-        authenticated = true;
+        authenticated = false;
         authFailed = false;
         notInGuild = false;
-        connectedSince = Instant.now();
+        connectedSince = null;
         autoReconnect = true;
         authAttempt = 0;
         nextAllowedAuthAttemptAtMs = 0;
@@ -258,17 +308,15 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         if (pendingAuthFlow == AuthFlow.LINK) {
             notifyConnectionStatus(
                     username != null && !username.isBlank()
-                            ? "Authenticated Minecraft account: " + username
-                            : "Authenticated Minecraft account.");
-            requestDiscordLink(true);
+                            ? "Connected websocket for " + username + ". Waiting for backend authentication..."
+                            : "Connected websocket. Waiting for backend authentication...");
         } else {
             notifyConnectionStatus(
                     username != null && !username.isBlank()
-                            ? "Connected as " + username
-                            : "Connected to " + BuildConfig.ENVIRONMENT + ".");
+                            ? "Connected websocket for " + username + ". Waiting for backend authentication..."
+                            : "Connected websocket to " + BuildConfig.ENVIRONMENT + ". Waiting for backend authentication...");
         }
         finishConnectFlow();
-        sendLocalPartyClassUpdate();
     }
 
     @Override
@@ -317,6 +365,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 ex != null ? ex.getMessage() : "null",
                 ex);
         connectInProgress = false;
+        authenticated = false;
+        connectedSince = null;
         notifyConnectionFailure("Connection error: " + (ex != null ? ex.getMessage() : "unknown"), false);
         finishConnectFlow();
     }
@@ -324,7 +374,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // ── Auto-reconnect ──
 
     private static void scheduleReconnect() {
-        if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
+        WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+        if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
             autoReconnect = false;
             cancelReconnect();
             SeqClient.LOGGER.info("[WebSocket] Auto reconnect suppressed outside main Wynncraft host");
@@ -345,6 +396,21 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 () -> {
                     instance = null;
                     try {
+                        WynncraftServerPolicy.Scope reconnectScope = WynncraftServerPolicy.currentScope();
+                        if (reconnectScope == WynncraftServerPolicy.Scope.BLOCKED) {
+                            autoReconnect = false;
+                            cancelReconnect();
+                            SeqClient.LOGGER.info("[WebSocket] Cancelled reconnect because current host is blocked");
+                            return;
+                        }
+                        if (reconnectScope != WynncraftServerPolicy.Scope.MAIN) {
+                            reconnectAttempt = Math.max(0, reconnectAttempt - 1);
+                            SeqClient.LOGGER.info(
+                                    "[WebSocket] Delaying reconnect attempt {} until Wynncraft host is confirmed",
+                                    reconnectAttempt);
+                            scheduleReconnect();
+                            return;
+                        }
                         SeqClient.LOGGER.info("[WebSocket] Running scheduled reconnect attempt {}", reconnectAttempt);
                         getInstance().connect();
                     } catch (Exception e) {
@@ -384,13 +450,64 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
     }
 
-    private static boolean shouldReconnectAfterClose(int code, boolean remote) {
+    static boolean shouldReconnectAfterClose(int code, boolean remote) {
         if (remote) {
             return true;
         }
         // Local clean close (1000) is treated as intentional; do not auto-reconnect.
         // Handshake/protocol close failures (e.g. 1002 from HTTP 502) should retry.
         return code != 1000;
+    }
+
+    private boolean hasConnectionState() {
+        return isOpen()
+                || connectInProgress
+                || authenticated
+                || authFailed
+                || notInGuild
+                || connectedSince != null
+                || reconnectTask != null
+                || userInitiatedConnectFlow
+                || pendingDiscordLinkRequest;
+    }
+
+    static boolean hasReconnectTask() {
+        return reconnectTask != null;
+    }
+
+    public static boolean canAutoConnectNow() {
+        ConnectionManager current = instance;
+        return shouldAttemptAutomaticConnect(
+                current != null && current.isOpen(),
+                current != null && current.authenticated,
+                current != null && current.connectInProgress,
+                reconnectTask != null,
+                autoConnectSuppressedByManualDisconnect);
+    }
+
+    public static boolean isAutoConnectSuppressedByManualDisconnect() {
+        return autoConnectSuppressedByManualDisconnect;
+    }
+
+    static void resetForTest() {
+        autoReconnect = true;
+        reconnectAttempt = 0;
+        autoConnectSuppressedByManualDisconnect = false;
+        cancelReconnect();
+        instance = null;
+    }
+
+    static boolean shouldAttemptAutomaticConnect(
+            boolean socketOpen,
+            boolean authenticated,
+            boolean connectInProgress,
+            boolean reconnectScheduled,
+            boolean manualDisconnectSuppressed) {
+        return !manualDisconnectSuppressed
+                && !socketOpen
+                && !authenticated
+                && !connectInProgress
+                && !reconnectScheduled;
     }
 
     private static void notifyManualConnectRequired() {
@@ -400,7 +517,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 player.displayClientMessage(
                         java.util.Objects.requireNonNull(
                                 NotificationAccessor.prefixed(
-                                        "Could not reconnect automatically. Run /seq connect manually (or /seq link if needed).")),
+                                        "Could not reconnect automatically. Run /seq connect manually, or /seq link to reauthorize.")),
                         false);
             }
         });
@@ -409,13 +526,20 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // ── Outgoing messages ──
 
     private void send(String type, JsonObject payload) {
-        if (isPrivilegedType(type) && !WynncraftServerPolicy.isCurrentServerAllowed()) {
-            SeqClient.LOGGER.warn("[WebSocket] Dropping {} outside main Wynncraft host", type);
+        if (isServerScopedType(type) && WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
+            SeqClient.LOGGER.warn("[WebSocket] Dropping {} outside confirmed main Wynncraft host", type);
             return;
         }
-        if (isPrivilegedType(type) && !canSendPrivileged(type)) {
+        if (isAuthenticatedOutboundType(type) && !canSendAuthenticated(type)) {
             return;
         }
+        if (isThrottleLimitedType(type) && !canSendThrottleLimited(type)) {
+            return;
+        }
+        sendPrepared(type, payload);
+    }
+
+    private void sendPrepared(String type, JsonObject payload) {
         if (payload == null) payload = new JsonObject();
         payload.addProperty("type", type);
         SeqClient.LOGGER.debug("[WebSocket] send type={} payload={}", type, truncate(payload.toString(), 512));
@@ -423,11 +547,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private void prepareAuthenticatedConnection(boolean forceRefresh) {
-        if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
+        WynncraftServerPolicy.Scope initialScope = WynncraftServerPolicy.currentScope();
+        if (initialScope != WynncraftServerPolicy.Scope.MAIN) {
             connectInProgress = false;
-            autoReconnect = false;
-            cancelReconnect();
-            notifyConnectionFailure(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE, false);
+            if (initialScope == WynncraftServerPolicy.Scope.BLOCKED) {
+                autoReconnect = false;
+                cancelReconnect();
+                notifyConnectionFailure(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE, false);
+            } else if (autoReconnect) {
+                scheduleReconnect();
+            }
             finishConnectFlow();
             return;
         }
@@ -458,11 +587,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     }
 
                     try {
-                        if (!WynncraftServerPolicy.isCurrentServerAllowed()) {
+                        WynncraftServerPolicy.Scope currentScope = WynncraftServerPolicy.currentScope();
+                        if (currentScope != WynncraftServerPolicy.Scope.MAIN) {
                             connectInProgress = false;
-                            autoReconnect = false;
-                            cancelReconnect();
-                            notifyConnectionFailure(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE, false);
+                            if (currentScope == WynncraftServerPolicy.Scope.BLOCKED) {
+                                autoReconnect = false;
+                                cancelReconnect();
+                                notifyConnectionFailure(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE, false);
+                            } else if (autoReconnect) {
+                                scheduleReconnect();
+                            }
                             finishConnectFlow();
                             return;
                         }
@@ -499,9 +633,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                             && !session.minecraftUsername().isBlank()
                                     ? "Refreshed backend token for " + session.minecraftUsername()
                                     : "Refreshed backend token.");
-                    if (pendingDiscordLinkRequest && isOpen() && authenticated && !authFailed && !notInGuild) {
-                        requestDiscordLink(true);
-                    }
                     finishConnectFlow();
                 }));
     }
@@ -534,6 +665,70 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     static JsonObject buildLinkRequestPayload(boolean allowRelink) {
         JsonObject payload = new JsonObject();
         payload.addProperty("allow_relink", allowRelink);
+        return payload;
+    }
+
+    static JsonObject buildGuildWarSubmissionPayload(GuildWarSubmission submission) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("territory", submission.territory());
+        payload.addProperty("submitted_by", submission.submittedBy());
+        payload.addProperty("submitted_at", submission.submittedAt());
+        payload.addProperty("start_time", submission.startTime());
+
+        JsonArray warrers = new JsonArray();
+        for (String warrer : submission.warrers()) {
+            warrers.add(warrer);
+        }
+        payload.add("warrers", warrers);
+
+        JsonObject damage = new JsonObject();
+        damage.addProperty("low", submission.stats().damageLow());
+        damage.addProperty("high", submission.stats().damageHigh());
+
+        JsonObject stats = new JsonObject();
+        stats.add("damage", damage);
+        stats.addProperty("attack", submission.stats().attackSpeed());
+        stats.addProperty("health", submission.stats().health());
+        stats.addProperty("defence", submission.stats().defence());
+
+        JsonObject results = new JsonObject();
+        results.add("stats", stats);
+        payload.add("results", results);
+
+        payload.addProperty("sr", submission.seasonRating());
+        if (submission.completedAt() != null && !submission.completedAt().isBlank()) {
+            payload.addProperty("completed_at", submission.completedAt());
+        }
+        return payload;
+    }
+
+    static JsonObject buildBombShareRequestPayload(String canonicalKey, List<BombShareType> requestedTypes) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("canonical_key", canonicalKey);
+        JsonArray types = new JsonArray();
+        if (requestedTypes != null) {
+            for (BombShareType requestedType : requestedTypes) {
+                if (requestedType != null) {
+                    types.add(requestedType.name());
+                }
+            }
+        }
+        payload.add("requested_types", types);
+        return payload;
+    }
+
+    static JsonObject buildBombShareSubmitPayload(String requestId, List<String> worlds) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("request_id", requestId);
+        JsonArray worldArray = new JsonArray();
+        if (worlds != null) {
+            for (String world : worlds) {
+                if (world != null && !world.isBlank()) {
+                    worldArray.add(world.trim());
+                }
+            }
+        }
+        payload.add("worlds", worldArray);
         return payload;
     }
 
@@ -587,7 +782,50 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         send("get_connected", null);
     }
 
+    public boolean sendBombShareRequest(String canonicalKey, List<BombShareType> requestedTypes) {
+        if (!isOpen() || !authenticated || authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendBombShareRequest dropped open={} authenticated={} authFailed={} notInGuild={}",
+                    isOpen(),
+                    authenticated,
+                    authFailed,
+                    notInGuild);
+            return false;
+        }
+        if (canonicalKey == null || canonicalKey.isBlank() || requestedTypes == null || requestedTypes.isEmpty()) {
+            SeqClient.LOGGER.warn("[WebSocket] sendBombShareRequest dropped invalid payload canonicalKey={}", canonicalKey);
+            return false;
+        }
+
+        send("bomb_share_request", buildBombShareRequestPayload(canonicalKey, requestedTypes));
+        return true;
+    }
+
+    public boolean sendBombShareSubmit(String requestId, List<String> worlds) {
+        if (!isOpen() || !authenticated || authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendBombShareSubmit dropped open={} authenticated={} authFailed={} notInGuild={}",
+                    isOpen(),
+                    authenticated,
+                    authFailed,
+                    notInGuild);
+            return false;
+        }
+        if (requestId == null || requestId.isBlank() || worlds == null || worlds.isEmpty()) {
+            SeqClient.LOGGER.warn("[WebSocket] sendBombShareSubmit dropped invalid payload requestId={}", requestId);
+            return false;
+        }
+
+        send("bomb_share_submit", buildBombShareSubmitPayload(requestId, worlds));
+        return true;
+    }
+
     public void sendGuildChat(String username, String nickname, String message, String avatarUrl) {
+        sendGuildChat(username, nickname, message, avatarUrl, List.of());
+    }
+
+    public void sendGuildChat(
+            String username, String nickname, String message, String avatarUrl, List<ChatItemPreview> itemPreviews) {
         if (!isOpen()) {
             SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat dropped: socket not open uri={}", getURI());
             return;
@@ -634,7 +872,100 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
         msg.addProperty("message", cleanedMessage);
         if (safeAvatarUrl != null) msg.addProperty("avatar_url", safeAvatarUrl);
+        JsonArray itemPreviewArray = itemPreviewArray(itemPreviews);
+        if (itemPreviewArray.size() > 0) {
+            msg.add("item_previews", itemPreviewArray);
+        }
         send("guild_chat", msg);
+    }
+
+    private static JsonArray itemPreviewArray(List<ChatItemPreview> itemPreviews) {
+        JsonArray previews = new JsonArray();
+        if (itemPreviews == null || itemPreviews.isEmpty()) {
+            return previews;
+        }
+        for (ChatItemPreview preview : itemPreviews) {
+            if (preview == null || preview.name() == null || preview.name().isBlank()) {
+                continue;
+            }
+            JsonObject json = new JsonObject();
+            json.addProperty("name", preview.name());
+            if (preview.subtitle() != null && !preview.subtitle().isBlank()) {
+                json.addProperty("subtitle", preview.subtitle());
+            }
+            if (preview.color() != null) {
+                json.addProperty("color", preview.color());
+            }
+            JsonArray attributes = stringArray(preview.attributes());
+            if (attributes.size() > 0) {
+                json.add("attributes", attributes);
+            }
+            JsonArray statLines = stringArray(preview.statLines());
+            if (statLines.size() > 0) {
+                json.add("stat_lines", statLines);
+            }
+            JsonArray statRolls = statRollArray(preview.statRolls());
+            if (statRolls.size() > 0) {
+                json.add("stat_rolls", statRolls);
+            }
+            if (preview.shinyStat() != null) {
+                json.add("shiny_stat", shinyStatJson(preview.shinyStat()));
+            }
+            previews.add(json);
+        }
+        return previews;
+    }
+
+    private static JsonObject shinyStatJson(ChatItemPreview.ShinyStat shinyStat) {
+        JsonObject json = new JsonObject();
+        if (shinyStat.key() != null && !shinyStat.key().isBlank()) {
+            json.addProperty("key", shinyStat.key());
+        }
+        if (shinyStat.displayName() != null && !shinyStat.displayName().isBlank()) {
+            json.addProperty("display_name", shinyStat.displayName());
+        }
+        json.addProperty("value", shinyStat.value());
+        json.addProperty("rerolls", shinyStat.rerolls());
+        return json;
+    }
+
+    private static JsonArray statRollArray(List<ChatItemPreview.StatRoll> statRolls) {
+        JsonArray array = new JsonArray();
+        if (statRolls == null || statRolls.isEmpty()) {
+            return array;
+        }
+        for (ChatItemPreview.StatRoll statRoll : statRolls) {
+            if (statRoll == null || statRoll.percentage() == null) {
+                continue;
+            }
+            JsonObject json = new JsonObject();
+            if (statRoll.apiName() != null && !statRoll.apiName().isBlank()) {
+                json.addProperty("api_name", statRoll.apiName());
+            }
+            if (statRoll.key() != null && !statRoll.key().isBlank()) {
+                json.addProperty("key", statRoll.key());
+            }
+            if (statRoll.displayName() != null && !statRoll.displayName().isBlank()) {
+                json.addProperty("display_name", statRoll.displayName());
+            }
+            json.addProperty("value", statRoll.value());
+            json.addProperty("percentage", statRoll.percentage());
+            array.add(json);
+        }
+        return array;
+    }
+
+    private static JsonArray stringArray(List<String> values) {
+        JsonArray array = new JsonArray();
+        if (values == null) {
+            return array;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                array.add(value);
+            }
+        }
+        return array;
     }
 
     public void sendRaidAnnouncement(
@@ -726,6 +1057,206 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         send("guild_bank_event", msg);
     }
 
+    public void sendGuildStorageSnapshot(long emeraldCurrent, long emeraldMax, long aspectCurrent, long aspectMax) {
+        if (!authenticated || !isOpen()) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildStorageSnapshot dropped open={} authenticated={}", isOpen(), authenticated);
+            return;
+        }
+        if (authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildStorageSnapshot dropped authFailed={} notInGuild={}", authFailed, notInGuild);
+            return;
+        }
+        if (emeraldCurrent < 0 || emeraldMax <= 0 || aspectCurrent < 0 || aspectMax <= 0) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildStorageSnapshot dropped invalid payload emerald={}/{} aspect={}/{}",
+                    emeraldCurrent,
+                    emeraldMax,
+                    aspectCurrent,
+                    aspectMax);
+            return;
+        }
+
+        JsonObject msg = new JsonObject();
+        msg.addProperty("emerald_current", emeraldCurrent);
+        msg.addProperty("emerald_max", emeraldMax);
+        msg.addProperty("aspect_current", aspectCurrent);
+        msg.addProperty("aspect_max", aspectMax);
+        SeqClient.LOGGER.info(
+                "[WebSocket] Sending guild_storage_snapshot emerald={}/{} aspect={}/{}",
+                emeraldCurrent,
+                emeraldMax,
+                aspectCurrent,
+                aspectMax);
+        send("guild_storage_snapshot", msg);
+    }
+
+    public void sendGuildStorageReward(
+            String senderUsername,
+            String recipientUsername,
+            String resourceType,
+            long amount,
+            int count,
+            Instant windowStartedAt) {
+        if (!authenticated || !isOpen()) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildStorageReward dropped open={} authenticated={}", isOpen(), authenticated);
+            return;
+        }
+        if (authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildStorageReward dropped authFailed={} notInGuild={}", authFailed, notInGuild);
+            return;
+        }
+
+        String safeSender = sanitizeMinecraftUsername(senderUsername);
+        String safeRecipient = sanitizeMinecraftUsername(recipientUsername);
+        String normalizedResourceType = resourceType == null ? "" : resourceType.trim().toLowerCase(Locale.ROOT);
+        if (safeSender == null
+                || safeRecipient == null
+                || count <= 0
+                || amount <= 0
+                || windowStartedAt == null
+                || (!normalizedResourceType.equals("emeralds") && !normalizedResourceType.equals("aspects"))) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildStorageReward dropped invalid payload sender='{}' recipient='{}' resource='{}' amount={} count={} windowStartedAt={}",
+                    senderUsername,
+                    recipientUsername,
+                    resourceType,
+                    amount,
+                    count,
+                    windowStartedAt);
+            return;
+        }
+
+        JsonObject msg = new JsonObject();
+        msg.addProperty("sender_username", safeSender);
+        msg.addProperty("recipient_username", safeRecipient);
+        msg.addProperty("resource_type", normalizedResourceType);
+        msg.addProperty("amount", amount);
+        msg.addProperty("count", count);
+        msg.addProperty("window_started_at", windowStartedAt.toString());
+        SeqClient.LOGGER.info(
+                "[WebSocket] Sending guild_storage_reward sender='{}' recipient='{}' resource='{}' amount={} count={} windowStartedAt={}",
+                safeSender,
+                safeRecipient,
+                normalizedResourceType,
+                amount,
+                count,
+                windowStartedAt);
+        send("guild_storage_reward", msg);
+    }
+
+    public boolean sendGuildWarSubmission(GuildWarSubmission submission) {
+        if (submission == null
+                || submission.territory() == null
+                || submission.territory().isBlank()
+                || submission.submittedBy() == null
+                || submission.submittedBy().isBlank()
+                || submission.submittedAt() == null
+                || submission.submittedAt().isBlank()
+                || submission.startTime() == null
+                || submission.startTime().isBlank()
+                || submission.warrers() == null
+                || submission.warrers().isEmpty()
+                || submission.stats() == null) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarSubmission dropped: invalid payload");
+            return false;
+        }
+
+        for (String warrer : submission.warrers()) {
+            if (warrer == null || !MC_USERNAME_PATTERN.matcher(warrer).matches()) {
+                SeqClient.LOGGER.warn("[WebSocket] sendGuildWarSubmission dropped invalid warrer={}", warrer);
+                return false;
+            }
+        }
+
+        WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+        if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarSubmission dropped outside main Wynncraft host");
+            return false;
+        }
+        if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
+            SeqClient.LOGGER.warn("[WebSocket] Queueing guild_war_submission until Wynncraft host is confirmed");
+            pendingGuildWarSubmissions.addLast(submission);
+            return true;
+        }
+
+        if (!authenticated || !isOpen()) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] Queueing guild_war_submission until websocket is ready open={} authenticated={}",
+                    isOpen(),
+                    authenticated);
+            pendingGuildWarSubmissions.addLast(submission);
+            return true;
+        }
+        if (authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] Queueing guild_war_submission until auth recovers authFailed={} notInGuild={}",
+                    authFailed,
+                    notInGuild);
+            pendingGuildWarSubmissions.addLast(submission);
+            return true;
+        }
+
+        return sendGuildWarSubmissionNow(submission, false);
+    }
+
+    public static void flushPendingOutbound() {
+        if (instance == null) {
+            return;
+        }
+        instance.flushPendingGuildWarSubmissions();
+    }
+
+    public static void resetForAccountChange() {
+        ConnectionManager current = instance;
+        if (current == null) {
+            return;
+        }
+
+        current.pendingGuildWarSubmissions.clear();
+        current.pendingBombSharePrompts.clear();
+        current.disconnectInternal(false);
+    }
+
+    private void flushPendingGuildWarSubmissions() {
+        if (pendingGuildWarSubmissions.isEmpty()
+                || !isOpen()
+                || !authenticated
+                || authFailed
+                || notInGuild
+                || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
+            return;
+        }
+
+        GuildWarSubmission pending = pendingGuildWarSubmissions.peekFirst();
+        if (pending == null) {
+            return;
+        }
+        if (sendGuildWarSubmissionNow(pending, true)) {
+            pendingGuildWarSubmissions.pollFirst();
+        }
+    }
+
+    private boolean sendGuildWarSubmissionNow(GuildWarSubmission submission, boolean replay) {
+        if (!canSendAuthenticated("guild_war_submission") || !canSendThrottleLimited("guild_war_submission")) {
+            return false;
+        }
+        JsonObject payload = buildGuildWarSubmissionPayload(submission);
+        SeqClient.LOGGER.info(
+                replay
+                        ? "[WebSocket] Replaying queued guild_war_submission territory='{}' warrers={} completedAt={} sr={}"
+                        : "[WebSocket] Sending guild_war_submission territory='{}' warrers={} completedAt={} sr={}",
+                submission.territory(),
+                submission.warrers(),
+                submission.completedAt(),
+                submission.seasonRating());
+        sendPrepared("guild_war_submission", payload);
+        return true;
+    }
+
     public void sendPartyClassUpdate(WynnClassType classType) {
         if (!authenticated || !isOpen() || classType == null) {
             SeqClient.LOGGER.warn(
@@ -786,6 +1317,34 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return true;
     }
 
+    public boolean sendPartySyncMemberRemoved(String username, String reason) {
+        if (!authenticated || !isOpen()) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendPartySyncMemberRemoved dropped open={} authenticated={}",
+                    isOpen(),
+                    authenticated);
+            return false;
+        }
+        if (authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendPartySyncMemberRemoved dropped authFailed={} notInGuild={}",
+                    authFailed,
+                    notInGuild);
+            return false;
+        }
+        if (username == null || username.isBlank() || reason == null || reason.isBlank()) {
+            SeqClient.LOGGER.warn("[WebSocket] sendPartySyncMemberRemoved dropped invalid payload");
+            return false;
+        }
+
+        JsonObject msg = new JsonObject();
+        msg.addProperty("username", username);
+        msg.addProperty("reason", reason);
+        SeqClient.LOGGER.info("[WebSocket] Sending party_sync_member_removed username={} reason={}", username, reason);
+        send("party_sync_member_removed", msg);
+        return true;
+    }
+
     public void sendLocalPartyClassUpdate() {
         WynnClassType classType = WynnClassCache.resolveLocalClassType();
         if (classType == null) {
@@ -823,9 +1382,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     } else {
                         clearDiscordUsername();
                     }
-                    if (pendingDiscordLinkRequest) {
-                        requestDiscordLink(true);
-                    }
+                    flushPendingGuildWarSubmissions();
                     sendLocalPartyClassUpdate();
                 }
                 case "auth_challenge" -> handleAuthChallenge(json);
@@ -843,6 +1400,61 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     } else {
                         SeqClient.LOGGER.warn("[WebSocket] connected_users had no callback listener");
                     }
+                }
+                case "bomb_share_prompt" -> {
+                    List<BombShareType> requestedTypes =
+                            parseBombShareTypes(json.has("requested_types") ? json.getAsJsonArray("requested_types") : null);
+                    BombSharePromptMessage prompt = new BombSharePromptMessage(
+                            extractPrimitiveString(json, "request_id"),
+                            extractPrimitiveString(json, "requester_username"),
+                            extractPrimitiveString(json, "canonical_key"),
+                            requestedTypes,
+                            json.has("expires_at") && !json.get("expires_at").isJsonNull()
+                                    ? Instant.parse(json.get("expires_at").getAsString())
+                                    : null,
+                            json.has("first_prompt")
+                                    && json.get("first_prompt").isJsonPrimitive()
+                                    && json.get("first_prompt").getAsBoolean());
+                    if (prompt.requestId() != null) {
+                        pendingBombSharePrompts.put(prompt.requestId(), prompt);
+                    }
+                    if (bombSharePromptHandler != null) {
+                        bombSharePromptHandler.accept(prompt);
+                    } else {
+                        SeqClient.LOGGER.warn("[WebSocket] Received bomb_share_prompt but handler is not registered");
+                    }
+                }
+                case "bomb_share_result" -> {
+                    BombShareResultMessage result = new BombShareResultMessage(
+                            extractPrimitiveString(json, "request_id"),
+                            extractPrimitiveString(json, "canonical_key"),
+                            parseBombShareTypes(json.has("requested_types") ? json.getAsJsonArray("requested_types") : null),
+                            parsePrimitiveStringArray(json.has("worlds") ? json.getAsJsonArray("worlds") : null),
+                            json.has("share_count") && json.get("share_count").isJsonPrimitive()
+                                    ? json.get("share_count").getAsInt()
+                                    : 0);
+                    if (result.requestId() != null) {
+                        pendingBombSharePrompts.remove(result.requestId());
+                    }
+                    if (bombShareResultHandler != null) {
+                        bombShareResultHandler.accept(result);
+                    } else {
+                        SeqClient.LOGGER.warn("[WebSocket] Received bomb_share_result but handler is not registered");
+                    }
+                }
+                case "guild_storage_snapshot" -> {
+                    long emeraldCurrent = json.get("emerald_current").getAsLong();
+                    long emeraldMax = json.get("emerald_max").getAsLong();
+                    long aspectCurrent = json.get("aspect_current").getAsLong();
+                    long aspectMax = json.get("aspect_max").getAsLong();
+                    SeqClient.LOGGER.info(
+                            "[WebSocket] Applying guild_storage_snapshot emerald={}/{} aspect={}/{}",
+                            emeraldCurrent,
+                            emeraldMax,
+                            aspectCurrent,
+                            aspectMax);
+                    Minecraft.getInstance().execute(() -> GuildStorageTracker.getInstance().applyRemoteSnapshot(
+                            emeraldCurrent, emeraldMax, aspectCurrent, aspectMax));
                 }
                 case "discord_chat" -> {
                     if (discordChatHandler != null) {
@@ -938,7 +1550,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         authFailed = true;
                         authenticated = false;
                         registerAuthFailure();
-                        notify("Invalid auth request. Check username/UUID/session, then run /seq link.");
+                        notify("Invalid auth request. Run /seq link to reauthorize with Wynncraft.");
                         return;
                     }
 
@@ -1020,6 +1632,34 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         partyFinderStaleWarningHandler = handler;
     }
 
+    public static void onBombSharePrompt(Consumer<BombSharePromptMessage> handler) {
+        SeqClient.LOGGER.info("[WebSocket] Registering bomb_share_prompt handler present={}", handler != null);
+        bombSharePromptHandler = handler;
+    }
+
+    public static void onBombShareResult(Consumer<BombShareResultMessage> handler) {
+        SeqClient.LOGGER.info("[WebSocket] Registering bomb_share_result handler present={}", handler != null);
+        bombShareResultHandler = handler;
+    }
+
+    public Optional<BombSharePromptMessage> getPendingBombSharePrompt(String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(pendingBombSharePrompts.get(requestId));
+    }
+
+    public Optional<BombSharePromptMessage> removePendingBombSharePrompt(String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(pendingBombSharePrompts.remove(requestId));
+    }
+
+    public boolean hasPendingBombSharePrompt(String requestId) {
+        return requestId != null && !requestId.isBlank() && pendingBombSharePrompts.containsKey(requestId);
+    }
+
     private static String truncate(String input, int maxLength) {
         if (input == null) {
             return "null";
@@ -1068,7 +1708,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         nextAllowedAuthAttemptAtMs = System.currentTimeMillis() + delay;
     }
 
-    private boolean canSendPrivileged(String type) {
+    private boolean canSendAuthenticated(String type) {
         if (!authenticated || authFailed || notInGuild) {
             SeqClient.LOGGER.warn(
                     "[WebSocket] Dropping {}: authenticated={} authFailed={} notInGuild={}",
@@ -1078,6 +1718,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     notInGuild);
             return false;
         }
+        return true;
+    }
+
+    private boolean canSendThrottleLimited(String type) {
         long now = System.currentTimeMillis();
         if (now < nextPrivilegedSendAtMs) {
             SeqClient.LOGGER.debug("[WebSocket] Throttled {} send", type);
@@ -1087,12 +1731,36 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return true;
     }
 
-    private static boolean isPrivilegedType(String type) {
-        return "guild_chat".equals(type)
+    static boolean isAuthenticatedOutboundType(String type) {
+        return isServerScopedType(type);
+    }
+
+    static boolean isServerScopedType(String type) {
+        return "bomb_share_request".equals(type)
+                || "bomb_share_submit".equals(type)
+                || "guild_chat".equals(type)
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)
+                || "guild_storage_snapshot".equals(type)
+                || "guild_storage_reward".equals(type)
+                || "guild_war_submission".equals(type)
                 || "party_class_update".equals(type)
                 || "party_sync_snapshot".equals(type)
+                || "party_sync_member_removed".equals(type)
+                || "link_request".equals(type)
+                || "get_connected".equals(type);
+    }
+
+    static boolean isThrottleLimitedType(String type) {
+        return "bomb_share_request".equals(type)
+                || "bomb_share_submit".equals(type)
+                || "guild_chat".equals(type)
+                || "guild_raid_announcement".equals(type)
+                || "guild_bank_event".equals(type)
+                || "guild_war_submission".equals(type)
+                || "party_class_update".equals(type)
+                || "party_sync_snapshot".equals(type)
+                || "party_sync_member_removed".equals(type)
                 || "link_request".equals(type)
                 || "get_connected".equals(type);
     }
@@ -1110,17 +1778,17 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         String url = extractPrimitiveString(json, "url");
         String code = extractPrimitiveString(json, "code");
         if (url == null) {
-            notify("Backend returned an invalid Discord OAuth link challenge.");
+            notify("Backend returned an invalid Wynn authorization request.");
             return;
         }
 
         if (code != null) {
-            notify("Discord link code: " + code);
+            notify("Wynn authorization code: " + code);
         }
 
-        notifyClickable("Click to link Discord", url);
+        notifyClickable("Click to authorize with Wynncraft", url);
         if (openBrowser(url)) {
-            notify("Opened Discord OAuth in your browser.");
+            notify("Opened Wynn authorization in your browser.");
         } else {
             notify("Could not open browser automatically. Click the link shown in chat.");
         }
@@ -1129,7 +1797,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private void handleAuthSuccess(JsonObject json) {
         String token = extractPrimitiveString(json, "token");
         if (token == null) {
-            notify("Discord link completed, but backend did not return a token.");
+            notify("Wynn authorization completed, but backend did not return a token.");
             return;
         }
 
@@ -1138,9 +1806,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         storeAuthSuccessSession(token, minecraftUsername);
         storeDiscordUsername(discordUsername);
         if (discordUsername != null) {
-            notify("Discord account linked as " + discordUsername + ".");
+            notify("Wynn authorization complete for linked Discord account " + discordUsername + ".");
         } else {
-            notify("Discord account linked.");
+            notify("Wynn authorization complete.");
         }
     }
 
@@ -1174,7 +1842,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             Desktop.getDesktop().browse(URI.create(url));
             return true;
         } catch (Exception exception) {
-            SeqClient.LOGGER.warn("[WebSocket] Failed to open browser for Discord OAuth", exception);
+            SeqClient.LOGGER.warn("[WebSocket] Failed to open browser for Wynn authorization", exception);
             return false;
         }
     }
@@ -1318,9 +1986,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
 
         String feature = switch (scope) {
+            case "bomb_share_request", "bomb_share_submit" -> "bomb share relays";
             case "guild_chat" -> "guild chat relays";
             case "guild_raid_announcement" -> "raid completion relays";
             case "guild_bank_event" -> "guild bank relays";
+            case "guild_war_submission" -> "guild war tracking";
             default -> "some Sequoia features";
         };
         String targetVersion = minimumSafeVersion != null && !minimumSafeVersion.isBlank()
@@ -1342,6 +2012,37 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private static List<BombShareType> parseBombShareTypes(JsonArray requestedTypesJson) {
+        if (requestedTypesJson == null) {
+            return List.of();
+        }
+
+        List<BombShareType> requestedTypes = new ArrayList<>();
+        requestedTypesJson.forEach(element -> BombShareType.fromWireValue(element.getAsString()).ifPresent(type -> {
+            if (!requestedTypes.contains(type)) {
+                requestedTypes.add(type);
+            }
+        }));
+        return List.copyOf(requestedTypes);
+    }
+
+    private static List<String> parsePrimitiveStringArray(JsonArray jsonArray) {
+        if (jsonArray == null) {
+            return List.of();
+        }
+
+        List<String> values = new ArrayList<>();
+        jsonArray.forEach(element -> {
+            if (element != null && element.isJsonPrimitive()) {
+                String value = element.getAsString();
+                if (value != null && !value.isBlank()) {
+                    values.add(value.trim());
+                }
+            }
+        });
+        return List.copyOf(values);
     }
 
     private static boolean isPartyFinderError(JsonObject json, String normalizedMessage) {
@@ -1410,4 +2111,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     public record PartyFinderStaleWarningMessage(
             String reason, long listingId, Instant disbandAt, long minutesRemaining) {}
+
+    public record BombSharePromptMessage(
+            String requestId,
+            String requesterUsername,
+            String canonicalKey,
+            List<BombShareType> requestedTypes,
+            Instant expiresAt,
+            boolean firstPrompt) {}
+
+    public record BombShareResultMessage(
+            String requestId,
+            String canonicalKey,
+            List<BombShareType> requestedTypes,
+            List<String> worlds,
+            int shareCount) {}
 }

@@ -8,6 +8,9 @@ import net.minecraft.network.chat.Style;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.events.DiscordChatEvent;
+import org.sequoia.seq.integrations.WynntilsGuildRankAccess;
+import org.sequoia.seq.integrations.WynntilsItemPreviewAccess;
+import org.sequoia.seq.model.ChatItemPreview;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.utils.PacketTextNormalizer;
 
@@ -16,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.time.Duration;
 import java.time.Instant;
@@ -42,11 +46,12 @@ public class ChatManager {
      * shout uses §#bd45ffff, territory/battle info uses §c, etc.
      */
     private static final int GUILD_CHAT_COLOR = 0x55FFFF;
+    private static final String BACKEND_GUILD_NAME = "Sequoia";
     // Nicknames may contain spaces (e.g. "Emanant Force"), so allow spaces in the
     // display-name capture group. DOTALL so the message group captures across \n.
     // Packet-level normalization strips the icon/banner glyph spam before matching.
     private static final Pattern CHAT_PATTERN = Pattern.compile(
-            "^([a-zA-Z0-9_][a-zA-Z0-9_ ]*[a-zA-Z0-9_]|[a-zA-Z0-9_]{3,16})\\s*:\\s*(.*)$",
+            "^(?:<\\d+>\\s*)?([a-zA-Z0-9_][a-zA-Z0-9_ ]*[a-zA-Z0-9_]|[a-zA-Z0-9_]{3,16})\\s*:\\s*(.*)$",
             Pattern.DOTALL);
     private static final Pattern HOVER_REAL_NAME_PATTERN = Pattern.compile(
             // Wynntils format: "<nick>'s real name is <username>"
@@ -59,7 +64,8 @@ public class ChatManager {
     private static volatile String lastOutgoingKey;
     private static volatile Instant lastOutgoingAt = Instant.EPOCH;
 
-    private static final Pattern WYNNCRAFT_WELCOME_PATTERN = Pattern.compile("§6§lWelcome to Wynncraft!");
+    private static final Pattern WYNNCRAFT_WELCOME_PATTERN = Pattern.compile("Welcome to Wynncraft!",
+            Pattern.CASE_INSENSITIVE);
 
     private static boolean firstConnect = true;
 
@@ -76,8 +82,7 @@ public class ChatManager {
      */
     public static void onSystemChat(Component message) {
         // Bumliotech goon parser to auto goon.
-        Matcher welcomeMatcher = WYNNCRAFT_WELCOME_PATTERN.matcher(message.getString());
-        if (SeqClient.getAutoConnectSetting().getValue() && welcomeMatcher.find() && mc.player != null
+        if (SeqClient.getAutoConnectSetting().getValue() && isWynncraftWelcomeMessage(message) && mc.player != null
                 && !ConnectionManager.getInstance().isOpen() && firstConnect) {
             firstConnect = !firstConnect;
             mc.execute(() -> mc.player.connection.sendCommand("seq connect"));
@@ -86,11 +91,13 @@ public class ChatManager {
         // Guild chat uses aqua color (§b / 0x55FFFF) per Wynntils' RecipientType.GUILD.
         // This cleanly rejects DMs, party, shout, territory, and other message types
         // that share the \uDAFF\uDFFC icon prefix but use different colors.
-        var color = message.getStyle().getColor();
-        if (color == null || color.getValue() != GUILD_CHAT_COLOR)
+        if (!hasLeadingGuildChatColor(message))
             return;
 
         if (!ConnectionManager.isConnected())
+            return;
+
+        if (!shouldRelayForLocalGuild())
             return;
 
         ParsedMessage parsed = parseGuildMessage(message);
@@ -116,7 +123,45 @@ public class ChatManager {
                 parsed.username(),
                 parsed.nickname(),
                 parsed.message(),
-                parsed.avatarUrl());
+                parsed.avatarUrl(),
+                parsed.itemPreviews());
+    }
+
+    private static boolean shouldRelayForLocalGuild() {
+        WynntilsGuildRankAccess.GuildMembership membership =
+                WynntilsGuildRankAccess.guildMembership(BACKEND_GUILD_NAME);
+        boolean shouldRelay = shouldRelayForGuild(membership);
+        if (!shouldRelay) {
+            SeqClient.LOGGER.debug(
+                    "[GuildChat] Dropping guild chat relay: local Wynntils guild='{}' expected='{}'",
+                    membership == null ? null : membership.currentGuildName(),
+                    BACKEND_GUILD_NAME);
+        }
+        return shouldRelay;
+    }
+
+    static boolean shouldRelayForGuild(WynntilsGuildRankAccess.GuildMembership membership) {
+        return membership != null && membership.available() && membership.inExpectedGuild();
+    }
+
+    static boolean hasLeadingGuildChatColor(Component message) {
+        if (message == null) {
+            return false;
+        }
+
+        var rootColor = message.getStyle().getColor();
+        if (rootColor != null) {
+            return rootColor.getValue() == GUILD_CHAT_COLOR;
+        }
+
+        Optional<Boolean> leadingColorIsGuild = message.visit((style, text) -> {
+            if (text == null || text.isBlank()) {
+                return Optional.empty();
+            }
+            var color = style.getColor();
+            return Optional.of(color != null && color.getValue() == GUILD_CHAT_COLOR);
+        }, Style.EMPTY);
+        return leadingColorIsGuild.orElse(false);
     }
 
     /**
@@ -136,6 +181,12 @@ public class ChatManager {
 
         String displayedName = matcher.group(1).trim();
         String content = matcher.group(2).trim();
+        WynntilsItemPreviewAccess.Result itemPreviewResult =
+                WynntilsItemPreviewAccess.extract(extractRawContent(message.getString()));
+        String previewCleanedContent = PacketTextNormalizer.normalizeForParsing(itemPreviewResult.message());
+        if (!previewCleanedContent.isBlank()) {
+            content = previewCleanedContent;
+        }
 
         if (content.isEmpty())
             return null;
@@ -163,7 +214,28 @@ public class ChatManager {
                 + URLEncoder.encode(avatarUsername, StandardCharsets.UTF_8).replace("+", "%20")
                 + "/128";
         String nickname = deriveNickname(displayedName, avatarUsername);
-        return new ParsedMessage(avatarUsername, nickname, content, avatarUrl);
+        return new ParsedMessage(avatarUsername, nickname, content, avatarUrl, itemPreviewResult.previews());
+    }
+
+    private static String extractRawContent(String rawText) {
+        if (rawText == null || rawText.isBlank()) {
+            return "";
+        }
+        int colonIndex = rawText.indexOf(':');
+        if (colonIndex < 0 || colonIndex == rawText.length() - 1) {
+            return "";
+        }
+        return rawText.substring(colonIndex + 1).trim();
+    }
+
+    static boolean isWynncraftWelcomeMessage(Component message) {
+        String normalized = PacketTextNormalizer.normalizeForParsing(message == null ? null : message.getString());
+        if (normalized.isEmpty()) {
+            return false;
+        }
+
+        Matcher welcomeMatcher = WYNNCRAFT_WELCOME_PATTERN.matcher(normalized);
+        return welcomeMatcher.find() && normalized.contains("play.wynncraft.com");
     }
 
     private static String deriveNickname(String displayedName, String actualUsername) {
@@ -379,6 +451,7 @@ public class ChatManager {
         });
     }
 
-    record ParsedMessage(String username, String nickname, String message, String avatarUrl) {
+    record ParsedMessage(
+            String username, String nickname, String message, String avatarUrl, List<ChatItemPreview> itemPreviews) {
     }
 }

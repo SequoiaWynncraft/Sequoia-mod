@@ -19,6 +19,7 @@ import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.SharedSuggestionProvider;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
+import org.sequoia.seq.managers.BombShareManager;
 import org.sequoia.seq.managers.PartyFinderManager;
 import org.sequoia.seq.managers.PartyListing;
 import org.sequoia.seq.model.Activity;
@@ -107,6 +108,7 @@ public class SeqCommand {
                                                         sendFeedback(ctx.getSource(), "Logged out and token cleared.");
                                                         return 1;
                                                 }))
+                                .then(buildBombCommand())
                                 .then(buildPartyCommand("party"))
                                 .then(buildPartyCommand("p"));
 
@@ -193,6 +195,29 @@ public class SeqCommand {
                                                                                 .inviteAllCurrentMembersFromCommand())));
         }
 
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildBombCommand() {
+                return ClientCommandManager.literal("bomb")
+                                .then(ClientCommandManager.literal("_share")
+                                                .then(ClientCommandManager.argument(
+                                                                "requestId",
+                                                                StringArgumentType.word())
+                                                                .executes(ctx -> SeqClient.getBombShareManager()
+                                                                                .sharePrompt(StringArgumentType
+                                                                                                .getString(
+                                                                                                                ctx,
+                                                                                                                "requestId")))))
+                                .then(ClientCommandManager.literal("_mute-requests")
+                                                .executes(ctx -> SeqClient.getBombShareManager().muteRequests()))
+                                .then(ClientCommandManager.argument(
+                                                "selectors",
+                                                StringArgumentType.greedyString())
+                                                .suggests(SeqCommand::suggestBombSelectors)
+                                                .executes(ctx -> SeqClient.getBombShareManager()
+                                                                .requestBombShare(StringArgumentType.getString(
+                                                                                ctx,
+                                                                                "selectors"))));
+        }
+
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildPartyJoinCommand() {
                 return ClientCommandManager.literal("join")
                                 .then(ClientCommandManager.argument(
@@ -220,6 +245,15 @@ public class SeqCommand {
         private static int openPartyScreen() {
                 SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new PartyFinderScreen(SeqClient.mc.screen)));
                 return 1;
+        }
+
+        private static CompletableFuture<Suggestions> suggestBombSelectors(
+                        CommandContext<FabricClientCommandSource> ctx,
+                        SuggestionsBuilder builder) {
+                for (String suggestion : BombShareManager.suggestionsFor(builder.getRemaining())) {
+                        builder.suggest(suggestion);
+                }
+                return builder.buildFuture();
         }
 
         private static int openPartyCreateScreen() {

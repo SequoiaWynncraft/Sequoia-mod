@@ -23,6 +23,8 @@ import org.sequoia.seq.model.Activity;
 import org.sequoia.seq.model.PartyMode;
 import org.sequoia.seq.model.PartyRegion;
 import org.sequoia.seq.model.PartyStatus;
+import org.sequoia.seq.utils.TextInputFilters;
+import org.sequoia.seq.utils.TextInputHelper;
 import org.sequoia.seq.utils.rendering.nvg.NVGContext;
 import org.sequoia.seq.utils.rendering.nvg.NVGWrapper;
 
@@ -34,6 +36,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         "Nexus of Light",
         "The Canyon Colossus",
         "The Nameless Anomaly",
+        "The Wartorn Palace",
         "Prelude to Annihilation",
     };
     private static final String[] PARTY_TAGS = {"Chill", "Grind"};
@@ -969,6 +972,17 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 party.closeReason);
         rowX += STATUS_BADGE_W + 8;
 
+        float rightX = x + w - CARD_PADDING;
+        float reservedRightWidth = 22;
+        for (int j = 0; j < party.members.size(); j++) {
+            if (getClassIcon(party.members.get(j).className) != null) {
+                reservedRightWidth += CLASS_ICON_SIZE + 4;
+            }
+        }
+        reservedRightWidth += 6;
+        reservedRightWidth += nvgTextBounds(nvg, 0, 0, getPartyCardLabel(party), new float[4]);
+        float leaderTextMaxX = rightX - reservedRightWidth;
+
         PartyMember leader = party.getLeader();
         if (leader != null) {
             String leaderName = leader.displayName();
@@ -984,11 +998,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
             var nc = NVGContext.nvgColor(MEMBER_TEXT_COLOR);
             nvgFillColor(nvg, nc);
-            nvgText(nvg, rowX, centerY, leaderName);
+            String clippedLeaderName = fitTextToWidth(nvg, leaderName, Math.max(0, leaderTextMaxX - rowX));
+            if (!clippedLeaderName.isEmpty()) {
+                nvgText(nvg, rowX, centerY, clippedLeaderName);
+            }
             nc.free();
         }
-
-        float rightX = x + w - CARD_PADDING;
 
         // Expand "+"
         nvgFontFace(nvg, fontName);
@@ -1018,6 +1033,32 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFillColor(nvg, tc);
         nvgText(nvg, rightX, centerY, getPartyCardLabel(party));
         tc.free();
+    }
+
+    private String fitTextToWidth(long nvg, String text, float maxWidth) {
+        if (text == null || text.isEmpty() || maxWidth <= 0) {
+            return "";
+        }
+
+        float fullWidth = nvgTextBounds(nvg, 0, 0, text, new float[4]);
+        if (fullWidth <= maxWidth) {
+            return text;
+        }
+
+        String ellipsis = "...";
+        float ellipsisWidth = nvgTextBounds(nvg, 0, 0, ellipsis, new float[4]);
+        if (ellipsisWidth > maxWidth) {
+            return "";
+        }
+
+        for (int end = text.length() - 1; end > 0; end--) {
+            String candidate = text.substring(0, end) + ellipsis;
+            if (nvgTextBounds(nvg, 0, 0, candidate, new float[4]) <= maxWidth) {
+                return candidate;
+            }
+        }
+
+        return ellipsis;
     }
 
     private void renderMemberRow(
@@ -2745,6 +2786,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             case "The Nameless Anomaly" -> "TNA";
             case "The Canyon Colossus" -> "TCC";
             case "Nexus of Light" -> "NOL";
+            case "The Wartorn Palace" -> "TWP";
             case "Prelude to Annihilation" -> "PTA";
             default -> tag;
         };
@@ -2813,18 +2855,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             if (inviteUsernameInput.length() >= 16) {
                 return true;
             }
-            if (keyCode >= GLFW.GLFW_KEY_A && keyCode <= GLFW.GLFW_KEY_Z) {
-                boolean shift = (keyEvent.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0;
-                char letter = (char) ('a' + (keyCode - GLFW.GLFW_KEY_A));
-                inviteUsernameInput += shift ? Character.toUpperCase(letter) : letter;
-                return true;
-            }
-            if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
-                inviteUsernameInput += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
-                return true;
-            }
-            if (keyCode == GLFW.GLFW_KEY_MINUS && (keyEvent.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0) {
-                inviteUsernameInput += '_';
+            Character typedCharacter = TextInputHelper.getTypedCharacter(keyEvent);
+            if (typedCharacter != null && TextInputFilters.isMinecraftUsernameCharacter(typedCharacter)) {
+                inviteUsernameInput += typedCharacter;
                 return true;
             }
             return true;
@@ -2894,20 +2927,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 }
                 return true;
             }
-            if (keyCode >= GLFW.GLFW_KEY_A && keyCode <= GLFW.GLFW_KEY_Z) {
-                boolean shift = (keyEvent.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0;
-                char letter = (char) ('a' + (keyCode - GLFW.GLFW_KEY_A));
-                searchQuery += shift ? Character.toUpperCase(letter) : letter;
-                scrollOffset = 0;
-                return true;
-            }
-            if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
-                searchQuery += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
-                scrollOffset = 0;
-                return true;
-            }
-            if (keyCode == GLFW.GLFW_KEY_SPACE) {
-                searchQuery += ' ';
+            Character typedCharacter = TextInputHelper.getTypedCharacter(keyEvent);
+            if (typedCharacter != null && TextInputHelper.isPrintableCharacter(typedCharacter)) {
+                searchQuery += typedCharacter;
                 scrollOffset = 0;
                 return true;
             }

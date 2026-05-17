@@ -4,6 +4,7 @@ import net.minecraft.client.input.KeyEvent;
 import org.lwjgl.glfw.GLFW;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.config.Setting;
+import org.sequoia.seq.utils.TextInputHelper;
 import org.sequoia.seq.utils.rendering.nvg.NVGContext;
 import org.sequoia.seq.utils.rendering.nvg.NVGWrapper;
 
@@ -129,30 +130,9 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
             }
             return true;
         }
-
-        // Accept printable characters via the character field if available
-        char c = (char) keyEvent.key();
-        // Use scancode-based approach for letters and common chars
-        if (keyCode >= GLFW.GLFW_KEY_A && keyCode <= GLFW.GLFW_KEY_Z) {
-            boolean shift = (keyEvent.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0;
-            char letter = (char) ('a' + (keyCode - GLFW.GLFW_KEY_A));
-            editBuffer += shift ? Character.toUpperCase(letter) : letter;
-            return true;
-        }
-        if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
-            editBuffer += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
-            return true;
-        }
-        if (keyCode == GLFW.GLFW_KEY_SPACE) {
-            editBuffer += ' ';
-            return true;
-        }
-        if (keyCode == GLFW.GLFW_KEY_PERIOD) {
-            editBuffer += '.';
-            return true;
-        }
-        if (keyCode == GLFW.GLFW_KEY_MINUS) {
-            editBuffer += '-';
+        Character typedCharacter = TextInputHelper.getTypedCharacter(keyEvent);
+        if (typedCharacter != null && TextInputHelper.isPrintableCharacter(typedCharacter)) {
+            editBuffer += typedCharacter;
             return true;
         }
 

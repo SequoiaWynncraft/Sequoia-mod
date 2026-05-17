@@ -137,6 +137,48 @@ class GuildBankTrackerTest {
     }
 
     @Test
+    void parseMessageHandlesAbbreviatedGuildSuffixWithoutBankTier() {
+        GuildBankTracker tracker = new GuildBankTracker();
+
+        GuildBankTracker.GuildBankEvent withdrawal =
+                tracker.parseEvent("cinfrascitizen withdrew 1x Mural Shard [✫✫✫] from the Guild");
+        GuildBankTracker.GuildBankEvent deposit =
+                tracker.parseEvent("cinfrascitizen deposited 1x Mural Shard [✫✫✫] to the Guild");
+
+        assertNotNull(withdrawal);
+        assertEquals(GuildBankTracker.GuildBankAction.WITHDRAWAL, withdrawal.action());
+        assertEquals("cinfrascitizen", withdrawal.player());
+        assertEquals(1, withdrawal.quantity());
+        assertEquals("Mural Shard", withdrawal.itemName());
+        assertEquals("✫✫✫", withdrawal.charges());
+        assertEquals("Unknown", withdrawal.accessTier());
+
+        assertNotNull(deposit);
+        assertEquals(GuildBankTracker.GuildBankAction.DEPOSIT, deposit.action());
+        assertEquals("Unknown", deposit.accessTier());
+    }
+
+    @Test
+    void parseMessageHandlesFormattedGuildChatLogLines() {
+        GuildBankTracker tracker = new GuildBankTracker();
+
+        GuildBankTracker.GuildBankEvent withdrawal = tracker.parseEvent(
+                "[10:45:41] [Render thread/INFO]: [CHAT/GUILD] &b&{fr:cp}󏿼󏿿󏿾&{fr:d} &3cinfrascitizen&b withdrew &e1x Mural Shard [✫✫✫]&b from the Guild&{fr:d}");
+        GuildBankTracker.GuildBankEvent deposit = tracker.parseEvent(
+                "[10:45:50] [Render thread/INFO]: [CHAT/GUILD] &b&{fr:cp}󏿼󏿿󏿾&{fr:d} &3cinfrascitizen&b deposited &e1x Mural Shard [✫✫✫]&b to the Guild&{fr:d}");
+
+        assertNotNull(withdrawal);
+        assertEquals("cinfrascitizen", withdrawal.player());
+        assertEquals("Mural Shard", withdrawal.itemName());
+        assertEquals("✫✫✫", withdrawal.charges());
+        assertEquals("Unknown", withdrawal.accessTier());
+
+        assertNotNull(deposit);
+        assertEquals(GuildBankTracker.GuildBankAction.DEPOSIT, deposit.action());
+        assertEquals("cinfrascitizen", deposit.player());
+    }
+
+    @Test
     void parseEventIgnoresGuildMessagesThatAreNotBankTransactions() {
         GuildBankTracker tracker = new GuildBankTracker();
 

@@ -148,8 +148,9 @@ public class AuthenticationScreen extends Screen {
     private void renderStatusPanel(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
         ConnectionManager connectionManager = ConnectionManager.getInstance();
         boolean connected = ConnectionManager.isConnected();
-        boolean linked = connectionManager.isDiscordLinked();
-        String linkedAccount = connectionManager.getLinkedDiscordUsername();
+        boolean authenticated = SeqClient.getConfigManager().getToken() != null
+                && !SeqClient.getConfigManager().getToken().isBlank();
+        String minecraftUsername = SeqClient.getConfigManager().getMinecraftUsername();
         String uptime = connectionManager.getUptimeString();
 
         float baseX = panelX + 34;
@@ -188,23 +189,23 @@ public class AuthenticationScreen extends Screen {
                 baseX,
                 authLineY,
                 "Authentication status:",
-                linked ? "Linked" : "Unlinked",
-                linked ? CONNECTED_COLOR : DISCONNECTED_COLOR);
+                authenticated ? "Authorized" : "Signed out",
+                authenticated ? CONNECTED_COLOR : DISCONNECTED_COLOR);
         drawMetaLine(
                 nvg,
                 fontName,
                 baseX,
                 authMetaY,
-                "Linked account: " + (linkedAccount != null && !linkedAccount.isBlank() ? linkedAccount : "None"));
+                "Minecraft profile: " + (minecraftUsername != null && !minecraftUsername.isBlank() ? minecraftUsername : "None"));
 
         ButtonBounds authButton = new ButtonBounds(baseX, authButtonY, BUTTON_WIDTH, BUTTON_HEIGHT);
         drawActionButton(
                 nvg,
                 fontName,
                 authButton,
-                linked ? "Unlink" : "Link",
-                linked ? DANGER_BUTTON : PRIMARY_BUTTON,
-                linked ? DANGER_BUTTON_HOVER : PRIMARY_BUTTON_HOVER);
+                authenticated ? "Logout" : "Authorize",
+                authenticated ? DANGER_BUTTON : PRIMARY_BUTTON,
+                authenticated ? DANGER_BUTTON_HOVER : PRIMARY_BUTTON_HOVER);
 
         NVGWrapper.drawRect(nvg, baseX, dividerY, panelWidth - 68, 1, DIVIDER_COLOR);
         drawMetaLine(
@@ -212,7 +213,7 @@ public class AuthenticationScreen extends Screen {
                 fontName,
                 baseX,
                 dividerY + NOTE_OFFSET,
-                "Unlink clears local authentication so the next link can use a different Discord account.");
+                "Logout clears only the local Sequoia session. Wynn authorization stays stored server-side.");
     }
 
     private void drawStatusLine(long nvg, String fontName, float x, float y, String label, String value, Color valueColor) {
@@ -312,7 +313,8 @@ public class AuthenticationScreen extends Screen {
 
         ButtonBounds authButton = getAuthButtonBounds();
         if (isHovered(mx, my, authButton.x(), authButton.y(), authButton.w(), authButton.h())) {
-            if (connectionManager.isDiscordLinked()) {
+            String token = SeqClient.getConfigManager().getToken();
+            if (token != null && !token.isBlank()) {
                 connectionManager.unlinkLocally();
             } else {
                 connectionManager.linkManually();

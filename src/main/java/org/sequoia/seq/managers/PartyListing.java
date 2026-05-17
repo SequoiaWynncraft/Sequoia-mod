@@ -54,6 +54,7 @@ public class PartyListing {
         register("The Nameless Anomaly", "TNA", "tna");
         register("The Canyon Colossus", "TCC", "tcc");
         register("Nexus of Light", "NOL", "nol");
+        register("The Wartorn Palace", "TWP", "twp");
         register("Prelude to Annihilation", "ANNI", "annihilation");
 
         // Backend aliases observed in API payloads

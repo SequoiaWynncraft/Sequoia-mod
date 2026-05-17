@@ -7,6 +7,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -33,6 +34,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     Instant.class, (JsonDeserializer<Instant>) (json, type, ctx) -> Instant.parse(json.getAsString()))
             .create();
     private static final long INVITE_NAME_LOOKUP_TIMEOUT_SECONDS = 3L;
+    private static final long INVITE_ALL_COMMAND_DELAY_MS = 500L;
     private static final String GAME_PARTY_CREATE_COMMAND = "party create";
     private static final String GAME_PARTY_INVITE_PREFIX = "party ";
     private static final String GAME_PARTY_KICK_PREFIX = "party kick ";
@@ -838,11 +840,12 @@ public class PartyFinderManager implements NotificationAccessor {
                 minutesRemaining);
 
         long safeMinutesRemaining = Math.max(0, minutesRemaining);
-        if ("heartbeat_lost".equals(reason)) {
-            notify("Your Party Finder listing will auto-disband in " + safeMinutesRemaining + " minutes.");
-            return;
-        }
-        notify("Your Party Finder listing is still solo and has not changed in a while.");
+        String unit = safeMinutesRemaining == 1 ? "minute" : "minutes";
+        notify("Your Party Finder listing looks inactive and will be removed in "
+                + safeMinutesRemaining
+                + " "
+                + unit
+                + " unless activity resumes.");
     }
 
     private void notifyInviteWithJoinAction(String message, long listingId, String inviteToken) {
@@ -1260,13 +1263,15 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     private static String abbreviateActivityName(String activityName) {
-        return switch (activityName) {
+        String normalizedName = PartyListing.backendNameToDisplayName(activityName);
+        return switch (normalizedName) {
             case "Nest of the Grootslangs" -> "NOG";
             case "The Nameless Anomaly" -> "TNA";
             case "The Canyon Colossus" -> "TCC";
             case "Nexus of Light" -> "NOL";
+            case "The Wartorn Palace" -> "TWP";
             case "Prelude to Annihilation" -> "ANNI";
-            default -> activityName;
+            default -> normalizedName;
         };
     }
 
@@ -1661,25 +1666,70 @@ public class PartyFinderManager implements NotificationAccessor {
                         }
 
                         Set<String> activeMemberKeys = collectListingMemberKeys(currentListing);
-                        int sentCount = 0;
-                        int skippedAtDispatch = finalSkippedCount;
+                        AtomicInteger sentCount = new AtomicInteger();
+                        AtomicInteger skippedAtDispatch = new AtomicInteger(finalSkippedCount);
+                        List<CompletableFuture<Boolean>> sendFutures = new ArrayList<>();
                         for (ResolvedInviteTarget target : targets) {
                             String memberKey = normalizeUuidLike(target.memberUUID());
                             if (memberKey == null || !activeMemberKeys.contains(memberKey)) {
-                                skippedAtDispatch++;
+                                skippedAtDispatch.incrementAndGet();
                                 continue;
                             }
-                            currentPlayer.connection.sendCommand(GAME_PARTY_INVITE_PREFIX + target.username());
-                            sentCount++;
+
+                            String command = GAME_PARTY_INVITE_PREFIX + target.username();
+                            long delayMs = (long) sendFutures.size() * INVITE_ALL_COMMAND_DELAY_MS;
+                            CompletableFuture<Boolean> sendFuture = new CompletableFuture<>();
+                            CompletableFuture.delayedExecutor(delayMs, TimeUnit.MILLISECONDS)
+                                    .execute(() -> SeqClient.mc.execute(() -> {
+                                        var delayedPlayer = SeqClient.mc.player;
+                                        if (delayedPlayer == null || delayedPlayer.connection == null) {
+                                            skippedAtDispatch.incrementAndGet();
+                                            sendFuture.complete(false);
+                                            return;
+                                        }
+
+                                        if (currentListing == null || currentListing.id() != listingId) {
+                                            skippedAtDispatch.incrementAndGet();
+                                            sendFuture.complete(false);
+                                            return;
+                                        }
+
+                                        if (!isPartyLeader()) {
+                                            skippedAtDispatch.incrementAndGet();
+                                            sendFuture.complete(false);
+                                            return;
+                                        }
+
+                                        delayedPlayer.connection.sendCommand(command);
+                                        sentCount.incrementAndGet();
+                                        sendFuture.complete(true);
+                                    }));
+                            sendFutures.add(sendFuture);
                         }
 
-                        dispatchFuture.complete(finishInviteAll(
-                                true,
-                                sentCount > 0,
-                                sentCount,
-                                skippedAtDispatch,
-                                formatInviteAllMessage(sentCount, skippedAtDispatch),
-                                notifyPlayer));
+                        if (sendFutures.isEmpty()) {
+                            dispatchFuture.complete(finishInviteAll(
+                                    true,
+                                    false,
+                                    0,
+                                    skippedAtDispatch.get(),
+                                    formatInviteAllMessage(0, skippedAtDispatch.get()),
+                                    notifyPlayer));
+                            return;
+                        }
+
+                        CompletableFuture.allOf(sendFutures.toArray(CompletableFuture[]::new))
+                                .thenRun(() -> {
+                                    int finalSentCount = sentCount.get();
+                                    int finalSkippedAtDispatch = skippedAtDispatch.get();
+                                    dispatchFuture.complete(finishInviteAll(
+                                            true,
+                                            finalSentCount > 0,
+                                            finalSentCount,
+                                            finalSkippedAtDispatch,
+                                            formatInviteAllMessage(finalSentCount, finalSkippedAtDispatch),
+                                            notifyPlayer));
+                                });
                     });
                     return dispatchFuture;
                 });
@@ -2055,7 +2105,7 @@ public class PartyFinderManager implements NotificationAccessor {
             return "Request rejected by backend validation. Check your inputs.";
         }
         if (statusCode == 401) {
-            return "Authentication required. Please relink/login with /seq link.";
+            return "Authentication required. Run /seq link to reauthorize with Wynncraft.";
         }
         if (statusCode == 403) {
             if (body.contains("guild") || body.contains("not in guild")) {

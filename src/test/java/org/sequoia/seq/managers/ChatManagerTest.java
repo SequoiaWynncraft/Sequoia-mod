@@ -2,12 +2,16 @@ package org.sequoia.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
 import org.junit.jupiter.api.Test;
+import org.sequoia.seq.integrations.WynntilsGuildRankAccess;
 
 class ChatManagerTest {
 
@@ -25,6 +29,23 @@ class ChatManagerTest {
         assertEquals("Purprated", parsed.username());
         assertEquals("Emanant Force", parsed.nickname());
         assertEquals("any raids?", parsed.message());
+    }
+
+    @Test
+    void parseGuildMessageHandlesWynnPrestigePrefixBeforeSpeaker() {
+        Component message = Component.empty()
+                .append(Component.literal("󏿼󐀆 "))
+                .append(Component.literal("󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿄"))
+                .append(Component.literal("󐀂 "))
+                .append(Component.literal("<1>Commander Lilacs").withStyle(Style.EMPTY.withInsertion("RealLilacs")))
+                .append(Component.literal(": tna/wtp 1/4"));
+
+        ChatManager.ParsedMessage parsed = ChatManager.parseGuildMessage(message);
+
+        assertNotNull(parsed);
+        assertEquals("RealLilacs", parsed.username());
+        assertEquals("Commander Lilacs", parsed.nickname());
+        assertEquals("tna/wtp 1/4", parsed.message());
     }
 
     @Test
@@ -76,5 +97,67 @@ class ChatManagerTest {
                 "󏿼󏿿󏿾 Territory Gelibord is producing more resources than it\n󏿼󐀆 can store!")));
         assertNull(ChatManager.parseGuildMessage(Component.literal(
                 "󏿼󐀆 Purprated rewarded 1024 Emeralds to cinfrascitizen")));
+    }
+
+    @Test
+    void detectsUpdatedWynncraftWelcomeBanner() {
+        Component message = Component.literal(
+                "\n󐁙Welcome to Wynncraft!\n󐀻play.wynncraft.com -/- wynncraft.com\n\n󐁄WYNNCRAFT: FRUMA EXPANSION\n󐂁OUT NOW!\n󐂚\n󐀲Discover Fruma: wynncraft.com/fruma");
+
+        assertTrue(ChatManager.isWynncraftWelcomeMessage(message));
+    }
+
+    @Test
+    void doesNotTreatOrdinaryChatMentionAsWelcomeBanner() {
+        Component message = Component.literal("Frieren: Welcome to Wynncraft! meet me on EU7");
+
+        assertFalse(ChatManager.isWynncraftWelcomeMessage(message));
+    }
+
+    @Test
+    void dropsGuildChatWhenWynntilsMembershipIsUnavailable() {
+        WynntilsGuildRankAccess.GuildMembership membership =
+                new WynntilsGuildRankAccess.GuildMembership(false, false, null);
+
+        assertFalse(ChatManager.shouldRelayForGuild(membership));
+    }
+
+    @Test
+    void dropsGuildChatWhenWynntilsMembershipIsMissing() {
+        assertFalse(ChatManager.shouldRelayForGuild(null));
+    }
+
+    @Test
+    void relaysGuildChatForExpectedWynntilsGuild() {
+        WynntilsGuildRankAccess.GuildMembership membership =
+                new WynntilsGuildRankAccess.GuildMembership(true, true, "Sequoia");
+
+        assertTrue(ChatManager.shouldRelayForGuild(membership));
+    }
+
+    @Test
+    void dropsGuildChatForOtherKnownWynntilsGuild() {
+        WynntilsGuildRankAccess.GuildMembership membership =
+                new WynntilsGuildRankAccess.GuildMembership(true, false, "Other Guild");
+
+        assertFalse(ChatManager.shouldRelayForGuild(membership));
+    }
+
+    @Test
+    void detectsGuildChatWhenOnlyLeadingFragmentIsGuildColored() {
+        Component message = Component.empty()
+                .append(Component.literal("󏿼󐀆 ").withStyle(ChatFormatting.AQUA))
+                .append(Component.literal("ilyhug: what").withStyle(ChatFormatting.DARK_AQUA));
+
+        assertTrue(ChatManager.hasLeadingGuildChatColor(message));
+    }
+
+    @Test
+    void rejectsInfoChatWithLaterGuildColoredFragment() {
+        Component message = Component.empty()
+                .append(Component.literal("󏿼󏿿󏿾 Party Finder: ").withStyle(ChatFormatting.DARK_PURPLE))
+                .append(Component.literal("The Nameless Anomaly").withStyle(ChatFormatting.AQUA));
+
+        assertFalse(ChatManager.hasLeadingGuildChatColor(message));
     }
 }
