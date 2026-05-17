@@ -29,6 +29,7 @@ import org.sequoia.seq.managers.GuildStorageTracker;
 import org.sequoia.seq.managers.GuildWarTrackerHandle;
 import org.sequoia.seq.managers.GuildWarTrackers;
 import org.sequoia.seq.managers.PartyFinderManager;
+import org.sequoia.seq.managers.ThemeManager;
 import org.sequoia.seq.managers.WynnPartySyncManager;
 import org.sequoia.seq.model.WynnClassType;
 import org.sequoia.seq.network.ConnectionManager;
@@ -151,6 +152,8 @@ public class SeqClient implements ClientModInitializer {
         configManager.load();
         configManager.migrateToken();
         authService = MinecraftAuthService.getInstance();
+        ThemeManager.loadThemes();
+        ThemeManager.setCurrentTheme("default");
         SeqCommand.register();
 
         KeyMapping.Category category =

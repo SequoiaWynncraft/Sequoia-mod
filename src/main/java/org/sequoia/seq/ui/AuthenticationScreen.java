@@ -7,7 +7,9 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import org.sequoia.seq.client.SeqClient;
+import org.sequoia.seq.managers.ThemeManager;
 import org.sequoia.seq.network.ConnectionManager;
+import org.sequoia.seq.ui.values.Theme;
 import org.sequoia.seq.utils.rendering.nvg.NVGContext;
 import org.sequoia.seq.utils.rendering.nvg.NVGWrapper;
 
@@ -45,25 +47,7 @@ public class AuthenticationScreen extends Screen {
     private static final float SECTION_SPACING = 44;
     private static final float NOTE_OFFSET = 22;
 
-    private static final Color BG_COLOR = new Color(10, 10, 16, 100);
-    private static final Color SIDEBAR_COLOR = new Color(18, 18, 26, 200);
-    private static final Color PANEL_COLOR = new Color(22, 22, 30, 100);
-    private static final Color HEADER_COLOR = new Color(26, 26, 36, 110);
-    private static final Color TITLE_COLOR = new Color(160, 130, 220, 255);
-    private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
-    private static final Color SUBTEXT_COLOR = new Color(180, 180, 200, 255);
-    private static final Color DIVIDER_COLOR = new Color(40, 40, 55, 255);
-    private static final Color SEARCH_BG = new Color(30, 30, 40, 255);
-    private static final Color SEARCH_PLACEHOLDER = new Color(100, 100, 120, 200);
-    private static final Color SIDEBAR_BUTTON_COLOR = new Color(30, 30, 42, 110);
-    private static final Color SIDEBAR_BUTTON_HOVER = new Color(42, 42, 58, 120);
-    private static final Color SIDEBAR_BUTTON_ACTIVE = new Color(80, 50, 140, 120);
-    private static final Color PRIMARY_BUTTON = new Color(160, 130, 220, 255);
-    private static final Color PRIMARY_BUTTON_HOVER = new Color(176, 148, 236, 255);
-    private static final Color DANGER_BUTTON = new Color(220, 45, 60, 255);
-    private static final Color DANGER_BUTTON_HOVER = new Color(236, 65, 80, 255);
-    private static final Color CONNECTED_COLOR = new Color(0, 225, 90, 255);
-    private static final Color DISCONNECTED_COLOR = new Color(235, 55, 55, 255);
+    private static Theme theme = ThemeManager.getCurrentTheme();
 
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
 
@@ -89,28 +73,28 @@ public class AuthenticationScreen extends Screen {
             float panelWidth = screenWidth - SIDEBAR_WIDTH;
             String fontName = SeqClient.getFontManager().getSelectedFont();
 
-            NVGWrapper.drawRect(nvg, 0, 0, screenWidth, screenHeight, BG_COLOR);
+            NVGWrapper.drawRect(nvg, 0, 0, screenWidth, screenHeight, theme.background.OVERLAY);
             renderSidebar(nvg, fontName, screenHeight);
 
-            NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, PANEL_COLOR);
-            NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, HEADER_HEIGHT, HEADER_COLOR);
+            NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, theme.background.BODY);
+            NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, HEADER_HEIGHT, theme.background.HEADER);
             renderHeader(nvg, fontName, panelX, panelWidth);
             renderStatusPanel(nvg, fontName, panelX, panelWidth, screenHeight);
         });
     }
 
     private void renderSidebar(long nvg, String fontName, float screenHeight) {
-        NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
+        NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, screenHeight, theme.background.SIDEBAR);
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, SIDEBAR_TITLE_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var titleColor = NVGContext.nvgColor(TITLE_COLOR);
+        var titleColor = NVGContext.nvgColor(theme.accent.MAIN_LIGHT);
         nvgFillColor(nvg, titleColor);
         nvgText(nvg, SIDEBAR_WIDTH / 2f, 22, "Sequoia");
         titleColor.free();
 
-        NVGWrapper.drawRect(nvg, SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, DIVIDER_COLOR);
+        NVGWrapper.drawRect(nvg, SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, theme.accent.MAIN_DARK);
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
@@ -126,12 +110,12 @@ public class AuthenticationScreen extends Screen {
     private void renderHeader(long nvg, String fontName, float panelX, float panelWidth) {
         float searchX = panelX + SEARCH_BAR_MARGIN;
         float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
-        NVGWrapper.drawRect(nvg, searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, SEARCH_BG);
+        NVGWrapper.drawRect(nvg, searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, theme.element.INPUT_PRIMARY);
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, 12);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var placeholder = NVGContext.nvgColor(SEARCH_PLACEHOLDER);
+        var placeholder = NVGContext.nvgColor(theme.text.INACTIVE);
         nvgFillColor(nvg, placeholder);
         nvgText(nvg, searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, "Search...");
         placeholder.free();
@@ -139,7 +123,7 @@ public class AuthenticationScreen extends Screen {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, TITLE_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        var title = NVGContext.nvgColor(TITLE_COLOR);
+        var title = NVGContext.nvgColor(theme.accent.MAIN_LIGHT);
         nvgFillColor(nvg, title);
         nvgText(nvg, panelX + panelWidth - SEARCH_BAR_MARGIN, HEADER_HEIGHT / 2f, "Authentication");
         title.free();
@@ -169,7 +153,7 @@ public class AuthenticationScreen extends Screen {
                 connectionLineY,
                 "Connection status:",
                 connected ? "Connected" : "Disconnected",
-                connected ? CONNECTED_COLOR : DISCONNECTED_COLOR);
+                connected ? theme.element.GOOD_PRIMARY : theme.element.DANGER_PRIMARY);
         if (uptime != null && connected) {
             drawMetaLine(nvg, fontName, baseX, connectionMetaY, "Uptime: " + uptime);
         }
@@ -180,8 +164,8 @@ public class AuthenticationScreen extends Screen {
                 fontName,
                 connectionButton,
                 connected ? "Disconnect" : "Connect",
-                connected ? DANGER_BUTTON : PRIMARY_BUTTON,
-                connected ? DANGER_BUTTON_HOVER : PRIMARY_BUTTON_HOVER);
+                connected ? theme.element.DANGER_PRIMARY : theme.accent.MAIN_LIGHT,
+                connected ? theme.element.DANGER_HOVER : theme.accent.MAIN_LIGHT_HOVER);
 
         drawStatusLine(
                 nvg,
@@ -190,7 +174,7 @@ public class AuthenticationScreen extends Screen {
                 authLineY,
                 "Authentication status:",
                 authenticated ? "Authorized" : "Signed out",
-                authenticated ? CONNECTED_COLOR : DISCONNECTED_COLOR);
+                authenticated ? theme.element.GOOD_PRIMARY : theme.element.DANGER_PRIMARY);
         drawMetaLine(
                 nvg,
                 fontName,
@@ -204,10 +188,10 @@ public class AuthenticationScreen extends Screen {
                 fontName,
                 authButton,
                 authenticated ? "Logout" : "Authorize",
-                authenticated ? DANGER_BUTTON : PRIMARY_BUTTON,
-                authenticated ? DANGER_BUTTON_HOVER : PRIMARY_BUTTON_HOVER);
+                authenticated ? theme.element.DANGER_PRIMARY : theme.accent.MAIN_LIGHT,
+                authenticated ? theme.element.DANGER_HOVER : theme.accent.MAIN_LIGHT_HOVER);
 
-        NVGWrapper.drawRect(nvg, baseX, dividerY, panelWidth - 68, 1, DIVIDER_COLOR);
+        NVGWrapper.drawRect(nvg, baseX, dividerY, panelWidth - 68, 1, theme.accent.MAIN_DARK);
         drawMetaLine(
                 nvg,
                 fontName,
@@ -220,7 +204,7 @@ public class AuthenticationScreen extends Screen {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, LABEL_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var labelColor = NVGContext.nvgColor(TEXT_COLOR);
+        var labelColor = NVGContext.nvgColor(theme.text.PRIMARY);
         nvgFillColor(nvg, labelColor);
         nvgText(nvg, x, y, label);
         labelColor.free();
@@ -236,7 +220,7 @@ public class AuthenticationScreen extends Screen {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, META_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var color = NVGContext.nvgColor(SUBTEXT_COLOR);
+        var color = NVGContext.nvgColor(theme.text.FAINT);
         nvgFillColor(nvg, color);
         nvgText(nvg, x, y, text);
         color.free();
@@ -244,13 +228,13 @@ public class AuthenticationScreen extends Screen {
 
     private void drawSidebarButton(long nvg, String fontName, float x, float y, float w, String label, boolean active) {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
-        Color bgColor = active ? SIDEBAR_BUTTON_ACTIVE : (hovered ? SIDEBAR_BUTTON_HOVER : SIDEBAR_BUTTON_COLOR);
+        Color bgColor = active ? theme.accent.MAIN_DARK : (hovered ? theme.accent.ALT_LIGHT : theme.accent.ALT_DARK);
         NVGWrapper.drawRect(nvg, x, y, w, SIDEBAR_BUTTON_HEIGHT, bgColor);
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, SIDEBAR_BUTTON_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var textColor = NVGContext.nvgColor(TEXT_COLOR);
+        var textColor = NVGContext.nvgColor(theme.text.PRIMARY);
         nvgFillColor(nvg, textColor);
         nvgText(nvg, x + w / 2f, y + SIDEBAR_BUTTON_HEIGHT / 2f, label);
         textColor.free();
@@ -263,7 +247,7 @@ public class AuthenticationScreen extends Screen {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, VALUE_FONT_SIZE - 2);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var textColor = NVGContext.nvgColor(TEXT_COLOR);
+        var textColor = NVGContext.nvgColor(theme.text.PRIMARY);
         nvgFillColor(nvg, textColor);
         nvgText(nvg, bounds.x() + bounds.w() / 2f, bounds.y() + bounds.h() / 2f, label);
         textColor.free();
