@@ -3,10 +3,16 @@ package org.sequoia.seq.managers;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystemNotFoundException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.stream.Stream;
 
 import org.sequoia.seq.ui.values.Theme;
 import org.sequoia.seq.utils.ThemeReader;
@@ -50,22 +56,30 @@ public class ThemeManager {
     }
 
     public static void loadThemes() {
-        URI uri;
-
         try {
-            uri = ThemeManager.class.getClassLoader().getResource("assets/seq/themes").toURI();
-        } catch (URISyntaxException e) {
-            e.printStackTrace(); // TODO Auto-generated catch block
-            return;
-        }
-        
-        Path themesPath = Paths.get(uri);
+            URI uri = ThemeManager.class.getClassLoader().getResource("assets/seq/themes").toURI();
+            Path themesPath;
 
-        try {
-            Files.walk(themesPath).filter(Files::isRegularFile).forEach(ThemeManager::loadFromPath);
-        } catch (IOException e) {
+            if ("jar".equals(uri.getScheme())) {
+                FileSystem fs;
+                try {
+                    fs = FileSystems.getFileSystem(uri);
+                } catch (FileSystemNotFoundException e) {
+                    fs = FileSystems.newFileSystem(uri, Map.of());
+                }
+
+                themesPath = fs.getPath("/assets/seq/themes");
+            } else {
+                themesPath = Paths.get(uri);
+            }
+
+            try (Stream<Path> paths = Files.walk(themesPath)) {
+                paths.filter(Files::isRegularFile)
+                     .forEach(ThemeManager::loadFromPath);
+            }
+
+        } catch (IOException | URISyntaxException e) {
             e.printStackTrace();
-            return;
         }
     }
 
