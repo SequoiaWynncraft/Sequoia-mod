@@ -159,6 +159,29 @@ class GuildBankTrackerTest {
     }
 
     @Test
+    void parseMessageHandlesGuildBankSuffixWithoutAccessTier() {
+        GuildBankTracker tracker = new GuildBankTracker();
+
+        GuildBankTracker.GuildBankEvent withdrawal =
+                tracker.parseEvent("pat_crafter07 withdrew 3x Doom Stone from the Guild Bank");
+        GuildBankTracker.GuildBankEvent deposit =
+                tracker.parseEvent("melodozina deposited 3x Photophobic Kelp to the Guild Bank");
+
+        assertNotNull(withdrawal);
+        assertEquals(GuildBankTracker.GuildBankAction.WITHDRAWAL, withdrawal.action());
+        assertEquals("pat_crafter07", withdrawal.player());
+        assertEquals(3, withdrawal.quantity());
+        assertEquals("Doom Stone", withdrawal.itemName());
+        assertEquals("Unknown", withdrawal.accessTier());
+
+        assertNotNull(deposit);
+        assertEquals(GuildBankTracker.GuildBankAction.DEPOSIT, deposit.action());
+        assertEquals("melodozina", deposit.player());
+        assertEquals("Photophobic Kelp", deposit.itemName());
+        assertEquals("Unknown", deposit.accessTier());
+    }
+
+    @Test
     void parseMessageHandlesFormattedGuildChatLogLines() {
         GuildBankTracker tracker = new GuildBankTracker();
 

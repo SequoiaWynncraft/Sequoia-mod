@@ -18,8 +18,8 @@ public final class GuildBankTracker {
     private static final Pattern GUILD_BANK_PATTERN = Pattern.compile(
             "^(.+?)\\s+(deposited|withdrew)\\s+(.+?)\\s+(to|from)\\s+the Guild Bank\\s+\\((.+)\\)$",
             Pattern.CASE_INSENSITIVE);
-    private static final Pattern GUILD_PATTERN = Pattern.compile(
-            "^(.+?)\\s+(deposited|withdrew)\\s+(.+?)\\s+(to|from)\\s+the Guild$",
+    private static final Pattern GUILD_WITHOUT_TIER_PATTERN = Pattern.compile(
+            "^(.+?)\\s+(deposited|withdrew)\\s+(.+?)\\s+(to|from)\\s+the Guild(?: Bank)?$",
             Pattern.CASE_INSENSITIVE);
     private static final String DEFAULT_ACCESS_TIER = "Unknown";
     private static final Pattern QUANTITY_PATTERN = Pattern.compile("^(?:(\\d+)x\\s+)?(.+)$");
@@ -107,7 +107,7 @@ public final class GuildBankTracker {
         if (matcher.matches()) {
             accessTier = matcher.group(5).trim();
         } else {
-            matcher = GUILD_PATTERN.matcher(cleaned);
+            matcher = GUILD_WITHOUT_TIER_PATTERN.matcher(cleaned);
             if (!matcher.matches()) {
                 return null;
             }
