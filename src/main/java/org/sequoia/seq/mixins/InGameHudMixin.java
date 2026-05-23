@@ -19,15 +19,15 @@ import static org.sequoia.seq.client.SeqClient.mc;
 public class InGameHudMixin implements EventBusAccessor {
 
     @Inject(method = "renderCrosshair", at = @At("HEAD"), cancellable = true)
-    private void onRenderCrosshair(GuiGraphics context, DeltaTracker deltaTracker, CallbackInfo ci) {
+    private void seq$onRenderCrosshair(GuiGraphics context, DeltaTracker deltaTracker, CallbackInfo ci) {
         if (mc.screen instanceof SequoiaScreen || mc.screen instanceof SettingsScreen) {
             ci.cancel();
         }
     }
 
     @Inject(method = "render", at = @At("TAIL"))
-    private void onRender(GuiGraphics context, DeltaTracker tickCounter, CallbackInfo ci) {
+    private void seq$onRender(GuiGraphics context, DeltaTracker tickCounter, CallbackInfo ci) {
         if (mc.screen != null) return;
-        NVGContext.render(nvg -> dispatch(new Render2DEvent(context, tickCounter.getGameTimeDeltaPartialTick(true))));
+        NVGContext.render(nvg -> seqdispatch(new Render2DEvent(context, tickCounter.getGameTimeDeltaPartialTick(true))));
     }
 }

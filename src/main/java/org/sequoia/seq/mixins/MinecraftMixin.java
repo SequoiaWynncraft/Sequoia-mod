@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(net.minecraft.client.Minecraft.class)
 public abstract class MinecraftMixin implements EventBusAccessor {
     @Inject(method = "<init>", at = @At("RETURN"))
-    private void onInit(CallbackInfo ci) {
-        dispatch(new MinecraftFinishedLoading());
+    private void seq$onInit(CallbackInfo ci) {
+        seqdispatch(new MinecraftFinishedLoading());
     }
 }

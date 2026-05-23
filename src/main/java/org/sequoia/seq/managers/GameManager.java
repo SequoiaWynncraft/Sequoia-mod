@@ -13,7 +13,7 @@ public class GameManager implements EventBusAccessor {
     private static final String DEFAULT_RESOURCE_FONT = "mc";
 
     public GameManager() {
-        subscribe(this);
+        seqsubscribe(this);
     }
 
     public void loadFont() {

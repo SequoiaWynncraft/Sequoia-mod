@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class GameRendererMixin {
 
     @Inject(method = "render", at = @At("TAIL"))
-    private void onRenderTail(DeltaTracker deltaTracker, boolean renderLevel, CallbackInfo ci) {
+    private void seq$onRenderTail(DeltaTracker deltaTracker, boolean renderLevel, CallbackInfo ci) {
         NVGContext.flushDeferred();
     }
 }

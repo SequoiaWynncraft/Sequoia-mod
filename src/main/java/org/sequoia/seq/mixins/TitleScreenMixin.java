@@ -8,6 +8,7 @@ import org.sequoia.seq.accessors.EventBusAccessor;
 import org.sequoia.seq.events.GameStartEvent;
 import org.sequoia.seq.ui.StartupVideoOverlay;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -18,18 +19,19 @@ public class TitleScreenMixin extends Screen implements EventBusAccessor {
         super(title);
     }
 
-    boolean opened = false;
+    @Unique
+    private boolean seq$opened = false;
 
     @Inject(method = "init", at = @At("RETURN"))
-    public void TitleScreenInit(CallbackInfo ci) {
-        if (!opened) {
-            dispatch(new GameStartEvent());
-            opened = true;
+    private void seq$titleScreenInit(CallbackInfo ci) {
+        if (!seq$opened) {
+            seqdispatch(new GameStartEvent());
+            seq$opened = true;
         }
     }
 
     @Inject(method = "render", at = @At("TAIL"))
-    private void sequoia$renderStartupVideo(GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
+    private void seq$renderStartupVideo(GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
         StartupVideoOverlay.render(graphics);
     }
 }

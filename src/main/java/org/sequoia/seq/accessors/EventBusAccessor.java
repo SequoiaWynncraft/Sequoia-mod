@@ -6,23 +6,23 @@ import com.collarmc.pounce.EventBus;
 import org.sequoia.seq.client.SeqClient;
 
 public interface EventBusAccessor {
-    default EventBus events() {
+    default EventBus seqevents() {
         return SeqClient.getEventBus();
     }
 
-    default void dispatch(Object o) {
-        events().dispatch(o);
+    default void seqdispatch(Object o) {
+        seqevents().dispatch(o);
     }
 
-    default void dispatch(Object event, CancelableCallback callback) {
-        events().dispatch(event, callback);
+    default void seqdispatch(Object event, CancelableCallback callback) {
+        seqevents().dispatch(event, callback);
     }
 
-    default void subscribe(Object listener) {
-        events().subscribeStrongly(listener);
+    default void seqsubscribe(Object listener) {
+        seqevents().subscribeStrongly(listener);
     }
 
-    default void unsubscribe(Object listener) {
-        events().unsubscribe(listener);
+    default void sequnsubscribe(Object listener) {
+        seqevents().unsubscribe(listener);
     }
 }

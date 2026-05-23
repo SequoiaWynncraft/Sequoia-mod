@@ -26,7 +26,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class ClientPacketListenerMixin {
 
     @Inject(method = "handleSystemChat", at = @At("HEAD"))
-    private void onHandleSystemChat(ClientboundSystemChatPacket packet, CallbackInfo ci) {
+    private void seq$onHandleSystemChat(ClientboundSystemChatPacket packet, CallbackInfo ci) {
         if (packet.overlay()) return;
 
         Component content = packet.content();
