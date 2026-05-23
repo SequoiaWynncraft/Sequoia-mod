@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collection;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,6 +30,7 @@ import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
+import org.sequoia.seq.config.ConfigManager;
 import org.sequoia.seq.model.ChatItemPreview;
 import org.sequoia.seq.managers.GuildStorageTracker;
 import org.sequoia.seq.model.BombShareType;
@@ -1460,6 +1462,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     if (discordChatHandler != null) {
                         String username = json.get("username").getAsString();
                         String msg = json.get("message").getAsString();
+                        ConfigManager configManager = SeqClient.getConfigManager();
+                        if (configManager != null
+                                && shouldIgnoreDiscordChatSender(username, configManager.ignoredBridgeUsers())) {
+                            SeqClient.LOGGER.debug("[WebSocket] Ignoring discord_chat from {}", username);
+                            return;
+                        }
                         SeqClient.LOGGER.info("[WebSocket] Dispatching discord_chat from {}", username);
                         discordChatHandler.accept(new DiscordChatMessage(username, msg));
                     } else {
@@ -2088,6 +2096,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     static boolean hasDiscordUsername(String discordUsername) {
         return discordUsername != null && !discordUsername.isBlank();
+    }
+
+    static boolean shouldIgnoreDiscordChatSender(String username, Collection<String> ignoredBridgeUsers) {
+        if (username == null || ignoredBridgeUsers == null) {
+            return false;
+        }
+        String loweredUsername = username.toLowerCase(Locale.ROOT);
+        for (String ignoredBridgeUser : ignoredBridgeUsers) {
+            if (ignoredBridgeUser != null && !ignoredBridgeUser.isBlank() && loweredUsername.contains(ignoredBridgeUser)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void storeDiscordUsername(String discordUsername) {

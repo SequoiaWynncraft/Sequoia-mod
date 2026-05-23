@@ -3,6 +3,7 @@ package org.sequoia.seq.network;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -70,6 +71,15 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.hasDiscordUsername("SequoiaUser"));
         assertEquals(false, ConnectionManager.hasDiscordUsername(""));
         assertEquals(false, ConnectionManager.hasDiscordUsername("   "));
+    }
+
+    @Test
+    void discordChatIgnoreMatchesUsernameContainingIgnoredMinecraftName() {
+        assertTrue(ConnectionManager.shouldIgnoreDiscordChatSender("SomeUser", List.of("someuser")));
+        assertTrue(ConnectionManager.shouldIgnoreDiscordChatSender("[VIP] SomeUser", List.of("someuser")));
+        assertTrue(ConnectionManager.shouldIgnoreDiscordChatSender("Guild | someuser", List.of("someuser")));
+        assertFalse(ConnectionManager.shouldIgnoreDiscordChatSender("OtherUser", List.of("someuser")));
+        assertFalse(ConnectionManager.shouldIgnoreDiscordChatSender(null, List.of("someuser")));
     }
 
     @Test

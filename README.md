@@ -48,6 +48,8 @@ If you are a Sequoia member, the expected setup is simple: install the mod, link
 - `/seq link`: link or refresh backend authentication
 - `/seq status`: show connection state and token status
 - `/seq logout`: clear the saved token
+- `/seq ignore <IGN>`: hide incoming Discord bridge messages from a Minecraft username
+- `/seq unignore <IGN>`: show incoming Discord bridge messages from that username again
 
 <details>
 <summary>Full command list</summary>
@@ -59,6 +61,8 @@ If you are a Sequoia member, the expected setup is simple: install the mod, link
 - `/seq connected`
 - `/seq status`
 - `/seq logout`
+- `/seq ignore <IGN>`
+- `/seq unignore <IGN>`
 - `/seq party`
 - `/seq p`
 - `/seq party list`

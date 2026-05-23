@@ -19,6 +19,7 @@ import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.SharedSuggestionProvider;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
+import org.sequoia.seq.config.ConfigManager;
 import org.sequoia.seq.managers.BombShareManager;
 import org.sequoia.seq.managers.PartyFinderManager;
 import org.sequoia.seq.managers.PartyListing;
@@ -108,6 +109,8 @@ public class SeqCommand {
                                                         sendFeedback(ctx.getSource(), "Logged out and token cleared.");
                                                         return 1;
                                                 }))
+                                .then(buildIgnoreCommand())
+                                .then(buildUnignoreCommand())
                                 .then(buildBombCommand())
                                 .then(buildPartyCommand("party"))
                                 .then(buildPartyCommand("p"));
@@ -193,6 +196,25 @@ public class SeqCommand {
                                                                 ctx,
                                                                 SeqClient.getPartyFinderManager()
                                                                                 .inviteAllCurrentMembersFromCommand())));
+        }
+
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildIgnoreCommand() {
+                return ClientCommandManager.literal("ignore")
+                                .executes(SeqCommand::runIgnoredBridgeUsersList)
+                                .then(ClientCommandManager.argument(
+                                                "username",
+                                                StringArgumentType.word())
+                                                .executes(SeqCommand::runIgnoreBridgeUser));
+        }
+
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildUnignoreCommand() {
+                return ClientCommandManager.literal("unignore")
+                                .executes(SeqCommand::runIgnoredBridgeUsersList)
+                                .then(ClientCommandManager.argument(
+                                                "username",
+                                                StringArgumentType.word())
+                                                .suggests(SeqCommand::suggestIgnoredBridgeUsers)
+                                                .executes(SeqCommand::runUnignoreBridgeUser));
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildBombCommand() {
@@ -384,6 +406,57 @@ public class SeqCommand {
                 return 1;
         }
 
+        private static int runIgnoreBridgeUser(CommandContext<FabricClientCommandSource> ctx) {
+                String username = StringArgumentType.getString(ctx, "username");
+                if (!ConfigManager.isValidBridgeUsername(username)) {
+                        sendFeedback(
+                                        ctx.getSource(),
+                                        "IGN must be a Minecraft username: 3-16 letters, numbers, or underscores.");
+                        return 0;
+                }
+
+                if (SeqClient.getConfigManager().addIgnoredBridgeUser(username)) {
+                        sendFeedback(ctx.getSource(), "Ignoring Discord bridge messages from " + username.trim() + ".");
+                } else {
+                        sendFeedback(
+                                        ctx.getSource(),
+                                        "Already ignoring Discord bridge messages from " + username.trim() + ".");
+                }
+                return 1;
+        }
+
+        private static int runUnignoreBridgeUser(CommandContext<FabricClientCommandSource> ctx) {
+                String username = StringArgumentType.getString(ctx, "username");
+                if (!ConfigManager.isValidBridgeUsername(username)) {
+                        sendFeedback(
+                                        ctx.getSource(),
+                                        "IGN must be a Minecraft username: 3-16 letters, numbers, or underscores.");
+                        return 0;
+                }
+
+                if (SeqClient.getConfigManager().removeIgnoredBridgeUser(username)) {
+                        sendFeedback(
+                                        ctx.getSource(),
+                                        "Discord bridge messages from " + username.trim() + " are visible again.");
+                } else {
+                        sendFeedback(
+                                        ctx.getSource(),
+                                        "Discord bridge messages from " + username.trim() + " were not ignored.");
+                }
+                return 1;
+        }
+
+        private static int runIgnoredBridgeUsersList(CommandContext<FabricClientCommandSource> ctx) {
+                List<String> ignoredUsers = SeqClient.getConfigManager().ignoredBridgeUsers();
+                if (ignoredUsers.isEmpty()) {
+                        sendFeedback(ctx.getSource(), "No Discord bridge users are ignored.");
+                        return 1;
+                }
+
+                sendFeedback(ctx.getSource(), "Ignored Discord bridge users: " + String.join(", ", ignoredUsers));
+                return 1;
+        }
+
         private static int runPartyInvite(CommandContext<FabricClientCommandSource> ctx) {
                 String username = StringArgumentType.getString(ctx, "username");
                 return relayCommandResult(
@@ -467,6 +540,12 @@ public class SeqCommand {
                                 .filter(alias -> alias.toLowerCase(Locale.ROOT).startsWith(loweredSegment))
                                 .toList();
                 return SharedSuggestionProvider.suggest(matches, segmentBuilder);
+        }
+
+        private static CompletableFuture<Suggestions> suggestIgnoredBridgeUsers(
+                        CommandContext<FabricClientCommandSource> ctx,
+                        SuggestionsBuilder builder) {
+                return SharedSuggestionProvider.suggest(SeqClient.getConfigManager().ignoredBridgeUsers(), builder);
         }
 
         private static List<String> parseActivitiesInput(String rawActivities) {

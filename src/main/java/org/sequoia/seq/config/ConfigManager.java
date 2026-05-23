@@ -11,7 +11,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 @Getter
 public class ConfigManager {
@@ -22,9 +26,12 @@ public class ConfigManager {
     private static final String MINECRAFT_UUID_KEY = "_minecraft_uuid";
     private static final String MINECRAFT_USERNAME_KEY = "_minecraft_username";
     private static final String DISCORD_USERNAME_KEY = "_discord_username";
+    private static final String IGNORED_BRIDGE_USERS_KEY = "_ignored_bridge_users";
     private static final String BOMB_SHARE_PROMPT_SEEN_KEY = "_bomb_share_prompt_seen";
+    private static final Pattern MINECRAFT_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private final List<Setting<?>> settings = new ArrayList<>();
+    private final Set<String> ignoredBridgeUsers = new LinkedHashSet<>();
     private String authToken;
     private Instant authTokenExpiresAt;
     private String minecraftUuid;
@@ -114,6 +121,54 @@ public class ConfigManager {
         save();
     }
 
+    public static boolean isValidBridgeUsername(String username) {
+        return normalizeBridgeUsername(username) != null;
+    }
+
+    public static String normalizeBridgeUsername(String username) {
+        if (username == null) {
+            return null;
+        }
+        String trimmed = username.trim();
+        if (!MINECRAFT_USERNAME_PATTERN.matcher(trimmed).matches()) {
+            return null;
+        }
+        return trimmed.toLowerCase(Locale.ROOT);
+    }
+
+    public boolean addIgnoredBridgeUser(String username) {
+        String normalized = normalizeBridgeUsername(username);
+        if (normalized == null) {
+            return false;
+        }
+        boolean added = ignoredBridgeUsers.add(normalized);
+        if (added) {
+            save();
+        }
+        return added;
+    }
+
+    public boolean removeIgnoredBridgeUser(String username) {
+        String normalized = normalizeBridgeUsername(username);
+        if (normalized == null) {
+            return false;
+        }
+        boolean removed = ignoredBridgeUsers.remove(normalized);
+        if (removed) {
+            save();
+        }
+        return removed;
+    }
+
+    public boolean isIgnoredBridgeUser(String username) {
+        String normalized = normalizeBridgeUsername(username);
+        return normalized != null && ignoredBridgeUsers.contains(normalized);
+    }
+
+    public List<String> ignoredBridgeUsers() {
+        return List.copyOf(ignoredBridgeUsers);
+    }
+
     public void setBombSharePromptSeen(boolean bombSharePromptSeen) {
         this.bombSharePromptSeen = bombSharePromptSeen;
         save();
@@ -156,6 +211,13 @@ public class ConfigManager {
             }
             if (discordUsername != null) {
                 root.addProperty(DISCORD_USERNAME_KEY, discordUsername);
+            }
+            if (!ignoredBridgeUsers.isEmpty()) {
+                JsonArray ignoredUsers = new JsonArray();
+                for (String username : ignoredBridgeUsers) {
+                    ignoredUsers.add(username);
+                }
+                root.add(IGNORED_BRIDGE_USERS_KEY, ignoredUsers);
             }
             root.addProperty(BOMB_SHARE_PROMPT_SEEN_KEY, bombSharePromptSeen);
             for (Setting<?> setting : settings) {
@@ -204,6 +266,18 @@ public class ConfigManager {
             }
             if (root != null && root.has(DISCORD_USERNAME_KEY) && root.get(DISCORD_USERNAME_KEY).isJsonPrimitive()) {
                 discordUsername = root.get(DISCORD_USERNAME_KEY).getAsString();
+            }
+            ignoredBridgeUsers.clear();
+            if (root != null && root.has(IGNORED_BRIDGE_USERS_KEY) && root.get(IGNORED_BRIDGE_USERS_KEY).isJsonArray()) {
+                for (JsonElement element : root.getAsJsonArray(IGNORED_BRIDGE_USERS_KEY)) {
+                    if (element == null || !element.isJsonPrimitive()) {
+                        continue;
+                    }
+                    String normalized = normalizeBridgeUsername(element.getAsString());
+                    if (normalized != null) {
+                        ignoredBridgeUsers.add(normalized);
+                    }
+                }
             }
             if (root != null
                     && root.has(BOMB_SHARE_PROMPT_SEEN_KEY)
