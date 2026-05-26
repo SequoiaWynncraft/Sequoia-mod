@@ -3,7 +3,6 @@ package org.sequoia.seq.network;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import java.awt.Desktop;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -1795,11 +1794,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
 
         notifyClickable("Click to authorize with Wynncraft", url);
-        if (openBrowser(url)) {
-            notify("Opened Wynn authorization in your browser.");
-        } else {
-            notify("Could not open browser automatically. Click the link shown in chat.");
-        }
     }
 
     private void handleAuthSuccess(JsonObject json) {
@@ -1835,24 +1829,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         Instant expiresAt = extractJwtExpiration(token);
         SeqClient.getConfigManager()
                 .setAuthSession(new StoredAuthSession(token, expiresAt, minecraftUuid, resolvedUsername));
-    }
-
-    private boolean openBrowser(String url) {
-        if (url == null || url.isBlank()) {
-            return false;
-        }
-
-        if (!Desktop.isDesktopSupported()) {
-            return false;
-        }
-
-        try {
-            Desktop.getDesktop().browse(URI.create(url));
-            return true;
-        } catch (Exception exception) {
-            SeqClient.LOGGER.warn("[WebSocket] Failed to open browser for Wynn authorization", exception);
-            return false;
-        }
     }
 
     private static Instant extractJwtExpiration(String token) {

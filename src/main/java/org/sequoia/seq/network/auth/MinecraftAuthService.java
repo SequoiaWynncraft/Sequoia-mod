@@ -8,14 +8,13 @@ import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.User;
 import net.minecraft.server.Services;
+import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.network.ApiClient;
 import org.sequoia.seq.network.BuildConfig;
 
-import java.awt.Desktop;
 import java.lang.reflect.Method;
 import java.math.BigInteger;
-import java.net.URI;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -29,7 +28,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 
-public class MinecraftAuthService {
+public class MinecraftAuthService implements NotificationAccessor {
 
     private static final Duration TOKEN_REFRESH_SKEW = Duration.ofSeconds(30);
     private static final Duration OAUTH_POLL_INTERVAL = Duration.ofSeconds(2);
@@ -129,11 +128,6 @@ public class MinecraftAuthService {
     private CompletableFuture<MinecraftAuthCompleteResponse> completeWynnOAuthInBrowser(WynnOAuthStartResponse start) {
         setState(AuthState.WAITING_FOR_BROWSER, null);
         notifyClickable("Click to authorize Sequoia with Wynncraft", start.authorizationUrl());
-        if (openBrowser(start.authorizationUrl())) {
-            notifyPlayer("Opened Wynn authorization in your browser.");
-        } else {
-            notifyPlayer("Could not open browser automatically. Click the Wynn authorization link in chat.");
-        }
         return pollWynnOAuthStatus(start);
     }
 
@@ -202,37 +196,6 @@ public class MinecraftAuthService {
         } catch (Exception ignored) {
         }
         return Instant.now().plus(Duration.ofMinutes(5));
-    }
-
-    private boolean openBrowser(String url) {
-        try {
-            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                Desktop.getDesktop().browse(URI.create(url));
-                return true;
-            }
-        } catch (Exception exception) {
-            SeqClient.LOGGER.warn("[Auth] Failed to open Wynn OAuth URL", exception);
-        }
-        return false;
-    }
-
-    private void notifyClickable(String label, String url) {
-        Minecraft.getInstance().execute(() -> {
-            var player = Minecraft.getInstance().player;
-            if (player != null) {
-                player.displayClientMessage(
-                        net.minecraft.network.chat.Component.literal("[Sequoia] " + label + ": " + url), false);
-            }
-        });
-    }
-
-    private void notifyPlayer(String message) {
-        Minecraft.getInstance().execute(() -> {
-            var player = Minecraft.getInstance().player;
-            if (player != null) {
-                player.displayClientMessage(net.minecraft.network.chat.Component.literal("[Sequoia] " + message), false);
-            }
-        });
     }
 
     public String getCurrentToken() {
