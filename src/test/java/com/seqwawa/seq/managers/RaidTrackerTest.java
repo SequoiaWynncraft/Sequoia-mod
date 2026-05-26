@@ -107,6 +107,21 @@ class RaidTrackerTest {
     }
 
     @Test
+    void parseRaidCompletionHandlesAspectlessRewardClause() {
+        RaidTracker.ParsedRaidCompletion parsed = RaidTracker.parseRaidCompletion(Component.literal(
+                "󏿼󐀆 AAA finished The Nameless Anomaly and claimed 2048x Emeralds,\n"
+                        + "󏿼󐀆 and +5183m Guild Experience, and +220 Seasonal Rating"));
+
+        assertNotNull(parsed);
+        assertEquals(List.of("AAA"), parsed.partyMembers());
+        assertEquals("The Nameless Anomaly", parsed.raidName());
+        assertEquals(0, parsed.aspects());
+        assertEquals(2048, parsed.emeralds());
+        assertEquals(5.183, parsed.guildExp());
+        assertEquals(220, parsed.seasonalRating());
+    }
+
+    @Test
     void parseRaidCompletionPrefersDisplayedUsernamesWhenAllDisplayedNamesAreValid() {
         Component message = Component.empty()
                 .append(Component.literal("Tannslee").withStyle(Style.EMPTY.withInsertion("eep")))
