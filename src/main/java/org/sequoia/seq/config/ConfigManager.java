@@ -28,6 +28,10 @@ public class ConfigManager {
     private static final String DISCORD_USERNAME_KEY = "_discord_username";
     private static final String IGNORED_BRIDGE_USERS_KEY = "_ignored_bridge_users";
     private static final String BOMB_SHARE_PROMPT_SEEN_KEY = "_bomb_share_prompt_seen";
+    private static final String STARTUP_VIDEO_X_KEY = "_startup_video_x";
+    private static final String STARTUP_VIDEO_Y_KEY = "_startup_video_y";
+    private static final String STARTUP_VIDEO_WIDTH_KEY = "_startup_video_width";
+    private static final String STARTUP_VIDEO_HEIGHT_KEY = "_startup_video_height";
     private static final Pattern MINECRAFT_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private final List<Setting<?>> settings = new ArrayList<>();
@@ -38,6 +42,10 @@ public class ConfigManager {
     private String minecraftUsername;
     private String discordUsername;
     private boolean bombSharePromptSeen;
+    private Double startupVideoX;
+    private Double startupVideoY;
+    private Double startupVideoWidth;
+    private Double startupVideoHeight;
 
     public ConfigManager() {
         Runtime.getRuntime().addShutdownHook(new Thread(this::save));
@@ -174,6 +182,28 @@ public class ConfigManager {
         save();
     }
 
+    public StartupVideoBounds getStartupVideoBounds() {
+        if (startupVideoX == null || startupVideoY == null || startupVideoWidth == null || startupVideoHeight == null) {
+            return null;
+        }
+        return new StartupVideoBounds(startupVideoX, startupVideoY, startupVideoWidth, startupVideoHeight);
+    }
+
+    public void setStartupVideoBounds(double x, double y, double width, double height) {
+        startupVideoX = clamp01(x);
+        startupVideoY = clamp01(y);
+        startupVideoWidth = clamp01(width);
+        startupVideoHeight = clamp01(height);
+        save();
+    }
+
+    private static double clamp01(double value) {
+        if (!Double.isFinite(value)) {
+            return 0.0;
+        }
+        return Math.max(0.0, Math.min(1.0, value));
+    }
+
     /** Migrate token from legacy ~/.seq_token into sequoia.json on first run. */
     public void migrateToken() {
         if (authToken != null) return;
@@ -220,6 +250,15 @@ public class ConfigManager {
                 root.add(IGNORED_BRIDGE_USERS_KEY, ignoredUsers);
             }
             root.addProperty(BOMB_SHARE_PROMPT_SEEN_KEY, bombSharePromptSeen);
+            if (startupVideoX != null
+                    && startupVideoY != null
+                    && startupVideoWidth != null
+                    && startupVideoHeight != null) {
+                root.addProperty(STARTUP_VIDEO_X_KEY, startupVideoX);
+                root.addProperty(STARTUP_VIDEO_Y_KEY, startupVideoY);
+                root.addProperty(STARTUP_VIDEO_WIDTH_KEY, startupVideoWidth);
+                root.addProperty(STARTUP_VIDEO_HEIGHT_KEY, startupVideoHeight);
+            }
             for (Setting<?> setting : settings) {
                 String key = setting.getCategory() + "." + setting.getName();
                 root.add(key, setting.serialize());
@@ -288,6 +327,12 @@ public class ConfigManager {
                     bombSharePromptSeen = false;
                 }
             }
+            if (root != null) {
+                startupVideoX = readDouble(root, STARTUP_VIDEO_X_KEY);
+                startupVideoY = readDouble(root, STARTUP_VIDEO_Y_KEY);
+                startupVideoWidth = readDouble(root, STARTUP_VIDEO_WIDTH_KEY);
+                startupVideoHeight = readDouble(root, STARTUP_VIDEO_HEIGHT_KEY);
+            }
 
             for (Setting<?> setting : settings) {
                 if (root == null) {
@@ -303,4 +348,17 @@ public class ConfigManager {
             SeqClient.LOGGER.error("Failed to load config", e);
         }
     }
+
+    private static Double readDouble(JsonObject root, String key) {
+        if (!root.has(key) || !root.get(key).isJsonPrimitive()) {
+            return null;
+        }
+        try {
+            return clamp01(root.get(key).getAsDouble());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    public record StartupVideoBounds(double x, double y, double width, double height) {}
 }

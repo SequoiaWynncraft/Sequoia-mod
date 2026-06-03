@@ -32,6 +32,6 @@ public class TitleScreenMixin extends Screen implements EventBusAccessor {
 
     @Inject(method = "render", at = @At("TAIL"))
     private void seq$renderStartupVideo(GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
-        StartupVideoOverlay.render(graphics);
+        StartupVideoOverlay.render(graphics, mouseX, mouseY);
     }
 }
