@@ -42,7 +42,7 @@ public final class EntityDebugTracker {
     }
 
     public static void markBadModel(float model) {
-        int m = (int) model;
+        int m = ResourcePackModelScanner.normalizeAnimatedModel(model);
         if (m > 0 && knownRadianceModel <= 0.0f) {
             BAD_MODELS.add(m);
         }
@@ -53,7 +53,7 @@ public final class EntityDebugTracker {
     }
 
     public static boolean isBadModel(float model) {
-        return BAD_MODELS.contains((int) model);
+        return BAD_MODELS.contains(ResourcePackModelScanner.normalizeAnimatedModel(model));
     }
 
     public static boolean isRadianceModel(float model) {
@@ -108,6 +108,9 @@ public final class EntityDebugTracker {
             float model = customModelData.floats().getFirst();
 
             if (model < ResourcePackModelScanner.MIN_DISCOVERY_MODEL) {
+                continue;
+            }
+            if (!ResourcePackModelScanner.hasRadianceModels() && isBadModel(model)) {
                 continue;
             }
             if (ResourcePackModelScanner.hasRadianceModels() && !isRadianceModel(model)) {

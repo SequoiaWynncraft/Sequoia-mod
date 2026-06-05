@@ -127,6 +127,7 @@ public final class ResourcePackModelScanner {
             }
 
             if (thresholdToModelPath.isEmpty()) {
+                scanned = true;
                 return false;
             }
 
@@ -134,6 +135,7 @@ public final class ResourcePackModelScanner {
             scanned = true;
             return true;
         } catch (Exception e) {
+            scanned = true;
             SeqClient.LOGGER.error("Radiance pack scan failed", e);
             return true;
         }

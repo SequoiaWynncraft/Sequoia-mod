@@ -25,7 +25,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("check_updates", "Check for updates on startup");
         DISPLAY_NAME_OVERRIDES.put("enable_easter_eggs", "Enable easter eggs");
         DISPLAY_NAME_OVERRIDES.put("startup_video", "Startup video");
-        DISPLAY_NAME_OVERRIDES.put("enable_radiance_checker", "Enable Radiance checker");
+        DISPLAY_NAME_OVERRIDES.put("enable_radiance_visualiser", "Enable Radiance visualiser");
 
         TOKEN_REPLACEMENTS.put("discord", "Discord");
         TOKEN_REPLACEMENTS.put("bridge", "Chat");
