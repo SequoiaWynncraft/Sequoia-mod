@@ -10,6 +10,7 @@ import org.joml.Vector3fc;
 
 public final class PingRenderer {
     private static final int WORLD_RING_SEGMENTS = 32;
+    private static final int WORLD_RING_PARTICLES_PER_TICK = 2;
 
     private PingRenderer() {}
 
@@ -43,22 +44,26 @@ public final class PingRenderer {
         }
     }
 
-    public static void renderWorld(Minecraft client, WorldPing ping) {
+    public static boolean renderWorld(Minecraft client, WorldPing ping) {
         if (client.level == null || !ping.showCircle()) {
-            return;
+            return false;
         }
 
         Vec3 pos = ping.pos();
         double radius = ping.radius();
         double y = pos.y + 0.05;
 
-        for (int i = 0; i < WORLD_RING_SEGMENTS; i++) {
-            double angle = (Math.PI * 2.0 * i) / WORLD_RING_SEGMENTS;
+        int startSegment = Math.floorMod(ping.ringPhase() * WORLD_RING_PARTICLES_PER_TICK, WORLD_RING_SEGMENTS);
+        for (int i = 0; i < WORLD_RING_PARTICLES_PER_TICK; i++) {
+            int segment = (startSegment + i) % WORLD_RING_SEGMENTS;
+            double angle = (Math.PI * 2.0 * segment) / WORLD_RING_SEGMENTS;
             double x = pos.x + Math.cos(angle) * radius;
             double z = pos.z + Math.sin(angle) * radius;
 
             client.level.addAlwaysVisibleParticle(ParticleTypes.END_ROD, x, y, z, 0.0, 0.0, 0.0);
         }
+
+        return startSegment + WORLD_RING_PARTICLES_PER_TICK >= WORLD_RING_SEGMENTS;
     }
 
     private static ScreenPos worldToScreen(Minecraft client, Vec3 worldPos) {
