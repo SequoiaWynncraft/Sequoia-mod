@@ -13,13 +13,13 @@ public enum GatheringProfession {
 
     private static final Set<String> WOODCUTTING_RESOURCES = Set.of(
             "OAK", "BIRCH", "WILLOW", "ACACIA", "SPRUCE", "JUNGLE", "DARK", "LIGHT",
-            "PINE", "AVO", "SKY", "MAPLE", "REDWOOD", "DERNIC_WOOD");
+            "PINE", "AVO", "SKY", "MAPLE", "REDWOOD", "DERNIC_TREE");
     private static final Set<String> MINING_RESOURCES = Set.of(
             "COPPER", "GRANITE", "GOLD", "SANDSTONE", "IRON", "SILVER", "COBALT", "KANDERSTONE", "DIAMOND",
             "VOIDSTONE", "MOLTEN", "TITANIUM", "CINNABAR", "DERNIC_ORE");
     private static final Set<String> FARMING_RESOURCES = Set.of(
             "WHEAT", "BARLEY", "OAT", "MALT", "HOPS", "RYE", "MILLET", "DECAY", "DECAY_ROOT",
-            "RICE", "SORGHUM", "HEMP", "JUTE", "HEATHER", "DERNIC_GRAIN");
+            "RICE", "SORGHUM", "HEMP", "JUTE", "HEATHER", "DERNIC_CROPS");
     private static final Set<String> FISHING_RESOURCES = Set.of(
             "GUDGEON", "TROUT", "SALMON", "CARP", "ICEFISH", "PIRANHA", "KOI", "GYLIA",
             "BASS", "MOLTEN_EEL", "STARFISH", "STURGEON", "MAHSEER", "DERNIC_FISH");
