@@ -9,7 +9,7 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3fc;
 
 public final class PingRenderer {
-    private static final int WORLD_RING_SEGMENTS = 64;
+    private static final int WORLD_RING_SEGMENTS = 32;
 
     private PingRenderer() {}
 
