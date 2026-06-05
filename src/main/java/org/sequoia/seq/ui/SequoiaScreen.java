@@ -69,7 +69,8 @@ public class SequoiaScreen extends Screen {
             drawButton(nvg, centerX, startY, "Partyfinder");
             drawButton(nvg, centerX, startY + BUTTON_HEIGHT + BUTTON_SPACING, "Authentication");
             drawButton(nvg, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 2, "Settings");
-            drawButton(nvg, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 3, "Github");
+            drawButton(nvg, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 3, "Gathering Map");
+            drawButton(nvg, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 4, "Github");
         });
     }
 
@@ -111,6 +112,8 @@ public class SequoiaScreen extends Screen {
             } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 2)) {
                 SeqClient.mc.setScreen(new SettingsScreen(this));
             } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 3)) {
+                SeqClient.mc.setScreen(new GatheringMapScreen(this));
+            } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 4)) {
                 try {
                     java.net.URI uri = java.net.URI.create(GITHUB_URL);
                     java.awt.Desktop.getDesktop().browse(uri);
