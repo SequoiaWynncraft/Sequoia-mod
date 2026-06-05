@@ -11,6 +11,7 @@
     "ClientPacketListenerMixin",
     "GameRendererMixin",
     "InGameHudMixin",
+    "ParticleEngineMixin",
     "TitleScreenMixin"
   ],
   "injectors": {

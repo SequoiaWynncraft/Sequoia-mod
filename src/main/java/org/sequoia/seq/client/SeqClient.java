@@ -34,6 +34,7 @@ import org.sequoia.seq.model.WynnClassType;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.network.WynncraftServerPolicy;
 import org.sequoia.seq.network.auth.MinecraftAuthService;
+import org.sequoia.seq.radiance.RadianceCheckerClient;
 import org.sequoia.seq.ui.SequoiaScreen;
 import org.sequoia.seq.utils.WynnClassCache;
 import org.sequoia.seq.update.UpdateManager;
@@ -114,6 +115,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting receiveBombShareRequestsSetting;
 
     @Getter
+    public static Setting.BooleanSetting radianceCheckerSetting;
+
+    @Getter
     public static WynnPartySyncManager wynnPartySyncManager;
 
     @Getter
@@ -152,6 +156,7 @@ public class SeqClient implements ClientModInitializer {
         configManager.migrateToken();
         authService = MinecraftAuthService.getInstance();
         SeqCommand.register();
+        RadianceCheckerClient.initialize();
 
         KeyMapping.Category category =
                 KeyMapping.Category.register(Identifier.fromNamespaceAndPath("sequoia-mod", "controls"));
@@ -178,6 +183,7 @@ public class SeqClient implements ClientModInitializer {
             WynncraftServerPolicy.Scope previousServerScope = lastServerScope;
             logServerScopeChange(serverScope, currentHost);
             if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
+                RadianceCheckerClient.reset();
                 ConnectionManager.disconnectForBlockedServer();
                 wasInPartyFinder = false;
                 lastBroadcastPartyClass = null;
@@ -193,6 +199,7 @@ public class SeqClient implements ClientModInitializer {
                 return;
             }
             if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
+                RadianceCheckerClient.reset();
                 ConnectionManager.flushPendingOutbound();
                 return;
             }
@@ -215,6 +222,7 @@ public class SeqClient implements ClientModInitializer {
             if (guildStorageTracker != null) {
                 guildStorageTracker.tick();
             }
+            RadianceCheckerClient.tick(client);
             ConnectionManager.flushPendingOutbound();
 
             boolean inPartyFinder = partyFinderManager != null && partyFinderManager.isInParty();
@@ -390,6 +398,7 @@ public class SeqClient implements ClientModInitializer {
         autoConnectSetting = new Setting.BooleanSetting("auto_connect", "network", true);
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
+        radianceCheckerSetting = new Setting.BooleanSetting("enable_radiance_visualiser", "raids", true);
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
@@ -418,6 +427,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(announceOpenPartiesIntervalMinutesSetting);
         getConfigManager().register(syncWynnPartySetting);
         getConfigManager().register(receiveBombShareRequestsSetting);
+        getConfigManager().register(radianceCheckerSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.
