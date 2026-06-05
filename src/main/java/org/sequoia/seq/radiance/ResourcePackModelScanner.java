@@ -61,11 +61,17 @@ public final class ResourcePackModelScanner {
     }
 
     public static boolean learnRadianceModels(Set<Integer> observedModels) {
+        if (hasRadianceModels()) {
+            return true;
+        }
+
+        int radianceModel = 0;
         String radianceTexture = null;
         for (int observedModel : observedModels) {
             int baseModel = normalizeAnimatedModel(observedModel);
             radianceTexture = getTextureForThreshold(baseModel);
             if (radianceTexture != null) {
+                radianceModel = baseModel;
                 break;
             }
         }
@@ -74,15 +80,8 @@ public final class ResourcePackModelScanner {
             return false;
         }
 
-        radianceBaseModels.clear();
-        for (Integer threshold : thresholdToModelPath.keySet()) {
-            String texture = getTextureForThreshold(threshold);
-            if (radianceTexture.equals(texture)) {
-                radianceBaseModels.add(threshold);
-            }
-        }
-
-        return true;
+        learnContiguousRadianceModels(radianceModel, radianceTexture);
+        return hasRadianceModels();
     }
 
     public static boolean scan(Minecraft client) {
@@ -194,6 +193,18 @@ public final class ResourcePackModelScanner {
         }
     }
 
+    private static void learnContiguousRadianceModels(int model, String texture) {
+        int firstModel = model;
+        while (texture.equals(getTextureForThreshold(firstModel - 1))) {
+            firstModel--;
+        }
+
+        radianceBaseModels.clear();
+        for (int currentModel = firstModel; texture.equals(getTextureForThreshold(currentModel)); currentModel++) {
+            radianceBaseModels.add(currentModel);
+        }
+    }
+
     private static void learnRadianceModelsFromPack() {
         for (Integer threshold : new TreeSet<>(thresholdToModelPath.keySet())) {
             if (threshold < MIN_DISCOVERY_MODEL) {
@@ -216,10 +227,7 @@ public final class ResourcePackModelScanner {
                 continue;
             }
 
-            radianceBaseModels.clear();
-            for (int model = threshold; texture.equals(getTextureForThreshold(model)); model++) {
-                radianceBaseModels.add(model);
-            }
+            learnContiguousRadianceModels(threshold, texture);
             return;
         }
     }
