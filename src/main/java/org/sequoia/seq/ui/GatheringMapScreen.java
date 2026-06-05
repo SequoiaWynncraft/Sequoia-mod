@@ -43,6 +43,8 @@ public class GatheringMapScreen extends Screen {
     private static final float SIDEBAR_HEADER_HEIGHT = 44;
     private static final float SIDEBAR_SCROLL_STEP = 28;
     private static final long CENTER_PLAYER_WARNING_DURATION_MS = 6_767;
+    private static final float CLUSTER_DETAIL_HEIGHT = 110;
+    private static final float NODE_DETAIL_HEIGHT = 58;
     private static final float RESOURCE_DROPDOWN_ROW_HEIGHT = 20;
     private static final int RESOURCE_DROPDOWN_VISIBLE_ROWS = 8;
     private static final float MIN_HULL_PADDING_PX = 4f;
@@ -414,22 +416,20 @@ public class GatheringMapScreen extends Screen {
         GatheringNodeCluster clusterDetail = selectedCluster != null ? selectedCluster : hoveredCluster;
         GatheringNode detail = selectedNode != null ? selectedNode : hoveredNode;
         if (clusterDetail != null) {
-            NVGWrapper.drawRect(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, 110, new Color(28, 28, 38, 210));
-            NVGWrapper.drawRectOutline(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, 110, 1, BORDER_COLOR);
+            NVGWrapper.drawRect(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, CLUSTER_DETAIL_HEIGHT, new Color(28, 28, 38, 210));
+            NVGWrapper.drawRectOutline(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, CLUSTER_DETAIL_HEIGHT, 1, BORDER_COLOR);
             drawText(nvg, PADDING + 8, y + 17, 14, clusterDetail.resource(), TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            drawText(nvg, PADDING + 8, y + 36, 12, clusterDetail.nodeCount() + " nodes | lvl " + clusterDetail.levelMin() + "-" + clusterDetail.levelMax(), SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            drawText(nvg, PADDING + 8, y + 55, 12, clusterDetail.score() + "% | " + Math.round(clusterDetail.averageSpacing()) + "m spacing", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawText(nvg, PADDING + 8, y + 36, 12, clusterDetail.nodeCount() + " nodes | score " + clusterDetail.score() + "%", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawText(nvg, PADDING + 8, y + 55, 12, Math.round(clusterDetail.averageSpacing()) + "m spacing", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
             drawText(nvg, PADDING + 8, y + 74, 12, clusterDetail.profession().name(), clusterDetail.profession().color(), NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            drawText(nvg, PADDING + 8, y + 93, 12, "X " + Math.round(clusterDetail.centerX()) + "  Z " + Math.round(clusterDetail.centerZ()), SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            y += 124;
+            drawText(nvg, PADDING + 8, y + 93, 12, clusterCoords(clusterDetail), SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            y += CLUSTER_DETAIL_HEIGHT + 14;
         } else if (detail != null) {
-            NVGWrapper.drawRect(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, 94, new Color(28, 28, 38, 210));
-            NVGWrapper.drawRectOutline(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, 94, 1, BORDER_COLOR);
+            NVGWrapper.drawRect(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, NODE_DETAIL_HEIGHT, new Color(28, 28, 38, 210));
+            NVGWrapper.drawRectOutline(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, NODE_DETAIL_HEIGHT, 1, BORDER_COLOR);
             drawText(nvg, PADDING + 8, y + 17, 14, detail.resource(), TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            drawText(nvg, PADDING + 8, y + 36, 12, "Level " + detail.level() + " " + detail.type(), SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            drawText(nvg, PADDING + 8, y + 55, 12, detail.profession().name(), detail.profession().color(), NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            drawText(nvg, PADDING + 8, y + 74, 12, "X " + detail.x() + "  Y " + detail.y() + "  Z " + detail.z(), SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            y += 108;
+            drawText(nvg, PADDING + 8, y + 38, 12, nodeCoords(detail), SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            y += NODE_DETAIL_HEIGHT + 14;
         }
 
         if (showClusters && !cachedClusters.isEmpty()) {
@@ -440,7 +440,7 @@ public class GatheringMapScreen extends Screen {
                 boolean active = cluster.equals(selectedCluster);
                 NVGWrapper.drawRect(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, 34, active ? CONTROL_ACTIVE : CONTROL_COLOR);
                 NVGWrapper.drawRectOutline(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, 34, 1, BORDER_COLOR);
-                drawText(nvg, PADDING + 8, y + 11, 11, "#" + (index + 1) + " " + cluster.resource() + " | " + cluster.score() + "%", TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+                drawText(nvg, PADDING + 8, y + 11, 11, "#" + (index + 1) + " " + cluster.resource() + " | score " + cluster.score() + "%", TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
                 drawText(nvg, PADDING + 8, y + 26, 10, cluster.nodeCount() + " nodes | " + Math.round(cluster.averageSpacing()) + "m spacing", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
                 y += 40;
             }
@@ -516,9 +516,49 @@ public class GatheringMapScreen extends Screen {
         return System.currentTimeMillis() < centerPlayerWarningUntilMs ? "Leave housing bum !" : "Center Player";
     }
 
+    private boolean copyHoveredCoordinates(float mx, float my, float sidebarMy, float screenWidth, float screenHeight) {
+        GatheringNodeCluster clusterDetail = selectedCluster != null ? selectedCluster : hoveredCluster;
+        GatheringNode detail = selectedNode != null ? selectedNode : hoveredNode;
+        float detailY = sidebarDetailY();
+        if (clusterDetail != null && isHovered(mx, sidebarMy, PADDING, detailY, SIDEBAR_WIDTH - PADDING * 2, CLUSTER_DETAIL_HEIGHT)) {
+            copyToClipboard(clusterCoords(clusterDetail));
+            return true;
+        }
+        if (clusterDetail == null && detail != null && isHovered(mx, sidebarMy, PADDING, detailY, SIDEBAR_WIDTH - PADDING * 2, NODE_DETAIL_HEIGHT)) {
+            copyToClipboard(nodeCoords(detail));
+            return true;
+        }
+
+        MapViewport viewport = new MapViewport(centerX, centerZ, pixelsPerBlock, SIDEBAR_WIDTH, 0, screenWidth - SIDEBAR_WIDTH, screenHeight);
+        if (!viewport.isInsideScreen(mx, my)) {
+            return false;
+        }
+        if (hoveredNode != null) {
+            copyToClipboard(nodeCoords(hoveredNode));
+            return true;
+        }
+        if (hoveredCluster != null) {
+            copyToClipboard(clusterCoords(hoveredCluster));
+            return true;
+        }
+        return false;
+    }
+
+    private void copyToClipboard(String text) {
+        SeqClient.mc.keyboardHandler.setClipboard(text);
+    }
+
+    private static String nodeCoords(GatheringNode node) {
+        return node.x() + " " + node.y() + " " + node.z();
+    }
+
+    private static String clusterCoords(GatheringNodeCluster cluster) {
+        return Math.round(cluster.centerX()) + " " + Math.round(cluster.centerZ());
+    }
+
     private void renderNodeTooltip(long nvg, GatheringNode node) {
         String title = node.resource() + " Lv. " + node.level();
-        String subtitle = node.type() + " | " + node.x() + ", " + node.y() + ", " + node.z();
+        String subtitle = nodeCoords(node);
         float x = Math.min(nvgMouseX + 12, SeqClient.mc.getWindow().getWidth() / 2f - 190);
         float y = Math.max(8, nvgMouseY + 12);
         NVGWrapper.drawRect(nvg, x, y, 180, 42, new Color(18, 18, 24, 235));
@@ -528,9 +568,8 @@ public class GatheringMapScreen extends Screen {
     }
 
     private void renderClusterTooltip(long nvg, GatheringNodeCluster cluster) {
-        String title = cluster.resource() + " | " + cluster.score() + "%";
-        String subtitle = cluster.nodeCount() + " nodes | lvl " + cluster.levelMin() + "-" + cluster.levelMax()
-                + " | " + Math.round(cluster.averageSpacing()) + "m";
+        String title = cluster.resource() + " | score " + cluster.score() + "%";
+        String subtitle = cluster.nodeCount() + " nodes | " + Math.round(cluster.averageSpacing()) + "m";
         float x = Math.min(nvgMouseX + 12, SeqClient.mc.getWindow().getWidth() / 2f - 210);
         float y = Math.max(8, nvgMouseY + 12);
         NVGWrapper.drawRect(nvg, x, y, 200, 42, new Color(18, 18, 24, 235));
@@ -739,14 +778,21 @@ public class GatheringMapScreen extends Screen {
 
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
-        if (click.button() != 0) {
-            return super.mouseClicked(click, outsideScreen);
-        }
         float mx = scaledMouseX(click.x());
         float my = scaledMouseY(click.y());
         float sidebarMy = my + sidebarScroll;
         float screenWidth = SeqClient.mc.getWindow().getWidth() / 2f;
         float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+
+        if (click.button() == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+            if (copyHoveredCoordinates(mx, my, sidebarMy, screenWidth, screenHeight)) {
+                return true;
+            }
+            return super.mouseClicked(click, outsideScreen);
+        }
+        if (click.button() != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            return super.mouseClicked(click, outsideScreen);
+        }
 
         if (mx >= 0 && mx <= SIDEBAR_WIDTH && my < SIDEBAR_HEADER_HEIGHT) {
             return true;
@@ -1064,6 +1110,16 @@ public class GatheringMapScreen extends Screen {
     }
 
     private float sidebarTopClusterY() {
+        float y = sidebarDetailY();
+        if (selectedCluster != null || hoveredCluster != null) {
+            y += CLUSTER_DETAIL_HEIGHT + 14;
+        } else if (selectedNode != null || hoveredNode != null) {
+            y += NODE_DETAIL_HEIGHT + 14;
+        }
+        return y + 12;
+    }
+
+    private float sidebarDetailY() {
         float y = 58;
         y += BUTTON_HEIGHT + 8;
         y += BUTTON_HEIGHT + 18;
@@ -1074,12 +1130,7 @@ public class GatheringMapScreen extends Screen {
         y += 12;
         y += (TOGGLE_HEIGHT + 6) * 4;
         y += 12;
-        if (selectedCluster != null || hoveredCluster != null) {
-            y += 124;
-        } else if (selectedNode != null || hoveredNode != null) {
-            y += 108;
-        }
-        return y + 12;
+        return y;
     }
 
     private static double clamp(double value, double min, double max) {
