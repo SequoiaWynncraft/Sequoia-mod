@@ -5,10 +5,10 @@ public final class MapCalibration {
     public static final double MAX_WORLD_X = 2048.0018901611634;
     public static final double MIN_WORLD_Z = -6634.997935164797;
     public static final double MAX_WORLD_Z = 8.989267839958302;
-    public static final int FALLBACK_IMAGE_WIDTH = 1536;
-    public static final int FALLBACK_IMAGE_HEIGHT = 2215;
-    public static final int HIGH_QUALITY_IMAGE_WIDTH = 4608;
-    public static final int HIGH_QUALITY_IMAGE_HEIGHT = 6644;
+    public static final int MAP_IMAGE_WIDTH = 1536;
+    public static final int MAP_IMAGE_HEIGHT = 2215;
+    public static final int ORIGINAL_IMAGE_WIDTH = 4608;
+    public static final int ORIGINAL_IMAGE_HEIGHT = 6644;
 
     private MapCalibration() {}
 

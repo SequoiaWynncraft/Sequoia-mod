@@ -24,6 +24,7 @@ import org.sequoia.seq.managers.BombShareManager;
 import org.sequoia.seq.managers.PartyFinderManager;
 import org.sequoia.seq.managers.PartyListing;
 import org.sequoia.seq.map.GatheringClusterCache;
+import org.sequoia.seq.map.GatheringMapImageService;
 import org.sequoia.seq.map.GatheringMapSettings;
 import org.sequoia.seq.model.Activity;
 import org.sequoia.seq.model.Listing;
@@ -258,6 +259,8 @@ public class SeqCommand {
                                 .then(buildMapMinSamplesCommand("minSamples"))
                                 .then(ClientCommandManager.literal("reset")
                                                 .executes(SeqCommand::runMapClusterReset))
+                                .then(ClientCommandManager.literal("debug")
+                                                .executes(SeqCommand::runMapDebugToggle))
                                 .then(ClientCommandManager.literal("cache")
                                                 .executes(SeqCommand::runMapClusterCacheStatus)
                                                 .then(ClientCommandManager.literal("status")
@@ -345,6 +348,21 @@ public class SeqCommand {
                                 ctx.getSource(),
                                 "Map clustering reset to " + GatheringMapSettings.getInstance().describe()
                                                 + ". Cluster cache cleared.");
+                return 1;
+        }
+
+        private static int runMapDebugToggle(CommandContext<FabricClientCommandSource> ctx) {
+                boolean enabled = GatheringMapSettings.getInstance().toggleDebugInfo();
+                GatheringMapImageService imageService = GatheringMapImageService.getInstance();
+                sendFeedback(
+                                ctx.getSource(),
+                                "Map debug " + (enabled ? "enabled" : "disabled")
+                                                + " | source="
+                                                + displayMapImageSource(imageService.imageSource())
+                                                + " | status="
+                                                + imageService.hqStatus()
+                                                + " | url="
+                                                + imageService.hqMapUrl());
                 return 1;
         }
 
@@ -727,6 +745,14 @@ public class SeqCommand {
                 }
                 String lower = raw.toLowerCase(Locale.ROOT);
                 return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
+        }
+
+        private static String displayMapImageSource(GatheringMapImageService.Source source) {
+                return switch (source) {
+                        case NONE -> "none";
+                        case FALLBACK -> "fallback";
+                        case CACHED_HQ -> "cached HQ";
+                };
         }
 
         private static void sendFeedback(FabricClientCommandSource source, String message) {

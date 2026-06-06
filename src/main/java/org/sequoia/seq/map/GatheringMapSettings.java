@@ -12,6 +12,7 @@ public final class GatheringMapSettings {
     private int clusterEps = GatheringNodeClusterer.DEFAULT_EPS;
     private int clusterMinSamples = GatheringNodeClusterer.DEFAULT_MIN_SAMPLES;
     private boolean showClusters = true;
+    private boolean showDebugInfo;
     private ClusterScoreMode clusterScoreMode = ClusterScoreMode.FOUR_TICK;
     private long version;
 
@@ -62,6 +63,15 @@ public final class GatheringMapSettings {
 
     public synchronized void setShowClusters(boolean showClusters) {
         this.showClusters = showClusters;
+    }
+
+    public synchronized boolean showDebugInfo() {
+        return showDebugInfo;
+    }
+
+    public synchronized boolean toggleDebugInfo() {
+        showDebugInfo = !showDebugInfo;
+        return showDebugInfo;
     }
 
     public synchronized ClusterScoreMode clusterScoreMode() {

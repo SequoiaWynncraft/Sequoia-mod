@@ -1,8 +1,6 @@
 package org.sequoia.seq.ui;
 
 import java.awt.Color;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
@@ -21,6 +19,7 @@ import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.map.ClusterOutlinePoint;
 import org.sequoia.seq.map.ClusterScoreMode;
 import org.sequoia.seq.map.GatheringClusterCache;
+import org.sequoia.seq.map.GatheringMapImageService;
 import org.sequoia.seq.map.GatheringMapSettings;
 import org.sequoia.seq.map.GatheringNode;
 import org.sequoia.seq.map.GatheringNodeCluster;
@@ -55,8 +54,6 @@ public class GatheringMapScreen extends Screen {
     private static final double NODE_DETAIL_PIXELS_PER_BLOCK = 0.42;
     private static final double CLUSTER_BADGE_PIXELS_PER_BLOCK = 0.65;
     private static final int SIDEBAR_CLUSTER_LIMIT = 5;
-    private static final String MAP_IMAGE_RESOURCE = "assets/seq/textures/map/wynn-map.png";
-
     private static final Color SIDEBAR_COLOR = new Color(18, 18, 24, 235);
     private static final Color MAP_TINT = new Color(4, 7, 10, 32);
     private static final Color HEADER_COLOR = new Color(28, 28, 38, 230);
@@ -72,6 +69,7 @@ public class GatheringMapScreen extends Screen {
 
     private final Screen parent;
     private final GatheringNodeService nodeService = GatheringNodeService.getInstance();
+    private final GatheringMapImageService mapImageService = GatheringMapImageService.getInstance();
     private final GatheringMapSettings mapSettings = GatheringMapSettings.getInstance();
     private final GatheringClusterCache clusterCache = GatheringClusterCache.getInstance();
     private final EnumMap<GatheringProfession, Boolean> professionToggles = new EnumMap<>(GatheringProfession.class);
@@ -94,6 +92,7 @@ public class GatheringMapScreen extends Screen {
     private GatheringNodeCluster hoveredCluster;
     private GatheringNodeCluster selectedCluster;
     private boolean showClusters = true;
+    private boolean showDebugInfo;
     private ClusterScoreMode clusterScoreMode = ClusterScoreMode.FOUR_TICK;
     private List<GatheringNode> cachedSourceNodes = List.of();
     private List<GatheringNode> cachedFilteredNodes = List.of();
@@ -103,6 +102,7 @@ public class GatheringMapScreen extends Screen {
     private long cachedSettingsVersion = -1;
     private int mapImageHandle;
     private boolean mapImageLoadAttempted;
+    private long loadedMapImageVersion = -1;
     private float nvgMouseX;
     private float nvgMouseY;
 
@@ -112,8 +112,10 @@ public class GatheringMapScreen extends Screen {
         professionToggles.putAll(mapSettings.professionToggles());
         selectedResourceFilters.addAll(mapSettings.resourceFilters());
         showClusters = mapSettings.showClusters();
+        showDebugInfo = mapSettings.showDebugInfo();
         clusterScoreMode = mapSettings.clusterScoreMode();
         nodeService.loadBundledNodes();
+        mapImageService.requestLoad();
     }
 
     @Override
@@ -126,6 +128,7 @@ public class GatheringMapScreen extends Screen {
 
         float screenWidth = SeqClient.mc.getWindow().getWidth() / 2f;
         float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+        showDebugInfo = mapSettings.showDebugInfo();
         float mapX = SIDEBAR_WIDTH;
         float mapY = 0;
         float mapW = Math.max(1, screenWidth - SIDEBAR_WIDTH);
@@ -197,29 +200,40 @@ public class GatheringMapScreen extends Screen {
     }
 
     private int mapImageHandle(long nvg) {
-        if (mapImageHandle != 0 || mapImageLoadAttempted) {
+        long imageVersion = mapImageService.version();
+        if (mapImageHandle != 0 && loadedMapImageVersion == imageVersion) {
             return mapImageHandle;
+        }
+        if (mapImageHandle != 0) {
+            nvgDeleteImage(nvg, mapImageHandle);
+            mapImageHandle = 0;
+        }
+        if (mapImageLoadAttempted && loadedMapImageVersion == imageVersion) {
+            return 0;
         }
         mapImageLoadAttempted = true;
 
-        try (InputStream input = GatheringMapScreen.class.getClassLoader().getResourceAsStream(MAP_IMAGE_RESOURCE)) {
-            if (input == null) {
-                SeqClient.LOGGER.warn("[GatheringMap] Missing map image asset: {}", MAP_IMAGE_RESOURCE);
+        try {
+            byte[] imageBytes = mapImageService.imageBytes();
+            if (imageBytes.length == 0) {
                 return 0;
             }
-
-            byte[] imageBytes = input.readAllBytes();
             var byteBuffer = MemoryUtil.memAlloc(imageBytes.length);
             try {
                 byteBuffer.put(imageBytes);
                 byteBuffer.flip();
                 mapImageHandle = NVGWrapper.loadImageFromInputStream(nvg, byteBuffer);
+                loadedMapImageVersion = mapImageService.version();
             } finally {
                 MemoryUtil.memFree(byteBuffer);
             }
-        } catch (IOException | RuntimeException exception) {
-            SeqClient.LOGGER.warn("[GatheringMap] Could not load map image asset: {}", MAP_IMAGE_RESOURCE, exception);
+        } catch (RuntimeException exception) {
+            SeqClient.LOGGER.warn(
+                    "[GatheringMap] Could not load {} map image.",
+                    mapImageService.imageSource().name().toLowerCase(Locale.ROOT),
+                    exception);
             mapImageHandle = 0;
+            loadedMapImageVersion = imageVersion;
         }
         return mapImageHandle;
     }
@@ -382,6 +396,13 @@ public class GatheringMapScreen extends Screen {
         y += BUTTON_HEIGHT + 8;
         drawButton(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Score " + clusterScoreMode.label(), true);
         y += BUTTON_HEIGHT + 18;
+
+        if (showDebugInfo) {
+            drawText(nvg, PADDING, y, 11, "Map source: " + displayMapImageSource(), SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            y += 18;
+            drawText(nvg, PADDING, y, 11, "HQ status: " + mapImageService.hqStatus(), SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            y += 18;
+        }
 
         drawText(nvg, PADDING, y, 12, "Resource", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         y += 12;
@@ -825,7 +846,7 @@ public class GatheringMapScreen extends Screen {
             return true;
         }
 
-        float inputY = scoreButtonY + BUTTON_HEIGHT + 18 + 12;
+        float inputY = scoreButtonY + BUTTON_HEIGHT + 18 + (showDebugInfo ? 36 : 0) + 12;
         if (resourceDropdownOpen) {
             List<String> resources = resourceDropdownOptions();
             int visibleRows = Math.min(RESOURCE_DROPDOWN_VISIBLE_ROWS, resources.size());
@@ -1023,6 +1044,14 @@ public class GatheringMapScreen extends Screen {
         return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
     }
 
+    private String displayMapImageSource() {
+        return switch (mapImageService.imageSource()) {
+            case NONE -> "none";
+            case FALLBACK -> "fallback";
+            case CACHED_HQ -> "cached HQ";
+        };
+    }
+
     private static float scaledMouseX(double rawX) {
         return (float) (rawX * SeqClient.mc.getWindow().getGuiScale() / 2.0);
     }
@@ -1131,6 +1160,9 @@ public class GatheringMapScreen extends Screen {
         y += BUTTON_HEIGHT + 18;
         y += BUTTON_HEIGHT + 8;
         y += BUTTON_HEIGHT + 18;
+        if (showDebugInfo) {
+            y += 36;
+        }
         y += 12;
         y += INPUT_HEIGHT + 18;
         y += 12;
