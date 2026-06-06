@@ -7,7 +7,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
 
 public final class PingManager {
-    private static final int WORLD_RING_SPAWN_INTERVAL_TICKS = 12;
+    private static final int WORLD_RING_REFRESH_COOLDOWN_TICKS = 16;
     private static final List<WorldPing> ACTIVE_PINGS = new ArrayList<>();
 
     private PingManager() {}
@@ -32,11 +32,12 @@ public final class PingManager {
                             Math.max(ping.radius(), radius),
                             Math.max(ping.ticksLeft(), durationTicks),
                             ping.showCircle() || showCircle,
-                            ping.particleSpawnCooldownTicks()));
+                            ping.showCircle() ? ping.ringPhase() : 0,
+                            ping.showCircle() ? ping.ringRefreshCooldownTicks() : 0));
             return;
         }
 
-        ACTIVE_PINGS.add(new WorldPing(id, pos, radius, durationTicks, showCircle, 0));
+        ACTIVE_PINGS.add(new WorldPing(id, pos, radius, durationTicks, showCircle, 0, 0));
     }
 
     public static void updatePingRadius(UUID id, float radius) {
@@ -47,7 +48,6 @@ public final class PingManager {
                 continue;
             }
 
-            int particleSpawnCooldownTicks = ping.showCircle() ? ping.particleSpawnCooldownTicks() : 0;
             ACTIVE_PINGS.set(
                     i,
                     new WorldPing(
@@ -56,7 +56,8 @@ public final class PingManager {
                             Math.max(ping.radius(), radius),
                             ping.ticksLeft(),
                             true,
-                            particleSpawnCooldownTicks));
+                            ping.showCircle() ? ping.ringPhase() : 0,
+                            ping.showCircle() ? ping.ringRefreshCooldownTicks() : 0));
             return;
         }
     }
@@ -70,7 +71,7 @@ public final class PingManager {
         List<WorldPing> remainingPings = new ArrayList<>();
 
         for (WorldPing ping : ACTIVE_PINGS) {
-            int particleSpawnCooldownTicks = tickParticleSpawnCooldown(client, ping);
+            RingState ringState = tickRing(client, ping);
 
             int ticksLeft = ping.ticksLeft() - 1;
             if (ticksLeft > 0) {
@@ -81,7 +82,8 @@ public final class PingManager {
                                 ping.radius(),
                                 ticksLeft,
                                 ping.showCircle(),
-                                particleSpawnCooldownTicks));
+                                ringState.phase,
+                                ringState.cooldownTicks));
             }
         }
 
@@ -93,16 +95,22 @@ public final class PingManager {
         return List.copyOf(ACTIVE_PINGS);
     }
 
-    private static int tickParticleSpawnCooldown(Minecraft client, WorldPing ping) {
+    private static RingState tickRing(Minecraft client, WorldPing ping) {
         if (!ping.showCircle()) {
-            return ping.particleSpawnCooldownTicks();
+            return new RingState(ping.ringPhase(), ping.ringRefreshCooldownTicks());
         }
 
-        if (ping.particleSpawnCooldownTicks() <= 0) {
-            PingRenderer.renderWorld(client, ping);
-            return WORLD_RING_SPAWN_INTERVAL_TICKS - 1;
+        if (ping.ringRefreshCooldownTicks() > 0) {
+            return new RingState(0, ping.ringRefreshCooldownTicks() - 1);
         }
 
-        return ping.particleSpawnCooldownTicks() - 1;
+        boolean completedRing = PingRenderer.renderWorld(client, ping);
+        if (completedRing) {
+            return new RingState(0, WORLD_RING_REFRESH_COOLDOWN_TICKS);
+        }
+
+        return new RingState(ping.ringPhase() + 1, 0);
     }
+
+    private record RingState(int phase, int cooldownTicks) {}
 }

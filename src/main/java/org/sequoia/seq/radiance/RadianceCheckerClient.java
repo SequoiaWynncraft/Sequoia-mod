@@ -21,6 +21,7 @@ public final class RadianceCheckerClient {
                             @Override
                             public void onResourceManagerReload(ResourceManager manager) {
                                 ResourcePackModelScanner.reset();
+                                ResourcePackModelScanner.scan(manager);
                             }
                         });
 

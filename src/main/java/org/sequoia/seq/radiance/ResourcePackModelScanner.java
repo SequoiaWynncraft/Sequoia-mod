@@ -89,7 +89,13 @@ public final class ResourcePackModelScanner {
             return true;
         }
 
-        ResourceManager rm = client.getResourceManager();
+        return scan(client.getResourceManager());
+    }
+
+    public static boolean scan(ResourceManager rm) {
+        if (scanned) {
+            return true;
+        }
         if (rm == null) {
             return false;
         }
