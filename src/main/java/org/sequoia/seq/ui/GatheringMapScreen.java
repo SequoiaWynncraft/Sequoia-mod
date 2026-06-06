@@ -109,9 +109,10 @@ public class GatheringMapScreen extends Screen {
     public GatheringMapScreen(Screen parent) {
         super(Component.literal("Sequoia Gathering Map"));
         this.parent = parent;
-        for (GatheringProfession profession : GatheringProfession.values()) {
-            professionToggles.put(profession, true);
-        }
+        professionToggles.putAll(mapSettings.professionToggles());
+        selectedResourceFilters.addAll(mapSettings.resourceFilters());
+        showClusters = mapSettings.showClusters();
+        clusterScoreMode = mapSettings.clusterScoreMode();
         nodeService.loadBundledNodes();
     }
 
@@ -810,6 +811,7 @@ public class GatheringMapScreen extends Screen {
         float clustersButtonY = 58 + BUTTON_HEIGHT + 8 + BUTTON_HEIGHT + 18;
         if (isHovered(mx, sidebarMy, PADDING, clustersButtonY, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
             showClusters = !showClusters;
+            mapSettings.setShowClusters(showClusters);
             selectedCluster = null;
             selectedNode = null;
             return true;
@@ -817,6 +819,7 @@ public class GatheringMapScreen extends Screen {
         float scoreButtonY = clustersButtonY + BUTTON_HEIGHT + 8;
         if (isHovered(mx, sidebarMy, PADDING, scoreButtonY, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
             clusterScoreMode = clusterScoreMode.next();
+            mapSettings.setClusterScoreMode(clusterScoreMode);
             selectedCluster = null;
             cachedClusterKey = "";
             return true;
@@ -855,7 +858,9 @@ public class GatheringMapScreen extends Screen {
                 GatheringProfession.FARMING,
                 GatheringProfession.FISHING)) {
             if (isHovered(mx, sidebarMy, PADDING, toggleY, SIDEBAR_WIDTH - PADDING * 2, TOGGLE_HEIGHT)) {
-                professionToggles.put(profession, !professionToggles.getOrDefault(profession, true));
+                boolean enabled = !professionToggles.getOrDefault(profession, true);
+                professionToggles.put(profession, enabled);
+                mapSettings.setProfessionEnabled(profession, enabled);
                 selectedNode = null;
                 selectedCluster = null;
                 return true;
@@ -1085,6 +1090,7 @@ public class GatheringMapScreen extends Screen {
         } else if (!selectedResourceFilters.add(nextResource)) {
             selectedResourceFilters.remove(nextResource);
         }
+        mapSettings.setResourceFilters(selectedResourceFilters);
         if (!keepOpen) {
             resourceSearch = "";
         }
