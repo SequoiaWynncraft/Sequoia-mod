@@ -51,6 +51,7 @@ public final class GatheringNodeService {
     }
 
     private void loadStaticResource() {
+        // TODO: Replace this static load with a Wynncraft API fetch once the gathering-nodes API is fixed.
         try (InputStream input = GatheringNodeService.class.getClassLoader()
                 .getResourceAsStream(STATIC_NODES_RESOURCE)) {
             if (input == null) {
