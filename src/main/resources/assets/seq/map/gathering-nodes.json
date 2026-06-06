@@ -169373,7 +169373,7 @@
       "z": -335,
       "angle": 180,
       "type": "CORNER",
-      "resource": "DERNIC",
+      "resource": "DERNIC_ORE",
       "level": 105,
       "territory": null,
       "cluster_id": null
@@ -169731,17 +169731,6 @@
       "cluster_id": null
     },
     {
-      "x": 632,
-      "y": 22,
-      "z": -1220,
-      "angle": 0,
-      "type": "NODE",
-      "resource": "DERNIC",
-      "level": 105,
-      "territory": "Mine Base Plains",
-      "cluster_id": null
-    },
-    {
       "x": 634,
       "y": 96,
       "z": -279,
@@ -169761,17 +169750,6 @@
       "resource": "DERNIC_ORE",
       "level": 105,
       "territory": null,
-      "cluster_id": null
-    },
-    {
-      "x": 638,
-      "y": 22,
-      "z": -1227,
-      "angle": 0,
-      "type": "NODE",
-      "resource": "DERNIC",
-      "level": 105,
-      "territory": "Mine Base Plains",
       "cluster_id": null
     },
     {
@@ -169798,17 +169776,6 @@
     },
     {
       "x": 644,
-      "y": 22,
-      "z": -1208,
-      "angle": 0,
-      "type": "NODE",
-      "resource": "DERNIC",
-      "level": 105,
-      "territory": "Mine Base Plains",
-      "cluster_id": null
-    },
-    {
-      "x": 644,
       "y": 96,
       "z": -277,
       "angle": 0,
@@ -169825,17 +169792,6 @@
       "angle": 0,
       "type": "NODE",
       "resource": "DERNIC_ORE",
-      "level": 105,
-      "territory": null,
-      "cluster_id": null
-    },
-    {
-      "x": 652,
-      "y": 22,
-      "z": -1214,
-      "angle": 0,
-      "type": "NODE",
-      "resource": "DERNIC",
       "level": 105,
       "territory": null,
       "cluster_id": null
@@ -170330,7 +170286,7 @@
       "z": -540,
       "angle": 0,
       "type": "NODE",
-      "resource": "DERNIC",
+      "resource": "DERNIC_TREE",
       "level": 105,
       "territory": "Sinister Forest",
       "cluster_id": null
@@ -171045,7 +171001,7 @@
       "z": -610,
       "angle": 0,
       "type": "NODE",
-      "resource": "DERNIC",
+      "resource": "DERNIC_TREE",
       "level": 105,
       "territory": "Sinister Forest",
       "cluster_id": null
@@ -171392,17 +171348,6 @@
       "cluster_id": null
     },
     {
-      "x": 1089,
-      "y": 68,
-      "z": -1059,
-      "angle": 0,
-      "type": "NODE",
-      "resource": "DERNIC",
-      "level": 105,
-      "territory": null,
-      "cluster_id": null
-    },
-    {
       "x": 1090,
       "y": 134,
       "z": -1144,
@@ -171411,17 +171356,6 @@
       "resource": "DERNIC_CROPS",
       "level": 105,
       "territory": "Void Valley",
-      "cluster_id": null
-    },
-    {
-      "x": 1092,
-      "y": 68,
-      "z": -1054,
-      "angle": 0,
-      "type": "NODE",
-      "resource": "DERNIC",
-      "level": 105,
-      "territory": null,
       "cluster_id": null
     },
     {
@@ -171444,28 +171378,6 @@
       "resource": "DERNIC_CROPS",
       "level": 105,
       "territory": "Void Valley",
-      "cluster_id": null
-    },
-    {
-      "x": 1094,
-      "y": 68,
-      "z": -1053,
-      "angle": 0,
-      "type": "NODE",
-      "resource": "DERNIC",
-      "level": 105,
-      "territory": null,
-      "cluster_id": null
-    },
-    {
-      "x": 1095,
-      "y": 68,
-      "z": -1056,
-      "angle": 0,
-      "type": "NODE",
-      "resource": "DERNIC",
-      "level": 105,
-      "territory": null,
       "cluster_id": null
     },
     {

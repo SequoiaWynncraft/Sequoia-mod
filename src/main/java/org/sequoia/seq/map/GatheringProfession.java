@@ -2,6 +2,7 @@ package org.sequoia.seq.map;
 
 import java.awt.Color;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 public enum GatheringProfession {
@@ -11,18 +12,19 @@ public enum GatheringProfession {
     FISHING(new Color(82, 190, 211, 235)),
     UNKNOWN(new Color(210, 210, 210, 210));
 
-    private static final Set<String> WOODCUTTING_RESOURCES = Set.of(
-            "OAK", "BIRCH", "WILLOW", "ACACIA", "SPRUCE", "JUNGLE", "DARK", "LIGHT",
-            "PINE", "AVO", "SKY", "MAPLE", "REDWOOD", "DERNIC_TREE");
-    private static final Set<String> MINING_RESOURCES = Set.of(
-            "COPPER", "GRANITE", "GOLD", "SANDSTONE", "IRON", "SILVER", "COBALT", "KANDERSTONE", "DIAMOND",
-            "VOIDSTONE", "MOLTEN", "TITANIUM", "CINNABAR", "DERNIC_ORE");
-    private static final Set<String> FARMING_RESOURCES = Set.of(
-            "WHEAT", "BARLEY", "OAT", "MALT", "HOPS", "RYE", "MILLET", "DECAY", "DECAY_ROOT",
-            "RICE", "SORGHUM", "HEMP", "JUTE", "HEATHER", "DERNIC_CROPS");
-    private static final Set<String> FISHING_RESOURCES = Set.of(
-            "GUDGEON", "TROUT", "SALMON", "CARP", "ICEFISH", "PIRANHA", "KOI", "GYLIA",
-            "BASS", "MOLTEN_EEL", "STARFISH", "STURGEON", "MAHSEER", "DERNIC_FISH");
+    private static final Map<GatheringProfession, Set<String>> RESOURCES = Map.of(
+            WOODCUTTING, Set.of(
+                    "OAK", "BIRCH", "WILLOW", "ACACIA", "SPRUCE", "JUNGLE", "DARK", "LIGHT",
+                    "PINE", "AVO", "SKY", "MAPLE", "REDWOOD", "DERNIC_TREE", "DERNIC_WOOD"),
+            MINING, Set.of(
+                    "COPPER", "GRANITE", "GOLD", "SANDSTONE", "IRON", "SILVER", "COBALT", "KANDERSTONE",
+                    "DIAMOND", "VOIDSTONE", "MOLTEN", "TITANIUM", "CINNABAR", "DERNIC_ORE"),
+            FARMING, Set.of(
+                    "WHEAT", "BARLEY", "OAT", "MALT", "HOPS", "RYE", "MILLET", "DECAY", "DECAY_ROOT",
+                    "RICE", "SORGHUM", "HEMP", "JUTE", "HEATHER", "DERNIC_CROPS", "DERNIC_GRAIN"),
+            FISHING, Set.of(
+                    "GUDGEON", "TROUT", "SALMON", "CARP", "ICEFISH", "PIRANHA", "KOI", "GYLIA",
+                    "BASS", "MOLTEN_EEL", "STARFISH", "STURGEON", "MAHSEER", "DERNIC_FISH"));
 
     private final Color color;
 
@@ -39,10 +41,11 @@ public enum GatheringProfession {
             return UNKNOWN;
         }
         String normalized = resource.trim().toUpperCase(Locale.ROOT).replace(" ", "_").replace("-", "_");
-        if (WOODCUTTING_RESOURCES.contains(normalized)) return WOODCUTTING;
-        if (MINING_RESOURCES.contains(normalized)) return MINING;
-        if (FARMING_RESOURCES.contains(normalized)) return FARMING;
-        if (FISHING_RESOURCES.contains(normalized)) return FISHING;
+        for (Map.Entry<GatheringProfession, Set<String>> entry : RESOURCES.entrySet()) {
+            if (entry.getValue().contains(normalized)) {
+                return entry.getKey();
+            }
+        }
         return UNKNOWN;
     }
 }
