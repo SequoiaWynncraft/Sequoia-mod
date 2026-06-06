@@ -1577,6 +1577,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         return;
                     }
 
+                    if (isSilentGuildChatMembershipReject(backendCode, capability, normalized)) {
+                        SeqClient.LOGGER.info("[WebSocket] Guild chat relay rejected because sender is not in guild");
+                        return;
+                    }
+
                     if (status == 403 || normalized.contains("not in guild") || normalized.contains("guild")) {
                         notInGuild = true;
                         authFailed = true;
@@ -1947,6 +1952,13 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     private static String extractCapability(JsonObject json) {
         return extractPrimitiveString(json, "capability");
+    }
+
+    static boolean isSilentGuildChatMembershipReject(String backendCode, String capability, String normalizedMessage) {
+        return "not_in_guild".equalsIgnoreCase(backendCode)
+                && "guild_chat".equalsIgnoreCase(capability)
+                && normalizedMessage != null
+                && normalizedMessage.contains("guild");
     }
 
     private void maybeNotifyVersionRejection(String capability, String minimumSafeVersion, String backendMessage) {

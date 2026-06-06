@@ -134,6 +134,20 @@ class ConnectionManagerTest {
     }
 
     @Test
+    void scopedGuildChatMembershipRejectsAreSilent() {
+        assertTrue(ConnectionManager.isSilentGuildChatMembershipReject(
+                "not_in_guild", "guild_chat", "guild chat sender is not in sequoia"));
+    }
+
+    @Test
+    void unscopedGuildMembershipRejectsRemainVisible() {
+        assertFalse(ConnectionManager.isSilentGuildChatMembershipReject(
+                "not_in_guild", null, "this feature is limited to sequoia members"));
+        assertFalse(ConnectionManager.isSilentGuildChatMembershipReject(
+                "not_in_guild", "guild_bank_event", "this feature is limited to sequoia members"));
+    }
+
+    @Test
     void bombShareMessagesAreScopedAuthenticatedAndThrottleLimited() {
         assertTrue(ConnectionManager.isServerScopedType("bomb_share_request"));
         assertTrue(ConnectionManager.isServerScopedType("bomb_share_submit"));
