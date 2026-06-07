@@ -23,10 +23,14 @@ import org.sequoia.seq.config.ConfigManager;
 import org.sequoia.seq.managers.BombShareManager;
 import org.sequoia.seq.managers.PartyFinderManager;
 import org.sequoia.seq.managers.PartyListing;
+import org.sequoia.seq.map.GatheringClusterCache;
+import org.sequoia.seq.map.GatheringMapImageService;
+import org.sequoia.seq.map.GatheringMapSettings;
 import org.sequoia.seq.model.Activity;
 import org.sequoia.seq.model.Listing;
 import org.sequoia.seq.model.PartyRole;
 import org.sequoia.seq.network.ConnectionManager;
+import org.sequoia.seq.ui.GatheringMapScreen;
 import org.sequoia.seq.ui.PartyFinderScreen;
 import org.sequoia.seq.utils.PlayerNameCache;
 
@@ -112,6 +116,7 @@ public class SeqCommand {
                                 .then(buildIgnoreCommand())
                                 .then(buildUnignoreCommand())
                                 .then(buildBombCommand())
+                                .then(buildMapCommand())
                                 .then(buildPartyCommand("party"))
                                 .then(buildPartyCommand("p"));
 
@@ -240,6 +245,47 @@ public class SeqCommand {
                                                                                 "selectors"))));
         }
 
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildMapCommand() {
+                return ClientCommandManager.literal("map")
+                                .executes(SeqCommand::openGatheringMapScreen)
+                                .then(ClientCommandManager.literal("params")
+                                                .executes(SeqCommand::runMapParams))
+                                .then(ClientCommandManager.literal("eps")
+                                                .then(ClientCommandManager.argument(
+                                                                "blocks",
+                                                                IntegerArgumentType.integer(1, 500))
+                                                                .executes(SeqCommand::runMapClusterEps)))
+                                .then(buildMapMinSamplesCommand("minSamples"))
+                                .then(ClientCommandManager.literal("reset")
+                                                .executes(SeqCommand::runMapClusterReset))
+                                .then(ClientCommandManager.literal("debug")
+                                                .executes(SeqCommand::runMapDebugToggle))
+                                .then(ClientCommandManager.literal("cache")
+                                                .executes(SeqCommand::runMapClusterCacheStatus)
+                                                .then(ClientCommandManager.literal("status")
+                                                                .executes(SeqCommand::runMapClusterCacheStatus))
+                                                .then(ClientCommandManager.literal("cluster")
+                                                                .executes(SeqCommand::runMapClusterCacheStatus)
+                                                                .then(ClientCommandManager.literal("status")
+                                                                                .executes(SeqCommand::runMapClusterCacheStatus))
+                                                                .then(ClientCommandManager.literal("clear")
+                                                                                .executes(SeqCommand::runMapClusterCacheClear)))
+                                                .then(ClientCommandManager.literal("map")
+                                                                .executes(SeqCommand::runMapImageCacheStatus)
+                                                                .then(ClientCommandManager.literal("status")
+                                                                                .executes(SeqCommand::runMapImageCacheStatus))
+                                                                .then(ClientCommandManager.literal("clear")
+                                                                                .executes(SeqCommand::runMapImageCacheClear))));
+        }
+
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildMapMinSamplesCommand(String literalName) {
+                return ClientCommandManager.literal(literalName)
+                                .then(ClientCommandManager.argument(
+                                                "count",
+                                                IntegerArgumentType.integer(1, 100))
+                                                .executes(SeqCommand::runMapClusterMinSamples));
+        }
+
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildPartyJoinCommand() {
                 return ClientCommandManager.literal("join")
                                 .then(ClientCommandManager.argument(
@@ -266,6 +312,89 @@ public class SeqCommand {
 
         private static int openPartyScreen() {
                 SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new PartyFinderScreen(SeqClient.mc.screen)));
+                return 1;
+        }
+
+        private static int openGatheringMapScreen(CommandContext<FabricClientCommandSource> ctx) {
+                SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new GatheringMapScreen(SeqClient.mc.screen)));
+                return 1;
+        }
+
+        private static int runMapParams(CommandContext<FabricClientCommandSource> ctx) {
+                GatheringMapSettings settings = GatheringMapSettings.getInstance();
+                sendFeedback(
+                                ctx.getSource(),
+                                "Map clustering: " + settings.describe()
+                                                + " | cached analyses="
+                                                + GatheringClusterCache.getInstance().size());
+                return 1;
+        }
+
+        private static int runMapClusterEps(CommandContext<FabricClientCommandSource> ctx) {
+                int epsBlocks = IntegerArgumentType.getInteger(ctx, "blocks");
+                GatheringMapSettings.getInstance().setClusterEps(epsBlocks);
+                GatheringClusterCache.getInstance().clear();
+                sendFeedback(
+                                ctx.getSource(),
+                                "Map cluster eps set to " + epsBlocks + " blocks. Cluster cache cleared.");
+                return 1;
+        }
+
+        private static int runMapClusterMinSamples(CommandContext<FabricClientCommandSource> ctx) {
+                int minSamples = IntegerArgumentType.getInteger(ctx, "count");
+                GatheringMapSettings.getInstance().setClusterMinSamples(minSamples);
+                GatheringClusterCache.getInstance().clear();
+                sendFeedback(
+                                ctx.getSource(),
+                                "Map cluster minSamples set to " + minSamples + ". Cluster cache cleared.");
+                return 1;
+        }
+
+        private static int runMapClusterReset(CommandContext<FabricClientCommandSource> ctx) {
+                GatheringMapSettings.getInstance().resetClusterParams();
+                GatheringClusterCache.getInstance().clear();
+                sendFeedback(
+                                ctx.getSource(),
+                                "Map clustering reset to " + GatheringMapSettings.getInstance().describe()
+                                                + ". Cluster cache cleared.");
+                return 1;
+        }
+
+        private static int runMapDebugToggle(CommandContext<FabricClientCommandSource> ctx) {
+                boolean enabled = GatheringMapSettings.getInstance().toggleDebugInfo();
+                GatheringMapImageService imageService = GatheringMapImageService.getInstance();
+                sendFeedback(
+                                ctx.getSource(),
+                                "Map debug " + (enabled ? "enabled" : "disabled")
+                                                + " | source="
+                                                + displayMapImageSource(imageService.imageSource())
+                                                + " | status="
+                                                + imageService.hqStatus()
+                                                + " | url="
+                                                + imageService.hqMapUrl());
+                return 1;
+        }
+
+        private static int runMapClusterCacheStatus(CommandContext<FabricClientCommandSource> ctx) {
+                sendFeedback(
+                                ctx.getSource(),
+                                "Map cluster cache entries: " + GatheringClusterCache.getInstance().size());
+                return 1;
+        }
+
+        private static int runMapClusterCacheClear(CommandContext<FabricClientCommandSource> ctx) {
+                GatheringClusterCache.getInstance().clear();
+                sendFeedback(ctx.getSource(), "Map cluster cache cleared.");
+                return 1;
+        }
+
+        private static int runMapImageCacheStatus(CommandContext<FabricClientCommandSource> ctx) {
+                sendFeedback(ctx.getSource(), GatheringMapImageService.getInstance().cacheStatus());
+                return 1;
+        }
+
+        private static int runMapImageCacheClear(CommandContext<FabricClientCommandSource> ctx) {
+                sendFeedback(ctx.getSource(), GatheringMapImageService.getInstance().clearCache());
                 return 1;
         }
 
@@ -635,6 +764,14 @@ public class SeqCommand {
                 }
                 String lower = raw.toLowerCase(Locale.ROOT);
                 return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
+        }
+
+        private static String displayMapImageSource(GatheringMapImageService.Source source) {
+                return switch (source) {
+                        case NONE -> "none";
+                        case FALLBACK -> "fallback";
+                        case CACHED_HQ -> "cached HQ";
+                };
         }
 
         private static void sendFeedback(FabricClientCommandSource source, String message) {
