@@ -15,10 +15,10 @@ import net.minecraft.world.item.component.CustomModelData;
 import net.minecraft.world.phys.Vec3;
 
 public final class EntityDebugTracker {
-    private static final double RADIANCE_MERGE_DISTANCE_SQR = 9.0;
-    private static final double DUPLICATE_DETECTION_DISTANCE_SQR = RADIANCE_MERGE_DISTANCE_SQR;
-    private static final long DUPLICATE_DETECTION_COOLDOWN_TICKS = 40L;
-    private static final float MAX_DETECTION_DISTANCE_SQR = 64.0f * 64.0f;
+    private static final double RADIANCE_MERGE_DISTANCE_SQR = 2.25;
+    private static final double DUPLICATE_DETECTION_DISTANCE_SQR = 1.0;
+    private static final long DUPLICATE_DETECTION_COOLDOWN_TICKS = 120L;
+    private static final float MAX_DETECTION_DISTANCE_SQR = 96.0f * 96.0f;
     private static final int MIN_RADIANCE_CLUSTER_SIZE = 8;
 
     private static final Set<UUID> SEEN_ENTITIES = new HashSet<>();
@@ -82,9 +82,6 @@ public final class EntityDebugTracker {
             }
 
             entitiesThisTick.add(entity.getUUID());
-            if (SEEN_ENTITIES.contains(entity.getUUID())) {
-                continue;
-            }
 
             if (!(entity instanceof Display.ItemDisplay itemDisplay)) {
                 continue;
@@ -106,14 +103,18 @@ public final class EntityDebugTracker {
             }
 
             float model = customModelData.floats().getFirst();
+            boolean knownRadianceModel = isRadianceModel(model);
 
             if (model < ResourcePackModelScanner.MIN_DISCOVERY_MODEL) {
+                continue;
+            }
+            if (!knownRadianceModel && SEEN_ENTITIES.contains(entity.getUUID())) {
                 continue;
             }
             if (!ResourcePackModelScanner.hasRadianceModels() && isBadModel(model)) {
                 continue;
             }
-            if (ResourcePackModelScanner.hasRadianceModels() && !isRadianceModel(model)) {
+            if (ResourcePackModelScanner.hasRadianceModels() && !knownRadianceModel) {
                 continue;
             }
 
