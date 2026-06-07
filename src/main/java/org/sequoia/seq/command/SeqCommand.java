@@ -255,7 +255,6 @@ public class SeqCommand {
                                                                 "blocks",
                                                                 IntegerArgumentType.integer(1, 500))
                                                                 .executes(SeqCommand::runMapClusterEps)))
-                                .then(buildMapMinSamplesCommand("min-samples"))
                                 .then(buildMapMinSamplesCommand("minSamples"))
                                 .then(ClientCommandManager.literal("reset")
                                                 .executes(SeqCommand::runMapClusterReset))
@@ -265,8 +264,18 @@ public class SeqCommand {
                                                 .executes(SeqCommand::runMapClusterCacheStatus)
                                                 .then(ClientCommandManager.literal("status")
                                                                 .executes(SeqCommand::runMapClusterCacheStatus))
-                                                .then(ClientCommandManager.literal("clear")
-                                                                .executes(SeqCommand::runMapClusterCacheClear)));
+                                                .then(ClientCommandManager.literal("cluster")
+                                                                .executes(SeqCommand::runMapClusterCacheStatus)
+                                                                .then(ClientCommandManager.literal("status")
+                                                                                .executes(SeqCommand::runMapClusterCacheStatus))
+                                                                .then(ClientCommandManager.literal("clear")
+                                                                                .executes(SeqCommand::runMapClusterCacheClear)))
+                                                .then(ClientCommandManager.literal("map")
+                                                                .executes(SeqCommand::runMapImageCacheStatus)
+                                                                .then(ClientCommandManager.literal("status")
+                                                                                .executes(SeqCommand::runMapImageCacheStatus))
+                                                                .then(ClientCommandManager.literal("clear")
+                                                                                .executes(SeqCommand::runMapImageCacheClear))));
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildMapMinSamplesCommand(String literalName) {
@@ -376,6 +385,16 @@ public class SeqCommand {
         private static int runMapClusterCacheClear(CommandContext<FabricClientCommandSource> ctx) {
                 GatheringClusterCache.getInstance().clear();
                 sendFeedback(ctx.getSource(), "Map cluster cache cleared.");
+                return 1;
+        }
+
+        private static int runMapImageCacheStatus(CommandContext<FabricClientCommandSource> ctx) {
+                sendFeedback(ctx.getSource(), GatheringMapImageService.getInstance().cacheStatus());
+                return 1;
+        }
+
+        private static int runMapImageCacheClear(CommandContext<FabricClientCommandSource> ctx) {
+                sendFeedback(ctx.getSource(), GatheringMapImageService.getInstance().clearCache());
                 return 1;
         }
 

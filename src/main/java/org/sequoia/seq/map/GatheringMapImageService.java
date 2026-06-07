@@ -17,6 +17,7 @@ import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -26,7 +27,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.stream.Stream;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.network.chat.Component;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.network.BuildConfig;
 import org.sequoia.seq.network.ClientVersion;
@@ -38,6 +41,7 @@ public final class GatheringMapImageService {
     private static final Duration REQUEST_TIMEOUT = Duration.ofMinutes(3);
     private static final Duration TILE_RETRY_BASE_DELAY = Duration.ofSeconds(2);
     private static final int TILE_DOWNLOAD_CONCURRENCY = 2;
+    private static final int HTTP_CLIENT_THREADS = 4;
     private static final Path CACHE_DIR = FabricLoader.getInstance()
             .getGameDir()
             .resolve("config")
@@ -54,7 +58,12 @@ public final class GatheringMapImageService {
         thread.setDaemon(true);
         return thread;
     });
-    private final ExecutorService httpExecutor = Executors.newFixedThreadPool(TILE_DOWNLOAD_CONCURRENCY, runnable -> {
+    private final ExecutorService tileExecutor = Executors.newFixedThreadPool(TILE_DOWNLOAD_CONCURRENCY, runnable -> {
+        Thread thread = new Thread(runnable, "seq-gathering-map-tile");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final ExecutorService httpExecutor = Executors.newFixedThreadPool(HTTP_CLIENT_THREADS, runnable -> {
         Thread thread = new Thread(runnable, "seq-gathering-map-http");
         thread.setDaemon(true);
         return thread;
@@ -117,7 +126,7 @@ public final class GatheringMapImageService {
         if (tiles == null || tiles.isBlank() || "not requested".equals(tiles)) {
             return hqStatus;
         }
-        return hqStatus + " | tiles: " + tiles;
+        return hqStatus + " | tiles: " + tiles + " | active=" + tileDownloads.size();
     }
 
     public String hqMapUrl() {
@@ -138,6 +147,29 @@ public final class GatheringMapImageService {
             return Optional.empty();
         }
         return Optional.of(current.tiles());
+    }
+
+    public String cacheStatus() {
+        long bytes = cacheSizeBytes();
+        return "Map image cache: " + formatBytes(bytes) + " at " + CACHE_DIR;
+    }
+
+    public synchronized String clearCache() {
+        int deletedFiles = deleteCacheDirectory();
+        for (CompletableFuture<Void> download : tileDownloads.values()) {
+            download.cancel(true);
+        }
+        tileDownloads.clear();
+        tileRetryAfterMs.clear();
+        imageBytes = null;
+        imageSource = Source.NONE;
+        hqStatus = "cache cleared";
+        tileStatus = "not requested";
+        manifest = null;
+        loadRequested = false;
+        version++;
+        requestLoad();
+        return "Map image cache cleared (" + deletedFiles + " files). Reload started.";
     }
 
     public byte[] cachedTileBytes(TileKey key) {
@@ -196,6 +228,11 @@ public final class GatheringMapImageService {
 
     private void loadCachedSingleImage() {
         Manifest current = manifest;
+        if (prefersTiles(current)) {
+            publishTileModeUnderlay();
+            hqStatus = "using tiled HQ, refreshing";
+            return;
+        }
         if (current == null || current.single() == null || !Files.isRegularFile(SINGLE_CACHE_PATH)) {
             return;
         }
@@ -222,32 +259,84 @@ public final class GatheringMapImageService {
         }
 
         hqStatus = "refreshing manifest";
+        Manifest remoteManifest;
         try {
             byte[] manifestBytes = download(manifestUri, "manifest");
-            Manifest remoteManifest = gson.fromJson(new String(manifestBytes, java.nio.charset.StandardCharsets.UTF_8), Manifest.class);
-            if (remoteManifest == null || remoteManifest.single() == null) {
+            remoteManifest = gson.fromJson(new String(manifestBytes, java.nio.charset.StandardCharsets.UTF_8), Manifest.class);
+            if (remoteManifest == null) {
                 hqStatus = "manifest invalid";
+                debugMap("Manifest invalid from " + manifestUri + ": empty response.");
+                return;
+            }
+            if (!prefersTiles(remoteManifest) && remoteManifest.single() == null) {
+                hqStatus = "manifest invalid";
+                debugMap("Manifest invalid from " + manifestUri + ": missing single image metadata.");
                 return;
             }
             manifest = remoteManifest;
             writeCache(MANIFEST_CACHE_PATH, manifestBytes);
-            refreshSingleImage(remoteManifest);
         } catch (HttpConnectTimeoutException exception) {
             hqStatus = "manifest connect timeout";
-            SeqClient.LOGGER.warn("[GatheringMap] Manifest connection timed out from {}", manifestUri);
+            debugMap("Manifest connection timed out from " + manifestUri);
+            SeqClient.LOGGER.debug("[GatheringMap] Manifest connection timed out from {}", manifestUri);
+            return;
         } catch (HttpTimeoutException exception) {
             hqStatus = "manifest timeout";
-            SeqClient.LOGGER.warn("[GatheringMap] Manifest download timed out from {}", manifestUri);
+            debugMap("Manifest download timed out from " + manifestUri);
+            SeqClient.LOGGER.debug("[GatheringMap] Manifest download timed out from {}", manifestUri);
+            return;
+        } catch (MapDownloadException exception) {
+            hqStatus = exception.statusLine();
+            debugMap(exception.statusLine());
+            SeqClient.LOGGER.debug("[GatheringMap] {}", exception.statusLine());
+            return;
         } catch (IOException exception) {
-            hqStatus = "manifest failed: " + exception.getClass().getSimpleName();
-            SeqClient.LOGGER.warn("[GatheringMap] Failed to download gathering map manifest.", exception);
+            hqStatus = "manifest failed: " + exception.getMessage();
+            debugMap("Manifest failed from " + manifestUri + ": " + exception.getMessage());
+            SeqClient.LOGGER.debug("[GatheringMap] Failed to download gathering map manifest.", exception);
+            return;
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             hqStatus = "manifest interrupted";
-            SeqClient.LOGGER.warn("[GatheringMap] Manifest download interrupted.", exception);
+            debugMap("Manifest download interrupted from " + manifestUri);
+            SeqClient.LOGGER.debug("[GatheringMap] Manifest download interrupted.", exception);
+            return;
         } catch (RuntimeException exception) {
             hqStatus = "manifest parse failed";
-            SeqClient.LOGGER.warn("[GatheringMap] Failed to parse gathering map manifest.", exception);
+            debugMap("Manifest parse failed from " + manifestUri + ": " + exception.getMessage());
+            SeqClient.LOGGER.debug("[GatheringMap] Failed to parse gathering map manifest.", exception);
+            return;
+        }
+
+        if (prefersTiles(remoteManifest)) {
+            publishTileModeUnderlay();
+            hqStatus = "tiles manifest current";
+            return;
+        }
+
+        try {
+            refreshSingleImage(remoteManifest);
+        } catch (HttpConnectTimeoutException exception) {
+            hqStatus = "HQ connect timeout";
+            debugMap("HQ image connection timed out for " + remoteManifest.single().url());
+            SeqClient.LOGGER.debug("[GatheringMap] HQ image connection timed out for {}", remoteManifest.single().url());
+        } catch (HttpTimeoutException exception) {
+            hqStatus = "HQ timeout";
+            debugMap("HQ image download timed out for " + remoteManifest.single().url());
+            SeqClient.LOGGER.debug("[GatheringMap] HQ image download timed out for {}", remoteManifest.single().url());
+        } catch (MapDownloadException exception) {
+            hqStatus = exception.statusLine();
+            debugMap(exception.statusLine());
+            SeqClient.LOGGER.debug("[GatheringMap] {}", exception.statusLine());
+        } catch (IOException exception) {
+            hqStatus = "HQ failed: " + exception.getMessage();
+            debugMap("HQ image failed: " + exception.getMessage());
+            SeqClient.LOGGER.debug("[GatheringMap] Failed to download HQ map image.", exception);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            hqStatus = "HQ interrupted";
+            debugMap("HQ image download interrupted for " + remoteManifest.single().url());
+            SeqClient.LOGGER.debug("[GatheringMap] HQ image download interrupted.", exception);
         }
     }
 
@@ -266,12 +355,36 @@ public final class GatheringMapImageService {
         byte[] downloaded = download(imageUri, "HQ");
         if (!validateSingleImage(remoteManifest, downloaded)) {
             hqStatus = "checksum failed";
-            SeqClient.LOGGER.warn("[GatheringMap] HQ map checksum/size validation failed from {}", imageUri);
+            String expected = remoteManifest.single().sha256();
+            String actual = sha256(downloaded);
+            debugMap("HQ checksum/size validation failed from " + imageUri
+                    + " size="
+                    + downloaded.length
+                    + "/"
+                    + remoteManifest.single().size()
+                    + " sha256="
+                    + actual
+                    + "/"
+                    + expected);
+            SeqClient.LOGGER.debug(
+                    "[GatheringMap] HQ map checksum/size validation failed from {} size={}/{} sha256={}/{}",
+                    imageUri,
+                    downloaded.length,
+                    remoteManifest.single().size(),
+                    actual,
+                    expected);
             return;
         }
         writeCache(SINGLE_CACHE_PATH, downloaded);
         publish(downloaded, Source.CACHED_HQ);
         hqStatus = "downloaded HQ (" + formatBytes(downloaded.length) + ")";
+    }
+
+    private void publishTileModeUnderlay() {
+        byte[] fallback = loadFallbackBytes();
+        if (fallback.length > 0) {
+            publish(fallback, Source.FALLBACK);
+        }
     }
 
     private void requestTile(Manifest current, TileKey key, boolean visible) {
@@ -286,7 +399,7 @@ public final class GatheringMapImageService {
         if (retryAfter != null && retryAfter > now) {
             return;
         }
-        tileDownloads.computeIfAbsent(key, ignored -> CompletableFuture.runAsync(() -> downloadTile(current, key, visible), httpExecutor)
+        tileDownloads.computeIfAbsent(key, ignored -> CompletableFuture.runAsync(() -> downloadTile(current, key, visible), tileExecutor)
                 .whenComplete((ignoredResult, ignoredFailure) -> tileDownloads.remove(key)));
     }
 
@@ -299,6 +412,7 @@ public final class GatheringMapImageService {
             byte[] downloaded = download(tileUri, "tile " + key.id());
             if (!matchesSha256(downloaded, current.tiles().sha256().get(key.id()))) {
                 tileStatus = "checksum failed " + key.id();
+                debugMap("Tile " + key.id() + " checksum failed from " + tileUri);
                 scheduleTileRetry(key);
                 return;
             }
@@ -307,9 +421,10 @@ public final class GatheringMapImageService {
             tileStatus = "cached " + key.id();
             version++;
         } catch (IOException exception) {
-            tileStatus = "failed " + key.id() + ": " + exception.getClass().getSimpleName();
+            tileStatus = "failed " + key.id() + ": " + exception.getMessage();
             scheduleTileRetry(key);
-            SeqClient.LOGGER.warn("[GatheringMap] Failed to download tile {}.", key.id(), exception);
+            debugMap("Tile " + key.id() + " failed from " + tileUri + ": " + exception.getMessage());
+            SeqClient.LOGGER.debug("[GatheringMap] Failed to download tile {}.", key.id(), exception);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             tileStatus = "interrupted " + key.id();
@@ -320,10 +435,28 @@ public final class GatheringMapImageService {
     private byte[] download(URI uri, String label) throws IOException, InterruptedException {
         HttpResponse<InputStream> response = httpClient.send(downloadRequest(uri), HttpResponse.BodyHandlers.ofInputStream());
         if (response.statusCode() / 100 != 2) {
-            throw new IOException(label + " download returned HTTP " + response.statusCode());
+            String contentType = response.headers().firstValue("Content-Type").orElse("unknown");
+            throw new MapDownloadException(label, uri, response.statusCode(), contentType);
         }
         long contentLength = response.headers().firstValueAsLong("Content-Length").orElse(-1);
+        SeqClient.LOGGER.debug(
+                "[GatheringMap] Downloading {} from {} contentLength={}",
+                label,
+                uri,
+                contentLength < 0 ? "unknown" : formatBytes(contentLength));
         return readDownloadBody(response.body(), contentLength, label);
+    }
+
+    private static void debugMap(String message) {
+        SeqClient.LOGGER.debug("[GatheringMap] {}", message);
+        if (!GatheringMapSettings.getInstance().showDebugInfo()) {
+            return;
+        }
+        SeqClient.mc.execute(() -> {
+            if (SeqClient.mc.player != null) {
+                SeqClient.mc.player.displayClientMessage(Component.literal("[GatheringMap] " + message), false);
+            }
+        });
     }
 
     private static HttpRequest downloadRequest(URI uri) {
@@ -404,6 +537,10 @@ public final class GatheringMapImageService {
         return expected == null || expected.isBlank() || expected.equalsIgnoreCase(sha256(bytes));
     }
 
+    private static boolean prefersTiles(Manifest manifest) {
+        return manifest != null && manifest.tiles() != null && "tiles".equalsIgnoreCase(manifest.preferredMode());
+    }
+
     private static String sha256(byte[] bytes) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -450,6 +587,49 @@ public final class GatheringMapImageService {
             Files.move(tempPath, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException exception) {
             Files.move(tempPath, path, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static long cacheSizeBytes() {
+        if (!Files.exists(CACHE_DIR)) {
+            return 0L;
+        }
+        try (Stream<Path> paths = Files.walk(CACHE_DIR)) {
+            return paths.filter(Files::isRegularFile).mapToLong(GatheringMapImageService::fileSize).sum();
+        } catch (IOException exception) {
+            SeqClient.LOGGER.warn("[GatheringMap] Failed to calculate map cache size.", exception);
+            return 0L;
+        }
+    }
+
+    private static long fileSize(Path path) {
+        try {
+            return Files.size(path);
+        } catch (IOException exception) {
+            return 0L;
+        }
+    }
+
+    private static int deleteCacheDirectory() {
+        if (!Files.exists(CACHE_DIR)) {
+            return 0;
+        }
+        try (Stream<Path> paths = Files.walk(CACHE_DIR)) {
+            return paths.sorted(Comparator.reverseOrder()).mapToInt(GatheringMapImageService::deleteCachePath).sum();
+        } catch (IOException exception) {
+            SeqClient.LOGGER.warn("[GatheringMap] Failed to clear map image cache.", exception);
+            return 0;
+        }
+    }
+
+    private static int deleteCachePath(Path path) {
+        try {
+            boolean wasFile = Files.isRegularFile(path);
+            Files.deleteIfExists(path);
+            return wasFile ? 1 : 0;
+        } catch (IOException exception) {
+            SeqClient.LOGGER.warn("[GatheringMap] Failed to delete map cache path {}.", path, exception);
+            return 0;
         }
     }
 
@@ -509,6 +689,25 @@ public final class GatheringMapImageService {
     public record TileKey(int x, int y) {
         public String id() {
             return x + "_" + y;
+        }
+    }
+
+    private static final class MapDownloadException extends IOException {
+        private final String label;
+        private final URI uri;
+        private final int statusCode;
+        private final String contentType;
+
+        private MapDownloadException(String label, URI uri, int statusCode, String contentType) {
+            super(label + " returned HTTP " + statusCode + " from " + uri + " contentType=" + contentType);
+            this.label = label;
+            this.uri = uri;
+            this.statusCode = statusCode;
+            this.contentType = contentType;
+        }
+
+        private String statusLine() {
+            return label + " HTTP " + statusCode + " from " + uri + " contentType=" + contentType;
         }
     }
 }

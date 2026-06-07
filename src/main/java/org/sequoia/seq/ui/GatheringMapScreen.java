@@ -225,6 +225,10 @@ public class GatheringMapScreen extends Screen {
         var manifest = mapImageService.manifest().orElse(null);
         TileSet tileSet = manifest == null ? null : manifest.tiles();
         if (tileSet == null || !"tiles".equalsIgnoreCase(manifest.preferredMode())) {
+            if (!tileImageHandles.isEmpty()) {
+                clearTileImageHandles(nvg);
+                loadedTileVersion = "";
+            }
             return;
         }
         if (!manifest.version().equals(loadedTileVersion)) {
@@ -552,9 +556,9 @@ public class GatheringMapScreen extends Screen {
         y += BUTTON_HEIGHT + 18;
 
         if (showDebugInfo) {
-            drawText(nvg, PADDING, y, 11, "Map source: " + displayMapImageSource(), SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawSidebarText(nvg, PADDING, y, 11, "Map source: " + displayMapImageSource(), SUBTEXT_COLOR);
             y += 18;
-            drawText(nvg, PADDING, y, 11, "HQ status: " + mapImageService.hqStatus(), SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawSidebarText(nvg, PADDING, y, 11, "HQ status: " + mapImageService.hqStatus(), SUBTEXT_COLOR);
             y += 18;
         }
 
@@ -569,9 +573,12 @@ public class GatheringMapScreen extends Screen {
                 ? SUBTEXT_COLOR
                 : TEXT_COLOR;
         String displayValue = value.isBlank() && !resourceInputFocused ? "All resources" : value;
-        drawText(nvg, PADDING + 8, y + INPUT_HEIGHT / 2f, 12, displayValue, valueColor, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        float inputTextWidth = SIDEBAR_WIDTH - PADDING * 2 - 30;
+        drawFittedText(nvg, PADDING + 8, y + INPUT_HEIGHT / 2f, 12, displayValue, valueColor, inputTextWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         if (resourceInputFocused) {
-            drawText(nvg, PADDING + 10 + textWidth(nvg, value), y + INPUT_HEIGHT / 2f, 12, "|", TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            nvgFontSize(nvg, 12);
+            float cursorX = PADDING + 10 + Math.min(textWidth(nvg, value), inputTextWidth);
+            drawText(nvg, cursorX, y + INPUT_HEIGHT / 2f, 12, "|", TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         }
         drawText(nvg, SIDEBAR_WIDTH - PADDING - 10, y + INPUT_HEIGHT / 2f, 12, resourceDropdownOpen ? "^" : "v", SUBTEXT_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         y += INPUT_HEIGHT + 18;
@@ -594,17 +601,19 @@ public class GatheringMapScreen extends Screen {
         if (clusterDetail != null) {
             NVGWrapper.drawRect(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, CLUSTER_DETAIL_HEIGHT, new Color(28, 28, 38, 210));
             NVGWrapper.drawRectOutline(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, CLUSTER_DETAIL_HEIGHT, 1, BORDER_COLOR);
-            drawText(nvg, PADDING + 8, y + 17, 14, clusterDetail.resource(), TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            drawText(nvg, PADDING + 8, y + 36, 12, clusterDetail.nodeCount() + " nodes | score " + clusterDetail.score() + "%", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            drawText(nvg, PADDING + 8, y + 55, 12, Math.round(clusterDetail.averageSpacing()) + "m spacing", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            drawText(nvg, PADDING + 8, y + 74, 12, clusterDetail.profession().name(), clusterDetail.profession().color(), NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            drawText(nvg, PADDING + 8, y + 93, 12, clusterCoords(clusterDetail), SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            float detailWidth = SIDEBAR_WIDTH - PADDING * 2 - 16;
+            drawFittedText(nvg, PADDING + 8, y + 17, 14, clusterDetail.resource(), TEXT_COLOR, detailWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawFittedText(nvg, PADDING + 8, y + 36, 12, clusterDetail.nodeCount() + " nodes | score " + clusterDetail.score() + "%", SUBTEXT_COLOR, detailWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawFittedText(nvg, PADDING + 8, y + 55, 12, Math.round(clusterDetail.averageSpacing()) + "m spacing", SUBTEXT_COLOR, detailWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawFittedText(nvg, PADDING + 8, y + 74, 12, clusterDetail.profession().name(), clusterDetail.profession().color(), detailWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawFittedText(nvg, PADDING + 8, y + 93, 12, clusterCoords(clusterDetail), SUBTEXT_COLOR, detailWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
             y += CLUSTER_DETAIL_HEIGHT + 14;
         } else if (detail != null) {
             NVGWrapper.drawRect(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, NODE_DETAIL_HEIGHT, new Color(28, 28, 38, 210));
             NVGWrapper.drawRectOutline(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, NODE_DETAIL_HEIGHT, 1, BORDER_COLOR);
-            drawText(nvg, PADDING + 8, y + 17, 14, detail.resource(), TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            drawText(nvg, PADDING + 8, y + 38, 12, nodeCoords(detail), SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            float detailWidth = SIDEBAR_WIDTH - PADDING * 2 - 16;
+            drawFittedText(nvg, PADDING + 8, y + 17, 14, detail.resource(), TEXT_COLOR, detailWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawFittedText(nvg, PADDING + 8, y + 38, 12, nodeCoords(detail), SUBTEXT_COLOR, detailWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
             y += NODE_DETAIL_HEIGHT + 14;
         }
 
@@ -616,8 +625,9 @@ public class GatheringMapScreen extends Screen {
                 boolean active = cluster.equals(selectedCluster);
                 NVGWrapper.drawRect(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, 34, active ? CONTROL_ACTIVE : CONTROL_COLOR);
                 NVGWrapper.drawRectOutline(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, 34, 1, BORDER_COLOR);
-                drawText(nvg, PADDING + 8, y + 11, 11, "#" + (index + 1) + " " + cluster.resource() + " | score " + cluster.score() + "%", TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-                drawText(nvg, PADDING + 8, y + 26, 10, cluster.nodeCount() + " nodes | " + Math.round(cluster.averageSpacing()) + "m spacing", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+                float rowTextWidth = SIDEBAR_WIDTH - PADDING * 2 - 16;
+                drawFittedText(nvg, PADDING + 8, y + 11, 11, "#" + (index + 1) + " " + cluster.resource() + " | score " + cluster.score() + "%", TEXT_COLOR, rowTextWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+                drawFittedText(nvg, PADDING + 8, y + 26, 10, cluster.nodeCount() + " nodes | " + Math.round(cluster.averageSpacing()) + "m spacing", SUBTEXT_COLOR, rowTextWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
                 y += 40;
             }
         }
@@ -665,7 +675,7 @@ public class GatheringMapScreen extends Screen {
                 NVGWrapper.drawRect(nvg, x + 1, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1, width - 2, RESOURCE_DROPDOWN_ROW_HEIGHT - 2, selected ? CONTROL_ACTIVE : CONTROL_HOVER);
             }
             String label = resource.isBlank() ? "All resources" : resource;
-            drawText(nvg, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, label, resource.isBlank() ? SUBTEXT_COLOR : TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawFittedText(nvg, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, label, resource.isBlank() ? SUBTEXT_COLOR : TEXT_COLOR, width - 16, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         }
         if (resources.size() > visibleRows) {
             String range = (resourceDropdownScroll + 1) + "-" + (resourceDropdownScroll + visibleRows) + "/" + resources.size();
@@ -739,8 +749,8 @@ public class GatheringMapScreen extends Screen {
         float y = Math.max(8, nvgMouseY + 12);
         NVGWrapper.drawRect(nvg, x, y, 180, 42, new Color(18, 18, 24, 235));
         NVGWrapper.drawRectOutline(nvg, x, y, 180, 42, 1, BORDER_COLOR);
-        drawText(nvg, x + 8, y + 15, 12, title, TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawText(nvg, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawFittedText(nvg, x + 8, y + 15, 12, title, TEXT_COLOR, 164, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawFittedText(nvg, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 164, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
     }
 
     private void renderClusterTooltip(long nvg, GatheringNodeCluster cluster) {
@@ -750,8 +760,8 @@ public class GatheringMapScreen extends Screen {
         float y = Math.max(8, nvgMouseY + 12);
         NVGWrapper.drawRect(nvg, x, y, 200, 42, new Color(18, 18, 24, 235));
         NVGWrapper.drawRectOutline(nvg, x, y, 200, 42, 1, BORDER_COLOR);
-        drawText(nvg, x + 8, y + 15, 12, title, TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawText(nvg, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawFittedText(nvg, x + 8, y + 15, 12, title, TEXT_COLOR, 184, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawFittedText(nvg, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 184, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
     }
 
     private void refreshClusterAnalysisIfNeeded() {
@@ -1183,6 +1193,41 @@ public class GatheringMapScreen extends Screen {
         nvgFillColor(nvg, nvgColor);
         nvgText(nvg, x, y, text);
         nvgColor.free();
+    }
+
+    private static void drawSidebarText(long nvg, float x, float y, float size, String text, Color color) {
+        drawFittedText(nvg, x, y, size, text, color, SIDEBAR_WIDTH - x - PADDING, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    }
+
+    private static void drawFittedText(long nvg, float x, float y, float size, String text, Color color, float maxWidth, int align) {
+        nvgFontSize(nvg, size);
+        String fitted = fitText(nvg, text, maxWidth);
+        drawText(nvg, x, y, size, fitted, color, align);
+    }
+
+    private static String fitText(long nvg, String text, float maxWidth) {
+        if (text == null || text.isEmpty() || maxWidth <= 0) {
+            return "";
+        }
+        if (textWidth(nvg, text) <= maxWidth) {
+            return text;
+        }
+        String ellipsis = "...";
+        if (textWidth(nvg, ellipsis) > maxWidth) {
+            return "";
+        }
+        int low = 0;
+        int high = text.length();
+        while (low < high) {
+            int mid = (low + high + 1) / 2;
+            String candidate = text.substring(0, mid).stripTrailing() + ellipsis;
+            if (textWidth(nvg, candidate) <= maxWidth) {
+                low = mid;
+            } else {
+                high = mid - 1;
+            }
+        }
+        return text.substring(0, low).stripTrailing() + ellipsis;
     }
 
     private static float textWidth(long nvg, String text) {
