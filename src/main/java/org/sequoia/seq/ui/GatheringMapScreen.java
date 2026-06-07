@@ -1,9 +1,12 @@
 package org.sequoia.seq.ui;
 
 import java.awt.Color;
+import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import net.minecraft.client.gui.GuiGraphics;
@@ -27,6 +30,8 @@ import org.sequoia.seq.map.GatheringNodeService;
 import org.sequoia.seq.map.GatheringProfession;
 import org.sequoia.seq.map.MapCalibration;
 import org.sequoia.seq.map.MapViewport;
+import org.sequoia.seq.map.GatheringMapImageService.TileKey;
+import org.sequoia.seq.map.GatheringMapImageService.TileSet;
 import org.sequoia.seq.utils.TextInputHelper;
 import org.sequoia.seq.utils.rendering.nvg.NVGContext;
 import org.sequoia.seq.utils.rendering.nvg.NVGWrapper;
@@ -103,6 +108,8 @@ public class GatheringMapScreen extends Screen {
     private int mapImageHandle;
     private boolean mapImageLoadAttempted;
     private long loadedMapImageVersion = -1;
+    private final Map<TileKey, Integer> tileImageHandles = new HashMap<>();
+    private String loadedTileVersion = "";
     private float nvgMouseX;
     private float nvgMouseY;
 
@@ -116,6 +123,18 @@ public class GatheringMapScreen extends Screen {
         clusterScoreMode = mapSettings.clusterScoreMode();
         nodeService.loadBundledNodes();
         mapImageService.requestLoad();
+    }
+
+    @Override
+    public void removed() {
+        NVGContext.renderDeferred(nvg -> {
+            if (mapImageHandle != 0) {
+                nvgDeleteImage(nvg, mapImageHandle);
+                mapImageHandle = 0;
+            }
+            clearTileImageHandles(nvg);
+        });
+        super.removed();
     }
 
     @Override
@@ -172,10 +191,13 @@ public class GatheringMapScreen extends Screen {
 
     private void renderMapBackground(long nvg, MapViewport viewport) {
         int image = mapImageHandle(nvg);
-        if (image == 0) {
-            return;
+        if (image != 0) {
+            renderFullMapImage(nvg, viewport, image);
         }
+        renderMapTiles(nvg, viewport);
+    }
 
+    private void renderFullMapImage(long nvg, MapViewport viewport, int image) {
         float x = viewport.worldToScreenX(MapCalibration.MIN_WORLD_X);
         float y = viewport.worldToScreenZ(MapCalibration.MIN_WORLD_Z);
         float width = viewport.worldToScreenX(MapCalibration.MAX_WORLD_X) - x;
@@ -197,6 +219,138 @@ public class GatheringMapScreen extends Screen {
         } finally {
             nvgResetScissor(nvg);
         }
+    }
+
+    private void renderMapTiles(long nvg, MapViewport viewport) {
+        var manifest = mapImageService.manifest().orElse(null);
+        TileSet tileSet = manifest == null ? null : manifest.tiles();
+        if (tileSet == null || !"tiles".equalsIgnoreCase(manifest.preferredMode())) {
+            return;
+        }
+        if (!manifest.version().equals(loadedTileVersion)) {
+            clearTileImageHandles(nvg);
+            loadedTileVersion = manifest.version();
+        }
+
+        TileRange visibleRange = visibleTileRange(viewport, tileSet, 0);
+        TileRange prefetchRange = visibleTileRange(viewport, tileSet, 1);
+        List<TileKey> visibleTiles = tilesInRange(visibleRange);
+        List<TileKey> prefetchTiles = tilesInRange(prefetchRange);
+        mapImageService.requestTiles(visibleTiles, prefetchTiles);
+
+        nvgScissor(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+        try {
+            for (TileKey key : visibleTiles) {
+                int tileImage = tileImageHandle(nvg, key);
+                if (tileImage != 0) {
+                    renderTile(nvg, viewport, tileSet, key, tileImage);
+                }
+            }
+        } finally {
+            nvgResetScissor(nvg);
+        }
+    }
+
+    private int tileImageHandle(long nvg, TileKey key) {
+        Integer existing = tileImageHandles.get(key);
+        if (existing != null) {
+            return existing;
+        }
+        byte[] imageBytes = mapImageService.cachedTileBytes(key);
+        if (imageBytes == null || imageBytes.length == 0) {
+            return 0;
+        }
+        var byteBuffer = MemoryUtil.memAlloc(imageBytes.length);
+        try {
+            byteBuffer.put(imageBytes);
+            byteBuffer.flip();
+            int handle = NVGWrapper.loadImageFromInputStream(nvg, byteBuffer);
+            tileImageHandles.put(key, handle);
+            return handle;
+        } catch (RuntimeException exception) {
+            SeqClient.LOGGER.warn("[GatheringMap] Could not load map tile {}.", key.id(), exception);
+            return 0;
+        } finally {
+            MemoryUtil.memFree(byteBuffer);
+        }
+    }
+
+    private void renderTile(long nvg, MapViewport viewport, TileSet tileSet, TileKey key, int image) {
+        int pixelX0 = key.x() * tileSet.tileSize();
+        int pixelY0 = key.y() * tileSet.tileSize();
+        int pixelX1 = Math.min(tileSet.width(), pixelX0 + tileSet.tileSize());
+        int pixelY1 = Math.min(tileSet.height(), pixelY0 + tileSet.tileSize());
+        double worldX0 = imageToWorldX(pixelX0, tileSet.width());
+        double worldZ0 = imageToWorldZ(pixelY0, tileSet.height());
+        double worldX1 = imageToWorldX(pixelX1, tileSet.width());
+        double worldZ1 = imageToWorldZ(pixelY1, tileSet.height());
+        float x = viewport.worldToScreenX(worldX0);
+        float y = viewport.worldToScreenZ(worldZ0);
+        float width = viewport.worldToScreenX(worldX1) - x;
+        float height = viewport.worldToScreenZ(worldZ1) - y;
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+
+        try (NVGPaint paint = NVGPaint.calloc()) {
+            nvgImagePattern(nvg, x, y, width, height, 0, image, 1f, paint);
+            nvgBeginPath(nvg);
+            nvgRect(nvg, x, y, width, height);
+            nvgFillPaint(nvg, paint);
+            nvgFill(nvg);
+            nvgClosePath(nvg);
+        }
+    }
+
+    private static TileRange visibleTileRange(MapViewport viewport, TileSet tileSet, int margin) {
+        double minImageX = clampImageX(MapCalibration.worldToImageX(viewport.minWorldX(), tileSet.width()), tileSet);
+        double maxImageX = clampImageX(MapCalibration.worldToImageX(viewport.maxWorldX(), tileSet.width()), tileSet);
+        double minImageY = clampImageY(MapCalibration.worldToImageZ(viewport.minWorldZ(), tileSet.height()), tileSet);
+        double maxImageY = clampImageY(MapCalibration.worldToImageZ(viewport.maxWorldZ(), tileSet.height()), tileSet);
+        int minX = clampTile((int) Math.floor(minImageX / tileSet.tileSize()) - margin, tileSet.columns());
+        int maxX = clampTile((int) Math.floor(maxImageX / tileSet.tileSize()) + margin, tileSet.columns());
+        int minY = clampTile((int) Math.floor(minImageY / tileSet.tileSize()) - margin, tileSet.rows());
+        int maxY = clampTile((int) Math.floor(maxImageY / tileSet.tileSize()) + margin, tileSet.rows());
+        return new TileRange(minX, maxX, minY, maxY);
+    }
+
+    private static List<TileKey> tilesInRange(TileRange range) {
+        List<TileKey> tiles = new ArrayList<>();
+        for (int y = range.minY(); y <= range.maxY(); y++) {
+            for (int x = range.minX(); x <= range.maxX(); x++) {
+                tiles.add(new TileKey(x, y));
+            }
+        }
+        return tiles;
+    }
+
+    private static double imageToWorldX(double imageX, int imageWidth) {
+        return MapCalibration.MIN_WORLD_X
+                + (imageX / imageWidth) * (MapCalibration.MAX_WORLD_X - MapCalibration.MIN_WORLD_X);
+    }
+
+    private static double imageToWorldZ(double imageY, int imageHeight) {
+        return MapCalibration.MIN_WORLD_Z
+                + (imageY / imageHeight) * (MapCalibration.MAX_WORLD_Z - MapCalibration.MIN_WORLD_Z);
+    }
+
+    private static double clampImageX(double value, TileSet tileSet) {
+        return Math.max(0, Math.min(tileSet.width() - 1, value));
+    }
+
+    private static double clampImageY(double value, TileSet tileSet) {
+        return Math.max(0, Math.min(tileSet.height() - 1, value));
+    }
+
+    private static int clampTile(int value, int count) {
+        return Math.max(0, Math.min(count - 1, value));
+    }
+
+    private void clearTileImageHandles(long nvg) {
+        for (int handle : tileImageHandles.values()) {
+            nvgDeleteImage(nvg, handle);
+        }
+        tileImageHandles.clear();
     }
 
     private int mapImageHandle(long nvg) {
@@ -1176,6 +1330,8 @@ public class GatheringMapScreen extends Screen {
     }
 
     private record ScreenPoint(float x, float y) {}
+
+    private record TileRange(int minX, int maxX, int minY, int maxY) {}
 
     @Override
     public boolean isPauseScreen() {
