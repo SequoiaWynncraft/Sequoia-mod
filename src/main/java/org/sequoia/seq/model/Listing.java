@@ -1,5 +1,6 @@
 package org.sequoia.seq.model;
 
+import com.google.gson.annotations.SerializedName;
 import java.time.Instant;
 import java.util.List;
 
@@ -11,12 +12,47 @@ public record Listing(
         PartyMode mode,
         boolean strict,
         PartyRegion region,
+        @SerializedName(
+                        value = "world",
+                        alternate = {"leaderWorld", "leaderWorldName", "currentWorld", "currentWorldName"})
+                String world,
         PartyStatus status,
         PartyCloseReason closeReason,
         String note,
         List<Member> members,
         List<Member> reservedSlots,
         Instant createdAt) {
+    public Listing(
+            long id,
+            List<Activity> activities,
+            Activity activity,
+            String leaderUUID,
+            PartyMode mode,
+            boolean strict,
+            PartyRegion region,
+            PartyStatus status,
+            PartyCloseReason closeReason,
+            String note,
+            List<Member> members,
+            List<Member> reservedSlots,
+            Instant createdAt) {
+        this(
+                id,
+                activities,
+                activity,
+                leaderUUID,
+                mode,
+                strict,
+                region,
+                null,
+                status,
+                closeReason,
+                note,
+                members,
+                reservedSlots,
+                createdAt);
+    }
+
     public Listing(
             long id,
             List<Activity> activities,
@@ -38,6 +74,7 @@ public record Listing(
                 mode,
                 strict,
                 region,
+                null,
                 status,
                 null,
                 note,

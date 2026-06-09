@@ -2,8 +2,17 @@ package org.sequoia.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.sequoia.seq.model.Activity;
+import org.sequoia.seq.model.Listing;
+import org.sequoia.seq.model.Member;
+import org.sequoia.seq.model.PartyMode;
+import org.sequoia.seq.model.PartyRegion;
+import org.sequoia.seq.model.PartyRole;
+import org.sequoia.seq.model.PartyStatus;
+import org.sequoia.seq.model.WynnClassType;
 
 class PartyListingTest {
 
@@ -35,5 +44,27 @@ class PartyListingTest {
                         "The Wartorn Palace",
                         "Prelude to Annihilation"),
                 PartyListing.activityDisplayNames());
+    }
+
+    @Test
+    void displayLabelUsesWorldBeforeRegion() {
+        PartyListing listing = new PartyListing(new Listing(
+                1L,
+                List.of(new Activity(1L, "TNA", 4)),
+                null,
+                "leader",
+                PartyMode.CHILL,
+                false,
+                PartyRegion.EU,
+                "EU21",
+                PartyStatus.OPEN,
+                null,
+                null,
+                List.of(new Member("leader", PartyRole.DPS, WynnClassType.MAGE, Instant.EPOCH)),
+                List.of(),
+                Instant.EPOCH));
+
+        assertEquals("EU21 · Chill · The Nameless Anomaly", listing.displayLabel());
+        assertEquals("EU21", listing.tags.get(1));
     }
 }

@@ -20,6 +20,7 @@ import net.minecraft.network.chat.MutableComponent;
 import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.events.PartyFinderUpdateEvent;
+import org.sequoia.seq.integrations.WynntilsWorldStateAccess;
 import org.sequoia.seq.model.*;
 import org.sequoia.seq.network.ApiClient;
 import org.sequoia.seq.network.ConnectionManager;
@@ -241,7 +242,8 @@ public class PartyFinderManager implements NotificationAccessor {
                                         false,
                                         PartyRegion.NA,
                                         PartyRole.DPS,
-                                        null),
+                                        null,
+                                        currentLeaderWorldName()),
                         listing -> applyCreatedListingState(listing),
                         "Unable to create party",
                         "Failed to create party",
@@ -281,7 +283,8 @@ public class PartyFinderManager implements NotificationAccessor {
                                         listing.mode(),
                                         listing.strict(),
                                         region,
-                                        listing.note()),
+                                        listing.note(),
+                                        currentLeaderWorldName()),
                         this::applyUpdatedCurrentListingState,
                         "Unable to update party",
                         "Failed to update party",
@@ -520,7 +523,7 @@ public class PartyFinderManager implements NotificationAccessor {
     public CompletableFuture<Listing> createParty(
             List<Long> activityIds, PartyMode mode, boolean strict, PartyRegion region, PartyRole role, String note) {
         return ApiClient.getInstance()
-                .createListing(activityIds, mode, strict, region, role, note)
+                .createListing(activityIds, mode, strict, region, role, note, currentLeaderWorldName())
                 .thenApply(listing -> {
                     applyCreatedListingState(listing);
                     return listing;
@@ -1868,7 +1871,14 @@ public class PartyFinderManager implements NotificationAccessor {
                 region != null ? region : (currentListing.region() != null ? currentListing.region() : PartyRegion.NA);
         boolean strict = mode == PartyMode.GRIND && strictRoles;
         ApiClient.getInstance()
-                .updateListing(currentListing.id(), activityIds, mode, strict, selectedRegion, currentListing.note())
+                .updateListing(
+                        currentListing.id(),
+                        activityIds,
+                        mode,
+                        strict,
+                        selectedRegion,
+                        currentListing.note(),
+                        currentLeaderWorldName())
                 .thenAccept(listing -> {
                     if (listing != null) {
                         applyUpdatedCurrentListingState(listing);
@@ -1879,6 +1889,10 @@ public class PartyFinderManager implements NotificationAccessor {
                     handleActionError(e, "Unable to update party", "Failed to update party");
                     return null;
                 });
+    }
+
+    private static String currentLeaderWorldName() {
+        return WynntilsWorldStateAccess.currentWorldName().orElse(null);
     }
 
     private void pushUiBanner(String message) {

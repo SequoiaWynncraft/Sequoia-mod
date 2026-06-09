@@ -99,6 +99,17 @@ public class ApiClient {
 
     public CompletableFuture<Listing> createListing(
             List<Long> activityIds, PartyMode mode, boolean strict, PartyRegion region, PartyRole role, String note) {
+        return createListing(activityIds, mode, strict, region, role, note, null);
+    }
+
+    public CompletableFuture<Listing> createListing(
+            List<Long> activityIds,
+            PartyMode mode,
+            boolean strict,
+            PartyRegion region,
+            PartyRole role,
+            String note,
+            String world) {
         if (activityIds == null || activityIds.isEmpty()) {
             throw new IllegalArgumentException("activityIds must not be empty");
         }
@@ -121,6 +132,7 @@ public class ApiClient {
         body.addProperty("region", region.name());
         body.addProperty("role", role.name());
         if (note != null && !note.isBlank()) body.addProperty("note", note);
+        if (world != null && !world.isBlank()) body.addProperty("world", world);
         return post("/party-finder/listings", body, Listing.class);
     }
 
@@ -196,6 +208,17 @@ public class ApiClient {
 
     public CompletableFuture<Listing> updateListing(
             long id, List<Long> activityIds, PartyMode mode, boolean strict, PartyRegion region, String note) {
+        return updateListing(id, activityIds, mode, strict, region, note, null);
+    }
+
+    public CompletableFuture<Listing> updateListing(
+            long id,
+            List<Long> activityIds,
+            PartyMode mode,
+            boolean strict,
+            PartyRegion region,
+            String note,
+            String world) {
         if (activityIds == null || activityIds.isEmpty()) {
             throw new IllegalArgumentException("activityIds must not be empty");
         }
@@ -217,6 +240,9 @@ public class ApiClient {
         body.addProperty("region", region.name());
         if (note != null) {
             body.addProperty("note", note);
+        }
+        if (world != null && !world.isBlank()) {
+            body.addProperty("world", world);
         }
 
         return post("/party-finder/listings/" + id + "/update", body, Listing.class);

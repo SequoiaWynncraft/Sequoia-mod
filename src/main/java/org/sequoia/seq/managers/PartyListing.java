@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.sequoia.seq.integrations.WynntilsWorldStateAccess;
 import org.sequoia.seq.model.Activity;
 import org.sequoia.seq.model.Listing;
 import org.sequoia.seq.model.PartyCloseReason;
@@ -198,12 +199,16 @@ public class PartyListing {
     private static List<String> buildTags(Listing listing) {
         List<String> t = new ArrayList<>();
         t.addAll(getDisplayActivityNames(listing));
-        t.add(regionLabel(listing));
+        t.add(worldOrRegionLabel(listing));
         t.add(listing.mode() == PartyMode.CHILL ? "Chill" : "Grind");
         return Collections.unmodifiableList(t);
     }
 
-    private static String regionLabel(Listing listing) {
+    private static String worldOrRegionLabel(Listing listing) {
+        String world = WynntilsWorldStateAccess.normalizeWorldName(listing.world()).orElse(null);
+        if (world != null) {
+            return world;
+        }
         PartyRegion region = listing.region();
         return (region != null ? region : PartyRegion.NA).name();
     }
@@ -261,7 +266,7 @@ public class PartyListing {
             modeLabel += " (Strict)";
         }
         String displayNames = String.join(", ", getDisplayActivityNames(backing));
-        return regionLabel(backing) + " · " + modeLabel + " · " + displayNames;
+        return worldOrRegionLabel(backing) + " · " + modeLabel + " · " + displayNames;
     }
 
     /**
@@ -278,7 +283,7 @@ public class PartyListing {
                 .map(name -> name == null ? "" : name.trim())
                 .filter(name -> !name.isEmpty())
                 .toList();
-        return regionLabel(backing) + " · " + modeLabel + " · "
+        return worldOrRegionLabel(backing) + " · " + modeLabel + " · "
                 + (shortNames.isEmpty() ? "Unknown Activity" : String.join(", ", shortNames));
     }
 
