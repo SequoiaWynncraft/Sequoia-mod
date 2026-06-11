@@ -42,7 +42,10 @@ public class RaidTracker {
      * Group 6: Seasonal Rating
      */
     private static final Pattern RAID_FINISH_PATTERN = Pattern.compile(
-            "(.+?)\\s+finished\\s+(.+?)\\s+and claimed\\s+(\\d+)x Aspects,\\s+(\\d+)x Emeralds,\\s+(?:and\\s+)?\\+([\\d.]+)m Guild Experience(?:,\\s+and\\s+\\+(\\d+)\\s+Seasonal Rating)?");
+            "^([^,:]+?(?:\\s*,\\s*[^,:]+?)*(?:,?\\s+and\\s+[^,:]+?)?)"
+                    + "\\s+finished\\s+(.+?)\\s+and claimed\\s+(\\d+)x Aspects,"
+                    + "\\s+(\\d+)x Emeralds,\\s+(?:and\\s+)?\\+([\\d.]+)m Guild Experience"
+                    + "(?:,\\s+and\\s+\\+(\\d+)\\s+Seasonal Rating)?$");
     private static final Pattern USERNAME_PATTERN = Pattern.compile("[a-zA-Z0-9_]{3,16}");
     private static final Pattern COMMA_SPACING_PATTERN = Pattern.compile("\\s*,\\s*");
     private static final String FINISHED_BOUNDARY = " finished ";
@@ -121,7 +124,7 @@ public class RaidTracker {
         SeqClient.LOGGER.info("[RaidTracker] Normalized raid candidate cleaned='{}'", abbreviateForLog(cleaned));
 
         Matcher matcher = RAID_FINISH_PATTERN.matcher(cleaned);
-        if (!matcher.find()) {
+        if (!matcher.matches()) {
             SeqClient.LOGGER.warn(
                     "[RaidTracker] Regex did not match normalized raid candidate cleaned='{}'",
                     abbreviateForLog(cleaned));

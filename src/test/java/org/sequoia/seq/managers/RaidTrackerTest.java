@@ -136,4 +136,11 @@ class RaidTrackerTest {
         assertNull(RaidTracker.parseRaidCompletion(Component.literal("󏿼󐀆 xmattypazox: 3/4 tna")));
         assertNull(RaidTracker.parseRaidCompletion(Component.literal("󏿼󐀆 Purprated deposited 1x MR dagger [100%] to the Guild Bank (Everyone)")));
     }
+
+    @Test
+    void parseRaidCompletionIgnoresForwardedRaidCompletionChatMessages() {
+        assertNull(RaidTracker.parseRaidCompletion(Component.literal(
+                "󏿼󏿿󏿾 Orihme: Tannslee, melodzozina, wisedrag, and D4MIT finished The Wartorn Palace "
+                        + "and claimed 2x Aspects, 2048x Emeralds, +10367m Guild Experience, and +440 Seasonal Rating")));
+    }
 }
