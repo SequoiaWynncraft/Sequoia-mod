@@ -67,7 +67,7 @@ public class ChatManager {
     private static final Pattern WYNNCRAFT_WELCOME_PATTERN = Pattern.compile("Welcome to Wynncraft!",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern ALLIANCE_PATTERN = Pattern.compile(
-            "\\b(?<action>formed|revoked)\\s+(?:an|the)\\s+alliance\\s+with\\s+(?<guild>.+)$",
+            "\\b(?<subject>.+?)\\s+(?<action>formed|revoked)\\s+(?:an|the)\\s+alliance\\s+with\\s+(?<object>.+)$",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern PLAYER_CHAT_BEFORE_ALLIANCE_PATTERN = Pattern.compile(
             "^[^:]{1,80}:\\s+.*\\balliance\\b", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
@@ -279,12 +279,32 @@ public class ChatManager {
         if (!matcher.find()) {
             return null;
         }
-        String guildName = matcher.group("guild").trim();
-        if (guildName.isEmpty() || guildName.length() > 64 || guildName.contains(":")) {
+        String action = matcher.group("action").equalsIgnoreCase("formed") ? "formed" : "revoked";
+        String guildName = alliancePartner(matcher.group("subject"), matcher.group("object"));
+        if (!isValidAllianceGuildName(guildName)) {
             return null;
         }
-        String action = matcher.group("action").equalsIgnoreCase("formed") ? "formed" : "revoked";
         return new ParsedAllianceUpdate(action, guildName);
+    }
+
+    private static String alliancePartner(String subject, String object) {
+        String subjectGuild = cleanAllianceGuildName(subject);
+        String objectGuild = cleanAllianceGuildName(object);
+        if (BACKEND_GUILD_NAME.equalsIgnoreCase(subjectGuild)) {
+            return objectGuild;
+        }
+        if (BACKEND_GUILD_NAME.equalsIgnoreCase(objectGuild)) {
+            return subjectGuild;
+        }
+        return null;
+    }
+
+    private static String cleanAllianceGuildName(String guildName) {
+        return guildName == null ? "" : guildName.trim();
+    }
+
+    private static boolean isValidAllianceGuildName(String guildName) {
+        return guildName != null && !guildName.isEmpty() && guildName.length() <= 64 && !guildName.contains(":");
     }
 
     private static String deriveNickname(String displayedName, String actualUsername) {

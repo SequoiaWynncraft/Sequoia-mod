@@ -110,13 +110,19 @@ class ChatManagerTest {
     }
 
     @Test
-    void parseAllianceUpdateHandlesRevokedSystemMessageAndIgnoresSubject() {
+    void parseAllianceUpdateHandlesHomeGuildRevokedObject() {
         ChatManager.ParsedAllianceUpdate parsed = ChatManager.parseAllianceUpdate(Component.literal(
-                "󏿼󏿿󏿾 Tannslee revoked the alliance with Radiant Roses"));
+                "󏿼󐀆 Anime Lovers revoked the alliance with Sequoia"));
 
         assertNotNull(parsed);
         assertEquals("revoked", parsed.action());
-        assertEquals("Radiant Roses", parsed.guildName());
+        assertEquals("Anime Lovers", parsed.guildName());
+    }
+
+    @Test
+    void parseAllianceUpdateIgnoresUnrelatedAllianceSystemMessage() {
+        assertNull(ChatManager.parseAllianceUpdate(Component.literal(
+                "󏿼󏿿󏿾 Tannslee revoked the alliance with Radiant Roses")));
     }
 
     @Test
