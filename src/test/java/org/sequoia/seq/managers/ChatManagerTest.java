@@ -100,6 +100,34 @@ class ChatManagerTest {
     }
 
     @Test
+    void parseAllianceUpdateHandlesFormedSystemMessage() {
+        ChatManager.ParsedAllianceUpdate parsed = ChatManager.parseAllianceUpdate(Component.literal(
+                "󏿼󏿿󏿾 Sequoia formed an alliance with Silk Road"));
+
+        assertNotNull(parsed);
+        assertEquals("formed", parsed.action());
+        assertEquals("Silk Road", parsed.guildName());
+    }
+
+    @Test
+    void parseAllianceUpdateHandlesRevokedSystemMessageAndIgnoresSubject() {
+        ChatManager.ParsedAllianceUpdate parsed = ChatManager.parseAllianceUpdate(Component.literal(
+                "󏿼󏿿󏿾 Tannslee revoked the alliance with Radiant Roses"));
+
+        assertNotNull(parsed);
+        assertEquals("revoked", parsed.action());
+        assertEquals("Radiant Roses", parsed.guildName());
+    }
+
+    @Test
+    void parseAllianceUpdateRejectsPlayerAuthoredChat() {
+        assertNull(ChatManager.parseAllianceUpdate(Component.literal(
+                "Frieren: Sequoia formed an alliance with Silk Road")));
+        assertNull(ChatManager.parseAllianceUpdate(Component.literal(
+                "󏿼󐀆 Frieren: Sequoia formed an alliance with Silk Road")));
+    }
+
+    @Test
     void detectsUpdatedWynncraftWelcomeBanner() {
         Component message = Component.literal(
                 "\n󐁙Welcome to Wynncraft!\n󐀻play.wynncraft.com -/- wynncraft.com\n\n󐁄WYNNCRAFT: FRUMA EXPANSION\n󐂁OUT NOW!\n󐂚\n󐀲Discover Fruma: wynncraft.com/fruma");

@@ -122,8 +122,10 @@ class ConnectionManagerTest {
     void guildStorageMessagesAreServerScopedAuthenticatedOutbound() {
         assertTrue(ConnectionManager.isServerScopedType("guild_storage_snapshot"));
         assertTrue(ConnectionManager.isServerScopedType("guild_storage_reward"));
+        assertTrue(ConnectionManager.isServerScopedType("guild_alliance_update"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_storage_snapshot"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_storage_reward"));
+        assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_alliance_update"));
     }
 
     @Test

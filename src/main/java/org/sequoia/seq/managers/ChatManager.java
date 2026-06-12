@@ -66,6 +66,14 @@ public class ChatManager {
 
     private static final Pattern WYNNCRAFT_WELCOME_PATTERN = Pattern.compile("Welcome to Wynncraft!",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern ALLIANCE_PATTERN = Pattern.compile(
+            "\\b(?<action>formed|revoked)\\s+(?:an|the)\\s+alliance\\s+with\\s+(?<guild>.+)$",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern PLAYER_CHAT_BEFORE_ALLIANCE_PATTERN = Pattern.compile(
+            "^[^:]{1,80}:\\s+.*\\balliance\\b", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Duration ALLIANCE_DEDUPE_WINDOW = Duration.ofSeconds(5);
+    private static volatile String lastAllianceKey;
+    private static volatile Instant lastAllianceAt = Instant.EPOCH;
 
     private static boolean firstConnect = true;
 
@@ -86,6 +94,23 @@ public class ChatManager {
                 && !ConnectionManager.getInstance().isOpen() && firstConnect) {
             firstConnect = !firstConnect;
             mc.execute(() -> mc.player.connection.sendCommand("seq connect"));
+        }
+
+        ParsedAllianceUpdate allianceUpdate = parseAllianceUpdate(message);
+        if (allianceUpdate != null && ConnectionManager.isConnected() && shouldRelayForLocalGuild()) {
+            if (isDuplicateAllianceUpdate(allianceUpdate.action(), allianceUpdate.guildName())) {
+                SeqClient.LOGGER.debug(
+                        "[GuildAlliance] Duplicate alliance update ignored action='{}' guild='{}'",
+                        allianceUpdate.action(),
+                        allianceUpdate.guildName());
+            } else {
+                SeqClient.LOGGER.info(
+                        "[GuildAlliance] Forwarding alliance update action='{}' guild='{}'",
+                        allianceUpdate.action(),
+                        allianceUpdate.guildName());
+                ConnectionManager.getInstance().sendGuildAllianceUpdate(
+                        allianceUpdate.action(), allianceUpdate.guildName());
+            }
         }
 
         // Guild chat uses aqua color (§b / 0x55FFFF) per Wynntils' RecipientType.GUILD.
@@ -238,6 +263,30 @@ public class ChatManager {
         return welcomeMatcher.find() && normalized.contains("play.wynncraft.com");
     }
 
+    static ParsedAllianceUpdate parseAllianceUpdate(Component message) {
+        String normalized = PacketTextNormalizer.normalizeForParsing(message == null ? null : message.getString());
+        if (normalized.isEmpty() || !normalized.toLowerCase(java.util.Locale.ROOT).contains("alliance")) {
+            return null;
+        }
+        if (parseGuildMessage(message) != null) {
+            return null;
+        }
+        if (PLAYER_CHAT_BEFORE_ALLIANCE_PATTERN.matcher(normalized).matches()) {
+            return null;
+        }
+
+        Matcher matcher = ALLIANCE_PATTERN.matcher(normalized);
+        if (!matcher.find()) {
+            return null;
+        }
+        String guildName = matcher.group("guild").trim();
+        if (guildName.isEmpty() || guildName.length() > 64 || guildName.contains(":")) {
+            return null;
+        }
+        String action = matcher.group("action").equalsIgnoreCase("formed") ? "formed" : "revoked";
+        return new ParsedAllianceUpdate(action, guildName);
+    }
+
     private static String deriveNickname(String displayedName, String actualUsername) {
         if (displayedName == null) {
             return null;
@@ -279,6 +328,21 @@ public class ChatManager {
             }
             lastOutgoingKey = key;
             lastOutgoingAt = now;
+            return false;
+        }
+    }
+
+    private static boolean isDuplicateAllianceUpdate(String action, String guildName) {
+        String key = action + "\u0000" + guildName.toLowerCase(java.util.Locale.ROOT);
+        Instant now = Instant.now();
+
+        synchronized (ChatManager.class) {
+            if (key.equals(lastAllianceKey)
+                    && Duration.between(lastAllianceAt, now).compareTo(ALLIANCE_DEDUPE_WINDOW) < 0) {
+                return true;
+            }
+            lastAllianceKey = key;
+            lastAllianceAt = now;
             return false;
         }
     }
@@ -453,5 +517,8 @@ public class ChatManager {
 
     record ParsedMessage(
             String username, String nickname, String message, String avatarUrl, List<ChatItemPreview> itemPreviews) {
+    }
+
+    record ParsedAllianceUpdate(String action, String guildName) {
     }
 }

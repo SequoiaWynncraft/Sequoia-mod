@@ -880,6 +880,25 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         send("guild_chat", msg);
     }
 
+    public boolean sendGuildAllianceUpdate(String action, String guildName) {
+        String safeAction = action == null ? "" : action.trim().toLowerCase(java.util.Locale.ROOT);
+        String safeGuildName = guildName == null ? "" : guildName.trim();
+        if (!"formed".equals(safeAction) && !"revoked".equals(safeAction)) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildAllianceUpdate dropped invalid action={}", action);
+            return false;
+        }
+        if (safeGuildName.isEmpty() || safeGuildName.length() > 64) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildAllianceUpdate dropped invalid guild='{}'", guildName);
+            return false;
+        }
+
+        JsonObject msg = new JsonObject();
+        msg.addProperty("action", safeAction);
+        msg.addProperty("guild_name", safeGuildName);
+        send("guild_alliance_update", msg);
+        return true;
+    }
+
     private static JsonArray itemPreviewArray(List<ChatItemPreview> itemPreviews) {
         JsonArray previews = new JsonArray();
         if (itemPreviews == null || itemPreviews.isEmpty()) {
@@ -1751,6 +1770,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return "bomb_share_request".equals(type)
                 || "bomb_share_submit".equals(type)
                 || "guild_chat".equals(type)
+                || "guild_alliance_update".equals(type)
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)
                 || "guild_storage_snapshot".equals(type)
@@ -1767,6 +1787,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return "bomb_share_request".equals(type)
                 || "bomb_share_submit".equals(type)
                 || "guild_chat".equals(type)
+                || "guild_alliance_update".equals(type)
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)
                 || "guild_war_submission".equals(type)
