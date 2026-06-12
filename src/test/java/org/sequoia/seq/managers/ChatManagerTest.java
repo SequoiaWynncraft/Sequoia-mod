@@ -110,7 +110,7 @@ class ChatManagerTest {
     }
 
     @Test
-    void parseAllianceUpdateHandlesHomeGuildRevokedObject() {
+    void parseAllianceUpdateHandlesOtherGuildRevokedHomeGuild() {
         ChatManager.ParsedAllianceUpdate parsed = ChatManager.parseAllianceUpdate(Component.literal(
                 "󏿼󐀆 Anime Lovers revoked the alliance with Sequoia"));
 
@@ -120,9 +120,19 @@ class ChatManagerTest {
     }
 
     @Test
-    void parseAllianceUpdateIgnoresUnrelatedAllianceSystemMessage() {
+    void parseAllianceUpdateHandlesHomeGuildPlayerRevokedOtherGuild() {
+        ChatManager.ParsedAllianceUpdate parsed = ChatManager.parseAllianceUpdate(Component.literal(
+                "󏿼󏿿󏿾 GaztheCat revoked the alliance with Chiefs Of Corkus"));
+
+        assertNotNull(parsed);
+        assertEquals("revoked", parsed.action());
+        assertEquals("Chiefs Of Corkus", parsed.guildName());
+    }
+
+    @Test
+    void parseAllianceUpdateIgnoresUnrelatedFormedAllianceSystemMessage() {
         assertNull(ChatManager.parseAllianceUpdate(Component.literal(
-                "󏿼󏿿󏿾 Tannslee revoked the alliance with Radiant Roses")));
+                "󏿼󏿿󏿾 Tannslee formed an alliance with Radiant Roses")));
     }
 
     @Test

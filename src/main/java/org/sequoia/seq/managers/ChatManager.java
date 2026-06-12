@@ -280,14 +280,14 @@ public class ChatManager {
             return null;
         }
         String action = matcher.group("action").equalsIgnoreCase("formed") ? "formed" : "revoked";
-        String guildName = alliancePartner(matcher.group("subject"), matcher.group("object"));
+        String guildName = alliancePartner(action, matcher.group("subject"), matcher.group("object"));
         if (!isValidAllianceGuildName(guildName)) {
             return null;
         }
         return new ParsedAllianceUpdate(action, guildName);
     }
 
-    private static String alliancePartner(String subject, String object) {
+    private static String alliancePartner(String action, String subject, String object) {
         String subjectGuild = cleanAllianceGuildName(subject);
         String objectGuild = cleanAllianceGuildName(object);
         if (BACKEND_GUILD_NAME.equalsIgnoreCase(subjectGuild)) {
@@ -295,6 +295,9 @@ public class ChatManager {
         }
         if (BACKEND_GUILD_NAME.equalsIgnoreCase(objectGuild)) {
             return subjectGuild;
+        }
+        if ("revoked".equals(action)) {
+            return objectGuild;
         }
         return null;
     }
