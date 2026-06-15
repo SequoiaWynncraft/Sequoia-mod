@@ -22,7 +22,7 @@ import static org.lwjgl.nanovg.NanoVG.nvgText;
 import static org.lwjgl.nanovg.NanoVG.nvgTextAlign;
 import static org.lwjgl.nanovg.NanoVG.nvgTextBounds;
 
-public class AuthenticationScreen extends Screen {
+public class ConnectionScreen extends Screen {
     private static final float SIDEBAR_WIDTH = 140;
     private static final float SIDEBAR_PADDING = 10;
     private static final float SIDEBAR_BUTTON_HEIGHT = 22;
@@ -44,6 +44,7 @@ public class AuthenticationScreen extends Screen {
     private static final float BUTTON_OFFSET = 44;
     private static final float SECTION_SPACING = 44;
     private static final float NOTE_OFFSET = 22;
+    private static final float AUTH_BUTTON_WIDTH = 118;
 
     private static final Color BG_COLOR = new Color(10, 10, 16, 100);
     private static final Color SIDEBAR_COLOR = new Color(18, 18, 26, 200);
@@ -70,8 +71,8 @@ public class AuthenticationScreen extends Screen {
     private float nvgMouseX;
     private float nvgMouseY;
 
-    public AuthenticationScreen(Screen parent) {
-        super(Component.literal("Authentication"));
+    public ConnectionScreen(Screen parent) {
+        super(Component.literal("Connection"));
     }
 
     @Override
@@ -118,7 +119,7 @@ public class AuthenticationScreen extends Screen {
         float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
 
         drawSidebarButton(nvg, fontName, btnX, btnY, btnW, "Partyfinder", false);
-        drawSidebarButton(nvg, fontName, btnX, btnY + step, btnW, "Authentication", true);
+        drawSidebarButton(nvg, fontName, btnX, btnY + step, btnW, "Connection", true);
         drawSidebarButton(nvg, fontName, btnX, btnY + step * 2, btnW, "Settings", false);
         drawSidebarButton(nvg, fontName, btnX, btnY + step * 3, btnW, "Github", false);
     }
@@ -141,7 +142,7 @@ public class AuthenticationScreen extends Screen {
         nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
         var title = NVGContext.nvgColor(TITLE_COLOR);
         nvgFillColor(nvg, title);
-        nvgText(nvg, panelX + panelWidth - SEARCH_BAR_MARGIN, HEADER_HEIGHT / 2f, "Authentication");
+        nvgText(nvg, panelX + panelWidth - SEARCH_BAR_MARGIN, HEADER_HEIGHT / 2f, "Connection");
         title.free();
     }
 
@@ -188,24 +189,29 @@ public class AuthenticationScreen extends Screen {
                 fontName,
                 baseX,
                 authLineY,
-                "Authentication status:",
-                authenticated ? "Authorized" : "Signed out",
+                "Backend session:",
+                authenticated ? "Ready" : "Not ready",
                 authenticated ? CONNECTED_COLOR : DISCONNECTED_COLOR);
         drawMetaLine(
                 nvg,
                 fontName,
                 baseX,
                 authMetaY,
-                "Minecraft profile: " + (minecraftUsername != null && !minecraftUsername.isBlank() ? minecraftUsername : "None"));
-
-        ButtonBounds authButton = new ButtonBounds(baseX, authButtonY, BUTTON_WIDTH, BUTTON_HEIGHT);
-        drawActionButton(
-                nvg,
-                fontName,
-                authButton,
-                authenticated ? "Logout" : "Authorize",
-                authenticated ? DANGER_BUTTON : PRIMARY_BUTTON,
-                authenticated ? DANGER_BUTTON_HOVER : PRIMARY_BUTTON_HOVER);
+                authenticated
+                        ? "Minecraft account: " + (minecraftUsername != null && !minecraftUsername.isBlank()
+                                ? minecraftUsername
+                                : "Unknown")
+                        : "Use Connect to start a backend session when needed.");
+        if (authenticated) {
+            ButtonBounds authButton = new ButtonBounds(baseX, authButtonY, AUTH_BUTTON_WIDTH, BUTTON_HEIGHT);
+            drawActionButton(
+                    nvg,
+                    fontName,
+                    authButton,
+                    "Clear session",
+                    DANGER_BUTTON,
+                    DANGER_BUTTON_HOVER);
+        }
 
         NVGWrapper.drawRect(nvg, baseX, dividerY, panelWidth - 68, 1, DIVIDER_COLOR);
         drawMetaLine(
@@ -213,7 +219,7 @@ public class AuthenticationScreen extends Screen {
                 fontName,
                 baseX,
                 dividerY + NOTE_OFFSET,
-                "Logout clears only the local Sequoia session. Wynn authorization stays stored server-side.");
+                "Connect verifies your Minecraft session and checks your Discord link automatically.");
     }
 
     private void drawStatusLine(long nvg, String fontName, float x, float y, String label, String value, Color valueColor) {
@@ -312,13 +318,11 @@ public class AuthenticationScreen extends Screen {
         }
 
         ButtonBounds authButton = getAuthButtonBounds();
-        if (isHovered(mx, my, authButton.x(), authButton.y(), authButton.w(), authButton.h())) {
-            String token = SeqClient.getConfigManager().getToken();
-            if (token != null && !token.isBlank()) {
-                connectionManager.unlinkLocally();
-            } else {
-                connectionManager.linkManually();
-            }
+        String token = SeqClient.getConfigManager().getToken();
+        if (token != null
+                && !token.isBlank()
+                && isHovered(mx, my, authButton.x(), authButton.y(), authButton.w(), authButton.h())) {
+            connectionManager.unlinkLocally();
             return true;
         }
 
@@ -338,7 +342,7 @@ public class AuthenticationScreen extends Screen {
         float connectionButtonY = HEADER_HEIGHT + SECTION_TOP + BUTTON_OFFSET;
         float authLineY = connectionButtonY + BUTTON_HEIGHT + SECTION_SPACING;
         float authButtonY = authLineY + BUTTON_OFFSET;
-        return new ButtonBounds(baseX, authButtonY, BUTTON_WIDTH, BUTTON_HEIGHT);
+        return new ButtonBounds(baseX, authButtonY, AUTH_BUTTON_WIDTH, BUTTON_HEIGHT);
     }
 
     private float measureTextWidth(long nvg, String fontName, float fontSize, String text) {

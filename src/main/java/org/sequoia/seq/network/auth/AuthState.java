@@ -3,8 +3,6 @@ package org.sequoia.seq.network.auth;
 public enum AuthState {
     IDLE,
     REQUESTING_CHALLENGE,
-    WAITING_FOR_BROWSER,
-    POLLING_OAUTH_STATUS,
     JOINING_MINECRAFT_SESSION,
     COMPLETING_BACKEND_AUTH,
     AUTHENTICATED,

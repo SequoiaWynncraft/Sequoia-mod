@@ -55,11 +55,6 @@ public class SeqCommand {
                                                         ConnectionManager.getInstance().connectManually();
                                                         return 1;
                                                 }))
-                                .then(ClientCommandManager.literal("link")
-                                                .executes(ctx -> {
-                                                        ConnectionManager.getInstance().linkManually();
-                                                        return 1;
-                                                }))
                                 .then(ClientCommandManager.literal("disconnect")
                                                 .executes(ctx -> {
                                                         ConnectionManager.getInstance().disconnectManually();

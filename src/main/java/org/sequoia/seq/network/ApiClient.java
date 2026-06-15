@@ -22,8 +22,6 @@ import org.sequoia.seq.model.*;
 import org.sequoia.seq.network.auth.MinecraftAuthChallengeResponse;
 import org.sequoia.seq.network.auth.MinecraftAuthCompleteRequest;
 import org.sequoia.seq.network.auth.MinecraftAuthCompleteResponse;
-import org.sequoia.seq.network.auth.WynnOAuthStartResponse;
-import org.sequoia.seq.network.auth.WynnOAuthStatusResponse;
 import org.sequoia.seq.utils.WynnClassCache;
 
 /**
@@ -270,36 +268,16 @@ public class ApiClient {
 
     public CompletableFuture<MinecraftAuthChallengeResponse> requestMinecraftAuthChallenge() {
         return postWithFallback(
-            authRequestBaseUrls(),
-            "/auth/minecraft/challenge",
-            null,
-            MinecraftAuthChallengeResponse.class,
-            false);
+                authRequestBaseUrls(), "/auth/minecraft/challenge", null, MinecraftAuthChallengeResponse.class, false);
     }
 
     public CompletableFuture<MinecraftAuthCompleteResponse> completeMinecraftAuthentication(
-            MinecraftAuthCompleteRequest requestBody) {
+            MinecraftAuthCompleteRequest request) {
         JsonObject body = new JsonObject();
-        body.addProperty("challenge_id", requestBody.challengeId());
-        body.addProperty("username", requestBody.username());
+        body.addProperty("challenge_id", request.challengeId());
+        body.addProperty("username", request.username());
         return postWithFallback(
-            authRequestBaseUrls(),
-            "/auth/minecraft/complete",
-            body,
-            MinecraftAuthCompleteResponse.class,
-            false);
-    }
-
-    public CompletableFuture<WynnOAuthStartResponse> startWynnOAuthAuthentication() {
-        return postWithFallback(authRequestBaseUrls(), "/auth/wynn/start", null, WynnOAuthStartResponse.class, false);
-    }
-
-    public CompletableFuture<WynnOAuthStatusResponse> getWynnOAuthStatus(String pollToken) {
-        String encodedToken = URLEncoder.encode(pollToken, StandardCharsets.UTF_8);
-        HttpRequest request = newRequest(authRequestBaseUrls().get(0), "/auth/wynn/status/" + encodedToken, false)
-                .GET()
-                .build();
-        return sendAsync(request, WynnOAuthStatusResponse.class);
+                authRequestBaseUrls(), "/auth/minecraft/complete", body, MinecraftAuthCompleteResponse.class, false);
     }
 
     // ── HTTP helpers ──

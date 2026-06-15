@@ -30,14 +30,6 @@ class ConnectionManagerTest {
     }
 
     @Test
-    void linkRequestPayloadIncludesRelinkFlag() {
-        var payload = ConnectionManager.buildLinkRequestPayload(true);
-
-        assertTrue(payload.has("allow_relink"));
-        assertTrue(payload.get("allow_relink").getAsBoolean());
-    }
-
-    @Test
     void guildWarSubmissionPayloadUsesExpectedNestedShape() {
         GuildWarSubmission submission = new GuildWarSubmission(
                 "Detlas Suburbs",

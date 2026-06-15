@@ -10,13 +10,13 @@
 
 It provides the in-game client for Sequoia's guild systems: backend authentication, Discord bridge integration, party finder tools, raid tracking, and a small set of guild-specific utilities. The goal is straightforward: put the guild workflows members actually use into the game client instead of splitting them across chat, Discord, and manual commands.
 
-This is not a general-purpose Wynncraft mod. Most online features require a linked Sequoia account, and several of them only make sense if you are already part of the guild's Discord and in-game processes.
+This is not a general-purpose Wynncraft mod. Most online features require a linked Sequoia Discord/Wynn account, and several of them only make sense if you are already part of the guild's Discord and in-game processes.
 
-If you are a Sequoia member, the expected setup is simple: install the mod, link your account from the Sequoia menu, connect to the backend, and use the guild integrations from there.
+If you are a Sequoia or allied guild member, the expected setup is simple: link through Discord, install the mod, connect to the backend, and use the guild integrations from there.
 
 ## Features
 
-- Sequoia account linking and backend authentication
+- Automatic backend authentication
 - Automatic connection to Sequoia services
 - In-game Discord chat bridge
 - Party finder commands and UI
@@ -33,10 +33,10 @@ If you are a Sequoia member, the expected setup is simple: install the mod, link
 
 ## First-time setup
 
-1. **Join the guild** - you need to be a member of [Sequoia](https://discord.gg/seq) on Wynncraft for backend features to work.
+1. **Join Sequoia or an allied guild** - party finder access is available to Sequoia and allied guild members.
 2. **Install the mod** using the steps below.
-3. **Link your account** - open the Sequoia Mod menu (`O` by default) and navigate to the Authentication section.
-4. **Connect** - the mod auto-connects on startup if enabled, or by using a button in the Authentication section.
+3. **Connect** - the mod auto-connects on startup if enabled, or by using a button in the Connection section.
+4. **Link if prompted** - if the backend reports no linked account, run `/link` in Discord and reconnect.
 5. **Check status** - run `/seq status` to make sure you're connected.
 6. **Configure** - press `O` and open settings to toggle Discord chat, raid announcements, and related behavior.
 
@@ -45,7 +45,6 @@ If you are a Sequoia member, the expected setup is simple: install the mod, link
 - `/seq`: open the main Sequoia screen
 - `/seq p`: open the Sequoia party finder UI
 - `/seq connect`: connect to the backend
-- `/seq link`: link or refresh backend authentication
 - `/seq status`: show connection state and token status
 - `/seq logout`: clear the saved token
 - `/seq ignore <IGN>`: hide incoming Discord bridge messages from a Minecraft username
@@ -56,7 +55,6 @@ If you are a Sequoia member, the expected setup is simple: install the mod, link
 
 - `/seq`
 - `/seq connect`
-- `/seq link`
 - `/seq disconnect`
 - `/seq connected`
 - `/seq status`

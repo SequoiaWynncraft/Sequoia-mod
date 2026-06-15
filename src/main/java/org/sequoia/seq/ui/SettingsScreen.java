@@ -172,7 +172,7 @@ public class SettingsScreen extends Screen {
 
             drawSidebarButton(nvg, fontName, btnX, btnStartY, btnW, "Partyfinder", false);
             drawSidebarButton(nvg, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING), btnW,
-                    "Authentication", false);
+                    "Connection", false);
             drawSidebarButton(nvg, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
                     btnW, "Settings", true);
             drawSidebarButton(nvg, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
@@ -368,10 +368,10 @@ public class SettingsScreen extends Screen {
                 SeqClient.mc.setScreen(new PartyFinderScreen(this));
                 return true;
             }
-            // Authentication
+            // Connection
             if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING), btnW,
                     SIDEBAR_BUTTON_HEIGHT)) {
-                SeqClient.mc.setScreen(new AuthenticationScreen(this));
+                SeqClient.mc.setScreen(new ConnectionScreen(this));
                 return true;
             }
             // Settings (already here)

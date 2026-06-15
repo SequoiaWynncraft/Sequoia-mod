@@ -4,10 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.LinkedHashMap;
@@ -37,7 +35,6 @@ import org.sequoia.seq.model.GuildWarSubmission;
 import org.sequoia.seq.model.WynnClassType;
 import org.sequoia.seq.network.auth.AuthErrorCode;
 import org.sequoia.seq.network.auth.AuthException;
-import org.sequoia.seq.network.auth.StoredAuthSession;
 import org.sequoia.seq.utils.WynnClassCache;
 
 public class ConnectionManager extends WebSocketClient implements NotificationAccessor {
@@ -87,7 +84,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private volatile long nextPrivilegedSendAtMs;
     private volatile boolean connectInProgress;
     private volatile boolean userInitiatedConnectFlow;
-    private volatile boolean pendingDiscordLinkRequest;
     private final Deque<GuildWarSubmission> pendingGuildWarSubmissions = new ConcurrentLinkedDeque<>();
 
     // Reconnect state
@@ -95,11 +91,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static int reconnectAttempt = 0;
     private static ScheduledFuture<?> reconnectTask;
     private static boolean autoConnectSuppressedByManualDisconnect;
-
-    private enum AuthFlow {
-        CONNECT,
-        LINK
-    }
 
     // Callbacks for new message types
     private static Consumer<DiscordChatMessage> discordChatHandler;
@@ -110,7 +101,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static Consumer<BombShareResultMessage> bombShareResultHandler;
     private static final Map<String, Integer> versionRejectionCounts = new ConcurrentHashMap<>();
     private final Map<String, BombSharePromptMessage> pendingBombSharePrompts = new ConcurrentHashMap<>();
-    private volatile AuthFlow pendingAuthFlow = AuthFlow.CONNECT;
 
     public static ConnectionManager getInstance() {
         if (instance == null) {
@@ -153,28 +143,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     @Override
     public void connect() {
-        connectInternal(AuthFlow.CONNECT, false);
+        connectInternal(false);
     }
 
     public void connectManually() {
-        connectInternal(AuthFlow.CONNECT, true);
+        connectInternal(true);
     }
 
-    public void link() {
-        connectInternal(AuthFlow.LINK, false);
-    }
-
-    public void linkManually() {
-        connectInternal(AuthFlow.LINK, true);
-    }
-
-    private void connectInternal(AuthFlow authFlow, boolean userInitiated) {
+    private void connectInternal(boolean userInitiated) {
         if (userInitiated) {
             autoConnectSuppressedByManualDisconnect = false;
         }
         WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
         if (serverScope != WynncraftServerPolicy.Scope.MAIN) {
-            pendingDiscordLinkRequest = false;
             connectInProgress = false;
             finishConnectFlow();
             if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
@@ -183,36 +164,28 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 if (userInitiated) {
                     notify(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE);
                 }
-                SeqClient.LOGGER.info("[WebSocket] Blocking {} outside main Wynncraft host", authFlow);
+                SeqClient.LOGGER.info("[WebSocket] Blocking connection outside main Wynncraft host");
             } else {
                 if (userInitiated) {
                     notify("Waiting until Wynncraft server transfer finishes.");
                 }
-                SeqClient.LOGGER.info("[WebSocket] Delaying {} until Wynncraft host is confirmed", authFlow);
+                SeqClient.LOGGER.info("[WebSocket] Delaying connection until Wynncraft host is confirmed");
             }
             return;
         }
 
-        pendingAuthFlow = authFlow;
-        pendingDiscordLinkRequest = false;
         userInitiatedConnectFlow = userInitiated;
         autoReconnect = true;
         SeqClient.LOGGER.info(
-                "[WebSocket] connectInternal() called flow={} open={} authenticated={} autoReconnect={} configuredUrl={} clientUri={}",
-                authFlow,
+                "[WebSocket] connectInternal() called open={} authenticated={} autoReconnect={} configuredUrl={} clientUri={}",
                 isOpen(),
                 authenticated,
                 autoReconnect,
                 BuildConfig.WS_URL,
                 getURI());
         if (isOpen()) {
-            if (authFlow == AuthFlow.LINK) {
-                notifyConnectionStatus("Refreshing Wynn OAuth authentication...");
-                refreshAuthentication();
-            } else {
-                notifyConnectionStatus("Already connected/connecting.");
-                finishConnectFlow();
-            }
+            notifyConnectionStatus("Already connected/connecting.");
+            finishConnectFlow();
             return;
         }
         if (connectInProgress) {
@@ -220,12 +193,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return;
         }
 
-        if (authFlow == AuthFlow.LINK) {
-            notifyConnectionStatus("Reauthorizing Sequoia with Wynn OAuth on " + BuildConfig.ENVIRONMENT + "...");
-        } else {
-            notifyConnectionStatus("Connecting to " + BuildConfig.ENVIRONMENT + "...");
-        }
-        prepareAuthenticatedConnection(authFlow == AuthFlow.LINK);
+        notifyConnectionStatus("Connecting to " + BuildConfig.ENVIRONMENT + "...");
+        prepareAuthenticatedConnection();
     }
 
     public void disconnect() {
@@ -244,7 +213,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         boolean hadConnectionState = hasConnectionState();
         boolean hadAutoReconnect = autoReconnect;
         if (!hadConnectionState && !hadAutoReconnect) {
-            pendingDiscordLinkRequest = false;
             connectInProgress = false;
             connectedSince = null;
             instance = null;
@@ -268,7 +236,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             authFailed = false;
             notInGuild = false;
             connectedSince = null;
-            pendingDiscordLinkRequest = false;
             instance = null;
             if (userInitiated) {
                 notify("Not connected");
@@ -306,17 +273,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         nextAllowedAuthAttemptAtMs = 0;
 
         String username = SeqClient.getConfigManager().getMinecraftUsername();
-        if (pendingAuthFlow == AuthFlow.LINK) {
-            notifyConnectionStatus(
-                    username != null && !username.isBlank()
-                            ? "Connected websocket for " + username + ". Waiting for backend authentication..."
-                            : "Connected websocket. Waiting for backend authentication...");
-        } else {
-            notifyConnectionStatus(
-                    username != null && !username.isBlank()
-                            ? "Connected websocket for " + username + ". Waiting for backend authentication..."
-                            : "Connected websocket to " + BuildConfig.ENVIRONMENT + ". Waiting for backend authentication...");
-        }
+        notifyConnectionStatus(
+                username != null && !username.isBlank()
+                        ? "Connected websocket for " + username + ". Waiting for backend authentication..."
+                        : "Connected websocket to " + BuildConfig.ENVIRONMENT + ". Waiting for backend authentication...");
         finishConnectFlow();
     }
 
@@ -445,10 +405,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     private void finishConnectFlow() {
         userInitiatedConnectFlow = false;
-        pendingAuthFlow = AuthFlow.CONNECT;
-        if (!isOpen()) {
-            pendingDiscordLinkRequest = false;
-        }
     }
 
     static boolean shouldReconnectAfterClose(int code, boolean remote) {
@@ -468,8 +424,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || notInGuild
                 || connectedSince != null
                 || reconnectTask != null
-                || userInitiatedConnectFlow
-                || pendingDiscordLinkRequest;
+                || userInitiatedConnectFlow;
     }
 
     static boolean hasReconnectTask() {
@@ -518,7 +473,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 player.displayClientMessage(
                         java.util.Objects.requireNonNull(
                                 NotificationAccessor.prefixed(
-                                        "Could not reconnect automatically. Run /seq connect manually, or /seq link to reauthorize.")),
+                                        "Could not reconnect automatically. Run /seq connect manually.")),
                         false);
             }
         });
@@ -547,7 +502,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         send(GSON.toJson(payload));
     }
 
-    private void prepareAuthenticatedConnection(boolean forceRefresh) {
+    private void prepareAuthenticatedConnection() {
         WynncraftServerPolicy.Scope initialScope = WynncraftServerPolicy.currentScope();
         if (initialScope != WynncraftServerPolicy.Scope.MAIN) {
             connectInProgress = false;
@@ -561,12 +516,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             finishConnectFlow();
             return;
         }
-        if (!forceRefresh && !canAttemptAuthNow()) {
+        if (!canAttemptAuthNow()) {
             return;
         }
         connectInProgress = true;
         SeqClient.getAuthService()
-                .ensureValidToken(forceRefresh)
+                .ensureValidToken(false)
                 .whenComplete((token, throwable) -> Minecraft.getInstance().execute(() -> {
                     if (throwable != null) {
                         connectInProgress = false;
@@ -614,30 +569,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 }));
     }
 
-    private void refreshAuthentication() {
-        SeqClient.getAuthService().beginAuthentication().whenComplete((session, throwable) -> Minecraft.getInstance()
-                .execute(() -> {
-                    if (throwable != null) {
-                        AuthException authException = unwrapAuthException(throwable);
-                        SeqClient.LOGGER.warn(
-                                "[WebSocket] Refresh authentication failed code={} message={}",
-                                authException.getStableCode(),
-                                authException.getMessage(),
-                                authException);
-                        notifyConnectionFailure(authException.getMessage(), !authException.isRetryable());
-                        finishConnectFlow();
-                        return;
-                    }
-
-                    notifyConnectionStatus(
-                            session.minecraftUsername() != null
-                                            && !session.minecraftUsername().isBlank()
-                                    ? "Refreshed backend token for " + session.minecraftUsername()
-                                    : "Refreshed backend token.");
-                    finishConnectFlow();
-                }));
-    }
-
     private void configureHandshakeAuthorization(String token) {
         Map<String, String> headers = buildHandshakeHeaders(token);
         clearHeaders();
@@ -661,12 +592,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     static String buildAuthorizationHeaderValue(String token) {
         return "Bearer " + token.trim();
-    }
-
-    static JsonObject buildLinkRequestPayload(boolean allowRelink) {
-        JsonObject payload = new JsonObject();
-        payload.addProperty("allow_relink", allowRelink);
-        return payload;
     }
 
     static JsonObject buildGuildWarSubmissionPayload(GuildWarSubmission submission) {
@@ -1405,8 +1330,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     flushPendingGuildWarSubmissions();
                     sendLocalPartyClassUpdate();
                 }
-                case "auth_challenge" -> handleAuthChallenge(json);
-                case "auth_success" -> handleAuthSuccess(json);
                 case "connected_users" -> {
                     List<String> users = new ArrayList<>();
                     json.getAsJsonArray("users").forEach(el -> users.add(el.getAsString()));
@@ -1576,7 +1499,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         authFailed = true;
                         authenticated = false;
                         registerAuthFailure();
-                        notify("Invalid auth request. Run /seq link to reauthorize with Wynncraft.");
+                        notify("Invalid auth request. Run /seq connect to start a fresh backend session.");
                         return;
                     }
 
@@ -1601,25 +1524,29 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         return;
                     }
 
+                    if (isPartyFinderError(json, normalized)) {
+                        SeqClient.getPartyFinderManager().pushUiError(error);
+                        return;
+                    }
+
+                    if (isCapabilityAuthorizationReject(status, capability)) {
+                        SeqClient.LOGGER.info(
+                                "[WebSocket] Capability authorization rejected capability={} message={}",
+                                capability,
+                                error);
+                        notify(formatCapabilityAccessDenied(capability, error));
+                        return;
+                    }
+
                     if (status == 403 || normalized.contains("not in guild") || normalized.contains("guild")) {
                         notInGuild = true;
                         authFailed = true;
                         authenticated = false;
-                        notify("Access denied: you are not in the guild.");
+                        notify("Access denied by backend authorization.");
                         SeqClient.LOGGER.warn(
                                 "[WebSocket] Guild error detected; disabling auto-reconnect and closing socket");
                         autoReconnect = false;
                         close();
-                        return;
-                    }
-
-                    if (normalized.contains("already linked")) {
-                        notify(error);
-                        return;
-                    }
-
-                    if (isPartyFinderError(json, normalized)) {
-                        SeqClient.getPartyFinderManager().pushUiError(error);
                         return;
                     }
 
@@ -1719,7 +1646,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         disconnectInternal(false);
         SeqClient.getAuthService().clearSession();
         clearDiscordUsername();
-        notify("Authentication cleared.");
+        notify("Backend session cleared.");
     }
 
     private boolean canAttemptAuthNow() {
@@ -1779,7 +1706,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "party_class_update".equals(type)
                 || "party_sync_snapshot".equals(type)
                 || "party_sync_member_removed".equals(type)
-                || "link_request".equals(type)
                 || "get_connected".equals(type);
     }
 
@@ -1794,90 +1720,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "party_class_update".equals(type)
                 || "party_sync_snapshot".equals(type)
                 || "party_sync_member_removed".equals(type)
-                || "link_request".equals(type)
                 || "get_connected".equals(type);
-    }
-
-    private void requestDiscordLink(boolean allowRelink) {
-        if (!isOpen() || !authenticated || authFailed || notInGuild) {
-            return;
-        }
-
-        send("link_request", buildLinkRequestPayload(allowRelink));
-        pendingDiscordLinkRequest = false;
-    }
-
-    private void handleAuthChallenge(JsonObject json) {
-        String url = extractPrimitiveString(json, "url");
-        String code = extractPrimitiveString(json, "code");
-        if (url == null) {
-            notify("Backend returned an invalid Wynn authorization request.");
-            return;
-        }
-
-        if (code != null) {
-            notify("Wynn authorization code: " + code);
-        }
-
-        notifyClickable("Click to authorize with Wynncraft", url);
-    }
-
-    private void handleAuthSuccess(JsonObject json) {
-        String token = extractPrimitiveString(json, "token");
-        if (token == null) {
-            notify("Wynn authorization completed, but backend did not return a token.");
-            return;
-        }
-
-        String minecraftUsername = extractPrimitiveString(json, "minecraft_username");
-        String discordUsername = extractPrimitiveString(json, "discord_username");
-        storeAuthSuccessSession(token, minecraftUsername);
-        storeDiscordUsername(discordUsername);
-        if (discordUsername != null) {
-            notify("Wynn authorization complete for linked Discord account " + discordUsername + ".");
-        } else {
-            notify("Wynn authorization complete.");
-        }
-    }
-
-    private void storeAuthSuccessSession(String token, String minecraftUsername) {
-        StoredAuthSession current = SeqClient.getConfigManager().getStoredAuthSession();
-        String minecraftUuid = current != null
-                ? current.minecraftUuid()
-                : SeqClient.getConfigManager().getMinecraftUuid();
-        String resolvedUsername = minecraftUsername;
-        if (resolvedUsername == null || resolvedUsername.isBlank()) {
-            resolvedUsername = current != null
-                    ? current.minecraftUsername()
-                    : SeqClient.getConfigManager().getMinecraftUsername();
-        }
-
-        Instant expiresAt = extractJwtExpiration(token);
-        SeqClient.getConfigManager()
-                .setAuthSession(new StoredAuthSession(token, expiresAt, minecraftUuid, resolvedUsername));
-    }
-
-    private static Instant extractJwtExpiration(String token) {
-        if (token == null || token.isBlank()) {
-            return null;
-        }
-
-        try {
-            String[] parts = token.split("\\.");
-            if (parts.length < 2) {
-                return null;
-            }
-
-            String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
-            JsonObject payload = GSON.fromJson(payloadJson, JsonObject.class);
-            if (payload == null || !payload.has("exp") || !payload.get("exp").isJsonPrimitive()) {
-                return null;
-            }
-
-            return Instant.ofEpochSecond(payload.get("exp").getAsLong());
-        } catch (Exception ignored) {
-            return null;
-        }
     }
 
     private static String sanitizeAvatarUrl(String avatarUrl) {
@@ -1980,6 +1823,18 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 && "guild_chat".equalsIgnoreCase(capability)
                 && normalizedMessage != null
                 && normalizedMessage.contains("guild");
+    }
+
+    private static boolean isCapabilityAuthorizationReject(int status, String capability) {
+        return status == 403 && capability != null && !capability.isBlank();
+    }
+
+    private static String formatCapabilityAccessDenied(String capability, String backendMessage) {
+        String feature = capability.replace('_', ' ');
+        if (backendMessage != null && !backendMessage.isBlank() && !"Unknown backend error".equals(backendMessage)) {
+            return feature + " unavailable: " + backendMessage;
+        }
+        return feature + " unavailable for this account.";
     }
 
     private void maybeNotifyVersionRejection(String capability, String minimumSafeVersion, String backendMessage) {

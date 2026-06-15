@@ -2119,11 +2119,11 @@ public class PartyFinderManager implements NotificationAccessor {
             return "Request rejected by backend validation. Check your inputs.";
         }
         if (statusCode == 401) {
-            return "Authentication required. Run /seq link to reauthorize with Wynncraft.";
+            return "Authentication required. Run /seq connect to start a fresh backend session.";
         }
         if (statusCode == 403) {
             if (body.contains("guild") || body.contains("not in guild")) {
-                return "Access denied: your account is not in the guild.";
+                return "Access denied: party finder is available to Sequoia and allied guild members.";
             }
             if (backendError != null) {
                 return backendError;
@@ -2145,7 +2145,7 @@ public class PartyFinderManager implements NotificationAccessor {
             case "invite has expired" -> "This invite has expired.";
             case "invite is no longer active" -> "This invite is no longer active.";
             case "this invite was not intended for your linked account" ->
-                "This invite was sent to a different linked account.";
+                "This invite was sent to a different account.";
             case "role is required" -> "Choose a role before joining this party.";
             case "listing has been disbanded", "listing has already been disbanded" ->
                 "This party has already been disbanded.";

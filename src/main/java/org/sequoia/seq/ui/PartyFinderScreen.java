@@ -529,7 +529,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 btnX,
                 btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING),
                 btnW,
-                "Authentication",
+                "Connection",
                 false);
         drawSidebarButton(
                 nvg,
@@ -2102,7 +2102,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING),
                 btnW,
                 SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new AuthenticationScreen(this));
+            SeqClient.mc.setScreen(new ConnectionScreen(this));
             return true;
         }
         if (isHovered(

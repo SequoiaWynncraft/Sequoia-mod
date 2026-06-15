@@ -8,32 +8,23 @@ import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.User;
 import net.minecraft.server.Services;
-import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.network.ApiClient;
 import org.sequoia.seq.network.BuildConfig;
 
-import java.lang.reflect.Method;
-import java.math.BigInteger;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.Pattern;
 
-public class MinecraftAuthService implements NotificationAccessor {
+public class MinecraftAuthService {
 
     private static final Duration TOKEN_REFRESH_SKEW = Duration.ofSeconds(30);
-    private static final Duration OAUTH_POLL_INTERVAL = Duration.ofSeconds(2);
     private static final Gson GSON = new Gson();
-    private static final Pattern MOJANG_SERVER_ID_PATTERN = Pattern.compile("^-?[0-9a-f]{1,40}$");
 
     private static MinecraftAuthService instance;
 
@@ -81,9 +72,9 @@ public class MinecraftAuthService implements NotificationAccessor {
 
             setState(AuthState.REQUESTING_CHALLENGE, null);
             CompletableFuture<StoredAuthSession> future = ApiClient.getInstance()
-                    .startWynnOAuthAuthentication()
-                    .thenApply(MinecraftAuthService::validateWynnOAuthStart)
-                    .thenCompose(this::completeWynnOAuthInBrowser)
+                    .requestMinecraftAuthChallenge()
+                    .thenApply(MinecraftAuthService::validateChallenge)
+                    .thenCompose(this::authenticateMinecraftSession)
                     .thenApply(this::storeSession)
                     .handle((session, throwable) -> {
                         if (throwable != null) {
@@ -118,84 +109,86 @@ public class MinecraftAuthService implements NotificationAccessor {
         }
     }
 
-    public CompletableFuture<MinecraftAuthCompleteResponse> completeAuthentication(
-            String challengeId, String username) {
+    static MinecraftAuthChallengeResponse validateChallenge(MinecraftAuthChallengeResponse response) {
+        if (response == null
+                || response.challengeId() == null
+                || response.challengeId().isBlank()
+                || response.serverId() == null
+                || !response.serverId().matches("[0-9a-f]{40}")
+                || response.expiresAt() == null) {
+            throw new AuthException(
+                    AuthErrorCode.MALFORMED_RESPONSE,
+                    "Backend returned a malformed Minecraft auth challenge.");
+        }
+        if (!response.expiresAt().isAfter(Instant.now())) {
+            throw new AuthException(
+                    AuthErrorCode.CHALLENGE_EXPIRED, "Backend returned an already expired Minecraft auth challenge.");
+        }
+        return response;
+    }
+
+    private CompletableFuture<MinecraftAuthCompleteResponse> authenticateMinecraftSession(
+            MinecraftAuthChallengeResponse challenge) {
+        return CompletableFuture
+                .supplyAsync(
+                        () -> {
+                            setState(AuthState.JOINING_MINECRAFT_SESSION, null);
+                            User user = requireLoggedInUser();
+                            try {
+                                resolveSessionService().joinServer(
+                                        user.getProfileId(), user.getAccessToken(), challenge.serverId());
+                                return user.getName();
+                            } catch (AuthenticationException exception) {
+                                throw new AuthException(
+                                        AuthErrorCode.SESSION_JOIN_FAILED,
+                                        "Minecraft session verification failed. Restart Minecraft and try again.",
+                                        true,
+                                        exception);
+                            }
+                        },
+                        executor)
+                .thenCompose(username -> completeAuthentication(challenge.challengeId(), username));
+    }
+
+    private CompletableFuture<MinecraftAuthCompleteResponse> completeAuthentication(String challengeId, String username) {
         setState(AuthState.COMPLETING_BACKEND_AUTH, null);
         return ApiClient.getInstance()
                 .completeMinecraftAuthentication(new MinecraftAuthCompleteRequest(challengeId, username));
     }
 
-    private CompletableFuture<MinecraftAuthCompleteResponse> completeWynnOAuthInBrowser(WynnOAuthStartResponse start) {
-        setState(AuthState.WAITING_FOR_BROWSER, null);
-        notifyClickable("Click to authorize Sequoia with Wynncraft", start.authorizationUrl());
-        return pollWynnOAuthStatus(start);
+    private User requireLoggedInUser() {
+        Minecraft minecraft = resolveMinecraftClient();
+        if (minecraft == null || minecraft.getUser() == null) {
+            throw new AuthException(AuthErrorCode.PLAYER_NOT_LOGGED_IN, "Minecraft account is not logged in.");
+        }
+        User user = minecraft.getUser();
+        if (user.getProfileId() == null
+                || user.getName() == null
+                || user.getName().isBlank()
+                || user.getAccessToken() == null
+                || user.getAccessToken().isBlank()) {
+            throw new AuthException(
+                    AuthErrorCode.PLAYER_NOT_LOGGED_IN,
+                    "Minecraft account is missing launcher session credentials.");
+        }
+        return user;
     }
 
-    private CompletableFuture<MinecraftAuthCompleteResponse> pollWynnOAuthStatus(WynnOAuthStartResponse start) {
-        return CompletableFuture.supplyAsync(
-                () -> {
-                    setState(AuthState.POLLING_OAUTH_STATUS, null);
-                    while (Instant.now().isBefore(start.expiresAt())) {
-                        try {
-                            WynnOAuthStatusResponse status =
-                                    ApiClient.getInstance().getWynnOAuthStatus(start.pollToken()).join();
-                            if ("COMPLETE".equalsIgnoreCase(status.status())) {
-                                return new MinecraftAuthCompleteResponse(
-                                        status.token(),
-                                        resolveJwtExpiry(status.token()),
-                                        new AuthenticatedMinecraftUser(status.minecraftUuid(), status.minecraftUsername()));
-                            }
-                            if ("FAILED".equalsIgnoreCase(status.status()) || "EXPIRED".equalsIgnoreCase(status.status())) {
-                                String message = status.errorMessage() != null && !status.errorMessage().isBlank()
-                                        ? status.errorMessage()
-                                        : "Wynn authorization failed.";
-                                throw new AuthException(AuthErrorCode.BACKEND_VERIFICATION_FAILED, message);
-                            }
-                            Thread.sleep(OAUTH_POLL_INTERVAL.toMillis());
-                        } catch (AuthException exception) {
-                            throw exception;
-                        } catch (InterruptedException exception) {
-                            Thread.currentThread().interrupt();
-                            throw new AuthException(AuthErrorCode.NETWORK_FAILURE, "Wynn authorization polling was interrupted.", true, exception);
-                        } catch (Exception exception) {
-                            throw new AuthException(AuthErrorCode.NETWORK_FAILURE, "Failed to poll Wynn authorization status.", true, exception);
-                        }
-                    }
-                    throw new AuthException(AuthErrorCode.CHALLENGE_EXPIRED, "Wynn authorization expired.");
-                },
-                executor);
+    private MinecraftSessionService resolveSessionService() {
+        Minecraft minecraft = resolveMinecraftClient();
+        Services services = minecraft == null ? null : minecraft.services();
+        MinecraftSessionService sessionService = services == null ? null : services.sessionService();
+        if (sessionService == null) {
+            throw new AuthException(
+                    AuthErrorCode.MINECRAFT_SESSION_INVALID,
+                    "Minecraft session service is unavailable. Restart Minecraft and try again.",
+                    true);
+        }
+        return sessionService;
     }
 
-    static WynnOAuthStartResponse validateWynnOAuthStart(WynnOAuthStartResponse response) {
-        if (response == null
-                || response.authorizationUrl() == null
-                || response.authorizationUrl().isBlank()
-                || response.pollToken() == null
-                || response.pollToken().isBlank()
-                || response.expiresAt() == null) {
-            throw new AuthException(AuthErrorCode.MALFORMED_RESPONSE, "Backend returned a malformed Wynn authorization start response.");
-        }
-        if (!response.expiresAt().isAfter(Instant.now())) {
-            throw new AuthException(AuthErrorCode.CHALLENGE_EXPIRED, "Backend returned an already expired Wynn authorization flow.");
-        }
-        return response;
-    }
-
-    private static Instant resolveJwtExpiry(String token) {
-        if (token == null || token.isBlank()) {
-            return Instant.now().minusSeconds(1);
-        }
-        try {
-            String[] parts = token.split("\\.");
-            JsonObject payload = GSON.fromJson(
-                    new String(Base64.getUrlDecoder().decode(padBase64(parts[1])), java.nio.charset.StandardCharsets.UTF_8),
-                    JsonObject.class);
-            if (payload != null && payload.has("exp")) {
-                return Instant.ofEpochSecond(payload.get("exp").getAsLong());
-            }
-        } catch (Exception ignored) {
-        }
-        return Instant.now().plus(Duration.ofMinutes(5));
+    private Minecraft resolveMinecraftClient() {
+        return SeqClient.mc != null ? SeqClient.mc : Minecraft.getInstance();
     }
 
     public String getCurrentToken() {
@@ -226,42 +219,17 @@ public class MinecraftAuthService implements NotificationAccessor {
     }
 
     public void clearSessionIfNotActiveProfile(UUID activeProfileId) {
-        // Wynn OAuth binds Sequoia to the user's primary Wynn profile, which may differ from the local Minecraft
-        // profile used by the launcher. Keep the Sequoia JWT until it expires or the user logs out.
-    }
-
-    static boolean sessionMatchesActiveProfile(StoredAuthSession session, UUID activeProfileId) {
-        if (session == null || activeProfileId == null) {
-            return false;
-        }
-        String storedUuid = session.minecraftUuid();
-        if (storedUuid == null || storedUuid.isBlank()) {
-            return false;
+        StoredAuthSession session = getCurrentSession();
+        if (activeProfileId == null || session == null || session.minecraftUuid() == null) {
+            return;
         }
         try {
-            return UUID.fromString(storedUuid).equals(activeProfileId);
+            if (!UUID.fromString(session.minecraftUuid()).equals(activeProfileId)) {
+                clearSession();
+            }
         } catch (IllegalArgumentException exception) {
-            return false;
+            clearSession();
         }
-    }
-
-    static MinecraftAuthChallengeResponse validateChallenge(MinecraftAuthChallengeResponse response) {
-        if (response == null
-                || response.challengeId() == null
-                || response.challengeId().isBlank()
-                || response.serverId() == null
-                || response.serverId().isBlank()
-                || response.expiresAt() == null) {
-            throw new AuthException(
-                    AuthErrorCode.MALFORMED_RESPONSE, "Backend returned a malformed Minecraft auth challenge.");
-        }
-        if (!response.expiresAt().isAfter(Instant.now())) {
-            throw new AuthException(
-                    AuthErrorCode.CHALLENGE_EXPIRED, "Backend returned an already expired Minecraft auth challenge.");
-        }
-
-        return new MinecraftAuthChallengeResponse(
-                response.challengeId(), normalizeServerId(response.serverId()), response.expiresAt());
     }
 
     static StoredAuthSession toStoredSession(MinecraftAuthCompleteResponse response) {
@@ -298,58 +266,6 @@ public class MinecraftAuthService implements NotificationAccessor {
                 response.expiresAt(),
                 response.user().minecraftUuid(),
                 response.user().minecraftUsername());
-    }
-
-    private CompletableFuture<String> performMinecraftSessionJoin(MinecraftAuthChallengeResponse challenge) {
-        return CompletableFuture.supplyAsync(
-                () -> {
-                    setState(AuthState.JOINING_MINECRAFT_SESSION, null);
-
-                    User user = Minecraft.getInstance().getUser();
-                    String username = user.getName();
-                    UUID profileId = user.getProfileId();
-                    String accessToken = user.getAccessToken();
-                    if (username == null
-                            || username.isBlank()
-                            || profileId == null
-                            || accessToken == null
-                            || accessToken.isBlank()) {
-                        throw new AuthException(
-                                AuthErrorCode.MINECRAFT_SESSION_INVALID,
-                                "Minecraft session is missing profile or access-token data.");
-                    }
-
-                    try {
-                        resolveSessionService(Minecraft.getInstance())
-                                .joinServer(profileId, accessToken, challenge.serverId());
-                        SeqClient.LOGGER.info(
-                                "[Auth] Minecraft session join succeeded username='{}' challengeId={} expiresAt={}",
-                                username,
-                                challenge.challengeId(),
-                                challenge.expiresAt());
-                        return username;
-                    } catch (AuthenticationException exception) {
-                        throw new AuthException(
-                                AuthErrorCode.SESSION_JOIN_FAILED,
-                                "Minecraft session join failed. Re-log in to Minecraft and try again.",
-                                false,
-                                exception);
-                    } catch (AuthException exception) {
-                        throw exception;
-                    } catch (Exception exception) {
-                        throw new AuthException(
-                                AuthErrorCode.MINECRAFT_SESSION_INVALID,
-                                "Unable to access Minecraft session service.",
-                                false,
-                                exception);
-                    }
-                },
-                executor);
-    }
-
-    private UUID activeMinecraftProfileId() {
-        User user = Minecraft.getInstance().getUser();
-        return user == null ? null : user.getProfileId();
     }
 
     private MinecraftAuthCompleteResponse unwrapCompleteResponse(MinecraftAuthCompleteResponse response) {
@@ -389,13 +305,6 @@ public class MinecraftAuthService implements NotificationAccessor {
         if (cause instanceof ApiClient.ApiException apiException) {
             return mapApiException(apiException);
         }
-        if (cause instanceof AuthenticationException authenticationException) {
-            return new AuthException(
-                    AuthErrorCode.SESSION_JOIN_FAILED,
-                    "Minecraft session join failed. Re-log in to Minecraft and try again.",
-                    false,
-                    authenticationException);
-        }
         return new AuthException(
                 AuthErrorCode.NETWORK_FAILURE,
                 cause != null && cause.getMessage() != null ? cause.getMessage() : "Authentication request failed.",
@@ -429,14 +338,17 @@ public class MinecraftAuthService implements NotificationAccessor {
         }
 
         String normalized = message == null ? "" : message.toLowerCase(Locale.ROOT);
+        if ("not_linked".equalsIgnoreCase(backendCode)) {
+            return AuthErrorCode.ACCOUNT_NOT_LINKED;
+        }
+        if ("minecraft_session_invalid".equalsIgnoreCase(backendCode)) {
+            return AuthErrorCode.MINECRAFT_SESSION_INVALID;
+        }
         if (status == 429 || normalized.contains("rate")) {
             return AuthErrorCode.RATE_LIMITED;
         }
         if (status == 503 || status == 502 || status == 504) {
             return AuthErrorCode.BACKEND_UNAVAILABLE;
-        }
-        if (status == 401 && normalized.contains("session")) {
-            return AuthErrorCode.MINECRAFT_SESSION_INVALID;
         }
         if (status == 401 && normalized.contains("token")) {
             return AuthErrorCode.TOKEN_INVALID;
@@ -455,18 +367,19 @@ public class MinecraftAuthService implements NotificationAccessor {
 
     private static String defaultMessageFor(AuthErrorCode code, int status) {
         return switch (code) {
-            case CHALLENGE_EXPIRED -> "Wynn authorization expired before it could be completed.";
-            case CHALLENGE_USED -> "Wynn authorization was already used.";
-            case MINECRAFT_SESSION_INVALID -> "Minecraft session is invalid. Re-log in and try again.";
+            case ACCOUNT_NOT_LINKED -> "No linked Sequoia account was found. Use /link with the Sierra bot in Discord, then reconnect.";
+            case CHALLENGE_EXPIRED -> "Minecraft authentication challenge expired before it could be completed.";
+            case CHALLENGE_USED -> "Minecraft authentication challenge was already used.";
+            case MINECRAFT_SESSION_INVALID -> "Minecraft session verification failed. Restart Minecraft and try again.";
+            case SESSION_JOIN_FAILED -> "Minecraft session join failed. Restart Minecraft and try again.";
             case TOKEN_INVALID -> "Stored backend token is invalid. Re-authentication is required.";
             case TOKEN_EXPIRED -> "Stored backend token expired. Re-authentication is required.";
             case RATE_LIMITED -> "Authentication was rate limited. Please wait and try again.";
             case TRANSPORT_INSECURE -> "Refusing authentication over insecure transport.";
             case BACKEND_UNAVAILABLE -> "Backend is unavailable right now.";
-            case BACKEND_VERIFICATION_FAILED -> "Backend could not complete Wynn authorization.";
+            case BACKEND_VERIFICATION_FAILED -> "Backend could not complete Minecraft authentication.";
             case WEBSOCKET_AUTH_REJECTED -> "Websocket authentication was rejected by the backend.";
             case PLAYER_NOT_LOGGED_IN -> "Minecraft account is not logged in.";
-            case SESSION_JOIN_FAILED -> "Minecraft session join failed. Re-log in and try again.";
             case NETWORK_FAILURE -> "Network request failed during authentication.";
             case MALFORMED_RESPONSE -> "Backend returned an invalid authentication response.";
             case UNKNOWN -> "Authentication failed with backend status " + status + ".";
@@ -495,116 +408,4 @@ public class MinecraftAuthService implements NotificationAccessor {
         }
     }
 
-    private static String normalizeServerId(String rawServerId) {
-        String trimmed = rawServerId.trim();
-        String lowercase = trimmed.toLowerCase(Locale.ROOT);
-        if (isMojangServerId(lowercase)) {
-            return lowercase;
-        }
-
-        byte[] decoded;
-        try {
-            decoded = decodeBase64Url(trimmed);
-        } catch (IllegalArgumentException exception) {
-            throw new AuthException(
-                    AuthErrorCode.MALFORMED_RESPONSE,
-                    "Backend returned an invalid Minecraft auth server_id format.",
-                    false,
-                    exception);
-        }
-
-        String signedHex = toSignedHexSha1(decoded).toLowerCase(Locale.ROOT);
-        if (!isMojangServerId(signedHex)) {
-            throw new AuthException(
-                    AuthErrorCode.MALFORMED_RESPONSE, "Backend returned an invalid Minecraft auth server_id format.");
-        }
-        return signedHex;
-    }
-
-    private static boolean isMojangServerId(String value) {
-        return value != null && MOJANG_SERVER_ID_PATTERN.matcher(value).matches();
-    }
-
-    private static byte[] decodeBase64Url(String value) {
-        return Base64.getUrlDecoder().decode(padBase64(value));
-    }
-
-    private static String padBase64(String value) {
-        int remainder = value.length() % 4;
-        if (remainder == 0) {
-            return value;
-        }
-        if (remainder == 1) {
-            throw new IllegalArgumentException("Invalid base64url length for server_id.");
-        }
-        return value + "=".repeat(4 - remainder);
-    }
-
-    private static String toSignedHexSha1(byte[] source) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-1");
-            return new BigInteger(digest.digest(source)).toString(16);
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-1 algorithm is unavailable for server_id conversion.", exception);
-        }
-    }
-
-    private static MinecraftSessionService resolveSessionService(Minecraft minecraft) {
-        if (minecraft == null) {
-            throw new AuthException(AuthErrorCode.MINECRAFT_SESSION_INVALID, "Minecraft client is not available.");
-        }
-
-        try {
-            Services services = minecraft.services();
-            if (services != null && services.sessionService() != null) {
-                return services.sessionService();
-            }
-        } catch (Throwable ignored) {
-        }
-
-        for (String methodName : new String[] {"getMinecraftSessionService", "sessionService"}) {
-            try {
-                Method method = minecraft.getClass().getMethod(methodName);
-                if (MinecraftSessionService.class.isAssignableFrom(method.getReturnType())) {
-                    return (MinecraftSessionService) method.invoke(minecraft);
-                }
-            } catch (ReflectiveOperationException ignored) {
-            }
-        }
-
-        for (String methodName : new String[] {"getApiServices", "apiServices"}) {
-            try {
-                Method apiServicesMethod = minecraft.getClass().getMethod(methodName);
-                Object apiServices = apiServicesMethod.invoke(minecraft);
-                if (apiServices == null) {
-                    continue;
-                }
-                for (String sessionMethodName :
-                        new String[] {"sessionService", "getSessionService", "getMinecraftSessionService"}) {
-                    try {
-                        Method sessionServiceMethod = apiServices.getClass().getMethod(sessionMethodName);
-                        if (MinecraftSessionService.class.isAssignableFrom(sessionServiceMethod.getReturnType())) {
-                            return (MinecraftSessionService) sessionServiceMethod.invoke(apiServices);
-                        }
-                    } catch (ReflectiveOperationException ignored) {
-                    }
-                }
-            } catch (ReflectiveOperationException ignored) {
-            }
-        }
-
-        for (Method method : minecraft.getClass().getMethods()) {
-            if (method.getParameterCount() == 0
-                    && MinecraftSessionService.class.isAssignableFrom(method.getReturnType())) {
-                try {
-                    return (MinecraftSessionService) method.invoke(minecraft);
-                } catch (ReflectiveOperationException ignored) {
-                }
-            }
-        }
-
-        throw new AuthException(
-                AuthErrorCode.MINECRAFT_SESSION_INVALID,
-                "Unable to resolve Minecraft session service from the client.");
-    }
 }

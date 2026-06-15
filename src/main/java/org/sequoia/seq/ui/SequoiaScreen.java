@@ -67,7 +67,7 @@ public class SequoiaScreen extends Screen {
             float centerX = screenWidth / 2f - BUTTON_WIDTH / 2f;
 
             drawButton(nvg, centerX, startY, "Partyfinder");
-            drawButton(nvg, centerX, startY + BUTTON_HEIGHT + BUTTON_SPACING, "Authentication");
+            drawButton(nvg, centerX, startY + BUTTON_HEIGHT + BUTTON_SPACING, "Connection");
             drawButton(nvg, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 2, "Settings");
             drawButton(nvg, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 3, "Gathering Map");
             drawButton(nvg, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 4, "Github");
@@ -108,7 +108,7 @@ public class SequoiaScreen extends Screen {
             if (isInButton(mx, my, centerX, startY)) {
                 SeqClient.mc.setScreen(new PartyFinderScreen(this));
             } else if (isInButton(mx, my, centerX, startY + BUTTON_HEIGHT + BUTTON_SPACING)) {
-                SeqClient.mc.setScreen(new AuthenticationScreen(this));
+                SeqClient.mc.setScreen(new ConnectionScreen(this));
             } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 2)) {
                 SeqClient.mc.setScreen(new SettingsScreen(this));
             } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 3)) {

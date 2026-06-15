@@ -1,9 +1,11 @@
 package org.sequoia.seq.network.auth;
 
 public enum AuthErrorCode {
+    ACCOUNT_NOT_LINKED("not_linked"),
     CHALLENGE_EXPIRED("challenge_expired"),
     CHALLENGE_USED("challenge_used"),
     MINECRAFT_SESSION_INVALID("minecraft_session_invalid"),
+    SESSION_JOIN_FAILED("session_join_failed"),
     TOKEN_INVALID("token_invalid"),
     TOKEN_EXPIRED("token_expired"),
     RATE_LIMITED("rate_limited"),
@@ -12,7 +14,6 @@ public enum AuthErrorCode {
     BACKEND_VERIFICATION_FAILED("backend_verification_failed"),
     WEBSOCKET_AUTH_REJECTED("websocket_auth_rejected"),
     PLAYER_NOT_LOGGED_IN("player_not_logged_in"),
-    SESSION_JOIN_FAILED("session_join_failed"),
     NETWORK_FAILURE("network_failure"),
     MALFORMED_RESPONSE("malformed_response"),
     UNKNOWN("unknown");
