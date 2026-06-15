@@ -8,12 +8,15 @@ import net.minecraft.world.phys.Vec3;
 
 public final class PingManager {
     private static final int WORLD_RING_REFRESH_COOLDOWN_TICKS = 16;
+    private static final double TELEPORT_CLEAR_DISTANCE_SQR = 32.0 * 32.0;
     private static final List<WorldPing> ACTIVE_PINGS = new ArrayList<>();
+    private static Vec3 lastPlayerPos;
 
     private PingManager() {}
 
     public static void clear() {
         ACTIVE_PINGS.clear();
+        lastPlayerPos = null;
     }
 
     public static void addPing(UUID id, Vec3 pos, float radius, int durationTicks, boolean showCircle) {
@@ -63,10 +66,19 @@ public final class PingManager {
     }
 
     public static void tick(Minecraft client) {
-        if (client.level == null) {
-            ACTIVE_PINGS.clear();
+        if (client.level == null || client.player == null) {
+            clear();
             return;
         }
+
+        Vec3 playerPos = client.player.position();
+        if (lastPlayerPos != null && playerPos.distanceToSqr(lastPlayerPos) > TELEPORT_CLEAR_DISTANCE_SQR) {
+            clear();
+            lastPlayerPos = playerPos;
+            return;
+        }
+
+        lastPlayerPos = playerPos;
 
         List<WorldPing> remainingPings = new ArrayList<>();
 

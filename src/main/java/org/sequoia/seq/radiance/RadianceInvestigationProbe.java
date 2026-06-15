@@ -14,13 +14,16 @@ import net.minecraft.world.phys.Vec3;
 public final class RadianceInvestigationProbe {
     private static final int DURATION_TICKS = 5;
     private static final double MAX_PARTICLE_DISTANCE = 16.0;
+    private static final double TELEPORT_CLEAR_DISTANCE_SQR = 32.0 * 32.0;
 
     private static final List<ProbeSession> ACTIVE_SESSIONS = new ArrayList<>();
+    private static Vec3 lastPlayerPos;
 
     private RadianceInvestigationProbe() {}
 
     public static void clear() {
         ACTIVE_SESSIONS.clear();
+        lastPlayerPos = null;
     }
 
     public static UUID start(Vec3 center, float model, Set<Integer> models) {
@@ -37,9 +40,18 @@ public final class RadianceInvestigationProbe {
 
     public static void tick(Minecraft client) {
         if (client.level == null || client.player == null) {
-            ACTIVE_SESSIONS.clear();
+            clear();
             return;
         }
+
+        Vec3 playerPos = client.player.position();
+        if (lastPlayerPos != null && playerPos.distanceToSqr(lastPlayerPos) > TELEPORT_CLEAR_DISTANCE_SQR) {
+            clear();
+            lastPlayerPos = playerPos;
+            return;
+        }
+
+        lastPlayerPos = playerPos;
 
         if (ACTIVE_SESSIONS.isEmpty()) {
             return;
