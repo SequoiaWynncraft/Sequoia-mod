@@ -1,6 +1,8 @@
 package org.sequoia.seq.radiance;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -14,15 +16,18 @@ import net.minecraft.world.phys.Vec3;
 public final class RadianceInvestigationProbe {
     private static final int DURATION_TICKS = 5;
     private static final double MAX_PARTICLE_DISTANCE = 16.0;
-    private static final double TELEPORT_CLEAR_DISTANCE_SQR = 32.0 * 32.0;
+    private static final int TELEPORT_MOVEMENT_HISTORY_TICKS = 3;
+    private static final double TELEPORT_CLEAR_DISTANCE = 32.0;
 
     private static final List<ProbeSession> ACTIVE_SESSIONS = new ArrayList<>();
+    private static final Deque<Double> RECENT_PLAYER_MOVEMENTS = new ArrayDeque<>();
     private static Vec3 lastPlayerPos;
 
     private RadianceInvestigationProbe() {}
 
     public static void clear() {
         ACTIVE_SESSIONS.clear();
+        RECENT_PLAYER_MOVEMENTS.clear();
         lastPlayerPos = null;
     }
 
@@ -45,7 +50,7 @@ public final class RadianceInvestigationProbe {
         }
 
         Vec3 playerPos = client.player.position();
-        if (lastPlayerPos != null && playerPos.distanceToSqr(lastPlayerPos) > TELEPORT_CLEAR_DISTANCE_SQR) {
+        if (movedTooFar(playerPos)) {
             clear();
             lastPlayerPos = playerPos;
             return;
@@ -129,5 +134,34 @@ public final class RadianceInvestigationProbe {
         double dx = a.x - b.x;
         double dz = a.z - b.z;
         return Math.sqrt(dx * dx + dz * dz);
+    }
+
+    private static boolean movedTooFar(Vec3 playerPos) {
+        if (lastPlayerPos != null) {
+            addRecentMovement(Math.sqrt(playerPos.distanceToSqr(lastPlayerPos)));
+        }
+
+        double recentMovement = 0.0;
+        for (double movement : RECENT_PLAYER_MOVEMENTS) {
+            recentMovement += movement;
+        }
+
+        return recentMovement > TELEPORT_CLEAR_DISTANCE;
+    }
+
+    private static void addRecentMovement(double movement) {
+        while (RECENT_PLAYER_MOVEMENTS.size() > TELEPORT_MOVEMENT_HISTORY_TICKS) {
+            RECENT_PLAYER_MOVEMENTS.removeFirst();
+        }
+
+        if (RECENT_PLAYER_MOVEMENTS.size() == TELEPORT_MOVEMENT_HISTORY_TICKS) {
+            RECENT_PLAYER_MOVEMENTS.removeFirst();
+        }
+
+        RECENT_PLAYER_MOVEMENTS.addLast(movement);
+
+        while (RECENT_PLAYER_MOVEMENTS.size() > TELEPORT_MOVEMENT_HISTORY_TICKS) {
+            RECENT_PLAYER_MOVEMENTS.removeFirst();
+        }
     }
 }
