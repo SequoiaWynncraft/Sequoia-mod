@@ -1,6 +1,7 @@
 package org.sequoia.seq.network;
 
 import com.google.gson.*;
+import com.google.gson.annotations.SerializedName;
 import com.google.gson.reflect.TypeToken;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -264,6 +265,17 @@ public class ApiClient {
         return post("/party-finder/listings/" + listingId + "/unreserve", body, Listing.class);
     }
 
+    // ── Reward Queue ──
+
+    public CompletableFuture<RewardQueueFirstResponse> getFirstRewardQueueEntry(String type) {
+        String encodedType = URLEncoder.encode(type, StandardCharsets.UTF_8);
+        return get("/reward-queue/first?type=" + encodedType, RewardQueueFirstResponse.class);
+    }
+
+    public CompletableFuture<Void> completeRewardQueueEntry(long requestId) {
+        return post("/reward-queue/" + requestId + "/complete", null, Void.class);
+    }
+
     // ── Minecraft Auth ──
 
     public CompletableFuture<MinecraftAuthChallengeResponse> requestMinecraftAuthChallenge() {
@@ -483,4 +495,15 @@ public class ApiClient {
             return responseBody;
         }
     }
+
+    public record RewardQueueFirstResponse(String type, RewardQueueEntry entry) {}
+
+    public record RewardQueueEntry(
+            @SerializedName("request_id") long requestId,
+            String type,
+            @SerializedName("discord_account_id") long discordAccountId,
+            @SerializedName("discord_id") String discordId,
+            @SerializedName("minecraft_username") String minecraftUsername,
+            @SerializedName("guild_rank") String guildRank,
+            @SerializedName("created_at") Instant createdAt) {}
 }

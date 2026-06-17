@@ -25,6 +25,7 @@ import org.sequoia.seq.managers.BombShareManager;
 import org.sequoia.seq.managers.ChatManager;
 import org.sequoia.seq.managers.FontManager;
 import org.sequoia.seq.managers.GameManager;
+import org.sequoia.seq.managers.GuildRewardAutomationManager;
 import org.sequoia.seq.managers.GuildStorageTracker;
 import org.sequoia.seq.managers.GuildWarTrackerHandle;
 import org.sequoia.seq.managers.GuildWarTrackers;
@@ -126,6 +127,9 @@ public class SeqClient implements ClientModInitializer {
     @Getter
     public static GuildStorageTracker guildStorageTracker;
 
+    @Getter
+    public static GuildRewardAutomationManager guildRewardAutomationManager;
+
     private static KeyMapping openScreenKey;
     private static KeyMapping shareBombsKey;
     private static WynnClassType lastBroadcastPartyClass;
@@ -149,6 +153,7 @@ public class SeqClient implements ClientModInitializer {
         wynnPartySyncManager = new WynnPartySyncManager();
         guildWarTracker = GuildWarTrackers.createIfAvailable();
         guildStorageTracker = GuildStorageTracker.getInstance();
+        guildRewardAutomationManager = new GuildRewardAutomationManager();
         chatManager = new ChatManager();
         bombShareManager = new BombShareManager();
         configManager = new ConfigManager();
@@ -221,6 +226,9 @@ public class SeqClient implements ClientModInitializer {
             }
             if (guildStorageTracker != null) {
                 guildStorageTracker.tick();
+            }
+            if (guildRewardAutomationManager != null) {
+                guildRewardAutomationManager.tick();
             }
             RadianceCheckerClient.tick(client);
             ConnectionManager.flushPendingOutbound();

@@ -5,18 +5,13 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ClickType;
-import net.minecraft.world.inventory.Slot;
-import net.minecraft.world.item.ItemStack;
 import org.sequoia.seq.accessors.NotificationAccessor;
-import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.integrations.WynntilsGuildRankAccess;
 import org.sequoia.seq.managers.GuildStorageTracker;
 
 public final class GuildStorageShortcutOverlay {
     private static final String RECIPIENT = "cinfrascitizen";
     private static final String BUTTON_LABEL = "Send emeralds to " + RECIPIENT;
-    private static final int SEND_EMERALDS_HOTBAR_BUTTON = 2;
     private static final int BUTTON_WIDTH = 170;
     private static final int BUTTON_HEIGHT = 20;
     private static final int BUTTON_MARGIN = 6;
@@ -58,7 +53,7 @@ public final class GuildStorageShortcutOverlay {
 
         if (hovered) {
             Component tooltip = enabled
-                    ? Component.literal("Presses 3 on " + RECIPIENT + "'s storage head.")
+                    ? Component.literal("Sends all stored emeralds to " + RECIPIENT + ".")
                     : Component.literal("No emeralds are currently in guild storage.");
             graphics.setTooltipForNextFrame(Minecraft.getInstance().font, tooltip, mouseX, mouseY);
         }
@@ -93,47 +88,9 @@ public final class GuildStorageShortcutOverlay {
             return true;
         }
 
-        Slot recipientSlot = findRecipientSlot(menu);
-        if (recipientSlot == null) {
-            NotificationAccessor.notifyPlayer("Could not find " + RECIPIENT + " in this guild storage menu.");
-            return true;
-        }
-
-        minecraft.gameMode.handleInventoryMouseClick(
-                menu.containerId,
-                recipientSlot.index,
-                SEND_EMERALDS_HOTBAR_BUTTON,
-                ClickType.SWAP,
-                minecraft.player);
-        SeqClient.LOGGER.info(
-                "[GuildStorage] Shortcut pressed hotbar button {} on slot {} for {}",
-                SEND_EMERALDS_HOTBAR_BUTTON,
-                recipientSlot.index,
-                RECIPIENT);
+        org.sequoia.seq.client.SeqClient.getGuildRewardAutomationManager()
+                .sendAllEmeraldsToCinfrascitizenInCurrentMenu();
         return true;
-    }
-
-    private static Slot findRecipientSlot(AbstractContainerMenu menu) {
-        if (menu == null) {
-            return null;
-        }
-
-        for (Slot slot : menu.slots) {
-            if (slot == null || !slot.hasItem()) {
-                continue;
-            }
-            if (matchesRecipient(slot.getItem())) {
-                return slot;
-            }
-        }
-        return null;
-    }
-
-    private static boolean matchesRecipient(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) {
-            return false;
-        }
-        return stack.getHoverName().getString().toLowerCase().contains(RECIPIENT);
     }
 
     private static ButtonBounds bounds(int screenWidth, int leftPos, int topPos, int imageWidth) {

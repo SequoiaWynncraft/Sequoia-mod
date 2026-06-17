@@ -21,6 +21,7 @@ import org.sequoia.seq.accessors.NotificationAccessor;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.config.ConfigManager;
 import org.sequoia.seq.managers.BombShareManager;
+import org.sequoia.seq.managers.GuildRewardAutomationManager;
 import org.sequoia.seq.managers.PartyFinderManager;
 import org.sequoia.seq.managers.PartyListing;
 import org.sequoia.seq.map.GatheringClusterCache;
@@ -29,6 +30,7 @@ import org.sequoia.seq.map.GatheringMapSettings;
 import org.sequoia.seq.model.Activity;
 import org.sequoia.seq.model.Listing;
 import org.sequoia.seq.model.PartyRole;
+import org.sequoia.seq.network.ApiClient;
 import org.sequoia.seq.network.ConnectionManager;
 import org.sequoia.seq.ui.GatheringMapScreen;
 import org.sequoia.seq.ui.PartyFinderScreen;
@@ -110,6 +112,10 @@ public class SeqCommand {
                                                 }))
                                 .then(buildIgnoreCommand())
                                 .then(buildUnignoreCommand())
+                                .then(buildEmeraldRewardCommand("e"))
+                                .then(buildEmeraldRewardCommand("emeralds"))
+                                .then(buildAspectRewardCommand())
+                                .then(buildTomeRewardCommand())
                                 .then(buildBombCommand())
                                 .then(buildMapCommand())
                                 .then(buildPartyCommand("party"))
@@ -238,6 +244,37 @@ public class SeqCommand {
                                                                 .requestBombShare(StringArgumentType.getString(
                                                                                 ctx,
                                                                                 "selectors"))));
+        }
+
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildEmeraldRewardCommand(String literalName) {
+                return ClientCommandManager.literal(literalName)
+                                .executes(ctx -> {
+                                        SeqClient.getGuildRewardAutomationManager().sendAllEmeraldsToCinfrascitizen();
+                                        return 1;
+                                });
+        }
+
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildTomeRewardCommand() {
+                return ClientCommandManager.literal("tome")
+                                .executes(ctx -> runQueuedGuildReward(ctx, GuildRewardAutomationManager.RewardType.TOME, 1))
+                                .then(ClientCommandManager.argument(
+                                                "username",
+                                                StringArgumentType.word())
+                                                .executes(ctx -> runDirectTomeReward(
+                                                                ctx,
+                                                                StringArgumentType.getString(ctx, "username"))));
+        }
+
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildAspectRewardCommand() {
+                return ClientCommandManager.literal("aspects")
+                                .then(ClientCommandManager.argument(
+                                                "amount",
+                                                LongArgumentType.longArg(1))
+                                                .executes(SeqCommand::runQueuedAspectReward)
+                                                .then(ClientCommandManager.argument(
+                                                                "username",
+                                                                StringArgumentType.word())
+                                                                .executes(SeqCommand::runDirectAspectReward)));
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildMapCommand() {
@@ -432,6 +469,84 @@ public class SeqCommand {
                                 boolean isCurrent = currentListing != null && currentListing.id() == listing.id();
                                 sendFeedback(source, formatListingSummary(listing, isCurrent));
                         }
+                });
+                return 1;
+        }
+
+        private static int runQueuedAspectReward(CommandContext<FabricClientCommandSource> ctx) {
+                long amount = LongArgumentType.getLong(ctx, "amount");
+                return runQueuedGuildReward(ctx, GuildRewardAutomationManager.RewardType.ASPECT, amount);
+        }
+
+        private static int runDirectAspectReward(CommandContext<FabricClientCommandSource> ctx) {
+                long amount = LongArgumentType.getLong(ctx, "amount");
+                String username = StringArgumentType.getString(ctx, "username");
+                if (!isValidMinecraftUsername(username)) {
+                        sendFeedback(ctx.getSource(), "IGN must be a Minecraft username: 3-16 letters, numbers, or underscores.");
+                        return 0;
+                }
+                SeqClient.getGuildRewardAutomationManager().sendAspects(username, amount);
+                return 1;
+        }
+
+        private static int runDirectTomeReward(CommandContext<FabricClientCommandSource> ctx, String username) {
+                if (!isValidMinecraftUsername(username)) {
+                        sendFeedback(ctx.getSource(), "IGN must be a Minecraft username: 3-16 letters, numbers, or underscores.");
+                        return 0;
+                }
+                SeqClient.getGuildRewardAutomationManager().sendTome(username);
+                return 1;
+        }
+
+        private static int runQueuedGuildReward(
+                        CommandContext<FabricClientCommandSource> ctx,
+                        GuildRewardAutomationManager.RewardType rewardType,
+                        long amount) {
+                FabricClientCommandSource source = ctx.getSource();
+                String type = rewardType == GuildRewardAutomationManager.RewardType.TOME ? "tome" : "aspect";
+                ApiClient.getInstance().getFirstRewardQueueEntry(type).whenComplete((response, error) -> {
+                        if (error != null) {
+                                sendFeedback(source, "Could not load " + type + " reward queue.");
+                                return;
+                        }
+                        if (response == null || response.entry() == null) {
+                                sendFeedback(source, "No pending " + type + " reward queue entry.");
+                                return;
+                        }
+
+                        ApiClient.RewardQueueEntry entry = response.entry();
+                        String username = entry.minecraftUsername();
+                        if (!isValidMinecraftUsername(username)) {
+                                sendFeedback(source, "Queued " + type + " entry has an invalid IGN.");
+                                return;
+                        }
+
+                        CompletableFuture<GuildRewardAutomationManager.AutomationResult> automation =
+                                        rewardType == GuildRewardAutomationManager.RewardType.TOME
+                                                        ? SeqClient.getGuildRewardAutomationManager().sendTome(username)
+                                                        : SeqClient.getGuildRewardAutomationManager()
+                                                                        .sendAspects(username, amount);
+                        automation.whenComplete((result, automationError) -> {
+                                if (automationError != null || result == null || !result.success()) {
+                                        return;
+                                }
+                                ApiClient.getInstance().completeRewardQueueEntry(entry.requestId())
+                                                .whenComplete((ignored, claimError) -> {
+                                                        if (claimError != null) {
+                                                                sendFeedback(
+                                                                                source,
+                                                                                "Reward sent, but queue completion failed for request #"
+                                                                                                + entry.requestId()
+                                                                                                + ".");
+                                                        } else {
+                                                                sendFeedback(
+                                                                                source,
+                                                                                "Completed reward queue request #"
+                                                                                                + entry.requestId()
+                                                                                                + ".");
+                                                        }
+                                                });
+                        });
                 });
                 return 1;
         }
@@ -722,6 +837,10 @@ public class SeqCommand {
                                 case "tank" -> PartyRole.TANK;
                                 default -> null;
                         };
+        }
+
+        private static boolean isValidMinecraftUsername(String username) {
+                return ConfigManager.isValidBridgeUsername(username);
         }
 
         private static String formatListingSummary(Listing listing, boolean isCurrent) {
