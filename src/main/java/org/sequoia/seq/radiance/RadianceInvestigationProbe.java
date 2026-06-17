@@ -150,14 +150,6 @@ public final class RadianceInvestigationProbe {
     }
 
     private static void addRecentMovement(double movement) {
-        while (RECENT_PLAYER_MOVEMENTS.size() > TELEPORT_MOVEMENT_HISTORY_TICKS) {
-            RECENT_PLAYER_MOVEMENTS.removeFirst();
-        }
-
-        if (RECENT_PLAYER_MOVEMENTS.size() == TELEPORT_MOVEMENT_HISTORY_TICKS) {
-            RECENT_PLAYER_MOVEMENTS.removeFirst();
-        }
-
         RECENT_PLAYER_MOVEMENTS.addLast(movement);
 
         while (RECENT_PLAYER_MOVEMENTS.size() > TELEPORT_MOVEMENT_HISTORY_TICKS) {
