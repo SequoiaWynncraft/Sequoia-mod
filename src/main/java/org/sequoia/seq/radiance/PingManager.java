@@ -1,6 +1,8 @@
 package org.sequoia.seq.radiance;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.UUID;
 import net.minecraft.client.Minecraft;
@@ -8,12 +10,18 @@ import net.minecraft.world.phys.Vec3;
 
 public final class PingManager {
     private static final int WORLD_RING_REFRESH_COOLDOWN_TICKS = 16;
+    private static final int TELEPORT_MOVEMENT_HISTORY_TICKS = 3;
+    private static final double TELEPORT_CLEAR_DISTANCE = 32.0;
     private static final List<WorldPing> ACTIVE_PINGS = new ArrayList<>();
+    private static final Deque<Double> RECENT_PLAYER_MOVEMENTS = new ArrayDeque<>();
+    private static Vec3 lastPlayerPos;
 
     private PingManager() {}
 
     public static void clear() {
         ACTIVE_PINGS.clear();
+        RECENT_PLAYER_MOVEMENTS.clear();
+        lastPlayerPos = null;
     }
 
     public static void addPing(UUID id, Vec3 pos, float radius, int durationTicks, boolean showCircle) {
@@ -63,10 +71,19 @@ public final class PingManager {
     }
 
     public static void tick(Minecraft client) {
-        if (client.level == null) {
-            ACTIVE_PINGS.clear();
+        if (client.level == null || client.player == null) {
+            clear();
             return;
         }
+
+        Vec3 playerPos = client.player.position();
+        if (movedTooFar(playerPos)) {
+            clear();
+            lastPlayerPos = playerPos;
+            return;
+        }
+
+        lastPlayerPos = playerPos;
 
         List<WorldPing> remainingPings = new ArrayList<>();
 
@@ -113,4 +130,25 @@ public final class PingManager {
     }
 
     private record RingState(int phase, int cooldownTicks) {}
+
+    private static boolean movedTooFar(Vec3 playerPos) {
+        if (lastPlayerPos != null) {
+            addRecentMovement(Math.sqrt(playerPos.distanceToSqr(lastPlayerPos)));
+        }
+
+        double recentMovement = 0.0;
+        for (double movement : RECENT_PLAYER_MOVEMENTS) {
+            recentMovement += movement;
+        }
+
+        return recentMovement > TELEPORT_CLEAR_DISTANCE;
+    }
+
+    private static void addRecentMovement(double movement) {
+        RECENT_PLAYER_MOVEMENTS.addLast(movement);
+
+        while (RECENT_PLAYER_MOVEMENTS.size() > TELEPORT_MOVEMENT_HISTORY_TICKS) {
+            RECENT_PLAYER_MOVEMENTS.removeFirst();
+        }
+    }
 }
