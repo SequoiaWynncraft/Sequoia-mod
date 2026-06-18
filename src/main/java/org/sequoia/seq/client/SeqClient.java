@@ -20,6 +20,7 @@ import org.sequoia.seq.config.Setting;
 import org.sequoia.seq.events.GameStartEvent;
 import org.sequoia.seq.events.MinecraftFinishedLoading;
 import org.sequoia.seq.command.SeqCommand;
+import org.sequoia.seq.halcyon.HalcyonRangeVisualiserClient;
 import org.sequoia.seq.managers.AssetManager;
 import org.sequoia.seq.managers.BombShareManager;
 import org.sequoia.seq.managers.ChatManager;
@@ -119,6 +120,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting radianceCheckerSetting;
 
     @Getter
+    public static Setting.BooleanSetting halcyonRangeVisualiserSetting;
+
+    @Getter
     public static WynnPartySyncManager wynnPartySyncManager;
 
     @Getter
@@ -162,6 +166,7 @@ public class SeqClient implements ClientModInitializer {
         authService = MinecraftAuthService.getInstance();
         SeqCommand.register();
         RadianceCheckerClient.initialize();
+        HalcyonRangeVisualiserClient.initialize();
 
         KeyMapping.Category category =
                 KeyMapping.Category.register(Identifier.fromNamespaceAndPath("sequoia-mod", "controls"));
@@ -407,6 +412,7 @@ public class SeqClient implements ClientModInitializer {
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
         radianceCheckerSetting = new Setting.BooleanSetting("enable_radiance_visualiser", "raids", true);
+        halcyonRangeVisualiserSetting = new Setting.BooleanSetting("enable_halcyon_range_visualiser", "raids", true);
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
@@ -436,6 +442,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(syncWynnPartySetting);
         getConfigManager().register(receiveBombShareRequestsSetting);
         getConfigManager().register(radianceCheckerSetting);
+        getConfigManager().register(halcyonRangeVisualiserSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.
