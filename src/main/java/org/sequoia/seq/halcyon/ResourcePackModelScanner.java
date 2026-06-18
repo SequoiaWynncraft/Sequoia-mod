@@ -33,10 +33,6 @@ public final class ResourcePackModelScanner {
 		return SCANNER.getModelsWithSameTexture(itemName, observedModel);
 	}
 
-	public static Set<String> getTexturesForItem(String itemName) {
-		return SCANNER.getTexturesForItem(itemName);
-	}
-
 	public static boolean scan(Minecraft client) {
 		return SCANNER.scan(client);
 	}

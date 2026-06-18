@@ -3,7 +3,6 @@ package org.sequoia.seq.halcyon;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
@@ -173,39 +172,28 @@ public final class HalcyonTextureDetector {
 			if (distanceSqr > MAX_DISTANCE_SQR) continue;
 
 			float model = customModelData.floats().getFirst();
-			Identifier itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
-			String itemName = itemId.getPath();
+			String itemName = BuiltInRegistries.ITEM.getKey(stack.getItem()).getPath();
 			ResourcePackModelScanner.ModelInfo modelInfo = ResourcePackModelScanner.getModelInfo(itemName, model);
 			if (modelInfo == null || modelInfo.texture() == null) continue;
 
 			candidates.add(new Candidate(
-				entity,
-				itemId,
 				itemName,
 				model,
 				ResourcePackModelScanner.normalizeAnimatedModel(model),
 				modelInfo,
-				pos,
-				distanceSqr
+				pos
 			));
 		}
 
 		return candidates;
 	}
 
-	private static double round(double value) {
-		return Math.round(value * 100.0) / 100.0;
-	}
-
 	private record Candidate(
-		Entity entity,
-		Identifier itemId,
 		String itemName,
 		float model,
 		int baseModel,
 		ResourcePackModelScanner.ModelInfo modelInfo,
-		Vec3 pos,
-		double distanceSqr
+		Vec3 pos
 	) {
 		private double horizontalDistance() {
 			Minecraft client = Minecraft.getInstance();
@@ -312,18 +300,6 @@ public final class HalcyonTextureDetector {
 
 		private Candidate sample() {
 			return sample;
-		}
-
-		private int count() {
-			return count;
-		}
-
-		private int positionCount() {
-			return positions.size();
-		}
-
-		private int sectorCount() {
-			return sectors.size();
 		}
 
 		private List<Candidate> candidates() {

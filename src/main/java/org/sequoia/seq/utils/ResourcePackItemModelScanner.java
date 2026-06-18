@@ -1,5 +1,8 @@
 package org.sequoia.seq.utils;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.Resource;
@@ -8,7 +11,6 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -18,8 +20,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public final class ResourcePackItemModelScanner {
-	private static final Pattern MODEL_FIRST_ENTRY_PATTERN = Pattern.compile("\"model\"\\s*:\\s*\"([^\"]+)\".*?\"threshold\"\\s*:\\s*(\\d+)", Pattern.DOTALL);
-	private static final Pattern THRESHOLD_FIRST_ENTRY_PATTERN = Pattern.compile("\"threshold\"\\s*:\\s*(\\d+).*?\"model\"\\s*:\\s*\"([^\"]+)\"", Pattern.DOTALL);
 	private static final Pattern TEXTURE_PATTERN = Pattern.compile("\"0\"\\s*:\\s*\"([^\"]+)\"");
 	private static final int MODEL_ANIMATION_STEP = 65536;
 
@@ -32,10 +32,6 @@ public final class ResourcePackItemModelScanner {
 
 	public ResourcePackItemModelScanner() {
 		this(Set.of(), true);
-	}
-
-	public ResourcePackItemModelScanner(Set<String> includedItems) {
-		this(includedItems, true);
 	}
 
 	public ResourcePackItemModelScanner(Set<String> includedItems, boolean supportThresholdFirstEntries) {
@@ -78,10 +74,7 @@ public final class ResourcePackItemModelScanner {
 					String content = reader.lines().collect(Collectors.joining("\n"));
 					if (!content.contains("\"threshold\"")) continue;
 
-					addModels(itemName, content, MODEL_FIRST_ENTRY_PATTERN, 2, 1);
-					if (supportThresholdFirstEntries) {
-						addModels(itemName, content, THRESHOLD_FIRST_ENTRY_PATTERN, 1, 2);
-					}
+					addModels(itemName, JsonParser.parseString(content));
 				}
 			}
 
@@ -156,20 +149,6 @@ public final class ResourcePackItemModelScanner {
 		return matchingModels;
 	}
 
-	public Set<String> getTexturesForItem(String itemName) {
-		Map<Integer, ModelInfo> itemModels = modelsByItem.get(itemName);
-		if (itemModels == null) return Set.of();
-
-		Set<String> textures = new HashSet<>();
-		for (ModelInfo modelInfo : itemModels.values()) {
-			if (modelInfo.texture() != null) {
-				textures.add(modelInfo.texture());
-			}
-		}
-
-		return textures;
-	}
-
 	public static int normalizeAnimatedModel(float model) {
 		return normalizeAnimatedModel((int) model);
 	}
@@ -178,18 +157,65 @@ public final class ResourcePackItemModelScanner {
 		return Math.floorMod(model, MODEL_ANIMATION_STEP);
 	}
 
-	private void addModels(String itemName, String content, Pattern pattern, int thresholdGroup, int modelGroup) {
-		Matcher entryMatcher = pattern.matcher(content);
-
-		while (entryMatcher.find()) {
-			int threshold = Integer.parseInt(entryMatcher.group(thresholdGroup));
-			String modelPath = normalizeModelPath(entryMatcher.group(modelGroup));
-			String texture = readPrimaryTexture(modelPath);
-
-			modelsByItem
-				.computeIfAbsent(itemName, ignored -> new HashMap<>())
-				.putIfAbsent(threshold, new ModelInfo(threshold, modelPath, texture));
+	private void addModels(String itemName, JsonElement element) {
+		if (element == null || element.isJsonNull()) return;
+		if (element.isJsonObject()) {
+			JsonObject object = element.getAsJsonObject();
+			addModel(itemName, object);
+			for (JsonElement child : object.asMap().values()) {
+				addModels(itemName, child);
+			}
+			return;
 		}
+
+		if (element.isJsonArray()) {
+			for (JsonElement child : element.getAsJsonArray()) {
+				addModels(itemName, child);
+			}
+		}
+	}
+
+	private void addModel(String itemName, JsonObject object) {
+		JsonElement thresholdElement = object.get("threshold");
+		JsonElement modelElement = object.get("model");
+		if (thresholdElement == null || modelElement == null) return;
+		if (!thresholdElement.isJsonPrimitive() || !thresholdElement.getAsJsonPrimitive().isNumber()) return;
+		if (!supportThresholdFirstEntries && !modelComesBeforeThreshold(object)) return;
+
+		int threshold = thresholdElement.getAsInt();
+		String rawModelPath = getModelPath(modelElement);
+		if (rawModelPath == null) return;
+
+		String modelPath = normalizeModelPath(rawModelPath);
+		String texture = readPrimaryTexture(modelPath);
+
+		modelsByItem
+			.computeIfAbsent(itemName, ignored -> new HashMap<>())
+			.putIfAbsent(threshold, new ModelInfo(threshold, modelPath, texture));
+	}
+
+	private static String getModelPath(JsonElement modelElement) {
+		if (modelElement.isJsonPrimitive() && modelElement.getAsJsonPrimitive().isString()) {
+			return modelElement.getAsString();
+		}
+
+		if (!modelElement.isJsonObject()) return null;
+
+		JsonElement nestedModel = modelElement.getAsJsonObject().get("model");
+		if (nestedModel == null || !nestedModel.isJsonPrimitive() || !nestedModel.getAsJsonPrimitive().isString()) {
+			return null;
+		}
+
+		return nestedModel.getAsString();
+	}
+
+	private static boolean modelComesBeforeThreshold(JsonObject object) {
+		for (String key : object.asMap().keySet()) {
+			if (key.equals("model")) return true;
+			if (key.equals("threshold")) return false;
+		}
+
+		return false;
 	}
 
 	private static String normalizeModelPath(String modelPath) {

@@ -36,7 +36,7 @@ public final class HalcyonRangeVisualiserClient {
 		});
 	}
 
-	public static void reset() {
+	private static void reset() {
 		HalcyonTextureDetector.reset();
 	}
 
