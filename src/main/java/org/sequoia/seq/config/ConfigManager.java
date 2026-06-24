@@ -1,14 +1,17 @@
 package org.sequoia.seq.config;
 
 import com.google.gson.*;
+import lombok.AccessLevel;
 import lombok.Getter;
 import org.sequoia.seq.client.SeqClient;
 import org.sequoia.seq.network.auth.StoredAuthSession;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -19,8 +22,8 @@ import java.util.regex.Pattern;
 
 @Getter
 public class ConfigManager {
-    private static final Path CONFIG_PATH = Path.of("config", "sequoia.json");
-    private static final Path LEGACY_TOKEN_FILE = Path.of(System.getProperty("user.home"), ".seq_token");
+    private static final Path DEFAULT_CONFIG_PATH = Path.of("config", "sequoia.json");
+    private static final Path DEFAULT_LEGACY_TOKEN_FILE = Path.of(System.getProperty("user.home"), ".seq_token");
     private static final String TOKEN_KEY = "_auth_token";
     private static final String TOKEN_EXPIRES_AT_KEY = "_auth_token_expires_at";
     private static final String MINECRAFT_UUID_KEY = "_minecraft_uuid";
@@ -34,6 +37,11 @@ public class ConfigManager {
     private static final String STARTUP_VIDEO_HEIGHT_KEY = "_startup_video_height";
     private static final Pattern MINECRAFT_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    @Getter(AccessLevel.NONE)
+    private final Path configPath;
+
+    @Getter(AccessLevel.NONE)
+    private final Path legacyTokenFile;
     private final List<Setting<?>> settings = new ArrayList<>();
     private final Set<String> ignoredBridgeUsers = new LinkedHashSet<>();
     private String authToken;
@@ -48,53 +56,65 @@ public class ConfigManager {
     private Double startupVideoHeight;
 
     public ConfigManager() {
-        Runtime.getRuntime().addShutdownHook(new Thread(this::save));
+        this(DEFAULT_CONFIG_PATH, DEFAULT_LEGACY_TOKEN_FILE, true);
     }
 
-    public void register(Setting<?> setting) {
+    ConfigManager(Path configPath, Path legacyTokenFile) {
+        this(configPath, legacyTokenFile, false);
+    }
+
+    private ConfigManager(Path configPath, Path legacyTokenFile, boolean registerShutdownHook) {
+        this.configPath = configPath;
+        this.legacyTokenFile = legacyTokenFile;
+        if (registerShutdownHook) {
+            Runtime.getRuntime().addShutdownHook(new Thread(this::save));
+        }
+    }
+
+    public synchronized void register(Setting<?> setting) {
         settings.add(setting);
     }
 
     // ── Token management ──
 
-    public String getToken() {
+    public synchronized String getToken() {
         return authToken;
     }
 
-    public Instant getTokenExpiresAt() {
+    public synchronized Instant getTokenExpiresAt() {
         return authTokenExpiresAt;
     }
 
-    public String getMinecraftUuid() {
+    public synchronized String getMinecraftUuid() {
         return minecraftUuid;
     }
 
-    public String getMinecraftUsername() {
+    public synchronized String getMinecraftUsername() {
         return minecraftUsername;
     }
 
-    public String getDiscordUsername() {
+    public synchronized String getDiscordUsername() {
         return discordUsername;
     }
 
-    public boolean isBombSharePromptSeen() {
+    public synchronized boolean isBombSharePromptSeen() {
         return bombSharePromptSeen;
     }
 
-    public StoredAuthSession getStoredAuthSession() {
+    public synchronized StoredAuthSession getStoredAuthSession() {
         if (authToken == null || authToken.isBlank()) {
             return null;
         }
         return new StoredAuthSession(authToken, authTokenExpiresAt, minecraftUuid, minecraftUsername);
     }
 
-    public void setToken(String token) {
+    public synchronized void setToken(String token) {
         this.authToken = token;
         this.authTokenExpiresAt = null;
         save();
     }
 
-    public void setAuthSession(StoredAuthSession session) {
+    public synchronized void setAuthSession(StoredAuthSession session) {
         if (session == null || !session.hasToken()) {
             clearAuthSession();
             return;
@@ -107,11 +127,11 @@ public class ConfigManager {
         save();
     }
 
-    public void clearToken() {
+    public synchronized void clearToken() {
         clearAuthSession();
     }
 
-    public void clearAuthSession() {
+    public synchronized void clearAuthSession() {
         this.authToken = null;
         this.authTokenExpiresAt = null;
         this.minecraftUuid = null;
@@ -119,12 +139,12 @@ public class ConfigManager {
         save();
     }
 
-    public void setDiscordUsername(String discordUsername) {
+    public synchronized void setDiscordUsername(String discordUsername) {
         this.discordUsername = discordUsername;
         save();
     }
 
-    public void clearDiscordUsername() {
+    public synchronized void clearDiscordUsername() {
         this.discordUsername = null;
         save();
     }
@@ -144,7 +164,7 @@ public class ConfigManager {
         return trimmed.toLowerCase(Locale.ROOT);
     }
 
-    public boolean addIgnoredBridgeUser(String username) {
+    public synchronized boolean addIgnoredBridgeUser(String username) {
         String normalized = normalizeBridgeUsername(username);
         if (normalized == null) {
             return false;
@@ -156,7 +176,7 @@ public class ConfigManager {
         return added;
     }
 
-    public boolean removeIgnoredBridgeUser(String username) {
+    public synchronized boolean removeIgnoredBridgeUser(String username) {
         String normalized = normalizeBridgeUsername(username);
         if (normalized == null) {
             return false;
@@ -168,28 +188,28 @@ public class ConfigManager {
         return removed;
     }
 
-    public boolean isIgnoredBridgeUser(String username) {
+    public synchronized boolean isIgnoredBridgeUser(String username) {
         String normalized = normalizeBridgeUsername(username);
         return normalized != null && ignoredBridgeUsers.contains(normalized);
     }
 
-    public List<String> ignoredBridgeUsers() {
+    public synchronized List<String> ignoredBridgeUsers() {
         return List.copyOf(ignoredBridgeUsers);
     }
 
-    public void setBombSharePromptSeen(boolean bombSharePromptSeen) {
+    public synchronized void setBombSharePromptSeen(boolean bombSharePromptSeen) {
         this.bombSharePromptSeen = bombSharePromptSeen;
         save();
     }
 
-    public StartupVideoBounds getStartupVideoBounds() {
+    public synchronized StartupVideoBounds getStartupVideoBounds() {
         if (startupVideoX == null || startupVideoY == null || startupVideoWidth == null || startupVideoHeight == null) {
             return null;
         }
         return new StartupVideoBounds(startupVideoX, startupVideoY, startupVideoWidth, startupVideoHeight);
     }
 
-    public void setStartupVideoBounds(double x, double y, double width, double height) {
+    public synchronized void setStartupVideoBounds(double x, double y, double width, double height) {
         startupVideoX = clamp01(x);
         startupVideoY = clamp01(y);
         startupVideoWidth = clamp01(width);
@@ -205,17 +225,17 @@ public class ConfigManager {
     }
 
     /** Migrate token from legacy ~/.seq_token into sequoia.json on first run. */
-    public void migrateToken() {
+    public synchronized void migrateToken() {
         if (authToken != null) return;
         try {
-            if (Files.exists(LEGACY_TOKEN_FILE)) {
-                String legacy = Files.readString(LEGACY_TOKEN_FILE).trim();
+            if (Files.exists(legacyTokenFile)) {
+                String legacy = Files.readString(legacyTokenFile).trim();
                 if (!legacy.isEmpty()) {
                     authToken = legacy;
                     save();
                     SeqClient.LOGGER.info("Migrated auth token from ~/.seq_token into sequoia.json");
                 }
-                Files.deleteIfExists(LEGACY_TOKEN_FILE);
+                Files.deleteIfExists(legacyTokenFile);
             }
         } catch (Exception e) {
             SeqClient.LOGGER.warn("Failed to migrate legacy token", e);
@@ -224,7 +244,7 @@ public class ConfigManager {
 
     // ── Save / Load ──
 
-    public void save() {
+    public synchronized void save() {
         try {
             JsonObject root = new JsonObject();
             if (authToken != null) {
@@ -263,21 +283,33 @@ public class ConfigManager {
                 String key = setting.getCategory() + "." + setting.getName();
                 root.add(key, setting.serialize());
             }
-            Files.createDirectories(CONFIG_PATH.getParent());
-            try (Writer writer =
-                    new OutputStreamWriter(new FileOutputStream(CONFIG_PATH.toFile()), StandardCharsets.UTF_8)) {
-                GSON.toJson(root, writer);
-            }
+            writeConfigAtomically(root);
         } catch (IOException e) {
             SeqClient.LOGGER.error("Failed to save config", e);
         }
     }
 
-    public void load() {
-        if (!Files.exists(CONFIG_PATH)) {
+    private void writeConfigAtomically(JsonObject root) throws IOException {
+        Path parent = configPath.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        Path tempPath = configPath.resolveSibling(configPath.getFileName() + ".tmp");
+        try (Writer writer = Files.newBufferedWriter(tempPath, StandardCharsets.UTF_8)) {
+            GSON.toJson(root, writer);
+        }
+        try {
+            Files.move(tempPath, configPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException exception) {
+            Files.move(tempPath, configPath, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    public synchronized void load() {
+        if (!Files.exists(configPath)) {
             return;
         }
-        try (Reader reader = new InputStreamReader(new FileInputStream(CONFIG_PATH.toFile()), StandardCharsets.UTF_8)) {
+        try (Reader reader = Files.newBufferedReader(configPath, StandardCharsets.UTF_8)) {
             JsonObject root = GSON.fromJson(reader, JsonObject.class);
             // Load token
             if (root != null && root.has(TOKEN_KEY) && root.get(TOKEN_KEY).isJsonPrimitive()) {

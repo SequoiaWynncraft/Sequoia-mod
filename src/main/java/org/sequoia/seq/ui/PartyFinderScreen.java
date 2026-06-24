@@ -382,8 +382,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             nvgScissor(nvg, contentX, contentY, contentWidth, contentHeight);
 
             float cursorY = contentY - scrollOffset + PADDING;
-            for (int i = 0; i < party().getParties().size(); i++) {
-                PartyListing party = party().getParties().get(i);
+            List<PartyListing> parties = party().getParties();
+            for (int i = 0; i < parties.size(); i++) {
+                PartyListing party = parties.get(i);
                 if (!matchesFilters(party)) continue;
 
                 float cardH = party.expanded
@@ -2230,8 +2231,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float cursorY = contentY - scrollOffset + PADDING;
         float contentWidth = panelWidth;
 
-        for (int i = 0; i < party().getParties().size(); i++) {
-            PartyListing party = party().getParties().get(i);
+        List<PartyListing> parties = party().getParties();
+        for (int i = 0; i < parties.size(); i++) {
+            PartyListing party = parties.get(i);
             if (!matchesFilters(party)) continue;
 
             float cardX = panelX + PADDING;
