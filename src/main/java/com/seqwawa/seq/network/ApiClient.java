@@ -198,6 +198,10 @@ public class ApiClient {
         return patch("/party-finder/members/me/role", body, Listing.class);
     }
 
+    public CompletableFuture<LeaderboardBadgeResponse> getLeaderboardBadges() {
+        return get("/leaderboard/badges", LeaderboardBadgeResponse.class);
+    }
+
     public CompletableFuture<Listing> reassignRole(long listingId, UUID targetUUID, PartyRole role) {
         JsonObject body = new JsonObject();
         body.addProperty("role", role.name());

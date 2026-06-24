@@ -18,7 +18,8 @@
     ]
   },
   "mixins": [
-    "seq.mixins.json"
+    "seq.mixins.json",
+    "seq.wynntils.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=${loader_version}",

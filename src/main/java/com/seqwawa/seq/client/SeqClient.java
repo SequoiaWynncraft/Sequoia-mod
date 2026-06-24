@@ -15,11 +15,11 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
+import com.seqwawa.seq.command.SeqCommand;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.events.GameStartEvent;
 import com.seqwawa.seq.events.MinecraftFinishedLoading;
-import com.seqwawa.seq.command.SeqCommand;
 import com.seqwawa.seq.halcyon.HalcyonRangeVisualiserClient;
 import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.BombShareManager;
@@ -30,7 +30,10 @@ import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
 import com.seqwawa.seq.managers.GuildWarTrackers;
+import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyFinderManager;
+import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
+import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
@@ -38,8 +41,8 @@ import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
 import com.seqwawa.seq.ui.SequoiaScreen;
-import com.seqwawa.seq.utils.WynnClassCache;
 import com.seqwawa.seq.update.UpdateManager;
+import com.seqwawa.seq.utils.WynnClassCache;
 import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
 import org.slf4j.Logger;
 
@@ -134,6 +137,12 @@ public class SeqClient implements ClientModInitializer {
     @Getter
     public static GuildRewardAutomationManager guildRewardAutomationManager;
 
+    @Getter
+    public static LeaderboardBadgeService leaderboardBadgeService;
+
+    @Getter
+    public static SeqBadgeNametagRendererHandle seqBadgeNametagRenderer;
+
     private static KeyMapping openScreenKey;
     private static KeyMapping shareBombsKey;
     private static WynnClassType lastBroadcastPartyClass;
@@ -163,6 +172,8 @@ public class SeqClient implements ClientModInitializer {
         configManager = new ConfigManager();
         configManager.load();
         configManager.migrateToken();
+        leaderboardBadgeService = LeaderboardBadgeService.getInstance();
+        seqBadgeNametagRenderer = SeqBadgeNametagRenderers.createIfAvailable();
         authService = MinecraftAuthService.getInstance();
         SeqCommand.register();
         RadianceCheckerClient.initialize();
@@ -234,6 +245,12 @@ public class SeqClient implements ClientModInitializer {
             }
             if (guildRewardAutomationManager != null) {
                 guildRewardAutomationManager.tick();
+            }
+            if (leaderboardBadgeService != null) {
+                leaderboardBadgeService.tick();
+            }
+            if (seqBadgeNametagRenderer != null) {
+                seqBadgeNametagRenderer.tick();
             }
             RadianceCheckerClient.tick(client);
             ConnectionManager.flushPendingOutbound();

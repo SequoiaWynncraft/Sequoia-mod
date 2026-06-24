@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.seqwawa.seq.mixins",
+  "compatibilityLevel": "JAVA_21",
+  "plugin": "com.seqwawa.seq.mixins.WynntilsMixinPlugin",
+  "client": [
+    "WynntilsCustomNametagRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

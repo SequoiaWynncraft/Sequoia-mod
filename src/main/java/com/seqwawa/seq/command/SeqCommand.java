@@ -22,6 +22,7 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.managers.BombShareManager;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
+import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.PartyListing;
 import com.seqwawa.seq.map.GatheringClusterCache;
@@ -117,6 +118,7 @@ public class SeqCommand {
                                 .then(buildAspectRewardCommand())
                                 .then(buildTomeRewardCommand())
                                 .then(buildBombCommand())
+                                .then(buildBadgeCommand())
                                 .then(buildMapCommand())
                                 .then(buildPartyCommand("party"))
                                 .then(buildPartyCommand("p"));
@@ -277,6 +279,15 @@ public class SeqCommand {
                                                                 .executes(SeqCommand::runDirectAspectReward)));
         }
 
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildBadgeCommand() {
+                return ClientCommandManager.literal("badges")
+                                .executes(SeqCommand::runBadgeStatus)
+                                .then(ClientCommandManager.literal("status")
+                                                .executes(SeqCommand::runBadgeStatus))
+                                .then(ClientCommandManager.literal("refresh")
+                                                .executes(SeqCommand::runBadgeRefresh));
+        }
+
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildMapCommand() {
                 return ClientCommandManager.literal("map")
                                 .executes(SeqCommand::openGatheringMapScreen)
@@ -349,6 +360,24 @@ public class SeqCommand {
 
         private static int openGatheringMapScreen(CommandContext<FabricClientCommandSource> ctx) {
                 SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new GatheringMapScreen(SeqClient.mc.screen)));
+                return 1;
+        }
+
+        private static int runBadgeStatus(CommandContext<FabricClientCommandSource> ctx) {
+                String rendererStatus = SeqClient.getSeqBadgeNametagRenderer() == null
+                                ? "disabled"
+                                : SeqClient.getSeqBadgeNametagRenderer().status();
+                sendFeedback(
+                                ctx.getSource(),
+                                LeaderboardBadgeService.getInstance().status() + " | renderer=" + rendererStatus);
+                return 1;
+        }
+
+        private static int runBadgeRefresh(CommandContext<FabricClientCommandSource> ctx) {
+                LeaderboardBadgeService.getInstance()
+                                .refreshAsync()
+                                .thenAccept(message -> sendFeedback(ctx.getSource(), message));
+                sendFeedback(ctx.getSource(), "Refreshing leaderboard badges...");
                 return 1;
         }
 
