@@ -4,6 +4,7 @@ import java.awt.Color;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -19,7 +20,6 @@ import org.lwjgl.glfw.GLFW;
 import org.lwjgl.nanovg.NVGPaint;
 import org.lwjgl.system.MemoryUtil;
 import org.sequoia.seq.client.SeqClient;
-import org.sequoia.seq.map.ClusterOutlinePoint;
 import org.sequoia.seq.map.ClusterScoreMode;
 import org.sequoia.seq.map.GatheringClusterCache;
 import org.sequoia.seq.map.GatheringMapImageService;
@@ -29,6 +29,7 @@ import org.sequoia.seq.map.GatheringNodeCluster;
 import org.sequoia.seq.map.GatheringNodeService;
 import org.sequoia.seq.map.GatheringProfession;
 import org.sequoia.seq.map.MapCalibration;
+import org.sequoia.seq.map.MapBounds;
 import org.sequoia.seq.map.MapViewport;
 import org.sequoia.seq.map.GatheringMapImageService.TileKey;
 import org.sequoia.seq.map.GatheringMapImageService.TileSet;
@@ -102,6 +103,8 @@ public class GatheringMapScreen extends Screen {
     private List<GatheringNode> cachedSourceNodes = List.of();
     private List<GatheringNode> cachedFilteredNodes = List.of();
     private List<GatheringNodeCluster> cachedClusters = List.of();
+    private final Map<GatheringNodeCluster, ClusterOutlineShape> clusterOutlineShapes = new IdentityHashMap<>();
+    private double clusterOutlineScale = Double.NaN;
     private List<String> cachedResourceOptions = List.of();
     private String cachedClusterKey = "";
     private long cachedSettingsVersion = -1;
@@ -110,6 +113,12 @@ public class GatheringMapScreen extends Screen {
     private long loadedMapImageVersion = -1;
     private final Map<TileKey, Integer> tileImageHandles = new HashMap<>();
     private String loadedTileVersion = "";
+    private long loadedTileContentVersion = -1;
+    private TileRange cachedVisibleTileRange;
+    private TileRange cachedPrefetchTileRange;
+    private List<TileKey> cachedVisibleTiles = List.of();
+    private List<TileKey> cachedPrefetchTiles = List.of();
+    private long lastTileRequestAtMs;
     private float nvgMouseX;
     private float nvgMouseY;
 
@@ -171,7 +180,7 @@ public class GatheringMapScreen extends Screen {
         NVGWrapper.drawRect(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(), MAP_TINT);
         boolean clusterMode = shouldRenderClusters();
         if (showClusters && !cachedClusters.isEmpty()) {
-            renderClusterHulls(nvg, viewport, true);
+            renderClusterHulls(nvg, viewport, !draggingMap);
             if (clusterMode) {
                 renderClusterBadges(nvg, viewport, true);
             }
@@ -183,7 +192,7 @@ public class GatheringMapScreen extends Screen {
             }
         }
         renderPlayer(nvg, viewport);
-        if (hoveredCluster != null && (clusterMode || hoveredNode == null)) {
+        if (!draggingMap && hoveredCluster != null && (clusterMode || hoveredNode == null)) {
             renderClusterTooltip(nvg, hoveredCluster);
         }
         renderSidebar(nvg);
@@ -229,23 +238,41 @@ public class GatheringMapScreen extends Screen {
                 clearTileImageHandles(nvg);
                 loadedTileVersion = "";
             }
+            resetTileRangeCache();
             return;
         }
         if (!manifest.version().equals(loadedTileVersion)) {
             clearTileImageHandles(nvg);
             loadedTileVersion = manifest.version();
+            resetTileRangeCache();
         }
 
         TileRange visibleRange = visibleTileRange(viewport, tileSet, 0);
         TileRange prefetchRange = visibleTileRange(viewport, tileSet, 1);
-        List<TileKey> visibleTiles = tilesInRange(visibleRange);
-        List<TileKey> prefetchTiles = tilesInRange(prefetchRange);
-        mapImageService.requestTiles(visibleTiles, prefetchTiles);
+        boolean visibleRangeChanged = !visibleRange.equals(cachedVisibleTileRange);
+        boolean prefetchRangeChanged = !prefetchRange.equals(cachedPrefetchTileRange);
+        if (visibleRangeChanged) {
+            cachedVisibleTileRange = visibleRange;
+            cachedVisibleTiles = tilesInRange(visibleRange);
+        }
+        if (prefetchRangeChanged) {
+            cachedPrefetchTileRange = prefetchRange;
+            cachedPrefetchTiles = tilesInRange(prefetchRange);
+        }
+
+        long now = System.currentTimeMillis();
+        if (visibleRangeChanged || prefetchRangeChanged || now - lastTileRequestAtMs >= 1_000L) {
+            mapImageService.requestTiles(cachedVisibleTiles, cachedPrefetchTiles);
+            lastTileRequestAtMs = now;
+        }
+
+        long tileContentVersion = mapImageService.tileVersion();
+        boolean loadMissingTileHandles = visibleRangeChanged || tileContentVersion != loadedTileContentVersion;
 
         nvgScissor(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         try {
-            for (TileKey key : visibleTiles) {
-                int tileImage = tileImageHandle(nvg, key);
+            for (TileKey key : cachedVisibleTiles) {
+                int tileImage = tileImageHandle(nvg, key, loadMissingTileHandles);
                 if (tileImage != 0) {
                     renderTile(nvg, viewport, tileSet, key, tileImage);
                 }
@@ -253,12 +280,16 @@ public class GatheringMapScreen extends Screen {
         } finally {
             nvgResetScissor(nvg);
         }
+        loadedTileContentVersion = tileContentVersion;
     }
 
-    private int tileImageHandle(long nvg, TileKey key) {
+    private int tileImageHandle(long nvg, TileKey key, boolean loadMissing) {
         Integer existing = tileImageHandles.get(key);
         if (existing != null) {
             return existing;
+        }
+        if (!loadMissing) {
+            return 0;
         }
         byte[] imageBytes = mapImageService.cachedTileBytes(key);
         if (imageBytes == null || imageBytes.length == 0) {
@@ -357,6 +388,15 @@ public class GatheringMapScreen extends Screen {
         tileImageHandles.clear();
     }
 
+    private void resetTileRangeCache() {
+        cachedVisibleTileRange = null;
+        cachedPrefetchTileRange = null;
+        cachedVisibleTiles = List.of();
+        cachedPrefetchTiles = List.of();
+        loadedTileContentVersion = -1;
+        lastTileRequestAtMs = 0;
+    }
+
     private int mapImageHandle(long nvg) {
         long imageVersion = mapImageService.version();
         if (mapImageHandle != 0 && loadedMapImageVersion == imageVersion) {
@@ -404,30 +444,37 @@ public class GatheringMapScreen extends Screen {
             GatheringNodeCluster cluster = cachedClusters.get(index);
             float x = viewport.worldToScreenX(cluster.centerX());
             float y = viewport.worldToScreenZ(cluster.centerZ());
+            ClusterOutlineShape outline = clusterOutlineShape(cluster, viewport.pixelsPerBlock());
+            if (!outline.isVisible(viewport, x, y)) {
+                continue;
+            }
             float radius = clusterRadius(cluster);
-            float distance = (float) Math.hypot(nvgMouseX - x, nvgMouseY - y);
-            boolean hovered = allowHover && (distance <= Math.max(12, radius + 3) || isPointInsideCluster(viewport, cluster, nvgMouseX, nvgMouseY));
+            float distance = allowHover ? (float) Math.hypot(nvgMouseX - x, nvgMouseY - y) : Float.MAX_VALUE;
+            boolean hovered = allowHover
+                    && (distance <= Math.max(12, radius + 3)
+                            || isPointInsideCluster(outline, x, y, nvgMouseX, nvgMouseY));
             if (hovered && distance < bestHoverDistance) {
                 bestHoverDistance = distance;
                 hoveredCluster = cluster;
             }
-            boolean selected = cluster.equals(selectedCluster);
-            renderClusterOutline(nvg, viewport, cluster, selected, selected || hovered);
+            boolean selected = cluster == selectedCluster;
+            renderClusterOutline(nvg, viewport, cluster, outline, x, y, selected, selected || hovered);
         }
         nvgResetScissor(nvg);
     }
 
     private void renderClusterBadges(long nvg, MapViewport viewport, boolean overviewMode) {
         nvgScissor(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+        MapBounds visibleBounds = viewport.visibleBounds();
         GatheringNodeCluster hoveredBadge = null;
         GatheringNodeCluster selectedBadge = null;
         for (int index = cachedClusters.size() - 1; index >= 0; index--) {
             GatheringNodeCluster cluster = cachedClusters.get(index);
-            if (!viewport.visibleBounds().contains(cluster.centerX(), cluster.centerZ())) {
+            if (!visibleBounds.contains(cluster.centerX(), cluster.centerZ())) {
                 continue;
             }
-            boolean selected = cluster.equals(selectedCluster);
-            boolean hovered = cluster.equals(hoveredCluster);
+            boolean selected = cluster == selectedCluster;
+            boolean hovered = cluster == hoveredCluster;
             if (!overviewMode && !selected && !hovered) {
                 continue;
             }
@@ -451,15 +498,22 @@ public class GatheringMapScreen extends Screen {
         if (hoveredBadge != null) {
             float x = viewport.worldToScreenX(hoveredBadge.centerX());
             float y = viewport.worldToScreenZ(hoveredBadge.centerZ());
-            boolean selected = hoveredBadge.equals(selectedCluster);
+            boolean selected = hoveredBadge == selectedCluster;
             drawClusterMarker(nvg, x, y, clusterRadius(hoveredBadge), hoveredBadge, selected, true);
         }
         nvgResetScissor(nvg);
     }
 
-    private void renderClusterOutline(long nvg, MapViewport viewport, GatheringNodeCluster cluster, boolean selected, boolean highlighted) {
-        List<ScreenPoint> outline = buildClusterDisplayOutline(viewport, cluster.outline());
-        if (outline.isEmpty()) {
+    private void renderClusterOutline(
+            long nvg,
+            MapViewport viewport,
+            GatheringNodeCluster cluster,
+            ClusterOutlineShape outline,
+            float centerScreenX,
+            float centerScreenY,
+            boolean selected,
+            boolean highlighted) {
+        if (outline.points().isEmpty()) {
             return;
         }
         Color color = selected ? SELECTED_CLUSTER_COLOR : cluster.profession().color();
@@ -467,13 +521,13 @@ public class GatheringMapScreen extends Screen {
         Color stroke = new Color(color.getRed(), color.getGreen(), color.getBlue(), highlighted ? 220 : 105);
 
         nvgBeginPath(nvg);
-        ScreenPoint first = outline.getFirst();
-        nvgMoveTo(nvg, first.x(), first.y());
-        for (int index = 1; index < outline.size(); index++) {
-            ScreenPoint point = outline.get(index);
-            nvgLineTo(nvg, point.x(), point.y());
+        ScreenPoint first = outline.points().getFirst();
+        nvgMoveTo(nvg, centerScreenX + first.x(), centerScreenY + first.y());
+        for (int index = 1; index < outline.points().size(); index++) {
+            ScreenPoint point = outline.points().get(index);
+            nvgLineTo(nvg, centerScreenX + point.x(), centerScreenY + point.y());
         }
-        if (outline.size() > 2) {
+        if (outline.points().size() > 2) {
             nvgClosePath(nvg);
             var fillColor = NVGContext.nvgColor(fill);
             nvgFillColor(nvg, fillColor);
@@ -497,16 +551,18 @@ public class GatheringMapScreen extends Screen {
     private void renderNodes(long nvg, MapViewport viewport, List<GatheringNode> nodes) {
         hoveredNode = null;
         float bestHoverDistance = 10f;
+        boolean allowHover = !draggingMap;
+        MapBounds visibleBounds = viewport.visibleBounds();
         nvgScissor(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         for (GatheringNode node : nodes) {
-            if (!viewport.visibleBounds().contains(node.x(), node.z())) {
+            if (!visibleBounds.contains(node.x(), node.z())) {
                 continue;
             }
             float x = viewport.worldToScreenX(node.x());
             float y = viewport.worldToScreenZ(node.z());
             float radius = (float) Math.max(1.5, Math.min(4.0, pixelsPerBlock * 12.0));
-            float distance = (float) Math.hypot(nvgMouseX - x, nvgMouseY - y);
-            boolean hovered = distance <= Math.max(8, radius + 3);
+            float distance = allowHover ? (float) Math.hypot(nvgMouseX - x, nvgMouseY - y) : Float.MAX_VALUE;
+            boolean hovered = allowHover && distance <= Math.max(8, radius + 3);
             if (hovered && distance < bestHoverDistance) {
                 bestHoverDistance = distance;
                 hoveredNode = node;
@@ -528,7 +584,8 @@ public class GatheringMapScreen extends Screen {
         }
         double x = SeqClient.mc.player.getX();
         double z = SeqClient.mc.player.getZ();
-        if (!viewport.visibleBounds().contains(x, z)) {
+        MapBounds visibleBounds = viewport.visibleBounds();
+        if (!visibleBounds.contains(x, z)) {
             return;
         }
         float sx = viewport.worldToScreenX(x);
@@ -622,7 +679,7 @@ public class GatheringMapScreen extends Screen {
             y += 12;
             for (int index = 0; index < Math.min(SIDEBAR_CLUSTER_LIMIT, cachedClusters.size()); index++) {
                 GatheringNodeCluster cluster = cachedClusters.get(index);
-                boolean active = cluster.equals(selectedCluster);
+                boolean active = cluster == selectedCluster;
                 NVGWrapper.drawRect(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, 34, active ? CONTROL_ACTIVE : CONTROL_COLOR);
                 NVGWrapper.drawRectOutline(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, 34, 1, BORDER_COLOR);
                 float rowTextWidth = SIDEBAR_WIDTH - PADDING * 2 - 16;
@@ -784,6 +841,8 @@ public class GatheringMapScreen extends Screen {
         cachedFilteredNodes = result.filteredNodes();
         cachedResourceOptions = result.resourceOptions();
         cachedClusters = result.clusters();
+        clusterOutlineShapes.clear();
+        clusterOutlineScale = Double.NaN;
         hoveredNode = null;
         hoveredCluster = null;
         clearInvalidSelections();
@@ -853,24 +912,32 @@ public class GatheringMapScreen extends Screen {
         if (selectedNode != null && !cachedFilteredNodes.contains(selectedNode)) {
             selectedNode = null;
         }
-        if (selectedCluster != null && !cachedClusters.contains(selectedCluster)) {
+        if (selectedCluster != null && cachedClusters.stream().noneMatch(cluster -> cluster == selectedCluster)) {
             selectedCluster = null;
         }
     }
 
-    private static boolean isPointInsideCluster(MapViewport viewport, GatheringNodeCluster cluster, float screenX, float screenY) {
-        List<ScreenPoint> outline = buildClusterDisplayOutline(viewport, cluster.outline());
-        if (outline.size() < 3) {
+    private static boolean isPointInsideCluster(
+            ClusterOutlineShape outline,
+            float centerScreenX,
+            float centerScreenY,
+            float screenX,
+            float screenY) {
+        if (outline.points().size() < 3) {
             return false;
         }
+        float localX = screenX - centerScreenX;
+        float localY = screenY - centerScreenY;
         boolean inside = false;
-        for (int index = 0, previous = outline.size() - 1; index < outline.size(); previous = index++) {
-            float currentX = outline.get(index).x();
-            float currentY = outline.get(index).y();
-            float previousX = outline.get(previous).x();
-            float previousY = outline.get(previous).y();
-            boolean intersects = (currentY > screenY) != (previousY > screenY)
-                    && screenX < (previousX - currentX) * (screenY - currentY) / (previousY - currentY) + currentX;
+        for (int index = 0, previous = outline.points().size() - 1;
+                index < outline.points().size();
+                previous = index++) {
+            float currentX = outline.points().get(index).x();
+            float currentY = outline.points().get(index).y();
+            float previousX = outline.points().get(previous).x();
+            float previousY = outline.points().get(previous).y();
+            boolean intersects = (currentY > localY) != (previousY > localY)
+                    && localX < (previousX - currentX) * (localY - currentY) / (previousY - currentY) + currentX;
             if (intersects) {
                 inside = !inside;
             }
@@ -878,19 +945,29 @@ public class GatheringMapScreen extends Screen {
         return inside;
     }
 
-    private static List<ScreenPoint> buildClusterDisplayOutline(MapViewport viewport, List<ClusterOutlinePoint> outline) {
-        List<ScreenPoint> points = outline.stream()
-                .map(point -> new ScreenPoint(viewport.worldToScreenX(point.x()), viewport.worldToScreenZ(point.z())))
+    private ClusterOutlineShape clusterOutlineShape(GatheringNodeCluster cluster, double scale) {
+        if (Double.compare(clusterOutlineScale, scale) != 0) {
+            clusterOutlineShapes.clear();
+            clusterOutlineScale = scale;
+        }
+        return clusterOutlineShapes.computeIfAbsent(cluster, ignored -> buildClusterOutlineShape(cluster, scale));
+    }
+
+    private static ClusterOutlineShape buildClusterOutlineShape(GatheringNodeCluster cluster, double scale) {
+        List<ScreenPoint> points = cluster.outline().stream()
+                .map(point -> new ScreenPoint(
+                        (float) ((point.x() - cluster.centerX()) * scale),
+                        (float) ((point.z() - cluster.centerZ()) * scale)))
                 .toList();
         if (points.size() < 3) {
-            return points;
+            return ClusterOutlineShape.from(points);
         }
 
-        List<ScreenPoint> displayPoints = expandFromCentroid(points, hullPaddingForZoom(viewport.pixelsPerBlock()));
+        List<ScreenPoint> displayPoints = expandFromCentroid(points, hullPaddingForZoom(scale));
         for (int pass = 0; pass < HULL_SMOOTHING_PASSES; pass++) {
             displayPoints = chaikinClosedPass(displayPoints);
         }
-        return displayPoints;
+        return ClusterOutlineShape.from(displayPoints);
     }
 
     private static float hullPaddingForZoom(double pixelsPerBlock) {
@@ -1074,6 +1151,8 @@ public class GatheringMapScreen extends Screen {
                 selectedCluster = null;
             }
             draggingMap = true;
+            hoveredNode = null;
+            hoveredCluster = null;
             resourceDropdownOpen = false;
             resourceInputFocused = false;
             resourceSearch = "";
@@ -1094,6 +1173,8 @@ public class GatheringMapScreen extends Screen {
             double guiScale = SeqClient.mc.getWindow().getGuiScale();
             centerX -= (deltaX * guiScale / 2.0) / pixelsPerBlock;
             centerZ -= (deltaY * guiScale / 2.0) / pixelsPerBlock;
+            hoveredNode = null;
+            hoveredCluster = null;
             return true;
         }
         return super.mouseDragged(click, deltaX, deltaY);
@@ -1375,6 +1456,37 @@ public class GatheringMapScreen extends Screen {
     }
 
     private record ScreenPoint(float x, float y) {}
+
+    private record ClusterOutlineShape(
+            List<ScreenPoint> points,
+            float minX,
+            float maxX,
+            float minY,
+            float maxY) {
+        private static ClusterOutlineShape from(List<ScreenPoint> points) {
+            if (points.isEmpty()) {
+                return new ClusterOutlineShape(List.of(), 0, 0, 0, 0);
+            }
+            float minX = Float.POSITIVE_INFINITY;
+            float maxX = Float.NEGATIVE_INFINITY;
+            float minY = Float.POSITIVE_INFINITY;
+            float maxY = Float.NEGATIVE_INFINITY;
+            for (ScreenPoint point : points) {
+                minX = Math.min(minX, point.x());
+                maxX = Math.max(maxX, point.x());
+                minY = Math.min(minY, point.y());
+                maxY = Math.max(maxY, point.y());
+            }
+            return new ClusterOutlineShape(List.copyOf(points), minX, maxX, minY, maxY);
+        }
+
+        private boolean isVisible(MapViewport viewport, float centerScreenX, float centerScreenY) {
+            return centerScreenX + maxX >= viewport.screenX()
+                    && centerScreenX + minX <= viewport.screenX() + viewport.screenWidth()
+                    && centerScreenY + maxY >= viewport.screenY()
+                    && centerScreenY + minY <= viewport.screenY() + viewport.screenHeight();
+        }
+    }
 
     private record TileRange(int minX, int maxX, int minY, int maxY) {}
 

@@ -23,6 +23,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -77,14 +78,18 @@ public final class GatheringMapImageService {
     private final Gson gson = new Gson();
     private final Map<TileKey, CompletableFuture<Void>> tileDownloads = new ConcurrentHashMap<>();
     private final Map<TileKey, Long> tileRetryAfterMs = new ConcurrentHashMap<>();
+    private final Set<TileKey> validatedCachedTiles = ConcurrentHashMap.newKeySet();
+    private final Map<TileKey, byte[]> readyTileBytes = new ConcurrentHashMap<>();
 
     private volatile byte[] imageBytes;
     private volatile Source imageSource = Source.NONE;
     private volatile String hqStatus = "not requested";
     private volatile String tileStatus = "not requested";
     private volatile long version;
+    private volatile long tileVersion;
     private volatile Manifest manifest;
     private volatile boolean loadRequested;
+    private volatile String validatedTileManifestVersion = "";
 
     public static synchronized GatheringMapImageService getInstance() {
         if (instance == null) {
@@ -115,6 +120,10 @@ public final class GatheringMapImageService {
 
     public long version() {
         return version;
+    }
+
+    public long tileVersion() {
+        return tileVersion;
     }
 
     public Source imageSource() {
@@ -161,6 +170,9 @@ public final class GatheringMapImageService {
         }
         tileDownloads.clear();
         tileRetryAfterMs.clear();
+        validatedCachedTiles.clear();
+        readyTileBytes.clear();
+        validatedTileManifestVersion = "";
         imageBytes = null;
         imageSource = Source.NONE;
         hqStatus = "cache cleared";
@@ -168,6 +180,7 @@ public final class GatheringMapImageService {
         manifest = null;
         loadRequested = false;
         version++;
+        tileVersion++;
         requestLoad();
         return "Map image cache cleared (" + deletedFiles + " files). Reload started.";
     }
@@ -177,13 +190,20 @@ public final class GatheringMapImageService {
         if (current == null || current.tiles() == null || key == null) {
             return null;
         }
+        ensureTileCacheVersion(current);
+        byte[] ready = readyTileBytes.remove(key);
+        if (ready != null) {
+            return ready;
+        }
         Path path = tileCachePath(current, key);
         if (!Files.isRegularFile(path)) {
             return null;
         }
         try {
             byte[] cached = Files.readAllBytes(path);
-            if (matchesSha256(cached, current.tiles().sha256().get(key.id()))) {
+            if (validatedCachedTiles.contains(key)
+                    || matchesSha256(cached, current.tiles().sha256().get(key.id()))) {
+                validatedCachedTiles.add(key);
                 return cached;
             }
         } catch (IOException exception) {
@@ -391,7 +411,7 @@ public final class GatheringMapImageService {
         if (!isValidTile(current.tiles(), key)) {
             return;
         }
-        if (cachedTileBytes(key) != null) {
+        if (isCachedTile(current, key, visible)) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -416,10 +436,18 @@ public final class GatheringMapImageService {
                 scheduleTileRetry(key);
                 return;
             }
+            if (manifest != current) {
+                return;
+            }
             writeCache(tileCachePath(current, key), downloaded);
+            ensureTileCacheVersion(current);
+            validatedCachedTiles.add(key);
+            if (visible) {
+                readyTileBytes.put(key, downloaded);
+            }
             tileRetryAfterMs.remove(key);
             tileStatus = "cached " + key.id();
-            version++;
+            tileVersion++;
         } catch (IOException exception) {
             tileStatus = "failed " + key.id() + ": " + exception.getMessage();
             scheduleTileRetry(key);
@@ -561,6 +589,43 @@ public final class GatheringMapImageService {
                 && key.x() < tileSet.columns()
                 && key.y() < tileSet.rows()
                 && tileSet.sha256().containsKey(key.id());
+    }
+
+    private boolean isCachedTile(Manifest current, TileKey key, boolean retainBytes) {
+        ensureTileCacheVersion(current);
+        if (validatedCachedTiles.contains(key)) {
+            return true;
+        }
+
+        Path path = tileCachePath(current, key);
+        if (!Files.isRegularFile(path)) {
+            return false;
+        }
+        try {
+            byte[] cached = Files.readAllBytes(path);
+            if (!matchesSha256(cached, current.tiles().sha256().get(key.id()))) {
+                return false;
+            }
+            validatedCachedTiles.add(key);
+            if (retainBytes) {
+                readyTileBytes.putIfAbsent(key, cached);
+            }
+            return true;
+        } catch (IOException exception) {
+            SeqClient.LOGGER.warn("[GatheringMap] Failed to validate cached tile {}.", key.id(), exception);
+            return false;
+        }
+    }
+
+    private synchronized void ensureTileCacheVersion(Manifest current) {
+        String manifestVersion = current == null || current.version() == null ? "" : current.version();
+        if (manifestVersion.equals(validatedTileManifestVersion)) {
+            return;
+        }
+        validatedCachedTiles.clear();
+        readyTileBytes.clear();
+        validatedTileManifestVersion = manifestVersion;
+        tileVersion++;
     }
 
     private static Path tileCachePath(Manifest current, TileKey key) {
