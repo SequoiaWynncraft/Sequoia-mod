@@ -868,7 +868,7 @@ class UpdateManagerTest {
                         UpdateApplier.class.getResourceAsStream("UpdateApplier.class"),
                         "Missing UpdateApplier class bytes");
                 JarOutputStream output = new JarOutputStream(Files.newOutputStream(jarFile))) {
-            output.putNextEntry(new JarEntry("org/sequoia/seq/update/UpdateApplier.class"));
+            output.putNextEntry(new JarEntry("com/seqwawa/seq/update/UpdateApplier.class"));
             classBytes.transferTo(output);
             output.closeEntry();
         }
