@@ -46,7 +46,7 @@ jobs:
           cache: gradle
 
       - name: Run updater tests on Windows
-        run: .\gradlew.bat test --tests org.sequoia.seq.update.UpdateManagerTest --tests org.sequoia.seq.update.UpdateApplierTest --stacktrace
+        run: .\gradlew.bat test --tests com.seqwawa.seq.update.UpdateManagerTest --tests com.seqwawa.seq.update.UpdateApplierTest --stacktrace
 
       - name: Upload Windows updater test reports
         if: failure()
