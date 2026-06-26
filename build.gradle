@@ -165,10 +165,10 @@ def generateBuildConfig = tasks.register("generateBuildConfig") {
     outputs.dir(buildConfigDir)
 
     doLast {
-        def outputDir = buildConfigDir.get().asFile.toPath().resolve("org/sequoia/seq/network")
+        def outputDir = buildConfigDir.get().asFile.toPath().resolve("com/seqwawa/seq/network")
         outputDir.toFile().mkdirs()
         outputDir.resolve("BuildConfig.java").toFile().text = """\
-package org.sequoia.seq.network;
+package com.seqwawa.seq.network;
 
 /** Auto-generated — do not edit. */
 public final class BuildConfig {
