@@ -84,6 +84,29 @@ class RaidTrackerTest {
     }
 
     @Test
+    void parseRaidCompletionHandlesWrongOrderAspectsAndEmeralds() {
+        RaidTracker.ParsedRaidCompletion parsed = RaidTracker.parseRaidCompletion(Component.literal(
+                "󏿼󐀆 AAA, BBB, CCC, and DDD finished The Nameless Anomaly and claimed 2048x Emeralds,\n"
+                        + "󏿼󐀆 2x Aspects, and +10367m Guild Experience, and +410 Seasonal Rating"));
+
+        assertNotNull(parsed);
+        assertEquals(List.of("AAA", "BBB", "CCC", "DDD"), parsed.partyMembers());
+        assertEquals(2048, parsed.emeralds());
+        assertEquals(2, parsed.aspects());
+    }
+
+    @Test
+    void parseRaidCompletionHandlesAllyGuildRaids() {
+        RaidTracker.ParsedRaidCompletion parsed = RaidTracker.parseRaidCompletion(Component.literal(
+                "󏿼󐀆 AAA, and BBB finished The Nameless Anomaly and claimed 2048x Emeralds,\n"
+                        + "󏿼󐀆 2x Aspects, and +5183m Guild Experience, and +220 Seasonal Rating"));
+
+        assertNotNull(parsed);
+        assertEquals(List.of("AAA", "BBB"), parsed.partyMembers());
+        assertEquals(5.183, parsed.guildExp());
+    }
+
+    @Test
     void parseRaidCompletionPrefersDisplayedUsernamesWhenAllDisplayedNamesAreValid() {
         Component message = Component.empty()
                 .append(Component.literal("Tannslee").withStyle(Style.EMPTY.withInsertion("eep")))

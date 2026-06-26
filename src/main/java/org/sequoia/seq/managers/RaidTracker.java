@@ -42,11 +42,10 @@ public class RaidTracker {
      * Group 6: Seasonal Rating
      */
     private static final Pattern RAID_FINISH_PATTERN = Pattern.compile(
-            "^([^,:]+?(?:\\s*,\\s*[^,:]+?)*(?:,?\\s+and\\s+[^,:]+?)?)"
-                    + "\\s+finished\\s+(.+?)\\s+and claimed\\s+(\\d+)x Aspects,"
-                    + "\\s+(\\d+)x Emeralds,\\s+(?:and\\s+)?\\+([\\d.]+)m Guild Experience"
-                    + "(?:,\\s+and\\s+\\+(\\d+)\\s+Seasonal Rating)?$");
-    private static final Pattern USERNAME_PATTERN = Pattern.compile("[a-zA-Z0-9_]{3,16}");
+            "^((?:(?:and )?[\\w ]{1,20}(?:, )?){1,4}) finished ([\\w ']+?) "
+            + "and claimed (\\d+)x (?:Emeralds|Aspects), (\\d+)x (?:Emeralds|Aspects), "
+            + "(?:and )?\\+(\\d+)m Guild Experience(?:, and \\+(\\d+) Seasonal Rating)?$");
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("\\w{3,16}");
     private static final Pattern COMMA_SPACING_PATTERN = Pattern.compile("\\s*,\\s*");
     private static final String FINISHED_BOUNDARY = " finished ";
     /**
@@ -147,8 +146,14 @@ public class RaidTracker {
         }
 
         String raidName = matcher.group(2);
-        int aspects = Integer.parseInt(matcher.group(3));
-        int emeralds = Integer.parseInt(matcher.group(4));
+
+        // Determine if aspects or emeralds were displayed first
+        int aspectPos = cleaned.indexOf("Aspects");
+        int emeraldPos = cleaned.indexOf("Emeralds");
+
+        int aspects = Integer.parseInt(aspectPos < emeraldPos ? matcher.group(3) : matcher.group(4));
+        int emeralds = Integer.parseInt(aspectPos < emeraldPos ? matcher.group(4) : matcher.group(3));
+
         // Wynncraft reports XP in millions (e.g. "10367m" = 10,367,000) — divide
         // by 1000 so the backend receives a friendlier value (10367 -> 10.367).
         double guildExp = Double.parseDouble(matcher.group(5)) / 1000.0;
