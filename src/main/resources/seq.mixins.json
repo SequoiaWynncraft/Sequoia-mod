@@ -1,7 +1,7 @@
 {
   "required": true,
   "minVersion": "0.8",
-  "package": "org.sequoia.seq.mixins",
+  "package": "com.seqwawa.seq.mixins",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "MinecraftMixin"
