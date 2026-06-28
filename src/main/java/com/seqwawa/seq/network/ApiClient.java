@@ -20,6 +20,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.Activity;
+import com.seqwawa.seq.model.LeaderboardBadgeResponse;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
@@ -196,6 +197,10 @@ public class ApiClient {
         JsonObject body = new JsonObject();
         body.addProperty("role", role.name());
         return patch("/party-finder/members/me/role", body, Listing.class);
+    }
+
+    public CompletableFuture<LeaderboardBadgeResponse> getLeaderboardBadges() {
+        return get("/leaderboard/badges", LeaderboardBadgeResponse.class);
     }
 
     public CompletableFuture<Listing> reassignRole(long listingId, UUID targetUUID, PartyRole role) {

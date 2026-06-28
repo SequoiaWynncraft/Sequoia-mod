@@ -26,10 +26,13 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("enable_easter_eggs", "Enable easter eggs");
         DISPLAY_NAME_OVERRIDES.put("startup_video", "Startup video");
         DISPLAY_NAME_OVERRIDES.put("enable_radiance_visualiser", "Enable Radiance visualiser");
+        DISPLAY_NAME_OVERRIDES.put("show_leaderboard_badges", "Show leaderboard badges");
+        DISPLAY_NAME_OVERRIDES.put("show_own_leaderboard_badge", "Show own leaderboard badge");
 
         TOKEN_REPLACEMENTS.put("discord", "Discord");
         TOKEN_REPLACEMENTS.put("bridge", "Chat");
         TOKEN_REPLACEMENTS.put("radiance", "Radiance");
+        TOKEN_REPLACEMENTS.put("leaderboard", "Leaderboard");
     }
 
     protected final T setting;

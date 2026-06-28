@@ -15,11 +15,11 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
+import com.seqwawa.seq.command.SeqCommand;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.events.GameStartEvent;
 import com.seqwawa.seq.events.MinecraftFinishedLoading;
-import com.seqwawa.seq.command.SeqCommand;
 import com.seqwawa.seq.halcyon.HalcyonRangeVisualiserClient;
 import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.BombShareManager;
@@ -30,7 +30,10 @@ import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
 import com.seqwawa.seq.managers.GuildWarTrackers;
+import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyFinderManager;
+import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
+import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
@@ -38,8 +41,8 @@ import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
 import com.seqwawa.seq.ui.SequoiaScreen;
-import com.seqwawa.seq.utils.WynnClassCache;
 import com.seqwawa.seq.update.UpdateManager;
+import com.seqwawa.seq.utils.WynnClassCache;
 import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
 import org.slf4j.Logger;
 
@@ -123,6 +126,12 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting halcyonRangeVisualiserSetting;
 
     @Getter
+    public static Setting.BooleanSetting showLeaderboardBadgesSetting;
+
+    @Getter
+    public static Setting.BooleanSetting showOwnLeaderboardBadgeSetting;
+
+    @Getter
     public static WynnPartySyncManager wynnPartySyncManager;
 
     @Getter
@@ -133,6 +142,12 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static GuildRewardAutomationManager guildRewardAutomationManager;
+
+    @Getter
+    public static LeaderboardBadgeService leaderboardBadgeService;
+
+    @Getter
+    public static SeqBadgeNametagRendererHandle seqBadgeNametagRenderer;
 
     private static KeyMapping openScreenKey;
     private static KeyMapping shareBombsKey;
@@ -163,6 +178,8 @@ public class SeqClient implements ClientModInitializer {
         configManager = new ConfigManager();
         configManager.load();
         configManager.migrateToken();
+        leaderboardBadgeService = LeaderboardBadgeService.getInstance();
+        seqBadgeNametagRenderer = SeqBadgeNametagRenderers.createIfAvailable();
         authService = MinecraftAuthService.getInstance();
         SeqCommand.register();
         RadianceCheckerClient.initialize();
@@ -234,6 +251,12 @@ public class SeqClient implements ClientModInitializer {
             }
             if (guildRewardAutomationManager != null) {
                 guildRewardAutomationManager.tick();
+            }
+            if (leaderboardBadgeService != null) {
+                leaderboardBadgeService.tick();
+            }
+            if (seqBadgeNametagRenderer != null) {
+                seqBadgeNametagRenderer.tick();
             }
             RadianceCheckerClient.tick(client);
             ConnectionManager.flushPendingOutbound();
@@ -427,6 +450,10 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.IntSetting("announce_open_parties_interval_minutes", "party_finder", 5, 1, 60);
         syncWynnPartySetting = new Setting.BooleanSetting("sync_with_wynn_party", "party_finder", true);
         receiveBombShareRequestsSetting = new Setting.BooleanSetting("receive_bomb_share_requests", "network", true);
+        showLeaderboardBadgesSetting =
+                new Setting.BooleanSetting("show_leaderboard_badges", "leaderboard_badges", true);
+        showOwnLeaderboardBadgeSetting =
+                new Setting.BooleanSetting("show_own_leaderboard_badge", "leaderboard_badges", true);
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
@@ -443,6 +470,8 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(receiveBombShareRequestsSetting);
         getConfigManager().register(radianceCheckerSetting);
         getConfigManager().register(halcyonRangeVisualiserSetting);
+        getConfigManager().register(showLeaderboardBadgesSetting);
+        getConfigManager().register(showOwnLeaderboardBadgeSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.
