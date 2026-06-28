@@ -22,4 +22,10 @@ class WynntilsSeqBadgeNametagRendererTest {
     void matchesLocalUsernameAsNametagToken() {
         assertTrue(WynntilsSeqBadgeNametagRenderer.matchesLocalUsername("Alex", "[VIP] Alex"));
     }
+
+    @Test
+    void doesNotRenderStandaloneCanceledEvent() {
+        assertFalse(WynntilsSeqBadgeNametagRenderer.shouldRenderStandaloneEvent(true));
+        assertTrue(WynntilsSeqBadgeNametagRenderer.shouldRenderStandaloneEvent(false));
+    }
 }

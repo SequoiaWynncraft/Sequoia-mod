@@ -86,7 +86,14 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
             lastIntegratedEvent = null;
             return;
         }
+        if (!shouldRenderStandaloneEvent(event.isCanceled())) {
+            return;
+        }
         renderBadges(event, 0f, List.of());
+    }
+
+    static boolean shouldRenderStandaloneEvent(boolean eventCanceled) {
+        return !eventCanceled;
     }
 
     private boolean renderBadges(
