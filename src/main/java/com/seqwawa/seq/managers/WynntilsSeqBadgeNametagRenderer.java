@@ -9,7 +9,10 @@ import com.wynntils.utils.render.RenderUtils;
 import com.wynntils.utils.render.Texture;
 import com.mojang.authlib.GameProfile;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.world.entity.Entity;
 import net.neoforged.bus.api.EventPriority;
@@ -18,6 +21,7 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.SeqBadge;
 
 public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRendererHandle {
+    private static final Pattern USERNAME_TOKEN = Pattern.compile("[A-Za-z0-9_]{3,16}");
     private static final float TEXTURE_SIZE = 64f;
     private static final float CUSTOM_NAMETAG_BADGE_Y_OFFSET = 15f;
 
@@ -210,18 +214,54 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
             return true;
         }
         String localName = SeqClient.mc != null && SeqClient.mc.getUser() != null ? SeqClient.mc.getUser().getName() : null;
-        if (localName != null && !localName.isBlank() && nameCandidates != null) {
-            String normalizedLocalName = localName.trim();
-            for (String candidate : nameCandidates) {
-                if (candidate != null && candidate.toLowerCase().contains(normalizedLocalName.toLowerCase())) {
-                    return true;
-                }
-            }
+        if (matchesLocalUsername(localName, nameCandidates)) {
+            return true;
         }
         return player != null
                 && SeqClient.mc != null
                 && SeqClient.mc.player != null
                 && player.distanceToSqr(SeqClient.mc.player) <= 0.04d;
+    }
+
+    static boolean matchesLocalUsername(String localName, String... nameCandidates) {
+        String normalizedLocalName = normalizeMinecraftUsername(localName);
+        if (normalizedLocalName == null || nameCandidates == null) {
+            return false;
+        }
+
+        for (String candidate : nameCandidates) {
+            if (candidate == null || candidate.isBlank()) {
+                continue;
+            }
+            String cleaned = stripFormatting(candidate);
+            String exact = normalizeMinecraftUsername(cleaned);
+            if (normalizedLocalName.equals(exact)) {
+                return true;
+            }
+
+            Matcher matcher = USERNAME_TOKEN.matcher(cleaned);
+            while (matcher.find()) {
+                if (normalizedLocalName.equals(matcher.group().toLowerCase(Locale.ROOT))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static String normalizeMinecraftUsername(String username) {
+        if (username == null) {
+            return null;
+        }
+        String trimmed = stripFormatting(username).trim();
+        if (!trimmed.matches("[A-Za-z0-9_]{3,16}")) {
+            return null;
+        }
+        return trimmed.toLowerCase(Locale.ROOT);
+    }
+
+    private static String stripFormatting(String value) {
+        return value.replaceAll("(?i)§[0-9A-FK-OR]", "");
     }
 
     private static String profileName(AbstractClientPlayer player) {
