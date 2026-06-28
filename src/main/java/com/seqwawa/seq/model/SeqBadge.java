@@ -12,7 +12,7 @@ public record SeqBadge(SeqBadgeEvent event, SeqBadgeTier tier) {
 
     public Identifier textureId() {
         return Identifier.fromNamespaceAndPath(
-                "seq", "badges/" + event.texturePrefix() + "_" + tier.commandName() + ".png");
+                "seq", "badges/" + event.commandName() + "_" + tier.commandName() + ".png");
     }
 
     public static SeqBadge parseLegacy(String value) {

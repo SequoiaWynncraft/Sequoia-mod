@@ -20,6 +20,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.Activity;
+import com.seqwawa.seq.model.LeaderboardBadgeResponse;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;

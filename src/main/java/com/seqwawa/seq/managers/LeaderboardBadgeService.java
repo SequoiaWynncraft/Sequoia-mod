@@ -8,7 +8,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -17,9 +16,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import net.fabricmc.loader.api.FabricLoader;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.LeaderboardBadgeAssignment;
@@ -28,12 +24,10 @@ import com.seqwawa.seq.model.SeqBadge;
 import com.seqwawa.seq.model.SeqBadgeEvent;
 import com.seqwawa.seq.model.SeqBadgeTier;
 import com.seqwawa.seq.network.ApiClient;
-import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.utils.PlayerNameCache;
 
 public final class LeaderboardBadgeService {
     private static final long REFRESH_INTERVAL_MS = 5 * 60 * 1000L;
-    private static final Pattern USERNAME_TOKEN = Pattern.compile("[A-Za-z0-9_]{3,16}");
     private static final Path CACHE_PATH = FabricLoader.getInstance()
             .getGameDir()
             .resolve("config")
@@ -45,8 +39,6 @@ public final class LeaderboardBadgeService {
 
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
     private volatile Map<String, Map<SeqBadgeEvent, SeqBadgeTier>> cachedBadges = Map.of();
-    private final Map<String, Map<SeqBadgeEvent, SeqBadgeTier>> mockBadges = new ConcurrentHashMap<>();
-    private final Map<String, Map<SeqBadgeEvent, SeqBadgeTier>> mockBadgesByName = new ConcurrentHashMap<>();
     private volatile boolean cacheLoaded;
     private volatile boolean refreshInFlight;
     private volatile long lastRefreshAttemptMs;
@@ -64,18 +56,11 @@ public final class LeaderboardBadgeService {
         return instance;
     }
 
-    public List<SeqBadge> badgesFor(UUID uuid, String... nameCandidates) {
+    public List<SeqBadge> badgesFor(UUID uuid) {
         EnumMap<SeqBadgeEvent, SeqBadgeTier> merged = new EnumMap<>(SeqBadgeEvent.class);
         String uuidKey = uuid == null ? null : PlayerNameCache.formatUUID(uuid.toString());
         if (uuidKey != null) {
             mergeBadges(merged, cachedBadges.get(uuidKey));
-            mergeBadges(merged, mockBadges.get(uuidKey));
-        }
-
-        if (nameCandidates != null) {
-            for (String nameCandidate : nameCandidates) {
-                mergeBadges(merged, mockBadgesForNameCandidate(nameCandidate));
-            }
         }
 
         return merged.entrySet().stream()
@@ -110,92 +95,9 @@ public final class LeaderboardBadgeService {
             status = "refresh failed";
             SeqClient.LOGGER.debug("[LeaderboardBadges] Failed to refresh badge assignments: {}", rootMessage(throwable));
             return "Leaderboard badge refresh failed; using cached badges. Cause: " + rootMessage(throwable);
-        }).whenComplete((ignored, throwable) -> refreshInFlight = false);
-    }
-
-    public CompletableFuture<String> setMockBadge(
-            String username, SeqBadgeEvent event, SeqBadgeTier tier) {
-        if (username == null || username.isBlank() || event == null || tier == null) {
-            return CompletableFuture.completedFuture(
-                    "Usage: /seq badges mock set <username> <event> <tier>");
-        }
-        String trimmed = username.trim();
-        String normalizedName = normalizeUsername(trimmed);
-        if (normalizedName == null) {
-            return CompletableFuture.completedFuture("Enter a valid Minecraft username.");
-        }
-        putMock(mockBadgesByName, normalizedName, event, tier);
-        return PlayerNameCache.resolveUUID(trimmed).thenApply(uuid -> {
-            String formatted = PlayerNameCache.formatUUID(uuid);
-            if (formatted == null) {
-                return "Mock badge set by username: "
-                        + trimmed
-                        + " -> "
-                        + badgeName(event, tier)
-                        + ". UUID was not resolved.";
-            }
-            putMock(mockBadges, formatted, event, tier);
-            PlayerNameCache.put(formatted, trimmed);
-            return "Mock badge set: " + trimmed + " -> " + badgeName(event, tier) + ".";
+        }).whenComplete((ignored, throwable) -> {
+            refreshInFlight = false;
         });
-    }
-
-    public String setMockBadgeForCurrentPlayer(SeqBadgeEvent event, SeqBadgeTier tier) {
-        if (event == null || tier == null) {
-            return "Usage: /seq badges mock me <event> <tier>";
-        }
-
-        int uuidCount = 0;
-        int nameCount = 0;
-
-        StoredAuthSession session = SeqClient.getConfigManager().getStoredAuthSession();
-        if (session != null) {
-            if (putMockUuid(session.minecraftUuid(), event, tier)) {
-                uuidCount++;
-            }
-            if (putMockName(session.minecraftUsername(), event, tier)) {
-                nameCount++;
-            }
-        }
-
-        if (SeqClient.mc != null && SeqClient.mc.getUser() != null) {
-            if (putMockUuid(SeqClient.mc.getUser().getProfileId(), event, tier)) {
-                uuidCount++;
-            }
-            if (putMockName(SeqClient.mc.getUser().getName(), event, tier)) {
-                nameCount++;
-            }
-        }
-
-        if (uuidCount == 0 && nameCount == 0) {
-            return "No authenticated or launcher Minecraft identity is available.";
-        }
-        return "Mock badge set for current player: "
-                + uuidCount
-                + " UUID"
-                + (uuidCount == 1 ? "" : "s")
-                + ", "
-                + nameCount
-                + " name"
-                + (nameCount == 1 ? "" : "s")
-                + " -> "
-                + badgeName(event, tier)
-                + ".";
-    }
-
-    public String clearMockBadges() {
-        int count = badgeCount(mockBadges);
-        mockBadges.clear();
-        int nameCount = badgeCount(mockBadgesByName);
-        mockBadgesByName.clear();
-        return "Cleared "
-                + count
-                + " UUID mock badge"
-                + (count == 1 ? "" : "s")
-                + " and "
-                + nameCount
-                + " username mock badge"
-                + (nameCount == 1 ? "." : "s.");
     }
 
     public String status() {
@@ -205,98 +107,10 @@ public final class LeaderboardBadgeService {
                 + " badges for "
                 + cachedBadges.size()
                 + " players"
-                + " | mocks="
-                + (badgeCount(mockBadges) + badgeCount(mockBadgesByName))
-                + " across "
-                + (mockBadges.size() + mockBadgesByName.size())
-                + " identities"
                 + " | status="
                 + status
                 + " | last refresh="
                 + refreshed;
-    }
-
-    public static List<String> eventSuggestions() {
-        List<String> suggestions = new ArrayList<>();
-        for (SeqBadgeEvent event : SeqBadgeEvent.values()) {
-            suggestions.add(event.commandName());
-        }
-        return suggestions;
-    }
-
-    public static List<String> tierSuggestions() {
-        List<String> suggestions = new ArrayList<>();
-        for (SeqBadgeTier tier : SeqBadgeTier.values()) {
-            suggestions.add(tier.commandName());
-        }
-        return suggestions;
-    }
-
-    public static List<String> eventOrTierSuggestions() {
-        List<String> suggestions = eventSuggestions();
-        suggestions.addAll(tierSuggestions());
-        return suggestions;
-    }
-
-    private static String normalizeUsername(String username) {
-        if (username == null) {
-            return null;
-        }
-        String trimmed = stripFormatting(username).trim();
-        if (!trimmed.matches("[A-Za-z0-9_]{3,16}")) {
-            return null;
-        }
-        return trimmed.toLowerCase(Locale.ROOT);
-    }
-
-    private boolean putMockUuid(String uuid, SeqBadgeEvent event, SeqBadgeTier tier) {
-        String formatted = PlayerNameCache.formatUUID(uuid);
-        if (formatted == null || event == null || tier == null) {
-            return false;
-        }
-        putMock(mockBadges, formatted, event, tier);
-        return true;
-    }
-
-    private boolean putMockUuid(UUID uuid, SeqBadgeEvent event, SeqBadgeTier tier) {
-        return uuid != null && putMockUuid(uuid.toString(), event, tier);
-    }
-
-    private boolean putMockName(String username, SeqBadgeEvent event, SeqBadgeTier tier) {
-        String normalized = normalizeUsername(username);
-        if (normalized == null || event == null || tier == null) {
-            return false;
-        }
-        putMock(mockBadgesByName, normalized, event, tier);
-        return true;
-    }
-
-    private Map<SeqBadgeEvent, SeqBadgeTier> mockBadgesForNameCandidate(String nameCandidate) {
-        if (nameCandidate == null || nameCandidate.isBlank()) {
-            return Map.of();
-        }
-        String cleaned = stripFormatting(nameCandidate);
-        String exact = normalizeUsername(cleaned);
-        if (exact != null) {
-            Map<SeqBadgeEvent, SeqBadgeTier> badges = mockBadgesByName.get(exact);
-            if (badges != null) {
-                return badges;
-            }
-        }
-
-        Matcher matcher = USERNAME_TOKEN.matcher(cleaned);
-        while (matcher.find()) {
-            Map<SeqBadgeEvent, SeqBadgeTier> badges =
-                    mockBadgesByName.get(matcher.group().toLowerCase(Locale.ROOT));
-            if (badges != null) {
-                return badges;
-            }
-        }
-        return Map.of();
-    }
-
-    private static String stripFormatting(String value) {
-        return value.replaceAll("(?i)§[0-9A-FK-OR]", "");
     }
 
     private void loadCache() {
@@ -373,21 +187,6 @@ public final class LeaderboardBadgeService {
         }
     }
 
-    private static void putMock(
-            Map<String, Map<SeqBadgeEvent, SeqBadgeTier>> target,
-            String key,
-            SeqBadgeEvent event,
-            SeqBadgeTier tier) {
-        target.compute(key, (ignored, existing) -> {
-            EnumMap<SeqBadgeEvent, SeqBadgeTier> updated = new EnumMap<>(SeqBadgeEvent.class);
-            if (existing != null) {
-                updated.putAll(existing);
-            }
-            updated.put(event, tier);
-            return Map.copyOf(updated);
-        });
-    }
-
     private static void mergeBadges(
             EnumMap<SeqBadgeEvent, SeqBadgeTier> target,
             Map<SeqBadgeEvent, SeqBadgeTier> source) {
@@ -398,10 +197,6 @@ public final class LeaderboardBadgeService {
 
     private static int badgeCount(Map<String, Map<SeqBadgeEvent, SeqBadgeTier>> badges) {
         return badges.values().stream().mapToInt(Map::size).sum();
-    }
-
-    private static String badgeName(SeqBadgeEvent event, SeqBadgeTier tier) {
-        return event.commandName() + ":" + tier.commandName();
     }
 
     private static String rootMessage(Throwable throwable) {

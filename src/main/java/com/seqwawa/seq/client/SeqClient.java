@@ -126,6 +126,12 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting halcyonRangeVisualiserSetting;
 
     @Getter
+    public static Setting.BooleanSetting showLeaderboardBadgesSetting;
+
+    @Getter
+    public static Setting.BooleanSetting showOwnLeaderboardBadgeSetting;
+
+    @Getter
     public static WynnPartySyncManager wynnPartySyncManager;
 
     @Getter
@@ -444,6 +450,10 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.IntSetting("announce_open_parties_interval_minutes", "party_finder", 5, 1, 60);
         syncWynnPartySetting = new Setting.BooleanSetting("sync_with_wynn_party", "party_finder", true);
         receiveBombShareRequestsSetting = new Setting.BooleanSetting("receive_bomb_share_requests", "network", true);
+        showLeaderboardBadgesSetting =
+                new Setting.BooleanSetting("show_leaderboard_badges", "leaderboard_badges", true);
+        showOwnLeaderboardBadgeSetting =
+                new Setting.BooleanSetting("show_own_leaderboard_badge", "leaderboard_badges", true);
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
@@ -460,6 +470,8 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(receiveBombShareRequestsSetting);
         getConfigManager().register(radianceCheckerSetting);
         getConfigManager().register(halcyonRangeVisualiserSetting);
+        getConfigManager().register(showLeaderboardBadgesSetting);
+        getConfigManager().register(showOwnLeaderboardBadgeSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.

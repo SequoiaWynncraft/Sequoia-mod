@@ -9,8 +9,8 @@ class SeqBadgeTest {
     @Test
     void parsesLegacyCombinedBadgeName() {
         assertEquals(
-                new SeqBadge(SeqBadgeEvent.TWP, SeqBadgeTier.GOLD),
-                SeqBadge.parseLegacy("TWP_GOLD"));
+                new SeqBadge(SeqBadgeEvent.WTP, SeqBadgeTier.GOLD),
+                SeqBadge.parseLegacy("WTP_GOLD"));
     }
 
     @Test
@@ -20,8 +20,11 @@ class SeqBadgeTest {
 
     @Test
     void buildsEventSpecificTexturePath() {
-        SeqBadge badge = new SeqBadge(SeqBadgeEvent.TWP, SeqBadgeTier.DIAMOND);
-
-        assertEquals("seq:badges/fruma_diamond.png", badge.textureId().toString());
+        assertEquals(
+                "seq:badges/wtp_gold.png",
+                new SeqBadge(SeqBadgeEvent.WTP, SeqBadgeTier.GOLD).textureId().toString());
+        assertEquals(
+                "seq:badges/nol_gold.png",
+                new SeqBadge(SeqBadgeEvent.NOL, SeqBadgeTier.GOLD).textureId().toString());
     }
 }

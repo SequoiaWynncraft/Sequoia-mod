@@ -11,8 +11,9 @@ public final class SeqBadgeNametagRenderers {
 
     public static SeqBadgeNametagRendererHandle createIfAvailable() {
         if (!FabricLoader.getInstance().isModLoaded("wynntils")) {
-            warnOnce("Wynntils not found; Seq leaderboard nametag badges are disabled.", null);
-            return null;
+            SeqClient.LOGGER.info(
+                    "[LeaderboardBadges] Wynntils not found; vanilla nametag badge renderer enabled.");
+            return new VanillaSeqBadgeNametagRenderer();
         }
 
         try {
@@ -22,8 +23,8 @@ public final class SeqBadgeNametagRenderers {
             SeqClient.LOGGER.info("[LeaderboardBadges] Wynntils detected; nametag badge renderer enabled.");
             return (SeqBadgeNametagRendererHandle) renderer;
         } catch (Throwable throwable) {
-            warnOnce("Wynntils nametag badge renderer unavailable; Seq leaderboard badges are disabled.", throwable);
-            return null;
+            warnOnce("Wynntils nametag badge renderer unavailable; using vanilla fallback.", throwable);
+            return new VanillaSeqBadgeNametagRenderer();
         }
     }
 

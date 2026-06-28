@@ -16,14 +16,9 @@ import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.SeqBadge;
-import com.seqwawa.seq.network.auth.StoredAuthSession;
 
 public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRendererHandle {
-    private static final float BADGE_WIDTH = 19f;
-    private static final float BADGE_HEIGHT = 18f;
     private static final float TEXTURE_SIZE = 64f;
-    private static final float BADGE_STEP = 21f;
-    private static final float DEFAULT_BADGE_Y_OFFSET = 25f;
     private static final float CUSTOM_NAMETAG_BADGE_Y_OFFSET = 15f;
 
     private static volatile WynntilsSeqBadgeNametagRenderer instance;
@@ -59,23 +54,25 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
 
     @Override
     public String status() {
-        return status;
+        return "wynntils (" + status + ")";
     }
 
-    private void ensureRegistered() {
+    private boolean ensureRegistered() {
         if (registered) {
-            return;
+            return true;
         }
         try {
             WynntilsMod.registerEventListener(this);
             registered = true;
             status = "ready";
             SeqClient.LOGGER.info("[LeaderboardBadges] Registered Wynntils nametag badge listener.");
+            return true;
         } catch (Throwable throwable) {
             status = "waiting: " + throwable.getClass().getSimpleName();
             SeqClient.LOGGER.debug(
                     "[LeaderboardBadges] Wynntils nametag badge listener not ready yet: {}",
                     throwable.toString());
+            return false;
         }
     }
 
@@ -92,6 +89,9 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
             PlayerNametagRenderEvent event,
             float nametagVerticalOffset,
             List<LeaderboardBadge> visibleWynntilsBadges) {
+        if (!SeqBadgeNametagRenderSupport.showLeaderboardBadges()) {
+            return false;
+        }
         if (event == null || event.getEntityRenderState() == null) {
             return false;
         }
@@ -113,24 +113,22 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
         String displayName = player.getDisplayName() == null ? null : player.getDisplayName().getString();
         String entityName = player.getName() == null ? null : player.getName().getString();
         boolean localCandidate = isLocalBadgeCandidate(player, profileName, scoreboardName, displayName, entityName);
-        String localName = localCandidate && SeqClient.mc.player != null && SeqClient.mc.player.getName() != null
-                ? SeqClient.mc.player.getName().getString()
-                : null;
         String nametagText = event.getEntityRenderState().nameTag == null
                 ? null
                 : event.getEntityRenderState().nameTag.getString();
-        localCandidate = localCandidate || isLocalBadgeCandidate(player, nametagText, localName);
-        if (localCandidate && localName == null && SeqClient.mc.player != null && SeqClient.mc.player.getName() != null) {
-            localName = SeqClient.mc.player.getName().getString();
+        localCandidate = localCandidate || isLocalBadgeCandidate(player, nametagText);
+        if (localCandidate && !SeqBadgeNametagRenderSupport.showOwnLeaderboardBadge()) {
+            return false;
         }
-        List<SeqBadge> badges = badgesForPlayer(
-                player, uuid, localCandidate, profileName, scoreboardName, displayName, entityName, localName, nametagText);
+        List<SeqBadge> badges = badgesForPlayer(player, uuid, localCandidate);
         if (badges.isEmpty()) {
             return false;
         }
 
         float badgeYOffset =
-                nametagVerticalOffset == 0f ? DEFAULT_BADGE_Y_OFFSET : CUSTOM_NAMETAG_BADGE_Y_OFFSET;
+                nametagVerticalOffset == 0f
+                        ? SeqBadgeNametagRenderSupport.DEFAULT_BADGE_Y_OFFSET
+                        : CUSTOM_NAMETAG_BADGE_Y_OFFSET;
         drawCombinedBadges(event, nametagVerticalOffset, badgeYOffset, visibleWynntilsBadges, badges);
         return true;
     }
@@ -142,8 +140,9 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
             List<LeaderboardBadge> wynntilsBadges,
             List<SeqBadge> seqBadges) {
         int totalBadgeCount = wynntilsBadges.size() + seqBadges.size();
-        float rowWidth = BADGE_WIDTH * totalBadgeCount + 2f * (totalBadgeCount - 1);
-        float badgeXOffset = -rowWidth / 2f + BADGE_WIDTH / 2f;
+        float rowWidth =
+                SeqBadgeNametagRenderSupport.BADGE_WIDTH * totalBadgeCount + 2f * (totalBadgeCount - 1);
+        float badgeXOffset = -rowWidth / 2f + SeqBadgeNametagRenderSupport.BADGE_WIDTH / 2f;
 
         for (LeaderboardBadge badge : wynntilsBadges) {
             RenderUtils.renderLeaderboardBadge(
@@ -152,18 +151,18 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
                     event.getEntityRenderState(),
                     event.getCameraRenderState(),
                     Texture.LEADERBOARD_BADGES.identifier(),
-                    BADGE_WIDTH,
-                    BADGE_HEIGHT,
+                    SeqBadgeNametagRenderSupport.BADGE_WIDTH,
+                    SeqBadgeNametagRenderSupport.BADGE_HEIGHT,
                     badge.uOffset(),
                     badge.vOffset(),
-                    BADGE_WIDTH,
-                    BADGE_HEIGHT,
+                    SeqBadgeNametagRenderSupport.BADGE_WIDTH,
+                    SeqBadgeNametagRenderSupport.BADGE_HEIGHT,
                     Texture.LEADERBOARD_BADGES.width(),
                     Texture.LEADERBOARD_BADGES.height(),
                     nametagVerticalOffset,
                     badgeXOffset,
                     badgeYOffset);
-            badgeXOffset += BADGE_STEP;
+            badgeXOffset += SeqBadgeNametagRenderSupport.BADGE_STEP;
         }
 
         for (SeqBadge badge : seqBadges) {
@@ -173,8 +172,8 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
                     event.getEntityRenderState(),
                     event.getCameraRenderState(),
                     badge.textureId(),
-                    BADGE_WIDTH,
-                    BADGE_HEIGHT,
+                    SeqBadgeNametagRenderSupport.BADGE_WIDTH,
+                    SeqBadgeNametagRenderSupport.BADGE_HEIGHT,
                     0f,
                     0f,
                     TEXTURE_SIZE,
@@ -184,46 +183,17 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
                     nametagVerticalOffset,
                     badgeXOffset,
                     badgeYOffset);
-            badgeXOffset += BADGE_STEP;
+            badgeXOffset += SeqBadgeNametagRenderSupport.BADGE_STEP;
         }
     }
 
     private List<SeqBadge> badgesForPlayer(
             AbstractClientPlayer player,
             UUID wynntilsUuid,
-            boolean actualLocalPlayer,
-            String... nameCandidates) {
-        List<SeqBadge> badges = badgeService.badgesFor(wynntilsUuid, nameCandidates);
-        if (!badges.isEmpty()) {
-            return badges;
-        }
-
+            boolean actualLocalPlayer) {
         UUID rawUuid = player.getUUID();
-        if (rawUuid != null && !rawUuid.equals(wynntilsUuid)) {
-            badges = badgeService.badgesFor(rawUuid, nameCandidates);
-            if (!badges.isEmpty()) {
-                return badges;
-            }
-        }
-
-        if (actualLocalPlayer) {
-            StoredAuthSession session = SeqClient.getConfigManager().getStoredAuthSession();
-            UUID authUuid = parseUuid(session == null ? null : session.minecraftUuid());
-            badges = badgeService.badgesFor(authUuid, nameCandidates);
-            if (!badges.isEmpty()) {
-                return badges;
-            }
-
-            UUID launcherUuid = SeqClient.mc != null && SeqClient.mc.getUser() != null
-                    ? SeqClient.mc.getUser().getProfileId()
-                    : null;
-            badges = badgeService.badgesFor(launcherUuid, nameCandidates);
-            if (!badges.isEmpty()) {
-                return badges;
-            }
-        }
-
-        return List.of();
+        return SeqBadgePlayerResolver.resolve(
+                badgeService, wynntilsUuid, rawUuid, actualLocalPlayer);
     }
 
     private static boolean isActualLocalPlayer(AbstractClientPlayer player) {
@@ -254,19 +224,9 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
                 && player.distanceToSqr(SeqClient.mc.player) <= 0.04d;
     }
 
-    private static UUID parseUuid(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        try {
-            return UUID.fromString(value.trim());
-        } catch (IllegalArgumentException ignored) {
-            return null;
-        }
-    }
-
     private static String profileName(AbstractClientPlayer player) {
         GameProfile profile = player.getGameProfile();
         return profile == null ? null : profile.name();
     }
+
 }

@@ -3,14 +3,13 @@ package com.seqwawa.seq.model;
 import java.util.Locale;
 
 public enum SeqBadgeEvent {
-    TWP("twp", "fruma");
+    WTP("wtp"),
+    NOL("nol");
 
     private final String commandName;
-    private final String texturePrefix;
 
-    SeqBadgeEvent(String commandName, String texturePrefix) {
+    SeqBadgeEvent(String commandName) {
         this.commandName = commandName;
-        this.texturePrefix = texturePrefix;
     }
 
     public String commandName() {
@@ -19,10 +18,6 @@ public enum SeqBadgeEvent {
 
     public String apiName() {
         return name();
-    }
-
-    public String texturePrefix() {
-        return texturePrefix;
     }
 
     public static SeqBadgeEvent parse(String value) {
