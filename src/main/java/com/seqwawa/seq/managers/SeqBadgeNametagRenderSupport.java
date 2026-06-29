@@ -6,7 +6,8 @@ final class SeqBadgeNametagRenderSupport {
     static final float BADGE_WIDTH = 19f;
     static final float BADGE_HEIGHT = 18f;
     static final float BADGE_STEP = 21f;
-    static final float DEFAULT_BADGE_Y_OFFSET = 25f;
+    static final float WYNNTILS_DEFAULT_BADGE_Y_OFFSET = 25f;
+    static final float LOWER_BADGE_Y_OFFSET = 10f;
 
     private SeqBadgeNametagRenderSupport() {}
 
