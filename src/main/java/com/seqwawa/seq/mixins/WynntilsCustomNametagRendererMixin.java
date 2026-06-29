@@ -24,9 +24,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Pseudo
 @Mixin(targets = "com.wynntils.features.players.CustomNametagRendererFeature", remap = false)
 public abstract class WynntilsCustomNametagRendererMixin {
+    @Shadow @Final private Config<Boolean> showOwnNametag;
+
     @Shadow @Final private Config<Boolean> showLeaderboardBadges;
 
     @Shadow @Final private Config<Integer> badgeCount;
+
+    @Inject(method = "<init>", at = @At("RETURN"), require = 0, remap = false)
+    private void seq$captureNametagFeatureConfig(CallbackInfo callbackInfo) {
+        WynntilsSeqBadgeNametagRenderer.registerNametagFeatureConfig(showOwnNametag);
+    }
 
     @Inject(method = "drawBadges", at = @At("HEAD"), cancellable = true, require = 0, remap = false)
     private void seq$renderLeaderboardBadge(
@@ -35,6 +42,20 @@ public abstract class WynntilsCustomNametagRendererMixin {
                 event, nametagVerticalOffset, seq$visibleWynntilsBadges(event))) {
             callbackInfo.cancel();
         }
+    }
+
+    @Inject(
+            method = "onPlayerNameTagRender",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lcom/wynntils/mc/event/PlayerNametagRenderEvent;setCanceled(Z)V",
+                    ordinal = 0,
+                    shift = At.Shift.AFTER),
+            require = 0,
+            remap = false)
+    private void seq$renderHiddenPlayerNametagBadge(
+            PlayerNametagRenderEvent event, CallbackInfo callbackInfo) {
+        WynntilsSeqBadgeNametagRenderer.renderHiddenPlayerNametag(event);
     }
 
     @Unique

@@ -2,6 +2,10 @@ package com.seqwawa.seq.managers;
 
 import com.wynntils.core.WynntilsMod;
 import com.wynntils.core.components.Models;
+import com.wynntils.core.components.Managers;
+import com.wynntils.core.persisted.config.Config;
+import com.wynntils.features.players.CustomNametagRendererFeature;
+import com.wynntils.mc.event.GetCameraEntityEvent;
 import com.wynntils.mc.event.PlayerNametagRenderEvent;
 import com.wynntils.mc.extension.EntityRenderStateExtension;
 import com.wynntils.services.leaderboard.type.LeaderboardBadge;
@@ -10,50 +14,79 @@ import com.wynntils.utils.render.Texture;
 import com.mojang.authlib.GameProfile;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.world.entity.Entity;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.SeqBadge;
+import com.seqwawa.seq.render.SeqAvatarRenderStateExtension;
 
 public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRendererHandle {
     private static final Pattern USERNAME_TOKEN = Pattern.compile("[A-Za-z0-9_]{3,16}");
     private static final float TEXTURE_SIZE = 64f;
-    private static final float CUSTOM_NAMETAG_BADGE_Y_OFFSET = 15f;
-
     private static volatile WynntilsSeqBadgeNametagRenderer instance;
+    private static volatile Config<Boolean> showOwnNametagConfig;
     private final LeaderboardBadgeService badgeService = LeaderboardBadgeService.getInstance();
+    private final Set<UUID> wynntilsEventPlayers = ConcurrentHashMap.newKeySet();
     private boolean registered;
     private String status = "waiting for Wynntils event bus";
     private PlayerNametagRenderEvent lastIntegratedEvent;
+    private boolean nametagFeatureEnabled = true;
+    private boolean showOwnNametag;
+    private long wynntilsEventPlayersTick = Long.MIN_VALUE;
 
     WynntilsSeqBadgeNametagRenderer() {
         instance = this;
+        new VanillaSeqBadgeNametagRenderer(this::shouldRenderVanillaFallback, true);
         ensureRegistered();
+    }
+
+    public static void registerNametagFeatureConfig(Config<Boolean> showOwnNametag) {
+        showOwnNametagConfig = showOwnNametag;
     }
 
     public static boolean renderIntegrated(
             PlayerNametagRenderEvent event,
             float nametagVerticalOffset,
             List<LeaderboardBadge> visibleWynntilsBadges) {
+        return renderFromWynntilsHook(event, nametagVerticalOffset, visibleWynntilsBadges, false);
+    }
+
+    public static boolean renderHiddenPlayerNametag(PlayerNametagRenderEvent event) {
+        return renderFromWynntilsHook(event, 0f, List.of(), true);
+    }
+
+    private static boolean renderFromWynntilsHook(
+            PlayerNametagRenderEvent event,
+            float nametagVerticalOffset,
+            List<LeaderboardBadge> visibleWynntilsBadges,
+            boolean seqOnlyLowerPlacement) {
         WynntilsSeqBadgeNametagRenderer renderer = instance;
         if (renderer == null) {
             return false;
         }
-        boolean handled = renderer.renderBadges(event, nametagVerticalOffset, visibleWynntilsBadges);
+        boolean handled = renderer.renderBadges(
+                event, nametagVerticalOffset, visibleWynntilsBadges, seqOnlyLowerPlacement);
         if (handled) {
             renderer.lastIntegratedEvent = event;
         }
+        renderer.markWynntilsEvent(event);
         return handled;
     }
 
     @Override
     public void tick() {
         ensureRegistered();
+        refreshNametagFeatureState();
+        resetWynntilsEventPlayersIfTickChanged();
     }
 
     @Override
@@ -82,6 +115,7 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
 
     @SubscribeEvent(priority = EventPriority.LOWEST, receiveCanceled = true)
     public void onPlayerNametagRender(PlayerNametagRenderEvent event) {
+        markWynntilsEvent(event);
         if (event == lastIntegratedEvent) {
             lastIntegratedEvent = null;
             return;
@@ -89,17 +123,102 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
         if (!shouldRenderStandaloneEvent(event.isCanceled())) {
             return;
         }
-        renderBadges(event, 0f, List.of());
+        renderBadges(event, 0f, List.of(), false);
     }
 
     static boolean shouldRenderStandaloneEvent(boolean eventCanceled) {
         return !eventCanceled;
     }
 
+    static boolean shouldRenderVanillaFallback(
+            boolean showOwnNametag,
+            boolean nametagFeatureEnabled,
+            boolean wynntilsEventThisTick,
+            boolean localPlayer) {
+        if (wynntilsEventThisTick) {
+            return false;
+        }
+        return !nametagFeatureEnabled || (localPlayer && !showOwnNametag);
+    }
+
+    static boolean shouldForceOwnAvatarRendering(boolean showOwnNametag, boolean nametagFeatureEnabled) {
+        return !nametagFeatureEnabled || !showOwnNametag;
+    }
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
+    public void onGetCameraEntity(GetCameraEntityEvent event) {
+        refreshNametagFeatureState();
+        if (!SeqBadgeNametagRenderSupport.showLeaderboardBadges()
+                || !SeqBadgeNametagRenderSupport.showOwnLeaderboardBadge()
+                || !shouldForceOwnAvatarRendering(showOwnNametag, nametagFeatureEnabled)
+                || !isGameplayOrInventoryScreen()) {
+            return;
+        }
+        event.setEntity(null);
+    }
+
+    private boolean shouldRenderVanillaFallback(AvatarRenderState state, Boolean localPlayer) {
+        refreshNametagFeatureState();
+        UUID playerUuid = state instanceof SeqAvatarRenderStateExtension extension ? extension.seq$getPlayerUuid() : null;
+        return shouldRenderVanillaFallback(
+                showOwnNametag,
+                nametagFeatureEnabled,
+                playerUuid != null && wasSeenInWynntilsEventThisTick(playerUuid),
+                Boolean.TRUE.equals(localPlayer));
+    }
+
+    private void refreshNametagFeatureState() {
+        Config<Boolean> showOwnNametag = showOwnNametagConfig;
+        if (showOwnNametag != null) {
+            this.showOwnNametag = Boolean.TRUE.equals(showOwnNametag.get());
+        }
+
+        try {
+            CustomNametagRendererFeature feature =
+                    Managers.Feature.getFeatureInstance(CustomNametagRendererFeature.class);
+            nametagFeatureEnabled = feature == null || feature.isEnabled();
+        } catch (Throwable throwable) {
+            nametagFeatureEnabled = true;
+        }
+    }
+
+    private void markWynntilsEvent(PlayerNametagRenderEvent event) {
+        AbstractClientPlayer player = playerFromEvent(event);
+        if (player == null) {
+            return;
+        }
+        resetWynntilsEventPlayersIfTickChanged();
+        wynntilsEventPlayers.add(player.getUUID());
+    }
+
+    private boolean wasSeenInWynntilsEventThisTick(UUID playerUuid) {
+        resetWynntilsEventPlayersIfTickChanged();
+        return wynntilsEventPlayers.contains(playerUuid);
+    }
+
+    private void resetWynntilsEventPlayersIfTickChanged() {
+        long currentTick = currentGameTick();
+        if (wynntilsEventPlayersTick == currentTick) {
+            return;
+        }
+        wynntilsEventPlayers.clear();
+        wynntilsEventPlayersTick = currentTick;
+    }
+
+    private static long currentGameTick() {
+        return SeqClient.mc == null || SeqClient.mc.level == null ? Long.MIN_VALUE : SeqClient.mc.level.getGameTime();
+    }
+
+    private static boolean isGameplayOrInventoryScreen() {
+        return SeqClient.mc != null
+                && (SeqClient.mc.screen == null || SeqClient.mc.screen instanceof InventoryScreen);
+    }
+
     private boolean renderBadges(
             PlayerNametagRenderEvent event,
             float nametagVerticalOffset,
-            List<LeaderboardBadge> visibleWynntilsBadges) {
+            List<LeaderboardBadge> visibleWynntilsBadges,
+            boolean seqOnlyLowerPlacement) {
         if (!SeqBadgeNametagRenderSupport.showLeaderboardBadges()) {
             return false;
         }
@@ -110,8 +229,8 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
             return false;
         }
 
-        Entity entity = ((EntityRenderStateExtension) event.getEntityRenderState()).getEntity();
-        if (!(entity instanceof AbstractClientPlayer player)) {
+        AbstractClientPlayer player = playerFromEvent(event);
+        if (player == null) {
             return false;
         }
         if (Models.Player.isNpc(player)) {
@@ -136,12 +255,24 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
             return false;
         }
 
-        float badgeYOffset =
-                nametagVerticalOffset == 0f
-                        ? SeqBadgeNametagRenderSupport.DEFAULT_BADGE_Y_OFFSET
-                        : CUSTOM_NAMETAG_BADGE_Y_OFFSET;
+        float badgeYOffset = badgeYOffset(nametagVerticalOffset, seqOnlyLowerPlacement);
         drawCombinedBadges(event, nametagVerticalOffset, badgeYOffset, visibleWynntilsBadges, badges);
         return true;
+    }
+
+    static float badgeYOffset(float nametagVerticalOffset, boolean seqOnlyLowerPlacement) {
+        return nametagVerticalOffset == 0f && !seqOnlyLowerPlacement
+                ? SeqBadgeNametagRenderSupport.WYNNTILS_DEFAULT_BADGE_Y_OFFSET
+                : SeqBadgeNametagRenderSupport.LOWER_BADGE_Y_OFFSET;
+    }
+
+    private static AbstractClientPlayer playerFromEvent(PlayerNametagRenderEvent event) {
+        if (event == null || event.getEntityRenderState() == null) {
+            return null;
+        }
+
+        Entity entity = ((EntityRenderStateExtension) event.getEntityRenderState()).getEntity();
+        return entity instanceof AbstractClientPlayer player ? player : null;
     }
 
     private static void drawCombinedBadges(

@@ -21,9 +21,19 @@ public final class VanillaSeqBadgeNametagRenderer implements SeqBadgeNametagRend
 
     private static volatile VanillaSeqBadgeNametagRenderer activeInstance;
 
+    private final RenderPolicy renderPolicy;
+    private final boolean allowFirstPersonLocalPlayer;
     private final LeaderboardBadgeService badgeService = LeaderboardBadgeService.getInstance();
 
     VanillaSeqBadgeNametagRenderer() {
+        this((state, localPlayer) -> true, false);
+    }
+
+    VanillaSeqBadgeNametagRenderer(
+            RenderPolicy renderPolicy,
+            boolean allowFirstPersonLocalPlayer) {
+        this.renderPolicy = renderPolicy;
+        this.allowFirstPersonLocalPlayer = allowFirstPersonLocalPlayer;
         activeInstance = this;
     }
 
@@ -56,12 +66,16 @@ public final class VanillaSeqBadgeNametagRenderer implements SeqBadgeNametagRend
         }
 
         boolean localPlayer = extension.seq$isLocalPlayer();
+        if (!renderPolicy.shouldRender(state, localPlayer)) {
+            return;
+        }
+
         if (localPlayer) {
             if (!SeqBadgeNametagRenderSupport.showOwnLeaderboardBadge()) {
                 return;
             }
             Minecraft minecraft = Minecraft.getInstance();
-            if (minecraft.options.getCameraType().isFirstPerson()) {
+            if (!allowFirstPersonLocalPlayer && minecraft.options.getCameraType().isFirstPerson()) {
                 return;
             }
         } else if (state.nameTag == null || state.nameTagAttachment == null) {
@@ -121,7 +135,7 @@ public final class VanillaSeqBadgeNametagRenderer implements SeqBadgeNametagRend
                     state,
                     badge,
                     badgeXOffset,
-                    SeqBadgeNametagRenderSupport.DEFAULT_BADGE_Y_OFFSET,
+                    SeqBadgeNametagRenderSupport.LOWER_BADGE_Y_OFFSET,
                     color);
             badgeXOffset += SeqBadgeNametagRenderSupport.BADGE_STEP;
         }
@@ -178,5 +192,9 @@ public final class VanillaSeqBadgeNametagRenderer implements SeqBadgeNametagRend
             int light,
             int color) {
         vertices.addVertex(pose, x, y, z).setUv(u, v).setLight(light).setColor(color);
+    }
+
+    interface RenderPolicy {
+        boolean shouldRender(AvatarRenderState state, boolean localPlayer);
     }
 }
