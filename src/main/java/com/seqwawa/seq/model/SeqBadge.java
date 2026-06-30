@@ -1,5 +1,8 @@
 package com.seqwawa.seq.model;
 
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 import net.minecraft.resources.Identifier;
 
@@ -13,6 +16,13 @@ public record SeqBadge(SeqBadgeEvent event, SeqBadgeTier tier) {
     public Identifier textureId() {
         return Identifier.fromNamespaceAndPath(
                 "seq", "badges/" + event.commandName() + "_" + tier.commandName() + ".png");
+    }
+
+    public static List<SeqBadge> sortForRender(Collection<SeqBadge> badges) {
+        return badges.stream()
+                .sorted(Comparator.comparingInt((SeqBadge badge) -> badge.event().renderOrder())
+                        .thenComparing(SeqBadge::event))
+                .toList();
     }
 
     public static SeqBadge parseLegacy(String value) {
