@@ -153,7 +153,7 @@ public final class LeaderboardBadgeService {
     }
 
     private static SeqBadge parseAssignment(LeaderboardBadgeAssignment assignment) {
-        SeqBadgeEvent event = SeqBadgeEvent.parse(assignment.event());
+        SeqBadgeEvent event = SeqBadgeEvent.parse(assignment.type());
         SeqBadgeTier tier = SeqBadgeTier.parse(assignment.tier());
         if (event != null && tier != null) {
             return new SeqBadge(event, tier);

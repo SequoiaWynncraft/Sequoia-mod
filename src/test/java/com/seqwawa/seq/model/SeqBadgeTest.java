@@ -1,11 +1,16 @@
 package com.seqwawa.seq.model;
 
+import com.google.gson.Gson;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
 class SeqBadgeTest {
+    private static final Gson GSON = new Gson();
+
     @Test
     void parsesLegacyCombinedBadgeName() {
         assertEquals(
@@ -27,4 +32,19 @@ class SeqBadgeTest {
                 "seq:badges/nol_gold.png",
                 new SeqBadge(SeqBadgeEvent.NOL, SeqBadgeTier.GOLD).textureId().toString());
     }
+
+    @Test
+    void badgeAssignmentsUseTypeWireKey() {
+        LeaderboardBadgeAssignment assignment =
+                new LeaderboardBadgeAssignment("00000000-0000-0000-0000-000000000000", new SeqBadge(SeqBadgeEvent.WTP, SeqBadgeTier.GOLD));
+
+        String json = GSON.toJson(assignment);
+
+        assertEquals(
+                "WTP",
+                GSON.fromJson(json, LeaderboardBadgeAssignment.class).type());
+        assertFalse(json.contains("\"event\""));
+        assertTrue(json.contains("\"type\""));
+    }
+
 }

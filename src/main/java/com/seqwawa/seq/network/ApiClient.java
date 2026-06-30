@@ -200,7 +200,7 @@ public class ApiClient {
     }
 
     public CompletableFuture<LeaderboardBadgeResponse> getLeaderboardBadges() {
-        return get("/leaderboard/badges", LeaderboardBadgeResponse.class);
+        return get("/badges", LeaderboardBadgeResponse.class);
     }
 
     public CompletableFuture<Listing> reassignRole(long listingId, UUID targetUUID, PartyRole role) {
