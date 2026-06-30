@@ -261,7 +261,7 @@ public class SettingsScreen extends Screen {
             for (Map.Entry<String, List<SettingWidget<?>>> entry : categories.entrySet()) {
                 String category = entry.getKey();
                 List<SettingWidget<?>> widgets = entry.getValue();
-                boolean collapsed = collapsedCategories.contains(category);
+                boolean collapsed = isCategoryCollapsed(category);
 
                 // Filter widgets by search
                 List<SettingWidget<?>> filtered = widgets;
@@ -437,7 +437,7 @@ public class SettingsScreen extends Screen {
             for (Map.Entry<String, List<SettingWidget<?>>> entry : categories.entrySet()) {
                 String category = entry.getKey();
                 List<SettingWidget<?>> widgets = entry.getValue();
-                boolean collapsed = collapsedCategories.contains(category);
+                boolean collapsed = isCategoryCollapsed(category);
 
                 // Filter widgets by search
                 List<SettingWidget<?>> filtered = widgets;
@@ -565,6 +565,10 @@ public class SettingsScreen extends Screen {
 
     private boolean isHovered(float mx, float my, float bx, float by, float bw, float bh) {
         return mx >= bx && mx <= bx + bw && my >= by && my <= by + bh;
+    }
+
+    private boolean isCategoryCollapsed(String category) {
+        return searchQuery.isEmpty() && collapsedCategories.contains(category);
     }
 
     @Override
