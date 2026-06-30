@@ -11,7 +11,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import com.seqwawa.seq.model.SeqBadge;
-import com.seqwawa.seq.model.SeqBadgeEvent;
+import com.seqwawa.seq.model.SeqBadgeType;
 import com.seqwawa.seq.model.SeqBadgeTier;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 
@@ -23,10 +23,10 @@ class SeqBadgePlayerResolverTest {
 
     @Test
     void prefersPrimaryUuid() {
-        SeqBadge primaryBadge = new SeqBadge(SeqBadgeEvent.WTP, SeqBadgeTier.GOLD);
+        SeqBadge primaryBadge = new SeqBadge(SeqBadgeType.WTP, SeqBadgeTier.GOLD);
         TestBadgeLookup lookup = new TestBadgeLookup(Map.of(
                 PRIMARY_UUID, List.of(primaryBadge),
-                SECONDARY_UUID, List.of(new SeqBadge(SeqBadgeEvent.NOL, SeqBadgeTier.SILVER))));
+                SECONDARY_UUID, List.of(new SeqBadge(SeqBadgeType.NOL, SeqBadgeTier.SILVER))));
 
         List<SeqBadge> badges = SeqBadgePlayerResolver.resolve(
                 lookup::badgesFor,
@@ -42,10 +42,10 @@ class SeqBadgePlayerResolverTest {
 
     @Test
     void fallsBackToSecondaryBeforeLocalIdentity() {
-        SeqBadge secondaryBadge = new SeqBadge(SeqBadgeEvent.NOL, SeqBadgeTier.SILVER);
+        SeqBadge secondaryBadge = new SeqBadge(SeqBadgeType.NOL, SeqBadgeTier.SILVER);
         TestBadgeLookup lookup = new TestBadgeLookup(Map.of(
                 SECONDARY_UUID, List.of(secondaryBadge),
-                AUTH_UUID, List.of(new SeqBadge(SeqBadgeEvent.WTP, SeqBadgeTier.DIAMOND))));
+                AUTH_UUID, List.of(new SeqBadge(SeqBadgeType.WTP, SeqBadgeTier.DIAMOND))));
 
         List<SeqBadge> badges = SeqBadgePlayerResolver.resolve(
                 lookup::badgesFor,
@@ -61,7 +61,7 @@ class SeqBadgePlayerResolverTest {
 
     @Test
     void fallsBackToAuthThenLauncherForLocalPlayer() {
-        SeqBadge launcherBadge = new SeqBadge(SeqBadgeEvent.WTP, SeqBadgeTier.BRONZE);
+        SeqBadge launcherBadge = new SeqBadge(SeqBadgeType.WTP, SeqBadgeTier.BRONZE);
         TestBadgeLookup lookup = new TestBadgeLookup(Map.of(LAUNCHER_UUID, List.of(launcherBadge)));
 
         List<SeqBadge> badges = SeqBadgePlayerResolver.resolve(
