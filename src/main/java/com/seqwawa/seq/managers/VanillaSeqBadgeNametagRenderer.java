@@ -58,9 +58,6 @@ public final class VanillaSeqBadgeNametagRenderer implements SeqBadgeNametagRend
             PoseStack poseStack,
             SubmitNodeCollector submitNodeCollector,
             CameraRenderState cameraRenderState) {
-        if (!SeqBadgeNametagRenderSupport.showLeaderboardBadges()) {
-            return;
-        }
         if (!(state instanceof SeqAvatarRenderStateExtension extension)) {
             return;
         }
@@ -87,11 +84,11 @@ public final class VanillaSeqBadgeNametagRenderer implements SeqBadgeNametagRend
             return;
         }
 
-        List<SeqBadge> badges = SeqBadgePlayerResolver.resolve(
+        List<SeqBadge> badges = SeqBadgeNametagRenderSupport.visibleBadges(SeqBadgePlayerResolver.resolve(
                 badgeService,
                 extension.seq$getPlayerUuid(),
                 null,
-                localPlayer);
+                localPlayer));
         if (badges.isEmpty()) {
             return;
         }

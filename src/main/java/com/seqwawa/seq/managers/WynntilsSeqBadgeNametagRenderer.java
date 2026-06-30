@@ -148,7 +148,7 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public void onGetCameraEntity(GetCameraEntityEvent event) {
         refreshNametagFeatureState();
-        if (!SeqBadgeNametagRenderSupport.showLeaderboardBadges()
+        if (!SeqBadgeNametagRenderSupport.showAnyBadgeType()
                 || !SeqBadgeNametagRenderSupport.showOwnLeaderboardBadge()
                 || !shouldForceOwnAvatarRendering(showOwnNametag, nametagFeatureEnabled)
                 || !isGameplayOrInventoryScreen()) {
@@ -219,9 +219,6 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
             float nametagVerticalOffset,
             List<LeaderboardBadge> visibleWynntilsBadges,
             boolean seqOnlyLowerPlacement) {
-        if (!SeqBadgeNametagRenderSupport.showLeaderboardBadges()) {
-            return false;
-        }
         if (event == null || event.getEntityRenderState() == null) {
             return false;
         }
@@ -250,7 +247,7 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
         if (localCandidate && !SeqBadgeNametagRenderSupport.showOwnLeaderboardBadge()) {
             return false;
         }
-        List<SeqBadge> badges = badgesForPlayer(player, uuid, localCandidate);
+        List<SeqBadge> badges = SeqBadgeNametagRenderSupport.visibleBadges(badgesForPlayer(player, uuid, localCandidate));
         if (badges.isEmpty()) {
             return false;
         }
