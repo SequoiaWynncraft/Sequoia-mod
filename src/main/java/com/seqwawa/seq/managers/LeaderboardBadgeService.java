@@ -63,9 +63,9 @@ public final class LeaderboardBadgeService {
             mergeBadges(merged, cachedBadges.get(uuidKey));
         }
 
-        return merged.entrySet().stream()
+        return SeqBadge.sortForRender(merged.entrySet().stream()
                 .map(entry -> new SeqBadge(entry.getKey(), entry.getValue()))
-                .toList();
+                .toList());
     }
 
     public void tick() {

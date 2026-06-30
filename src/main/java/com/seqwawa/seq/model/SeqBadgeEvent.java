@@ -3,13 +3,16 @@ package com.seqwawa.seq.model;
 import java.util.Locale;
 
 public enum SeqBadgeEvent {
-    WTP("wtp"),
-    NOL("nol");
+    WTP("wtp", 0),
+    NOL("nol", 0),
+    INSIGNA("insigna", 1);
 
     private final String commandName;
+    private final int renderOrder;
 
-    SeqBadgeEvent(String commandName) {
+    SeqBadgeEvent(String commandName, int renderOrder) {
         this.commandName = commandName;
+        this.renderOrder = renderOrder;
     }
 
     public String commandName() {
@@ -18,6 +21,10 @@ public enum SeqBadgeEvent {
 
     public String apiName() {
         return name();
+    }
+
+    public int renderOrder() {
+        return renderOrder;
     }
 
     public static SeqBadgeEvent parse(String value) {
