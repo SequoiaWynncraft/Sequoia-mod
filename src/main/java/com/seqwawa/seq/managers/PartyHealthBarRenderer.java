@@ -278,13 +278,15 @@ public final class PartyHealthBarRenderer {
     }
 
     private static boolean hasSeqBadge(UUID playerUuid, boolean localPlayer) {
-        if (!SeqBadgeNametagRenderSupport.showLeaderboardBadges()) {
+        if (!SeqBadgeNametagRenderSupport.showAnyBadgeType()) {
             return false;
         }
         if (localPlayer && !SeqBadgeNametagRenderSupport.showOwnLeaderboardBadge()) {
             return false;
         }
-        return !SeqBadgePlayerResolver.resolve(LeaderboardBadgeService.getInstance(), playerUuid, null, localPlayer).isEmpty();
+        return !SeqBadgeNametagRenderSupport.visibleBadges(
+                        SeqBadgePlayerResolver.resolve(LeaderboardBadgeService.getInstance(), playerUuid, null, localPlayer))
+                .isEmpty();
     }
 
     private static boolean isLocalPlayer(AbstractClientPlayer player) {
