@@ -21,7 +21,7 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.LeaderboardBadgeAssignment;
 import com.seqwawa.seq.model.LeaderboardBadgeResponse;
 import com.seqwawa.seq.model.SeqBadge;
-import com.seqwawa.seq.model.SeqBadgeEvent;
+import com.seqwawa.seq.model.SeqBadgeType;
 import com.seqwawa.seq.model.SeqBadgeTier;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.utils.PlayerNameCache;
@@ -38,7 +38,7 @@ public final class LeaderboardBadgeService {
     private static LeaderboardBadgeService instance;
 
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
-    private volatile Map<String, Map<SeqBadgeEvent, SeqBadgeTier>> cachedBadges = Map.of();
+    private volatile Map<String, Map<SeqBadgeType, SeqBadgeTier>> cachedBadges = Map.of();
     private volatile boolean cacheLoaded;
     private volatile boolean refreshInFlight;
     private volatile long lastRefreshAttemptMs;
@@ -57,7 +57,7 @@ public final class LeaderboardBadgeService {
     }
 
     public List<SeqBadge> badgesFor(UUID uuid) {
-        EnumMap<SeqBadgeEvent, SeqBadgeTier> merged = new EnumMap<>(SeqBadgeEvent.class);
+        EnumMap<SeqBadgeType, SeqBadgeTier> merged = new EnumMap<>(SeqBadgeType.class);
         String uuidKey = uuid == null ? null : PlayerNameCache.formatUUID(uuid.toString());
         if (uuidKey != null) {
             mergeBadges(merged, cachedBadges.get(uuidKey));
@@ -84,7 +84,7 @@ public final class LeaderboardBadgeService {
         status = "refreshing";
 
         return ApiClient.getInstance().getLeaderboardBadges().thenApply(response -> {
-            Map<String, Map<SeqBadgeEvent, SeqBadgeTier>> parsed = parseAssignments(response);
+            Map<String, Map<SeqBadgeType, SeqBadgeTier>> parsed = parseAssignments(response);
             cachedBadges = parsed;
             writeCache(toResponse(parsed));
             lastSuccessfulRefresh = Instant.now();
@@ -129,8 +129,8 @@ public final class LeaderboardBadgeService {
         }
     }
 
-    private Map<String, Map<SeqBadgeEvent, SeqBadgeTier>> parseAssignments(LeaderboardBadgeResponse response) {
-        Map<String, EnumMap<SeqBadgeEvent, SeqBadgeTier>> parsed = new HashMap<>();
+    private Map<String, Map<SeqBadgeType, SeqBadgeTier>> parseAssignments(LeaderboardBadgeResponse response) {
+        Map<String, EnumMap<SeqBadgeType, SeqBadgeTier>> parsed = new HashMap<>();
         if (response == null || response.badges() == null) {
             return Map.of();
         }
@@ -143,25 +143,25 @@ public final class LeaderboardBadgeService {
             if (uuid == null || badge == null) {
                 continue;
             }
-            parsed.computeIfAbsent(uuid, ignored -> new EnumMap<>(SeqBadgeEvent.class))
-                    .merge(badge.event(), badge.tier(), SeqBadgeTier::highest);
+            parsed.computeIfAbsent(uuid, ignored -> new EnumMap<>(SeqBadgeType.class))
+                    .merge(badge.type(), badge.tier(), SeqBadgeTier::highest);
         }
 
-        Map<String, Map<SeqBadgeEvent, SeqBadgeTier>> immutable = new HashMap<>();
+        Map<String, Map<SeqBadgeType, SeqBadgeTier>> immutable = new HashMap<>();
         parsed.forEach((uuid, badges) -> immutable.put(uuid, Map.copyOf(badges)));
         return Map.copyOf(immutable);
     }
 
     private static SeqBadge parseAssignment(LeaderboardBadgeAssignment assignment) {
-        SeqBadgeEvent event = SeqBadgeEvent.parse(assignment.type());
+        SeqBadgeType type = SeqBadgeType.parse(assignment.type());
         SeqBadgeTier tier = SeqBadgeTier.parse(assignment.tier());
-        if (event != null && tier != null) {
-            return new SeqBadge(event, tier);
+        if (type != null && tier != null) {
+            return new SeqBadge(type, tier);
         }
         return SeqBadge.parseLegacy(assignment.legacyBadge());
     }
 
-    private LeaderboardBadgeResponse toResponse(Map<String, Map<SeqBadgeEvent, SeqBadgeTier>> badges) {
+    private LeaderboardBadgeResponse toResponse(Map<String, Map<SeqBadgeType, SeqBadgeTier>> badges) {
         List<LeaderboardBadgeAssignment> assignments = badges.entrySet().stream()
                 .sorted(Comparator.comparing(Map.Entry::getKey))
                 .flatMap(player -> player.getValue().entrySet().stream()
@@ -188,14 +188,14 @@ public final class LeaderboardBadgeService {
     }
 
     private static void mergeBadges(
-            EnumMap<SeqBadgeEvent, SeqBadgeTier> target,
-            Map<SeqBadgeEvent, SeqBadgeTier> source) {
+            EnumMap<SeqBadgeType, SeqBadgeTier> target,
+            Map<SeqBadgeType, SeqBadgeTier> source) {
         if (source != null) {
             target.putAll(source);
         }
     }
 
-    private static int badgeCount(Map<String, Map<SeqBadgeEvent, SeqBadgeTier>> badges) {
+    private static int badgeCount(Map<String, Map<SeqBadgeType, SeqBadgeTier>> badges) {
         return badges.values().stream().mapToInt(Map::size).sum();
     }
 

@@ -15,7 +15,7 @@ class SeqBadgeTest {
     @Test
     void parsesLegacyCombinedBadgeName() {
         assertEquals(
-                new SeqBadge(SeqBadgeEvent.WTP, SeqBadgeTier.GOLD),
+                new SeqBadge(SeqBadgeType.WTP, SeqBadgeTier.GOLD),
                 SeqBadge.parseLegacy("WTP_GOLD"));
     }
 
@@ -25,35 +25,35 @@ class SeqBadgeTest {
     }
 
     @Test
-    void buildsEventSpecificTexturePath() {
+    void buildsTypeSpecificTexturePath() {
         assertEquals(
                 "seq:badges/wtp_gold.png",
-                new SeqBadge(SeqBadgeEvent.WTP, SeqBadgeTier.GOLD).textureId().toString());
+                new SeqBadge(SeqBadgeType.WTP, SeqBadgeTier.GOLD).textureId().toString());
         assertEquals(
                 "seq:badges/nol_gold.png",
-                new SeqBadge(SeqBadgeEvent.NOL, SeqBadgeTier.GOLD).textureId().toString());
+                new SeqBadge(SeqBadgeType.NOL, SeqBadgeTier.GOLD).textureId().toString());
         assertEquals(
                 "seq:badges/insigna_gold.png",
-                new SeqBadge(SeqBadgeEvent.INSIGNA, SeqBadgeTier.GOLD).textureId().toString());
+                new SeqBadge(SeqBadgeType.INSIGNA, SeqBadgeTier.GOLD).textureId().toString());
     }
 
     @Test
-    void rendersInsignaAfterEventBadges() {
+    void rendersInsignaAfterOtherBadgeTypes() {
         assertEquals(
                 List.of(
-                        new SeqBadge(SeqBadgeEvent.WTP, SeqBadgeTier.GOLD),
-                        new SeqBadge(SeqBadgeEvent.NOL, SeqBadgeTier.SILVER),
-                        new SeqBadge(SeqBadgeEvent.INSIGNA, SeqBadgeTier.DIAMOND)),
+                        new SeqBadge(SeqBadgeType.WTP, SeqBadgeTier.GOLD),
+                        new SeqBadge(SeqBadgeType.NOL, SeqBadgeTier.SILVER),
+                        new SeqBadge(SeqBadgeType.INSIGNA, SeqBadgeTier.DIAMOND)),
                 SeqBadge.sortForRender(List.of(
-                        new SeqBadge(SeqBadgeEvent.INSIGNA, SeqBadgeTier.DIAMOND),
-                        new SeqBadge(SeqBadgeEvent.NOL, SeqBadgeTier.SILVER),
-                        new SeqBadge(SeqBadgeEvent.WTP, SeqBadgeTier.GOLD))));
+                        new SeqBadge(SeqBadgeType.INSIGNA, SeqBadgeTier.DIAMOND),
+                        new SeqBadge(SeqBadgeType.NOL, SeqBadgeTier.SILVER),
+                        new SeqBadge(SeqBadgeType.WTP, SeqBadgeTier.GOLD))));
     }
 
     @Test
     void badgeAssignmentsUseTypeWireKey() {
         LeaderboardBadgeAssignment assignment =
-                new LeaderboardBadgeAssignment("00000000-0000-0000-0000-000000000000", new SeqBadge(SeqBadgeEvent.WTP, SeqBadgeTier.GOLD));
+                new LeaderboardBadgeAssignment("00000000-0000-0000-0000-000000000000", new SeqBadge(SeqBadgeType.WTP, SeqBadgeTier.GOLD));
 
         String json = GSON.toJson(assignment);
 

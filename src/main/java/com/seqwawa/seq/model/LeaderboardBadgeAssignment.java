@@ -8,6 +8,6 @@ public record LeaderboardBadgeAssignment(
         String tier,
         @SerializedName("badge") String legacyBadge) {
     public LeaderboardBadgeAssignment(String playerUuid, SeqBadge badge) {
-        this(playerUuid, badge.event().apiName(), badge.tier().apiName(), null);
+        this(playerUuid, badge.type().apiName(), badge.tier().apiName(), null);
     }
 }
