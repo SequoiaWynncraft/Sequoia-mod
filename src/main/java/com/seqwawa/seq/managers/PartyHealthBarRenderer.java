@@ -7,7 +7,6 @@ import com.wynntils.mc.extension.EntityRenderStateExtension;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.render.SeqAvatarRenderStateExtension;
 import java.util.UUID;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
@@ -44,7 +43,7 @@ public final class PartyHealthBarRenderer {
             return;
         }
         boolean localPlayer = extension.seq$isLocalPlayer();
-        if (localPlayer && Minecraft.getInstance().options.getCameraType().isFirstPerson()) {
+        if (localPlayer) {
             return;
         }
         if (shouldSuppressVanillaHealthBar(state, localPlayer)) {
@@ -83,6 +82,9 @@ public final class PartyHealthBarRenderer {
                 ? abstractClientPlayer
                 : null;
         UUID playerUuid = player == null ? null : player.getUUID();
+        if (isLocalPlayer(player)) {
+            return;
+        }
         float badgeYOffset = nametagVerticalOffset == 0f && !seqOnlyLowerPlacement
                 ? SeqBadgeNametagRenderSupport.WYNNTILS_DEFAULT_BADGE_Y_OFFSET
                 : SeqBadgeNametagRenderSupport.LOWER_BADGE_Y_OFFSET;

@@ -459,7 +459,7 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.BooleanSetting("show_leaderboard_badges", "leaderboard_badges", true);
         showOwnLeaderboardBadgeSetting =
                 new Setting.BooleanSetting("show_own_leaderboard_badge", "leaderboard_badges", true);
-        showPartyHealthBarsSetting = new Setting.BooleanSetting("show_party_healthbars", "party_healthbar", true);
+        showPartyHealthBarsSetting = new Setting.BooleanSetting("show_party_healthbars", "raids", true);
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
