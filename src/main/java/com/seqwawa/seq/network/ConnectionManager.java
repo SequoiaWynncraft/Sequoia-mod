@@ -143,14 +143,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     @Override
     public void connect() {
-        connectInternal(false);
+        connectInternal(false, false);
     }
 
     public void connectManually() {
-        connectInternal(true);
+        connectInternal(true, true);
     }
 
-    private void connectInternal(boolean userInitiated) {
+    private void connectInternal(boolean userInitiated, boolean forceTokenRefresh) {
         if (userInitiated) {
             autoConnectSuppressedByManualDisconnect = false;
         }
@@ -194,7 +194,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
 
         notifyConnectionStatus("Connecting to " + BuildConfig.ENVIRONMENT + "...");
-        prepareAuthenticatedConnection();
+        prepareAuthenticatedConnection(forceTokenRefresh);
     }
 
     public void disconnect() {
@@ -502,7 +502,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         send(GSON.toJson(payload));
     }
 
-    private void prepareAuthenticatedConnection() {
+    private void prepareAuthenticatedConnection(boolean forceTokenRefresh) {
         WynncraftServerPolicy.Scope initialScope = WynncraftServerPolicy.currentScope();
         if (initialScope != WynncraftServerPolicy.Scope.MAIN) {
             connectInProgress = false;
@@ -521,7 +521,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
         connectInProgress = true;
         SeqClient.getAuthService()
-                .ensureValidToken(false)
+                .ensureValidToken(forceTokenRefresh)
                 .whenComplete((token, throwable) -> Minecraft.getInstance().execute(() -> {
                     if (throwable != null) {
                         connectInProgress = false;

@@ -31,6 +31,7 @@ import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
 import com.seqwawa.seq.managers.GuildWarTrackers;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
+import com.seqwawa.seq.managers.PartyHealthCache;
 import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
@@ -130,6 +131,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static Setting.BooleanSetting showOwnLeaderboardBadgeSetting;
+
+    @Getter
+    public static Setting.BooleanSetting showPartyHealthBarsSetting;
 
     @Getter
     public static WynnPartySyncManager wynnPartySyncManager;
@@ -243,6 +247,7 @@ public class SeqClient implements ClientModInitializer {
             if (wynnPartySyncManager != null) {
                 wynnPartySyncManager.tick();
             }
+            PartyHealthCache.tick();
             if (guildWarTracker != null) {
                 guildWarTracker.tick();
             }
@@ -454,6 +459,7 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.BooleanSetting("show_leaderboard_badges", "leaderboard_badges", true);
         showOwnLeaderboardBadgeSetting =
                 new Setting.BooleanSetting("show_own_leaderboard_badge", "leaderboard_badges", true);
+        showPartyHealthBarsSetting = new Setting.BooleanSetting("show_party_healthbars", "raids", true);
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
@@ -472,6 +478,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(halcyonRangeVisualiserSetting);
         getConfigManager().register(showLeaderboardBadgesSetting);
         getConfigManager().register(showOwnLeaderboardBadgeSetting);
+        getConfigManager().register(showPartyHealthBarsSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.
