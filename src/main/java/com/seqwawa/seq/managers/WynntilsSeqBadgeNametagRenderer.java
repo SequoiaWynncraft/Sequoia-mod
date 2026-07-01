@@ -94,6 +94,11 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
         return "wynntils (" + status + ")";
     }
 
+    @Override
+    public boolean shouldSuppressVanillaHealthBar(AvatarRenderState state, boolean localPlayer) {
+        return !shouldRenderVanillaFallback(state, localPlayer);
+    }
+
     private boolean ensureRegistered() {
         if (registered) {
             return true;

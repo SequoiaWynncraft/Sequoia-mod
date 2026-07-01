@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.world.entity.Entity;
+import com.seqwawa.seq.managers.PartyHealthBarRenderer;
 import com.seqwawa.seq.managers.WynntilsSeqBadgeNametagRenderer;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -38,8 +39,10 @@ public abstract class WynntilsCustomNametagRendererMixin {
     @Inject(method = "drawBadges", at = @At("HEAD"), cancellable = true, require = 0, remap = false)
     private void seq$renderLeaderboardBadge(
             PlayerNametagRenderEvent event, float nametagVerticalOffset, CallbackInfo callbackInfo) {
+        List<LeaderboardBadge> visibleWynntilsBadges = seq$visibleWynntilsBadges(event);
+        PartyHealthBarRenderer.renderWynntils(event, nametagVerticalOffset, !visibleWynntilsBadges.isEmpty(), false);
         if (WynntilsSeqBadgeNametagRenderer.renderIntegrated(
-                event, nametagVerticalOffset, seq$visibleWynntilsBadges(event))) {
+                event, nametagVerticalOffset, visibleWynntilsBadges)) {
             callbackInfo.cancel();
         }
     }
@@ -55,6 +58,7 @@ public abstract class WynntilsCustomNametagRendererMixin {
             remap = false)
     private void seq$renderHiddenPlayerNametagBadge(
             PlayerNametagRenderEvent event, CallbackInfo callbackInfo) {
+        PartyHealthBarRenderer.renderWynntils(event, 0f, false, true);
         WynntilsSeqBadgeNametagRenderer.renderHiddenPlayerNametag(event);
     }
 
