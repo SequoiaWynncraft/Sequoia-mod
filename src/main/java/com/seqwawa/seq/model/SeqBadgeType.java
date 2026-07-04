@@ -2,14 +2,17 @@ package com.seqwawa.seq.model;
 
 import java.util.Locale;
 
-public enum SeqBadgeEvent {
-    WTP("wtp"),
-    NOL("nol");
+public enum SeqBadgeType {
+    WTP("wtp", 0),
+    NOL("nol", 0),
+    INSIGNIA("insignia", 1);
 
     private final String commandName;
+    private final int renderOrder;
 
-    SeqBadgeEvent(String commandName) {
+    SeqBadgeType(String commandName, int renderOrder) {
         this.commandName = commandName;
+        this.renderOrder = renderOrder;
     }
 
     public String commandName() {
@@ -20,13 +23,17 @@ public enum SeqBadgeEvent {
         return name();
     }
 
-    public static SeqBadgeEvent parse(String value) {
+    public int renderOrder() {
+        return renderOrder;
+    }
+
+    public static SeqBadgeType parse(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }
         String normalized = value.trim().toUpperCase(Locale.ROOT).replace('-', '_');
         try {
-            return SeqBadgeEvent.valueOf(normalized);
+            return SeqBadgeType.valueOf(normalized);
         } catch (IllegalArgumentException ignored) {
             return null;
         }

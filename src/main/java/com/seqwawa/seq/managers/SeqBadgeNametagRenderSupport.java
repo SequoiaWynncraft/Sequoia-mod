@@ -1,6 +1,10 @@
 package com.seqwawa.seq.managers;
 
+import java.util.Collection;
+import java.util.List;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.model.SeqBadge;
+import com.seqwawa.seq.model.SeqBadgeType;
 
 final class SeqBadgeNametagRenderSupport {
     static final float BADGE_WIDTH = 19f;
@@ -11,9 +15,31 @@ final class SeqBadgeNametagRenderSupport {
 
     private SeqBadgeNametagRenderSupport() {}
 
-    static boolean showLeaderboardBadges() {
-        return SeqClient.getShowLeaderboardBadgesSetting() == null
-                || SeqClient.getShowLeaderboardBadgesSetting().getValue();
+    static boolean showAnyBadgeType() {
+        return showRaidBadges() || showInsigniaBadges();
+    }
+
+    static List<SeqBadge> visibleBadges(Collection<SeqBadge> badges) {
+        return SeqBadge.sortForRender(badges.stream()
+                .filter(badge -> isBadgeTypeVisible(badge.type()))
+                .toList());
+    }
+
+    static boolean isBadgeTypeVisible(SeqBadgeType type) {
+        return switch (type) {
+            case WTP, NOL -> showRaidBadges();
+            case INSIGNIA -> showInsigniaBadges();
+        };
+    }
+
+    static boolean showRaidBadges() {
+        return SeqClient.getShowRaidBadgesSetting() == null
+                || SeqClient.getShowRaidBadgesSetting().getValue();
+    }
+
+    static boolean showInsigniaBadges() {
+        return SeqClient.getShowInsigniaBadgesSetting() == null
+                || SeqClient.getShowInsigniaBadgesSetting().getValue();
     }
 
     static boolean showOwnLeaderboardBadge() {
