@@ -33,19 +33,19 @@ class SeqBadgeTest {
                 "seq:badges/nol_gold.png",
                 new SeqBadge(SeqBadgeType.NOL, SeqBadgeTier.GOLD).textureId().toString());
         assertEquals(
-                "seq:badges/insigna_gold.png",
-                new SeqBadge(SeqBadgeType.INSIGNA, SeqBadgeTier.GOLD).textureId().toString());
+                "seq:badges/insignia_gold.png",
+                new SeqBadge(SeqBadgeType.INSIGNIA, SeqBadgeTier.GOLD).textureId().toString());
     }
 
     @Test
-    void rendersInsignaAfterOtherBadgeTypes() {
+    void rendersInsigniaAfterOtherBadgeTypes() {
         assertEquals(
                 List.of(
                         new SeqBadge(SeqBadgeType.WTP, SeqBadgeTier.GOLD),
                         new SeqBadge(SeqBadgeType.NOL, SeqBadgeTier.SILVER),
-                        new SeqBadge(SeqBadgeType.INSIGNA, SeqBadgeTier.DIAMOND)),
+                        new SeqBadge(SeqBadgeType.INSIGNIA, SeqBadgeTier.DIAMOND)),
                 SeqBadge.sortForRender(List.of(
-                        new SeqBadge(SeqBadgeType.INSIGNA, SeqBadgeTier.DIAMOND),
+                        new SeqBadge(SeqBadgeType.INSIGNIA, SeqBadgeTier.DIAMOND),
                         new SeqBadge(SeqBadgeType.NOL, SeqBadgeTier.SILVER),
                         new SeqBadge(SeqBadgeType.WTP, SeqBadgeTier.GOLD))));
     }

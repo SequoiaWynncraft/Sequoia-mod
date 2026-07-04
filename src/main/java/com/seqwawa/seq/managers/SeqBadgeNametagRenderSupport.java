@@ -16,7 +16,7 @@ final class SeqBadgeNametagRenderSupport {
     private SeqBadgeNametagRenderSupport() {}
 
     static boolean showAnyBadgeType() {
-        return showRaidBadges() || showInsignaBadges();
+        return showRaidBadges() || showInsigniaBadges();
     }
 
     static List<SeqBadge> visibleBadges(Collection<SeqBadge> badges) {
@@ -28,7 +28,7 @@ final class SeqBadgeNametagRenderSupport {
     static boolean isBadgeTypeVisible(SeqBadgeType type) {
         return switch (type) {
             case WTP, NOL -> showRaidBadges();
-            case INSIGNA -> showInsignaBadges();
+            case INSIGNIA -> showInsigniaBadges();
         };
     }
 
@@ -37,9 +37,9 @@ final class SeqBadgeNametagRenderSupport {
                 || SeqClient.getShowRaidBadgesSetting().getValue();
     }
 
-    static boolean showInsignaBadges() {
-        return SeqClient.getShowInsignaBadgesSetting() == null
-                || SeqClient.getShowInsignaBadgesSetting().getValue();
+    static boolean showInsigniaBadges() {
+        return SeqClient.getShowInsigniaBadgesSetting() == null
+                || SeqClient.getShowInsigniaBadgesSetting().getValue();
     }
 
     static boolean showOwnLeaderboardBadge() {

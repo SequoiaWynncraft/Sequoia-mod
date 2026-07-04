@@ -24,21 +24,21 @@ class SeqBadgeNametagRenderSupportTest {
     @Test
     void filtersVisibleBadgesByCategorySettings() {
         Setting.BooleanSetting previousRaidSetting = SeqClient.showRaidBadgesSetting;
-        Setting.BooleanSetting previousInsignaSetting = SeqClient.showInsignaBadgesSetting;
+        Setting.BooleanSetting previousInsigniaSetting = SeqClient.showInsigniaBadgesSetting;
         try {
             SeqClient.showRaidBadgesSetting = new Setting.BooleanSetting("show_raid_badges", "leaderboard_badges", false);
-            SeqClient.showInsignaBadgesSetting =
-                    new Setting.BooleanSetting("show_insigna_badges", "leaderboard_badges", true);
+            SeqClient.showInsigniaBadgesSetting =
+                    new Setting.BooleanSetting("show_insignia_badges", "leaderboard_badges", true);
 
             assertEquals(
-                    List.of(new SeqBadge(SeqBadgeType.INSIGNA, SeqBadgeTier.DIAMOND)),
+                    List.of(new SeqBadge(SeqBadgeType.INSIGNIA, SeqBadgeTier.DIAMOND)),
                     SeqBadgeNametagRenderSupport.visibleBadges(List.of(
                             new SeqBadge(SeqBadgeType.WTP, SeqBadgeTier.GOLD),
                             new SeqBadge(SeqBadgeType.NOL, SeqBadgeTier.SILVER),
-                            new SeqBadge(SeqBadgeType.INSIGNA, SeqBadgeTier.DIAMOND))));
+                            new SeqBadge(SeqBadgeType.INSIGNIA, SeqBadgeTier.DIAMOND))));
         } finally {
             SeqClient.showRaidBadgesSetting = previousRaidSetting;
-            SeqClient.showInsignaBadgesSetting = previousInsignaSetting;
+            SeqClient.showInsigniaBadgesSetting = previousInsigniaSetting;
         }
     }
 }

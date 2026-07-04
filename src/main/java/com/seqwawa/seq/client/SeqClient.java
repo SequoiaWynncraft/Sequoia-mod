@@ -130,7 +130,7 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting showRaidBadgesSetting;
 
     @Getter
-    public static Setting.BooleanSetting showInsignaBadgesSetting;
+    public static Setting.BooleanSetting showInsigniaBadgesSetting;
 
     @Getter
     public static Setting.BooleanSetting showOwnLeaderboardBadgeSetting;
@@ -460,8 +460,8 @@ public class SeqClient implements ClientModInitializer {
         receiveBombShareRequestsSetting = new Setting.BooleanSetting("receive_bomb_share_requests", "network", true);
         showRaidBadgesSetting =
                 new Setting.BooleanSetting("show_raid_badges", "leaderboard_badges", true);
-        showInsignaBadgesSetting =
-                new Setting.BooleanSetting("show_insigna_badges", "leaderboard_badges", true);
+        showInsigniaBadgesSetting =
+                new Setting.BooleanSetting("show_insignia_badges", "leaderboard_badges", true);
         showOwnLeaderboardBadgeSetting =
                 new Setting.BooleanSetting("show_own_leaderboard_badge", "leaderboard_badges", true);
         showPartyHealthBarsSetting = new Setting.BooleanSetting("show_party_healthbars", "raids", true);
@@ -482,7 +482,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(radianceCheckerSetting);
         getConfigManager().register(halcyonRangeVisualiserSetting);
         getConfigManager().register(showRaidBadgesSetting);
-        getConfigManager().register(showInsignaBadgesSetting);
+        getConfigManager().register(showInsigniaBadgesSetting);
         getConfigManager().register(showOwnLeaderboardBadgeSetting);
         getConfigManager().register(showPartyHealthBarsSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
