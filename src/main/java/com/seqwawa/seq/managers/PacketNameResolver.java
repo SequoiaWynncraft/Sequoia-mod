@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.regex.Pattern;
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.contents.PlainTextContents;
@@ -48,16 +49,24 @@ final class PacketNameResolver {
             return metadata.firstHoverRealName();
         }
 
+        if (metadata.firstInsertionName() != null) {
+            return metadata.firstInsertionName();
+        }
+
         String displayedUsername = validUsername(trimmed);
         if (displayedUsername != null) {
             return displayedUsername;
         }
 
-        if (metadata.firstInsertionName() != null) {
-            return metadata.firstInsertionName();
-        }
-
         return null;
+    }
+
+    String resolveMetadataUsername(int startInclusive, int endExclusive) {
+        NameMetadata metadata = metadataForRange(startInclusive, endExclusive);
+        if (metadata.firstHoverRealName() != null) {
+            return metadata.firstHoverRealName();
+        }
+        return metadata.firstInsertionName();
     }
 
     private NameMetadata metadataForRange(int startInclusive, int endExclusive) {
@@ -88,15 +97,51 @@ final class PacketNameResolver {
         Style style = fragment.getStyle();
         String hoverRealName = validUsername(ChatManager.extractHoverRealUsername(style));
         String insertionName = validUsername(ChatManager.extractInsertionUsername(style));
+        Integer baseColor = style.getColor() == null ? null : style.getColor().getValue();
+        Integer currentColor = baseColor;
+        boolean legacyStrikethrough = false;
+        boolean legacyItalic = false;
 
         boolean previousWasSpace = !target.isEmpty() && target.getLast().value() == ' ';
+        boolean skipLegacyFormattingCode = false;
         for (int index = 0; index < text.length();) {
             int codePoint = text.codePointAt(index);
             index += Character.charCount(codePoint);
 
+            if (skipLegacyFormattingCode) {
+                ChatFormatting formatting = ChatFormatting.getByCode((char) Character.toLowerCase(codePoint));
+                if (formatting == ChatFormatting.RESET) {
+                    currentColor = baseColor;
+                    legacyStrikethrough = false;
+                    legacyItalic = false;
+                } else if (formatting != null) {
+                    if (formatting.getColor() != null) {
+                        currentColor = formatting.getColor();
+                        legacyStrikethrough = false;
+                        legacyItalic = false;
+                    } else if (formatting == ChatFormatting.STRIKETHROUGH) {
+                        legacyStrikethrough = true;
+                    } else if (formatting == ChatFormatting.ITALIC) {
+                        legacyItalic = true;
+                    }
+                }
+                skipLegacyFormattingCode = false;
+                continue;
+            }
+            if (codePoint == '§') {
+                skipLegacyFormattingCode = true;
+                continue;
+            }
+
             if (Character.isWhitespace(codePoint) || isIgnorableForParsing(codePoint)) {
                 if (!previousWasSpace) {
-                    target.add(new MetaChar(' ', hoverRealName, insertionName));
+                    target.add(new MetaChar(
+                            ' ',
+                            hoverRealName,
+                            insertionName,
+                            style.isStrikethrough() || legacyStrikethrough,
+                            style.isItalic() || legacyItalic,
+                            currentColor));
                     previousWasSpace = true;
                 }
                 continue;
@@ -104,7 +149,13 @@ final class PacketNameResolver {
 
             String value = new String(Character.toChars(codePoint));
             for (int charIndex = 0; charIndex < value.length(); charIndex++) {
-                target.add(new MetaChar(value.charAt(charIndex), hoverRealName, insertionName));
+                target.add(new MetaChar(
+                        value.charAt(charIndex),
+                        hoverRealName,
+                        insertionName,
+                        style.isStrikethrough() || legacyStrikethrough,
+                        style.isItalic() || legacyItalic,
+                        currentColor));
             }
             previousWasSpace = false;
         }
@@ -140,7 +191,63 @@ final class PacketNameResolver {
         return builder.toString();
     }
 
-    private record MetaChar(char value, String hoverRealName, String insertionName) {}
+    boolean hasStrikethrough(int startInclusive, int endExclusive) {
+        int cappedStart = Math.max(0, startInclusive);
+        int cappedEnd = Math.min(endExclusive, characters.size());
+        for (int index = cappedStart; index < cappedEnd; index++) {
+            if (characters.get(index).strikethrough()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    boolean hasItalic(int startInclusive, int endExclusive) {
+        int cappedStart = Math.max(0, startInclusive);
+        int cappedEnd = Math.min(endExclusive, characters.size());
+        for (int index = cappedStart; index < cappedEnd; index++) {
+            if (characters.get(index).italic()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    boolean hasOnlyRedHealthCharacters(int startInclusive, int endExclusive) {
+        int cappedStart = Math.max(0, startInclusive);
+        int cappedEnd = Math.min(endExclusive, characters.size());
+        boolean foundHealthCharacter = false;
+        for (int index = cappedStart; index < cappedEnd; index++) {
+            MetaChar character = characters.get(index);
+            if (Character.isWhitespace(character.value())) {
+                continue;
+            }
+            foundHealthCharacter = true;
+            if (!isRedHealthColor(character.color())) {
+                return false;
+            }
+        }
+        return foundHealthCharacter;
+    }
+
+    private static boolean isRedHealthColor(Integer color) {
+        if (color == null) {
+            return false;
+        }
+
+        int red = (color >> 16) & 0xFF;
+        int green = (color >> 8) & 0xFF;
+        int blue = color & 0xFF;
+        return red >= 120 && green <= 120 && blue <= 120 && red > green && red > blue;
+    }
+
+    private record MetaChar(
+            char value,
+            String hoverRealName,
+            String insertionName,
+            boolean strikethrough,
+            boolean italic,
+            Integer color) {}
 
     private record NameMetadata(List<String> hoverRealNames, List<String> insertionNames) {
         private String firstHoverRealName() {

@@ -10,6 +10,7 @@ import net.minecraft.client.renderer.state.CameraRenderState;
 import net.minecraft.world.entity.Avatar;
 import net.minecraft.world.entity.EntityAttachment;
 import net.minecraft.world.phys.Vec3;
+import com.seqwawa.seq.managers.PartyHealthBarRenderer;
 import com.seqwawa.seq.managers.VanillaSeqBadgeNametagRenderer;
 import com.seqwawa.seq.render.SeqAvatarRenderStateExtension;
 import org.spongepowered.asm.mixin.Mixin;
@@ -48,6 +49,8 @@ public abstract class AvatarRendererMixin {
             SubmitNodeCollector submitNodeCollector,
             CameraRenderState cameraRenderState,
             CallbackInfo callbackInfo) {
+        PartyHealthBarRenderer.renderIfVisible(
+                state, poseStack, submitNodeCollector, cameraRenderState);
         VanillaSeqBadgeNametagRenderer.renderIfActive(
                 state, poseStack, submitNodeCollector, cameraRenderState);
     }

@@ -114,6 +114,8 @@ public class ChatManager {
             }
         }
 
+        observeNicknameMapping(message);
+
         // Guild chat uses aqua color (§b / 0x55FFFF) per Wynntils' RecipientType.GUILD.
         // This cleanly rejects DMs, party, shout, territory, and other message types
         // that share the \uDAFF\uDFFC icon prefix but use different colors.
@@ -151,6 +153,32 @@ public class ChatManager {
                 parsed.message(),
                 parsed.avatarUrl(),
                 parsed.itemPreviews());
+    }
+
+    private static void observeNicknameMapping(Component message) {
+        String cleaned = PacketTextNormalizer.normalizeForParsing(message == null ? null : message.getString());
+        Matcher matcher = CHAT_PATTERN.matcher(cleaned);
+        if (!matcher.find()) {
+            return;
+        }
+
+        String displayedName = matcher.group(1).trim();
+        String realUsername = findRealUsername(message, displayedName);
+        if (realUsername == null || !realUsername.matches("[a-zA-Z0-9_]{3,16}")) {
+            SeqClient.LOGGER.debug(
+                    "[NicknameResolver] Chat observe no real username displayed='{}' real='{}' cleaned='{}'",
+                    displayedName,
+                    realUsername,
+                    cleaned);
+            return;
+        }
+
+        SeqClient.LOGGER.debug(
+                "[NicknameResolver] Chat observe displayed='{}' real='{}' cleaned='{}'",
+                displayedName,
+                realUsername,
+                cleaned);
+        NicknameResolverCache.remember(displayedName, realUsername);
     }
 
     private static boolean shouldRelayForLocalGuild() {
@@ -240,6 +268,7 @@ public class ChatManager {
                 + URLEncoder.encode(avatarUsername, StandardCharsets.UTF_8).replace("+", "%20")
                 + "/128";
         String nickname = deriveNickname(displayedName, avatarUsername);
+        NicknameResolverCache.remember(displayedName, avatarUsername);
         return new ParsedMessage(avatarUsername, nickname, content, avatarUrl, itemPreviewResult.previews());
     }
 

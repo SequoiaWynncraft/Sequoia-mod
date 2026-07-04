@@ -28,6 +28,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("enable_radiance_visualiser", "Enable Radiance visualiser");
         DISPLAY_NAME_OVERRIDES.put("show_leaderboard_badges", "Show leaderboard badges");
         DISPLAY_NAME_OVERRIDES.put("show_own_leaderboard_badge", "Show own leaderboard badge");
+        DISPLAY_NAME_OVERRIDES.put("show_party_healthbars", "Show party health bars");
 
         TOKEN_REPLACEMENTS.put("discord", "Discord");
         TOKEN_REPLACEMENTS.put("bridge", "Chat");

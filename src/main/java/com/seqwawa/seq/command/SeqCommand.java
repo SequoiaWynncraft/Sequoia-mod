@@ -33,6 +33,8 @@ import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.network.WynncraftServerPolicy;
+import com.seqwawa.seq.network.auth.AuthException;
 import com.seqwawa.seq.ui.GatheringMapScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.utils.PlayerNameCache;
@@ -93,15 +95,49 @@ public class SeqCommand {
                                                         boolean hasToken = token != null && !token.isBlank();
                                                         String uptime = ConnectionManager.getInstance()
                                                                         .getUptimeString();
+                                                        String rendererStatus = SeqClient.getSeqBadgeNametagRenderer() == null
+                                                                        ? "disabled"
+                                                                        : SeqClient.getSeqBadgeNametagRenderer().status();
+                                                        AuthException authError = SeqClient.getAuthService().getLastError();
+                                                        boolean tokenExpired = hasToken && SeqClient.getAuthService().isTokenExpired();
                                                         sendFeedback(
                                                                         ctx.getSource(),
                                                                         "Connected: " + connected
                                                                                         + " | Token: "
                                                                                         + (hasToken ? "present"
                                                                                                         : "none")
+                                                                                        + (hasToken
+                                                                                                        ? " (expired="
+                                                                                                                        + tokenExpired
+                                                                                                                        + ")"
+                                                                                                        : "")
+                                                                                        + " | Server: "
+                                                                                        + WynncraftServerPolicy
+                                                                                                        .currentScope()
+                                                                                        + " host="
+                                                                                        + WynncraftServerPolicy
+                                                                                                        .currentNormalizedHost()
+                                                                                        + " | Auth: "
+                                                                                        + SeqClient.getAuthService()
+                                                                                                        .getState()
+                                                                                        + (authError != null
+                                                                                                        ? " "
+                                                                                                                        + authError.getStableCode()
+                                                                                                                        + ": "
+                                                                                                                        + authError.getMessage()
+                                                                                                        : "")
+                                                                                        + " | Manual disconnect suppressed: "
+                                                                                        + ConnectionManager
+                                                                                                        .isAutoConnectSuppressedByManualDisconnect()
                                                                                         + (uptime != null
                                                                                                         ? " | Uptime: " + uptime
-                                                                                                        : ""));
+                                                                                                        : "")
+                                                                                        + " | "
+                                                                                        + LeaderboardBadgeService
+                                                                                                        .getInstance()
+                                                                                                        .status()
+                                                                                        + " | badge renderer="
+                                                                                        + rendererStatus);
                                                         return 1;
                                                 }))
                                 .then(ClientCommandManager.literal("logout")
@@ -118,7 +154,8 @@ public class SeqCommand {
                                 .then(buildAspectRewardCommand())
                                 .then(buildTomeRewardCommand())
                                 .then(buildBombCommand())
-                                .then(buildBadgeCommand())
+                                .then(buildBadgeCommand("badges"))
+                                .then(buildBadgeCommand("badge"))
                                 .then(buildMapCommand())
                                 .then(buildPartyCommand("party"))
                                 .then(buildPartyCommand("p"));
@@ -279,8 +316,8 @@ public class SeqCommand {
                                                                 .executes(SeqCommand::runDirectAspectReward)));
         }
 
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildBadgeCommand() {
-                return ClientCommandManager.literal("badges")
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildBadgeCommand(String literalName) {
+                return ClientCommandManager.literal(literalName)
                                 .executes(SeqCommand::runBadgeStatus)
                                 .then(ClientCommandManager.literal("status")
                                                 .executes(SeqCommand::runBadgeStatus))
