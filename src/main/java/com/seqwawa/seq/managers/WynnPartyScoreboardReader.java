@@ -325,8 +325,12 @@ public final class WynnPartyScoreboardReader {
         return line.contains("Party:");
     }
 
-    static ParsedPartyLine parsePartyLine(String line, boolean allowOfflineLine) {
+    static ParsedPartyLine parsePartyLine(String line, boolean allowPartyLine) {
         if (line == null || line.isBlank()) {
+            return null;
+        }
+
+        if (!allowPartyLine) {
             return null;
         }
 
@@ -335,7 +339,7 @@ public final class WynnPartyScoreboardReader {
             return onlineLine;
         }
 
-        return allowOfflineLine ? parseOfflinePartyLine(line) : null;
+        return parseOfflinePartyLine(line);
     }
 
     private static ParsedPartyLine parseOnlinePartyLine(String line) {
