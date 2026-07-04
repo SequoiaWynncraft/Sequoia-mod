@@ -2,6 +2,7 @@ package com.seqwawa.seq.managers;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.wynntils.core.components.Models;
 import com.wynntils.mc.event.PlayerNametagRenderEvent;
 import com.wynntils.mc.extension.EntityRenderStateExtension;
 import com.seqwawa.seq.client.SeqClient;
@@ -49,6 +50,9 @@ public final class PartyHealthBarRenderer {
         if (shouldSuppressVanillaHealthBar(state, localPlayer)) {
             return;
         }
+        if (state.nameTag == null) {
+            return;
+        }
 
         Vec3 attachment = localPlayer ? extension.seq$getNameTagAttachment() : state.nameTagAttachment;
         if (attachment == null) {
@@ -82,13 +86,13 @@ public final class PartyHealthBarRenderer {
                 ? abstractClientPlayer
                 : null;
         UUID playerUuid = player == null ? null : player.getUUID();
-        if (isLocalPlayer(player)) {
+        if (isLocalPlayer(player) || avatarState.nameTag == null) {
             return;
         }
         float badgeYOffset = nametagVerticalOffset == 0f && !seqOnlyLowerPlacement
                 ? SeqBadgeNametagRenderSupport.WYNNTILS_DEFAULT_BADGE_Y_OFFSET
                 : SeqBadgeNametagRenderSupport.LOWER_BADGE_Y_OFFSET;
-        boolean occupiedBadgeLane = badgeLaneOccupied || hasSeqBadge(playerUuid, isLocalPlayer(player));
+        boolean occupiedBadgeLane = badgeLaneOccupied || hasSeqBadge(wynntilsUserUuid(player, playerUuid), isLocalPlayer(player));
         renderAtAttachment(
                 event.getPoseStack(),
                 event.getSubmitNodeCollector(),
@@ -264,6 +268,13 @@ public final class PartyHealthBarRenderer {
     private static boolean shouldSuppressVanillaHealthBar(AvatarRenderState state, boolean localPlayer) {
         return SeqClient.getSeqBadgeNametagRenderer() != null
                 && SeqClient.getSeqBadgeNametagRenderer().shouldSuppressVanillaHealthBar(state, localPlayer);
+    }
+
+    private static UUID wynntilsUserUuid(AbstractClientPlayer player, UUID fallbackUuid) {
+        if (player == null) {
+            return fallbackUuid;
+        }
+        return Models.Player.getUserUUID(player);
     }
 
     private static boolean hasSeqBadge(UUID playerUuid, boolean localPlayer) {
