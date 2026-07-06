@@ -88,58 +88,7 @@ public class SeqCommand {
                                                         });
                                                         return 1;
                                                 }))
-                                .then(ClientCommandManager.literal("status")
-                                                .executes(ctx -> {
-                                                        boolean connected = ConnectionManager.isConnected();
-                                                        String token = SeqClient.getConfigManager().getToken();
-                                                        boolean hasToken = token != null && !token.isBlank();
-                                                        String uptime = ConnectionManager.getInstance()
-                                                                        .getUptimeString();
-                                                        String rendererStatus = SeqClient.getSeqBadgeNametagRenderer() == null
-                                                                        ? "disabled"
-                                                                        : SeqClient.getSeqBadgeNametagRenderer().status();
-                                                        AuthException authError = SeqClient.getAuthService().getLastError();
-                                                        boolean tokenExpired = hasToken && SeqClient.getAuthService().isTokenExpired();
-                                                        sendFeedback(
-                                                                        ctx.getSource(),
-                                                                        "Connected: " + connected
-                                                                                        + " | Token: "
-                                                                                        + (hasToken ? "present"
-                                                                                                        : "none")
-                                                                                        + (hasToken
-                                                                                                        ? " (expired="
-                                                                                                                        + tokenExpired
-                                                                                                                        + ")"
-                                                                                                        : "")
-                                                                                        + " | Server: "
-                                                                                        + WynncraftServerPolicy
-                                                                                                        .currentScope()
-                                                                                        + " host="
-                                                                                        + WynncraftServerPolicy
-                                                                                                        .currentNormalizedHost()
-                                                                                        + " | Auth: "
-                                                                                        + SeqClient.getAuthService()
-                                                                                                        .getState()
-                                                                                        + (authError != null
-                                                                                                        ? " "
-                                                                                                                        + authError.getStableCode()
-                                                                                                                        + ": "
-                                                                                                                        + authError.getMessage()
-                                                                                                        : "")
-                                                                                        + " | Manual disconnect suppressed: "
-                                                                                        + ConnectionManager
-                                                                                                        .isAutoConnectSuppressedByManualDisconnect()
-                                                                                        + (uptime != null
-                                                                                                        ? " | Uptime: " + uptime
-                                                                                                        : "")
-                                                                                        + " | "
-                                                                                        + LeaderboardBadgeService
-                                                                                                        .getInstance()
-                                                                                                        .status()
-                                                                                        + " | badge renderer="
-                                                                                        + rendererStatus);
-                                                        return 1;
-                                                }))
+                                .then(ClientCommandManager.literal("status").executes(SeqCommand::runStatus))
                                 .then(ClientCommandManager.literal("logout")
                                                 .executes(ctx -> {
                                                         ConnectionManager.getInstance().disconnect();
@@ -398,6 +347,48 @@ public class SeqCommand {
         private static int openGatheringMapScreen(CommandContext<FabricClientCommandSource> ctx) {
                 SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new GatheringMapScreen(SeqClient.mc.screen)));
                 return 1;
+        }
+
+        private static int runStatus(CommandContext<FabricClientCommandSource> ctx) {
+                boolean connected = ConnectionManager.isConnected();
+                String token = SeqClient.getConfigManager().getToken();
+                boolean hasToken = token != null && !token.isBlank();
+                boolean tokenExpired = hasToken && SeqClient.getAuthService().isTokenExpired();
+                String uptime = ConnectionManager.getInstance().getUptimeString();
+                AuthException authError = SeqClient.getAuthService().getLastError();
+
+                StringBuilder message = new StringBuilder();
+                message.append("Connection: ").append(connected ? "connected" : "disconnected");
+                message.append(" | Session: ").append(formatSessionStatus(hasToken, tokenExpired));
+                message.append(" | Server: ").append(formatServerScope(WynncraftServerPolicy.currentScope()));
+
+                if (connected && uptime != null) {
+                        message.append(" | Uptime: ").append(uptime);
+                }
+                if (ConnectionManager.isAutoConnectSuppressedByManualDisconnect()) {
+                        message.append(" | Auto-connect paused");
+                }
+                if (authError != null) {
+                        message.append(" | Auth issue: ").append(authError.getMessage());
+                }
+
+                sendFeedback(ctx.getSource(), message.toString());
+                return 1;
+        }
+
+        private static String formatSessionStatus(boolean hasToken, boolean tokenExpired) {
+                if (!hasToken) {
+                        return "not ready";
+                }
+                return tokenExpired ? "expired" : "ready";
+        }
+
+        private static String formatServerScope(WynncraftServerPolicy.Scope scope) {
+                return switch (scope) {
+                        case MAIN -> "Wynncraft";
+                        case UNKNOWN -> "checking";
+                        case BLOCKED -> "unsupported";
+                };
         }
 
         private static int runBadgeStatus(CommandContext<FabricClientCommandSource> ctx) {
