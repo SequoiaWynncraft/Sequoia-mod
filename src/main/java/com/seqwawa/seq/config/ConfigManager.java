@@ -19,8 +19,8 @@ import java.util.regex.Pattern;
 
 @Getter
 public class ConfigManager {
-    private static final Path CONFIG_PATH = Path.of("config", "sequoia.json");
-    private static final Path LEGACY_TOKEN_FILE = Path.of(System.getProperty("user.home"), ".seq_token");
+    private static final Path DEFAULT_CONFIG_PATH = Path.of("config", "sequoia.json");
+    private static final Path DEFAULT_LEGACY_TOKEN_FILE = Path.of(System.getProperty("user.home"), ".seq_token");
     private static final String TOKEN_KEY = "_auth_token";
     private static final String TOKEN_EXPIRES_AT_KEY = "_auth_token_expires_at";
     private static final String MINECRAFT_UUID_KEY = "_minecraft_uuid";
@@ -34,6 +34,8 @@ public class ConfigManager {
     private static final String STARTUP_VIDEO_HEIGHT_KEY = "_startup_video_height";
     private static final Pattern MINECRAFT_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private final Path configPath;
+    private final Path legacyTokenFile;
     private final List<Setting<?>> settings = new ArrayList<>();
     private final Set<String> ignoredBridgeUsers = new LinkedHashSet<>();
     private String authToken;
@@ -48,7 +50,15 @@ public class ConfigManager {
     private Double startupVideoHeight;
 
     public ConfigManager() {
-        Runtime.getRuntime().addShutdownHook(new Thread(this::save));
+        this(DEFAULT_CONFIG_PATH, DEFAULT_LEGACY_TOKEN_FILE, true);
+    }
+
+    ConfigManager(Path configPath, Path legacyTokenFile, boolean installShutdownHook) {
+        this.configPath = configPath;
+        this.legacyTokenFile = legacyTokenFile;
+        if (installShutdownHook) {
+            Runtime.getRuntime().addShutdownHook(new Thread(this::save));
+        }
     }
 
     public void register(Setting<?> setting) {
@@ -91,7 +101,6 @@ public class ConfigManager {
     public void setToken(String token) {
         this.authToken = token;
         this.authTokenExpiresAt = null;
-        save();
     }
 
     public void setAuthSession(StoredAuthSession session) {
@@ -104,7 +113,6 @@ public class ConfigManager {
         this.authTokenExpiresAt = session.expiresAt();
         this.minecraftUuid = session.minecraftUuid();
         this.minecraftUsername = session.minecraftUsername();
-        save();
     }
 
     public void clearToken() {
@@ -116,7 +124,6 @@ public class ConfigManager {
         this.authTokenExpiresAt = null;
         this.minecraftUuid = null;
         this.minecraftUsername = null;
-        save();
     }
 
     public void setDiscordUsername(String discordUsername) {
@@ -204,21 +211,15 @@ public class ConfigManager {
         return Math.max(0.0, Math.min(1.0, value));
     }
 
-    /** Migrate token from legacy ~/.seq_token into sequoia.json on first run. */
+    /** Retire the legacy persistent token file. Backend sessions are kept in memory only. */
     public void migrateToken() {
-        if (authToken != null) return;
         try {
-            if (Files.exists(LEGACY_TOKEN_FILE)) {
-                String legacy = Files.readString(LEGACY_TOKEN_FILE).trim();
-                if (!legacy.isEmpty()) {
-                    authToken = legacy;
-                    save();
-                    SeqClient.LOGGER.info("Migrated auth token from ~/.seq_token into sequoia.json");
-                }
-                Files.deleteIfExists(LEGACY_TOKEN_FILE);
+            if (Files.exists(legacyTokenFile)) {
+                Files.deleteIfExists(legacyTokenFile);
+                SeqClient.LOGGER.info("Deleted legacy ~/.seq_token auth token file");
             }
         } catch (Exception e) {
-            SeqClient.LOGGER.warn("Failed to migrate legacy token", e);
+            SeqClient.LOGGER.warn("Failed to delete legacy token", e);
         }
     }
 
@@ -227,18 +228,6 @@ public class ConfigManager {
     public void save() {
         try {
             JsonObject root = new JsonObject();
-            if (authToken != null) {
-                root.addProperty(TOKEN_KEY, authToken);
-            }
-            if (authTokenExpiresAt != null) {
-                root.addProperty(TOKEN_EXPIRES_AT_KEY, authTokenExpiresAt.toString());
-            }
-            if (minecraftUuid != null) {
-                root.addProperty(MINECRAFT_UUID_KEY, minecraftUuid);
-            }
-            if (minecraftUsername != null) {
-                root.addProperty(MINECRAFT_USERNAME_KEY, minecraftUsername);
-            }
             if (discordUsername != null) {
                 root.addProperty(DISCORD_USERNAME_KEY, discordUsername);
             }
@@ -263,45 +252,20 @@ public class ConfigManager {
                 String key = setting.getCategory() + "." + setting.getName();
                 root.add(key, setting.serialize());
             }
-            Files.createDirectories(CONFIG_PATH.getParent());
-            try (Writer writer =
-                    new OutputStreamWriter(new FileOutputStream(CONFIG_PATH.toFile()), StandardCharsets.UTF_8)) {
-                GSON.toJson(root, writer);
-            }
+            writeConfig(root);
         } catch (IOException e) {
             SeqClient.LOGGER.error("Failed to save config", e);
         }
     }
 
     public void load() {
-        if (!Files.exists(CONFIG_PATH)) {
+        if (!Files.exists(configPath)) {
             return;
         }
-        try (Reader reader = new InputStreamReader(new FileInputStream(CONFIG_PATH.toFile()), StandardCharsets.UTF_8)) {
+        try (Reader reader = new InputStreamReader(new FileInputStream(configPath.toFile()), StandardCharsets.UTF_8)) {
             JsonObject root = GSON.fromJson(reader, JsonObject.class);
-            // Load token
-            if (root != null && root.has(TOKEN_KEY) && root.get(TOKEN_KEY).isJsonPrimitive()) {
-                authToken = root.get(TOKEN_KEY).getAsString();
-            }
-            if (root != null
-                    && root.has(TOKEN_EXPIRES_AT_KEY)
-                    && root.get(TOKEN_EXPIRES_AT_KEY).isJsonPrimitive()) {
-                try {
-                    authTokenExpiresAt =
-                            Instant.parse(root.get(TOKEN_EXPIRES_AT_KEY).getAsString());
-                } catch (Exception ignored) {
-                    authTokenExpiresAt = null;
-                }
-            }
-            if (root != null
-                    && root.has(MINECRAFT_UUID_KEY)
-                    && root.get(MINECRAFT_UUID_KEY).isJsonPrimitive()) {
-                minecraftUuid = root.get(MINECRAFT_UUID_KEY).getAsString();
-            }
-            if (root != null
-                    && root.has(MINECRAFT_USERNAME_KEY)
-                    && root.get(MINECRAFT_USERNAME_KEY).isJsonPrimitive()) {
-                minecraftUsername = root.get(MINECRAFT_USERNAME_KEY).getAsString();
+            if (root != null && removePersistedAuthSession(root)) {
+                writeConfig(root);
             }
             if (root != null && root.has(DISCORD_USERNAME_KEY) && root.get(DISCORD_USERNAME_KEY).isJsonPrimitive()) {
                 discordUsername = root.get(DISCORD_USERNAME_KEY).getAsString();
@@ -347,6 +311,24 @@ public class ConfigManager {
         } catch (IOException | JsonSyntaxException e) {
             SeqClient.LOGGER.error("Failed to load config", e);
         }
+    }
+
+    private void writeConfig(JsonObject root) throws IOException {
+        Path parent = configPath.getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        try (Writer writer = new OutputStreamWriter(new FileOutputStream(configPath.toFile()), StandardCharsets.UTF_8)) {
+            GSON.toJson(root, writer);
+        }
+    }
+
+    private static boolean removePersistedAuthSession(JsonObject root) {
+        boolean removed = root.remove(TOKEN_KEY) != null;
+        removed |= root.remove(TOKEN_EXPIRES_AT_KEY) != null;
+        removed |= root.remove(MINECRAFT_UUID_KEY) != null;
+        removed |= root.remove(MINECRAFT_USERNAME_KEY) != null;
+        return removed;
     }
 
     private static Double readDouble(JsonObject root, String key) {
