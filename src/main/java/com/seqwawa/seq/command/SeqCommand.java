@@ -8,10 +8,14 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonSyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
@@ -98,6 +102,7 @@ public class SeqCommand {
                                                 }))
                                 .then(buildIgnoreCommand())
                                 .then(buildUnignoreCommand())
+                                .then(buildRequestCommand())
                                 .then(buildEmeraldRewardCommand("e"))
                                 .then(buildEmeraldRewardCommand("emeralds"))
                                 .then(buildAspectRewardCommand())
@@ -232,6 +237,22 @@ public class SeqCommand {
                                                                 .requestBombShare(StringArgumentType.getString(
                                                                                 ctx,
                                                                                 "selectors"))));
+        }
+
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildRequestCommand() {
+                return ClientCommandManager.literal("request")
+                                .then(ClientCommandManager.literal("aspects")
+                                                .executes(ctx -> runRewardQueueRequest(ctx, "aspect", null)))
+                                .then(ClientCommandManager.literal("tome")
+                                                .then(ClientCommandManager.argument(
+                                                                "reason",
+                                                                StringArgumentType.greedyString())
+                                                                .executes(ctx -> runRewardQueueRequest(
+                                                                                ctx,
+                                                                                "tome",
+                                                                                StringArgumentType.getString(
+                                                                                                ctx,
+                                                                                                "reason")))));
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildEmeraldRewardCommand(String literalName) {
@@ -553,6 +574,69 @@ public class SeqCommand {
                 }
                 SeqClient.getGuildRewardAutomationManager().sendTome(username);
                 return 1;
+        }
+
+        private static int runRewardQueueRequest(
+                        CommandContext<FabricClientCommandSource> ctx,
+                        String type,
+                        String reason) {
+                FabricClientCommandSource source = ctx.getSource();
+                ApiClient.getInstance().createRewardQueueRequest(type, reason).whenComplete((ignored, error) -> {
+                        if (error != null) {
+                                sendFeedback(
+                                                source,
+                                                "Could not submit " + rewardRequestLabel(type) + " request: "
+                                                                + describeApiFailure(
+                                                                                error,
+                                                                                "Backend request failed."));
+                                return;
+                        }
+
+                        sendFeedback(source, rewardRequestLabel(type) + " request submitted.");
+                });
+                return 1;
+        }
+
+        private static String rewardRequestLabel(String type) {
+                return "tome".equals(type) ? "Tome" : "Aspects";
+        }
+
+        private static String describeApiFailure(Throwable error, String fallback) {
+                Throwable cause = unwrapCompletionException(error);
+                if (cause instanceof ApiClient.ApiException apiException) {
+                        String message = readApiMessage(apiException.getResponseBody());
+                        if (message != null && !message.isBlank()) {
+                                return message;
+                        }
+                }
+                String message = cause == null ? null : cause.getMessage();
+                return message == null || message.isBlank() ? fallback : message;
+        }
+
+        private static Throwable unwrapCompletionException(Throwable error) {
+                Throwable cause = error;
+                while (cause instanceof CompletionException && cause.getCause() != null) {
+                        cause = cause.getCause();
+                }
+                return cause;
+        }
+
+        private static String readApiMessage(String responseBody) {
+                if (responseBody == null || responseBody.isBlank()) {
+                        return null;
+                }
+                try {
+                        JsonObject json = JsonParser.parseString(responseBody).getAsJsonObject();
+                        if (json.has("message") && json.get("message").isJsonPrimitive()) {
+                                return json.get("message").getAsString();
+                        }
+                        if (json.has("error") && json.get("error").isJsonPrimitive()) {
+                                return json.get("error").getAsString();
+                        }
+                } catch (IllegalStateException | JsonSyntaxException ignored) {
+                        return null;
+                }
+                return null;
         }
 
         private static int runQueuedGuildReward(

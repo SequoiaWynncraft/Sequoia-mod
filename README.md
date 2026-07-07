@@ -45,8 +45,10 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - `/seq`: open the main Sequoia screen
 - `/seq p`: open the Sequoia party finder UI
 - `/seq connect`: connect to the backend
-- `/seq status`: show connection state and token status
-- `/seq logout`: clear the saved token
+- `/seq status`: show connection state
+- `/seq logout`: clear the current backend session
+- `/seq request aspects`: request aspects from the guild reward queue
+- `/seq request tome <reason>`: request a tome from the guild reward queue
 - `/seq ignore <IGN>`: hide incoming Discord bridge messages from a Minecraft username
 - `/seq unignore <IGN>`: show incoming Discord bridge messages from that username again
 
@@ -59,6 +61,8 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - `/seq connected`
 - `/seq status`
 - `/seq logout`
+- `/seq request aspects`
+- `/seq request tome <reason>`
 - `/seq ignore <IGN>`
 - `/seq unignore <IGN>`
 - `/seq party`
