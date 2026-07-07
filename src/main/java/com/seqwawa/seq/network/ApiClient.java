@@ -41,6 +41,7 @@ public class ApiClient {
             "{\"error\":\"main_server_only\",\"message\":\""
                     + WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE
                     + "\"}";
+    private static final String DEFAULT_ASPECT_REQUEST_REASON = "No reason provided.";
 
     private static ApiClient instance;
 
@@ -284,6 +285,38 @@ public class ApiClient {
 
     public CompletableFuture<Void> completeRewardQueueEntry(long requestId) {
         return post("/reward-queue/" + requestId + "/complete", null, Void.class);
+    }
+
+    public CompletableFuture<Void> createRewardQueueRequest(String type, String reason) {
+        return post("/reward-queue/requests", buildRewardQueueRequestPayload(type, reason), Void.class);
+    }
+
+    static JsonObject buildRewardQueueRequestPayload(String type, String reason) {
+        String normalizedType = normalizeRewardQueueRequestType(type);
+        String normalizedReason = reason == null ? "" : reason.trim();
+        if ("aspect".equals(normalizedType) && normalizedReason.isBlank()) {
+            normalizedReason = DEFAULT_ASPECT_REQUEST_REASON;
+        }
+        if (normalizedReason.isBlank()) {
+            throw new IllegalArgumentException("Reason for request is required.");
+        }
+
+        JsonObject body = new JsonObject();
+        body.addProperty("type", normalizedType);
+        body.addProperty("reason", normalizedReason);
+        return body;
+    }
+
+    private static String normalizeRewardQueueRequestType(String type) {
+        if (type == null || type.isBlank()) {
+            throw new IllegalArgumentException("Request type is required.");
+        }
+
+        String normalized = type.trim().toLowerCase(Locale.ROOT);
+        if (!"aspect".equals(normalized) && !"tome".equals(normalized)) {
+            throw new IllegalArgumentException("Unknown request type: " + type);
+        }
+        return normalized;
     }
 
     // ── Minecraft Auth ──

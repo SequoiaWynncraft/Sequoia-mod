@@ -1,8 +1,10 @@
 package com.seqwawa.seq.network;
 
+import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ApiClientTest {
@@ -40,6 +42,32 @@ class ApiClientTest {
         assertEquals(403, exception.getStatusCode());
         assertTrue(exception.getResponseBody().contains("main_server_only"));
         assertTrue(exception.getResponseBody().contains(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE));
+    }
+
+    @Test
+    void rewardQueueAspectRequestUsesDefaultReason() {
+        JsonObject payload = ApiClient.buildRewardQueueRequestPayload("aspect", null);
+
+        assertEquals("aspect", payload.get("type").getAsString());
+        assertEquals("No reason provided.", payload.get("reason").getAsString());
+    }
+
+    @Test
+    void rewardQueueTomeRequestRequiresReason() {
+        assertThrows(IllegalArgumentException.class, () -> ApiClient.buildRewardQueueRequestPayload("tome", " "));
+    }
+
+    @Test
+    void rewardQueueTomeRequestTrimsReason() {
+        JsonObject payload = ApiClient.buildRewardQueueRequestPayload("tome", " Need guild tome ");
+
+        assertEquals("tome", payload.get("type").getAsString());
+        assertEquals("Need guild tome", payload.get("reason").getAsString());
+    }
+
+    @Test
+    void rewardQueueRequestRejectsUnknownType() {
+        assertThrows(IllegalArgumentException.class, () -> ApiClient.buildRewardQueueRequestPayload("emerald", null));
     }
 
     @Test
