@@ -586,9 +586,7 @@ public class SeqCommand {
                                 sendFeedback(
                                                 source,
                                                 "Could not submit " + rewardRequestLabel(type) + " request: "
-                                                                + describeApiFailure(
-                                                                                error,
-                                                                                "Backend request failed."));
+                                                                + describeRewardQueueRequestFailure(error, type));
                                 return;
                         }
 
@@ -599,6 +597,16 @@ public class SeqCommand {
 
         private static String rewardRequestLabel(String type) {
                 return "tome".equals(type) ? "Tome" : "Aspects";
+        }
+
+        private static String describeRewardQueueRequestFailure(Throwable error, String type) {
+                Throwable cause = unwrapCompletionException(error);
+                if (cause instanceof ApiClient.ApiException apiException && apiException.getStatusCode() == 409) {
+                        return "You already have a pending "
+                                        + rewardRequestLabel(type).toLowerCase(Locale.ROOT)
+                                        + " request in the queue.";
+                }
+                return describeApiFailure(error, "Backend request failed.");
         }
 
         private static String describeApiFailure(Throwable error, String fallback) {
