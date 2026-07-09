@@ -38,14 +38,16 @@ public class RaidTracker {
      * cleanup).
      * Group 1: Comma-separated player names (with optional "and")
      * Group 2: Raid name (e.g., "The Canyon Colossus")
-     * Group 3: Aspects count
-     * Group 4: Emeralds count
-     * Group 5: Guild Experience (numeric value before 'm')
-     * Group 6: Seasonal Rating
+     * Group 3: First reward count
+     * Group 4: First reward type
+     * Group 5: Second reward count, when present
+     * Group 6: Second reward type, when present
+     * Group 7: Guild Experience (numeric value before 'm')
+     * Group 8: Seasonal Rating
      */
     private static final Pattern RAID_FINISH_PATTERN = Pattern.compile(
             "^((?:(?:and )?[\\w ]{1,20}(?:, )?){1,4}) finished ([\\w ']+?) "
-            + "and claimed (\\d+)x (?:Emeralds|Aspects), (\\d+)x (?:Emeralds|Aspects), "
+            + "and claimed (\\d+)x (Emeralds|Aspects)(?:, (\\d+)x (Emeralds|Aspects))?, "
             + "(?:and )?\\+(\\d+)m Guild Experience(?:, and \\+(\\d+) Seasonal Rating)?$");
     private static final Pattern USERNAME_PATTERN = Pattern.compile("\\w{3,16}");
     private static final Pattern COMMA_SPACING_PATTERN = Pattern.compile("\\s*,\\s*");
@@ -149,17 +151,29 @@ public class RaidTracker {
 
         String raidName = matcher.group(2);
 
-        // Determine if aspects or emeralds were displayed first
-        int aspectPos = cleaned.indexOf("Aspects");
-        int emeraldPos = cleaned.indexOf("Emeralds");
+        int aspects = 0;
+        int emeralds = 0;
 
-        int aspects = Integer.parseInt(aspectPos < emeraldPos ? matcher.group(3) : matcher.group(4));
-        int emeralds = Integer.parseInt(aspectPos < emeraldPos ? matcher.group(4) : matcher.group(3));
+        int firstRewardCount = Integer.parseInt(matcher.group(3));
+        if ("Aspects".equals(matcher.group(4))) {
+            aspects = firstRewardCount;
+        } else {
+            emeralds = firstRewardCount;
+        }
+
+        if (matcher.group(5) != null) {
+            int secondRewardCount = Integer.parseInt(matcher.group(5));
+            if ("Aspects".equals(matcher.group(6))) {
+                aspects = secondRewardCount;
+            } else {
+                emeralds = secondRewardCount;
+            }
+        }
 
         // Wynncraft reports XP in millions (e.g. "10367m" = 10,367,000) — divide
         // by 1000 so the backend receives a friendlier value (10367 -> 10.367).
-        double guildExp = Double.parseDouble(matcher.group(5)) / 1000.0;
-        int seasonalRating = matcher.group(6) != null ? Integer.parseInt(matcher.group(6)) : 0;
+        double guildExp = Double.parseDouble(matcher.group(7)) / 1000.0;
+        int seasonalRating = matcher.group(8) != null ? Integer.parseInt(matcher.group(8)) : 0;
 
         SeqClient.LOGGER.info(
                 "[RaidTracker] Parsed raid completion raid='{}' aspects={} emeralds={} guildExp={} seasonalRating={}",
