@@ -38,17 +38,16 @@ public class RaidTracker {
      * cleanup).
      * Group 1: Comma-separated player names (with optional "and")
      * Group 2: Raid name (e.g., "The Canyon Colossus")
-     * Group 3: First reward count
-     * Group 4: First reward type
-     * Group 5: Second reward count, when present
-     * Group 6: Second reward type, when present
-     * Group 7: Guild Experience (numeric value before 'm')
-     * Group 8: Seasonal Rating
+     * Group 3: Reward clause, when present
+     * Group 4: Guild Experience (numeric value before 'm')
+     * Group 5: Seasonal Rating
      */
     private static final Pattern RAID_FINISH_PATTERN = Pattern.compile(
             "^((?:(?:and )?[\\w ]{1,20}(?:, )?){1,4}) finished ([\\w ']+?) "
-            + "and claimed (\\d+)x (Emeralds|Aspects)(?:, (\\d+)x (Emeralds|Aspects))?, "
-            + "(?:and )?\\+(\\d+)m Guild Experience(?:, and \\+(\\d+) Seasonal Rating)?$");
+            + "and claimed\\s+(?:(.*?)(?:,\\s*)?(?:and\\s+)?)?"
+            + "\\+(\\d+)m Guild Experience(?:, and \\+(\\d+) Seasonal Rating)?$");
+    private static final Pattern RAID_REWARD_PATTERN =
+            Pattern.compile("(?i)(?:(\\d+)x|no) (Emeralds?|Aspects?)");
     private static final Pattern USERNAME_PATTERN = Pattern.compile("\\w{3,16}");
     private static final Pattern COMMA_SPACING_PATTERN = Pattern.compile("\\s*,\\s*");
     private static final String FINISHED_BOUNDARY = " finished ";
@@ -151,38 +150,47 @@ public class RaidTracker {
 
         String raidName = matcher.group(2);
 
-        int aspects = 0;
-        int emeralds = 0;
-
-        int firstRewardCount = Integer.parseInt(matcher.group(3));
-        if ("Aspects".equals(matcher.group(4))) {
-            aspects = firstRewardCount;
-        } else {
-            emeralds = firstRewardCount;
-        }
-
-        if (matcher.group(5) != null) {
-            int secondRewardCount = Integer.parseInt(matcher.group(5));
-            if ("Aspects".equals(matcher.group(6))) {
-                aspects = secondRewardCount;
-            } else {
-                emeralds = secondRewardCount;
-            }
-        }
+        RaidRewardCounts rewardCounts = parseRaidRewardCounts(matcher.group(3));
 
         // Wynncraft reports XP in millions (e.g. "10367m" = 10,367,000) — divide
         // by 1000 so the backend receives a friendlier value (10367 -> 10.367).
-        double guildExp = Double.parseDouble(matcher.group(7)) / 1000.0;
-        int seasonalRating = matcher.group(8) != null ? Integer.parseInt(matcher.group(8)) : 0;
+        double guildExp = Double.parseDouble(matcher.group(4)) / 1000.0;
+        int seasonalRating = matcher.group(5) != null ? Integer.parseInt(matcher.group(5)) : 0;
 
         SeqClient.LOGGER.info(
                 "[RaidTracker] Parsed raid completion raid='{}' aspects={} emeralds={} guildExp={} seasonalRating={}",
                 raidName,
-                aspects,
-                emeralds,
+                rewardCounts.aspects(),
+                rewardCounts.emeralds(),
                 guildExp,
                 seasonalRating);
-        return new ParsedRaidCompletion(partyMembers, raidName, aspects, emeralds, guildExp, seasonalRating);
+        return new ParsedRaidCompletion(
+                partyMembers,
+                raidName,
+                rewardCounts.aspects(),
+                rewardCounts.emeralds(),
+                guildExp,
+                seasonalRating);
+    }
+
+    private static RaidRewardCounts parseRaidRewardCounts(String rewardClause) {
+        int aspects = 0;
+        int emeralds = 0;
+        if (rewardClause == null || rewardClause.isBlank()) {
+            return new RaidRewardCounts(aspects, emeralds);
+        }
+
+        Matcher rewardMatcher = RAID_REWARD_PATTERN.matcher(rewardClause);
+        while (rewardMatcher.find()) {
+            int amount = rewardMatcher.group(1) != null ? Integer.parseInt(rewardMatcher.group(1)) : 0;
+            String rewardType = rewardMatcher.group(2).toLowerCase();
+            if (rewardType.startsWith("aspect")) {
+                aspects += amount;
+            } else {
+                emeralds += amount;
+            }
+        }
+        return new RaidRewardCounts(aspects, emeralds);
     }
 
     static String normalizeForRaidParsing(String rawText) {
@@ -387,5 +395,8 @@ public class RaidTracker {
             int emeralds,
             double guildExp,
             int seasonalRating) {
+    }
+
+    private record RaidRewardCounts(int aspects, int emeralds) {
     }
 }
