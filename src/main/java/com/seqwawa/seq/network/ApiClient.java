@@ -20,11 +20,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.Activity;
-import com.seqwawa.seq.model.LeaderboardBadgeResponse;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
+import com.seqwawa.seq.model.RankProfilesResponse;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.auth.MinecraftAuthChallengeResponse;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteRequest;
@@ -75,7 +75,7 @@ public class ApiClient {
                         Instant.class, (JsonSerializer<Instant>) (src, type, ctx) -> new JsonPrimitive(src.toString()))
                 .create();
         this.baseUrl = BuildConfig.API_URL;
-            this.authBaseUrl = resolveAuthBaseUrl(BuildConfig.API_URL);
+        this.authBaseUrl = resolveAuthBaseUrl(BuildConfig.API_URL);
     }
 
     // ── Party Finder: Activities ──
@@ -200,8 +200,8 @@ public class ApiClient {
         return patch("/party-finder/members/me/role", body, Listing.class);
     }
 
-    public CompletableFuture<LeaderboardBadgeResponse> getLeaderboardBadges() {
-        return get("/badges", LeaderboardBadgeResponse.class);
+    public CompletableFuture<RankProfilesResponse> getRecognizedRankProfiles() {
+        return get(authBaseUrl, "/v1/rank-profiles?scope=recognized", RankProfilesResponse.class, false);
     }
 
     public CompletableFuture<Listing> reassignRole(long listingId, UUID targetUUID, PartyRole role) {
@@ -338,7 +338,12 @@ public class ApiClient {
     // ── HTTP helpers ──
 
     private <T> CompletableFuture<T> get(String path, java.lang.reflect.Type type) {
-        HttpRequest request = newRequest(baseUrl, path, true).GET().build();
+        return get(baseUrl, path, type, true);
+    }
+
+    private <T> CompletableFuture<T> get(
+            String resolvedBaseUrl, String path, java.lang.reflect.Type type, boolean includeAuthHeader) {
+        HttpRequest request = newRequest(resolvedBaseUrl, path, includeAuthHeader).GET().build();
         return sendAsync(request, type);
     }
 

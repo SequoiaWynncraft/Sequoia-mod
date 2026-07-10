@@ -2,9 +2,7 @@ package com.seqwawa.seq.model;
 
 import com.google.gson.Gson;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -51,17 +49,24 @@ class SeqBadgeTest {
     }
 
     @Test
-    void badgeAssignmentsUseTypeWireKey() {
-        LeaderboardBadgeAssignment assignment =
-                new LeaderboardBadgeAssignment("00000000-0000-0000-0000-000000000000", new SeqBadge(SeqBadgeType.WTP, SeqBadgeTier.GOLD));
+    void rankProfileFieldsUseSnakeCaseWireKeys() {
+        String json = """
+                {
+                  "schema_version": 1,
+                  "catalog": {"roles": [], "awards": [], "assets": []},
+                  "profiles": [{
+                    "minecraft": {"uuid": "00000000-0000-0000-0000-000000000000", "username": "Test"},
+                    "role_keys": ["role-key"],
+                    "award_keys": ["award-key"]
+                  }]
+                }
+                """;
 
-        String json = GSON.toJson(assignment);
+        RankProfilesResponse response = GSON.fromJson(json, RankProfilesResponse.class);
 
-        assertEquals(
-                "WTP",
-                GSON.fromJson(json, LeaderboardBadgeAssignment.class).type());
-        assertFalse(json.contains("\"event\""));
-        assertTrue(json.contains("\"type\""));
+        assertEquals(1, response.schemaVersion());
+        assertEquals(List.of("role-key"), response.profiles().getFirst().roleKeys());
+        assertEquals(List.of("award-key"), response.profiles().getFirst().awardKeys());
     }
 
 }
