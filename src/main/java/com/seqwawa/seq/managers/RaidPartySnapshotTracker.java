@@ -18,14 +18,16 @@ public final class RaidPartySnapshotTracker {
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
 
     private static volatile PartySnapshot latestSnapshot = PartySnapshot.empty();
+    private static long lastPollAtMs;
 
     private RaidPartySnapshotTracker() {}
 
-    public static void tick() {
+    public static synchronized void tick() {
         long now = System.currentTimeMillis();
-        if (now - latestSnapshot.capturedAtMs() < SNAPSHOT_INTERVAL_MS) {
+        if (now - lastPollAtMs < SNAPSHOT_INTERVAL_MS) {
             return;
         }
+        lastPollAtMs = now;
 
         WynnPartyScoreboardReader.PartyObservation partyObservation =
                 WynnPartyScoreboardReader.readPartyObservation();
@@ -79,8 +81,9 @@ public final class RaidPartySnapshotTracker {
         invalidate();
     }
 
-    public static void invalidate() {
+    public static synchronized void invalidate() {
         latestSnapshot = PartySnapshot.empty();
+        lastPollAtMs = 0;
     }
 
     private static PartySnapshot collectCurrentPartySnapshot(
