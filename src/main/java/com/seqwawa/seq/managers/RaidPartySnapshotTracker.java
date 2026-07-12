@@ -41,32 +41,23 @@ public final class RaidPartySnapshotTracker {
         PartySnapshot snapshot = now - currentSnapshot.capturedAtMs() <= SNAPSHOT_MAX_AGE_MS
                 ? currentSnapshot
                 : PartySnapshot.empty();
-        return choosePartyMembers(parsedPartyMembers, snapshot, displayedPartySize, localUsername());
+        return choosePartyMembers(parsedPartyMembers, snapshot, displayedPartySize);
     }
 
     static List<String> choosePartyMembers(
             List<String> parsedPartyMembers,
             List<SnapshotMember> snapshotPartyMembers,
-            int displayedPartySize,
-            String localUsername) {
-        return choosePartyMembers(
-                parsedPartyMembers, PartySnapshot.from(snapshotPartyMembers, 0), displayedPartySize, localUsername);
+            int displayedPartySize) {
+        return choosePartyMembers(parsedPartyMembers, PartySnapshot.from(snapshotPartyMembers, 0), displayedPartySize);
     }
 
     private static List<String> choosePartyMembers(
-            List<String> parsedPartyMembers,
-            PartySnapshot snapshot,
-            int displayedPartySize,
-            String localUsername) {
+            List<String> parsedPartyMembers, PartySnapshot snapshot, int displayedPartySize) {
         List<String> parsed = sanitizeParty(parsedPartyMembers);
-        String local = sanitizeUsername(localUsername);
 
         if (displayedPartySize < 1
                 || displayedPartySize > MAX_RAID_PARTY_MEMBERS
-                || snapshot.usernames().size() != displayedPartySize
-                || local == null
-                || parsed.stream().noneMatch(local::equalsIgnoreCase)
-                || snapshot.usernames().stream().noneMatch(local::equalsIgnoreCase)) {
+                || snapshot.usernames().isEmpty()) {
             return parsed;
         }
 

@@ -19,41 +19,34 @@ class RaidPartySnapshotTrackerTest {
                                 member("LocalPlayer", "LocalPlayer"),
                                 member("ActualThree", "ActualThree"),
                                 member("Fourth", "ActualFour")),
-                        4,
-                        "LocalPlayer"));
+                        4));
     }
 
     @Test
-    void keepsParsedNamesWhenSnapshotHasWrongSize() {
-        List<String> parsed = List.of("LocalPlayer", "Second", "Third", "Fourth");
-
+    void resolvesACompletionPartyFromTheLargerRaidSnapshot() {
         assertEquals(
-                parsed,
+                List.of("ActualAlly", "OtherPlayer"),
                 RaidPartySnapshotTracker.choosePartyMembers(
-                        parsed,
+                        List.of("AllyNickname", "OtherPlayer"),
                         List.of(
                                 member("LocalPlayer", "LocalPlayer"),
-                                member("Second", "Second"),
-                                member("Third", "Third")),
-                        4,
-                        "LocalPlayer"));
+                                member("AllyNickname", "ActualAlly"),
+                                member("OtherPlayer", "OtherPlayer"),
+                                member("FourthPlayer", "FourthPlayer")),
+                        2));
     }
 
     @Test
-    void keepsParsedNamesWhenSnapshotDoesNotContainLocalPlayer() {
-        List<String> parsed = List.of("LocalPlayer", "Second", "Third", "Fourth");
-
+    void resolvesACompletionThatDoesNotContainTheLocalPlayer() {
         assertEquals(
-                parsed,
+                List.of("ActualOne", "ActualTwo"),
                 RaidPartySnapshotTracker.choosePartyMembers(
-                        parsed,
+                        List.of("FirstNickname", "SecondNickname"),
                         List.of(
-                                member("OtherOne", "OtherOne"),
-                                member("OtherTwo", "OtherTwo"),
-                                member("OtherThree", "OtherThree"),
-                                member("OtherFour", "OtherFour")),
-                        4,
-                        "LocalPlayer"));
+                                member("FirstNickname", "ActualOne"),
+                                member("SecondNickname", "ActualTwo"),
+                                member("LocalPlayer", "LocalPlayer")),
+                        2));
     }
 
     @Test
@@ -69,8 +62,7 @@ class RaidPartySnapshotTrackerTest {
                                 member("Second", "Second"),
                                 member("Third", "Third"),
                                 member("OldFourth", "OldFourth")),
-                        4,
-                        "LocalPlayer"));
+                        4));
     }
 
     @Test
@@ -88,8 +80,19 @@ class RaidPartySnapshotTrackerTest {
                                 member("Third", "Third"),
                                 member("ParsedFourth", "ActualFourth"),
                                 member("bad name", "bad name")),
-                        4,
-                        "LocalPlayer"));
+                        4));
+    }
+
+    @Test
+    void keepsAnAmbiguousNicknameUnresolved() {
+        assertEquals(
+                List.of("SharedNickname"),
+                RaidPartySnapshotTracker.choosePartyMembers(
+                        List.of("SharedNickname"),
+                        List.of(
+                                member("SharedNickname", "ActualOne"),
+                                member("SharedNickname", "ActualTwo")),
+                        1));
     }
 
     @Test
