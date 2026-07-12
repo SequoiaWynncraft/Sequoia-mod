@@ -186,6 +186,10 @@ public class ApiClient {
         return post("/party-finder/listings/" + id + "/reopen", null, Listing.class);
     }
 
+    public CompletableFuture<Listing> extendListing(long id) {
+        return post("/party-finder/listings/" + id + "/extend", null, Listing.class);
+    }
+
     public CompletableFuture<Listing> disbandListing(long id) {
         return deleteTyped("/party-finder/listings/" + id, Listing.class);
     }

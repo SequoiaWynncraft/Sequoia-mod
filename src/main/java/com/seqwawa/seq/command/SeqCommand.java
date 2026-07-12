@@ -169,6 +169,19 @@ public class SeqCommand {
                                                                 ctx,
                                                                 SeqClient.getPartyFinderManager()
                                                                                 .closePartyFromCommand())))
+                                .then(ClientCommandManager.literal("extend")
+                                        .executes(ctx -> relayCommandResult(
+                                                ctx,
+                                                SeqClient.getPartyFinderManager()
+                                                                                .extendPartyFromCommand()))
+                                                .then(ClientCommandManager.argument(
+                                                                "listingId",
+                                                                LongArgumentType.longArg(1))
+                                                        .executes(ctx -> relayCommandResult(
+                                                                ctx,
+                                                                SeqClient.getPartyFinderManager()
+                                                                        .extendPartyFromCommand(LongArgumentType.getLong(
+                                                                                ctx, "listingId"))))))
                                 .then(ClientCommandManager.literal("disband")
                                                 .executes(ctx -> relayCommandResult(
                                                                 ctx,

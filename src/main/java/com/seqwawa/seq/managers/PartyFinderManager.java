@@ -438,6 +438,31 @@ public class PartyFinderManager implements NotificationAccessor {
                         updatedListing -> "Closed party #" + updatedListing.id() + "."));
     }
 
+    public CompletableFuture<CommandResult<Listing>> extendPartyFromCommand() {
+        return extendPartyFromCommand(null);
+    }
+
+    public CompletableFuture<CommandResult<Listing>> extendPartyFromCommand(long listingId) {
+        return extendPartyFromCommand(Long.valueOf(listingId));
+    }
+
+    private CompletableFuture<CommandResult<Listing>> extendPartyFromCommand(Long expectedListingId) {
+        return runLeaderListingCommand(
+                "Only the party leader can extend the Sequoia listing.",
+                listing -> {
+                    if (expectedListingId != null && listing.id() != expectedListingId) {
+                        return completedCommandFailure("That warning belongs to an older party listing.");
+                    }
+                    return executeListingCommand(
+                            ApiClient.getInstance().extendListing(listing.id()),
+                            this::applyUpdatedCurrentListingState,
+                            "Unable to extend party",
+                            "Failed to extend party",
+                            updatedListing ->
+                                    "Kept party #" + updatedListing.id() + " open for 30 more minutes.");
+                });
+    }
+
     public CompletableFuture<CommandResult<Listing>> disbandPartyFromCommand() {
         return runLeaderListingCommand(
                 "Only the party leader can disband the Sequoia listing.",
@@ -850,13 +875,40 @@ public class PartyFinderManager implements NotificationAccessor {
                 disbandAt,
                 minutesRemaining);
 
+        notifyStaleWarningWithExtendAction(staleWarningMessage(minutesRemaining), listingId);
+    }
+
+    static String staleWarningMessage(long minutesRemaining) {
         long safeMinutesRemaining = Math.max(0, minutesRemaining);
         String unit = safeMinutesRemaining == 1 ? "minute" : "minutes";
-        notify("Your Party Finder listing looks inactive and will be removed in "
+        return "Your Party Finder listing looks inactive and will be removed in "
                 + safeMinutesRemaining
                 + " "
                 + unit
-                + " unless activity resumes.");
+                + " unless activity resumes.";
+    }
+
+    static String staleWarningExtendCommand(long listingId) {
+        return "/seq p extend " + listingId;
+    }
+
+    private void notifyStaleWarningWithExtendAction(String message, long listingId) {
+        SeqClient.mc.execute(() -> {
+            var player = SeqClient.mc.player;
+            if (player == null) {
+                return;
+            }
+            MutableComponent warning = NotificationAccessor.prefixComponent()
+                    .append(Component.literal(message).withStyle(ChatFormatting.GRAY));
+            MutableComponent action = Component.empty()
+                    .append(NotificationAccessor.wynnPill(
+                            "extend 30m",
+                            ChatFormatting.GOLD,
+                            ChatFormatting.WHITE,
+                            new ClickEvent.RunCommand(staleWarningExtendCommand(listingId))));
+            player.displayClientMessage(warning, false);
+            player.displayClientMessage(action, false);
+        });
     }
 
     private void notifyInviteWithJoinAction(String message, long listingId, String inviteToken) {

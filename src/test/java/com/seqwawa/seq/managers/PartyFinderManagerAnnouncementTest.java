@@ -123,6 +123,25 @@ class PartyFinderManagerAnnouncementTest {
         assertEquals(LOCAL_UUID, resolved);
     }
 
+    @Test
+    void staleWarningMessageUsesSingularMinute() {
+        assertEquals(
+                "Your Party Finder listing looks inactive and will be removed in 1 minute unless activity resumes.",
+                PartyFinderManager.staleWarningMessage(1));
+    }
+
+    @Test
+    void staleWarningMessageClampsNegativeTime() {
+        assertEquals(
+                "Your Party Finder listing looks inactive and will be removed in 0 minutes unless activity resumes.",
+                PartyFinderManager.staleWarningMessage(-5));
+    }
+
+    @Test
+    void staleWarningExtendCommandTargetsWarnedListing() {
+        assertEquals("/seq p extend 42", PartyFinderManager.staleWarningExtendCommand(42));
+    }
+
     private static Listing listing(
             long id,
             String leaderUuid,
