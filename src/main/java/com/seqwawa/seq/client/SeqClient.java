@@ -33,6 +33,7 @@ import com.seqwawa.seq.managers.GuildWarTrackers;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyHealthCache;
 import com.seqwawa.seq.managers.PartyFinderManager;
+import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
@@ -224,6 +225,7 @@ public class SeqClient implements ClientModInitializer {
                 if (wynnPartySyncManager != null) {
                     wynnPartySyncManager.reset();
                 }
+                RaidPartySnapshotTracker.reset();
                 if (guildWarTracker != null) {
                     guildWarTracker.reset();
                 }
@@ -251,6 +253,7 @@ public class SeqClient implements ClientModInitializer {
                 wynnPartySyncManager.tick();
             }
             PartyHealthCache.tick();
+            RaidPartySnapshotTracker.tick();
             if (guildWarTracker != null) {
                 guildWarTracker.tick();
             }
@@ -322,6 +325,7 @@ public class SeqClient implements ClientModInitializer {
         if (wynnPartySyncManager != null) {
             wynnPartySyncManager.reset();
         }
+        RaidPartySnapshotTracker.reset();
         if (guildWarTracker != null) {
             guildWarTracker.reset();
         }

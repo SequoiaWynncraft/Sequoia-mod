@@ -150,4 +150,5 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_request"));
         assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_submit"));
     }
+
 }
