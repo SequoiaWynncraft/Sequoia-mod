@@ -107,6 +107,22 @@ class RaidTrackerTest {
     }
 
     @Test
+    void parseRaidCompletionHandlesAllyNicknamesWithParenthesizedUsernames() {
+        RaidTracker.ParsedRaidCompletion parsed = RaidTracker.parseRaidCompletion(Component.literal(
+                "󏿼󏿿󏿾 TranSilver§c(owoSilver)§f, and bwoc§c(Dwoc)§f finished "
+                        + "Orphion's Nexus of Light and claimed 2048x Emeralds, 2x Aspects, "
+                        + "+5183m Guild Experience, and +220 Seasonal Rating"));
+
+        assertNotNull(parsed);
+        assertEquals(List.of("owoSilver", "Dwoc"), parsed.partyMembers());
+        assertEquals("Orphion's Nexus of Light", parsed.raidName());
+        assertEquals(2048, parsed.emeralds());
+        assertEquals(2, parsed.aspects());
+        assertEquals(5.183, parsed.guildExp());
+        assertEquals(220, parsed.seasonalRating());
+    }
+
+    @Test
     void parseRaidCompletionHandlesAspectlessRewardClause() {
         RaidTracker.ParsedRaidCompletion parsed = RaidTracker.parseRaidCompletion(Component.literal(
                 "󏿼󐀆 AAA finished The Nameless Anomaly and claimed 2048x Emeralds,\n"
