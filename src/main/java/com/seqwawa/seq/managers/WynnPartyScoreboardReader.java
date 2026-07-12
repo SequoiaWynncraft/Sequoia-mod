@@ -31,6 +31,12 @@ public final class WynnPartyScoreboardReader {
             boolean alive,
             boolean fullHealthBar) {}
 
+    record PartyObservation(List<PartyHealth> members, boolean raidSidebarActive) {
+        PartyObservation {
+            members = List.copyOf(members);
+        }
+    }
+
     private record SidebarLine(String text, PacketNameResolver resolver) {}
 
     private static List<SidebarLine> readSidebarLineComponents() {
@@ -59,20 +65,36 @@ public final class WynnPartyScoreboardReader {
     }
 
     public static List<PartyHealth> readPartyHealth() {
-        return withLocalUsernameForSoloUnresolvedPartyMember(
-                withWynntilsPartyMembersForUnresolvedRows(readPartyHealthRowsWithoutFallbacks()));
+        return resolvePartyHealth(readPartyHealthRowsWithoutFallbacks(readSidebarLineComponents(), false));
     }
 
-    private static List<PartyHealth> readPartyHealthRowsWithoutFallbacks() {
+    static PartyObservation readPartyObservation() {
+        List<SidebarLine> sidebarLines = readSidebarLineComponents();
+        boolean raidSidebarActive = sidebarLines.stream()
+                .map(SidebarLine::text)
+                .map(String::trim)
+                .anyMatch(WynnPartyScoreboardReader::isRaidHeaderLine);
+        return new PartyObservation(
+                resolvePartyHealth(readPartyHealthRowsWithoutFallbacks(sidebarLines, true)), raidSidebarActive);
+    }
+
+    private static List<PartyHealth> resolvePartyHealth(List<PartyHealth> partyHealth) {
+        return withLocalUsernameForSoloUnresolvedPartyMember(
+                withWynntilsPartyMembersForUnresolvedRows(partyHealth));
+    }
+
+    private static List<PartyHealth> readPartyHealthRowsWithoutFallbacks(
+            List<SidebarLine> sidebarLines, boolean includeRaidSection) {
         List<PartyHealth> partyHealth = new ArrayList<>();
         boolean inPartySection = false;
 
-        for (SidebarLine sidebarLine : readSidebarLineComponents()) {
+        for (SidebarLine sidebarLine : sidebarLines) {
             String line = sidebarLine.text();
             String trimmedLine = line.trim();
 
             if (isHeaderLine(trimmedLine)) {
-                inPartySection = isPartyHeaderLine(trimmedLine);
+                inPartySection = isPartyHeaderLine(trimmedLine)
+                        || (includeRaidSection && isRaidHeaderLine(trimmedLine));
                 continue;
             }
 
@@ -323,6 +345,10 @@ public final class WynnPartyScoreboardReader {
 
     private static boolean isPartyHeaderLine(String line) {
         return line.contains("Party:");
+    }
+
+    private static boolean isRaidHeaderLine(String line) {
+        return line.contains("Raid:");
     }
 
     static ParsedPartyLine parsePartyLine(String line, boolean allowPartyLine) {

@@ -2,10 +2,12 @@ package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.client.SeqClient;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /** Maintains a recent canonical party snapshot for raid-completion name resolution. */
@@ -24,38 +26,53 @@ public final class RaidPartySnapshotTracker {
         if (now - latestSnapshot.capturedAtMs() < SNAPSHOT_INTERVAL_MS) {
             return;
         }
-        latestSnapshot = new PartySnapshot(collectCurrentPartyUsernames(), now);
+
+        WynnPartyScoreboardReader.PartyObservation partyObservation =
+                WynnPartyScoreboardReader.readPartyObservation();
+        PartySnapshot observedSnapshot = collectCurrentPartySnapshot(partyObservation.members(), now);
+        latestSnapshot = updateSnapshot(latestSnapshot, observedSnapshot, partyObservation.raidSidebarActive(), now);
     }
 
     public static List<String> resolvePartyMembers(List<String> parsedPartyMembers, int displayedPartySize) {
         long now = System.currentTimeMillis();
         PartySnapshot currentSnapshot = latestSnapshot;
-        List<String> snapshot = now - currentSnapshot.capturedAtMs() <= SNAPSHOT_MAX_AGE_MS
-                ? currentSnapshot.usernames()
-                : List.of();
+        PartySnapshot snapshot = now - currentSnapshot.capturedAtMs() <= SNAPSHOT_MAX_AGE_MS
+                ? currentSnapshot
+                : PartySnapshot.empty();
         return choosePartyMembers(parsedPartyMembers, snapshot, displayedPartySize, localUsername());
     }
 
     static List<String> choosePartyMembers(
             List<String> parsedPartyMembers,
-            List<String> snapshotPartyMembers,
+            List<SnapshotMember> snapshotPartyMembers,
+            int displayedPartySize,
+            String localUsername) {
+        return choosePartyMembers(
+                parsedPartyMembers, PartySnapshot.from(snapshotPartyMembers, 0), displayedPartySize, localUsername);
+    }
+
+    private static List<String> choosePartyMembers(
+            List<String> parsedPartyMembers,
+            PartySnapshot snapshot,
             int displayedPartySize,
             String localUsername) {
         List<String> parsed = sanitizeParty(parsedPartyMembers);
-        List<String> snapshot = sanitizeParty(snapshotPartyMembers);
         String local = sanitizeUsername(localUsername);
-        int requiredOverlap = Math.min(2, displayedPartySize);
 
         if (displayedPartySize < 1
                 || displayedPartySize > MAX_RAID_PARTY_MEMBERS
-                || snapshot.size() != displayedPartySize
+                || snapshot.usernames().size() != displayedPartySize
                 || local == null
                 || parsed.stream().noneMatch(local::equalsIgnoreCase)
-                || snapshot.stream().noneMatch(local::equalsIgnoreCase)
-                || overlapCount(parsed, snapshot) < requiredOverlap) {
+                || snapshot.usernames().stream().noneMatch(local::equalsIgnoreCase)) {
             return parsed;
         }
-        return snapshot;
+
+        List<String> resolved = new ArrayList<>(parsed.size());
+        for (String parsedMember : parsed) {
+            resolved.add(snapshot.resolveAlias(parsedMember));
+        }
+        return sanitizeParty(resolved);
     }
 
     public static void reset() {
@@ -66,17 +83,20 @@ public final class RaidPartySnapshotTracker {
         latestSnapshot = PartySnapshot.empty();
     }
 
-    private static List<String> collectCurrentPartyUsernames() {
-        List<String> usernames = new ArrayList<>();
-        for (WynnPartyScoreboardReader.PartyHealth member : WynnPartyScoreboardReader.readPartyHealth()) {
-            usernames.add(member.username());
+    private static PartySnapshot collectCurrentPartySnapshot(
+            List<WynnPartyScoreboardReader.PartyHealth> partyHealth, long capturedAtMs) {
+        List<SnapshotMember> members = new ArrayList<>();
+        for (WynnPartyScoreboardReader.PartyHealth member : partyHealth) {
+            members.add(new SnapshotMember(member.nickname(), member.username()));
         }
 
         WynnPartySyncManager syncManager = SeqClient.getWynnPartySyncManager();
         if (syncManager != null) {
-            usernames.addAll(syncManager.getObservedMemberUsernames());
+            for (String username : syncManager.getObservedMemberUsernames()) {
+                members.add(new SnapshotMember(username, username));
+            }
         }
-        return sanitizeParty(usernames);
+        return PartySnapshot.from(members, capturedAtMs);
     }
 
     private static List<String> sanitizeParty(List<String> usernames) {
@@ -101,14 +121,15 @@ public final class RaidPartySnapshotTracker {
         return MC_USERNAME_PATTERN.matcher(trimmed).matches() ? trimmed : null;
     }
 
-    private static int overlapCount(List<String> left, List<String> right) {
-        int matches = 0;
-        for (String value : left) {
-            if (right.stream().anyMatch(value::equalsIgnoreCase)) {
-                matches++;
+    static PartySnapshot updateSnapshot(
+            PartySnapshot current, PartySnapshot observed, boolean raidSidebarActive, long capturedAtMs) {
+        if (!observed.usernames().isEmpty()) {
+            if (current.hasSameMembers(observed)) {
+                return current.mergeAliases(observed, capturedAtMs);
             }
+            return observed;
         }
-        return matches;
+        return raidSidebarActive && !current.usernames().isEmpty() ? current.refresh(capturedAtMs) : current;
     }
 
     private static String localUsername() {
@@ -121,13 +142,77 @@ public final class RaidPartySnapshotTracker {
         return null;
     }
 
-    private record PartySnapshot(List<String> usernames, long capturedAtMs) {
-        private PartySnapshot {
+    record SnapshotMember(String displayedName, String username) {}
+
+    record PartySnapshot(List<String> usernames, Map<String, String> aliases, long capturedAtMs) {
+        PartySnapshot {
             usernames = List.copyOf(usernames);
+            aliases = Map.copyOf(aliases);
+        }
+
+        static PartySnapshot from(List<SnapshotMember> members, long capturedAtMs) {
+            Map<String, String> usernames = new LinkedHashMap<>();
+            Map<String, String> aliases = new LinkedHashMap<>();
+            Set<String> ambiguousAliases = new HashSet<>();
+
+            for (SnapshotMember member : members) {
+                String username = sanitizeUsername(member.username());
+                if (username == null) {
+                    continue;
+                }
+
+                usernames.putIfAbsent(username.toLowerCase(Locale.ROOT), username);
+                addAlias(aliases, ambiguousAliases, member.displayedName(), username);
+                addAlias(aliases, ambiguousAliases, username, username);
+            }
+            return new PartySnapshot(List.copyOf(usernames.values()), aliases, capturedAtMs);
+        }
+
+        private static void addAlias(
+                Map<String, String> aliases, Set<String> ambiguousAliases, String displayedName, String username) {
+            String alias = sanitizeUsername(displayedName);
+            if (alias == null) {
+                return;
+            }
+
+            String key = alias.toLowerCase(Locale.ROOT);
+            if (ambiguousAliases.contains(key)) {
+                return;
+            }
+            String existing = aliases.putIfAbsent(key, username);
+            if (existing != null && !existing.equalsIgnoreCase(username)) {
+                aliases.remove(key);
+                ambiguousAliases.add(key);
+            }
+        }
+
+        private String resolveAlias(String displayedName) {
+            String resolved = aliases.get(displayedName.toLowerCase(Locale.ROOT));
+            return resolved != null ? resolved : displayedName;
+        }
+
+        private boolean hasSameMembers(PartySnapshot other) {
+            if (usernames.size() != other.usernames.size()) {
+                return false;
+            }
+            return usernames.stream()
+                    .allMatch(username -> other.usernames.stream().anyMatch(username::equalsIgnoreCase));
+        }
+
+        private PartySnapshot mergeAliases(PartySnapshot other, long capturedAtMs) {
+            Map<String, String> mergedAliases = new LinkedHashMap<>(aliases);
+            for (Map.Entry<String, String> alias : other.aliases.entrySet()) {
+                mergedAliases.putIfAbsent(alias.getKey(), alias.getValue());
+            }
+            return new PartySnapshot(usernames, mergedAliases, capturedAtMs);
+        }
+
+        private PartySnapshot refresh(long capturedAtMs) {
+            return new PartySnapshot(usernames, aliases, capturedAtMs);
         }
 
         private static PartySnapshot empty() {
-            return new PartySnapshot(List.of(), 0);
+            return new PartySnapshot(List.of(), Map.of(), 0);
         }
     }
 }
