@@ -31,7 +31,8 @@ public final class RaidPartySnapshotTracker {
 
         WynnPartyScoreboardReader.PartyObservation partyObservation =
                 WynnPartyScoreboardReader.readPartyObservation();
-        PartySnapshot observedSnapshot = collectCurrentPartySnapshot(partyObservation.members(), now);
+        PartySnapshot observedSnapshot = collectCurrentPartySnapshot(
+                partyObservation.members(), partyObservation.raidSidebarActive(), now);
         latestSnapshot = updateSnapshot(latestSnapshot, observedSnapshot, partyObservation.raidSidebarActive(), now);
     }
 
@@ -41,32 +42,25 @@ public final class RaidPartySnapshotTracker {
         PartySnapshot snapshot = now - currentSnapshot.capturedAtMs() <= SNAPSHOT_MAX_AGE_MS
                 ? currentSnapshot
                 : PartySnapshot.empty();
-        return choosePartyMembers(parsedPartyMembers, snapshot, displayedPartySize, localUsername());
+        return choosePartyMembers(parsedPartyMembers, snapshot, displayedPartySize);
     }
 
     static List<String> choosePartyMembers(
             List<String> parsedPartyMembers,
             List<SnapshotMember> snapshotPartyMembers,
-            int displayedPartySize,
-            String localUsername) {
+            int displayedPartySize) {
         return choosePartyMembers(
-                parsedPartyMembers, PartySnapshot.from(snapshotPartyMembers, 0), displayedPartySize, localUsername);
+                parsedPartyMembers, PartySnapshot.from(snapshotPartyMembers, true, 0), displayedPartySize);
     }
 
-    private static List<String> choosePartyMembers(
-            List<String> parsedPartyMembers,
-            PartySnapshot snapshot,
-            int displayedPartySize,
-            String localUsername) {
+    static List<String> choosePartyMembers(
+            List<String> parsedPartyMembers, PartySnapshot snapshot, int displayedPartySize) {
         List<String> parsed = sanitizeParty(parsedPartyMembers);
-        String local = sanitizeUsername(localUsername);
 
         if (displayedPartySize < 1
                 || displayedPartySize > MAX_RAID_PARTY_MEMBERS
-                || snapshot.usernames().size() != displayedPartySize
-                || local == null
-                || parsed.stream().noneMatch(local::equalsIgnoreCase)
-                || snapshot.usernames().stream().noneMatch(local::equalsIgnoreCase)) {
+                || !snapshot.raidContext()
+                || snapshot.usernames().isEmpty()) {
             return parsed;
         }
 
@@ -87,7 +81,9 @@ public final class RaidPartySnapshotTracker {
     }
 
     private static PartySnapshot collectCurrentPartySnapshot(
-            List<WynnPartyScoreboardReader.PartyHealth> partyHealth, long capturedAtMs) {
+            List<WynnPartyScoreboardReader.PartyHealth> partyHealth,
+            boolean raidContext,
+            long capturedAtMs) {
         List<SnapshotMember> members = new ArrayList<>();
         for (WynnPartyScoreboardReader.PartyHealth member : partyHealth) {
             members.add(new SnapshotMember(member.nickname(), member.username()));
@@ -99,7 +95,7 @@ public final class RaidPartySnapshotTracker {
                 members.add(new SnapshotMember(username, username));
             }
         }
-        return PartySnapshot.from(members, capturedAtMs);
+        return PartySnapshot.from(members, raidContext, capturedAtMs);
     }
 
     private static List<String> sanitizeParty(List<String> usernames) {
@@ -126,34 +122,34 @@ public final class RaidPartySnapshotTracker {
 
     static PartySnapshot updateSnapshot(
             PartySnapshot current, PartySnapshot observed, boolean raidSidebarActive, long capturedAtMs) {
+        if (!raidSidebarActive) {
+            return current;
+        }
+        if (capturedAtMs - current.capturedAtMs() > SNAPSHOT_MAX_AGE_MS) {
+            current = PartySnapshot.empty();
+        }
         if (!observed.usernames().isEmpty()) {
             if (current.hasSameMembers(observed)) {
                 return current.mergeAliases(observed, capturedAtMs);
             }
             return observed;
         }
-        return raidSidebarActive && !current.usernames().isEmpty() ? current.refresh(capturedAtMs) : current;
-    }
-
-    private static String localUsername() {
-        if (SeqClient.mc != null && SeqClient.mc.getUser() != null) {
-            return sanitizeUsername(SeqClient.mc.getUser().getName());
-        }
-        if (SeqClient.mc != null && SeqClient.mc.player != null) {
-            return sanitizeUsername(SeqClient.mc.player.getName().getString());
-        }
-        return null;
+        return current.raidContext() && !current.usernames().isEmpty() ? current.refresh(capturedAtMs) : current;
     }
 
     record SnapshotMember(String displayedName, String username) {}
 
-    record PartySnapshot(List<String> usernames, Map<String, String> aliases, long capturedAtMs) {
+    record PartySnapshot(List<String> usernames, Map<String, String> aliases, boolean raidContext, long capturedAtMs) {
         PartySnapshot {
             usernames = List.copyOf(usernames);
             aliases = Map.copyOf(aliases);
         }
 
         static PartySnapshot from(List<SnapshotMember> members, long capturedAtMs) {
+            return from(members, false, capturedAtMs);
+        }
+
+        static PartySnapshot from(List<SnapshotMember> members, boolean raidContext, long capturedAtMs) {
             Map<String, String> usernames = new LinkedHashMap<>();
             Map<String, String> aliases = new LinkedHashMap<>();
             Set<String> ambiguousAliases = new HashSet<>();
@@ -168,7 +164,7 @@ public final class RaidPartySnapshotTracker {
                 addAlias(aliases, ambiguousAliases, member.displayedName(), username);
                 addAlias(aliases, ambiguousAliases, username, username);
             }
-            return new PartySnapshot(List.copyOf(usernames.values()), aliases, capturedAtMs);
+            return new PartySnapshot(List.copyOf(usernames.values()), aliases, raidContext, capturedAtMs);
         }
 
         private static void addAlias(
@@ -207,15 +203,15 @@ public final class RaidPartySnapshotTracker {
             for (Map.Entry<String, String> alias : other.aliases.entrySet()) {
                 mergedAliases.putIfAbsent(alias.getKey(), alias.getValue());
             }
-            return new PartySnapshot(usernames, mergedAliases, capturedAtMs);
+            return new PartySnapshot(usernames, mergedAliases, raidContext || other.raidContext, capturedAtMs);
         }
 
         private PartySnapshot refresh(long capturedAtMs) {
-            return new PartySnapshot(usernames, aliases, capturedAtMs);
+            return new PartySnapshot(usernames, aliases, raidContext, capturedAtMs);
         }
 
         private static PartySnapshot empty() {
-            return new PartySnapshot(List.of(), Map.of(), 0);
+            return new PartySnapshot(List.of(), Map.of(), false, 0);
         }
     }
 }
