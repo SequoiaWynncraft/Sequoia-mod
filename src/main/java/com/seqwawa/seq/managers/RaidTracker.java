@@ -43,12 +43,13 @@ public class RaidTracker {
      * Group 5: Seasonal Rating
      */
     private static final Pattern RAID_FINISH_PATTERN = Pattern.compile(
-            "^((?:(?:and )?[\\w ]{1,20}(?:, )?){1,4}) finished ([\\w ']+?) "
+            "^(.+?) finished ([\\w ']+?) "
             + "and claimed\\s+(?:(.*?)(?:,\\s*)?(?:and\\s+)?)?"
             + "\\+(\\d+)m Guild Experience(?:, and \\+(\\d+) Seasonal Rating)?$");
     private static final Pattern RAID_REWARD_PATTERN =
             Pattern.compile("(?i)(?:(\\d+)x|no) (Emeralds?|Aspects?)");
     private static final Pattern USERNAME_PATTERN = Pattern.compile("\\w{3,16}");
+    private static final Pattern PARENTHESIZED_USERNAME_PATTERN = Pattern.compile(".*\\((\\w{3,16})\\)$");
     private static final Pattern COMMA_SPACING_PATTERN = Pattern.compile("\\s*,\\s*");
     private static final String FINISHED_BOUNDARY = " finished ";
     /**
@@ -136,7 +137,16 @@ public class RaidTracker {
         }
 
         String namesPart = matcher.group(1);
+        if (namesPart.contains(":")) {
+            return null;
+        }
         List<String> parsedDisplayedNames = parseDisplayedNames(namesPart);
+        if (parsedDisplayedNames.size() > 4) {
+            SeqClient.LOGGER.warn(
+                    "[RaidTracker] Dropping raid candidate with too many displayed names namesPart='{}'",
+                    namesPart);
+            return null;
+        }
         List<String> partyMembers = resolvePartyMembers(parsedDisplayedNames, message);
         SeqClient.LOGGER.info(
                 "[RaidTracker] Parsed raid candidate namesPart='{}' displayedNames={} resolvedMembers={}",
@@ -257,6 +267,11 @@ public class RaidTracker {
             return hoverRealName;
         }
 
+        String parenthesizedRealName = parenthesizedUsername(displayedName);
+        if (parenthesizedRealName != null) {
+            return parenthesizedRealName;
+        }
+
         boolean displayedLooksLikeUsername = USERNAME_PATTERN.matcher(displayedName).matches();
         if (displayedLooksLikeUsername && !hasInvalidDisplayedNames) {
             return displayedName;
@@ -268,6 +283,11 @@ public class RaidTracker {
         }
 
         return displayedLooksLikeUsername ? displayedName : null;
+    }
+
+    private static String parenthesizedUsername(String displayedName) {
+        Matcher matcher = PARENTHESIZED_USERNAME_PATTERN.matcher(displayedName);
+        return matcher.matches() ? matcher.group(1) : null;
     }
 
     private static PrefixMetadata buildPrefixMetadata(Component message) {
