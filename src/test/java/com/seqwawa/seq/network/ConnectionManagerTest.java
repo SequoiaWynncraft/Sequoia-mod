@@ -151,10 +151,4 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_submit"));
     }
 
-    @Test
-    void raidPartyObservationIsScopedAuthenticatedButNotThrottleLimited() {
-        assertTrue(ConnectionManager.isServerScopedType("raid_party_observation"));
-        assertTrue(ConnectionManager.isAuthenticatedOutboundType("raid_party_observation"));
-        assertFalse(ConnectionManager.isThrottleLimitedType("raid_party_observation"));
-    }
 }

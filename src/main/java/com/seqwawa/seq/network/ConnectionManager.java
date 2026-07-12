@@ -54,7 +54,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             "bomb_share_submit", 5,
             "guild_chat", 20,
             "guild_raid_announcement", 5,
-            "raid_party_observation", 5,
             "guild_bank_event", 10,
             "guild_storage_snapshot", 10,
             "guild_storage_reward", 10,
@@ -482,26 +481,25 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     // ── Outgoing messages ──
 
-    private boolean send(String type, JsonObject payload) {
+    private void send(String type, JsonObject payload) {
         if (isServerScopedType(type) && WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
             SeqClient.LOGGER.warn("[WebSocket] Dropping {} outside confirmed main Wynncraft host", type);
-            return false;
+            return;
         }
         if (isAuthenticatedOutboundType(type) && !canSendAuthenticated(type)) {
-            return false;
+            return;
         }
         if (isThrottleLimitedType(type) && !canSendThrottleLimited(type)) {
-            return false;
+            return;
         }
-        return sendPrepared(type, payload);
+        sendPrepared(type, payload);
     }
 
-    private boolean sendPrepared(String type, JsonObject payload) {
+    private void sendPrepared(String type, JsonObject payload) {
         if (payload == null) payload = new JsonObject();
         payload.addProperty("type", type);
         SeqClient.LOGGER.debug("[WebSocket] send type={} payload={}", type, truncate(payload.toString(), 512));
         send(GSON.toJson(payload));
-        return true;
     }
 
     private void prepareAuthenticatedConnection(boolean forceTokenRefresh) {
@@ -958,25 +956,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         msg.addProperty("experience_count", experienceCount);
         msg.addProperty("sr_count", srCount);
         send("guild_raid_announcement", msg);
-    }
-
-    public boolean sendRaidPartyObservation(String raidName, List<String> partyUsernames) {
-        if (raidName == null || raidName.isBlank() || partyUsernames == null || partyUsernames.isEmpty()) {
-            SeqClient.LOGGER.warn(
-                    "[WebSocket] sendRaidPartyObservation dropped invalid payload raidName='{}' usernames={}",
-                    raidName,
-                    partyUsernames);
-            return false;
-        }
-
-        JsonObject msg = new JsonObject();
-        msg.addProperty("raid_name", raidName.trim());
-        msg.add("party_usernames", stringArray(partyUsernames));
-        SeqClient.LOGGER.info(
-                "[WebSocket] Sending raid_party_observation raid='{}' usernames={}",
-                raidName,
-                partyUsernames);
-        return send("raid_party_observation", msg);
     }
 
     public void sendGuildBankEvent(
@@ -1720,7 +1699,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_chat".equals(type)
                 || "guild_alliance_update".equals(type)
                 || "guild_raid_announcement".equals(type)
-                || "raid_party_observation".equals(type)
                 || "guild_bank_event".equals(type)
                 || "guild_storage_snapshot".equals(type)
                 || "guild_storage_reward".equals(type)
@@ -1883,7 +1861,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             case "bomb_share_request", "bomb_share_submit" -> "bomb share relays";
             case "guild_chat" -> "guild chat relays";
             case "guild_raid_announcement" -> "raid completion relays";
-            case "raid_party_observation" -> "raid party observation relays";
             case "guild_bank_event" -> "guild bank relays";
             case "guild_war_submission" -> "guild war tracking";
             default -> "some Sequoia features";

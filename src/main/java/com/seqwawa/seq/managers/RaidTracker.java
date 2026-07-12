@@ -92,23 +92,24 @@ public class RaidTracker {
 
         ConnectionManager instance = ConnectionManager.getInstance();
         if (instance != null && !completion.partyMembers().isEmpty()) {
+            List<String> partyMembers = RaidPartySnapshotTracker.resolvePartyMembers(
+                    completion.partyMembers(), completion.displayedPartySize());
             SeqClient.LOGGER.info(
                     "[RaidTracker] Forwarding raid completion raid='{}' members={} aspects={} emeralds={} guildExp={} seasonalRating={}",
                     completion.raidName(),
-                    completion.partyMembers(),
+                    partyMembers,
                     completion.aspects(),
                     completion.emeralds(),
                     completion.guildExp(),
                     completion.seasonalRating());
             instance.sendRaidAnnouncement(
-                    completion.partyMembers(),
+                    partyMembers,
                     completion.raidName(),
                     completion.aspects(),
                     completion.emeralds(),
                     completion.guildExp(),
                     completion.seasonalRating());
         }
-        RaidPartyObservationTracker.onRaidCompleted(completion.raidName());
     }
 
     static ParsedRaidCompletion parseRaidCompletion(Component message) {
@@ -167,6 +168,7 @@ public class RaidTracker {
                 seasonalRating);
         return new ParsedRaidCompletion(
                 partyMembers,
+                parsedDisplayedNames.size(),
                 raidName,
                 rewardCounts.aspects(),
                 rewardCounts.emeralds(),
@@ -391,6 +393,7 @@ public class RaidTracker {
 
     record ParsedRaidCompletion(
             List<String> partyMembers,
+            int displayedPartySize,
             String raidName,
             int aspects,
             int emeralds,
