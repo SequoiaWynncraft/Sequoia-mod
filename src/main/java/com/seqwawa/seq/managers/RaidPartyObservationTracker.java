@@ -23,6 +23,8 @@ public final class RaidPartyObservationTracker {
             "the nameless anomaly",
             "the canyon colossus",
             "nexus of light",
+            "orphion's nexus of light",
+            "orphions nexus of light",
             "the orphion's nexus of light",
             "the orphions nexus of light",
             "the wartorn palace");

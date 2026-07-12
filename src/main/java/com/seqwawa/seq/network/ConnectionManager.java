@@ -1737,7 +1737,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_chat".equals(type)
                 || "guild_alliance_update".equals(type)
                 || "guild_raid_announcement".equals(type)
-                || "raid_party_observation".equals(type)
                 || "guild_bank_event".equals(type)
                 || "guild_war_submission".equals(type)
                 || "party_class_update".equals(type)
