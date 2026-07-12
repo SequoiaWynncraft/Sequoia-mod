@@ -96,9 +96,19 @@ class RaidPartySnapshotTrackerTest {
     }
 
     @Test
+    void doesNotResolveCrossPartyAliasesFromANormalPartySnapshot() {
+        RaidPartySnapshotTracker.PartySnapshot normalParty = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(member("AllyNickname", "ActualAlly")), false, 1_000);
+
+        assertEquals(
+                List.of("AllyNickname"),
+                RaidPartySnapshotTracker.choosePartyMembers(List.of("AllyNickname"), normalParty, 1));
+    }
+
+    @Test
     void preservesTheLastSnapshotWhileTheRaidSidebarIsActive() {
         RaidPartySnapshotTracker.PartySnapshot current = RaidPartySnapshotTracker.PartySnapshot.from(
-                List.of(member("Nickname", "ActualPlayer"), member("LocalPlayer", "LocalPlayer")), 1_000);
+                List.of(member("Nickname", "ActualPlayer"), member("LocalPlayer", "LocalPlayer")), true, 1_000);
         RaidPartySnapshotTracker.PartySnapshot empty =
                 RaidPartySnapshotTracker.PartySnapshot.from(List.of(), 3_000);
 
@@ -113,9 +123,9 @@ class RaidPartySnapshotTrackerTest {
     @Test
     void preservesAliasesWhenTheObservedRosterIsUnchanged() {
         RaidPartySnapshotTracker.PartySnapshot current = RaidPartySnapshotTracker.PartySnapshot.from(
-                List.of(member("Nickname", "ActualPlayer"), member("LocalPlayer", "LocalPlayer")), 1_000);
+                List.of(member("Nickname", "ActualPlayer"), member("LocalPlayer", "LocalPlayer")), true, 1_000);
         RaidPartySnapshotTracker.PartySnapshot observed = RaidPartySnapshotTracker.PartySnapshot.from(
-                List.of(member("ActualPlayer", "ActualPlayer"), member("LocalPlayer", "LocalPlayer")), 3_000);
+                List.of(member("ActualPlayer", "ActualPlayer"), member("LocalPlayer", "LocalPlayer")), true, 3_000);
 
         RaidPartySnapshotTracker.PartySnapshot updated =
                 RaidPartySnapshotTracker.updateSnapshot(current, observed, true, 3_000);
@@ -125,11 +135,45 @@ class RaidPartySnapshotTrackerTest {
     }
 
     @Test
+    void preservesFreshRaidSnapshotDuringSmallerNormalSidebarTransition() {
+        RaidPartySnapshotTracker.PartySnapshot raidSnapshot = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(
+                        member("FirstNickname", "ActualOne"),
+                        member("SecondNickname", "ActualTwo"),
+                        member("LocalPlayer", "LocalPlayer")),
+                true,
+                1_000);
+        RaidPartySnapshotTracker.PartySnapshot normalSnapshot = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(member("LocalPlayer", "LocalPlayer")), false, 3_000);
+
+        RaidPartySnapshotTracker.PartySnapshot updated =
+                RaidPartySnapshotTracker.updateSnapshot(raidSnapshot, normalSnapshot, false, 3_000);
+
+        assertEquals(true, updated.raidContext());
+        assertEquals(1_000, updated.capturedAtMs());
+        assertEquals("ActualOne", updated.aliases().get("firstnickname"));
+    }
+
+    @Test
+    void expiresAliasesBeforeMergingALaterRaidWithTheSameRoster() {
+        RaidPartySnapshotTracker.PartySnapshot firstRaid = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(member("SharedNickname", "ActualOne"), member("ActualTwo", "ActualTwo")), true, 1_000);
+        RaidPartySnapshotTracker.PartySnapshot laterRaid = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(member("ActualOne", "ActualOne"), member("SharedNickname", "ActualTwo")), true, 7_000);
+
+        RaidPartySnapshotTracker.PartySnapshot updated =
+                RaidPartySnapshotTracker.updateSnapshot(firstRaid, laterRaid, true, 7_000);
+
+        assertEquals("ActualTwo", updated.aliases().get("sharednickname"));
+        assertEquals(7_000, updated.capturedAtMs());
+    }
+
+    @Test
     void replacesAliasesWhenTheObservedRosterChanges() {
         RaidPartySnapshotTracker.PartySnapshot current = RaidPartySnapshotTracker.PartySnapshot.from(
-                List.of(member("OldNickname", "OldPlayer"), member("LocalPlayer", "LocalPlayer")), 1_000);
+                List.of(member("OldNickname", "OldPlayer"), member("LocalPlayer", "LocalPlayer")), true, 1_000);
         RaidPartySnapshotTracker.PartySnapshot observed = RaidPartySnapshotTracker.PartySnapshot.from(
-                List.of(member("NewNickname", "NewPlayer"), member("LocalPlayer", "LocalPlayer")), 3_000);
+                List.of(member("NewNickname", "NewPlayer"), member("LocalPlayer", "LocalPlayer")), true, 3_000);
 
         RaidPartySnapshotTracker.PartySnapshot updated =
                 RaidPartySnapshotTracker.updateSnapshot(current, observed, true, 3_000);
