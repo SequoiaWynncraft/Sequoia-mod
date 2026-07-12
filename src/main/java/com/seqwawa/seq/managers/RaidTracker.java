@@ -108,6 +108,7 @@ public class RaidTracker {
                     completion.guildExp(),
                     completion.seasonalRating());
         }
+        RaidPartyObservationTracker.onRaidCompleted(completion.raidName());
     }
 
     static ParsedRaidCompletion parseRaidCompletion(Component message) {

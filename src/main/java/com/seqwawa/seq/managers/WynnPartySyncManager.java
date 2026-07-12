@@ -194,6 +194,10 @@ public class WynnPartySyncManager {
         lastEventAt = Instant.EPOCH;
     }
 
+    public List<String> getObservedMemberUsernames() {
+        return List.copyOf(observedState.memberUsernames);
+    }
+
     private void handlePartyCreated() {
         observedState.reset();
         observedState.initialized = true;
