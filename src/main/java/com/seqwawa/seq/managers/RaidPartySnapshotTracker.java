@@ -15,25 +15,24 @@ public final class RaidPartySnapshotTracker {
     private static final int MAX_RAID_PARTY_MEMBERS = 4;
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
 
-    private static List<String> latestPartyUsernames = List.of();
-    private static long lastSnapshotAtMs;
+    private static volatile PartySnapshot latestSnapshot = PartySnapshot.empty();
 
     private RaidPartySnapshotTracker() {}
 
     public static void tick() {
         long now = System.currentTimeMillis();
-        if (now - lastSnapshotAtMs < SNAPSHOT_INTERVAL_MS) {
+        if (now - latestSnapshot.capturedAtMs() < SNAPSHOT_INTERVAL_MS) {
             return;
         }
-        latestPartyUsernames = collectCurrentPartyUsernames();
-        lastSnapshotAtMs = now;
+        latestSnapshot = new PartySnapshot(collectCurrentPartyUsernames(), now);
     }
 
     public static List<String> resolvePartyMembers(List<String> parsedPartyMembers, int displayedPartySize) {
         long now = System.currentTimeMillis();
-        List<String> snapshot = now - lastSnapshotAtMs <= SNAPSHOT_MAX_AGE_MS
-                ? latestPartyUsernames
-                : collectCurrentPartyUsernames();
+        PartySnapshot currentSnapshot = latestSnapshot;
+        List<String> snapshot = now - currentSnapshot.capturedAtMs() <= SNAPSHOT_MAX_AGE_MS
+                ? currentSnapshot.usernames()
+                : List.of();
         return choosePartyMembers(parsedPartyMembers, snapshot, displayedPartySize, localUsername());
     }
 
@@ -45,20 +44,26 @@ public final class RaidPartySnapshotTracker {
         List<String> parsed = sanitizeParty(parsedPartyMembers);
         List<String> snapshot = sanitizeParty(snapshotPartyMembers);
         String local = sanitizeUsername(localUsername);
+        int requiredOverlap = Math.min(2, displayedPartySize);
 
         if (displayedPartySize < 1
                 || displayedPartySize > MAX_RAID_PARTY_MEMBERS
                 || snapshot.size() != displayedPartySize
                 || local == null
-                || snapshot.stream().noneMatch(local::equalsIgnoreCase)) {
+                || parsed.stream().noneMatch(local::equalsIgnoreCase)
+                || snapshot.stream().noneMatch(local::equalsIgnoreCase)
+                || overlapCount(parsed, snapshot) < requiredOverlap) {
             return parsed;
         }
         return snapshot;
     }
 
     public static void reset() {
-        latestPartyUsernames = List.of();
-        lastSnapshotAtMs = 0;
+        invalidate();
+    }
+
+    public static void invalidate() {
+        latestSnapshot = PartySnapshot.empty();
     }
 
     private static List<String> collectCurrentPartyUsernames() {
@@ -96,6 +101,16 @@ public final class RaidPartySnapshotTracker {
         return MC_USERNAME_PATTERN.matcher(trimmed).matches() ? trimmed : null;
     }
 
+    private static int overlapCount(List<String> left, List<String> right) {
+        int matches = 0;
+        for (String value : left) {
+            if (right.stream().anyMatch(value::equalsIgnoreCase)) {
+                matches++;
+            }
+        }
+        return matches;
+    }
+
     private static String localUsername() {
         if (SeqClient.mc != null && SeqClient.mc.getUser() != null) {
             return sanitizeUsername(SeqClient.mc.getUser().getName());
@@ -104,5 +119,15 @@ public final class RaidPartySnapshotTracker {
             return sanitizeUsername(SeqClient.mc.player.getName().getString());
         }
         return null;
+    }
+
+    private record PartySnapshot(List<String> usernames, long capturedAtMs) {
+        private PartySnapshot {
+            usernames = List.copyOf(usernames);
+        }
+
+        private static PartySnapshot empty() {
+            return new PartySnapshot(List.of(), 0);
+        }
     }
 }

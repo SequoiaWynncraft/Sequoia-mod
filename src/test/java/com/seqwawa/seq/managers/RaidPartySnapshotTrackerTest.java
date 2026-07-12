@@ -12,7 +12,7 @@ class RaidPartySnapshotTrackerTest {
         assertEquals(
                 List.of("ActualOne", "LocalPlayer", "ActualThree", "ActualFour"),
                 RaidPartySnapshotTracker.choosePartyMembers(
-                        List.of("Nickname", "LocalPlayer", "Third", "Fourth"),
+                        List.of("Nickname", "LocalPlayer", "ActualThree", "Fourth"),
                         List.of("ActualOne", "LocalPlayer", "ActualThree", "ActualFour"),
                         4,
                         "LocalPlayer"));
@@ -42,14 +42,27 @@ class RaidPartySnapshotTrackerTest {
     }
 
     @Test
-    void ignoresInvalidAndDuplicateSnapshotNames() {
-        List<String> parsed = List.of("LocalPlayer", "Second", "Third", "Fourth");
+    void keepsParsedNamesWhenOnlyTheLocalPlayerOverlaps() {
+        List<String> parsed = List.of("LocalPlayer", "NewSecond", "NewThird", "NewFourth");
 
         assertEquals(
                 parsed,
                 RaidPartySnapshotTracker.choosePartyMembers(
                         parsed,
-                        List.of("LocalPlayer", "localplayer", "bad name", "Fourth"),
+                        List.of("LocalPlayer", "OldSecond", "OldThird", "OldFourth"),
+                        4,
+                        "LocalPlayer"));
+    }
+
+    @Test
+    void ignoresInvalidAndDuplicateSnapshotNames() {
+        List<String> parsed = List.of("LocalPlayer", "Second", "Third", "ParsedFourth");
+
+        assertEquals(
+                List.of("LocalPlayer", "Second", "Third", "ActualFourth"),
+                RaidPartySnapshotTracker.choosePartyMembers(
+                        parsed,
+                        List.of("LocalPlayer", "localplayer", "Second", "Third", "ActualFourth", "bad name"),
                         4,
                         "LocalPlayer"));
     }
