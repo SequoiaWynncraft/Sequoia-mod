@@ -78,7 +78,7 @@ public final class ThemeManager {
             List<Path> themeFiles;
             try (Stream<Path> paths = Files.walk(directory)) {
                 themeFiles = paths.filter(Files::isRegularFile)
-                        .filter(path -> path.getFileName().toString().endsWith(".theme.txt"))
+                        .filter(ThemeManager::isThemeFile)
                         .sorted(Comparator.comparing(Path::toString))
                         .toList();
             }
@@ -117,12 +117,17 @@ public final class ThemeManager {
     }
 
     private static boolean isThemeFile(Path path) {
-        return path.getFileName().toString().endsWith(".theme.txt");
+        return path.getFileName().toString().endsWith(".theme.yml");
     }
 
     private static void loadTheme(Path path) {
         try {
             Theme theme = ThemeReader.fromFile(path);
+            Theme existing = LOADED_THEMES.get(theme.name());
+            if (existing != null && existing != currentTheme) {
+                SeqClient.LOGGER.warn("Ignoring duplicate UI theme '{}' from {}", theme.name(), path);
+                return;
+            }
             LOADED_THEMES.put(theme.name(), theme);
         } catch (IOException exception) {
             SeqClient.LOGGER.warn("Could not load UI theme {}", path, exception);

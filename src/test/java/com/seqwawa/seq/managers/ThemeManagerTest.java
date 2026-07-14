@@ -44,21 +44,41 @@ class ThemeManagerTest {
         Path externalThemes = tempDir.resolve("config/sequoia/themes");
         Files.createDirectories(externalThemes);
         Files.writeString(
-                externalThemes.resolve("custom.theme.txt"),
-                bundledDefaultTheme().replaceFirst("name=default", "name=custom"));
-        Files.writeString(externalThemes.resolve("broken.theme.txt"), "name=broken\ntext_primary=invalid\n");
+                externalThemes.resolve("custom.theme.yml"),
+                bundledDefaultTheme().replaceFirst("name: default", "name: custom"));
+        Files.writeString(externalThemes.resolve("broken.theme.yml"), "name: broken\ntext:\n  primary: invalid\n");
+        Files.writeString(
+                externalThemes.resolve("ignored.theme.txt"),
+                bundledDefaultTheme().replaceFirst("name: default", "name: ignored"));
 
         ThemeManager.initialize(externalThemes);
 
         assertTrue(ThemeManager.loadedThemeNames().contains("custom"));
         assertFalse(ThemeManager.loadedThemeNames().contains("broken"));
+        assertFalse(ThemeManager.loadedThemeNames().contains("ignored"));
         assertTrue(ThemeManager.setCurrentTheme("custom"));
         assertEquals("custom", ThemeManager.currentTheme().name());
     }
 
+    @Test
+    void externalThemesCannotReplaceBundledThemeNames() throws IOException {
+        Path externalThemes = tempDir.resolve("config/sequoia/themes");
+        Files.createDirectories(externalThemes);
+        Files.writeString(
+                externalThemes.resolve("replacement.theme.yml"),
+                bundledDefaultTheme()
+                        .replaceFirst("name: default", "name: high_contrast")
+                        .replace("primary: [160, 130, 220, 255]", "primary: [1, 2, 3, 255]"));
+
+        ThemeManager.initialize(externalThemes);
+
+        assertTrue(ThemeManager.setCurrentTheme("high_contrast"));
+        assertEquals(new Color(64, 220, 210, 255), ThemeManager.color(UiColor.ACCENT_PRIMARY));
+    }
+
     private static String bundledDefaultTheme() throws IOException {
         try (InputStream input = ThemeManagerTest.class.getResourceAsStream(
-                "/assets/seq/themes/default.theme.txt")) {
+                "/assets/seq/themes/default.theme.yml")) {
             if (input == null) {
                 throw new IOException("Missing bundled default theme");
             }

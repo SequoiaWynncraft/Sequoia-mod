@@ -1,0 +1,67 @@
+name: high_contrast
+
+background:
+  overlay: [4, 6, 8, 135]
+  modal_overlay: [0, 0, 0, 200]
+  sidebar: [8, 11, 14, 235]
+  body: [12, 16, 20, 180]
+  body_opaque: [10, 14, 18, 255]
+  header: [16, 22, 27, 220]
+  content: [20, 27, 33, 210]
+  content_focused: [29, 39, 46, 230]
+  popup: [15, 20, 25, 250]
+
+accent:
+  primary: [64, 220, 210, 255]
+  primary_hover: [112, 245, 234, 255]
+  primary_dark: [12, 98, 102, 255]
+  primary_dark_hover: [17, 130, 132, 255]
+  disabled: [74, 86, 91, 255]
+  secondary: [244, 196, 78, 255]
+  divider: [92, 72, 26, 255]
+
+text:
+  primary: [255, 255, 255, 255]
+  secondary: [231, 238, 240, 255]
+  muted: [183, 198, 202, 255]
+  disabled: [126, 141, 146, 255]
+
+control:
+  input: [18, 25, 30, 255]
+  input_secondary: [43, 58, 66, 255]
+  input_hover: [55, 76, 84, 255]
+  border: [64, 220, 210, 230]
+  scrollbar_track: [24, 32, 38, 255]
+  scrollbar_thumb: [64, 220, 210, 255]
+  danger: [210, 62, 72, 230]
+  danger_hover: [242, 91, 99, 245]
+  warning: [244, 196, 78, 255]
+  success: [91, 224, 132, 255]
+
+status:
+  success_background: [32, 121, 71, 235]
+  success_border: [91, 224, 132, 255]
+  warning_background: [145, 103, 24, 235]
+  warning_border: [244, 196, 78, 255]
+  danger_background: [151, 42, 53, 235]
+  danger_border: [242, 91, 99, 255]
+
+map:
+  sidebar: [8, 11, 14, 248]
+  tint: [0, 5, 7, 45]
+  header: [16, 22, 27, 245]
+  control: [27, 37, 43, 240]
+  control_inactive: [18, 25, 30, 245]
+  control_hover: [48, 67, 74, 245]
+  control_active: [18, 118, 119, 250]
+  border: [141, 166, 173, 225]
+  text: [255, 255, 255, 255]
+  subtext: [202, 216, 220, 255]
+  title: [112, 245, 234, 255]
+  player: [255, 255, 255, 255]
+  selected_cluster: [255, 76, 87, 255]
+  territory: [51, 211, 220, 220]
+  territory_hover_text: [198, 255, 252, 255]
+  selected_territory: [255, 211, 84, 255]
+  world_event: [68, 197, 255, 255]
+  tracked_world_event: [255, 196, 64, 255]

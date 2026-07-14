@@ -122,7 +122,8 @@ The settings screen includes controls for:
 - Update checks on startup
 
 Sequoia includes Default and High Contrast themes. Additional themes can be added as
-`*.theme.txt` files under `config/sequoia/themes`; restart the client to discover new files.
+`*.theme.yml` files under `config/sequoia/themes`; restart the client to discover new files.
+The complete supported schema is available in [`docs/theme-template.theme.yml`](docs/theme-template.theme.yml).
 
 ## Installation
 
