@@ -4,25 +4,29 @@ import java.util.EnumMap;
 import java.util.Set;
 import java.util.TreeSet;
 
-public final class GatheringMapSettings {
-    private static final GatheringMapSettings INSTANCE = new GatheringMapSettings();
+public final class WorldMapSettings {
+    private static final WorldMapSettings INSTANCE = new WorldMapSettings();
 
     private final EnumMap<GatheringProfession, Boolean> professionToggles = new EnumMap<>(GatheringProfession.class);
     private final Set<String> resourceFilters = new TreeSet<>();
     private int clusterEps = GatheringNodeClusterer.DEFAULT_EPS;
     private int clusterMinSamples = GatheringNodeClusterer.DEFAULT_MIN_SAMPLES;
     private boolean showClusters = true;
+    private boolean showTerritories;
+    private boolean showTerritoryNames;
     private boolean showDebugInfo;
     private ClusterScoreMode clusterScoreMode = ClusterScoreMode.FOUR_TICK;
+    private GatheringAnalysisScope gatheringAnalysisScope = GatheringAnalysisScope.ALL;
+    private String selectedTerritoryName;
     private long version;
 
-    private GatheringMapSettings() {
+    private WorldMapSettings() {
         for (GatheringProfession profession : GatheringProfession.values()) {
             professionToggles.put(profession, true);
         }
     }
 
-    public static GatheringMapSettings getInstance() {
+    public static WorldMapSettings getInstance() {
         return INSTANCE;
     }
 
@@ -65,6 +69,22 @@ public final class GatheringMapSettings {
         this.showClusters = showClusters;
     }
 
+    public synchronized boolean showTerritories() {
+        return showTerritories;
+    }
+
+    public synchronized void setShowTerritories(boolean showTerritories) {
+        this.showTerritories = showTerritories;
+    }
+
+    public synchronized boolean showTerritoryNames() {
+        return showTerritoryNames;
+    }
+
+    public synchronized void setShowTerritoryNames(boolean showTerritoryNames) {
+        this.showTerritoryNames = showTerritoryNames;
+    }
+
     public synchronized boolean showDebugInfo() {
         return showDebugInfo;
     }
@@ -80,6 +100,26 @@ public final class GatheringMapSettings {
 
     public synchronized void setClusterScoreMode(ClusterScoreMode clusterScoreMode) {
         this.clusterScoreMode = clusterScoreMode == null ? ClusterScoreMode.FOUR_TICK : clusterScoreMode;
+    }
+
+    public synchronized GatheringAnalysisScope gatheringAnalysisScope() {
+        return gatheringAnalysisScope;
+    }
+
+    public synchronized void setGatheringAnalysisScope(GatheringAnalysisScope gatheringAnalysisScope) {
+        this.gatheringAnalysisScope = gatheringAnalysisScope == null ? GatheringAnalysisScope.ALL : gatheringAnalysisScope;
+    }
+
+    public synchronized String selectedTerritoryName() {
+        return selectedTerritoryName;
+    }
+
+    public synchronized void setSelectedTerritoryName(String selectedTerritoryName) {
+        String normalized = selectedTerritoryName == null ? null : selectedTerritoryName.trim();
+        this.selectedTerritoryName = normalized == null || normalized.isEmpty() ? null : normalized;
+        if (this.selectedTerritoryName == null && gatheringAnalysisScope == GatheringAnalysisScope.SELECTED_TERRITORY) {
+            gatheringAnalysisScope = GatheringAnalysisScope.ALL;
+        }
     }
 
     public synchronized void setClusterEps(int clusterEps) {

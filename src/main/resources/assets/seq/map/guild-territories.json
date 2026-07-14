@@ -1,0 +1,4816 @@
+{
+  "meta": {
+    "source": "https://api.wynncraft.com/v3/guild/list/territory",
+    "snapshotDate": "2026-07-13",
+    "geometry": "location start/end only"
+  },
+  "data": [
+    {
+      "name": "Abandoned Farm",
+      "start": [
+        -577,
+        -1395
+      ],
+      "end": [
+        -478,
+        -1335
+      ]
+    },
+    {
+      "name": "Abandoned Lumberyard",
+      "start": [
+        -140,
+        -860
+      ],
+      "end": [
+        -180,
+        -980
+      ]
+    },
+    {
+      "name": "Abandoned Mines",
+      "start": [
+        870,
+        -1130
+      ],
+      "end": [
+        670,
+        -1225
+      ]
+    },
+    {
+      "name": "Abandoned Mines Entrance",
+      "start": [
+        655,
+        -1430
+      ],
+      "end": [
+        880,
+        -1330
+      ]
+    },
+    {
+      "name": "Abandoned Pass",
+      "start": [
+        881,
+        -1225
+      ],
+      "end": [
+        1019,
+        -1380
+      ]
+    },
+    {
+      "name": "Accursed Dunes",
+      "start": [
+        1450,
+        -2020
+      ],
+      "end": [
+        1270,
+        -1785
+      ]
+    },
+    {
+      "name": "Aerial Descent",
+      "start": [
+        885,
+        -4571
+      ],
+      "end": [
+        779,
+        -4639
+      ]
+    },
+    {
+      "name": "Agricultural Sector",
+      "start": [
+        -2291,
+        -934
+      ],
+      "end": [
+        -1976,
+        -768
+      ]
+    },
+    {
+      "name": "Ahmsord",
+      "start": [
+        1163,
+        -4462
+      ],
+      "end": [
+        942,
+        -4604
+      ]
+    },
+    {
+      "name": "Ahmsord Outskirts",
+      "start": [
+        1336,
+        -4893
+      ],
+      "end": [
+        1179,
+        -4730
+      ]
+    },
+    {
+      "name": "Akias Ruins",
+      "start": [
+        29,
+        -1657
+      ],
+      "end": [
+        188,
+        -1500
+      ]
+    },
+    {
+      "name": "Alder Understory",
+      "start": [
+        -1267,
+        -948
+      ],
+      "end": [
+        -1044,
+        -792
+      ]
+    },
+    {
+      "name": "Aldorei Cliffside Waterfalls",
+      "start": [
+        -237,
+        -4514
+      ],
+      "end": [
+        -321,
+        -4648
+      ]
+    },
+    {
+      "name": "Aldorei River",
+      "start": [
+        -437,
+        -4656
+      ],
+      "end": [
+        -338,
+        -4756
+      ]
+    },
+    {
+      "name": "Aldorei Springs",
+      "start": [
+        -714,
+        -4395
+      ],
+      "end": [
+        -559,
+        -4499
+      ]
+    },
+    {
+      "name": "Aldorei Valley",
+      "start": [
+        -557,
+        -4501
+      ],
+      "end": [
+        -322,
+        -4656
+      ]
+    },
+    {
+      "name": "Aldorei Valley Outskirts",
+      "start": [
+        -736,
+        -4428
+      ],
+      "end": [
+        -802,
+        -4553
+      ]
+    },
+    {
+      "name": "Aldwell",
+      "start": [
+        -1356,
+        -791
+      ],
+      "end": [
+        -1194,
+        -646
+      ]
+    },
+    {
+      "name": "Alekin",
+      "start": [
+        -175,
+        -1630
+      ],
+      "end": [
+        -105,
+        -1514
+      ]
+    },
+    {
+      "name": "Almuj",
+      "start": [
+        1050,
+        -1900
+      ],
+      "end": [
+        840,
+        -2060
+      ]
+    },
+    {
+      "name": "Almuj Slums",
+      "start": [
+        1040,
+        -1681
+      ],
+      "end": [
+        900,
+        -1870
+      ]
+    },
+    {
+      "name": "Ancient Excavation",
+      "start": [
+        1210,
+        -1810
+      ],
+      "end": [
+        1040,
+        -1680
+      ]
+    },
+    {
+      "name": "Ancient Nemract",
+      "start": [
+        152,
+        -1832
+      ],
+      "end": [
+        290,
+        -1999
+      ]
+    },
+    {
+      "name": "Ancient Waterworks",
+      "start": [
+        -472,
+        -1944
+      ],
+      "end": [
+        -255,
+        -1887
+      ]
+    },
+    {
+      "name": "Angel Refuge",
+      "start": [
+        1354,
+        -4727
+      ],
+      "end": [
+        1484,
+        -4877
+      ]
+    },
+    {
+      "name": "Apprentice Huts",
+      "start": [
+        -600,
+        -610
+      ],
+      "end": [
+        -670,
+        -780
+      ]
+    },
+    {
+      "name": "Arachnid Woods",
+      "start": [
+        -194,
+        -1632
+      ],
+      "end": [
+        -86,
+        -1800
+      ]
+    },
+    {
+      "name": "Astraulus' Tower",
+      "start": [
+        1102,
+        -5016
+      ],
+      "end": [
+        1250,
+        -4916
+      ]
+    },
+    {
+      "name": "Ava's Workshop",
+      "start": [
+        -1681,
+        -3178
+      ],
+      "end": [
+        -1888,
+        -3375
+      ]
+    },
+    {
+      "name": "Avos Temple",
+      "start": [
+        -1526,
+        -3225
+      ],
+      "end": [
+        -1378,
+        -3426
+      ]
+    },
+    {
+      "name": "Avos Territory",
+      "start": [
+        -1888,
+        -2997
+      ],
+      "end": [
+        -1683,
+        -3175
+      ]
+    },
+    {
+      "name": "Azure Frontier",
+      "start": [
+        -894,
+        -6164
+      ],
+      "end": [
+        -684,
+        -6313
+      ]
+    },
+    {
+      "name": "Balloon Airbase",
+      "start": [
+        -1633,
+        -2162
+      ],
+      "end": [
+        -1445,
+        -2306
+      ]
+    },
+    {
+      "name": "Bandit Cave",
+      "start": [
+        194,
+        -4956
+      ],
+      "end": [
+        111,
+        -4872
+      ]
+    },
+    {
+      "name": "Bandit's Toll",
+      "start": [
+        439,
+        -5038
+      ],
+      "end": [
+        345,
+        -5181
+      ]
+    },
+    {
+      "name": "Bantisu Air Temple",
+      "start": [
+        570,
+        -4833
+      ],
+      "end": [
+        445,
+        -4692
+      ]
+    },
+    {
+      "name": "Bantisu Approach",
+      "start": [
+        445,
+        -4972
+      ],
+      "end": [
+        563,
+        -4835
+      ]
+    },
+    {
+      "name": "Barren Sands",
+      "start": [
+        1260,
+        -2170
+      ],
+      "end": [
+        1450,
+        -2020
+      ]
+    },
+    {
+      "name": "Bear Zoo",
+      "start": [
+        -409,
+        -2539
+      ],
+      "end": [
+        -283,
+        -2414
+      ]
+    },
+    {
+      "name": "Big Mushroom Cave",
+      "start": [
+        -130,
+        -4641
+      ],
+      "end": [
+        -222,
+        -4509
+      ]
+    },
+    {
+      "name": "Bizarre Passage",
+      "start": [
+        1187,
+        -680
+      ],
+      "end": [
+        1388,
+        -530
+      ]
+    },
+    {
+      "name": "Black Road",
+      "start": [
+        770,
+        -1675
+      ],
+      "end": [
+        655,
+        -1430
+      ]
+    },
+    {
+      "name": "Blackstring Den",
+      "start": [
+        -105,
+        -2069
+      ],
+      "end": [
+        20,
+        -1960
+      ]
+    },
+    {
+      "name": "Bloody Beach",
+      "start": [
+        -1376,
+        -3225
+      ],
+      "end": [
+        -1097,
+        -3426
+      ]
+    },
+    {
+      "name": "Bloody Trail",
+      "start": [
+        -1519,
+        -5134
+      ],
+      "end": [
+        -1631,
+        -5288
+      ]
+    },
+    {
+      "name": "Blooming Boulders",
+      "start": [
+        -350,
+        -1440
+      ],
+      "end": [
+        -99,
+        -1330
+      ]
+    },
+    {
+      "name": "Bob's Tomb",
+      "start": [
+        246,
+        -747
+      ],
+      "end": [
+        380,
+        -867
+      ]
+    },
+    {
+      "name": "Bremminglar",
+      "start": [
+        760,
+        -2070
+      ],
+      "end": [
+        615,
+        -2120
+      ]
+    },
+    {
+      "name": "Brigand Outpost",
+      "start": [
+        -2060,
+        -4912
+      ],
+      "end": [
+        -2171,
+        -5000
+      ]
+    },
+    {
+      "name": "Broken Road",
+      "start": [
+        686,
+        -923
+      ],
+      "end": [
+        493,
+        -783
+      ]
+    },
+    {
+      "name": "Bucie Waterfall",
+      "start": [
+        -1391,
+        -4664
+      ],
+      "end": [
+        -1607,
+        -4526
+      ]
+    },
+    {
+      "name": "Burning Airship",
+      "start": [
+        35,
+        -4859
+      ],
+      "end": [
+        107,
+        -4955
+      ]
+    },
+    {
+      "name": "Burning Farm",
+      "start": [
+        107,
+        -4755
+      ],
+      "end": [
+        35,
+        -4857
+      ]
+    },
+    {
+      "name": "Canyon Dropoff",
+      "start": [
+        334,
+        -4518
+      ],
+      "end": [
+        269,
+        -4395
+      ]
+    },
+    {
+      "name": "Canyon High Path",
+      "start": [
+        562,
+        -5313
+      ],
+      "end": [
+        440,
+        -5191
+      ]
+    },
+    {
+      "name": "Canyon Walkway",
+      "start": [
+        271,
+        -5165
+      ],
+      "end": [
+        338,
+        -5041
+      ]
+    },
+    {
+      "name": "Caritat Mansion",
+      "start": [
+        -1237,
+        -5116
+      ],
+      "end": [
+        -1144,
+        -5268
+      ]
+    },
+    {
+      "name": "Cascading Basins",
+      "start": [
+        110,
+        -4869
+      ],
+      "end": [
+        194,
+        -4741
+      ]
+    },
+    {
+      "name": "Cascading Oasis",
+      "start": [
+        990,
+        -2270
+      ],
+      "end": [
+        1195,
+        -2120
+      ]
+    },
+    {
+      "name": "Castle Dullahan",
+      "start": [
+        -1027,
+        -5470
+      ],
+      "end": [
+        -1180,
+        -5600
+      ]
+    },
+    {
+      "name": "Cathedral Harbour",
+      "start": [
+        385,
+        -2180
+      ],
+      "end": [
+        570,
+        -1950
+      ]
+    },
+    {
+      "name": "Celestial Impact",
+      "start": [
+        -127,
+        -4896
+      ],
+      "end": [
+        3,
+        -5050
+      ]
+    },
+    {
+      "name": "Centerworld Fortress",
+      "start": [
+        -1403,
+        -4869
+      ],
+      "end": [
+        -1284,
+        -4748
+      ]
+    },
+    {
+      "name": "Central Islands",
+      "start": [
+        1250,
+        -4718
+      ],
+      "end": [
+        1183,
+        -4535
+      ]
+    },
+    {
+      "name": "Chasm Chokepoint",
+      "start": [
+        -733,
+        -4707
+      ],
+      "end": [
+        -654,
+        -4848
+      ]
+    },
+    {
+      "name": "Chasm Overlook",
+      "start": [
+        -738,
+        -4708
+      ],
+      "end": [
+        -818,
+        -4840
+      ]
+    },
+    {
+      "name": "Cherry Blossom Grove",
+      "start": [
+        699,
+        -5378
+      ],
+      "end": [
+        575,
+        -5551
+      ]
+    },
+    {
+      "name": "Cinfras",
+      "start": [
+        -534,
+        -4807
+      ],
+      "end": [
+        -375,
+        -5088
+      ]
+    },
+    {
+      "name": "Cinfras Outskirts",
+      "start": [
+        -392,
+        -5116
+      ],
+      "end": [
+        -534,
+        -5278
+      ]
+    },
+    {
+      "name": "Cinfras's Small Farm",
+      "start": [
+        -224,
+        -4793
+      ],
+      "end": [
+        -130,
+        -4643
+      ]
+    },
+    {
+      "name": "Citadel's Shadow",
+      "start": [
+        -1612,
+        -1109
+      ],
+      "end": [
+        -1341,
+        -1004
+      ]
+    },
+    {
+      "name": "Cliffhearth Orc Camp",
+      "start": [
+        -2060,
+        -4746
+      ],
+      "end": [
+        -2171,
+        -4828
+      ]
+    },
+    {
+      "name": "Cliffside Passage North",
+      "start": [
+        572,
+        -4818
+      ],
+      "end": [
+        700,
+        -4933
+      ]
+    },
+    {
+      "name": "Cliffside Passage South",
+      "start": [
+        699,
+        -4817
+      ],
+      "end": [
+        572,
+        -4691
+      ]
+    },
+    {
+      "name": "Coastal Trail",
+      "start": [
+        -747,
+        -1946
+      ],
+      "end": [
+        -565,
+        -2059
+      ]
+    },
+    {
+      "name": "Collapsed Bridge",
+      "start": [
+        -834,
+        -4839
+      ],
+      "end": [
+        -926,
+        -4708
+      ]
+    },
+    {
+      "name": "Collapsed Emerald Mine",
+      "start": [
+        -2060,
+        -5003
+      ],
+      "end": [
+        -2171,
+        -5075
+      ]
+    },
+    {
+      "name": "Colourful Mountaintop",
+      "start": [
+        168,
+        -5408
+      ],
+      "end": [
+        250,
+        -5518
+      ]
+    },
+    {
+      "name": "Contested District",
+      "start": [
+        -1624,
+        -834
+      ],
+      "end": [
+        -1471,
+        -665
+      ]
+    },
+    {
+      "name": "Corkus Castle",
+      "start": [
+        -1555,
+        -2968
+      ],
+      "end": [
+        -1452,
+        -2835
+      ]
+    },
+    {
+      "name": "Corkus City",
+      "start": [
+        -1557,
+        -2835
+      ],
+      "end": [
+        -1680,
+        -3010
+      ]
+    },
+    {
+      "name": "Corkus City Crossroads",
+      "start": [
+        -1559,
+        -2662
+      ],
+      "end": [
+        -1679,
+        -2833
+      ]
+    },
+    {
+      "name": "Corkus City Mine",
+      "start": [
+        -1394,
+        -2750
+      ],
+      "end": [
+        -1466,
+        -2831
+      ]
+    },
+    {
+      "name": "Corkus Forest",
+      "start": [
+        -1681,
+        -2732
+      ],
+      "end": [
+        -1883,
+        -2861
+      ]
+    },
+    {
+      "name": "Corkus Outskirts",
+      "start": [
+        -1502,
+        -2976
+      ],
+      "end": [
+        -1230,
+        -3224
+      ]
+    },
+    {
+      "name": "Corkus Sea Cove",
+      "start": [
+        -1578,
+        -2662
+      ],
+      "end": [
+        -1330,
+        -2513
+      ]
+    },
+    {
+      "name": "Corrupted Orchard",
+      "start": [
+        188,
+        -1657
+      ],
+      "end": [
+        300,
+        -1500
+      ]
+    },
+    {
+      "name": "Corrupted River",
+      "start": [
+        75,
+        -1145
+      ],
+      "end": [
+        325,
+        -1210
+      ]
+    },
+    {
+      "name": "Corrupted Road",
+      "start": [
+        22,
+        -1479
+      ],
+      "end": [
+        96,
+        -1261
+      ]
+    },
+    {
+      "name": "Corrupted Tower",
+      "start": [
+        25,
+        -1660
+      ],
+      "end": [
+        200,
+        -1800
+      ]
+    },
+    {
+      "name": "Corrupted Warfront",
+      "start": [
+        115,
+        -1360
+      ],
+      "end": [
+        390,
+        -1495
+      ]
+    },
+    {
+      "name": "Cosmic Fissures",
+      "start": [
+        30,
+        -5157
+      ],
+      "end": [
+        -127,
+        -5271
+      ]
+    },
+    {
+      "name": "Crater Descent",
+      "start": [
+        1383,
+        -5238
+      ],
+      "end": [
+        1230,
+        -5067
+      ]
+    },
+    {
+      "name": "Cyclospordial Hazard",
+      "start": [
+        110,
+        -4736
+      ],
+      "end": [
+        194,
+        -4651
+      ]
+    },
+    {
+      "name": "Dark Forest Village",
+      "start": [
+        -723,
+        -5229
+      ],
+      "end": [
+        -574,
+        -5147
+      ]
+    },
+    {
+      "name": "Decayed Basin",
+      "start": [
+        -471,
+        -5405
+      ],
+      "end": [
+        -549,
+        -5512
+      ]
+    },
+    {
+      "name": "Deforested Ecotone",
+      "start": [
+        -1631,
+        -646
+      ],
+      "end": [
+        -1316,
+        -500
+      ]
+    },
+    {
+      "name": "Delnar Manor",
+      "start": [
+        -970,
+        -795
+      ],
+      "end": [
+        -900,
+        -547
+      ]
+    },
+    {
+      "name": "Derelict Mansion",
+      "start": [
+        870,
+        -3920
+      ],
+      "end": [
+        745,
+        -4040
+      ]
+    },
+    {
+      "name": "Desolate Valley",
+      "start": [
+        330,
+        -1040
+      ],
+      "end": [
+        450,
+        -1170
+      ]
+    },
+    {
+      "name": "Detlas",
+      "start": [
+        402,
+        -1657
+      ],
+      "end": [
+        536,
+        -1518
+      ]
+    },
+    {
+      "name": "Detlas Suburbs",
+      "start": [
+        300,
+        -1657
+      ],
+      "end": [
+        389,
+        -1500
+      ]
+    },
+    {
+      "name": "Displaced Housing",
+      "start": [
+        574,
+        -5375
+      ],
+      "end": [
+        699,
+        -5242
+      ]
+    },
+    {
+      "name": "Disturbed Crypt",
+      "start": [
+        870,
+        -3920
+      ],
+      "end": [
+        1000,
+        -3810
+      ]
+    },
+    {
+      "name": "Dodegar's Forge",
+      "start": [
+        -929,
+        -4552
+      ],
+      "end": [
+        -1014,
+        -4706
+      ]
+    },
+    {
+      "name": "Dogun Ritual Site",
+      "start": [
+        1535,
+        -5067
+      ],
+      "end": [
+        1387,
+        -5366
+      ]
+    },
+    {
+      "name": "Dragonbone Graveyard",
+      "start": [
+        1531,
+        -5637
+      ],
+      "end": [
+        1221,
+        -5555
+      ]
+    },
+    {
+      "name": "Dragonling Nests",
+      "start": [
+        925,
+        -4916
+      ],
+      "end": [
+        1101,
+        -5016
+      ]
+    },
+    {
+      "name": "Dreary Docks",
+      "start": [
+        870,
+        -3920
+      ],
+      "end": [
+        745,
+        -3810
+      ]
+    },
+    {
+      "name": "Dujgon Nation",
+      "start": [
+        1000,
+        -3550
+      ],
+      "end": [
+        925,
+        -3380
+      ]
+    },
+    {
+      "name": "Durum Barley Islet",
+      "start": [
+        537,
+        -2994
+      ],
+      "end": [
+        595,
+        -2924
+      ]
+    },
+    {
+      "name": "Durum Isles Barn",
+      "start": [
+        405,
+        -2846
+      ],
+      "end": [
+        504,
+        -2972
+      ]
+    },
+    {
+      "name": "Durum Malt Islet",
+      "start": [
+        390,
+        -2851
+      ],
+      "end": [
+        347,
+        -2791
+      ]
+    },
+    {
+      "name": "Durum Oat Islet",
+      "start": [
+        482,
+        -2841
+      ],
+      "end": [
+        548,
+        -2785
+      ]
+    },
+    {
+      "name": "Dusty Pit",
+      "start": [
+        990,
+        -2270
+      ],
+      "end": [
+        895,
+        -2140
+      ]
+    },
+    {
+      "name": "Eagle Tribe",
+      "start": [
+        1479,
+        -1579
+      ],
+      "end": [
+        1210,
+        -1780
+      ]
+    },
+    {
+      "name": "Efilim",
+      "start": [
+        -1134,
+        -5078
+      ],
+      "end": [
+        -1020,
+        -4943
+      ]
+    },
+    {
+      "name": "Efilim Crossroads",
+      "start": [
+        -1030,
+        -4940
+      ],
+      "end": [
+        -1134,
+        -4847
+      ]
+    },
+    {
+      "name": "Elefolk Stomping Grounds",
+      "start": [
+        435,
+        -4511
+      ],
+      "end": [
+        341,
+        -4670
+      ]
+    },
+    {
+      "name": "Elephelk Trail",
+      "start": [
+        445,
+        -4689
+      ],
+      "end": [
+        570,
+        -4568
+      ]
+    },
+    {
+      "name": "Elkurn",
+      "start": [
+        -98,
+        -1250
+      ],
+      "end": [
+        62,
+        -1080
+      ]
+    },
+    {
+      "name": "Eltom",
+      "start": [
+        1029,
+        -5581
+      ],
+      "end": [
+        828,
+        -5376
+      ]
+    },
+    {
+      "name": "Emerald Trail",
+      "start": [
+        -615,
+        -1530
+      ],
+      "end": [
+        -436,
+        -1652
+      ]
+    },
+    {
+      "name": "Enchanted River",
+      "start": [
+        -942,
+        -5227
+      ],
+      "end": [
+        -1050,
+        -5116
+      ]
+    },
+    {
+      "name": "Entamis Village",
+      "start": [
+        -737,
+        -317
+      ],
+      "end": [
+        -502,
+        -530
+      ]
+    },
+    {
+      "name": "Entrance to Almuj",
+      "start": [
+        750,
+        -2060
+      ],
+      "end": [
+        820,
+        -1895
+      ]
+    },
+    {
+      "name": "Entrance to Bucie",
+      "start": [
+        -1553,
+        -4850
+      ],
+      "end": [
+        -1476,
+        -4719
+      ]
+    },
+    {
+      "name": "Entrance to Cinfras",
+      "start": [
+        -555,
+        -4996
+      ],
+      "end": [
+        -717,
+        -4868
+      ]
+    },
+    {
+      "name": "Entrance to Gavel",
+      "start": [
+        -2048,
+        -4250
+      ],
+      "end": [
+        -1932,
+        -4403
+      ]
+    },
+    {
+      "name": "Entrance to Kander",
+      "start": [
+        -896,
+        -5408
+      ],
+      "end": [
+        -792,
+        -5233
+      ]
+    },
+    {
+      "name": "Entrance to Molten Heights",
+      "start": [
+        854,
+        -5257
+      ],
+      "end": [
+        1113,
+        -5367
+      ]
+    },
+    {
+      "name": "Entrance to Nivla Woods",
+      "start": [
+        -435,
+        -1530
+      ],
+      "end": [
+        -372,
+        -1652
+      ]
+    },
+    {
+      "name": "Entrance to Olux",
+      "start": [
+        -1649,
+        -5246
+      ],
+      "end": [
+        -1764,
+        -5396
+      ]
+    },
+    {
+      "name": "Entrance to Thesead",
+      "start": [
+        700,
+        -5030
+      ],
+      "end": [
+        574,
+        -5181
+      ]
+    },
+    {
+      "name": "Espren",
+      "start": [
+        -2154,
+        -1134
+      ],
+      "end": [
+        -1938,
+        -934
+      ]
+    },
+    {
+      "name": "Essren's Hut",
+      "start": [
+        545,
+        -1520
+      ],
+      "end": [
+        650,
+        -1670
+      ]
+    },
+    {
+      "name": "Evergreen Outbreak",
+      "start": [
+        35,
+        -4643
+      ],
+      "end": [
+        107,
+        -4753
+      ]
+    },
+    {
+      "name": "Fading Forest",
+      "start": [
+        -1425,
+        -5407
+      ],
+      "end": [
+        -1194,
+        -5589
+      ]
+    },
+    {
+      "name": "Fallen Factory",
+      "start": [
+        -1579,
+        -2662
+      ],
+      "end": [
+        -1681,
+        -2518
+      ]
+    },
+    {
+      "name": "Fallen Village",
+      "start": [
+        -290,
+        -5292
+      ],
+      "end": [
+        -392,
+        -5116
+      ]
+    },
+    {
+      "name": "Faltach Manor",
+      "start": [
+        -896,
+        -5232
+      ],
+      "end": [
+        -802,
+        -5102
+      ]
+    },
+    {
+      "name": "Farmers Settlement",
+      "start": [
+        -564,
+        -1883
+      ],
+      "end": [
+        -436,
+        -1653
+      ]
+    },
+    {
+      "name": "Featherfall Cliffs",
+      "start": [
+        340,
+        -4395
+      ],
+      "end": [
+        437,
+        -4508
+      ]
+    },
+    {
+      "name": "Felroc Fields",
+      "start": [
+        -337,
+        -4756
+      ],
+      "end": [
+        -225,
+        -4657
+      ]
+    },
+    {
+      "name": "Festival Grounds",
+      "start": [
+        -2300,
+        -1310
+      ],
+      "end": [
+        -2154,
+        -969
+      ]
+    },
+    {
+      "name": "Feuding Houses",
+      "start": [
+        -1153,
+        -1249
+      ],
+      "end": [
+        -946,
+        -1035
+      ]
+    },
+    {
+      "name": "Field of Life",
+      "start": [
+        -894,
+        -6010
+      ],
+      "end": [
+        -827,
+        -6164
+      ]
+    },
+    {
+      "name": "Final Step",
+      "start": [
+        1388,
+        -869
+      ],
+      "end": [
+        1254,
+        -932
+      ]
+    },
+    {
+      "name": "Fleris Cranny",
+      "start": [
+        271,
+        -4739
+      ],
+      "end": [
+        338,
+        -4630
+      ]
+    },
+    {
+      "name": "Fleris Trail",
+      "start": [
+        -1390,
+        -4594
+      ],
+      "end": [
+        -1254,
+        -4351
+      ]
+    },
+    {
+      "name": "Floral Peaks",
+      "start": [
+        -1955,
+        -5081
+      ],
+      "end": [
+        -2059,
+        -5186
+      ]
+    },
+    {
+      "name": "Florist's Hut",
+      "start": [
+        110,
+        -873
+      ],
+      "end": [
+        240,
+        -1035
+      ]
+    },
+    {
+      "name": "Forest of Eyes",
+      "start": [
+        813,
+        -333
+      ],
+      "end": [
+        1043,
+        -504
+      ]
+    },
+    {
+      "name": "Forgotten Burrows",
+      "start": [
+        -1955,
+        -5311
+      ],
+      "end": [
+        -2059,
+        -5419
+      ]
+    },
+    {
+      "name": "Forgotten Path",
+      "start": [
+        -1603,
+        -4969
+      ],
+      "end": [
+        -1529,
+        -5100
+      ]
+    },
+    {
+      "name": "Forgotten Town",
+      "start": [
+        480,
+        -493
+      ],
+      "end": [
+        734,
+        -355
+      ]
+    },
+    {
+      "name": "Fort Hegea",
+      "start": [
+        -1194,
+        -792
+      ],
+      "end": [
+        -1040,
+        -579
+      ]
+    },
+    {
+      "name": "Fort Tericen",
+      "start": [
+        -1341,
+        -1176
+      ],
+      "end": [
+        -1153,
+        -948
+      ]
+    },
+    {
+      "name": "Fort Torann",
+      "start": [
+        -2022,
+        -1675
+      ],
+      "end": [
+        -1812,
+        -1500
+      ]
+    },
+    {
+      "name": "Forts in Fall",
+      "start": [
+        -2039,
+        -1500
+      ],
+      "end": [
+        -1780,
+        -1134
+      ]
+    },
+    {
+      "name": "Founder's Statue",
+      "start": [
+        -1322,
+        -2917
+      ],
+      "end": [
+        -1393,
+        -2836
+      ]
+    },
+    {
+      "name": "Fountain of Youth",
+      "start": [
+        -744,
+        -528
+      ],
+      "end": [
+        -965,
+        -264
+      ]
+    },
+    {
+      "name": "Freezing Heights",
+      "start": [
+        1531,
+        -5553
+      ],
+      "end": [
+        1387,
+        -5369
+      ]
+    },
+    {
+      "name": "Frigid Crossroads",
+      "start": [
+        70,
+        -820
+      ],
+      "end": [
+        -110,
+        -625
+      ]
+    },
+    {
+      "name": "Frosty Outpost",
+      "start": [
+        -1153,
+        -1481
+      ],
+      "end": [
+        -971,
+        -1249
+      ]
+    },
+    {
+      "name": "Frosty Spikes",
+      "start": [
+        70,
+        -950
+      ],
+      "end": [
+        -140,
+        -1060
+      ]
+    },
+    {
+      "name": "Frozen Fort",
+      "start": [
+        1501,
+        -4513
+      ],
+      "end": [
+        1586,
+        -4789
+      ]
+    },
+    {
+      "name": "Frozen Homestead",
+      "start": [
+        70,
+        -834
+      ],
+      "end": [
+        -120,
+        -910
+      ]
+    },
+    {
+      "name": "Fungal Grove",
+      "start": [
+        -489,
+        -5279
+      ],
+      "end": [
+        -549,
+        -5398
+      ]
+    },
+    {
+      "name": "Gates to Aelumia",
+      "start": [
+        -1624,
+        -1004
+      ],
+      "end": [
+        -1471,
+        -835
+      ]
+    },
+    {
+      "name": "Gateway to Nothing",
+      "start": [
+        1120,
+        -882
+      ],
+      "end": [
+        1244,
+        -1058
+      ]
+    },
+    {
+      "name": "Gelibord",
+      "start": [
+        -1050,
+        -5244
+      ],
+      "end": [
+        -958,
+        -5342
+      ]
+    },
+    {
+      "name": "Gelibord Watermill",
+      "start": [
+        -1056,
+        -5355
+      ],
+      "end": [
+        -1179,
+        -5448
+      ]
+    },
+    {
+      "name": "Gert Camp",
+      "start": [
+        30,
+        -5447
+      ],
+      "end": [
+        -83,
+        -5605
+      ]
+    },
+    {
+      "name": "Gloopy Cave",
+      "start": [
+        1195,
+        -2120
+      ],
+      "end": [
+        1060,
+        -1935
+      ]
+    },
+    {
+      "name": "Goblin Plains East",
+      "start": [
+        -1603,
+        -4963
+      ],
+      "end": [
+        -1527,
+        -4853
+      ]
+    },
+    {
+      "name": "Goblin Plains West",
+      "start": [
+        -1688,
+        -4962
+      ],
+      "end": [
+        -1611,
+        -4854
+      ]
+    },
+    {
+      "name": "Great Bridge",
+      "start": [
+        -275,
+        -620
+      ],
+      "end": [
+        -390,
+        -790
+      ]
+    },
+    {
+      "name": "Grey Ruins",
+      "start": [
+        683,
+        -619
+      ],
+      "end": [
+        462,
+        -515
+      ]
+    },
+    {
+      "name": "Guardian of the Forest",
+      "start": [
+        -1134,
+        -4708
+      ],
+      "end": [
+        -1030,
+        -4845
+      ]
+    },
+    {
+      "name": "Guild Hall",
+      "start": [
+        -349,
+        -5093
+      ],
+      "end": [
+        -137,
+        -4814
+      ]
+    },
+    {
+      "name": "Gylia Fisherman Camp",
+      "start": [
+        -127,
+        -5155
+      ],
+      "end": [
+        3,
+        -5051
+      ]
+    },
+    {
+      "name": "Gylia Lakehouse",
+      "start": [
+        -218,
+        -5427
+      ],
+      "end": [
+        -130,
+        -5273
+      ]
+    },
+    {
+      "name": "Gylia Research Cabin",
+      "start": [
+        -130,
+        -5173
+      ],
+      "end": [
+        -241,
+        -5271
+      ]
+    },
+    {
+      "name": "Gylia Watchtower",
+      "start": [
+        -128,
+        -5416
+      ],
+      "end": [
+        21,
+        -5273
+      ]
+    },
+    {
+      "name": "Half Moon Island",
+      "start": [
+        900,
+        -2660
+      ],
+      "end": [
+        1100,
+        -2480
+      ]
+    },
+    {
+      "name": "Harnort Compound",
+      "start": [
+        -1391,
+        -4352
+      ],
+      "end": [
+        -1607,
+        -4524
+      ]
+    },
+    {
+      "name": "Harpy's Haunt North",
+      "start": [
+        271,
+        -4946
+      ],
+      "end": [
+        337,
+        -4857
+      ]
+    },
+    {
+      "name": "Harpy's Haunt South",
+      "start": [
+        337,
+        -4855
+      ],
+      "end": [
+        271,
+        -4741
+      ]
+    },
+    {
+      "name": "Heart of Decay",
+      "start": [
+        -598,
+        -5580
+      ],
+      "end": [
+        -454,
+        -5518
+      ]
+    },
+    {
+      "name": "Heavenly Ingress",
+      "start": [
+        -814,
+        -6015
+      ],
+      "end": [
+        -894,
+        -5928
+      ]
+    },
+    {
+      "name": "Herb Cave",
+      "start": [
+        -448,
+        -813
+      ],
+      "end": [
+        -557,
+        -876
+      ]
+    },
+    {
+      "name": "Highlands Gate",
+      "start": [
+        -1471,
+        -948
+      ],
+      "end": [
+        -1267,
+        -803
+      ]
+    },
+    {
+      "name": "Hobgoblin's Hoard",
+      "start": [
+        440,
+        -4672
+      ],
+      "end": [
+        341,
+        -4838
+      ]
+    },
+    {
+      "name": "Housing Crisis",
+      "start": [
+        437,
+        -4314
+      ],
+      "end": [
+        336,
+        -4392
+      ]
+    },
+    {
+      "name": "Hyloch",
+      "start": [
+        -1456,
+        -1334
+      ],
+      "end": [
+        -1281,
+        -1176
+      ]
+    },
+    {
+      "name": "Iboju Village",
+      "start": [
+        -671,
+        -779
+      ],
+      "end": [
+        -810,
+        -630
+      ]
+    },
+    {
+      "name": "Icy Descent",
+      "start": [
+        -311,
+        -358
+      ],
+      "end": [
+        -104,
+        -496
+      ]
+    },
+    {
+      "name": "Icy Island",
+      "start": [
+        1001,
+        -3274
+      ],
+      "end": [
+        1172,
+        -3430
+      ]
+    },
+    {
+      "name": "Icy Vigil",
+      "start": [
+        -115,
+        -630
+      ],
+      "end": [
+        -240,
+        -780
+      ]
+    },
+    {
+      "name": "Illuminant Path",
+      "start": [
+        347,
+        -5313
+      ],
+      "end": [
+        438,
+        -5183
+      ]
+    },
+    {
+      "name": "Industrial Clearing",
+      "start": [
+        -1683,
+        -2571
+      ],
+      "end": [
+        -1798,
+        -2730
+      ]
+    },
+    {
+      "name": "Industrial Sector",
+      "start": [
+        -2113,
+        -768
+      ],
+      "end": [
+        -1856,
+        -515
+      ]
+    },
+    {
+      "name": "Infested Sinkhole",
+      "start": [
+        -2171,
+        -5312
+      ],
+      "end": [
+        -2060,
+        -5419
+      ]
+    },
+    {
+      "name": "Inhospitable Mountain",
+      "start": [
+        111,
+        -5043
+      ],
+      "end": [
+        194,
+        -4958
+      ]
+    },
+    {
+      "name": "Invaded Barracks",
+      "start": [
+        1260,
+        -2170
+      ],
+      "end": [
+        1450,
+        -2370
+      ]
+    },
+    {
+      "name": "Iron Road",
+      "start": [
+        -1688,
+        -5099
+      ],
+      "end": [
+        -1608,
+        -4969
+      ]
+    },
+    {
+      "name": "Jagged Foothills",
+      "start": [
+        -348,
+        -2060
+      ],
+      "end": [
+        -254,
+        -1954
+      ]
+    },
+    {
+      "name": "Jitak's Farm",
+      "start": [
+        -122,
+        -5430
+      ],
+      "end": [
+        -218,
+        -5567
+      ]
+    },
+    {
+      "name": "Jofash Docks",
+      "start": [
+        1178,
+        -4175
+      ],
+      "end": [
+        1445,
+        -4012
+      ]
+    },
+    {
+      "name": "Jofash Tunnel",
+      "start": [
+        1304,
+        -4354
+      ],
+      "end": [
+        1126,
+        -4176
+      ]
+    },
+    {
+      "name": "Jungle Entrance",
+      "start": [
+        -395,
+        -790
+      ],
+      "end": [
+        -515,
+        -610
+      ]
+    },
+    {
+      "name": "Kander Mines",
+      "start": [
+        -785,
+        -5229
+      ],
+      "end": [
+        -725,
+        -5102
+      ]
+    },
+    {
+      "name": "Kandon Farm",
+      "start": [
+        710,
+        -4587
+      ],
+      "end": [
+        614,
+        -4682
+      ]
+    },
+    {
+      "name": "Kandon Ridge",
+      "start": [
+        885,
+        -4640
+      ],
+      "end": [
+        719,
+        -4777
+      ]
+    },
+    {
+      "name": "Kandon-Beda",
+      "start": [
+        607,
+        -4579
+      ],
+      "end": [
+        760,
+        -4372
+      ]
+    },
+    {
+      "name": "Karoc Quarry",
+      "start": [
+        -1776,
+        -4352
+      ],
+      "end": [
+        -1609,
+        -4524
+      ]
+    },
+    {
+      "name": "Katoa Ranch",
+      "start": [
+        -914,
+        -1860
+      ],
+      "end": [
+        -748,
+        -1955
+      ]
+    },
+    {
+      "name": "Kitrios Armory",
+      "start": [
+        51,
+        -5297
+      ],
+      "end": [
+        166,
+        -5391
+      ]
+    },
+    {
+      "name": "Kitrios Barracks",
+      "start": [
+        104,
+        -5393
+      ],
+      "end": [
+        166,
+        -5518
+      ]
+    },
+    {
+      "name": "Krolton's Cave",
+      "start": [
+        341,
+        -4841
+      ],
+      "end": [
+        438,
+        -4962
+      ]
+    },
+    {
+      "name": "Lake Gitephe",
+      "start": [
+        -1612,
+        -1437
+      ],
+      "end": [
+        -1456,
+        -1109
+      ]
+    },
+    {
+      "name": "Lake Rieke",
+      "start": [
+        -1281,
+        -1460
+      ],
+      "end": [
+        -1153,
+        -1176
+      ]
+    },
+    {
+      "name": "Lava Lakes",
+      "start": [
+        1230,
+        -5240
+      ],
+      "end": [
+        1379,
+        -5366
+      ]
+    },
+    {
+      "name": "Lava Springs",
+      "start": [
+        775,
+        -1675
+      ],
+      "end": [
+        630,
+        -1830
+      ]
+    },
+    {
+      "name": "Legendary Island",
+      "start": [
+        -1212,
+        -2576
+      ],
+      "end": [
+        -1001,
+        -2342
+      ]
+    },
+    {
+      "name": "Lexdale",
+      "start": [
+        -650,
+        -5511
+      ],
+      "end": [
+        -562,
+        -5406
+      ]
+    },
+    {
+      "name": "Lexdale Penitentiary",
+      "start": [
+        -873,
+        -5518
+      ],
+      "end": [
+        -772,
+        -5585
+      ]
+    },
+    {
+      "name": "Lifeless Forest",
+      "start": [
+        870,
+        -3920
+      ],
+      "end": [
+        1000,
+        -4040
+      ]
+    },
+    {
+      "name": "Light Peninsula",
+      "start": [
+        -951,
+        -4421
+      ],
+      "end": [
+        -802,
+        -4108
+      ]
+    },
+    {
+      "name": "Lighthouse Lookout",
+      "start": [
+        -1633,
+        -2162
+      ],
+      "end": [
+        -1842,
+        -2058
+      ]
+    },
+    {
+      "name": "Lion Lair",
+      "start": [
+        890,
+        -2140
+      ],
+      "end": [
+        790,
+        -2320
+      ]
+    },
+    {
+      "name": "Little Wood",
+      "start": [
+        -812,
+        -1177
+      ],
+      "end": [
+        -636,
+        -1094
+      ]
+    },
+    {
+      "name": "Lizardman Camp",
+      "start": [
+        -1649,
+        -5134
+      ],
+      "end": [
+        -1763,
+        -5241
+      ]
+    },
+    {
+      "name": "Lizardman Lake",
+      "start": [
+        -1519,
+        -5291
+      ],
+      "end": [
+        -1626,
+        -5492
+      ]
+    },
+    {
+      "name": "Llevigar",
+      "start": [
+        -1800,
+        -4643
+      ],
+      "end": [
+        -2171,
+        -4405
+      ]
+    },
+    {
+      "name": "Llevigar Farm",
+      "start": [
+        -1663,
+        -4849
+      ],
+      "end": [
+        -1556,
+        -4714
+      ]
+    },
+    {
+      "name": "Llevigar Gate",
+      "start": [
+        -1932,
+        -4648
+      ],
+      "end": [
+        -2059,
+        -4746
+      ]
+    },
+    {
+      "name": "Llevigar Stables",
+      "start": [
+        -2059,
+        -4747
+      ],
+      "end": [
+        -1931,
+        -4828
+      ]
+    },
+    {
+      "name": "Loamsprout Orc Camp",
+      "start": [
+        -1800,
+        -4852
+      ],
+      "end": [
+        -1670,
+        -4684
+      ]
+    },
+    {
+      "name": "Lost Atoll",
+      "start": [
+        -472,
+        -3590
+      ],
+      "end": [
+        -688,
+        -3385
+      ]
+    },
+    {
+      "name": "Luminous Plateau",
+      "start": [
+        -894,
+        -5957
+      ],
+      "end": [
+        -962,
+        -6066
+      ]
+    },
+    {
+      "name": "Lusuco",
+      "start": [
+        -267,
+        -348
+      ],
+      "end": [
+        -91,
+        -250
+      ]
+    },
+    {
+      "name": "Lutho",
+      "start": [
+        936,
+        -654
+      ],
+      "end": [
+        1027,
+        -754
+      ]
+    },
+    {
+      "name": "Luxuriant Pond",
+      "start": [
+        -1014,
+        -4428
+      ],
+      "end": [
+        -929,
+        -4549
+      ]
+    },
+    {
+      "name": "Mage Island",
+      "start": [
+        805,
+        -2960
+      ],
+      "end": [
+        983,
+        -2787
+      ]
+    },
+    {
+      "name": "Maiden Tower",
+      "start": [
+        -2059,
+        -5188
+      ],
+      "end": [
+        -1955,
+        -5309
+      ]
+    },
+    {
+      "name": "Maltic",
+      "start": [
+        -604,
+        -1945
+      ],
+      "end": [
+        -475,
+        -1884
+      ]
+    },
+    {
+      "name": "Maltic Coast",
+      "start": [
+        -564,
+        -2059
+      ],
+      "end": [
+        -400,
+        -1946
+      ]
+    },
+    {
+      "name": "Mangled Lake",
+      "start": [
+        -1460,
+        -5025
+      ],
+      "end": [
+        -1272,
+        -5210
+      ]
+    },
+    {
+      "name": "Mantis Nest",
+      "start": [
+        -736,
+        -4559
+      ],
+      "end": [
+        -802,
+        -4698
+      ]
+    },
+    {
+      "name": "Maro Peaks",
+      "start": [
+        -41,
+        -4174
+      ],
+      "end": [
+        453,
+        -3793
+      ]
+    },
+    {
+      "name": "Mesquis Tower",
+      "start": [
+        -834,
+        -5078
+      ],
+      "end": [
+        -727,
+        -4999
+      ]
+    },
+    {
+      "name": "Meteor Crater",
+      "start": [
+        -1800,
+        -5099
+      ],
+      "end": [
+        -1690,
+        -4969
+      ]
+    },
+    {
+      "name": "Meteor Trail",
+      "start": [
+        -2060,
+        -4831
+      ],
+      "end": [
+        -2171,
+        -4909
+      ]
+    },
+    {
+      "name": "Mine Base Plains",
+      "start": [
+        550,
+        -1190
+      ],
+      "end": [
+        650,
+        -1430
+      ]
+    },
+    {
+      "name": "Mining Base Camp",
+      "start": [
+        880,
+        -1330
+      ],
+      "end": [
+        670,
+        -1225
+      ]
+    },
+    {
+      "name": "Minotaur Barbecue",
+      "start": [
+        -1014,
+        -4944
+      ],
+      "end": [
+        -949,
+        -5079
+      ]
+    },
+    {
+      "name": "Molten Passage",
+      "start": [
+        199,
+        -5164
+      ],
+      "end": [
+        260,
+        -5042
+      ]
+    },
+    {
+      "name": "Molten Reach",
+      "start": [
+        1251,
+        -4894
+      ],
+      "end": [
+        1500,
+        -4964
+      ]
+    },
+    {
+      "name": "Monte's Village",
+      "start": [
+        -515,
+        -610
+      ],
+      "end": [
+        -600,
+        -790
+      ]
+    },
+    {
+      "name": "Mount Wynn Inn",
+      "start": [
+        20,
+        -2065
+      ],
+      "end": [
+        151,
+        -1871
+      ]
+    },
+    {
+      "name": "Mudspring Orc Camp",
+      "start": [
+        -2059,
+        -5003
+      ],
+      "end": [
+        -1956,
+        -5074
+      ]
+    },
+    {
+      "name": "Mummy's Tomb",
+      "start": [
+        990,
+        -2270
+      ],
+      "end": [
+        1120,
+        -2400
+      ]
+    },
+    {
+      "name": "Mushroom Hill",
+      "start": [
+        -288,
+        -5411
+      ],
+      "end": [
+        -392,
+        -5601
+      ]
+    },
+    {
+      "name": "Mycelial Expanse",
+      "start": [
+        -926,
+        -4700
+      ],
+      "end": [
+        -805,
+        -4552
+      ]
+    },
+    {
+      "name": "Myconid Descent",
+      "start": [
+        -646,
+        -4699
+      ],
+      "end": [
+        -733,
+        -4559
+      ]
+    },
+    {
+      "name": "Naga Lake",
+      "start": [
+        -2065,
+        -5466
+      ],
+      "end": [
+        -1982,
+        -5603
+      ]
+    },
+    {
+      "name": "Nemract",
+      "start": [
+        10,
+        -2070
+      ],
+      "end": [
+        210,
+        -2270
+      ]
+    },
+    {
+      "name": "Nemract Cathedral",
+      "start": [
+        385,
+        -2180
+      ],
+      "end": [
+        270,
+        -2030
+      ]
+    },
+    {
+      "name": "Nesaak",
+      "start": [
+        75,
+        -850
+      ],
+      "end": [
+        160,
+        -760
+      ]
+    },
+    {
+      "name": "Nesaak Transition",
+      "start": [
+        330,
+        -1040
+      ],
+      "end": [
+        75,
+        -1145
+      ]
+    },
+    {
+      "name": "Nested Cliffside",
+      "start": [
+        5,
+        -1960
+      ],
+      "end": [
+        -100,
+        -1810
+      ]
+    },
+    {
+      "name": "Nexus of Light",
+      "start": [
+        -645,
+        -6384
+      ],
+      "end": [
+        -855,
+        -6561
+      ]
+    },
+    {
+      "name": "Nivla Woods",
+      "start": [
+        -325,
+        -1624
+      ],
+      "end": [
+        -196,
+        -1460
+      ]
+    },
+    {
+      "name": "Nivla Woods Exit",
+      "start": [
+        -74,
+        -1777
+      ],
+      "end": [
+        -3,
+        -1485
+      ]
+    },
+    {
+      "name": "Nodguj Nation",
+      "start": [
+        695,
+        -3210
+      ],
+      "end": [
+        880,
+        -3440
+      ]
+    },
+    {
+      "name": "Nomads' Refuge",
+      "start": [
+        -435,
+        -1883
+      ],
+      "end": [
+        -270,
+        -1653
+      ]
+    },
+    {
+      "name": "Ogre Den",
+      "start": [
+        -2060,
+        -5082
+      ],
+      "end": [
+        -2171,
+        -5186
+      ]
+    },
+    {
+      "name": "Old Coal Mine",
+      "start": [
+        719,
+        -4778
+      ],
+      "end": [
+        885,
+        -4915
+      ]
+    },
+    {
+      "name": "Old Crossroads",
+      "start": [
+        -648,
+        -5314
+      ],
+      "end": [
+        -567,
+        -5400
+      ]
+    },
+    {
+      "name": "Olux",
+      "start": [
+        -1810,
+        -5397
+      ],
+      "end": [
+        -1668,
+        -5597
+      ]
+    },
+    {
+      "name": "Olux Lumberyard",
+      "start": [
+        -1519,
+        -5492
+      ],
+      "end": [
+        -1626,
+        -5607
+      ]
+    },
+    {
+      "name": "Orc Battlegrounds",
+      "start": [
+        -1460,
+        -5024
+      ],
+      "end": [
+        -1282,
+        -4870
+      ]
+    },
+    {
+      "name": "Orc Lake",
+      "start": [
+        -1933,
+        -4962
+      ],
+      "end": [
+        -1816,
+        -4854
+      ]
+    },
+    {
+      "name": "Orc Road",
+      "start": [
+        -1927,
+        -4852
+      ],
+      "end": [
+        -1815,
+        -4700
+      ]
+    },
+    {
+      "name": "Otherworldly Monolith",
+      "start": [
+        -775,
+        -6164
+      ],
+      "end": [
+        -662,
+        -6003
+      ]
+    },
+    {
+      "name": "Outer Aldorei Town",
+      "start": [
+        -322,
+        -4499
+      ],
+      "end": [
+        -557,
+        -4395
+      ]
+    },
+    {
+      "name": "Overrun Docks",
+      "start": [
+        -1891,
+        -2997
+      ],
+      "end": [
+        -2022,
+        -3274
+      ]
+    },
+    {
+      "name": "Overtaken Outpost",
+      "start": [
+        -1452,
+        -5211
+      ],
+      "end": [
+        -1272,
+        -5395
+      ]
+    },
+    {
+      "name": "Owl Tribe",
+      "start": [
+        1190,
+        -1665
+      ],
+      "end": [
+        975,
+        -1540
+      ]
+    },
+    {
+      "name": "Panda Kingdom",
+      "start": [
+        200,
+        -4380
+      ],
+      "end": [
+        265,
+        -4518
+      ]
+    },
+    {
+      "name": "Panda Path",
+      "start": [
+        115,
+        -4380
+      ],
+      "end": [
+        194,
+        -4518
+      ]
+    },
+    {
+      "name": "Paper Trail",
+      "start": [
+        3,
+        -4760
+      ],
+      "end": [
+        -127,
+        -4640
+      ]
+    },
+    {
+      "name": "Parasitic Slime Mine",
+      "start": [
+        265,
+        -4521
+      ],
+      "end": [
+        199,
+        -4649
+      ]
+    },
+    {
+      "name": "Path to Ahmsord",
+      "start": [
+        779,
+        -4480
+      ],
+      "end": [
+        885,
+        -4570
+      ]
+    },
+    {
+      "name": "Path to Cinfras",
+      "start": [
+        -734,
+        -4842
+      ],
+      "end": [
+        -818,
+        -4953
+      ]
+    },
+    {
+      "name": "Path to Light",
+      "start": [
+        -775,
+        -6164
+      ],
+      "end": [
+        -827,
+        -6010
+      ]
+    },
+    {
+      "name": "Path to Light's Secret",
+      "start": [
+        -1134,
+        -4548
+      ],
+      "end": [
+        -1038,
+        -4426
+      ]
+    },
+    {
+      "name": "Path to Ozoth's Spire",
+      "start": [
+        194,
+        -5165
+      ],
+      "end": [
+        111,
+        -5045
+      ]
+    },
+    {
+      "name": "Path to Talor",
+      "start": [
+        -653,
+        -5231
+      ],
+      "end": [
+        -785,
+        -5401
+      ]
+    },
+    {
+      "name": "Path to Thanos",
+      "start": [
+        98,
+        -5049
+      ],
+      "end": [
+        35,
+        -5149
+      ]
+    },
+    {
+      "name": "Path to the Dojo",
+      "start": [
+        440,
+        -5315
+      ],
+      "end": [
+        560,
+        -5449
+      ]
+    },
+    {
+      "name": "Path to the Forgery",
+      "start": [
+        -949,
+        -4942
+      ],
+      "end": [
+        -1014,
+        -4847
+      ]
+    },
+    {
+      "name": "Path to the Grootslangs",
+      "start": [
+        -1981,
+        -5466
+      ],
+      "end": [
+        -1889,
+        -5603
+      ]
+    },
+    {
+      "name": "Path to the Penitentiary",
+      "start": [
+        -771,
+        -5504
+      ],
+      "end": [
+        -899,
+        -5412
+      ]
+    },
+    {
+      "name": "Paths of Sludge",
+      "start": [
+        1040,
+        -767
+      ],
+      "end": [
+        892,
+        -870
+      ]
+    },
+    {
+      "name": "Perilous Grotto",
+      "start": [
+        263,
+        -4973
+      ],
+      "end": [
+        199,
+        -5035
+      ]
+    },
+    {
+      "name": "Perilous Passage",
+      "start": [
+        264,
+        -4877
+      ],
+      "end": [
+        203,
+        -4971
+      ]
+    },
+    {
+      "name": "Picnic Pond",
+      "start": [
+        -1888,
+        -2862
+      ],
+      "end": [
+        -1682,
+        -2995
+      ]
+    },
+    {
+      "name": "Pigmen Ravines",
+      "start": [
+        -784,
+        -1398
+      ],
+      "end": [
+        -617,
+        -1317
+      ]
+    },
+    {
+      "name": "Pine Pillar Forest",
+      "start": [
+        35,
+        -4521
+      ],
+      "end": [
+        107,
+        -4641
+      ]
+    },
+    {
+      "name": "Pirate Town",
+      "start": [
+        -750,
+        -3251
+      ],
+      "end": [
+        -580,
+        -3006
+      ]
+    },
+    {
+      "name": "Plains Lake",
+      "start": [
+        395,
+        -1365
+      ],
+      "end": [
+        550,
+        -1190
+      ]
+    },
+    {
+      "name": "Primal Fen",
+      "start": [
+        -894,
+        -6244
+      ],
+      "end": [
+        -1026,
+        -6066
+      ]
+    },
+    {
+      "name": "Protector's Pathway",
+      "start": [
+        443,
+        -4566
+      ],
+      "end": [
+        570,
+        -4392
+      ]
+    },
+    {
+      "name": "Pyroclastic Flow",
+      "start": [
+        1233,
+        -5553
+      ],
+      "end": [
+        1379,
+        -5369
+      ]
+    },
+    {
+      "name": "Ragni",
+      "start": [
+        -955,
+        -1415
+      ],
+      "end": [
+        -756,
+        -1748
+      ]
+    },
+    {
+      "name": "Ragni Countryside North",
+      "start": [
+        -747,
+        -1776
+      ],
+      "end": [
+        -605,
+        -1945
+      ]
+    },
+    {
+      "name": "Ragni Countryside South",
+      "start": [
+        -747,
+        -1653
+      ],
+      "end": [
+        -616,
+        -1776
+      ]
+    },
+    {
+      "name": "Ragni Main Entrance",
+      "start": [
+        -747,
+        -1530
+      ],
+      "end": [
+        -616,
+        -1652
+      ]
+    },
+    {
+      "name": "Ragni North Entrance",
+      "start": [
+        -944,
+        -1761
+      ],
+      "end": [
+        -818,
+        -1859
+      ]
+    },
+    {
+      "name": "Ragni South Entrance",
+      "start": [
+        -924,
+        -1398
+      ],
+      "end": [
+        -784,
+        -1307
+      ]
+    },
+    {
+      "name": "Raiders' Airbase",
+      "start": [
+        1558,
+        -4316
+      ],
+      "end": [
+        1305,
+        -4253
+      ]
+    },
+    {
+      "name": "Raiders' Stronghold",
+      "start": [
+        1380,
+        -4457
+      ],
+      "end": [
+        1551,
+        -4316
+      ]
+    },
+    {
+      "name": "Ranol's Farm",
+      "start": [
+        810,
+        -5551
+      ],
+      "end": [
+        701,
+        -5377
+      ]
+    },
+    {
+      "name": "Razed Inn",
+      "start": [
+        151,
+        -1870
+      ],
+      "end": [
+        20,
+        -1810
+      ]
+    },
+    {
+      "name": "Regular Island",
+      "start": [
+        1202,
+        -3764
+      ],
+      "end": [
+        1458,
+        -3597
+      ]
+    },
+    {
+      "name": "Relos",
+      "start": [
+        -1680,
+        -2512
+      ],
+      "end": [
+        -1437,
+        -2307
+      ]
+    },
+    {
+      "name": "Residence Sector",
+      "start": [
+        -1976,
+        -917
+      ],
+      "end": [
+        -1805,
+        -768
+      ]
+    },
+    {
+      "name": "Retrofitted Manufactory",
+      "start": [
+        -1503,
+        -3191
+      ],
+      "end": [
+        -1680,
+        -3012
+      ]
+    },
+    {
+      "name": "Riverbank Knoll",
+      "start": [
+        -817,
+        -1859
+      ],
+      "end": [
+        -762,
+        -1761
+      ]
+    },
+    {
+      "name": "Road to Elkurn",
+      "start": [
+        -89,
+        -1481
+      ],
+      "end": [
+        2,
+        -1267
+      ]
+    },
+    {
+      "name": "Road to Light Forest",
+      "start": [
+        -1387,
+        -4595
+      ],
+      "end": [
+        -1252,
+        -4713
+      ]
+    },
+    {
+      "name": "Road to Mine",
+      "start": [
+        -1467,
+        -2834
+      ],
+      "end": [
+        -1557,
+        -2691
+      ]
+    },
+    {
+      "name": "Road to Time Valley",
+      "start": [
+        -461,
+        -1525
+      ],
+      "end": [
+        -359,
+        -1412
+      ]
+    },
+    {
+      "name": "Rocky Bend",
+      "start": [
+        334,
+        -4393
+      ],
+      "end": [
+        276,
+        -4314
+      ]
+    },
+    {
+      "name": "Rocky Shore",
+      "start": [
+        5,
+        -2270
+      ],
+      "end": [
+        -320,
+        -2090
+      ]
+    },
+    {
+      "name": "Rodoroc",
+      "start": [
+        1200,
+        -5067
+      ],
+      "end": [
+        965,
+        -5238
+      ]
+    },
+    {
+      "name": "Rooster Island",
+      "start": [
+        -128,
+        -2448
+      ],
+      "end": [
+        -30,
+        -2538
+      ]
+    },
+    {
+      "name": "Roots of Corruption",
+      "start": [
+        106,
+        -1341
+      ],
+      "end": [
+        260,
+        -1222
+      ]
+    },
+    {
+      "name": "Royal Barracks",
+      "start": [
+        -1780,
+        -1004
+      ],
+      "end": [
+        -1625,
+        -835
+      ]
+    },
+    {
+      "name": "Royal Dam",
+      "start": [
+        -1780,
+        -1500
+      ],
+      "end": [
+        -1612,
+        -1004
+      ]
+    },
+    {
+      "name": "Royal Gate",
+      "start": [
+        -1822,
+        -1995
+      ],
+      "end": [
+        -2015,
+        -1725
+      ]
+    },
+    {
+      "name": "Ruined Houses",
+      "start": [
+        -1684,
+        -2569
+      ],
+      "end": [
+        -1793,
+        -2453
+      ]
+    },
+    {
+      "name": "Ruined Prospect",
+      "start": [
+        1209,
+        -1269
+      ],
+      "end": [
+        1020,
+        -1380
+      ]
+    },
+    {
+      "name": "Ruined Villa",
+      "start": [
+        1060,
+        -1935
+      ],
+      "end": [
+        1210,
+        -1810
+      ]
+    },
+    {
+      "name": "Rymek",
+      "start": [
+        1210,
+        -1270
+      ],
+      "end": [
+        1400,
+        -1390
+      ]
+    },
+    {
+      "name": "Sablestone Orc Camp",
+      "start": [
+        -1800,
+        -4962
+      ],
+      "end": [
+        -1695,
+        -4854
+      ]
+    },
+    {
+      "name": "Sanctuary Bridge",
+      "start": [
+        -324,
+        -1130
+      ],
+      "end": [
+        -192,
+        -993
+      ]
+    },
+    {
+      "name": "Sanguine Spider Den",
+      "start": [
+        -2060,
+        -4746
+      ],
+      "end": [
+        -2171,
+        -4644
+      ]
+    },
+    {
+      "name": "Santa's Hideout",
+      "start": [
+        1057,
+        -3077
+      ],
+      "end": [
+        1221,
+        -3209
+      ]
+    },
+    {
+      "name": "Savannah Plains",
+      "start": [
+        750,
+        -2060
+      ],
+      "end": [
+        570,
+        -1870
+      ]
+    },
+    {
+      "name": "Scorched Trail",
+      "start": [
+        200,
+        -1820
+      ],
+      "end": [
+        510,
+        -1675
+      ]
+    },
+    {
+      "name": "Scorpion Nest",
+      "start": [
+        -2173,
+        -5466
+      ],
+      "end": [
+        -2128,
+        -5603
+      ]
+    },
+    {
+      "name": "Secluded Ponds",
+      "start": [
+        98,
+        -4957
+      ],
+      "end": [
+        35,
+        -5046
+      ]
+    },
+    {
+      "name": "Secluded Workshop",
+      "start": [
+        -2127,
+        -5466
+      ],
+      "end": [
+        -2066,
+        -5603
+      ]
+    },
+    {
+      "name": "Selchar",
+      "start": [
+        -100,
+        -3070
+      ],
+      "end": [
+        210,
+        -3270
+      ]
+    },
+    {
+      "name": "Shady Shack",
+      "start": [
+        -1776,
+        -5246
+      ],
+      "end": [
+        -1898,
+        -5396
+      ]
+    },
+    {
+      "name": "Shineridge Orc Camp",
+      "start": [
+        -1776,
+        -4664
+      ],
+      "end": [
+        -1609,
+        -4526
+      ]
+    },
+    {
+      "name": "Silent Road",
+      "start": [
+        540,
+        -1088
+      ],
+      "end": [
+        704,
+        -961
+      ]
+    },
+    {
+      "name": "Silverbull Headquarters",
+      "start": [
+        -127,
+        -4761
+      ],
+      "end": [
+        3,
+        -4895
+      ]
+    },
+    {
+      "name": "Sinister Forest",
+      "start": [
+        815,
+        -506
+      ],
+      "end": [
+        1059,
+        -629
+      ]
+    },
+    {
+      "name": "Skien's Island",
+      "start": [
+        527,
+        -3386
+      ],
+      "end": [
+        297,
+        -3644
+      ]
+    },
+    {
+      "name": "Sky Castle",
+      "start": [
+        954,
+        -4425
+      ],
+      "end": [
+        854,
+        -4340
+      ]
+    },
+    {
+      "name": "Sky Falls",
+      "start": [
+        1380,
+        -4458
+      ],
+      "end": [
+        1466,
+        -4653
+      ]
+    },
+    {
+      "name": "Sky Island Ascent",
+      "start": [
+        1180,
+        -4524
+      ],
+      "end": [
+        1379,
+        -4355
+      ]
+    },
+    {
+      "name": "Snail Island",
+      "start": [
+        949,
+        -4885
+      ],
+      "end": [
+        1057,
+        -4804
+      ]
+    },
+    {
+      "name": "Southern Outpost",
+      "start": [
+        -1258,
+        -2204
+      ],
+      "end": [
+        -1444,
+        -2306
+      ]
+    },
+    {
+      "name": "Stonecave Orc Camp",
+      "start": [
+        -2059,
+        -4912
+      ],
+      "end": [
+        -1940,
+        -5000
+      ]
+    },
+    {
+      "name": "Sulphuric Hollow",
+      "start": [
+        -898,
+        -1298
+      ],
+      "end": [
+        -678,
+        -1221
+      ]
+    },
+    {
+      "name": "Sunrise Plateau",
+      "start": [
+        1211,
+        -1410
+      ],
+      "end": [
+        1480,
+        -1578
+      ]
+    },
+    {
+      "name": "Sunset Plateau",
+      "start": [
+        1211,
+        -1410
+      ],
+      "end": [
+        1000,
+        -1530
+      ]
+    },
+    {
+      "name": "Sunspark Orc Camp",
+      "start": [
+        -1930,
+        -5099
+      ],
+      "end": [
+        -1816,
+        -4968
+      ]
+    },
+    {
+      "name": "Swamp Island",
+      "start": [
+        1178,
+        -4754
+      ],
+      "end": [
+        1101,
+        -4915
+      ]
+    },
+    {
+      "name": "Swamp Mountain Arch",
+      "start": [
+        -1776,
+        -5134
+      ],
+      "end": [
+        -1898,
+        -5240
+      ]
+    },
+    {
+      "name": "Talor Cemetery",
+      "start": [
+        -648,
+        -5311
+      ],
+      "end": [
+        -567,
+        -5234
+      ]
+    },
+    {
+      "name": "Temple Island",
+      "start": [
+        991,
+        -4643
+      ],
+      "end": [
+        1124,
+        -4750
+      ]
+    },
+    {
+      "name": "Temple of Legends",
+      "start": [
+        -631,
+        -973
+      ],
+      "end": [
+        -745,
+        -1093
+      ]
+    },
+    {
+      "name": "Tempo Town",
+      "start": [
+        -357,
+        -1325
+      ],
+      "end": [
+        -99,
+        -1141
+      ]
+    },
+    {
+      "name": "Ternaves",
+      "start": [
+        770,
+        -1675
+      ],
+      "end": [
+        880,
+        -1540
+      ]
+    },
+    {
+      "name": "Ternaves Tunnel",
+      "start": [
+        775,
+        -1675
+      ],
+      "end": [
+        890,
+        -1860
+      ]
+    },
+    {
+      "name": "Thanos",
+      "start": [
+        51,
+        -5189
+      ],
+      "end": [
+        194,
+        -5295
+      ]
+    },
+    {
+      "name": "Thanos Exit",
+      "start": [
+        338,
+        -5310
+      ],
+      "end": [
+        262,
+        -5168
+      ]
+    },
+    {
+      "name": "Thanos Underpass",
+      "start": [
+        250,
+        -5401
+      ],
+      "end": [
+        311,
+        -5315
+      ]
+    },
+    {
+      "name": "The Forgery",
+      "start": [
+        -926,
+        -4842
+      ],
+      "end": [
+        -831,
+        -4945
+      ]
+    },
+    {
+      "name": "The Frog Bog",
+      "start": [
+        -2253,
+        -1515
+      ],
+      "end": [
+        -2039,
+        -1310
+      ]
+    },
+    {
+      "name": "The Gate",
+      "start": [
+        1350,
+        -520
+      ],
+      "end": [
+        1265,
+        -410
+      ]
+    },
+    {
+      "name": "The Hive",
+      "start": [
+        381,
+        -5413
+      ],
+      "end": [
+        286,
+        -5593
+      ]
+    },
+    {
+      "name": "The Lumbermill",
+      "start": [
+        -1938,
+        -1134
+      ],
+      "end": [
+        -1780,
+        -917
+      ]
+    },
+    {
+      "name": "The Shiar",
+      "start": [
+        -926,
+        -4550
+      ],
+      "end": [
+        -806,
+        -4428
+      ]
+    },
+    {
+      "name": "Thesead",
+      "start": [
+        747,
+        -5104
+      ],
+      "end": [
+        872,
+        -4964
+      ]
+    },
+    {
+      "name": "Thesead Suburbs",
+      "start": [
+        703,
+        -5374
+      ],
+      "end": [
+        810,
+        -5216
+      ]
+    },
+    {
+      "name": "Thesead Underpass",
+      "start": [
+        572,
+        -4935
+      ],
+      "end": [
+        700,
+        -5028
+      ]
+    },
+    {
+      "name": "Timasca",
+      "start": [
+        -1856,
+        -665
+      ],
+      "end": [
+        -1631,
+        -433
+      ]
+    },
+    {
+      "name": "Time Valley",
+      "start": [
+        -563,
+        -1261
+      ],
+      "end": [
+        -406,
+        -1006
+      ]
+    },
+    {
+      "name": "Timeworn Arch",
+      "start": [
+        33,
+        -4367
+      ],
+      "end": [
+        107,
+        -4519
+      ]
+    },
+    {
+      "name": "Tower of Ascension",
+      "start": [
+        -400,
+        -450
+      ],
+      "end": [
+        -315,
+        -330
+      ]
+    },
+    {
+      "name": "Toxic Caves",
+      "start": [
+        1017,
+        -1146
+      ],
+      "end": [
+        844,
+        -993
+      ]
+    },
+    {
+      "name": "Toxic Drip",
+      "start": [
+        893,
+        -876
+      ],
+      "end": [
+        1086,
+        -992
+      ]
+    },
+    {
+      "name": "Tree Island",
+      "start": [
+        -454,
+        -3905
+      ],
+      "end": [
+        -323,
+        -3766
+      ]
+    },
+    {
+      "name": "Troll Tower",
+      "start": [
+        338,
+        -4628
+      ],
+      "end": [
+        269,
+        -4522
+      ]
+    },
+    {
+      "name": "Troll's Challenge",
+      "start": [
+        244,
+        -5407
+      ],
+      "end": [
+        168,
+        -5315
+      ]
+    },
+    {
+      "name": "Troms",
+      "start": [
+        -726,
+        -970
+      ],
+      "end": [
+        -899,
+        -826
+      ]
+    },
+    {
+      "name": "Troms Lake",
+      "start": [
+        -601,
+        -791
+      ],
+      "end": [
+        -680,
+        -940
+      ]
+    },
+    {
+      "name": "Trunkstump Goblin Camp",
+      "start": [
+        -2059,
+        -4831
+      ],
+      "end": [
+        -1937,
+        -4909
+      ]
+    },
+    {
+      "name": "Turncoat Turnabout",
+      "start": [
+        265,
+        -4652
+      ],
+      "end": [
+        200,
+        -4741
+      ]
+    },
+    {
+      "name": "Twain Lake",
+      "start": [
+        0,
+        -330
+      ],
+      "end": [
+        80,
+        -530
+      ]
+    },
+    {
+      "name": "Twain Mansion",
+      "start": [
+        95,
+        -407
+      ],
+      "end": [
+        140,
+        -310
+      ]
+    },
+    {
+      "name": "Twisted Housing",
+      "start": [
+        -1133,
+        -5116
+      ],
+      "end": [
+        -1053,
+        -5272
+      ]
+    },
+    {
+      "name": "Twisted Ridge",
+      "start": [
+        -1020,
+        -5603
+      ],
+      "end": [
+        -910,
+        -5343
+      ]
+    },
+    {
+      "name": "Unicorn Trail",
+      "start": [
+        -1014,
+        -4708
+      ],
+      "end": [
+        -935,
+        -4845
+      ]
+    },
+    {
+      "name": "University Campus",
+      "start": [
+        -1780,
+        -834
+      ],
+      "end": [
+        -1625,
+        -665
+      ]
+    },
+    {
+      "name": "Upper Thanos",
+      "start": [
+        260,
+        -5298
+      ],
+      "end": [
+        199,
+        -5169
+      ]
+    },
+    {
+      "name": "Verdant Grove",
+      "start": [
+        -1471,
+        -803
+      ],
+      "end": [
+        -1356,
+        -646
+      ]
+    },
+    {
+      "name": "Viscera Pits",
+      "start": [
+        -659,
+        -5424
+      ],
+      "end": [
+        -766,
+        -5508
+      ]
+    },
+    {
+      "name": "Void Valley",
+      "start": [
+        1082,
+        -1161
+      ],
+      "end": [
+        1250,
+        -1078
+      ]
+    },
+    {
+      "name": "Volcanic Excavation",
+      "start": [
+        -1164,
+        -3831
+      ],
+      "end": [
+        -930,
+        -3530
+      ]
+    },
+    {
+      "name": "Volcanic Isles",
+      "start": [
+        -929,
+        -3831
+      ],
+      "end": [
+        -722,
+        -3530
+      ]
+    },
+    {
+      "name": "Wanderer's Way",
+      "start": [
+        440,
+        -5183
+      ],
+      "end": [
+        563,
+        -5080
+      ]
+    },
+    {
+      "name": "Water Processing Sector",
+      "start": [
+        -2291,
+        -768
+      ],
+      "end": [
+        -2113,
+        -501
+      ]
+    },
+    {
+      "name": "Waterfall Cave",
+      "start": [
+        -127,
+        -4639
+      ],
+      "end": [
+        3,
+        -4509
+      ]
+    },
+    {
+      "name": "Wayward Split",
+      "start": [
+        200,
+        -4743
+      ],
+      "end": [
+        264,
+        -4875
+      ]
+    },
+    {
+      "name": "Webbed Fracture",
+      "start": [
+        -261,
+        -1881
+      ],
+      "end": [
+        -109,
+        -1808
+      ]
+    },
+    {
+      "name": "Weird Clearing",
+      "start": [
+        -288,
+        -5409
+      ],
+      "end": [
+        -392,
+        -5294
+      ]
+    },
+    {
+      "name": "Wellspring of Eternity",
+      "start": [
+        -2291,
+        -1752
+      ],
+      "end": [
+        -2022,
+        -1515
+      ]
+    },
+    {
+      "name": "Winding Waters",
+      "start": [
+        194,
+        -4649
+      ],
+      "end": [
+        115,
+        -4521
+      ]
+    },
+    {
+      "name": "Witching Road",
+      "start": [
+        -2171,
+        -5190
+      ],
+      "end": [
+        -2060,
+        -5309
+      ]
+    },
+    {
+      "name": "Wizard Tower",
+      "start": [
+        438,
+        -5037
+      ],
+      "end": [
+        345,
+        -4966
+      ]
+    },
+    {
+      "name": "Wizard's Warning",
+      "start": [
+        271,
+        -5039
+      ],
+      "end": [
+        337,
+        -4948
+      ]
+    },
+    {
+      "name": "Wolves' Den",
+      "start": [
+        76,
+        -757
+      ],
+      "end": [
+        230,
+        -660
+      ]
+    },
+    {
+      "name": "Wood Sprite Hideaway",
+      "start": [
+        -1040,
+        -4706
+      ],
+      "end": [
+        -1134,
+        -4552
+      ]
+    },
+    {
+      "name": "Workshop Glade",
+      "start": [
+        563,
+        -5079
+      ],
+      "end": [
+        440,
+        -4975
+      ]
+    },
+    {
+      "name": "Worm Tunnel",
+      "start": [
+        641,
+        -767
+      ],
+      "end": [
+        543,
+        -640
+      ]
+    },
+    {
+      "name": "Wybel Island",
+      "start": [
+        1355,
+        -4700
+      ],
+      "end": [
+        1253,
+        -4595
+      ]
+    },
+    {
+      "name": "Xima Valley",
+      "start": [
+        -1812,
+        -1750
+      ],
+      "end": [
+        -1635,
+        -1500
+      ]
+    },
+    {
+      "name": "Zhight Island",
+      "start": [
+        -727,
+        -2846
+      ],
+      "end": [
+        -440,
+        -2629
+      ]
+    }
+  ]
+}

@@ -477,7 +477,7 @@ public final class GatheringMapImageService {
 
     private static void debugMap(String message) {
         SeqClient.LOGGER.debug("[GatheringMap] {}", message);
-        if (!GatheringMapSettings.getInstance().showDebugInfo()) {
+        if (!WorldMapSettings.getInstance().showDebugInfo()) {
             return;
         }
         SeqClient.mc.execute(() -> {

@@ -27,9 +27,17 @@ public final class GatheringClusterCache {
             List<GatheringNode> sourceNodes,
             Set<String> resourceFilters,
             EnumMap<GatheringProfession, Boolean> professionToggles,
+            GuildTerritoryIndex territoryIndex,
+            GatheringAnalysisScope analysisScope,
+            String selectedTerritoryName,
             ClusterScoreMode scoreMode,
             int eps,
             int minSamples) {
+        GuildTerritoryIndex resolvedTerritoryIndex = territoryIndex == null
+                ? GuildTerritoryIndex.EMPTY
+                : territoryIndex;
+        GatheringAnalysisScope resolvedScope = analysisScope == null ? GatheringAnalysisScope.ALL : analysisScope;
+        String normalizedTerritoryName = selectedTerritoryName == null ? "" : selectedTerritoryName.trim();
         List<String> normalizedResourceFilters = resourceFilters == null
                 ? List.of()
                 : resourceFilters.stream()
@@ -47,6 +55,9 @@ public final class GatheringClusterCache {
                 professionToggles.getOrDefault(GatheringProfession.MINING, true),
                 professionToggles.getOrDefault(GatheringProfession.FARMING, true),
                 professionToggles.getOrDefault(GatheringProfession.FISHING, true),
+                resolvedTerritoryIndex.contentHash(),
+                resolvedScope,
+                normalizedTerritoryName,
                 scoreMode,
                 eps,
                 minSamples);
@@ -55,11 +66,23 @@ public final class GatheringClusterCache {
             return cached;
         }
 
-        List<GatheringNode> filteredNodes = sourceNodes.stream()
+        GuildTerritory selectedTerritory = resolvedTerritoryIndex.territory(normalizedTerritoryName);
+        List<GatheringNode> scopedNodes = switch (resolvedScope) {
+            case ALL -> sourceNodes;
+            case ANY_TERRITORY -> sourceNodes.stream()
+                    .filter(node -> resolvedTerritoryIndex.containsAny(node.x(), node.z()))
+                    .toList();
+            case SELECTED_TERRITORY -> selectedTerritory == null
+                    ? List.of()
+                    : sourceNodes.stream()
+                            .filter(node -> selectedTerritory.contains(node.x(), node.z()))
+                            .toList();
+        };
+        List<GatheringNode> filteredNodes = scopedNodes.stream()
                 .filter(node -> resourceFilterSet.isEmpty() || resourceFilterSet.contains(node.resource()))
                 .filter(node -> professionToggles.getOrDefault(node.profession(), true))
                 .toList();
-        List<String> resourceOptions = sourceNodes.stream()
+        List<String> resourceOptions = scopedNodes.stream()
                 .map(GatheringNode::resource)
                 .distinct()
                 .sorted()
@@ -96,6 +119,9 @@ public final class GatheringClusterCache {
             boolean mining,
             boolean farming,
             boolean fishing,
+            int territoryDataHash,
+            GatheringAnalysisScope analysisScope,
+            String selectedTerritoryName,
             ClusterScoreMode scoreMode,
             int eps,
             int minSamples) {}

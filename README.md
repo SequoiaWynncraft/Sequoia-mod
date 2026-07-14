@@ -21,6 +21,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - In-game Discord chat bridge
 - Party finder commands and UI
 - Raid tracking and announcements
+- Interactive world map with gathering analysis and guild territory borders
 - Guild-specific settings and status screens
 
 ## Requirements
@@ -44,6 +45,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 
 - `/seq`: open the main Sequoia screen
 - `/seq p`: open the Sequoia party finder UI
+- `/seq map`: open the Sequoia world map
 - `/seq connect`: connect to the backend
 - `/seq status`: show connection state
 - `/seq logout`: clear the current backend session
@@ -65,6 +67,12 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - `/seq request tome <reason>`
 - `/seq ignore <IGN>`
 - `/seq unignore <IGN>`
+- `/seq map`
+- `/seq map params`
+- `/seq map eps <blocks>`
+- `/seq map minSamples <count>`
+- `/seq map reset`
+- `/seq map debug`
 - `/seq party`
 - `/seq p`
 - `/seq party list`
@@ -90,6 +98,12 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - `/seq party game invite-all`
 
 </details>
+
+## World map
+
+Run `/seq map` to open the world map. Guild territory borders can be hovered or clicked, and the territory search centers the map on an exact territory.
+
+Gathering analysis supports three scopes: all bundled gathering nodes, nodes inside any guild territory, or nodes inside the selected territory. Resource, profession, cluster, and score controls continue to refine the active scope.
 
 ## Settings
 
