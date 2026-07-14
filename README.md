@@ -118,7 +118,11 @@ The settings screen includes controls for:
 - Raid auto-announce
 - Tracked world-event notifications
 - Global Sequoia UI size
+- UI theme selection
 - Update checks on startup
+
+Sequoia includes Default and High Contrast themes. Additional themes can be added as
+`*.theme.txt` files under `config/sequoia/themes`; restart the client to discover new files.
 
 ## Installation
 

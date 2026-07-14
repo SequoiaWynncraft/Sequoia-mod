@@ -23,6 +23,7 @@ import java.util.stream.Stream;
 
 public final class ThemeManager {
     private static final String THEMES_RESOURCE = "/assets/seq/themes";
+    private static final Path EXTERNAL_THEMES_DIRECTORY = Path.of("config", "sequoia", "themes");
     private static final Map<String, Theme> LOADED_THEMES = new LinkedHashMap<>();
     private static volatile Theme currentTheme = Theme.defaults();
 
@@ -30,11 +31,27 @@ public final class ThemeManager {
     }
 
     public static synchronized void initialize() {
+        initialize(EXTERNAL_THEMES_DIRECTORY);
+    }
+
+    static synchronized void initialize(Path externalThemesDirectory) {
         LOADED_THEMES.clear();
         Theme fallback = Theme.defaults();
         LOADED_THEMES.put(fallback.name(), fallback);
         currentTheme = fallback;
 
+        loadBundledThemes();
+        loadExternalThemes(externalThemesDirectory);
+
+        Theme defaultTheme = LOADED_THEMES.get("default");
+        if (defaultTheme == null) {
+            SeqClient.LOGGER.warn("Bundled UI theme is missing; using built-in colors");
+            return;
+        }
+        currentTheme = defaultTheme;
+    }
+
+    private static void loadBundledThemes() {
         URL resource = ThemeManager.class.getResource(THEMES_RESOURCE);
         if (resource == null) {
             SeqClient.LOGGER.warn("Bundled UI themes are missing; using built-in colors");
@@ -66,20 +83,8 @@ public final class ThemeManager {
                         .toList();
             }
             for (Path path : themeFiles) {
-                try {
-                    Theme theme = ThemeReader.fromFile(path);
-                    LOADED_THEMES.put(theme.name(), theme);
-                } catch (IOException exception) {
-                    SeqClient.LOGGER.warn("Could not load UI theme {}", path, exception);
-                }
+                loadTheme(path);
             }
-
-            Theme defaultTheme = LOADED_THEMES.get("default");
-            if (defaultTheme == null) {
-                SeqClient.LOGGER.warn("Bundled UI theme is missing; using built-in colors");
-                return;
-            }
-            currentTheme = defaultTheme;
         } catch (IOException | URISyntaxException exception) {
             SeqClient.LOGGER.warn("Could not discover bundled UI themes; using built-in colors", exception);
         } finally {
@@ -90,6 +95,37 @@ public final class ThemeManager {
                     SeqClient.LOGGER.debug("Could not close theme resource filesystem", exception);
                 }
             }
+        }
+    }
+
+    private static void loadExternalThemes(Path directory) {
+        try {
+            Files.createDirectories(directory);
+            List<Path> themeFiles;
+            try (Stream<Path> paths = Files.walk(directory)) {
+                themeFiles = paths.filter(Files::isRegularFile)
+                        .filter(ThemeManager::isThemeFile)
+                        .sorted(Comparator.comparing(Path::toString))
+                        .toList();
+            }
+            for (Path path : themeFiles) {
+                loadTheme(path);
+            }
+        } catch (IOException exception) {
+            SeqClient.LOGGER.warn("Could not discover external UI themes in {}", directory, exception);
+        }
+    }
+
+    private static boolean isThemeFile(Path path) {
+        return path.getFileName().toString().endsWith(".theme.txt");
+    }
+
+    private static void loadTheme(Path path) {
+        try {
+            Theme theme = ThemeReader.fromFile(path);
+            LOADED_THEMES.put(theme.name(), theme);
+        } catch (IOException exception) {
+            SeqClient.LOGGER.warn("Could not load UI theme {}", path, exception);
         }
     }
 

@@ -5,6 +5,7 @@ import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import java.awt.Color;
 import com.seqwawa.seq.ui.widget.BooleanWidget;
+import com.seqwawa.seq.ui.widget.ChoiceWidget;
 import com.seqwawa.seq.ui.widget.EnumWidget;
 import com.seqwawa.seq.ui.widget.SettingWidget;
 import com.seqwawa.seq.ui.widget.SliderWidget;
@@ -104,6 +105,8 @@ public class SettingsScreen extends Screen {
             return new SliderWidget(d);
         if (setting instanceof Setting.FloatSetting f)
             return new SliderWidget(f);
+        if (setting instanceof Setting.ChoiceSetting c)
+            return new ChoiceWidget(c);
         if (setting instanceof Setting.EnumSetting<?> e)
             return new EnumWidget(e);
         if (setting instanceof Setting.StringSetting s)

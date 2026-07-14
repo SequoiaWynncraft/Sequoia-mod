@@ -116,6 +116,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.IntSetting uiSizePercentSetting;
 
     @Getter
+    public static Setting.ChoiceSetting themeSetting;
+
+    @Getter
     public static Setting.BooleanSetting announceOpenPartiesSetting;
 
     @Getter
@@ -480,6 +483,12 @@ public class SeqClient implements ClientModInitializer {
         startupVideoSetting = new Setting.BooleanSetting("startup_video", "ui", false);
         uiSizePercentSetting = new Setting.IntSetting("ui_size_percent", "ui", 100, 75, 150, 5)
                 .allowOutOfRangeManualInput();
+        themeSetting = new Setting.ChoiceSetting(
+                "theme",
+                "ui",
+                ThemeManager.currentTheme().name(),
+                ThemeManager.loadedThemeNames(),
+                ThemeManager::setCurrentTheme);
         announceOpenPartiesSetting = new Setting.BooleanSetting("announce_open_parties", "party_finder", true);
         announceOpenPartiesIntervalMinutesSetting =
                 new Setting.IntSetting("announce_open_parties_interval_minutes", "party_finder", 5, 1, 60);
@@ -505,6 +514,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(easterEggsSetting);
         getConfigManager().register(startupVideoSetting);
         getConfigManager().register(uiSizePercentSetting);
+        getConfigManager().register(themeSetting);
         getConfigManager().register(announceOpenPartiesSetting);
         getConfigManager().register(announceOpenPartiesIntervalMinutesSetting);
         getConfigManager().register(syncWynnPartySetting);
