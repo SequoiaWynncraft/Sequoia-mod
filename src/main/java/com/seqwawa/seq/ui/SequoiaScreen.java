@@ -1,5 +1,9 @@
 package com.seqwawa.seq.ui;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.theme.UiColor.*;
+
+import java.awt.Color;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -10,7 +14,6 @@ import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 
-import java.awt.*;
 
 public class SequoiaScreen extends Screen {
     private static final float BUTTON_WIDTH = 120;
@@ -19,12 +22,6 @@ public class SequoiaScreen extends Screen {
     private static final float BUTTON_RADIUS = 6;
     private static final float TITLE_FONT_SIZE = 24;
     private static final float BUTTON_FONT_SIZE = 14;
-
-    private static final Color BG_COLOR = new Color(0, 0, 0, 140);
-    private static final Color BUTTON_COLOR = new Color(40, 40, 50, 200);
-    private static final Color BUTTON_HOVER_COLOR = new Color(60, 60, 80, 220);
-    private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
-    private static final Color TITLE_COLOR = new Color(160, 130, 220, 255);
 
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
 
@@ -47,7 +44,7 @@ public class SequoiaScreen extends Screen {
             float screenHeight = canvas.metrics().height();
 
             // Dark background
-            canvas.fillRect(0, 0, screenWidth, screenHeight, BG_COLOR);
+            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY, 140));
 
             // Title
             String fontName = SeqClient.getFontManager().getSelectedFont();
@@ -55,7 +52,7 @@ public class SequoiaScreen extends Screen {
             canvas.drawText("Sequoia", screenWidth / 2f, titleY, new UiCanvas.TextStyle(
                     fontName,
                     TITLE_FONT_SIZE,
-                    TITLE_COLOR,
+                    color(ACCENT_PRIMARY),
                     UiCanvas.HorizontalAlign.CENTER,
                     UiCanvas.VerticalAlign.MIDDLE));
 
@@ -75,14 +72,14 @@ public class SequoiaScreen extends Screen {
         boolean hovered = nvgMouseX >= x && nvgMouseX <= x + BUTTON_WIDTH
                 && nvgMouseY >= y && nvgMouseY <= y + BUTTON_HEIGHT;
 
-        Color bgColor = hovered ? BUTTON_HOVER_COLOR : BUTTON_COLOR;
+        Color bgColor = hovered ? color(CONTROL_INPUT_HOVER) : color(BACKGROUND_POPUP, 200);
         canvas.fillRect(x, y, BUTTON_WIDTH, BUTTON_HEIGHT, bgColor);
 
         String fontName = SeqClient.getFontManager().getSelectedFont();
         canvas.drawText(label, x + BUTTON_WIDTH / 2f, y + BUTTON_HEIGHT / 2f, new UiCanvas.TextStyle(
                 fontName,
                 BUTTON_FONT_SIZE,
-                TEXT_COLOR,
+                color(TEXT_PRIMARY),
                 UiCanvas.HorizontalAlign.CENTER,
                 UiCanvas.VerticalAlign.MIDDLE));
     }

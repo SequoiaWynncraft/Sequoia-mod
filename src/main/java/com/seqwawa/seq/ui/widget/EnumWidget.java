@@ -1,20 +1,18 @@
 package com.seqwawa.seq.ui.widget;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.theme.UiColor.*;
+
+import java.awt.Color;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 
-import java.awt.*;
 
 public class EnumWidget extends SettingWidget<Setting.EnumSetting<?>> {
     private static final float BUTTON_WIDTH = 100;
     private static final float BUTTON_HEIGHT = 18;
     private static final float FONT_SIZE = 12;
-
-    private static final Color BUTTON_COLOR = new Color(50, 50, 60, 200);
-    private static final Color BUTTON_HOVER = new Color(70, 70, 85, 220);
-    private static final Color LABEL_COLOR = new Color(220, 220, 220, 255);
-    private static final Color VALUE_COLOR = new Color(160, 130, 220, 255);
 
     public EnumWidget(Setting.EnumSetting<?> setting) {
         super(setting);
@@ -26,15 +24,15 @@ public class EnumWidget extends SettingWidget<Setting.EnumSetting<?>> {
         String fontName = SeqClient.getFontManager().getSelectedFont();
 
         canvas.drawText(getDisplayName(), x + 8, y + height / 2f,
-                textStyle(fontName, LABEL_COLOR, UiCanvas.HorizontalAlign.LEFT));
+                textStyle(fontName, color(TEXT_SECONDARY), UiCanvas.HorizontalAlign.LEFT));
 
         // Button
         float btnX = x + width - BUTTON_WIDTH - 8;
         float btnY = y + (height - BUTTON_HEIGHT) / 2f;
         boolean hovered = isHovered(mouseX, mouseY, btnX, btnY, BUTTON_WIDTH, BUTTON_HEIGHT);
-        canvas.fillRect(btnX, btnY, BUTTON_WIDTH, BUTTON_HEIGHT, hovered ? BUTTON_HOVER : BUTTON_COLOR);
+        canvas.fillRect(btnX, btnY, BUTTON_WIDTH, BUTTON_HEIGHT, hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT_SECONDARY));
         canvas.drawText(setting.getValue().name(), btnX + BUTTON_WIDTH / 2f, btnY + BUTTON_HEIGHT / 2f,
-                textStyle(fontName, VALUE_COLOR, UiCanvas.HorizontalAlign.CENTER));
+                textStyle(fontName, color(ACCENT_PRIMARY), UiCanvas.HorizontalAlign.CENTER));
     }
 
     private static UiCanvas.TextStyle textStyle(

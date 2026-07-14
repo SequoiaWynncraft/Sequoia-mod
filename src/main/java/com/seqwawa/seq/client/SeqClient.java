@@ -37,6 +37,7 @@ import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
+import com.seqwawa.seq.managers.ThemeManager;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.managers.WorldEventManager;
 import com.seqwawa.seq.model.WynnClassType;
@@ -197,6 +198,7 @@ public class SeqClient implements ClientModInitializer {
         configManager = new ConfigManager();
         configManager.load();
         configManager.migrateToken();
+        ThemeManager.initialize();
         leaderboardBadgeService = LeaderboardBadgeService.getInstance();
         seqBadgeNametagRenderer = SeqBadgeNametagRenderers.createIfAvailable();
         worldEventManager = WorldEventManager.getInstance();

@@ -1,5 +1,9 @@
 package com.seqwawa.seq.ui;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.managers.ThemeManager.withAlpha;
+import static com.seqwawa.seq.ui.theme.UiColor.*;
+
 import java.awt.Color;
 import java.nio.ByteBuffer;
 import java.time.Duration;
@@ -88,23 +92,6 @@ public class WorldMapScreen extends Screen {
     private static final double CLUSTER_BADGE_PIXELS_PER_BLOCK = 0.65;
     private static final double TERRITORY_FOCUS_MAX_PIXELS_PER_BLOCK = 1.25;
     private static final int SIDEBAR_CLUSTER_LIMIT = 5;
-    private static final Color SIDEBAR_COLOR = new Color(18, 18, 24, 235);
-    private static final Color MAP_TINT = new Color(4, 7, 10, 32);
-    private static final Color HEADER_COLOR = new Color(28, 28, 38, 230);
-    private static final Color CONTROL_COLOR = new Color(42, 42, 54, 220);
-    private static final Color CONTROL_HOVER = new Color(62, 62, 82, 235);
-    private static final Color CONTROL_ACTIVE = new Color(92, 74, 138, 235);
-    private static final Color BORDER_COLOR = new Color(92, 92, 115, 180);
-    private static final Color TEXT_COLOR = new Color(240, 240, 245, 255);
-    private static final Color SUBTEXT_COLOR = new Color(175, 175, 190, 255);
-    private static final Color TITLE_COLOR = new Color(170, 145, 230, 255);
-    private static final Color PLAYER_COLOR = new Color(255, 255, 255, 255);
-    private static final Color SELECTED_CLUSTER_COLOR = new Color(235, 58, 58, 255);
-    private static final Color TERRITORY_COLOR = new Color(75, 194, 205, 175);
-    private static final Color SELECTED_TERRITORY_COLOR = new Color(255, 204, 82, 235);
-    private static final Color WORLD_EVENT_COLOR = new Color(62, 190, 218, 245);
-    private static final Color TRACKED_WORLD_EVENT_COLOR = new Color(255, 194, 72, 250);
-
     private final Screen parent;
     private final GatheringNodeService nodeService = GatheringNodeService.getInstance();
     private final GuildTerritoryService territoryService = GuildTerritoryService.getInstance();
@@ -246,7 +233,7 @@ public class WorldMapScreen extends Screen {
 
     private void renderNvg(UiCanvas canvas, MapViewport viewport) {
         renderMapBackground(canvas, viewport);
-        canvas.fillRect(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(), MAP_TINT);
+        canvas.fillRect(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(), color(MAP_TINT));
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             renderWorldEvents(canvas, viewport);
             renderPlayer(canvas, viewport);
@@ -309,17 +296,17 @@ public class WorldMapScreen extends Screen {
             float height = viewport.worldToScreenZ(bounds.maxZ()) - y;
             boolean selected = territory.equals(selectedTerritory);
             boolean hovered = territory.equals(hoveredTerritory);
-            Color color = selected ? SELECTED_TERRITORY_COLOR : TERRITORY_COLOR;
+            Color color = selected ? color(MAP_SELECTED_TERRITORY) : color(MAP_TERRITORY);
             if (selected || hovered) {
                 int alpha = selected ? 38 : 24;
-                canvas.fillRect(x, y, width, height, new Color(color.getRed(), color.getGreen(), color.getBlue(), alpha));
+                canvas.fillRect(x, y, width, height, withAlpha(color, alpha));
             }
             canvas.strokeRect(x,
                     y,
                     width,
                     height,
                     selected || hovered ? 1.8f : 0.8f,
-                    new Color(color.getRed(), color.getGreen(), color.getBlue(), selected || hovered ? 235 : 115));
+                    withAlpha(color, selected || hovered ? 235 : 115));
         }
         canvas.resetScissor();
     }
@@ -377,20 +364,19 @@ public class WorldMapScreen extends Screen {
                 float y = viewport.worldToScreenZ(location.z());
                 float areaRadius = (float) (location.radius() * viewport.pixelsPerBlock());
                 if (areaRadius >= 5) {
-                    Color areaColor = eventTracked ? TRACKED_WORLD_EVENT_COLOR : WORLD_EVENT_COLOR;
-                    drawCircleOutline(canvas, x, y, areaRadius, 1, new Color(
-                            areaColor.getRed(), areaColor.getGreen(), areaColor.getBlue(), eventSelected ? 150 : 65));
+                    Color areaColor = eventTracked ? color(MAP_TRACKED_WORLD_EVENT) : color(MAP_WORLD_EVENT);
+                    drawCircleOutline(canvas, x, y, areaRadius, 1, withAlpha(areaColor, eventSelected ? 150 : 65));
                 }
 
-                Color markerColor = eventTracked ? TRACKED_WORLD_EVENT_COLOR : WORLD_EVENT_COLOR;
+                Color markerColor = eventTracked ? color(MAP_TRACKED_WORLD_EVENT) : color(MAP_WORLD_EVENT);
                 boolean highlighted = eventSelected || (event.equals(hoveredWorldEvent) && locationIndex == hoveredWorldEventLocationIndex);
                 if (markerAsset == null) {
-                    drawCircle(canvas, x, y, highlighted ? 8 : 7, new Color(0, 0, 0, 190));
-                    drawCircle(canvas, x, y, highlighted ? 5.5f : 4.5f, eventSelected ? PLAYER_COLOR : markerColor);
+                    drawCircle(canvas, x, y, highlighted ? 8 : 7, color(BACKGROUND_MODAL_OVERLAY, 190));
+                    drawCircle(canvas, x, y, highlighted ? 5.5f : 4.5f, eventSelected ? color(MAP_PLAYER) : markerColor);
                 } else {
                     float outerRadius = highlighted ? 9 : 8;
                     float assetSize = highlighted ? 12 : 11;
-                    drawCircle(canvas, x, y, outerRadius, new Color(0, 0, 0, 210));
+                    drawCircle(canvas, x, y, outerRadius, color(BACKGROUND_MODAL_OVERLAY, 210));
                     drawCircle(canvas, x, y, outerRadius - 1.5f, markerColor);
                     canvas.drawImage(
                             markerAsset.getImage(),
@@ -400,7 +386,7 @@ public class WorldMapScreen extends Screen {
                             assetSize,
                             1f);
                     if (eventSelected) {
-                        drawCircleOutline(canvas, x, y, outerRadius + 1, 1.5f, PLAYER_COLOR);
+                        drawCircleOutline(canvas, x, y, outerRadius + 1, 1.5f, color(MAP_PLAYER));
                     }
                 }
             }
@@ -439,8 +425,8 @@ public class WorldMapScreen extends Screen {
             }
 
             Color textColor = territory.equals(selectedTerritory)
-                    ? SELECTED_TERRITORY_COLOR
-                    : territory.equals(hoveredTerritory) ? new Color(185, 247, 250, 255) : TEXT_COLOR;
+                    ? color(MAP_SELECTED_TERRITORY)
+                    : territory.equals(hoveredTerritory) ? color(MAP_TERRITORY_HOVER_TEXT) : color(MAP_TEXT);
             float totalHeight = label.lines().size() * label.lineHeight();
             float lineY = y + (height - totalHeight) / 2f + label.lineHeight() / 2f;
             canvas.save();
@@ -452,7 +438,7 @@ public class WorldMapScreen extends Screen {
                         lineY + 1,
                         label.fontSize(),
                         line,
-                        new Color(0, 0, 0, 210),
+                        color(BACKGROUND_MODAL_OVERLAY, 210),
                         TextAlignment.CENTER);
                 drawText(
                         canvas,
@@ -840,9 +826,9 @@ public class WorldMapScreen extends Screen {
         if (outline.points().isEmpty()) {
             return;
         }
-        Color color = selected ? SELECTED_CLUSTER_COLOR : cluster.profession().color();
-        Color fill = new Color(color.getRed(), color.getGreen(), color.getBlue(), highlighted ? 48 : 18);
-        Color stroke = new Color(color.getRed(), color.getGreen(), color.getBlue(), highlighted ? 220 : 105);
+        Color color = selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color();
+        Color fill = withAlpha(color, highlighted ? 48 : 18);
+        Color stroke = withAlpha(color, highlighted ? 220 : 105);
 
         List<UiCanvas.Point> points = outline.points().stream()
                 .map(point -> new UiCanvas.Point(centerScreenX + point.x(), centerScreenY + point.y()))
@@ -857,10 +843,10 @@ public class WorldMapScreen extends Screen {
     }
 
     private void drawClusterMarker(UiCanvas canvas, float x, float y, float radius, GatheringNodeCluster cluster, boolean selected, boolean highlighted) {
-        Color color = selected ? SELECTED_CLUSTER_COLOR : cluster.profession().color();
-        drawCircle(canvas, x, y, radius + 3, new Color(0, 0, 0, highlighted ? 205 : 150));
-        drawCircle(canvas, x, y, radius, new Color(color.getRed(), color.getGreen(), color.getBlue(), highlighted ? 250 : 220));
-        drawText(canvas, x, y + 1, clusterCountTextSize(cluster), String.valueOf(cluster.nodeCount()), TEXT_COLOR, TextAlignment.CENTER);
+        Color color = selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color();
+        drawCircle(canvas, x, y, radius + 3, color(BACKGROUND_MODAL_OVERLAY, highlighted ? 205 : 150));
+        drawCircle(canvas, x, y, radius, withAlpha(color, highlighted ? 250 : 220));
+        drawText(canvas, x, y + 1, clusterCountTextSize(cluster), String.valueOf(cluster.nodeCount()), color(MAP_TEXT), TextAlignment.CENTER);
     }
 
     private void renderNodes(UiCanvas canvas, MapViewport viewport, List<GatheringNode> nodes) {
@@ -883,8 +869,9 @@ public class WorldMapScreen extends Screen {
                 hoveredNode = node;
             }
             boolean selected = selectedNode == node || (selectedCluster != null && selectedCluster.nodes().contains(node));
-            Color color = selected ? PLAYER_COLOR : node.profession().color();
-            drawCircle(canvas, x, y, selected || hovered ? Math.min(radius + 1.8f, 5.6f) : radius, new Color(0, 0, 0, 160));
+            Color color = selected ? color(MAP_PLAYER) : node.profession().color();
+            drawCircle(canvas, x, y, selected || hovered ? Math.min(radius + 1.8f, 5.6f) : radius,
+                    color(BACKGROUND_MODAL_OVERLAY, 160));
             drawCircle(canvas, x, y, radius, color);
         }
         canvas.resetScissor();
@@ -905,8 +892,8 @@ public class WorldMapScreen extends Screen {
         }
         float sx = viewport.worldToScreenX(x);
         float sy = viewport.worldToScreenZ(z);
-        drawCircle(canvas, sx, sy, 8, new Color(0, 0, 0, 180));
-        drawCircle(canvas, sx, sy, 5, PLAYER_COLOR);
+        drawCircle(canvas, sx, sy, 8, color(BACKGROUND_MODAL_OVERLAY, 180));
+        drawCircle(canvas, sx, sy, 5, color(MAP_PLAYER));
     }
 
     private void renderSidebar(UiCanvas canvas) {
@@ -917,9 +904,9 @@ public class WorldMapScreen extends Screen {
         float screenHeight = uiScreenHeight();
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         SidebarLayout layout = sidebarLayout();
-        canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
-        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, HEADER_COLOR);
-        drawText(canvas, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", TITLE_COLOR, TextAlignment.CENTER);
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(MAP_SIDEBAR));
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
+        drawText(canvas, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", color(MAP_TITLE), TextAlignment.CENTER);
 
         drawButton(canvas, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
         drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
@@ -933,9 +920,9 @@ public class WorldMapScreen extends Screen {
                 WorldMapSidebarPanel.MAP_AND_TERRITORY);
         if (panelExpanded(WorldMapSidebarPanel.MAP_AND_TERRITORY)) {
             renderTerritoryToggles(canvas, sidebarY(layout.territoryToggleY()));
-            drawText(canvas, PADDING, sidebarY(layout.scopeLabelY()), 12, "Gathering Scope", SUBTEXT_COLOR, TextAlignment.LEFT);
+            drawText(canvas, PADDING, sidebarY(layout.scopeLabelY()), 12, "Gathering Scope", color(MAP_SUBTEXT), TextAlignment.LEFT);
             drawScopeControl(canvas, sidebarY(layout.scopeY()));
-            drawText(canvas, PADDING, sidebarY(layout.territoryLabelY()), 12, "Territory", SUBTEXT_COLOR, TextAlignment.LEFT);
+            drawText(canvas, PADDING, sidebarY(layout.territoryLabelY()), 12, "Territory", color(MAP_SUBTEXT), TextAlignment.LEFT);
             renderSearchInput(
                     canvas,
                     sidebarY(layout.territoryInputY()),
@@ -962,7 +949,7 @@ public class WorldMapScreen extends Screen {
                 selectedResourceFilters.isEmpty() ? "All" : selectedResourceFilters.size() + " selected",
                 WorldMapSidebarPanel.RESOURCE_FILTERS);
         if (panelExpanded(WorldMapSidebarPanel.RESOURCE_FILTERS)) {
-            drawText(canvas, PADDING, sidebarY(layout.resourceLabelY()), 12, "Resource", SUBTEXT_COLOR, TextAlignment.LEFT);
+            drawText(canvas, PADDING, sidebarY(layout.resourceLabelY()), 12, "Resource", color(MAP_SUBTEXT), TextAlignment.LEFT);
             renderSearchInput(
                     canvas,
                     sidebarY(layout.resourceInputY()),
@@ -970,7 +957,7 @@ public class WorldMapScreen extends Screen {
                     resourceInputFocused,
                     resourceSearch,
                     selectedResourceLabel());
-            drawText(canvas, PADDING, sidebarY(layout.professionLabelY()), 12, "Professions", SUBTEXT_COLOR, TextAlignment.LEFT);
+            drawText(canvas, PADDING, sidebarY(layout.professionLabelY()), 12, "Professions", color(MAP_SUBTEXT), TextAlignment.LEFT);
             float professionY = sidebarY(layout.professionStartY());
             for (GatheringProfession profession : gatheringProfessions()) {
                 boolean active = professionToggles.getOrDefault(profession, true);
@@ -995,9 +982,9 @@ public class WorldMapScreen extends Screen {
         float screenHeight = uiScreenHeight();
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         WorldEventSidebarLayout layout = worldEventSidebarLayout();
-        canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
-        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, HEADER_COLOR);
-        drawText(canvas, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", TITLE_COLOR, TextAlignment.CENTER);
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(MAP_SIDEBAR));
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
+        drawText(canvas, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", color(MAP_TITLE), TextAlignment.CENTER);
 
         drawButton(canvas, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
         drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
@@ -1011,7 +998,7 @@ public class WorldMapScreen extends Screen {
                 worldEventDisplayFilter.label(),
                 WorldMapSidebarPanel.EVENT_DISPLAY);
         if (panelExpanded(WorldMapSidebarPanel.EVENT_DISPLAY)) {
-            drawText(canvas, PADDING, sidebarY(layout.filterLabelY()), 12, "Visible Events", SUBTEXT_COLOR, TextAlignment.LEFT);
+            drawText(canvas, PADDING, sidebarY(layout.filterLabelY()), 12, "Visible Events", color(MAP_SUBTEXT), TextAlignment.LEFT);
             drawWorldEventFilterControl(canvas, sidebarY(layout.filterY()));
         }
 
@@ -1051,16 +1038,16 @@ public class WorldMapScreen extends Screen {
                     10 + BUTTON_HEIGHT / 2f,
                     16,
                     "<",
-                    TEXT_COLOR,
+                    color(MAP_TEXT),
                     TextAlignment.CENTER);
             return;
         }
 
         float x = screenWidth - INSIGHTS_SIDEBAR_WIDTH;
         InsightsLayout layout = insightsLayout();
-        canvas.fillRect(x, 0, INSIGHTS_SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
-        canvas.fillRect(x, 0, INSIGHTS_SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, HEADER_COLOR);
-        drawText(canvas, x + PADDING, 22, 16, "Insights", TITLE_COLOR, TextAlignment.LEFT);
+        canvas.fillRect(x, 0, INSIGHTS_SIDEBAR_WIDTH, screenHeight, color(MAP_SIDEBAR));
+        canvas.fillRect(x, 0, INSIGHTS_SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
+        drawText(canvas, x + PADDING, 22, 16, "Insights", color(MAP_TITLE), TextAlignment.LEFT);
         drawButton(canvas, x + INSIGHTS_SIDEBAR_WIDTH - PADDING - 24, 10, 24, BUTTON_HEIGHT, ">", false);
         canvas.scissor(x, SIDEBAR_HEADER_HEIGHT, INSIGHTS_SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_HEADER_HEIGHT));
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
@@ -1102,7 +1089,7 @@ public class WorldMapScreen extends Screen {
                     layout.entityY() + 18,
                     11,
                     "Hover or select a node, cluster, or territory",
-                    SUBTEXT_COLOR,
+                    color(MAP_SUBTEXT),
                     contentWidth,
                     TextAlignment.LEFT);
         }
@@ -1118,10 +1105,10 @@ public class WorldMapScreen extends Screen {
         for (int index = 0; index < rowCount; index++) {
             GatheringNodeCluster cluster = cachedClusters.get(index);
             boolean active = cluster == selectedCluster;
-            canvas.fillRect(contentX, topY, contentWidth, 34, active ? CONTROL_ACTIVE : CONTROL_COLOR);
-            canvas.strokeRect(contentX, topY, contentWidth, 34, 1, BORDER_COLOR);
-            drawFittedText(canvas, contentX + 8, topY + 11, 11, "#" + (index + 1) + " " + cluster.resource() + " | " + cluster.score() + "%", TEXT_COLOR, contentWidth - 16, TextAlignment.LEFT);
-            drawFittedText(canvas, contentX + 8, topY + 26, 10, cluster.nodeCount() + " nodes | " + Math.round(cluster.averageSpacing()) + "m", SUBTEXT_COLOR, contentWidth - 16, TextAlignment.LEFT);
+            canvas.fillRect(contentX, topY, contentWidth, 34, active ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL));
+            canvas.strokeRect(contentX, topY, contentWidth, 34, 1, color(MAP_BORDER));
+            drawFittedText(canvas, contentX + 8, topY + 11, 11, "#" + (index + 1) + " " + cluster.resource() + " | " + cluster.score() + "%", color(MAP_TEXT), contentWidth - 16, TextAlignment.LEFT);
+            drawFittedText(canvas, contentX + 8, topY + 26, 10, cluster.nodeCount() + " nodes | " + Math.round(cluster.averageSpacing()) + "m", color(MAP_SUBTEXT), contentWidth - 16, TextAlignment.LEFT);
             topY += 40;
         }
     }
@@ -1140,35 +1127,35 @@ public class WorldMapScreen extends Screen {
         if (detail != null) {
             renderWorldEventDetail(canvas, contentX, layout.eventDetailY() + 4, contentWidth, detail, selectedWorldEvent != null);
         } else {
-            drawFittedText(canvas, contentX, layout.eventDetailY() + 18, 11, "Hover or select a world event", SUBTEXT_COLOR, contentWidth, TextAlignment.LEFT);
+            drawFittedText(canvas, contentX, layout.eventDetailY() + 18, 11, "Hover or select a world event", color(MAP_SUBTEXT), contentWidth, TextAlignment.LEFT);
         }
     }
 
     private void drawInsightsSectionTitle(UiCanvas canvas, float x, float y, String label) {
-        drawText(canvas, x, y, 12, label, SUBTEXT_COLOR, TextAlignment.LEFT);
+        drawText(canvas, x, y, 12, label, color(MAP_SUBTEXT), TextAlignment.LEFT);
     }
 
     private void drawInsightRow(UiCanvas canvas, float x, float y, float width, String label, String value) {
-        drawFittedText(canvas, x, y, 10, label, SUBTEXT_COLOR, width * 0.42f, TextAlignment.LEFT);
-        drawFittedText(canvas, x + width, y, 10, value, TEXT_COLOR, width * 0.58f, TextAlignment.RIGHT);
+        drawFittedText(canvas, x, y, 10, label, color(MAP_SUBTEXT), width * 0.42f, TextAlignment.LEFT);
+        drawFittedText(canvas, x + width, y, 10, value, color(MAP_TEXT), width * 0.58f, TextAlignment.RIGHT);
     }
 
     private void renderClusterDetail(UiCanvas canvas, float x, float y, float width, GatheringNodeCluster cluster) {
-        canvas.fillRect(x, y, width, CLUSTER_DETAIL_HEIGHT, new Color(28, 28, 38, 210));
-        canvas.strokeRect(x, y, width, CLUSTER_DETAIL_HEIGHT, 1, BORDER_COLOR);
+        canvas.fillRect(x, y, width, CLUSTER_DETAIL_HEIGHT, color(MAP_HEADER, 210));
+        canvas.strokeRect(x, y, width, CLUSTER_DETAIL_HEIGHT, 1, color(MAP_BORDER));
         float textWidth = width - 16;
-        drawFittedText(canvas, x + 8, y + 17, 14, cluster.resource(), TEXT_COLOR, textWidth, TextAlignment.LEFT);
-        drawFittedText(canvas, x + 8, y + 36, 12, cluster.nodeCount() + " nodes | score " + cluster.score() + "%", SUBTEXT_COLOR, textWidth, TextAlignment.LEFT);
-        drawFittedText(canvas, x + 8, y + 55, 12, Math.round(cluster.averageSpacing()) + "m spacing", SUBTEXT_COLOR, textWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 17, 14, cluster.resource(), color(MAP_TEXT), textWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 36, 12, cluster.nodeCount() + " nodes | score " + cluster.score() + "%", color(MAP_SUBTEXT), textWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 55, 12, Math.round(cluster.averageSpacing()) + "m spacing", color(MAP_SUBTEXT), textWidth, TextAlignment.LEFT);
         drawFittedText(canvas, x + 8, y + 74, 12, cluster.profession().name(), cluster.profession().color(), textWidth, TextAlignment.LEFT);
-        drawFittedText(canvas, x + 8, y + 93, 12, clusterCoords(cluster), SUBTEXT_COLOR, textWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 93, 12, clusterCoords(cluster), color(MAP_SUBTEXT), textWidth, TextAlignment.LEFT);
     }
 
     private void renderNodeDetail(UiCanvas canvas, float x, float y, float width, GatheringNode node) {
-        canvas.fillRect(x, y, width, NODE_DETAIL_HEIGHT, new Color(28, 28, 38, 210));
-        canvas.strokeRect(x, y, width, NODE_DETAIL_HEIGHT, 1, BORDER_COLOR);
-        drawFittedText(canvas, x + 8, y + 17, 14, node.resource(), TEXT_COLOR, width - 16, TextAlignment.LEFT);
-        drawFittedText(canvas, x + 8, y + 38, 12, nodeCoords(node), SUBTEXT_COLOR, width - 16, TextAlignment.LEFT);
+        canvas.fillRect(x, y, width, NODE_DETAIL_HEIGHT, color(MAP_HEADER, 210));
+        canvas.strokeRect(x, y, width, NODE_DETAIL_HEIGHT, 1, color(MAP_BORDER));
+        drawFittedText(canvas, x + 8, y + 17, 14, node.resource(), color(MAP_TEXT), width - 16, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 38, 12, nodeCoords(node), color(MAP_SUBTEXT), width - 16, TextAlignment.LEFT);
     }
 
     private void renderWorldEventDetail(
@@ -1179,16 +1166,16 @@ public class WorldMapScreen extends Screen {
             WorldEventDefinition event,
             boolean allowTrackingButton) {
         float textWidth = width - 16;
-        canvas.fillRect(x, y, width, WORLD_EVENT_DETAIL_HEIGHT, new Color(28, 28, 38, 220));
-        canvas.strokeRect(x, y, width, WORLD_EVENT_DETAIL_HEIGHT, 1, BORDER_COLOR);
-        drawFittedText(canvas, x + 8, y + 16, 14, event.name(), TEXT_COLOR, textWidth, TextAlignment.LEFT);
+        canvas.fillRect(x, y, width, WORLD_EVENT_DETAIL_HEIGHT, color(MAP_HEADER, 220));
+        canvas.strokeRect(x, y, width, WORLD_EVENT_DETAIL_HEIGHT, 1, color(MAP_BORDER));
+        drawFittedText(canvas, x + 8, y + 16, 14, event.name(), color(MAP_TEXT), textWidth, TextAlignment.LEFT);
         String metadata = worldEventMetadata(event);
-        drawFittedText(canvas, x + 8, y + 35, 11, metadata, SUBTEXT_COLOR, textWidth, TextAlignment.LEFT);
-        drawFittedText(canvas, x + 8, y + 53, 11, worldEventScheduleLabel(event.schedule()), SUBTEXT_COLOR, textWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 35, 11, metadata, color(MAP_SUBTEXT), textWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 53, 11, worldEventScheduleLabel(event.schedule()), color(MAP_SUBTEXT), textWidth, TextAlignment.LEFT);
         String locationLabel = event.locations().size() == 1
                 ? worldEventCoordinates(event.locations().getFirst())
                 : event.locations().size() + " possible locations";
-        drawFittedText(canvas, x + 8, y + 71, 11, locationLabel, SUBTEXT_COLOR, textWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 71, 11, locationLabel, color(MAP_SUBTEXT), textWidth, TextAlignment.LEFT);
         if (allowTrackingButton) {
             boolean tracked = SeqClient.getConfigManager().trackedWorldEventIds().contains(event.internalName());
             drawButton(
@@ -1210,9 +1197,9 @@ public class WorldMapScreen extends Screen {
             float x = PADDING + index * segmentWidth;
             boolean active = displayMode == mode;
             boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
-            canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
-            canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, BORDER_COLOR);
-            drawText(canvas, x + segmentWidth / 2f, y + BUTTON_HEIGHT / 2f, 11, mode.label(), TEXT_COLOR, TextAlignment.CENTER);
+            canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
+            canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, color(MAP_BORDER));
+            drawText(canvas, x + segmentWidth / 2f, y + BUTTON_HEIGHT / 2f, 11, mode.label(), color(MAP_TEXT), TextAlignment.CENTER);
         }
     }
 
@@ -1224,9 +1211,9 @@ public class WorldMapScreen extends Screen {
             float x = PADDING + index * segmentWidth;
             boolean active = worldEventDisplayFilter == filter;
             boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
-            canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
-            canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, BORDER_COLOR);
-            drawText(canvas, x + segmentWidth / 2f, y + BUTTON_HEIGHT / 2f, 11, filter.label(), TEXT_COLOR, TextAlignment.CENTER);
+            canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
+            canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, color(MAP_BORDER));
+            drawText(canvas, x + segmentWidth / 2f, y + BUTTON_HEIGHT / 2f, 11, filter.label(), color(MAP_TEXT), TextAlignment.CENTER);
         }
     }
 
@@ -1245,15 +1232,15 @@ public class WorldMapScreen extends Screen {
 
     private void drawTrackingListSegment(UiCanvas canvas, float x, float y, float width, String label, boolean active) {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, width, BUTTON_HEIGHT);
-        canvas.fillRect(x, y, width, BUTTON_HEIGHT, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
-        canvas.strokeRect(x, y, width, BUTTON_HEIGHT, 1, BORDER_COLOR);
+        canvas.fillRect(x, y, width, BUTTON_HEIGHT, active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
+        canvas.strokeRect(x, y, width, BUTTON_HEIGHT, 1, color(MAP_BORDER));
         drawFittedText(
                 canvas,
                 x + width / 2f,
                 y + BUTTON_HEIGHT / 2f,
                 11,
                 label,
-                TEXT_COLOR,
+                color(MAP_TEXT),
                 width - 10,
                 TextAlignment.CENTER);
     }
@@ -1276,20 +1263,20 @@ public class WorldMapScreen extends Screen {
                 y,
                 SIDEBAR_WIDTH - PADDING * 2,
                 PANEL_HEADER_HEIGHT,
-                hovered ? CONTROL_HOVER : new Color(33, 33, 44, 235));
+                hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL_INACTIVE));
         canvas.strokeRect(PADDING,
                 y,
                 SIDEBAR_WIDTH - PADDING * 2,
                 PANEL_HEADER_HEIGHT,
                 1,
-                BORDER_COLOR);
+                color(MAP_BORDER));
         drawText(
                 canvas,
                 PADDING + 10,
                 y + PANEL_HEADER_HEIGHT / 2f,
                 12,
                 expanded ? "v" : ">",
-                SUBTEXT_COLOR,
+                color(MAP_SUBTEXT),
                 TextAlignment.CENTER);
         drawFittedText(
                 canvas,
@@ -1297,7 +1284,7 @@ public class WorldMapScreen extends Screen {
                 y + PANEL_HEADER_HEIGHT / 2f,
                 12,
                 label,
-                TEXT_COLOR,
+                color(MAP_TEXT),
                 PANEL_LABEL_WIDTH,
                 TextAlignment.LEFT);
         drawFittedText(
@@ -1306,7 +1293,7 @@ public class WorldMapScreen extends Screen {
                 y + PANEL_HEADER_HEIGHT / 2f,
                 10,
                 summary,
-                SUBTEXT_COLOR,
+                color(MAP_SUBTEXT),
                 PANEL_SUMMARY_WIDTH,
                 TextAlignment.RIGHT);
     }
@@ -1381,18 +1368,18 @@ public class WorldMapScreen extends Screen {
             boolean inputFocused,
             String search,
             String unfocusedValue) {
-        canvas.fillRect(PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, dropdownOpen ? CONTROL_HOVER : CONTROL_COLOR);
-        canvas.strokeRect(PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, 1, BORDER_COLOR);
+        canvas.fillRect(PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, dropdownOpen ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
+        canvas.strokeRect(PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, 1, color(MAP_BORDER));
         String value = inputFocused ? search : unfocusedValue;
-        Color valueColor = value == null || value.isBlank() ? SUBTEXT_COLOR : TEXT_COLOR;
+        Color valueColor = value == null || value.isBlank() ? color(MAP_SUBTEXT) : color(MAP_TEXT);
         String displayValue = value == null || value.isBlank() ? "Search" : value;
         float inputTextWidth = SIDEBAR_WIDTH - PADDING * 2 - 30;
         drawFittedText(canvas, PADDING + 8, y + INPUT_HEIGHT / 2f, 12, displayValue, valueColor, inputTextWidth, TextAlignment.LEFT);
         if (inputFocused) {
             float cursorX = PADDING + 10 + Math.min(textWidth(value, 12), inputTextWidth);
-            drawText(canvas, cursorX, y + INPUT_HEIGHT / 2f, 12, "|", TEXT_COLOR, TextAlignment.LEFT);
+            drawText(canvas, cursorX, y + INPUT_HEIGHT / 2f, 12, "|", color(MAP_TEXT), TextAlignment.LEFT);
         }
-        drawText(canvas, SIDEBAR_WIDTH - PADDING - 10, y + INPUT_HEIGHT / 2f, 12, dropdownOpen ? "^" : "v", SUBTEXT_COLOR, TextAlignment.CENTER);
+        drawText(canvas, SIDEBAR_WIDTH - PADDING - 10, y + INPUT_HEIGHT / 2f, 12, dropdownOpen ? "^" : "v", color(MAP_SUBTEXT), TextAlignment.CENTER);
     }
 
     private void drawScopeControl(UiCanvas canvas, float y) {
@@ -1404,19 +1391,19 @@ public class WorldMapScreen extends Screen {
             boolean enabled = scope != GatheringAnalysisScope.SELECTED_TERRITORY || selectedTerritory != null;
             boolean active = gatheringAnalysisScope == scope;
             boolean hovered = enabled && isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
-            Color background = active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR;
+            Color background = active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL);
             if (!enabled) {
-                background = new Color(background.getRed(), background.getGreen(), background.getBlue(), 105);
+                background = withAlpha(background, 105);
             }
             canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, background);
-            canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, BORDER_COLOR);
+            canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, color(MAP_BORDER));
             drawFittedText(
                     canvas,
                     x + segmentWidth / 2f,
                     y + BUTTON_HEIGHT / 2f,
                     10,
                     scope.label(),
-                    enabled ? TEXT_COLOR : SUBTEXT_COLOR,
+                    enabled ? color(MAP_TEXT) : color(MAP_SUBTEXT),
                     segmentWidth - 8,
                     TextAlignment.CENTER);
         }
@@ -1428,21 +1415,21 @@ public class WorldMapScreen extends Screen {
             float y,
             float width,
             GuildTerritory territory) {
-        canvas.fillRect(x, y, width, TERRITORY_DETAIL_HEIGHT, new Color(28, 28, 38, 210));
-        canvas.strokeRect(x, y, width, TERRITORY_DETAIL_HEIGHT, 1, SELECTED_TERRITORY_COLOR);
+        canvas.fillRect(x, y, width, TERRITORY_DETAIL_HEIGHT, color(MAP_HEADER, 210));
+        canvas.strokeRect(x, y, width, TERRITORY_DETAIL_HEIGHT, 1, color(MAP_SELECTED_TERRITORY));
         float detailWidth = width - 16;
         int totalNodes = cachedTerritoryNodeCounts.getOrDefault(territory.name(), 0);
         int matchingNodes = selectedTerritoryMatchingNodeCount;
-        drawFittedText(canvas, x + 8, y + 17, 14, territory.name(), TEXT_COLOR, detailWidth, TextAlignment.LEFT);
-        drawFittedText(canvas, x + 8, y + 36, 11, totalNodes + " total nodes | " + matchingNodes + " matching", SUBTEXT_COLOR, detailWidth, TextAlignment.LEFT);
-        drawFittedText(canvas, x + 8, y + 56, 10, territoryBoundsLabel(territory), SUBTEXT_COLOR, detailWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 17, 14, territory.name(), color(MAP_TEXT), detailWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 36, 11, totalNodes + " total nodes | " + matchingNodes + " matching", color(MAP_SUBTEXT), detailWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 56, 10, territoryBoundsLabel(territory), color(MAP_SUBTEXT), detailWidth, TextAlignment.LEFT);
     }
 
     private void drawButton(UiCanvas canvas, float x, float y, float w, float h, String label, boolean active) {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
-        canvas.fillRect(x, y, w, h, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
-        canvas.strokeRect(x, y, w, h, 1, BORDER_COLOR);
-        drawText(canvas, x + w / 2f, y + h / 2f, 12, label, TEXT_COLOR, TextAlignment.CENTER);
+        canvas.fillRect(x, y, w, h, active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
+        canvas.strokeRect(x, y, w, h, 1, color(MAP_BORDER));
+        drawText(canvas, x + w / 2f, y + h / 2f, 12, label, color(MAP_TEXT), TextAlignment.CENTER);
     }
 
     private void drawToggle(UiCanvas canvas, float x, float y, float w, float h, GatheringProfession profession, boolean active) {
@@ -1457,10 +1444,10 @@ public class WorldMapScreen extends Screen {
         float x = PADDING;
         float width = SIDEBAR_WIDTH - PADDING * 2;
         float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
-        canvas.fillRect(x, y, width, height, new Color(22, 22, 30, 248));
-        canvas.strokeRect(x, y, width, height, 1, BORDER_COLOR);
+        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY, 248));
+        canvas.strokeRect(x, y, width, height, 1, color(MAP_BORDER));
         if (resources.isEmpty()) {
-            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", SUBTEXT_COLOR, TextAlignment.LEFT);
+            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", color(MAP_SUBTEXT), TextAlignment.LEFT);
             return;
         }
         for (int index = 0; index < visibleRows; index++) {
@@ -1470,14 +1457,14 @@ public class WorldMapScreen extends Screen {
                     : selectedResourceFilters.contains(resource);
             boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT, width, RESOURCE_DROPDOWN_ROW_HEIGHT);
             if (selected || hovered) {
-                canvas.fillRect(x + 1, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1, width - 2, RESOURCE_DROPDOWN_ROW_HEIGHT - 2, selected ? CONTROL_ACTIVE : CONTROL_HOVER);
+                canvas.fillRect(x + 1, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1, width - 2, RESOURCE_DROPDOWN_ROW_HEIGHT - 2, selected ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL_HOVER));
             }
             String label = resource.isBlank() ? "All resources" : resource;
-            drawFittedText(canvas, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, label, resource.isBlank() ? SUBTEXT_COLOR : TEXT_COLOR, width - 16, TextAlignment.LEFT);
+            drawFittedText(canvas, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, label, resource.isBlank() ? color(MAP_SUBTEXT) : color(MAP_TEXT), width - 16, TextAlignment.LEFT);
         }
         if (resources.size() > visibleRows) {
             String range = (resourceDropdownScroll + 1) + "-" + (resourceDropdownScroll + visibleRows) + "/" + resources.size();
-            drawText(canvas, x + width - 8, y + height - 7, 9, range, SUBTEXT_COLOR, TextAlignment.RIGHT);
+            drawText(canvas, x + width - 8, y + height - 7, 9, range, color(MAP_SUBTEXT), TextAlignment.RIGHT);
         }
     }
 
@@ -1488,10 +1475,10 @@ public class WorldMapScreen extends Screen {
         float x = PADDING;
         float width = SIDEBAR_WIDTH - PADDING * 2;
         float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
-        canvas.fillRect(x, y, width, height, new Color(22, 22, 30, 248));
-        canvas.strokeRect(x, y, width, height, 1, BORDER_COLOR);
+        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY, 248));
+        canvas.strokeRect(x, y, width, height, 1, color(MAP_BORDER));
         if (territories.isEmpty()) {
-            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", SUBTEXT_COLOR, TextAlignment.LEFT);
+            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", color(MAP_SUBTEXT), TextAlignment.LEFT);
             return;
         }
         for (int index = 0; index < visibleRows; index++) {
@@ -1499,13 +1486,13 @@ public class WorldMapScreen extends Screen {
             boolean selected = territory.equals(selectedTerritory);
             boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT, width, RESOURCE_DROPDOWN_ROW_HEIGHT);
             if (selected || hovered) {
-                canvas.fillRect(x + 1, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1, width - 2, RESOURCE_DROPDOWN_ROW_HEIGHT - 2, selected ? CONTROL_ACTIVE : CONTROL_HOVER);
+                canvas.fillRect(x + 1, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1, width - 2, RESOURCE_DROPDOWN_ROW_HEIGHT - 2, selected ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL_HOVER));
             }
-            drawFittedText(canvas, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, territory.name(), TEXT_COLOR, width - 16, TextAlignment.LEFT);
+            drawFittedText(canvas, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, territory.name(), color(MAP_TEXT), width - 16, TextAlignment.LEFT);
         }
         if (territories.size() > visibleRows) {
             String range = (territoryDropdownScroll + 1) + "-" + (territoryDropdownScroll + visibleRows) + "/" + territories.size();
-            drawText(canvas, x + width - 8, y + height - 7, 9, range, SUBTEXT_COLOR, TextAlignment.RIGHT);
+            drawText(canvas, x + width - 8, y + height - 7, 9, range, color(MAP_SUBTEXT), TextAlignment.RIGHT);
         }
     }
 
@@ -1520,10 +1507,10 @@ public class WorldMapScreen extends Screen {
         float width = SIDEBAR_WIDTH - PADDING * 2;
         float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
         Set<String> tracked = SeqClient.getConfigManager().trackedWorldEventIds();
-        canvas.fillRect(x, y, width, height, new Color(22, 22, 30, 248));
-        canvas.strokeRect(x, y, width, height, 1, BORDER_COLOR);
+        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY, 248));
+        canvas.strokeRect(x, y, width, height, 1, color(MAP_BORDER));
         if (events.isEmpty()) {
-            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", SUBTEXT_COLOR, TextAlignment.LEFT);
+            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", color(MAP_SUBTEXT), TextAlignment.LEFT);
             return;
         }
         for (int index = 0; index < visibleRows; index++) {
@@ -1541,7 +1528,7 @@ public class WorldMapScreen extends Screen {
                         y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1,
                         width - 2,
                         RESOURCE_DROPDOWN_ROW_HEIGHT - 2,
-                        selected ? CONTROL_ACTIVE : CONTROL_HOVER);
+                        selected ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL_HOVER));
             }
             String label = (selected ? "[x] " : "[ ] ") + event.name();
             drawFittedText(
@@ -1550,13 +1537,13 @@ public class WorldMapScreen extends Screen {
                     y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f,
                     11,
                     label,
-                    event.isVisible() ? TEXT_COLOR : SUBTEXT_COLOR,
+                    event.isVisible() ? color(MAP_TEXT) : color(MAP_SUBTEXT),
                     width - 16,
                     TextAlignment.LEFT);
         }
         if (events.size() > visibleRows) {
             String range = (worldEventDropdownScroll + 1) + "-" + (worldEventDropdownScroll + visibleRows) + "/" + events.size();
-            drawText(canvas, x + width - 8, y + height - 7, 9, range, SUBTEXT_COLOR, TextAlignment.RIGHT);
+            drawText(canvas, x + width - 8, y + height - 7, 9, range, color(MAP_SUBTEXT), TextAlignment.RIGHT);
         }
     }
 
@@ -1572,8 +1559,8 @@ public class WorldMapScreen extends Screen {
         float scrollableContentHeight = Math.max(viewportHeight, sidebarContentHeight - SIDEBAR_PANEL_TOP);
         float thumbHeight = Math.max(24, trackHeight * (viewportHeight / scrollableContentHeight));
         float thumbY = trackY + (trackHeight - thumbHeight) * (sidebarScroll / maxScroll);
-        canvas.fillRect(trackX, trackY, 3, trackHeight, new Color(255, 255, 255, 28));
-        canvas.fillRect(trackX, thumbY, 3, thumbHeight, new Color(255, 255, 255, 110));
+        canvas.fillRect(trackX, trackY, 3, trackHeight, color(MAP_TEXT, 28));
+        canvas.fillRect(trackX, thumbY, 3, thumbHeight, color(MAP_TEXT, 110));
     }
 
     private String centerPlayerButtonLabel() {
@@ -1657,10 +1644,10 @@ public class WorldMapScreen extends Screen {
         String subtitle = nodeCoords(node);
         float x = tooltipX(180);
         float y = Math.max(8, nvgMouseY + 12);
-        canvas.fillRect(x, y, 180, 42, new Color(18, 18, 24, 235));
-        canvas.strokeRect(x, y, 180, 42, 1, BORDER_COLOR);
-        drawFittedText(canvas, x + 8, y + 15, 12, title, TEXT_COLOR, 164, TextAlignment.LEFT);
-        drawFittedText(canvas, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 164, TextAlignment.LEFT);
+        canvas.fillRect(x, y, 180, 42, color(MAP_SIDEBAR));
+        canvas.strokeRect(x, y, 180, 42, 1, color(MAP_BORDER));
+        drawFittedText(canvas, x + 8, y + 15, 12, title, color(MAP_TEXT), 164, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 31, 11, subtitle, color(MAP_SUBTEXT), 164, TextAlignment.LEFT);
     }
 
     private void renderClusterTooltip(UiCanvas canvas, GatheringNodeCluster cluster) {
@@ -1668,20 +1655,20 @@ public class WorldMapScreen extends Screen {
         String subtitle = cluster.nodeCount() + " nodes | " + Math.round(cluster.averageSpacing()) + "m";
         float x = tooltipX(200);
         float y = Math.max(8, nvgMouseY + 12);
-        canvas.fillRect(x, y, 200, 42, new Color(18, 18, 24, 235));
-        canvas.strokeRect(x, y, 200, 42, 1, BORDER_COLOR);
-        drawFittedText(canvas, x + 8, y + 15, 12, title, TEXT_COLOR, 184, TextAlignment.LEFT);
-        drawFittedText(canvas, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 184, TextAlignment.LEFT);
+        canvas.fillRect(x, y, 200, 42, color(MAP_SIDEBAR));
+        canvas.strokeRect(x, y, 200, 42, 1, color(MAP_BORDER));
+        drawFittedText(canvas, x + 8, y + 15, 12, title, color(MAP_TEXT), 184, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 31, 11, subtitle, color(MAP_SUBTEXT), 184, TextAlignment.LEFT);
     }
 
     private void renderTerritoryTooltip(UiCanvas canvas, GuildTerritory territory) {
         String subtitle = cachedTerritoryNodeCounts.getOrDefault(territory.name(), 0) + " gathering nodes";
         float x = tooltipX(200);
         float y = Math.max(8, nvgMouseY + 12);
-        canvas.fillRect(x, y, 200, 42, new Color(18, 18, 24, 235));
-        canvas.strokeRect(x, y, 200, 42, 1, BORDER_COLOR);
-        drawFittedText(canvas, x + 8, y + 15, 12, territory.name(), TEXT_COLOR, 184, TextAlignment.LEFT);
-        drawFittedText(canvas, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 184, TextAlignment.LEFT);
+        canvas.fillRect(x, y, 200, 42, color(MAP_SIDEBAR));
+        canvas.strokeRect(x, y, 200, 42, 1, color(MAP_BORDER));
+        drawFittedText(canvas, x + 8, y + 15, 12, territory.name(), color(MAP_TEXT), 184, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 31, 11, subtitle, color(MAP_SUBTEXT), 184, TextAlignment.LEFT);
     }
 
     private void renderWorldEventTooltip(UiCanvas canvas, WorldEventDefinition event, int locationIndex) {
@@ -1693,10 +1680,10 @@ public class WorldMapScreen extends Screen {
         String subtitle = worldEventScheduleLabel(event.schedule()) + " | " + locationLabel;
         float x = tooltipX(210);
         float y = Math.max(8, nvgMouseY + 12);
-        canvas.fillRect(x, y, 210, 42, new Color(18, 18, 24, 235));
-        canvas.strokeRect(x, y, 210, 42, 1, BORDER_COLOR);
-        drawFittedText(canvas, x + 8, y + 15, 12, event.name(), TEXT_COLOR, 194, TextAlignment.LEFT);
-        drawFittedText(canvas, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 194, TextAlignment.LEFT);
+        canvas.fillRect(x, y, 210, 42, color(MAP_SIDEBAR));
+        canvas.strokeRect(x, y, 210, 42, 1, color(MAP_BORDER));
+        drawFittedText(canvas, x + 8, y + 15, 12, event.name(), color(MAP_TEXT), 194, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 31, 11, subtitle, color(MAP_SUBTEXT), 194, TextAlignment.LEFT);
     }
 
     private float tooltipX(float width) {

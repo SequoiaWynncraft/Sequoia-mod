@@ -1,8 +1,11 @@
 package com.seqwawa.seq.ui;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.theme.UiColor.*;
+
 import static org.lwjgl.nanovg.NanoVG.*;
 
-import java.awt.*;
+import java.awt.Color;
 import java.util.*;
 import java.util.List;
 
@@ -125,74 +128,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float MODAL_TITLE_SIZE = 16;
     private static final float MODAL_LABEL_SIZE = 12;
     private static final float TAG_CHIP_FONT_SIZE = 11;
-
-    // ── Colors ──
-    private static final Color BG_COLOR = new Color(10, 10, 16, 100);
-    private static final Color SIDEBAR_COLOR = new Color(18, 18, 26, 200);
-    private static final Color PANEL_COLOR = new Color(22, 22, 30, 100);
-    private static final Color HEADER_COLOR = new Color(26, 26, 36, 110);
-    private static final Color TITLE_COLOR = new Color(160, 130, 220, 255);
-    private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
-    private static final Color DIVIDER_COLOR = new Color(40, 40, 55, 255);
-
-    private static final Color SIDEBAR_BUTTON_COLOR = new Color(30, 30, 42, 110);
-    private static final Color SIDEBAR_BUTTON_HOVER = new Color(42, 42, 58, 120);
-    private static final Color SIDEBAR_BUTTON_ACTIVE = new Color(80, 50, 140, 120);
-
-    private static final Color SEARCH_BG = new Color(30, 30, 40, 255);
-    private static final Color SEARCH_ACTIVE_BG = new Color(40, 40, 55, 255);
-    private static final Color SEARCH_BORDER = new Color(130, 100, 200, 180);
-    private static final Color SEARCH_PLACEHOLDER = new Color(100, 100, 120, 200);
-
-    private static final Color CARD_BG = new Color(30, 30, 42, 110);
-    private static final Color CARD_EXPANDED_BG = new Color(26, 26, 36, 120);
-    private static final Color MEMBER_TEXT_COLOR = new Color(220, 220, 230, 255);
-    private static final Color MEMBER_DIM_COLOR = new Color(120, 120, 140, 180);
-    private static final Color ROLE_TEXT_COLOR = new Color(160, 160, 180, 255);
-
-    private static final Color PARTY_TYPE_TEXT = new Color(180, 180, 200, 255);
-    private static final Color EXPAND_ARROW_COLOR = new Color(140, 140, 160, 255);
-
-    private static final Color JOIN_BUTTON_COLOR = new Color(160, 130, 220, 255);
-    private static final Color JOIN_BUTTON_HOVER = new Color(180, 150, 240, 255);
-    private static final Color NEW_PARTY_COLOR = new Color(160, 130, 220, 200);
-    private static final Color NEW_PARTY_HOVER = new Color(180, 150, 240, 220);
-    private static final Color MANAGE_PARTY_COLOR = new Color(160, 130, 220, 200);
-    private static final Color DELIST_PARTY_COLOR = new Color(200, 60, 60, 200);
-    private static final Color DELIST_PARTY_HOVER = new Color(220, 80, 80, 220);
-    private static final Color OPEN_CLOSE_PARTY_COLOR = new Color(100, 70, 160, 200);
-    private static final Color OPEN_CLOSE_PARTY_HOVER = new Color(120, 90, 180, 220);
-    private static final Color DISABLED_BUTTON_COLOR = new Color(60, 60, 70, 180);
-    private static final Color DISABLED_BUTTON_TEXT = new Color(120, 120, 130, 200);
-
-    private static final Color DROPDOWN_BG = new Color(40, 40, 55, 240);
-    private static final Color DROPDOWN_HOVER = new Color(55, 55, 75, 240);
-    private static final Color DROPDOWN_BORDER = new Color(80, 80, 100, 200);
-
-    private static final Color TYPE_ICON_SELECTED =
-            new Color(TITLE_COLOR.getRed(), TITLE_COLOR.getGreen(), TITLE_COLOR.getBlue(), 120);
-
-    private static final Color ERROR_POPUP_BG = new Color(55, 25, 90, 235);
-    private static final Color ERROR_POPUP_BORDER = new Color(160, 130, 220, 255);
-
-    private static final Color SCROLLBAR_TRACK = new Color(30, 30, 42, 255);
-    private static final Color SCROLLBAR_THUMB = new Color(160, 130, 220, 150);
-
-    private static final Color MODAL_BG = new Color(20, 20, 30, 255);
-    private static final Color MODAL_BORDER = new Color(80, 80, 100, 255);
-    private static final Color MODAL_OVERLAY = new Color(0, 0, 0, 160);
-    private static final Color MODAL_DROPDOWN_BG = new Color(35, 35, 48, 255);
-    private static final Color MODAL_DROPDOWN_BORDER = new Color(80, 80, 100, 200);
-
-    private static final Color TAG_CHIP_BG = new Color(40, 40, 55, 220);
-    private static final Color TAG_CHIP_HOVER = new Color(55, 55, 75, 240);
-    private static final Color FILTER_BOX_BG = new Color(15, 15, 22, 240);
-    private static final Color STATUS_OPEN_BG = new Color(56, 140, 88, 220);
-    private static final Color STATUS_OPEN_BORDER = new Color(88, 196, 122, 255);
-    private static final Color STATUS_CLOSED_BG = new Color(148, 108, 44, 220);
-    private static final Color STATUS_CLOSED_BORDER = new Color(220, 176, 88, 255);
-    private static final Color STATUS_FULL_BG = new Color(160, 64, 72, 220);
-    private static final Color STATUS_FULL_BORDER = new Color(226, 108, 118, 255);
 
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
     private static final String GAZ_EARS_ASSET = "gaz_ears";
@@ -348,20 +283,20 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float screenHeight = NVGContext.screenHeight();
             String fontName = SeqClient.getFontManager().getSelectedFont();
 
-            NVGWrapper.drawRect(nvg, 0, 0, screenWidth, screenHeight, BG_COLOR);
+            NVGWrapper.drawRect(nvg, 0, 0, screenWidth, screenHeight, color(BACKGROUND_OVERLAY));
             renderSidebar(nvg, fontName, screenHeight);
 
             float panelX = SIDEBAR_WIDTH;
             float panelWidth = screenWidth - SIDEBAR_WIDTH;
 
-            NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, PANEL_COLOR);
-            NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, HEADER_HEIGHT, HEADER_COLOR);
+            NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, color(BACKGROUND_BODY));
+            NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, HEADER_HEIGHT, color(BACKGROUND_HEADER));
             renderHeaderControls(nvg, fontName, panelX, panelWidth);
 
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, TITLE_FONT_SIZE);
             nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-            var titleCol = NVGContext.nvgColor(TITLE_COLOR);
+            var titleCol = NVGContext.nvgColor(color(ACCENT_PRIMARY));
             nvgFillColor(nvg, titleCol);
             nvgText(nvg, panelX + panelWidth - SEARCH_BAR_MARGIN, HEADER_HEIGHT / 2f, "Party Finder");
             titleCol.free();
@@ -403,11 +338,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             // Scrollbar
             if (maxScroll > 0) {
                 float scrollbarX = panelX + panelWidth - 5;
-                NVGWrapper.drawRect(nvg, scrollbarX, contentY, 4, contentHeight, SCROLLBAR_TRACK);
+                NVGWrapper.drawRect(nvg, scrollbarX, contentY, 4, contentHeight, color(CONTROL_TRACK));
                 float thumbRatio = contentHeight / (contentHeight + maxScroll);
                 float thumbH = Math.max(20, contentHeight * thumbRatio);
                 float thumbY = contentY + (scrollOffset / maxScroll) * (contentHeight - thumbH);
-                NVGWrapper.drawRect(nvg, scrollbarX, thumbY, 4, thumbH, SCROLLBAR_THUMB);
+                NVGWrapper.drawRect(nvg, scrollbarX, thumbY, 4, thumbH, color(CONTROL_THUMB));
             }
 
             // Filter + button (bottom right of content area)
@@ -420,11 +355,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     filterY,
                     FILTER_BUTTON_W,
                     FILTER_BUTTON_H,
-                    filterHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
+                    filterHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, HEADER_BUTTON_SIZE);
             nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            var ftc = NVGContext.nvgColor(TEXT_COLOR);
+            var ftc = NVGContext.nvgColor(color(TEXT_PRIMARY));
             nvgFillColor(nvg, ftc);
             nvgText(nvg, filterX + FILTER_BUTTON_W / 2f, filterY + FILTER_BUTTON_H / 2f, "Filter +");
             ftc.free();
@@ -495,11 +430,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float popupX = panelX + (panelWidth - popupW) / 2f;
         float popupY = screenHeight - STATUS_BANNER_H - 10;
 
-        NVGWrapper.drawRect(nvg, popupX, popupY, popupW, STATUS_BANNER_H, ERROR_POPUP_BG);
-        NVGWrapper.drawRectOutline(nvg, popupX, popupY, popupW, STATUS_BANNER_H, 1, ERROR_POPUP_BORDER);
+        NVGWrapper.drawRect(nvg, popupX, popupY, popupW, STATUS_BANNER_H, color(ACCENT_PRIMARY_DARK, 235));
+        NVGWrapper.drawRectOutline(nvg, popupX, popupY, popupW, STATUS_BANNER_H, 1, color(ACCENT_PRIMARY));
 
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var text = NVGContext.nvgColor(TEXT_COLOR);
+        var text = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, text);
         nvgText(nvg, popupX + popupW / 2f, popupY + STATUS_BANNER_H / 2f, activeStatusBannerMessage);
         text.free();
@@ -508,17 +443,17 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     // ── Sidebar ──
 
     private void renderSidebar(long nvg, String fontName, float screenHeight) {
-        NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
+        NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, screenHeight, color(BACKGROUND_SIDEBAR));
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, SIDEBAR_TITLE_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var col = NVGContext.nvgColor(TITLE_COLOR);
+        var col = NVGContext.nvgColor(color(ACCENT_PRIMARY));
         nvgFillColor(nvg, col);
         nvgText(nvg, SIDEBAR_WIDTH / 2f, 22, "Sequoia");
         col.free();
 
-        NVGWrapper.drawRect(nvg, SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, DIVIDER_COLOR);
+        NVGWrapper.drawRect(nvg, SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_DIVIDER));
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
@@ -553,13 +488,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     private void drawSidebarButton(long nvg, String fontName, float x, float y, float w, String label, boolean active) {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
-        Color bg = active ? SIDEBAR_BUTTON_ACTIVE : (hovered ? SIDEBAR_BUTTON_HOVER : SIDEBAR_BUTTON_COLOR);
+        Color bg = active ? color(ACCENT_PRIMARY_DARK) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
         NVGWrapper.drawRect(nvg, x, y, w, SIDEBAR_BUTTON_HEIGHT, bg);
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, SIDEBAR_BUTTON_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var c = NVGContext.nvgColor(TEXT_COLOR);
+        var c = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, c);
         nvgText(nvg, x + w / 2f, y + SIDEBAR_BUTTON_HEIGHT / 2f, label);
         c.free();
@@ -574,10 +509,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float searchX = searchBar.x();
         float searchY = searchBar.y();
 
-        Color searchBg = searchFocused ? SEARCH_ACTIVE_BG : SEARCH_BG;
+        Color searchBg = searchFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
         NVGWrapper.drawRect(nvg, searchX, searchY, searchBar.w(), searchBar.h(), searchBg);
         if (searchFocused) {
-            NVGWrapper.drawRectOutline(nvg, searchX, searchY, searchBar.w(), searchBar.h(), 1, SEARCH_BORDER);
+            NVGWrapper.drawRectOutline(nvg, searchX, searchY, searchBar.w(), searchBar.h(), 1, color(CONTROL_BORDER));
         }
 
         nvgFontFace(nvg, fontName);
@@ -587,12 +522,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgSave(nvg);
         nvgScissor(nvg, searchX, searchY, searchBar.w(), searchBar.h());
         if (searchQuery.isEmpty() && !searchFocused) {
-            var ph = NVGContext.nvgColor(SEARCH_PLACEHOLDER);
+            var ph = NVGContext.nvgColor(color(TEXT_DISABLED));
             nvgFillColor(nvg, ph);
             nvgText(nvg, searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, "Search...");
             ph.free();
         } else {
-            var tc = NVGContext.nvgColor(TEXT_COLOR);
+            var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
             nvgFillColor(nvg, tc);
             nvgText(nvg, searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, searchQuery);
             tc.free();
@@ -604,17 +539,17 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, SEARCH_FONT_SIZE);
             float textW = searchQuery.isEmpty() ? 0 : nvgTextBounds(nvg, 0, 0, searchQuery, bounds);
-            NVGWrapper.drawRect(nvg, searchX + 6 + textW + 1, searchY + 3, 1, searchBar.h() - 6, TEXT_COLOR);
+            NVGWrapper.drawRect(nvg, searchX + 6 + textW + 1, searchY + 3, 1, searchBar.h() - 6, color(TEXT_PRIMARY));
         }
 
         if (party().isPartyLeader()) {
             String manageLabel = party().hasListedParty() ? "Manage Party" : "New party +";
-            drawHeaderButton(nvg, fontName, layout.manageButton(), manageLabel, MANAGE_PARTY_COLOR, NEW_PARTY_HOVER);
-            drawHeaderButton(nvg, fontName, layout.inviteButton(), "Invite", NEW_PARTY_COLOR, NEW_PARTY_HOVER);
+            drawHeaderButton(nvg, fontName, layout.manageButton(), manageLabel, color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
+            drawHeaderButton(nvg, fontName, layout.inviteButton(), "Invite", color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
             boolean autoClosed = isCurrentListingAutoClosed();
             String openCloseLabel = autoClosed ? "Auto-closed" : (isCurrentListingClosed() ? "Open party" : "Close party");
-            Color openCloseBg = autoClosed ? DISABLED_BUTTON_COLOR : OPEN_CLOSE_PARTY_COLOR;
-            Color openCloseHover = autoClosed ? DISABLED_BUTTON_COLOR : OPEN_CLOSE_PARTY_HOVER;
+            Color openCloseBg = autoClosed ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_DARK_HOVER, 200);
+            Color openCloseHover = autoClosed ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_DARK_HOVER, 220);
             drawHeaderButton(
                     nvg,
                     fontName,
@@ -623,12 +558,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     openCloseBg,
                     openCloseHover);
             drawHeaderButton(
-                    nvg, fontName, layout.delistButton(), "Delist party", DELIST_PARTY_COLOR, DELIST_PARTY_HOVER);
-            drawHeaderButton(nvg, fontName, layout.inviteAllButton(), "Invite all", NEW_PARTY_COLOR, NEW_PARTY_HOVER);
+                    nvg, fontName, layout.delistButton(), "Delist party", color(CONTROL_DANGER, 200), color(CONTROL_DANGER_HOVER));
+            drawHeaderButton(nvg, fontName, layout.inviteAllButton(), "Invite all", color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
         } else {
             boolean inPartyAsMember = party().getJoinedPartyIndex() >= 0;
-            Color newBg = inPartyAsMember ? new Color(60, 60, 70, 180) : NEW_PARTY_COLOR;
-            Color newHover = inPartyAsMember ? new Color(60, 60, 70, 180) : NEW_PARTY_HOVER;
+            Color newBg = inPartyAsMember ? color(ACCENT_DISABLED, 180) : color(ACCENT_PRIMARY, 200);
+            Color newHover = inPartyAsMember ? color(ACCENT_DISABLED, 180) : color(ACCENT_PRIMARY_HOVER, 220);
             drawHeaderButton(nvg, fontName, layout.newPartyButton(), "New party +", newBg, newHover);
         }
 
@@ -646,7 +581,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, HEADER_BUTTON_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var c = NVGContext.nvgColor(TEXT_COLOR);
+        var c = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, c);
         nvgText(nvg, x + w / 2f, y + h / 2f, label);
         c.free();
@@ -689,7 +624,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, HEADER_BUTTON_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var tc = NVGContext.nvgColor(TEXT_COLOR);
+        var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, tc);
         nvgText(nvg, x + w / 2f, y + h / 2f, statusBadgeLabel(status, closeReason));
         tc.free();
@@ -697,19 +632,19 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     private Color statusBadgeBackground(PartyStatus status) {
         return switch (status) {
-            case OPEN -> STATUS_OPEN_BG;
-            case FULL -> STATUS_FULL_BG;
-            case CLOSED -> STATUS_CLOSED_BG;
-            default -> DROPDOWN_BG;
+            case OPEN -> color(STATUS_SUCCESS_BACKGROUND);
+            case FULL -> color(STATUS_DANGER_BACKGROUND);
+            case CLOSED -> color(STATUS_WARNING_BACKGROUND);
+            default -> color(BACKGROUND_POPUP);
         };
     }
 
     private Color statusBadgeBorder(PartyStatus status) {
         return switch (status) {
-            case OPEN -> STATUS_OPEN_BORDER;
-            case FULL -> STATUS_FULL_BORDER;
-            case CLOSED -> STATUS_CLOSED_BORDER;
-            default -> DROPDOWN_BORDER;
+            case OPEN -> color(STATUS_SUCCESS_BORDER);
+            case FULL -> color(STATUS_DANGER_BORDER);
+            case CLOSED -> color(STATUS_WARNING_BORDER);
+            default -> color(CONTROL_INPUT_SECONDARY);
         };
     }
 
@@ -778,19 +713,19 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float w = bounds.w();
         float h = bounds.h();
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
-        NVGWrapper.drawRect(nvg, x, y, w, h, hovered ? SEARCH_ACTIVE_BG : SEARCH_BG);
-        NVGWrapper.drawRectOutline(nvg, x, y, w, h, 1, DROPDOWN_BORDER);
+        NVGWrapper.drawRect(nvg, x, y, w, h, hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+        NVGWrapper.drawRectOutline(nvg, x, y, w, h, 1, color(CONTROL_INPUT_SECONDARY));
 
         String label = selectedRole != null ? selectedRole : "Your role";
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, HEADER_BUTTON_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var tc = NVGContext.nvgColor(TEXT_COLOR);
+        var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, tc);
         nvgText(nvg, x + 6, y + h / 2f, label);
         tc.free();
 
-        drawTriangle(nvg, x + w - 8, y + h / 2f, 5, false, EXPAND_ARROW_COLOR);
+        drawTriangle(nvg, x + w - 8, y + h / 2f, 5, false, color(ACCENT_SECONDARY));
     }
 
     private void renderRoleDropdownMenu(long nvg, String fontName) {
@@ -800,18 +735,18 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float itemH = 20;
         float totalH = ROLES.length * itemH;
 
-        NVGWrapper.drawRect(nvg, x, y, w, totalH, DROPDOWN_BG);
-        NVGWrapper.drawRectOutline(nvg, x, y, w, totalH, 1, DROPDOWN_BORDER);
+        NVGWrapper.drawRect(nvg, x, y, w, totalH, color(BACKGROUND_POPUP));
+        NVGWrapper.drawRectOutline(nvg, x, y, w, totalH, 1, color(CONTROL_INPUT_SECONDARY));
 
         for (int i = 0; i < ROLES.length; i++) {
             float itemY = y + i * itemH;
             boolean itemHovered = isHovered(nvgMouseX, nvgMouseY, x, itemY, w, itemH);
-            if (itemHovered) NVGWrapper.drawRect(nvg, x, itemY, w, itemH, DROPDOWN_HOVER);
+            if (itemHovered) NVGWrapper.drawRect(nvg, x, itemY, w, itemH, color(CONTROL_INPUT_HOVER));
 
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, MEMBER_FONT_SIZE);
             nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            var tc = NVGContext.nvgColor(TEXT_COLOR);
+            var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
             nvgFillColor(nvg, tc);
             nvgText(nvg, x + 6, itemY + itemH / 2f, ROLES[i]);
             tc.free();
@@ -823,7 +758,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private void renderPartyCard(
             long nvg, String fontName, float x, float y, float w, float h, PartyListing party, int partyIndex) {
         boolean isJoined = party().getJoinedPartyIndex() == partyIndex;
-        NVGWrapper.drawRect(nvg, x, y, w, h, party.expanded ? CARD_EXPANDED_BG : CARD_BG);
+        NVGWrapper.drawRect(nvg, x, y, w, h, party.expanded ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
 
         if (party.expanded) {
             renderExpandedCard(nvg, fontName, x, y, w, h, party, partyIndex, isJoined);
@@ -858,7 +793,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, CARD_TITLE_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var countCol = NVGContext.nvgColor(TEXT_COLOR);
+        var countCol = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, countCol);
         nvgText(nvg, rowX, y + CARD_HEADER_HEIGHT / 2f, party.occupiedSlots + "/" + party.maxSize);
         countCol.free();
@@ -877,7 +812,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         // Collapse arrow
         nvgFontSize(nvg, 16);
         nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        var arrCol = NVGContext.nvgColor(EXPAND_ARROW_COLOR);
+        var arrCol = NVGContext.nvgColor(color(ACCENT_SECONDARY));
         nvgFillColor(nvg, arrCol);
         nvgText(nvg, x + w - CARD_PADDING, y + CARD_HEADER_HEIGHT / 2f, "-");
         arrCol.free();
@@ -913,13 +848,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         boolean joinHovered =
                 !buttonDisabled && isHovered(nvgMouseX, nvgMouseY, joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT);
         Color joinBg =
-                buttonDisabled ? DISABLED_BUTTON_COLOR : (joinHovered ? JOIN_BUTTON_HOVER : JOIN_BUTTON_COLOR);
+                buttonDisabled ? color(ACCENT_DISABLED) : (joinHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
         NVGWrapper.drawRect(nvg, joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT, joinBg);
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        Color textCol = buttonDisabled ? DISABLED_BUTTON_TEXT : TEXT_COLOR;
+        Color textCol = buttonDisabled ? color(TEXT_DISABLED) : color(TEXT_PRIMARY);
         String actionText = showJoinedDisabled
                 ? "Joined"
                 : (isJoined ? "Leave" : partyActionLabel(party));
@@ -932,7 +867,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float labelRightX = x + w - CARD_PADDING - JOIN_BUTTON_WIDTH - 8;
         nvgFontSize(nvg, TYPE_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        var ptc = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        var ptc = NVGContext.nvgColor(color(TEXT_MUTED));
         nvgFillColor(nvg, ptc);
         nvgText(nvg, labelRightX, lastMemberCenterY, getPartyCardLabel(party));
         ptc.free();
@@ -956,7 +891,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, CARD_TITLE_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var cc = NVGContext.nvgColor(TEXT_COLOR);
+        var cc = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, cc);
         nvgText(nvg, rowX, centerY, party.occupiedSlots + "/" + party.maxSize);
         cc.free();
@@ -997,7 +932,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, MEMBER_FONT_SIZE);
             nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            var nc = NVGContext.nvgColor(MEMBER_TEXT_COLOR);
+            var nc = NVGContext.nvgColor(color(TEXT_SECONDARY));
             nvgFillColor(nvg, nc);
             String clippedLeaderName = fitTextToWidth(nvg, leaderName, Math.max(0, leaderTextMaxX - rowX));
             if (!clippedLeaderName.isEmpty()) {
@@ -1010,7 +945,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, 16);
         nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        var pc = NVGContext.nvgColor(EXPAND_ARROW_COLOR);
+        var pc = NVGContext.nvgColor(color(ACCENT_SECONDARY));
         nvgFillColor(nvg, pc);
         nvgText(nvg, rightX, centerY, "+");
         pc.free();
@@ -1030,7 +965,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, TYPE_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        var tc = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        var tc = NVGContext.nvgColor(color(TEXT_MUTED));
         nvgFillColor(nvg, tc);
         nvgText(nvg, rightX, centerY, getPartyCardLabel(party));
         tc.free();
@@ -1098,7 +1033,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        Color nameColor = isHoveredMember ? MEMBER_DIM_COLOR : MEMBER_TEXT_COLOR;
+        Color nameColor = isHoveredMember ? color(TEXT_DISABLED, 180) : color(TEXT_SECONDARY);
         String memberName = member.displayName();
         var nc = NVGContext.nvgColor(nameColor);
         nvgFillColor(nvg, nc);
@@ -1144,7 +1079,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, ROLE_FONT_SIZE);
             nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            var rc = NVGContext.nvgColor(ROLE_TEXT_COLOR);
+            var rc = NVGContext.nvgColor(color(TEXT_MUTED));
             nvgFillColor(nvg, rc);
             nvgText(nvg, rowX, centerY, "(" + member.role + ")");
             rc.free();
@@ -1196,7 +1131,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, RAID_LABEL_SIZE);
             nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            var tc = NVGContext.nvgColor(TEXT_COLOR);
+            var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
             nvgFillColor(nvg, tc);
             nvgText(nvg, cx, cy, raidTags.get(0));
             tc.free();
@@ -1253,7 +1188,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     nvgFontFace(nvg, fontName);
                     nvgFontSize(nvg, RAID_LABEL_SIZE);
                     nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-                    var tc = NVGContext.nvgColor(TEXT_COLOR);
+                    var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
                     nvgFillColor(nvg, tc);
                     nvgText(nvg, cx, cy, tag);
                     tc.free();
@@ -1273,7 +1208,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 if (raidIcon != null) {
                     UiRenderer.currentCanvas().fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
                 } else {
-                    var fc = NVGContext.nvgColor(TYPE_ICON_SELECTED);
+                    var fc = NVGContext.nvgColor(color(ACCENT_PRIMARY, 120));
                     nvgFillColor(nvg, fc);
                     nvgFill(nvg);
                     fc.free();
@@ -1291,7 +1226,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     UiRenderer.currentCanvas().fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
                 } else {
                     // Fallback solid color for missing icon
-                    var fc = NVGContext.nvgColor(TYPE_ICON_SELECTED);
+                    var fc = NVGContext.nvgColor(color(ACCENT_PRIMARY, 120));
                     nvgFillColor(nvg, fc);
                     nvgFill(nvg);
                     fc.free();
@@ -1301,7 +1236,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         if (count >= 2) {
-            var splitColor = NVGContext.nvgColor(DIVIDER_COLOR);
+            var splitColor = NVGContext.nvgColor(color(ACCENT_DIVIDER));
             nvgStrokeColor(nvg, splitColor);
             nvgStrokeWidth(nvg, 1.25f);
 
@@ -1340,20 +1275,20 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     private void renderModal(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
         // Darken background
-        NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, MODAL_OVERLAY);
+        NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
 
         // Modal centered in main panel area
         modalX = panelX + (panelWidth - MODAL_WIDTH) / 2f;
         modalY = (screenHeight - PARTY_MODAL_HEIGHT) / 2f;
 
-        NVGWrapper.drawRect(nvg, modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, MODAL_BG);
-        NVGWrapper.drawRectOutline(nvg, modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, 1, MODAL_BORDER);
+        NVGWrapper.drawRect(nvg, modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, color(BACKGROUND_BODY_OPAQUE));
+        NVGWrapper.drawRectOutline(nvg, modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, 1, color(ACCENT_SECONDARY));
 
         // Title
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MODAL_TITLE_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var tc = NVGContext.nvgColor(TEXT_COLOR);
+        var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, tc);
         String modalTitle = party().hasListedParty() ? "Update Party" : "Create Party";
         nvgText(nvg, modalX + MODAL_WIDTH / 2f, modalY + 18, modalTitle);
@@ -1376,7 +1311,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             if (selected) {
                 nvgBeginPath(nvg);
                 nvgCircle(nvg, rcx, rcy, RAID_CIRCLE_SIZE / 2f - 2);
-                var fill = NVGContext.nvgColor(TYPE_ICON_SELECTED);
+                var fill = NVGContext.nvgColor(color(ACCENT_PRIMARY, 120));
                 nvgFillColor(nvg, fill);
                 nvgFill(nvg);
                 nvgClosePath(nvg);
@@ -1401,7 +1336,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 nvgFontFace(nvg, fontName);
                 nvgFontSize(nvg, RAID_LABEL_SIZE);
                 nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-                var lc = NVGContext.nvgColor(selected ? TEXT_COLOR : PARTY_TYPE_TEXT);
+                var lc = NVGContext.nvgColor(selected ? color(TEXT_PRIMARY) : color(TEXT_MUTED));
                 nvgFillColor(nvg, lc);
                 nvgText(nvg, rcx, rcy, rt);
                 lc.free();
@@ -1416,7 +1351,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MODAL_LABEL_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var l2 = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        var l2 = NVGContext.nvgColor(color(TEXT_MUTED));
         nvgFillColor(nvg, l2);
         nvgText(nvg, rightColX, rowY, "Reserved slots");
         l2.free();
@@ -1426,11 +1361,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float etBtnY = rowY + 12;
         boolean etHovered = isHovered(nvgMouseX, nvgMouseY, etBtnX, etBtnY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H);
         NVGWrapper.drawRect(
-                nvg, etBtnX, etBtnY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H, etHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
+                nvg, etBtnX, etBtnY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H, etHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
 
         nvgFontSize(nvg, MODAL_LABEL_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var ptc = NVGContext.nvgColor(TEXT_COLOR);
+        var ptc = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, ptc);
         nvgText(nvg, leftColX, etBtnY + MODAL_DROPDOWN_H / 2f, "Edit tags");
         ptc.free();
@@ -1443,7 +1378,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float arrowX = rsBoxX + rsFieldW;
         float halfArrowH = MODAL_DROPDOWN_H / 2f;
 
-        Color rsFieldBg = reservedSlotsFocused ? SEARCH_ACTIVE_BG : MODAL_DROPDOWN_BG;
+        Color rsFieldBg = reservedSlotsFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
         NVGWrapper.drawRect(nvg, rsBoxX, rsBoxY, rsFieldW, MODAL_DROPDOWN_H, rsFieldBg);
         NVGWrapper.drawRectOutline(
                 nvg,
@@ -1452,12 +1387,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 rsFieldW,
                 MODAL_DROPDOWN_H,
                 1,
-                reservedSlotsFocused ? SEARCH_BORDER : MODAL_DROPDOWN_BORDER);
+                reservedSlotsFocused ? color(CONTROL_BORDER) : color(CONTROL_INPUT_SECONDARY));
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MODAL_LABEL_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var rsc = NVGContext.nvgColor(TEXT_COLOR);
+        var rsc = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, rsc);
         nvgText(
                 nvg,
@@ -1468,22 +1403,22 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Up arrow button
         boolean upHovered = isHovered(nvgMouseX, nvgMouseY, arrowX, rsBoxY, arrowW, halfArrowH);
-        NVGWrapper.drawRect(nvg, arrowX, rsBoxY, arrowW, halfArrowH, upHovered ? DROPDOWN_HOVER : MODAL_DROPDOWN_BG);
-        NVGWrapper.drawRectOutline(nvg, arrowX, rsBoxY, arrowW, halfArrowH, 1, MODAL_DROPDOWN_BORDER);
-        drawTriangle(nvg, arrowX + arrowW / 2f, rsBoxY + halfArrowH / 2f, 4, true, TEXT_COLOR);
+        NVGWrapper.drawRect(nvg, arrowX, rsBoxY, arrowW, halfArrowH, upHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+        NVGWrapper.drawRectOutline(nvg, arrowX, rsBoxY, arrowW, halfArrowH, 1, color(CONTROL_INPUT_SECONDARY));
+        drawTriangle(nvg, arrowX + arrowW / 2f, rsBoxY + halfArrowH / 2f, 4, true, color(TEXT_PRIMARY));
 
         // Down arrow button
         boolean downHovered = isHovered(nvgMouseX, nvgMouseY, arrowX, rsBoxY + halfArrowH, arrowW, halfArrowH);
         NVGWrapper.drawRect(
-                nvg, arrowX, rsBoxY + halfArrowH, arrowW, halfArrowH, downHovered ? DROPDOWN_HOVER : MODAL_DROPDOWN_BG);
-        NVGWrapper.drawRectOutline(nvg, arrowX, rsBoxY + halfArrowH, arrowW, halfArrowH, 1, MODAL_DROPDOWN_BORDER);
-        drawTriangle(nvg, arrowX + arrowW / 2f, rsBoxY + halfArrowH + halfArrowH / 2f, 4, false, TEXT_COLOR);
+                nvg, arrowX, rsBoxY + halfArrowH, arrowW, halfArrowH, downHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+        NVGWrapper.drawRectOutline(nvg, arrowX, rsBoxY + halfArrowH, arrowW, halfArrowH, 1, color(CONTROL_INPUT_SECONDARY));
+        drawTriangle(nvg, arrowX + arrowW / 2f, rsBoxY + halfArrowH + halfArrowH / 2f, 4, false, color(TEXT_PRIMARY));
 
         float regionLabelY = rsBoxY + MODAL_DROPDOWN_H + 18;
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MODAL_LABEL_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var regionLabelColor = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        var regionLabelColor = NVGContext.nvgColor(color(TEXT_MUTED));
         nvgFillColor(nvg, regionLabelColor);
         nvgText(nvg, modalX + MODAL_WIDTH / 2f, regionLabelY, "Region");
         regionLabelColor.free();
@@ -1507,7 +1442,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     regionButtonsY,
                     REGION_BUTTON_W,
                     MODAL_DROPDOWN_H,
-                    regionSelected ? TYPE_ICON_SELECTED : (regionHovered ? DROPDOWN_HOVER : MODAL_DROPDOWN_BG));
+                    regionSelected ? color(ACCENT_PRIMARY, 120) : (regionHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT)));
             NVGWrapper.drawRectOutline(
                     nvg,
                     regionX,
@@ -1515,12 +1450,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     REGION_BUTTON_W,
                     MODAL_DROPDOWN_H,
                     1,
-                    regionSelected ? SEARCH_BORDER : MODAL_DROPDOWN_BORDER);
+                    regionSelected ? color(CONTROL_BORDER) : color(CONTROL_INPUT_SECONDARY));
 
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, MODAL_LABEL_SIZE);
             nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            var regionTextColor = NVGContext.nvgColor(TEXT_COLOR);
+            var regionTextColor = NVGContext.nvgColor(color(TEXT_PRIMARY));
             nvgFillColor(nvg, regionTextColor);
             nvgText(nvg, regionX + REGION_BUTTON_W / 2f, regionButtonsY + MODAL_DROPDOWN_H / 2f, region.name());
             regionTextColor.free();
@@ -1533,8 +1468,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float checkboxX = modalX + MODAL_WIDTH / 2f - 72;
             float checkboxY = strictLabelY - checkboxSize / 2f;
 
-            Color checkboxBg = modalStrictRoles ? TYPE_ICON_SELECTED : MODAL_DROPDOWN_BG;
-            Color checkboxBorder = modalStrictRoles ? SEARCH_BORDER : MODAL_DROPDOWN_BORDER;
+            Color checkboxBg = modalStrictRoles ? color(ACCENT_PRIMARY, 120) : color(CONTROL_INPUT);
+            Color checkboxBorder = modalStrictRoles ? color(CONTROL_BORDER) : color(CONTROL_INPUT_SECONDARY);
 
             NVGWrapper.drawRect(nvg, checkboxX, checkboxY, checkboxSize, checkboxSize, checkboxBg);
             NVGWrapper.drawRectOutline(nvg, checkboxX, checkboxY, checkboxSize, checkboxSize, 1, checkboxBorder);
@@ -1547,13 +1482,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                         checkboxY + innerInset,
                         checkboxSize - innerInset * 2,
                         checkboxSize - innerInset * 2,
-                        TEXT_COLOR);
+                        color(TEXT_PRIMARY));
             }
 
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, MODAL_LABEL_SIZE);
             nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            var strictLabelCol = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+            var strictLabelCol = NVGContext.nvgColor(color(TEXT_MUTED));
             nvgFillColor(nvg, strictLabelCol);
             nvgText(nvg, checkboxX + checkboxSize + 8, strictLabelY, "Strict roles");
             strictLabelCol.free();
@@ -1570,11 +1505,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 createBtnY,
                 MODAL_BUTTON_W,
                 MODAL_BUTTON_H,
-                createHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
+                createHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
 
         nvgFontSize(nvg, MODAL_LABEL_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var cbc = NVGContext.nvgColor(TEXT_COLOR);
+        var cbc = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, cbc);
         nvgText(nvg, createBtnX + MODAL_BUTTON_W / 2f, createBtnY + MODAL_BUTTON_H / 2f, createLabel);
         cbc.free();
@@ -1598,15 +1533,15 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float overlayX = modalX + (MODAL_WIDTH - overlayW) / 2f;
         float overlayY = modalY + (PARTY_MODAL_HEIGHT - overlayH) / 2f;
 
-        NVGWrapper.drawRect(nvg, modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, MODAL_OVERLAY);
-        NVGWrapper.drawRect(nvg, overlayX, overlayY, overlayW, overlayH, MODAL_BG);
-        NVGWrapper.drawRectOutline(nvg, overlayX, overlayY, overlayW, overlayH, 1, MODAL_BORDER);
+        NVGWrapper.drawRect(nvg, modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, color(BACKGROUND_MODAL_OVERLAY));
+        NVGWrapper.drawRect(nvg, overlayX, overlayY, overlayW, overlayH, color(BACKGROUND_BODY_OPAQUE));
+        NVGWrapper.drawRectOutline(nvg, overlayX, overlayY, overlayW, overlayH, 1, color(ACCENT_SECONDARY));
 
         // Title
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MODAL_TITLE_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var tc = NVGContext.nvgColor(TEXT_COLOR);
+        var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, tc);
         nvgText(nvg, overlayX + overlayW / 2f, overlayY + 18, "Tag selection");
         tc.free();
@@ -1618,10 +1553,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Active tags box
         float activeBoxY = overlayY + 34;
-        NVGWrapper.drawRect(nvg, boxX, activeBoxY, boxW, boxH, FILTER_BOX_BG);
+        NVGWrapper.drawRect(nvg, boxX, activeBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
         nvgFontSize(nvg, 9);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-        var al = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        var al = NVGContext.nvgColor(color(TEXT_MUTED));
         nvgFillColor(nvg, al);
         nvgText(nvg, boxX + 4, activeBoxY + 2, "Active tags");
         al.free();
@@ -1639,10 +1574,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Inactive tags box
         float inactiveBoxY = activeBoxY + boxH + 8;
-        NVGWrapper.drawRect(nvg, boxX, inactiveBoxY, boxW, boxH, FILTER_BOX_BG);
+        NVGWrapper.drawRect(nvg, boxX, inactiveBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
         nvgFontSize(nvg, 9);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-        var il = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        var il = NVGContext.nvgColor(color(TEXT_MUTED));
         nvgFillColor(nvg, il);
         nvgText(nvg, boxX + 4, inactiveBoxY + 2, "Inactive tags");
         il.free();
@@ -1664,11 +1599,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float backX = overlayX + (overlayW - backW) / 2f;
         float backY = overlayY + overlayH - backH - 8;
         boolean backHovered = isHovered(nvgMouseX, nvgMouseY, backX, backY, backW, backH);
-        NVGWrapper.drawRect(nvg, backX, backY, backW, backH, backHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
+        NVGWrapper.drawRect(nvg, backX, backY, backW, backH, backHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
 
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var bc = NVGContext.nvgColor(TEXT_COLOR);
+        var bc = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, bc);
         nvgText(nvg, backX + backW / 2f, backY + backH / 2f, "< Back");
         bc.free();
@@ -1677,21 +1612,21 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     // ── Filter+ Screen ──
 
     private void renderFilterScreen(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
-        NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, MODAL_OVERLAY);
+        NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
 
         float filterW = TAG_OVERLAY_WIDTH;
         float filterH = TAG_OVERLAY_HEIGHT;
         float filterX = panelX + (panelWidth - filterW) / 2f;
         float filterY = (screenHeight - filterH) / 2f;
 
-        NVGWrapper.drawRect(nvg, filterX, filterY, filterW, filterH, MODAL_BG);
-        NVGWrapper.drawRectOutline(nvg, filterX, filterY, filterW, filterH, 1, MODAL_BORDER);
+        NVGWrapper.drawRect(nvg, filterX, filterY, filterW, filterH, color(BACKGROUND_BODY_OPAQUE));
+        NVGWrapper.drawRectOutline(nvg, filterX, filterY, filterW, filterH, 1, color(ACCENT_SECONDARY));
 
         // Title
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MODAL_TITLE_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var tc = NVGContext.nvgColor(TEXT_COLOR);
+        var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, tc);
         nvgText(nvg, filterX + filterW / 2f, filterY + 18, "Tag filter selection");
         tc.free();
@@ -1703,10 +1638,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Active filters box
         float activeBoxY = filterY + 34;
-        NVGWrapper.drawRect(nvg, boxX, activeBoxY, boxW, boxH, FILTER_BOX_BG);
+        NVGWrapper.drawRect(nvg, boxX, activeBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
         nvgFontSize(nvg, 9);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-        var al = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        var al = NVGContext.nvgColor(color(TEXT_MUTED));
         nvgFillColor(nvg, al);
         nvgText(nvg, boxX + 4, activeBoxY + 2, "Active filters");
         al.free();
@@ -1724,10 +1659,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Inactive filters box
         float inactiveBoxY = activeBoxY + boxH + 8;
-        NVGWrapper.drawRect(nvg, boxX, inactiveBoxY, boxW, boxH, FILTER_BOX_BG);
+        NVGWrapper.drawRect(nvg, boxX, inactiveBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
         nvgFontSize(nvg, 9);
         nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-        var il = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        var il = NVGContext.nvgColor(color(TEXT_MUTED));
         nvgFillColor(nvg, il);
         nvgText(nvg, boxX + 4, inactiveBoxY + 2, "Inactive filters");
         il.free();
@@ -1749,11 +1684,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float backX = filterX + (filterW - backW) / 2f;
         float backY = filterY + filterH - backH - 8;
         boolean backHovered = isHovered(nvgMouseX, nvgMouseY, backX, backY, backW, backH);
-        NVGWrapper.drawRect(nvg, backX, backY, backW, backH, backHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
+        NVGWrapper.drawRect(nvg, backX, backY, backW, backH, backHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
 
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var bc = NVGContext.nvgColor(TEXT_COLOR);
+        var bc = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, bc);
         nvgText(nvg, backX + backW / 2f, backY + backH / 2f, "< Back");
         bc.free();
@@ -1830,12 +1765,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             }
 
             boolean chipHovered = isHovered(nvgMouseX, nvgMouseY, curX, curY, chipW, chipH);
-            NVGWrapper.drawRoundedRect(nvg, curX, curY, chipW, chipH, 4, chipHovered ? TAG_CHIP_HOVER : TAG_CHIP_BG);
+            NVGWrapper.drawRoundedRect(nvg, curX, curY, chipW, chipH, 4, chipHovered ? color(CONTROL_INPUT_HOVER) : color(ACCENT_DIVIDER, 220));
 
             nvgFontFace(nvg, fontName);
             nvgFontSize(nvg, TAG_CHIP_FONT_SIZE);
             nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            Color chipTextColor = RAID_TYPE_SET.contains(tag) ? TITLE_COLOR : TEXT_COLOR;
+            Color chipTextColor = RAID_TYPE_SET.contains(tag) ? color(ACCENT_PRIMARY) : color(TEXT_PRIMARY);
             var cc = NVGContext.nvgColor(chipTextColor);
             nvgFillColor(nvg, cc);
             nvgText(nvg, chipCenterX, chipCenterY, label);
@@ -2347,18 +2282,18 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     }
 
     private void renderInviteModal(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
-        NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, MODAL_OVERLAY);
+        NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
 
         float inviteModalX = panelX + (panelWidth - MODAL_WIDTH) / 2f;
         float inviteModalY = (screenHeight - MODAL_HEIGHT) / 2f;
 
-        NVGWrapper.drawRect(nvg, inviteModalX, inviteModalY, MODAL_WIDTH, MODAL_HEIGHT, MODAL_BG);
-        NVGWrapper.drawRectOutline(nvg, inviteModalX, inviteModalY, MODAL_WIDTH, MODAL_HEIGHT, 1, MODAL_BORDER);
+        NVGWrapper.drawRect(nvg, inviteModalX, inviteModalY, MODAL_WIDTH, MODAL_HEIGHT, color(BACKGROUND_BODY_OPAQUE));
+        NVGWrapper.drawRectOutline(nvg, inviteModalX, inviteModalY, MODAL_WIDTH, MODAL_HEIGHT, 1, color(ACCENT_SECONDARY));
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MODAL_TITLE_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var titleColor = NVGContext.nvgColor(TEXT_COLOR);
+        var titleColor = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, titleColor);
         nvgText(nvg, inviteModalX + MODAL_WIDTH / 2f, inviteModalY + 22, "Invite Player");
         titleColor.free();
@@ -2366,7 +2301,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float labelY = inviteModalY + 64;
         nvgFontSize(nvg, MODAL_LABEL_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var labelColor = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        var labelColor = NVGContext.nvgColor(color(TEXT_MUTED));
         nvgFillColor(nvg, labelColor);
         nvgText(nvg, inviteModalX + MODAL_WIDTH / 2f, labelY, "Username");
         labelColor.free();
@@ -2377,13 +2312,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float inputY = labelY + 12;
 
         NVGWrapper.drawRect(
-                nvg, inputX, inputY, inputW, inputH, inviteUsernameFocused ? SEARCH_ACTIVE_BG : MODAL_DROPDOWN_BG);
+                nvg, inputX, inputY, inputW, inputH, inviteUsernameFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
         NVGWrapper.drawRectOutline(
-                nvg, inputX, inputY, inputW, inputH, 1, inviteUsernameFocused ? SEARCH_BORDER : MODAL_DROPDOWN_BORDER);
+                nvg, inputX, inputY, inputW, inputH, 1, inviteUsernameFocused ? color(CONTROL_BORDER) : color(CONTROL_INPUT_SECONDARY));
 
         String inputText =
                 inviteUsernameInput.isBlank() && !inviteUsernameFocused ? "Enter username" : inviteUsernameInput;
-        Color inputColor = inviteUsernameInput.isBlank() && !inviteUsernameFocused ? PARTY_TYPE_TEXT : TEXT_COLOR;
+        Color inputColor = inviteUsernameInput.isBlank() && !inviteUsernameFocused ? color(TEXT_MUTED) : color(TEXT_PRIMARY);
 
         nvgFontFace(nvg, fontName);
         nvgFontSize(nvg, MODAL_LABEL_SIZE);
@@ -2402,11 +2337,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 sendBtnY,
                 MODAL_BUTTON_W,
                 MODAL_BUTTON_H,
-                sendHovered ? NEW_PARTY_HOVER : NEW_PARTY_COLOR);
+                sendHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
 
         nvgFontSize(nvg, MEMBER_FONT_SIZE);
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var sendTextColor = NVGContext.nvgColor(TEXT_COLOR);
+        var sendTextColor = NVGContext.nvgColor(color(TEXT_PRIMARY));
         nvgFillColor(nvg, sendTextColor);
         nvgText(nvg, sendBtnX + MODAL_BUTTON_W / 2f, sendBtnY + MODAL_BUTTON_H / 2f, "Send");
         sendTextColor.free();

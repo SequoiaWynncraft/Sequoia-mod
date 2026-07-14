@@ -1,5 +1,9 @@
 package com.seqwawa.seq.ui;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.theme.UiColor.*;
+
+import java.awt.Color;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -11,7 +15,6 @@ import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 
-import java.awt.*;
 
 public class UpdatePromptScreen extends Screen {
     private static final float PANEL_WIDTH = 340;
@@ -19,13 +22,6 @@ public class UpdatePromptScreen extends Screen {
     private static final float BUTTON_WIDTH = 96;
     private static final float BUTTON_HEIGHT = 22;
     private static final float BUTTON_SPACING = 12;
-
-    private static final Color BG_OVERLAY = new Color(0, 0, 0, 150);
-    private static final Color PANEL_BG = new Color(24, 24, 34, 240);
-    private static final Color TITLE_COLOR = new Color(190, 150, 255, 255);
-    private static final Color TEXT_COLOR = new Color(225, 225, 235, 255);
-    private static final Color BUTTON_COLOR = new Color(55, 55, 70, 220);
-    private static final Color BUTTON_HOVER = new Color(85, 70, 130, 230);
 
     private final Screen parent;
     private final String installedVersion;
@@ -52,20 +48,20 @@ public class UpdatePromptScreen extends Screen {
             float screenWidth = canvas.metrics().width();
             float screenHeight = canvas.metrics().height();
 
-            canvas.fillRect(0, 0, screenWidth, screenHeight, BG_OVERLAY);
+            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY, 150));
 
             float panelX = (screenWidth - PANEL_WIDTH) / 2f;
             float panelY = (screenHeight - PANEL_HEIGHT) / 2f;
-            canvas.fillRect(panelX, panelY, PANEL_WIDTH, PANEL_HEIGHT, PANEL_BG);
+            canvas.fillRect(panelX, panelY, PANEL_WIDTH, PANEL_HEIGHT, color(BACKGROUND_BODY_OPAQUE, 240));
 
             String fontName = SeqClient.getFontManager().getSelectedFont();
-            drawCenteredText(canvas, fontName, 16, TITLE_COLOR, panelX + PANEL_WIDTH / 2f, panelY + 26,
+            drawCenteredText(canvas, fontName, 16, color(ACCENT_PRIMARY_HOVER), panelX + PANEL_WIDTH / 2f, panelY + 26,
                     "Sequoia update available");
-            drawCenteredText(canvas, fontName, 12, TEXT_COLOR, panelX + PANEL_WIDTH / 2f, panelY + 62,
+            drawCenteredText(canvas, fontName, 12, color(TEXT_SECONDARY), panelX + PANEL_WIDTH / 2f, panelY + 62,
                     "Current: " + installedVersion + "   Latest: " + release.tagName());
-            drawCenteredText(canvas, fontName, 12, TEXT_COLOR, panelX + PANEL_WIDTH / 2f, panelY + 82,
+            drawCenteredText(canvas, fontName, 12, color(TEXT_SECONDARY), panelX + PANEL_WIDTH / 2f, panelY + 82,
                     "Update downloads and installs the new jar.");
-            drawCenteredText(canvas, fontName, 12, TEXT_COLOR, panelX + PANEL_WIDTH / 2f, panelY + 100,
+            drawCenteredText(canvas, fontName, 12, color(TEXT_SECONDARY), panelX + PANEL_WIDTH / 2f, panelY + 100,
                     "Restart is required after install.");
 
             float buttonsTotalWidth = BUTTON_WIDTH * 3 + BUTTON_SPACING * 2;
@@ -82,8 +78,8 @@ public class UpdatePromptScreen extends Screen {
         boolean hovered = nvgMouseX >= x && nvgMouseX <= x + BUTTON_WIDTH
                 && nvgMouseY >= y && nvgMouseY <= y + BUTTON_HEIGHT;
 
-        canvas.fillRect(x, y, BUTTON_WIDTH, BUTTON_HEIGHT, hovered ? BUTTON_HOVER : BUTTON_COLOR);
-        drawCenteredText(canvas, fontName, 11, TEXT_COLOR,
+        canvas.fillRect(x, y, BUTTON_WIDTH, BUTTON_HEIGHT, hovered ? color(ACCENT_PRIMARY_DARK_HOVER, 230) : color(CONTROL_INPUT_HOVER, 220));
+        drawCenteredText(canvas, fontName, 11, color(TEXT_SECONDARY),
                 x + BUTTON_WIDTH / 2f, y + BUTTON_HEIGHT / 2f, label);
     }
 

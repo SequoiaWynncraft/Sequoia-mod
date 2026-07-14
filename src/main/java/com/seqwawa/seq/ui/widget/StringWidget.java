@@ -1,5 +1,9 @@
 package com.seqwawa.seq.ui.widget;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.theme.UiColor.*;
+
+import java.awt.Color;
 import net.minecraft.client.input.KeyEvent;
 import org.lwjgl.glfw.GLFW;
 import com.seqwawa.seq.client.SeqClient;
@@ -8,19 +12,11 @@ import com.seqwawa.seq.utils.TextInputHelper;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 
-import java.awt.*;
 
 public class StringWidget extends SettingWidget<Setting.StringSetting> {
     private static final float FONT_SIZE = 12;
     private static final float TEXT_BOX_HEIGHT = 18;
     private static final float TEXT_BOX_MARGIN = 8;
-
-    private static final Color LABEL_COLOR = new Color(220, 220, 220, 255);
-    private static final Color TEXT_BOX_BG = new Color(30, 30, 40, 200);
-    private static final Color TEXT_BOX_ACTIVE = new Color(50, 50, 70, 220);
-    private static final Color TEXT_BOX_BORDER = new Color(130, 100, 200, 180);
-    private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
-    private static final Color PLACEHOLDER_COLOR = new Color(120, 120, 140, 180);
 
     private boolean editing = false;
     private String editBuffer = "";
@@ -37,17 +33,17 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
         String fontName = SeqClient.getFontManager().getSelectedFont();
 
         canvas.drawText(getDisplayName(), x + TEXT_BOX_MARGIN, y + 2,
-                textStyle(fontName, LABEL_COLOR, UiCanvas.VerticalAlign.TOP));
+                textStyle(fontName, color(TEXT_SECONDARY), UiCanvas.VerticalAlign.TOP));
 
         // Text box
         float boxX = x + TEXT_BOX_MARGIN;
         float boxY = y + 18;
         float boxWidth = width - TEXT_BOX_MARGIN * 2;
 
-        Color boxBg = editing ? TEXT_BOX_ACTIVE : TEXT_BOX_BG;
+        Color boxBg = editing ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT, 200);
         canvas.fillRect(boxX, boxY, boxWidth, TEXT_BOX_HEIGHT, boxBg);
         if (editing) {
-            canvas.strokeRect(boxX, boxY, boxWidth, TEXT_BOX_HEIGHT, 1, TEXT_BOX_BORDER);
+            canvas.strokeRect(boxX, boxY, boxWidth, TEXT_BOX_HEIGHT, 1, color(CONTROL_BORDER));
         }
 
         String displayText = editing ? editBuffer : setting.getValue();
@@ -58,7 +54,7 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
         canvas.scissor(boxX, boxY, boxWidth, TEXT_BOX_HEIGHT);
         String renderText = isEmpty ? "..." : displayText;
         canvas.drawText(renderText, boxX + 4, boxY + TEXT_BOX_HEIGHT / 2f,
-                textStyle(fontName, isEmpty ? PLACEHOLDER_COLOR : TEXT_COLOR, UiCanvas.VerticalAlign.MIDDLE));
+                textStyle(fontName, isEmpty ? color(TEXT_DISABLED, 180) : color(TEXT_PRIMARY), UiCanvas.VerticalAlign.MIDDLE));
         canvas.restore();
 
         // Draw cursor separately so it doesn't affect text width
@@ -66,7 +62,7 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
             float textW = UiRenderer.measureText(
                     editBuffer.isEmpty() ? " " : editBuffer, fontName, FONT_SIZE).width();
             float cursorX = boxX + 4 + (editBuffer.isEmpty() ? 0 : textW) + 1;
-            canvas.fillRect(cursorX, boxY + 3, 1, TEXT_BOX_HEIGHT - 6, TEXT_COLOR);
+            canvas.fillRect(cursorX, boxY + 3, 1, TEXT_BOX_HEIGHT - 6, color(TEXT_PRIMARY));
         }
     }
 

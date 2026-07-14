@@ -1,5 +1,8 @@
 package com.seqwawa.seq.ui;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.theme.UiColor.*;
+
 import java.awt.Color;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -36,26 +39,6 @@ public class ConnectionScreen extends Screen {
     private static final float NOTE_OFFSET = 22;
     private static final float AUTH_BUTTON_WIDTH = 118;
 
-    private static final Color BG_COLOR = new Color(10, 10, 16, 100);
-    private static final Color SIDEBAR_COLOR = new Color(18, 18, 26, 200);
-    private static final Color PANEL_COLOR = new Color(22, 22, 30, 100);
-    private static final Color HEADER_COLOR = new Color(26, 26, 36, 110);
-    private static final Color TITLE_COLOR = new Color(160, 130, 220, 255);
-    private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
-    private static final Color SUBTEXT_COLOR = new Color(180, 180, 200, 255);
-    private static final Color DIVIDER_COLOR = new Color(40, 40, 55, 255);
-    private static final Color SEARCH_BG = new Color(30, 30, 40, 255);
-    private static final Color SEARCH_PLACEHOLDER = new Color(100, 100, 120, 200);
-    private static final Color SIDEBAR_BUTTON_COLOR = new Color(30, 30, 42, 110);
-    private static final Color SIDEBAR_BUTTON_HOVER = new Color(42, 42, 58, 120);
-    private static final Color SIDEBAR_BUTTON_ACTIVE = new Color(80, 50, 140, 120);
-    private static final Color PRIMARY_BUTTON = new Color(160, 130, 220, 255);
-    private static final Color PRIMARY_BUTTON_HOVER = new Color(176, 148, 236, 255);
-    private static final Color DANGER_BUTTON = new Color(220, 45, 60, 255);
-    private static final Color DANGER_BUTTON_HOVER = new Color(236, 65, 80, 255);
-    private static final Color CONNECTED_COLOR = new Color(0, 225, 90, 255);
-    private static final Color DISCONNECTED_COLOR = new Color(235, 55, 55, 255);
-
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
 
     private float nvgMouseX;
@@ -79,22 +62,22 @@ public class ConnectionScreen extends Screen {
             float panelWidth = screenWidth - SIDEBAR_WIDTH;
             String fontName = SeqClient.getFontManager().getSelectedFont();
 
-            canvas.fillRect(0, 0, screenWidth, screenHeight, BG_COLOR);
+            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_OVERLAY));
             renderSidebar(canvas, fontName, screenHeight);
 
-            canvas.fillRect(panelX, 0, panelWidth, screenHeight, PANEL_COLOR);
-            canvas.fillRect(panelX, 0, panelWidth, HEADER_HEIGHT, HEADER_COLOR);
+            canvas.fillRect(panelX, 0, panelWidth, screenHeight, color(BACKGROUND_BODY));
+            canvas.fillRect(panelX, 0, panelWidth, HEADER_HEIGHT, color(BACKGROUND_HEADER));
             renderHeader(canvas, fontName, panelX, panelWidth);
             renderStatusPanel(canvas, fontName, panelX, panelWidth, screenHeight);
         });
     }
 
     private void renderSidebar(UiCanvas canvas, String fontName, float screenHeight) {
-        canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
-        drawText(canvas, fontName, SIDEBAR_TITLE_SIZE, TITLE_COLOR,
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(BACKGROUND_SIDEBAR));
+        drawText(canvas, fontName, SIDEBAR_TITLE_SIZE, color(ACCENT_PRIMARY),
                 UiCanvas.HorizontalAlign.CENTER, SIDEBAR_WIDTH / 2f, 22, "Sequoia");
 
-        canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, DIVIDER_COLOR);
+        canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_DIVIDER));
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
@@ -110,10 +93,10 @@ public class ConnectionScreen extends Screen {
     private void renderHeader(UiCanvas canvas, String fontName, float panelX, float panelWidth) {
         float searchX = panelX + SEARCH_BAR_MARGIN;
         float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
-        canvas.fillRect(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, SEARCH_BG);
-        drawText(canvas, fontName, 12, SEARCH_PLACEHOLDER, UiCanvas.HorizontalAlign.LEFT,
+        canvas.fillRect(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, color(CONTROL_INPUT));
+        drawText(canvas, fontName, 12, color(TEXT_DISABLED), UiCanvas.HorizontalAlign.LEFT,
                 searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, "Search...");
-        drawText(canvas, fontName, TITLE_FONT_SIZE, TITLE_COLOR, UiCanvas.HorizontalAlign.RIGHT,
+        drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY), UiCanvas.HorizontalAlign.RIGHT,
                 panelX + panelWidth - SEARCH_BAR_MARGIN, HEADER_HEIGHT / 2f, "Connection");
     }
 
@@ -141,7 +124,7 @@ public class ConnectionScreen extends Screen {
                 connectionLineY,
                 "Connection status:",
                 connected ? "Connected" : "Disconnected",
-                connected ? CONNECTED_COLOR : DISCONNECTED_COLOR);
+                connected ? color(CONTROL_SUCCESS) : color(CONTROL_DANGER));
         if (uptime != null && connected) {
             drawMetaLine(canvas, fontName, baseX, connectionMetaY, "Uptime: " + uptime);
         }
@@ -152,8 +135,8 @@ public class ConnectionScreen extends Screen {
                 fontName,
                 connectionButton,
                 connected ? "Disconnect" : "Connect",
-                connected ? DANGER_BUTTON : PRIMARY_BUTTON,
-                connected ? DANGER_BUTTON_HOVER : PRIMARY_BUTTON_HOVER);
+                connected ? color(CONTROL_DANGER) : color(ACCENT_PRIMARY),
+                connected ? color(CONTROL_DANGER_HOVER) : color(ACCENT_PRIMARY_HOVER));
 
         drawStatusLine(
                 canvas,
@@ -162,7 +145,7 @@ public class ConnectionScreen extends Screen {
                 authLineY,
                 "Backend session:",
                 authenticated ? "Ready" : "Not ready",
-                authenticated ? CONNECTED_COLOR : DISCONNECTED_COLOR);
+                authenticated ? color(CONTROL_SUCCESS) : color(CONTROL_DANGER));
         drawMetaLine(
                 canvas,
                 fontName,
@@ -180,11 +163,11 @@ public class ConnectionScreen extends Screen {
                     fontName,
                     authButton,
                     "Clear session",
-                    DANGER_BUTTON,
-                    DANGER_BUTTON_HOVER);
+                    color(CONTROL_DANGER),
+                    color(CONTROL_DANGER_HOVER));
         }
 
-        canvas.fillRect(baseX, dividerY, panelWidth - 68, 1, DIVIDER_COLOR);
+        canvas.fillRect(baseX, dividerY, panelWidth - 68, 1, color(ACCENT_DIVIDER));
         drawMetaLine(
                 canvas,
                 fontName,
@@ -195,21 +178,21 @@ public class ConnectionScreen extends Screen {
 
     private void drawStatusLine(
             UiCanvas canvas, String fontName, float x, float y, String label, String value, Color valueColor) {
-        drawText(canvas, fontName, LABEL_FONT_SIZE, TEXT_COLOR, UiCanvas.HorizontalAlign.LEFT, x, y, label);
+        drawText(canvas, fontName, LABEL_FONT_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.LEFT, x, y, label);
         float valueX = x + measureTextWidth(fontName, LABEL_FONT_SIZE, label) + 10;
         drawText(canvas, fontName, LABEL_FONT_SIZE, valueColor, UiCanvas.HorizontalAlign.LEFT, valueX, y, value);
     }
 
     private void drawMetaLine(UiCanvas canvas, String fontName, float x, float y, String text) {
-        drawText(canvas, fontName, META_FONT_SIZE, SUBTEXT_COLOR, UiCanvas.HorizontalAlign.LEFT, x, y, text);
+        drawText(canvas, fontName, META_FONT_SIZE, color(TEXT_MUTED), UiCanvas.HorizontalAlign.LEFT, x, y, text);
     }
 
     private void drawSidebarButton(
             UiCanvas canvas, String fontName, float x, float y, float w, String label, boolean active) {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
-        Color bgColor = active ? SIDEBAR_BUTTON_ACTIVE : (hovered ? SIDEBAR_BUTTON_HOVER : SIDEBAR_BUTTON_COLOR);
+        Color bgColor = active ? color(ACCENT_PRIMARY_DARK_HOVER, 120) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
         canvas.fillRect(x, y, w, SIDEBAR_BUTTON_HEIGHT, bgColor);
-        drawText(canvas, fontName, SIDEBAR_BUTTON_SIZE, TEXT_COLOR, UiCanvas.HorizontalAlign.CENTER,
+        drawText(canvas, fontName, SIDEBAR_BUTTON_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
                 x + w / 2f, y + SIDEBAR_BUTTON_HEIGHT / 2f, label);
     }
 
@@ -217,7 +200,7 @@ public class ConnectionScreen extends Screen {
             UiCanvas canvas, String fontName, ButtonBounds bounds, String label, Color base, Color hover) {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, bounds.x(), bounds.y(), bounds.w(), bounds.h());
         canvas.fillRect(bounds.x(), bounds.y(), bounds.w(), bounds.h(), hovered ? hover : base);
-        drawText(canvas, fontName, VALUE_FONT_SIZE - 2, TEXT_COLOR, UiCanvas.HorizontalAlign.CENTER,
+        drawText(canvas, fontName, VALUE_FONT_SIZE - 2, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
                 bounds.x() + bounds.w() / 2f, bounds.y() + bounds.h() / 2f, label);
     }
 

@@ -1,5 +1,9 @@
 package com.seqwawa.seq.ui;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.theme.UiColor.*;
+
+import java.awt.Color;
 import com.seqwawa.seq.ui.widget.BooleanWidget;
 import com.seqwawa.seq.ui.widget.EnumWidget;
 import com.seqwawa.seq.ui.widget.SettingWidget;
@@ -19,7 +23,6 @@ import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 
-import java.awt.*;
 import java.util.*;
 import java.util.List;
 
@@ -46,29 +49,6 @@ public class SettingsScreen extends Screen {
     private static final float SCROLL_SPEED = 12;
 
     // Colors
-    private static final Color BG_COLOR = new Color(10, 10, 16, 100);
-    private static final Color SIDEBAR_COLOR = new Color(18, 18, 26, 200);
-    private static final Color PANEL_COLOR = new Color(22, 22, 30, 100);
-    private static final Color HEADER_COLOR = new Color(26, 26, 36, 110);
-    private static final Color CATEGORY_COLOR = new Color(30, 30, 42, 110);
-    private static final Color CATEGORY_HOVER = new Color(38, 38, 52, 120);
-    private static final Color TITLE_COLOR = new Color(160, 130, 220, 255);
-    private static final Color CATEGORY_TEXT = new Color(180, 180, 200, 255);
-    private static final Color ARROW_COLOR = new Color(140, 140, 160, 255);
-    private static final Color SCROLLBAR_TRACK = new Color(30, 30, 42, 255);
-    private static final Color SCROLLBAR_THUMB = new Color(160, 130, 220, 150);
-    private static final Color SETTING_BG = new Color(22, 22, 30, 100);
-    private static final Color SETTING_BG_ALT = new Color(26, 26, 36, 100);
-    private static final Color SIDEBAR_BUTTON_COLOR = new Color(30, 30, 42, 110);
-    private static final Color SIDEBAR_BUTTON_HOVER = new Color(42, 42, 58, 120);
-    private static final Color SIDEBAR_BUTTON_ACTIVE = new Color(80, 50, 140, 120);
-    private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
-    private static final Color DIVIDER_COLOR = new Color(40, 40, 55, 255);
-    private static final Color SEARCH_BG = new Color(30, 30, 40, 255);
-    private static final Color SEARCH_ACTIVE_BG = new Color(40, 40, 55, 255);
-    private static final Color SEARCH_BORDER = new Color(130, 100, 200, 180);
-    private static final Color SEARCH_PLACEHOLDER = new Color(100, 100, 120, 200);
-
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
 
     private final Screen parent;
@@ -156,17 +136,17 @@ public class SettingsScreen extends Screen {
             String fontName = SeqClient.getFontManager().getSelectedFont();
 
             // Fill entire screen
-            canvas.fillRect(0, 0, screenWidth, screenHeight, BG_COLOR);
+            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_OVERLAY));
 
             // === Left Sidebar (full height) ===
-            canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
+            canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(BACKGROUND_SIDEBAR));
 
             // Sidebar title
-            drawText(canvas, fontName, SIDEBAR_TITLE_SIZE, TITLE_COLOR, UiCanvas.HorizontalAlign.CENTER,
+            drawText(canvas, fontName, SIDEBAR_TITLE_SIZE, color(ACCENT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
                     SIDEBAR_WIDTH / 2f, 22, "Sequoia");
 
             // Divider under title
-            canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, DIVIDER_COLOR);
+            canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_DIVIDER));
 
             // Sidebar buttons
             float btnX = SIDEBAR_PADDING;
@@ -187,31 +167,31 @@ public class SettingsScreen extends Screen {
             float panelWidth = screenWidth - SIDEBAR_WIDTH;
             float panelHeight = screenHeight;
 
-            canvas.fillRect(panelX, panelY, panelWidth, panelHeight, PANEL_COLOR);
+            canvas.fillRect(panelX, panelY, panelWidth, panelHeight, color(BACKGROUND_BODY));
 
             // Header bar
-            canvas.fillRect(panelX, panelY, panelWidth, HEADER_HEIGHT, HEADER_COLOR);
+            canvas.fillRect(panelX, panelY, panelWidth, HEADER_HEIGHT, color(BACKGROUND_HEADER));
 
             // Search bar (top left of header)
             searchCursorBlink++;
             float searchX = panelX + SEARCH_BAR_MARGIN;
             float searchY = panelY + (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
 
-            Color searchBg = searchFocused ? SEARCH_ACTIVE_BG : SEARCH_BG;
+            Color searchBg = searchFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
             canvas.fillRect(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, searchBg);
             if (searchFocused) {
                 canvas.strokeRect(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, 1,
-                        SEARCH_BORDER);
+                        color(CONTROL_BORDER));
             }
 
             canvas.save();
             canvas.scissor(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT);
 
             if (searchQuery.isEmpty() && !searchFocused) {
-                drawText(canvas, fontName, SEARCH_FONT_SIZE, SEARCH_PLACEHOLDER, UiCanvas.HorizontalAlign.LEFT,
+                drawText(canvas, fontName, SEARCH_FONT_SIZE, color(TEXT_DISABLED), UiCanvas.HorizontalAlign.LEFT,
                         searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, "Search...");
             } else {
-                drawText(canvas, fontName, SEARCH_FONT_SIZE, TEXT_COLOR, UiCanvas.HorizontalAlign.LEFT,
+                drawText(canvas, fontName, SEARCH_FONT_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.LEFT,
                         searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, searchQuery);
             }
 
@@ -223,11 +203,11 @@ public class SettingsScreen extends Screen {
                         ? 0
                         : UiRenderer.measureText(searchQuery, fontName, SEARCH_FONT_SIZE).width();
                 float cursorDrawX = searchX + 6 + textW + 1;
-                canvas.fillRect(cursorDrawX, searchY + 3, 1, SEARCH_BAR_HEIGHT - 6, TEXT_COLOR);
+                canvas.fillRect(cursorDrawX, searchY + 3, 1, SEARCH_BAR_HEIGHT - 6, color(TEXT_PRIMARY));
             }
 
             // Title (right side of header)
-            drawText(canvas, fontName, TITLE_FONT_SIZE, TITLE_COLOR, UiCanvas.HorizontalAlign.RIGHT,
+            drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY), UiCanvas.HorizontalAlign.RIGHT,
                     panelX + panelWidth - SEARCH_BAR_MARGIN, panelY + HEADER_HEIGHT / 2f, "Settings");
 
             // Content area with scissor
@@ -265,15 +245,15 @@ public class SettingsScreen extends Screen {
                 boolean catHovered = isHovered(nvgMouseX, nvgMouseY, contentX, cursorY, contentWidth, CATEGORY_HEIGHT)
                         && nvgMouseY >= contentY && nvgMouseY <= contentY + contentHeight;
                 canvas.fillRect(contentX, cursorY, contentWidth, CATEGORY_HEIGHT,
-                        catHovered ? CATEGORY_HOVER : CATEGORY_COLOR);
+                        catHovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
 
                 // Arrow
-                drawText(canvas, fontName, 12, ARROW_COLOR, UiCanvas.HorizontalAlign.CENTER,
+                drawText(canvas, fontName, 12, color(ACCENT_SECONDARY), UiCanvas.HorizontalAlign.CENTER,
                         contentX + PADDING + 14, cursorY + CATEGORY_HEIGHT / 2f, collapsed ? "+" : "-");
 
                 // Category name
                 String displayName = SettingWidget.toDisplayName(category);
-                drawText(canvas, fontName, CATEGORY_FONT_SIZE, CATEGORY_TEXT, UiCanvas.HorizontalAlign.LEFT,
+                drawText(canvas, fontName, CATEGORY_FONT_SIZE, color(TEXT_MUTED), UiCanvas.HorizontalAlign.LEFT,
                         contentX + PADDING + 26, cursorY + CATEGORY_HEIGHT / 2f, displayName);
 
                 cursorY += CATEGORY_HEIGHT;
@@ -281,7 +261,7 @@ public class SettingsScreen extends Screen {
                 // Settings under this category
                 if (!collapsed) {
                     for (SettingWidget<?> widget : filtered) {
-                        Color bg = (settingIndex % 2 == 0) ? SETTING_BG : SETTING_BG_ALT;
+                        Color bg = (settingIndex % 2 == 0) ? color(BACKGROUND_BODY) : color(BACKGROUND_CONTENT_FOCUSED, 100);
                         canvas.fillRect(contentX, cursorY, contentWidth, widget.getHeight(), bg);
 
                         widget.setPosition(contentX + PADDING, cursorY, widgetWidth, widget.getHeight());
@@ -302,12 +282,12 @@ public class SettingsScreen extends Screen {
             if (maxScroll > 0) {
                 float scrollbarX = panelX + panelWidth - 5;
                 float scrollbarHeight = contentHeight;
-                canvas.fillRect(scrollbarX, contentY, 4, scrollbarHeight, SCROLLBAR_TRACK);
+                canvas.fillRect(scrollbarX, contentY, 4, scrollbarHeight, color(CONTROL_TRACK));
 
                 float thumbRatio = contentHeight / (contentHeight + maxScroll);
                 float thumbHeight = Math.max(20, scrollbarHeight * thumbRatio);
                 float thumbY = contentY + (scrollOffset / maxScroll) * (scrollbarHeight - thumbHeight);
-                canvas.fillRect(scrollbarX, thumbY, 4, thumbHeight, SCROLLBAR_THUMB);
+                canvas.fillRect(scrollbarX, thumbY, 4, thumbHeight, color(CONTROL_THUMB));
             }
         });
     }
@@ -316,9 +296,9 @@ public class SettingsScreen extends Screen {
             UiCanvas canvas, String fontName, float x, float y, float w, String label, boolean active) {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
 
-        Color bgColor = active ? SIDEBAR_BUTTON_ACTIVE : (hovered ? SIDEBAR_BUTTON_HOVER : SIDEBAR_BUTTON_COLOR);
+        Color bgColor = active ? color(ACCENT_PRIMARY_DARK_HOVER, 120) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
         canvas.fillRect(x, y, w, SIDEBAR_BUTTON_HEIGHT, bgColor);
-        drawText(canvas, fontName, SIDEBAR_BUTTON_SIZE, TEXT_COLOR, UiCanvas.HorizontalAlign.CENTER,
+        drawText(canvas, fontName, SIDEBAR_BUTTON_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
                 x + w / 2f, y + SIDEBAR_BUTTON_HEIGHT / 2f, label);
     }
 

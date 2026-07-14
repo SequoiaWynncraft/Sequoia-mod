@@ -1,21 +1,19 @@
 package com.seqwawa.seq.ui.widget;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.theme.UiColor.*;
+
+import java.awt.Color;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 
-import java.awt.*;
 
 public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
     private static final float TOGGLE_WIDTH = 36;
     private static final float TOGGLE_HEIGHT = 18;
     private static final float KNOB_PADDING = 2;
     private static final float FONT_SIZE = 12;
-
-    private static final Color ON_COLOR = new Color(160, 130, 220, 255);
-    private static final Color OFF_COLOR = new Color(80, 80, 90, 200);
-    private static final Color KNOB_COLOR = new Color(255, 255, 255, 255);
-    private static final Color LABEL_COLOR = new Color(220, 220, 220, 255);
 
     public BooleanWidget(Setting.BooleanSetting setting) {
         super(setting);
@@ -27,14 +25,14 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
         String fontName = SeqClient.getFontManager().getSelectedFont();
 
         canvas.drawText(getDisplayName(), x + 8, y + height / 2f, textStyle(
-                fontName, LABEL_COLOR, UiCanvas.HorizontalAlign.LEFT));
+                fontName, color(TEXT_SECONDARY), UiCanvas.HorizontalAlign.LEFT));
 
         // Toggle
         float toggleX = x + width - TOGGLE_WIDTH - 8;
         float toggleY = y + (height - TOGGLE_HEIGHT) / 2f;
         boolean on = setting.getValue();
 
-        Color bgColor = on ? ON_COLOR : OFF_COLOR;
+        Color bgColor = on ? color(ACCENT_PRIMARY) : color(ACCENT_SECONDARY, 200);
         canvas.fillRect(toggleX, toggleY, TOGGLE_WIDTH, TOGGLE_HEIGHT, bgColor);
 
         float knobSize = TOGGLE_HEIGHT - KNOB_PADDING * 2;
@@ -42,7 +40,7 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
                 ? toggleX + TOGGLE_WIDTH - knobSize - KNOB_PADDING
                 : toggleX + KNOB_PADDING;
         float knobY = toggleY + KNOB_PADDING;
-        canvas.fillRect(knobX, knobY, knobSize, knobSize, KNOB_COLOR);
+        canvas.fillRect(knobX, knobY, knobSize, knobSize, color(TEXT_PRIMARY));
     }
 
     private static UiCanvas.TextStyle textStyle(
