@@ -340,13 +340,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        double guiScale = SeqClient.mc.getWindow().getGuiScale();
-        nvgMouseX = (float) ((mouseX * guiScale) / 2.0);
-        nvgMouseY = (float) ((mouseY * guiScale) / 2.0);
+        nvgMouseX = NVGContext.mouseX(mouseX);
+        nvgMouseY = NVGContext.mouseY(mouseY);
 
         NVGContext.renderDeferred(nvg -> {
-            float screenWidth = SeqClient.mc.getWindow().getWidth() / 2f;
-            float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+            float screenWidth = NVGContext.screenWidth();
+            float screenHeight = NVGContext.screenHeight();
             String fontName = SeqClient.getFontManager().getSelectedFont();
 
             NVGWrapper.drawRect(nvg, 0, 0, screenWidth, screenHeight, BG_COLOR);
@@ -1598,7 +1597,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     nvg,
                     fontName,
                     panelX,
-                    panelX + (SeqClient.mc.getWindow().getWidth() / 2f - SIDEBAR_WIDTH),
+                    panelX + (NVGContext.screenWidth() - SIDEBAR_WIDTH),
                     screenHeight);
         }
     }
@@ -2053,12 +2052,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
         if (click.button() != 0) return super.mouseClicked(click, outsideScreen);
 
-        double guiScale = SeqClient.mc.getWindow().getGuiScale();
-        float mx = (float) ((click.x() * guiScale) / 2.0);
-        float my = (float) ((click.y() * guiScale) / 2.0);
+        float mx = NVGContext.mouseX(click.x());
+        float my = NVGContext.mouseY(click.y());
 
-        float screenWidth = SeqClient.mc.getWindow().getWidth() / 2f;
-        float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+        float screenWidth = NVGContext.screenWidth();
+        float screenHeight = NVGContext.screenHeight();
 
         // ── Filter screen (highest priority) ──
         if (filterScreenOpen) {
@@ -2803,10 +2801,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (scrollbarDragging && maxScroll > 0) {
-            double guiScale = SeqClient.mc.getWindow().getGuiScale();
-            float my = (float) ((click.y() * guiScale) / 2.0);
+            float my = NVGContext.mouseY(click.y());
 
-            float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+            float screenHeight = NVGContext.screenHeight();
             float contentHeight = screenHeight - HEADER_HEIGHT;
             float thumbRatio = contentHeight / (contentHeight + maxScroll);
             float thumbH = Math.max(20, contentHeight * thumbRatio);

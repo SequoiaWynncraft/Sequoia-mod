@@ -75,8 +75,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         return 0;
     }
 
-    @SuppressWarnings("unchecked")
-    private void setDoubleValue(double val) {
+    private void setSliderValue(double val) {
         val = Math.max(min, Math.min(max, val));
         if (increment > 0) {
             val = Math.round(val / increment) * increment;
@@ -88,6 +87,25 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
             s.setValue(val);
         } else if (setting instanceof Setting.FloatSetting s) {
             s.setValue((float) val);
+        }
+    }
+
+    private void setManualValue(double value) {
+        if (!Double.isFinite(value)) {
+            return;
+        }
+        if (setting instanceof Setting.IntSetting s) {
+            long rounded = Math.round(value);
+            if (rounded >= Integer.MIN_VALUE && rounded <= Integer.MAX_VALUE) {
+                s.setValueFromManualInput((int) rounded);
+            }
+        } else if (setting instanceof Setting.DoubleSetting s) {
+            s.setValueFromManualInput(value);
+        } else if (setting instanceof Setting.FloatSetting s) {
+            float floatValue = (float) value;
+            if (Float.isFinite(floatValue)) {
+                s.setValueFromManualInput(floatValue);
+            }
         }
     }
 
@@ -223,7 +241,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         float ratio = (mouseX - sliderX) / sliderWidth;
         ratio = Math.max(0, Math.min(1, ratio));
         double val = min + ratio * (max - min);
-        setDoubleValue(val);
+        setSliderValue(val);
     }
 
     @Override
@@ -270,7 +288,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
     private void applyEditBuffer() {
         try {
             double val = Double.parseDouble(editBuffer);
-            setDoubleValue(val);
+            setManualValue(val);
         } catch (NumberFormatException ignored) {
         }
     }

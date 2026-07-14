@@ -40,13 +40,12 @@ public class SequoiaScreen extends Screen {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        double guiScale = SeqClient.mc.getWindow().getGuiScale();
-        nvgMouseX = (float) (mouseX * guiScale / 2.0);
-        nvgMouseY = (float) (mouseY * guiScale / 2.0);
+        nvgMouseX = NVGContext.mouseX(mouseX);
+        nvgMouseY = NVGContext.mouseY(mouseY);
 
         NVGContext.renderDeferred(nvg -> {
-            float screenWidth = (int) (SeqClient.mc.getWindow().getWidth() / 2f);
-            float screenHeight = (int) (SeqClient.mc.getWindow().getHeight() / 2f);
+            float screenWidth = NVGContext.screenWidth();
+            float screenHeight = NVGContext.screenHeight();
 
             // Dark background
             NVGWrapper.drawRect(nvg, 0, 0, screenWidth, screenHeight, BG_COLOR);
@@ -94,12 +93,11 @@ public class SequoiaScreen extends Screen {
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
         if (click.button() == 0) {
-            double guiScale = SeqClient.mc.getWindow().getGuiScale();
-            float mx = (float) (click.x() * guiScale / 2.0);
-            float my = (float) (click.y() * guiScale / 2.0);
+            float mx = NVGContext.mouseX(click.x());
+            float my = NVGContext.mouseY(click.y());
 
-            float screenWidth = (int) (SeqClient.mc.getWindow().getWidth() / 2f);
-            float screenHeight = (int) (SeqClient.mc.getWindow().getHeight() / 2f);
+            float screenWidth = NVGContext.screenWidth();
+            float screenHeight = NVGContext.screenHeight();
 
             float titleY = screenHeight * 0.3f;
             float startY = titleY + 40;

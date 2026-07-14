@@ -111,12 +111,13 @@ The Events view shows runs currently visible through the Wynncraft API. Choose A
 
 ## Settings
 
-The settings screen has toggles for:
+The settings screen includes controls for:
 
 - Auto connect to the Sequoia backend
 - Discord chat display
 - Raid auto-announce
 - Tracked world-event notifications
+- Global Sequoia UI size
 - Update checks on startup
 
 ## Installation
