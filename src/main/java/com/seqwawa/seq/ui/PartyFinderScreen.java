@@ -16,7 +16,6 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
-import org.lwjgl.nanovg.NVGPaint;
 import com.seqwawa.seq.accessors.PartyAccessor;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.AssetManager;
@@ -30,6 +29,7 @@ import com.seqwawa.seq.utils.TextInputFilters;
 import com.seqwawa.seq.utils.TextInputHelper;
 import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
 import com.seqwawa.seq.utils.rendering.nvg.NVGWrapper;
+import com.seqwawa.seq.utils.rendering.UiRenderer;
 
 public class PartyFinderScreen extends Screen implements PartyAccessor {
 
@@ -1245,11 +1245,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     nvgSave(nvg);
                     nvgBeginPath(nvg);
                     nvgCircle(nvg, cx, cy, radius);
-                    try (NVGPaint paint = NVGPaint.calloc()) {
-                        nvgImagePattern(nvg, x, y, size, size, 0, raidIcon.getImage(), 1.0f, paint);
-                        nvgFillPaint(nvg, paint);
-                        nvgFill(nvg);
-                    }
+                    UiRenderer.currentCanvas().fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
                     nvgClosePath(nvg);
                     nvgRestore(nvg);
                 } else {
@@ -1275,11 +1271,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 nvgClosePath(nvg);
 
                 if (raidIcon != null) {
-                    try (NVGPaint paint = NVGPaint.calloc()) {
-                        nvgImagePattern(nvg, x, y, size, size, 0, raidIcon.getImage(), 1.0f, paint);
-                        nvgFillPaint(nvg, paint);
-                        nvgFill(nvg);
-                    }
+                    UiRenderer.currentCanvas().fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
                 } else {
                     var fc = NVGContext.nvgColor(TYPE_ICON_SELECTED);
                     nvgFillColor(nvg, fc);
@@ -1296,11 +1288,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 nvgClosePath(nvg);
 
                 if (raidIcon != null) {
-                    try (NVGPaint paint = NVGPaint.calloc()) {
-                        nvgImagePattern(nvg, x, y, size, size, 0, raidIcon.getImage(), 1.0f, paint);
-                        nvgFillPaint(nvg, paint);
-                        nvgFill(nvg);
-                    }
+                    UiRenderer.currentCanvas().fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
                 } else {
                     // Fallback solid color for missing icon
                     var fc = NVGContext.nvgColor(TYPE_ICON_SELECTED);

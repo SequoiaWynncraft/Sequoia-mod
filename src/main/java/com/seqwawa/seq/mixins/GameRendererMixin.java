@@ -2,7 +2,7 @@ package com.seqwawa.seq.mixins;
 
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.renderer.GameRenderer;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
+import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -13,6 +13,6 @@ public class GameRendererMixin {
 
     @Inject(method = "render", at = @At("TAIL"))
     private void seq$onRenderTail(DeltaTracker deltaTracker, boolean renderLevel, CallbackInfo ci) {
-        NVGContext.flushDeferred();
+        MinecraftUiRenderer.flush();
     }
 }

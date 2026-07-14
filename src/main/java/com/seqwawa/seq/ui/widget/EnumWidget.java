@@ -2,12 +2,9 @@ package com.seqwawa.seq.ui.widget;
 
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
-import com.seqwawa.seq.utils.rendering.nvg.NVGWrapper;
+import com.seqwawa.seq.utils.rendering.UiCanvas;
 
 import java.awt.*;
-
-import static org.lwjgl.nanovg.NanoVG.*;
 
 public class EnumWidget extends SettingWidget<Setting.EnumSetting<?>> {
     private static final float BUTTON_WIDTH = 100;
@@ -25,31 +22,25 @@ public class EnumWidget extends SettingWidget<Setting.EnumSetting<?>> {
     }
 
     @Override
-    public void render(long nvg, float mouseX, float mouseY) {
+    public void render(UiCanvas canvas, float mouseX, float mouseY) {
         String fontName = SeqClient.getFontManager().getSelectedFont();
 
-        // Label
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var labelColor = NVGContext.nvgColor(LABEL_COLOR);
-        nvgFillColor(nvg, labelColor);
-        nvgText(nvg, x + 8, y + height / 2f, getDisplayName());
-        labelColor.free();
+        canvas.drawText(getDisplayName(), x + 8, y + height / 2f,
+                textStyle(fontName, LABEL_COLOR, UiCanvas.HorizontalAlign.LEFT));
 
         // Button
         float btnX = x + width - BUTTON_WIDTH - 8;
         float btnY = y + (height - BUTTON_HEIGHT) / 2f;
         boolean hovered = isHovered(mouseX, mouseY, btnX, btnY, BUTTON_WIDTH, BUTTON_HEIGHT);
-        NVGWrapper.drawRect(nvg, btnX, btnY, BUTTON_WIDTH, BUTTON_HEIGHT, hovered ? BUTTON_HOVER : BUTTON_COLOR);
+        canvas.fillRect(btnX, btnY, BUTTON_WIDTH, BUTTON_HEIGHT, hovered ? BUTTON_HOVER : BUTTON_COLOR);
+        canvas.drawText(setting.getValue().name(), btnX + BUTTON_WIDTH / 2f, btnY + BUTTON_HEIGHT / 2f,
+                textStyle(fontName, VALUE_COLOR, UiCanvas.HorizontalAlign.CENTER));
+    }
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var valColor = NVGContext.nvgColor(VALUE_COLOR);
-        nvgFillColor(nvg, valColor);
-        nvgText(nvg, btnX + BUTTON_WIDTH / 2f, btnY + BUTTON_HEIGHT / 2f, setting.getValue().name());
-        valColor.free();
+    private static UiCanvas.TextStyle textStyle(
+            String font, Color color, UiCanvas.HorizontalAlign horizontalAlign) {
+        return new UiCanvas.TextStyle(
+                font, FONT_SIZE, color, horizontalAlign, UiCanvas.VerticalAlign.MIDDLE);
     }
 
     @SuppressWarnings({ "unchecked", "rawtypes" })

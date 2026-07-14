@@ -4,12 +4,10 @@ import net.minecraft.client.input.KeyEvent;
 import org.lwjgl.glfw.GLFW;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
-import com.seqwawa.seq.utils.rendering.nvg.NVGWrapper;
+import com.seqwawa.seq.utils.rendering.UiCanvas;
+import com.seqwawa.seq.utils.rendering.UiRenderer;
 
 import java.awt.*;
-
-import static org.lwjgl.nanovg.NanoVG.*;
 
 public class SliderWidget extends SettingWidget<Setting<?>> {
     private static final float SLIDER_HEIGHT = 8;
@@ -116,18 +114,12 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
     }
 
     @Override
-    public void render(long nvg, float mouseX, float mouseY) {
+    public void render(UiCanvas canvas, float mouseX, float mouseY) {
         cursorBlink++;
         String fontName = SeqClient.getFontManager().getSelectedFont();
 
-        // Label
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-        var labelColor = NVGContext.nvgColor(LABEL_COLOR);
-        nvgFillColor(nvg, labelColor);
-        nvgText(nvg, x + 8, y + 2, getDisplayName());
-        labelColor.free();
+        canvas.drawText(getDisplayName(), x + 8, y + 2,
+                textStyle(fontName, LABEL_COLOR, UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.TOP));
 
         // Layout
         float sliderX = x + 8;
@@ -139,46 +131,46 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
         // Slider track
         float trackY = sliderY + (SLIDER_HEIGHT - 4) / 2f;
-        NVGWrapper.drawRect(nvg, sliderX, trackY, sliderWidth, 4, TRACK_COLOR);
+        canvas.fillRect(sliderX, trackY, sliderWidth, 4, TRACK_COLOR);
 
         // Slider fill
         double value = getDoubleValue();
         float ratio = (float) ((value - min) / (max - min));
         ratio = Math.max(0, Math.min(1, ratio));
         float fillWidth = sliderWidth * ratio;
-        NVGWrapper.drawRect(nvg, sliderX, trackY, fillWidth, 4, FILL_COLOR);
+        canvas.fillRect(sliderX, trackY, fillWidth, 4, FILL_COLOR);
 
         // Knob
         float knobX = sliderX + fillWidth;
         float knobY = sliderY + SLIDER_HEIGHT / 2f - KNOB_RADIUS / 2f;
-        NVGWrapper.drawRect(nvg, knobX - KNOB_RADIUS, knobY - KNOB_RADIUS / 2, KNOB_RADIUS * 2, KNOB_RADIUS * 2,
+        canvas.fillRect(knobX - KNOB_RADIUS, knobY - KNOB_RADIUS / 2, KNOB_RADIUS * 2, KNOB_RADIUS * 2,
                 KNOB_COLOR);
 
         // Text box
         Color boxBg = editing ? TEXT_BOX_ACTIVE : TEXT_BOX_BG;
-        NVGWrapper.drawRect(nvg, textBoxX, textBoxY, TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, boxBg);
+        canvas.fillRect(textBoxX, textBoxY, TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, boxBg);
         if (editing) {
-            NVGWrapper.drawRectOutline(nvg, textBoxX, textBoxY, TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, 1, TEXT_BOX_BORDER);
+            canvas.strokeRect(textBoxX, textBoxY, TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, 1, TEXT_BOX_BORDER);
         }
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var textColor = NVGContext.nvgColor(TEXT_COLOR);
-        nvgFillColor(nvg, textColor);
-
         String displayText = editing ? editBuffer : formatValue(value);
-        nvgText(nvg, textBoxX + TEXT_BOX_WIDTH / 2f, textBoxY + TEXT_BOX_HEIGHT / 2f, displayText);
-        textColor.free();
+        canvas.drawText(displayText, textBoxX + TEXT_BOX_WIDTH / 2f, textBoxY + TEXT_BOX_HEIGHT / 2f,
+                textStyle(fontName, TEXT_COLOR, UiCanvas.HorizontalAlign.CENTER, UiCanvas.VerticalAlign.MIDDLE));
 
         // Draw cursor separately so it doesn't affect text width
         if (editing && (cursorBlink / 1000) % 2 == 0) {
-            float[] textBounds = new float[4];
-            nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            float textW = nvgTextBounds(nvg, 0, 0, editBuffer, textBounds);
+            float textW = UiRenderer.measureText(editBuffer, fontName, FONT_SIZE).width();
             float cursorX = textBoxX + (TEXT_BOX_WIDTH + textW) / 2f + 1;
-            NVGWrapper.drawRect(nvg, cursorX, textBoxY + 3, 1, TEXT_BOX_HEIGHT - 6, TEXT_COLOR);
+            canvas.fillRect(cursorX, textBoxY + 3, 1, TEXT_BOX_HEIGHT - 6, TEXT_COLOR);
         }
+    }
+
+    private static UiCanvas.TextStyle textStyle(
+            String font,
+            Color color,
+            UiCanvas.HorizontalAlign horizontalAlign,
+            UiCanvas.VerticalAlign verticalAlign) {
+        return new UiCanvas.TextStyle(font, FONT_SIZE, color, horizontalAlign, verticalAlign);
     }
 
     @Override

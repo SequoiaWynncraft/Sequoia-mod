@@ -7,7 +7,7 @@ import com.seqwawa.seq.accessors.EventBusAccessor;
 import com.seqwawa.seq.events.Render2DEvent;
 import com.seqwawa.seq.ui.SequoiaScreen;
 import com.seqwawa.seq.ui.SettingsScreen;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
+import com.seqwawa.seq.utils.rendering.UiRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -28,6 +28,7 @@ public class InGameHudMixin implements EventBusAccessor {
     @Inject(method = "render", at = @At("TAIL"))
     private void seq$onRender(GuiGraphics context, DeltaTracker tickCounter, CallbackInfo ci) {
         if (mc.screen != null) return;
-        NVGContext.render(nvg -> seqdispatch(new Render2DEvent(context, tickCounter.getGameTimeDeltaPartialTick(true))));
+        UiRenderer.renderHud(
+                canvas -> seqdispatch(new Render2DEvent(context, tickCounter.getGameTimeDeltaPartialTick(true))));
     }
 }

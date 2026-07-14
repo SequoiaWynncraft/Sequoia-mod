@@ -6,12 +6,11 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
-import com.seqwawa.seq.utils.rendering.nvg.NVGWrapper;
+import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
+import com.seqwawa.seq.utils.rendering.UiCanvas;
+import com.seqwawa.seq.utils.rendering.UiRenderer;
 
 import java.awt.*;
-
-import static org.lwjgl.nanovg.NanoVG.*;
 
 public class SequoiaScreen extends Screen {
     private static final float BUTTON_WIDTH = 120;
@@ -40,64 +39,62 @@ public class SequoiaScreen extends Screen {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        nvgMouseX = NVGContext.mouseX(mouseX);
-        nvgMouseY = NVGContext.mouseY(mouseY);
+        nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
+        nvgMouseY = MinecraftUiRenderer.mouseY(mouseY);
 
-        NVGContext.renderDeferred(nvg -> {
-            float screenWidth = NVGContext.screenWidth();
-            float screenHeight = NVGContext.screenHeight();
+        UiRenderer.renderScreen(this, canvas -> {
+            float screenWidth = canvas.metrics().width();
+            float screenHeight = canvas.metrics().height();
 
             // Dark background
-            NVGWrapper.drawRect(nvg, 0, 0, screenWidth, screenHeight, BG_COLOR);
+            canvas.fillRect(0, 0, screenWidth, screenHeight, BG_COLOR);
 
             // Title
             String fontName = SeqClient.getFontManager().getSelectedFont();
-            nvgFontFace(nvg, fontName);
-            nvgFontSize(nvg, TITLE_FONT_SIZE);
-            nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            var titleColor = NVGContext.nvgColor(TITLE_COLOR);
-            nvgFillColor(nvg, titleColor);
             float titleY = screenHeight * 0.3f;
-            nvgText(nvg, screenWidth / 2f, titleY, "Sequoia");
-            titleColor.free();
+            canvas.drawText("Sequoia", screenWidth / 2f, titleY, new UiCanvas.TextStyle(
+                    fontName,
+                    TITLE_FONT_SIZE,
+                    TITLE_COLOR,
+                    UiCanvas.HorizontalAlign.CENTER,
+                    UiCanvas.VerticalAlign.MIDDLE));
 
             // Buttons
             float startY = titleY + 40;
             float centerX = screenWidth / 2f - BUTTON_WIDTH / 2f;
 
-            drawButton(nvg, centerX, startY, "Partyfinder");
-            drawButton(nvg, centerX, startY + BUTTON_HEIGHT + BUTTON_SPACING, "Connection");
-            drawButton(nvg, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 2, "Settings");
-            drawButton(nvg, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 3, "Map");
-            drawButton(nvg, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 4, "Github");
+            drawButton(canvas, centerX, startY, "Partyfinder");
+            drawButton(canvas, centerX, startY + BUTTON_HEIGHT + BUTTON_SPACING, "Connection");
+            drawButton(canvas, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 2, "Settings");
+            drawButton(canvas, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 3, "Map");
+            drawButton(canvas, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 4, "Github");
         });
     }
 
-    private void drawButton(long nvg, float x, float y, String label) {
+    private void drawButton(UiCanvas canvas, float x, float y, String label) {
         boolean hovered = nvgMouseX >= x && nvgMouseX <= x + BUTTON_WIDTH
                 && nvgMouseY >= y && nvgMouseY <= y + BUTTON_HEIGHT;
 
         Color bgColor = hovered ? BUTTON_HOVER_COLOR : BUTTON_COLOR;
-        NVGWrapper.drawRect(nvg, x, y, BUTTON_WIDTH, BUTTON_HEIGHT, bgColor);
+        canvas.fillRect(x, y, BUTTON_WIDTH, BUTTON_HEIGHT, bgColor);
 
         String fontName = SeqClient.getFontManager().getSelectedFont();
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, BUTTON_FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var textColor = NVGContext.nvgColor(TEXT_COLOR);
-        nvgFillColor(nvg, textColor);
-        nvgText(nvg, x + BUTTON_WIDTH / 2f, y + BUTTON_HEIGHT / 2f, label);
-        textColor.free();
+        canvas.drawText(label, x + BUTTON_WIDTH / 2f, y + BUTTON_HEIGHT / 2f, new UiCanvas.TextStyle(
+                fontName,
+                BUTTON_FONT_SIZE,
+                TEXT_COLOR,
+                UiCanvas.HorizontalAlign.CENTER,
+                UiCanvas.VerticalAlign.MIDDLE));
     }
 
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
         if (click.button() == 0) {
-            float mx = NVGContext.mouseX(click.x());
-            float my = NVGContext.mouseY(click.y());
+            float mx = MinecraftUiRenderer.mouseX(click.x());
+            float my = MinecraftUiRenderer.mouseY(click.y());
 
-            float screenWidth = NVGContext.screenWidth();
-            float screenHeight = NVGContext.screenHeight();
+            float screenWidth = MinecraftUiRenderer.screenWidth();
+            float screenHeight = MinecraftUiRenderer.screenHeight();
 
             float titleY = screenHeight * 0.3f;
             float startY = titleY + 40;

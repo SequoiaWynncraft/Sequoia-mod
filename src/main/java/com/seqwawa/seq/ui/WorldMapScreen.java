@@ -1,6 +1,7 @@
 package com.seqwawa.seq.ui;
 
 import java.awt.Color;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -19,8 +20,6 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
-import org.lwjgl.nanovg.NVGPaint;
-import org.lwjgl.system.MemoryUtil;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.map.ClusterScoreMode;
 import com.seqwawa.seq.map.GatheringAnalysisScope;
@@ -49,10 +48,10 @@ import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.map.GatheringMapImageService.TileKey;
 import com.seqwawa.seq.map.GatheringMapImageService.TileSet;
 import com.seqwawa.seq.utils.TextInputHelper;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
-import com.seqwawa.seq.utils.rendering.nvg.NVGWrapper;
-
-import static org.lwjgl.nanovg.NanoVG.*;
+import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
+import com.seqwawa.seq.utils.rendering.UiCanvas;
+import com.seqwawa.seq.utils.rendering.UiImage;
+import com.seqwawa.seq.utils.rendering.UiRenderer;
 
 public class WorldMapScreen extends Screen {
     private static final float SIDEBAR_WIDTH = 230;
@@ -168,10 +167,10 @@ public class WorldMapScreen extends Screen {
     private List<String> cachedResourceOptions = List.of();
     private String cachedClusterKey = "";
     private long cachedSettingsVersion = -1;
-    private int mapImageHandle;
+    private UiImage mapImage;
     private boolean mapImageLoadAttempted;
     private long loadedMapImageVersion = -1;
-    private final Map<TileKey, Integer> tileImageHandles = new HashMap<>();
+    private final Map<TileKey, UiImage> tileImages = new HashMap<>();
     private String loadedTileVersion = "";
     private long loadedTileContentVersion = -1;
     private TileRange cachedVisibleTileRange;
@@ -206,12 +205,12 @@ public class WorldMapScreen extends Screen {
 
     @Override
     public void removed() {
-        NVGContext.renderDeferred(nvg -> {
-            if (mapImageHandle != 0) {
-                nvgDeleteImage(nvg, mapImageHandle);
-                mapImageHandle = 0;
+        UiRenderer.renderResource(canvas -> {
+            if (mapImage != null) {
+                UiRenderer.deleteImage(mapImage);
+                mapImage = null;
             }
-            clearTileImageHandles(nvg);
+            clearTileImages();
         });
         super.removed();
     }
@@ -220,8 +219,8 @@ public class WorldMapScreen extends Screen {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        nvgMouseX = NVGContext.mouseX(mouseX);
-        nvgMouseY = NVGContext.mouseY(mouseY);
+        nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
+        nvgMouseY = MinecraftUiRenderer.mouseY(mouseY);
 
         float screenWidth = uiScreenWidth();
         float screenHeight = uiScreenHeight();
@@ -242,24 +241,21 @@ public class WorldMapScreen extends Screen {
             refreshWorldEvents();
         }
         MapViewport viewport = new MapViewport(centerX, centerZ, pixelsPerBlock, mapX, mapY, mapW, mapH);
-        NVGContext.renderDeferred(nvg -> renderNvg(nvg, viewport));
+        UiRenderer.renderScreen(this, canvas -> renderNvg(canvas, viewport));
     }
 
-    private void renderNvg(long nvg, MapViewport viewport) {
-        String fontName = SeqClient.getFontManager().getSelectedFont();
-        nvgFontFace(nvg, fontName);
-
-        renderMapBackground(nvg, viewport);
-        NVGWrapper.drawRect(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(), MAP_TINT);
+    private void renderNvg(UiCanvas canvas, MapViewport viewport) {
+        renderMapBackground(canvas, viewport);
+        canvas.fillRect(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(), MAP_TINT);
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
-            renderWorldEvents(nvg, viewport);
-            renderPlayer(nvg, viewport);
-            renderSidebar(nvg);
-            renderInsightsSidebar(nvg);
+            renderWorldEvents(canvas, viewport);
+            renderPlayer(canvas, viewport);
+            renderSidebar(canvas);
+            renderInsightsSidebar(canvas);
             return;
         }
 
-        renderTerritories(nvg, viewport);
+        renderTerritories(canvas, viewport);
         boolean clusterMode = shouldRenderClusters();
         if (clusterMode) {
             hoveredNode = null;
@@ -268,29 +264,29 @@ public class WorldMapScreen extends Screen {
             hoveredCluster = null;
         }
         if (showClusters && !cachedClusters.isEmpty()) {
-            renderClusterHulls(nvg, viewport, !draggingMap);
+            renderClusterHulls(canvas, viewport, !draggingMap);
             if (clusterMode) {
-                renderClusterBadges(nvg, viewport, true);
+                renderClusterBadges(canvas, viewport, true);
             }
         }
         if (!clusterMode) {
-            renderNodes(nvg, viewport, cachedFilteredNodes);
+            renderNodes(canvas, viewport, cachedFilteredNodes);
             if (shouldRenderClusterBadges()) {
-                renderClusterBadges(nvg, viewport, false);
+                renderClusterBadges(canvas, viewport, false);
             }
         }
-        renderPlayer(nvg, viewport);
-        renderTerritoryNames(nvg, viewport);
+        renderPlayer(canvas, viewport);
+        renderTerritoryNames(canvas, viewport);
         if (!draggingMap && hoveredCluster != null && (clusterMode || hoveredNode == null)) {
-            renderClusterTooltip(nvg, hoveredCluster);
+            renderClusterTooltip(canvas, hoveredCluster);
         } else if (!draggingMap && hoveredNode == null && hoveredTerritory != null) {
-            renderTerritoryTooltip(nvg, hoveredTerritory);
+            renderTerritoryTooltip(canvas, hoveredTerritory);
         }
-        renderSidebar(nvg);
-        renderInsightsSidebar(nvg);
+        renderSidebar(canvas);
+        renderInsightsSidebar(canvas);
     }
 
-    private void renderTerritories(long nvg, MapViewport viewport) {
+    private void renderTerritories(UiCanvas canvas, MapViewport viewport) {
         hoveredTerritory = null;
         if (!showTerritories) {
             return;
@@ -301,7 +297,7 @@ public class WorldMapScreen extends Screen {
                     viewport.screenToWorldZ(nvgMouseY));
         }
         MapBounds visibleBounds = viewport.visibleBounds();
-        nvgScissor(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+        canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         for (GuildTerritory territory : territoryIndex.territories()) {
             MapBounds bounds = territory.bounds();
             if (!intersects(visibleBounds, bounds)) {
@@ -316,18 +312,16 @@ public class WorldMapScreen extends Screen {
             Color color = selected ? SELECTED_TERRITORY_COLOR : TERRITORY_COLOR;
             if (selected || hovered) {
                 int alpha = selected ? 38 : 24;
-                NVGWrapper.drawRect(nvg, x, y, width, height, new Color(color.getRed(), color.getGreen(), color.getBlue(), alpha));
+                canvas.fillRect(x, y, width, height, new Color(color.getRed(), color.getGreen(), color.getBlue(), alpha));
             }
-            NVGWrapper.drawRectOutline(
-                    nvg,
-                    x,
+            canvas.strokeRect(x,
                     y,
                     width,
                     height,
                     selected || hovered ? 1.8f : 0.8f,
                     new Color(color.getRed(), color.getGreen(), color.getBlue(), selected || hovered ? 235 : 115));
         }
-        nvgResetScissor(nvg);
+        canvas.resetScissor();
     }
 
     private void refreshWorldEvents() {
@@ -339,7 +333,7 @@ public class WorldMapScreen extends Screen {
         selectedWorldEvent = WorldEventFilters.retainVisibleSelection(selectedWorldEvent, visibleWorldEvents);
     }
 
-    private void renderWorldEvents(long nvg, MapViewport viewport) {
+    private void renderWorldEvents(UiCanvas canvas, MapViewport viewport) {
         hoveredWorldEvent = null;
         hoveredWorldEventLocationIndex = -1;
         boolean allowHover = !draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY);
@@ -370,7 +364,7 @@ public class WorldMapScreen extends Screen {
             }
         }
 
-        nvgScissor(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+        canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         for (WorldEventDefinition event : visibleWorldEvents) {
             boolean eventSelected = selectedWorldEvent != null && selectedWorldEvent.runId().equals(event.runId());
             boolean eventTracked = tracked.contains(event.internalName());
@@ -384,41 +378,40 @@ public class WorldMapScreen extends Screen {
                 float areaRadius = (float) (location.radius() * viewport.pixelsPerBlock());
                 if (areaRadius >= 5) {
                     Color areaColor = eventTracked ? TRACKED_WORLD_EVENT_COLOR : WORLD_EVENT_COLOR;
-                    drawCircleOutline(nvg, x, y, areaRadius, 1, new Color(
+                    drawCircleOutline(canvas, x, y, areaRadius, 1, new Color(
                             areaColor.getRed(), areaColor.getGreen(), areaColor.getBlue(), eventSelected ? 150 : 65));
                 }
 
                 Color markerColor = eventTracked ? TRACKED_WORLD_EVENT_COLOR : WORLD_EVENT_COLOR;
                 boolean highlighted = eventSelected || (event.equals(hoveredWorldEvent) && locationIndex == hoveredWorldEventLocationIndex);
                 if (markerAsset == null) {
-                    drawCircle(nvg, x, y, highlighted ? 8 : 7, new Color(0, 0, 0, 190));
-                    drawCircle(nvg, x, y, highlighted ? 5.5f : 4.5f, eventSelected ? PLAYER_COLOR : markerColor);
+                    drawCircle(canvas, x, y, highlighted ? 8 : 7, new Color(0, 0, 0, 190));
+                    drawCircle(canvas, x, y, highlighted ? 5.5f : 4.5f, eventSelected ? PLAYER_COLOR : markerColor);
                 } else {
                     float outerRadius = highlighted ? 9 : 8;
                     float assetSize = highlighted ? 12 : 11;
-                    drawCircle(nvg, x, y, outerRadius, new Color(0, 0, 0, 210));
-                    drawCircle(nvg, x, y, outerRadius - 1.5f, markerColor);
-                    NVGWrapper.drawImage(
-                            nvg,
-                            markerAsset,
+                    drawCircle(canvas, x, y, outerRadius, new Color(0, 0, 0, 210));
+                    drawCircle(canvas, x, y, outerRadius - 1.5f, markerColor);
+                    canvas.drawImage(
+                            markerAsset.getImage(),
                             x - assetSize / 2,
                             y - assetSize / 2,
                             assetSize,
                             assetSize,
-                            255);
+                            1f);
                     if (eventSelected) {
-                        drawCircleOutline(nvg, x, y, outerRadius + 1, 1.5f, PLAYER_COLOR);
+                        drawCircleOutline(canvas, x, y, outerRadius + 1, 1.5f, PLAYER_COLOR);
                     }
                 }
             }
         }
-        nvgResetScissor(nvg);
+        canvas.resetScissor();
         if (hoveredWorldEvent != null) {
-            renderWorldEventTooltip(nvg, hoveredWorldEvent, hoveredWorldEventLocationIndex);
+            renderWorldEventTooltip(canvas, hoveredWorldEvent, hoveredWorldEventLocationIndex);
         }
     }
 
-    private void renderTerritoryNames(long nvg, MapViewport viewport) {
+    private void renderTerritoryNames(UiCanvas canvas, MapViewport viewport) {
         if (!showTerritories || !showTerritoryNames) {
             return;
         }
@@ -432,7 +425,7 @@ public class WorldMapScreen extends Screen {
             float y = viewport.worldToScreenZ(bounds.minZ());
             float width = viewport.worldToScreenX(bounds.maxX()) - x;
             float height = viewport.worldToScreenZ(bounds.maxZ()) - y;
-            TerritoryLabelLayout label = fitTerritoryLabel(nvg, territory.name(), width - 8, height - 6);
+            TerritoryLabelLayout label = fitTerritoryLabel(canvas, territory.name(), width - 8, height - 6);
             if (label == null) {
                 continue;
             }
@@ -450,38 +443,37 @@ public class WorldMapScreen extends Screen {
                     : territory.equals(hoveredTerritory) ? new Color(185, 247, 250, 255) : TEXT_COLOR;
             float totalHeight = label.lines().size() * label.lineHeight();
             float lineY = y + (height - totalHeight) / 2f + label.lineHeight() / 2f;
-            nvgSave(nvg);
-            nvgScissor(nvg, clipX, clipY, clipMaxX - clipX, clipMaxY - clipY);
+            canvas.save();
+            canvas.scissor(clipX, clipY, clipMaxX - clipX, clipMaxY - clipY);
             for (String line : label.lines()) {
                 drawText(
-                        nvg,
+                        canvas,
                         x + width / 2f + 1,
                         lineY + 1,
                         label.fontSize(),
                         line,
                         new Color(0, 0, 0, 210),
-                        NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                        TextAlignment.CENTER);
                 drawText(
-                        nvg,
+                        canvas,
                         x + width / 2f,
                         lineY,
                         label.fontSize(),
                         line,
                         textColor,
-                        NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                        TextAlignment.CENTER);
                 lineY += label.lineHeight();
             }
-            nvgRestore(nvg);
+            canvas.restore();
         }
     }
 
-    private static TerritoryLabelLayout fitTerritoryLabel(long nvg, String name, float maxWidth, float maxHeight) {
+    private static TerritoryLabelLayout fitTerritoryLabel(UiCanvas canvas, String name, float maxWidth, float maxHeight) {
         if (maxWidth < 4 || maxHeight < 6) {
             return null;
         }
         for (float fontSize = 11; fontSize >= 6; fontSize--) {
-            nvgFontSize(nvg, fontSize);
-            List<String> lines = wrapTerritoryName(nvg, name, maxWidth);
+            List<String> lines = wrapTerritoryName(canvas, name, maxWidth, fontSize);
             float lineHeight = fontSize + 2;
             if (!lines.isEmpty() && lines.size() * lineHeight <= maxHeight) {
                 return new TerritoryLabelLayout(lines, fontSize, lineHeight);
@@ -490,12 +482,12 @@ public class WorldMapScreen extends Screen {
         return null;
     }
 
-    private static List<String> wrapTerritoryName(long nvg, String name, float maxWidth) {
+    private static List<String> wrapTerritoryName(UiCanvas canvas, String name, float maxWidth, float fontSize) {
         List<String> lines = new ArrayList<>();
         StringBuilder currentLine = new StringBuilder();
         for (String word : name.trim().split("\\s+")) {
             String candidate = currentLine.isEmpty() ? word : currentLine + " " + word;
-            if (textWidth(nvg, candidate) <= maxWidth) {
+            if (textWidth(candidate, fontSize) <= maxWidth) {
                 currentLine.setLength(0);
                 currentLine.append(candidate);
                 continue;
@@ -504,11 +496,11 @@ public class WorldMapScreen extends Screen {
                 lines.add(currentLine.toString());
                 currentLine.setLength(0);
             }
-            if (textWidth(nvg, word) <= maxWidth) {
+            if (textWidth(word, fontSize) <= maxWidth) {
                 currentLine.append(word);
                 continue;
             }
-            List<String> pieces = splitTerritoryWord(nvg, word, maxWidth);
+            List<String> pieces = splitTerritoryWord(canvas, word, maxWidth, fontSize);
             if (pieces.isEmpty()) {
                 return List.of();
             }
@@ -521,13 +513,13 @@ public class WorldMapScreen extends Screen {
         return List.copyOf(lines);
     }
 
-    private static List<String> splitTerritoryWord(long nvg, String word, float maxWidth) {
+    private static List<String> splitTerritoryWord(UiCanvas canvas, String word, float maxWidth, float fontSize) {
         List<String> pieces = new ArrayList<>();
         StringBuilder piece = new StringBuilder();
         for (int index = 0; index < word.length(); index++) {
             char character = word.charAt(index);
             String candidate = piece.toString() + character;
-            if (textWidth(nvg, candidate) <= maxWidth) {
+            if (textWidth(candidate, fontSize) <= maxWidth) {
                 piece.append(character);
                 continue;
             }
@@ -536,7 +528,7 @@ public class WorldMapScreen extends Screen {
             }
             pieces.add(piece.toString());
             piece.setLength(0);
-            if (textWidth(nvg, String.valueOf(character)) > maxWidth) {
+            if (textWidth(String.valueOf(character), fontSize) > maxWidth) {
                 return List.of();
             }
             piece.append(character);
@@ -554,15 +546,15 @@ public class WorldMapScreen extends Screen {
                 && left.minZ() <= right.maxZ();
     }
 
-    private void renderMapBackground(long nvg, MapViewport viewport) {
-        int image = mapImageHandle(nvg);
-        if (image != 0) {
-            renderFullMapImage(nvg, viewport, image);
+    private void renderMapBackground(UiCanvas canvas, MapViewport viewport) {
+        UiImage image = mapImage();
+        if (image != null) {
+            renderFullMapImage(canvas, viewport, image);
         }
-        renderMapTiles(nvg, viewport);
+        renderMapTiles(canvas, viewport);
     }
 
-    private void renderFullMapImage(long nvg, MapViewport viewport, int image) {
+    private void renderFullMapImage(UiCanvas canvas, MapViewport viewport, UiImage image) {
         float x = viewport.worldToScreenX(MapCalibration.MIN_WORLD_X);
         float y = viewport.worldToScreenZ(MapCalibration.MIN_WORLD_Z);
         float width = viewport.worldToScreenX(MapCalibration.MAX_WORLD_X) - x;
@@ -572,33 +564,26 @@ public class WorldMapScreen extends Screen {
         }
 
         try {
-            nvgScissor(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
-            try (NVGPaint paint = NVGPaint.calloc()) {
-                nvgImagePattern(nvg, x, y, width, height, 0, image, 1f, paint);
-                nvgBeginPath(nvg);
-                nvgRect(nvg, x, y, width, height);
-                nvgFillPaint(nvg, paint);
-                nvgFill(nvg);
-                nvgClosePath(nvg);
-            }
+            canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+            canvas.drawImage(image, x, y, width, height, 1f);
         } finally {
-            nvgResetScissor(nvg);
+            canvas.resetScissor();
         }
     }
 
-    private void renderMapTiles(long nvg, MapViewport viewport) {
+    private void renderMapTiles(UiCanvas canvas, MapViewport viewport) {
         var manifest = mapImageService.manifest().orElse(null);
         TileSet tileSet = manifest == null ? null : manifest.tiles();
         if (tileSet == null || !"tiles".equalsIgnoreCase(manifest.preferredMode())) {
-            if (!tileImageHandles.isEmpty()) {
-                clearTileImageHandles(nvg);
+            if (!tileImages.isEmpty()) {
+                clearTileImages();
                 loadedTileVersion = "";
             }
             resetTileRangeCache();
             return;
         }
         if (!manifest.version().equals(loadedTileVersion)) {
-            clearTileImageHandles(nvg);
+            clearTileImages();
             loadedTileVersion = manifest.version();
             resetTileRangeCache();
         }
@@ -625,48 +610,45 @@ public class WorldMapScreen extends Screen {
         long tileContentVersion = mapImageService.tileVersion();
         boolean loadMissingTileHandles = visibleRangeChanged || tileContentVersion != loadedTileContentVersion;
 
-        nvgScissor(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+        canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         try {
             for (TileKey key : cachedVisibleTiles) {
-                int tileImage = tileImageHandle(nvg, key, loadMissingTileHandles);
-                if (tileImage != 0) {
-                    renderTile(nvg, viewport, tileSet, key, tileImage);
+                UiImage tileImage = tileImage(key, loadMissingTileHandles);
+                if (tileImage != null) {
+                    renderTile(canvas, viewport, tileSet, key, tileImage);
                 }
             }
         } finally {
-            nvgResetScissor(nvg);
+            canvas.resetScissor();
         }
         loadedTileContentVersion = tileContentVersion;
     }
 
-    private int tileImageHandle(long nvg, TileKey key, boolean loadMissing) {
-        Integer existing = tileImageHandles.get(key);
+    private UiImage tileImage(TileKey key, boolean loadMissing) {
+        UiImage existing = tileImages.get(key);
         if (existing != null) {
             return existing;
         }
         if (!loadMissing) {
-            return 0;
+            return null;
         }
         byte[] imageBytes = mapImageService.cachedTileBytes(key);
         if (imageBytes == null || imageBytes.length == 0) {
-            return 0;
+            return null;
         }
-        var byteBuffer = MemoryUtil.memAlloc(imageBytes.length);
         try {
-            byteBuffer.put(imageBytes);
-            byteBuffer.flip();
-            int handle = NVGWrapper.loadImageFromInputStream(nvg, byteBuffer);
-            tileImageHandles.put(key, handle);
-            return handle;
+            UiImage image = UiRenderer.createImage(ByteBuffer.wrap(imageBytes), true);
+            if (image != null) {
+                tileImages.put(key, image);
+            }
+            return image;
         } catch (RuntimeException exception) {
             SeqClient.LOGGER.warn("[GatheringMap] Could not load map tile {}.", key.id(), exception);
-            return 0;
-        } finally {
-            MemoryUtil.memFree(byteBuffer);
+            return null;
         }
     }
 
-    private void renderTile(long nvg, MapViewport viewport, TileSet tileSet, TileKey key, int image) {
+    private void renderTile(UiCanvas canvas, MapViewport viewport, TileSet tileSet, TileKey key, UiImage image) {
         int pixelX0 = key.x() * tileSet.tileSize();
         int pixelY0 = key.y() * tileSet.tileSize();
         int pixelX1 = Math.min(tileSet.width(), pixelX0 + tileSet.tileSize());
@@ -683,14 +665,7 @@ public class WorldMapScreen extends Screen {
             return;
         }
 
-        try (NVGPaint paint = NVGPaint.calloc()) {
-            nvgImagePattern(nvg, x, y, width, height, 0, image, 1f, paint);
-            nvgBeginPath(nvg);
-            nvgRect(nvg, x, y, width, height);
-            nvgFillPaint(nvg, paint);
-            nvgFill(nvg);
-            nvgClosePath(nvg);
-        }
+        canvas.drawImage(image, x, y, width, height, 1f);
     }
 
     private static TileRange visibleTileRange(MapViewport viewport, TileSet tileSet, int margin) {
@@ -737,11 +712,11 @@ public class WorldMapScreen extends Screen {
         return Math.max(0, Math.min(count - 1, value));
     }
 
-    private void clearTileImageHandles(long nvg) {
-        for (int handle : tileImageHandles.values()) {
-            nvgDeleteImage(nvg, handle);
+    private void clearTileImages() {
+        for (UiImage image : tileImages.values()) {
+            UiRenderer.deleteImage(image);
         }
-        tileImageHandles.clear();
+        tileImages.clear();
     }
 
     private void resetTileRangeCache() {
@@ -753,49 +728,42 @@ public class WorldMapScreen extends Screen {
         lastTileRequestAtMs = 0;
     }
 
-    private int mapImageHandle(long nvg) {
+    private UiImage mapImage() {
         long imageVersion = mapImageService.version();
-        if (mapImageHandle != 0 && loadedMapImageVersion == imageVersion) {
-            return mapImageHandle;
+        if (mapImage != null && loadedMapImageVersion == imageVersion) {
+            return mapImage;
         }
-        if (mapImageHandle != 0) {
-            nvgDeleteImage(nvg, mapImageHandle);
-            mapImageHandle = 0;
+        if (mapImage != null) {
+            UiRenderer.deleteImage(mapImage);
+            mapImage = null;
         }
         if (mapImageLoadAttempted && loadedMapImageVersion == imageVersion) {
-            return 0;
+            return null;
         }
         mapImageLoadAttempted = true;
 
         try {
             byte[] imageBytes = mapImageService.imageBytes();
             if (imageBytes.length == 0) {
-                return 0;
+                return null;
             }
-            var byteBuffer = MemoryUtil.memAlloc(imageBytes.length);
-            try {
-                byteBuffer.put(imageBytes);
-                byteBuffer.flip();
-                mapImageHandle = NVGWrapper.loadImageFromInputStream(nvg, byteBuffer);
-                loadedMapImageVersion = mapImageService.version();
-            } finally {
-                MemoryUtil.memFree(byteBuffer);
-            }
+            mapImage = UiRenderer.createImage(ByteBuffer.wrap(imageBytes), true);
+            loadedMapImageVersion = mapImageService.version();
         } catch (RuntimeException exception) {
             SeqClient.LOGGER.warn(
                     "[GatheringMap] Could not load {} map image.",
                     mapImageService.imageSource().name().toLowerCase(Locale.ROOT),
                     exception);
-            mapImageHandle = 0;
+            mapImage = null;
             loadedMapImageVersion = imageVersion;
         }
-        return mapImageHandle;
+        return mapImage;
     }
 
-    private void renderClusterHulls(long nvg, MapViewport viewport, boolean allowHover) {
+    private void renderClusterHulls(UiCanvas canvas, MapViewport viewport, boolean allowHover) {
         hoveredCluster = null;
         float bestHoverDistance = 18f;
-        nvgScissor(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+        canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         for (int index = cachedClusters.size() - 1; index >= 0; index--) {
             GatheringNodeCluster cluster = cachedClusters.get(index);
             float x = viewport.worldToScreenX(cluster.centerX());
@@ -814,13 +782,13 @@ public class WorldMapScreen extends Screen {
                 hoveredCluster = cluster;
             }
             boolean selected = cluster == selectedCluster;
-            renderClusterOutline(nvg, viewport, cluster, outline, x, y, selected, selected || hovered);
+            renderClusterOutline(canvas, viewport, cluster, outline, x, y, selected, selected || hovered);
         }
-        nvgResetScissor(nvg);
+        canvas.resetScissor();
     }
 
-    private void renderClusterBadges(long nvg, MapViewport viewport, boolean overviewMode) {
-        nvgScissor(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+    private void renderClusterBadges(UiCanvas canvas, MapViewport viewport, boolean overviewMode) {
+        canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         MapBounds visibleBounds = viewport.visibleBounds();
         GatheringNodeCluster hoveredBadge = null;
         GatheringNodeCluster selectedBadge = null;
@@ -844,24 +812,24 @@ public class WorldMapScreen extends Screen {
                 selectedBadge = cluster;
                 continue;
             }
-            drawClusterMarker(nvg, x, y, clusterRadius(cluster), cluster, false, false);
+            drawClusterMarker(canvas, x, y, clusterRadius(cluster), cluster, false, false);
         }
         if (selectedBadge != null) {
             float x = viewport.worldToScreenX(selectedBadge.centerX());
             float y = viewport.worldToScreenZ(selectedBadge.centerZ());
-            drawClusterMarker(nvg, x, y, clusterRadius(selectedBadge), selectedBadge, true, true);
+            drawClusterMarker(canvas, x, y, clusterRadius(selectedBadge), selectedBadge, true, true);
         }
         if (hoveredBadge != null) {
             float x = viewport.worldToScreenX(hoveredBadge.centerX());
             float y = viewport.worldToScreenZ(hoveredBadge.centerZ());
             boolean selected = hoveredBadge == selectedCluster;
-            drawClusterMarker(nvg, x, y, clusterRadius(hoveredBadge), hoveredBadge, selected, true);
+            drawClusterMarker(canvas, x, y, clusterRadius(hoveredBadge), hoveredBadge, selected, true);
         }
-        nvgResetScissor(nvg);
+        canvas.resetScissor();
     }
 
     private void renderClusterOutline(
-            long nvg,
+            UiCanvas canvas,
             MapViewport viewport,
             GatheringNodeCluster cluster,
             ClusterOutlineShape outline,
@@ -876,40 +844,31 @@ public class WorldMapScreen extends Screen {
         Color fill = new Color(color.getRed(), color.getGreen(), color.getBlue(), highlighted ? 48 : 18);
         Color stroke = new Color(color.getRed(), color.getGreen(), color.getBlue(), highlighted ? 220 : 105);
 
-        nvgBeginPath(nvg);
-        ScreenPoint first = outline.points().getFirst();
-        nvgMoveTo(nvg, centerScreenX + first.x(), centerScreenY + first.y());
-        for (int index = 1; index < outline.points().size(); index++) {
-            ScreenPoint point = outline.points().get(index);
-            nvgLineTo(nvg, centerScreenX + point.x(), centerScreenY + point.y());
-        }
-        if (outline.points().size() > 2) {
-            nvgClosePath(nvg);
-            var fillColor = NVGContext.nvgColor(fill);
-            nvgFillColor(nvg, fillColor);
-            nvgFill(nvg);
-            fillColor.free();
-        }
-        var strokeColor = NVGContext.nvgColor(stroke);
-        nvgStrokeWidth(nvg, hullStrokeWidthForZoom(viewport.pixelsPerBlock(), highlighted));
-        nvgStrokeColor(nvg, strokeColor);
-        nvgStroke(nvg);
-        strokeColor.free();
+        List<UiCanvas.Point> points = outline.points().stream()
+                .map(point -> new UiCanvas.Point(centerScreenX + point.x(), centerScreenY + point.y()))
+                .toList();
+        boolean closed = points.size() > 2;
+        canvas.fillAndStrokePolygon(
+                points,
+                closed ? fill : null,
+                stroke,
+                hullStrokeWidthForZoom(viewport.pixelsPerBlock(), highlighted),
+                closed);
     }
 
-    private void drawClusterMarker(long nvg, float x, float y, float radius, GatheringNodeCluster cluster, boolean selected, boolean highlighted) {
+    private void drawClusterMarker(UiCanvas canvas, float x, float y, float radius, GatheringNodeCluster cluster, boolean selected, boolean highlighted) {
         Color color = selected ? SELECTED_CLUSTER_COLOR : cluster.profession().color();
-        drawCircle(nvg, x, y, radius + 3, new Color(0, 0, 0, highlighted ? 205 : 150));
-        drawCircle(nvg, x, y, radius, new Color(color.getRed(), color.getGreen(), color.getBlue(), highlighted ? 250 : 220));
-        drawText(nvg, x, y + 1, clusterCountTextSize(cluster), String.valueOf(cluster.nodeCount()), TEXT_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        drawCircle(canvas, x, y, radius + 3, new Color(0, 0, 0, highlighted ? 205 : 150));
+        drawCircle(canvas, x, y, radius, new Color(color.getRed(), color.getGreen(), color.getBlue(), highlighted ? 250 : 220));
+        drawText(canvas, x, y + 1, clusterCountTextSize(cluster), String.valueOf(cluster.nodeCount()), TEXT_COLOR, TextAlignment.CENTER);
     }
 
-    private void renderNodes(long nvg, MapViewport viewport, List<GatheringNode> nodes) {
+    private void renderNodes(UiCanvas canvas, MapViewport viewport, List<GatheringNode> nodes) {
         hoveredNode = null;
         float bestHoverDistance = 10f;
         boolean allowHover = !draggingMap;
         MapBounds visibleBounds = viewport.visibleBounds();
-        nvgScissor(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+        canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         for (GatheringNode node : nodes) {
             if (!visibleBounds.contains(node.x(), node.z())) {
                 continue;
@@ -925,16 +884,16 @@ public class WorldMapScreen extends Screen {
             }
             boolean selected = selectedNode == node || (selectedCluster != null && selectedCluster.nodes().contains(node));
             Color color = selected ? PLAYER_COLOR : node.profession().color();
-            drawCircle(nvg, x, y, selected || hovered ? Math.min(radius + 1.8f, 5.6f) : radius, new Color(0, 0, 0, 160));
-            drawCircle(nvg, x, y, radius, color);
+            drawCircle(canvas, x, y, selected || hovered ? Math.min(radius + 1.8f, 5.6f) : radius, new Color(0, 0, 0, 160));
+            drawCircle(canvas, x, y, radius, color);
         }
-        nvgResetScissor(nvg);
+        canvas.resetScissor();
         if (hoveredNode != null) {
-            renderNodeTooltip(nvg, hoveredNode);
+            renderNodeTooltip(canvas, hoveredNode);
         }
     }
 
-    private void renderPlayer(long nvg, MapViewport viewport) {
+    private void renderPlayer(UiCanvas canvas, MapViewport viewport) {
         if (SeqClient.mc.player == null) {
             return;
         }
@@ -946,39 +905,39 @@ public class WorldMapScreen extends Screen {
         }
         float sx = viewport.worldToScreenX(x);
         float sy = viewport.worldToScreenZ(z);
-        drawCircle(nvg, sx, sy, 8, new Color(0, 0, 0, 180));
-        drawCircle(nvg, sx, sy, 5, PLAYER_COLOR);
+        drawCircle(canvas, sx, sy, 8, new Color(0, 0, 0, 180));
+        drawCircle(canvas, sx, sy, 5, PLAYER_COLOR);
     }
 
-    private void renderSidebar(long nvg) {
+    private void renderSidebar(UiCanvas canvas) {
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
-            renderWorldEventSidebar(nvg);
+            renderWorldEventSidebar(canvas);
             return;
         }
         float screenHeight = uiScreenHeight();
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         SidebarLayout layout = sidebarLayout();
-        NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
-        NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, HEADER_COLOR);
-        drawText(nvg, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", TITLE_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, HEADER_COLOR);
+        drawText(canvas, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", TITLE_COLOR, TextAlignment.CENTER);
 
-        drawButton(nvg, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
-        drawButton(nvg, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
-        drawMapModeControl(nvg, layout.modeY());
-        nvgScissor(nvg, 0, SIDEBAR_PANEL_TOP, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_PANEL_TOP));
+        drawButton(canvas, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
+        drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
+        drawMapModeControl(canvas, layout.modeY());
+        canvas.scissor(0, SIDEBAR_PANEL_TOP, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_PANEL_TOP));
         renderPanelHeader(
-                nvg,
+                canvas,
                 sidebarY(layout.mapPanelY()),
                 "Map & Territory",
                 selectedTerritory == null ? gatheringAnalysisScope.label() : selectedTerritory.name(),
                 WorldMapSidebarPanel.MAP_AND_TERRITORY);
         if (panelExpanded(WorldMapSidebarPanel.MAP_AND_TERRITORY)) {
-            renderTerritoryToggles(nvg, sidebarY(layout.territoryToggleY()));
-            drawText(nvg, PADDING, sidebarY(layout.scopeLabelY()), 12, "Gathering Scope", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            drawScopeControl(nvg, sidebarY(layout.scopeY()));
-            drawText(nvg, PADDING, sidebarY(layout.territoryLabelY()), 12, "Territory", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            renderTerritoryToggles(canvas, sidebarY(layout.territoryToggleY()));
+            drawText(canvas, PADDING, sidebarY(layout.scopeLabelY()), 12, "Gathering Scope", SUBTEXT_COLOR, TextAlignment.LEFT);
+            drawScopeControl(canvas, sidebarY(layout.scopeY()));
+            drawText(canvas, PADDING, sidebarY(layout.territoryLabelY()), 12, "Territory", SUBTEXT_COLOR, TextAlignment.LEFT);
             renderSearchInput(
-                    nvg,
+                    canvas,
                     sidebarY(layout.territoryInputY()),
                     territoryDropdownOpen,
                     territoryInputFocused,
@@ -987,85 +946,85 @@ public class WorldMapScreen extends Screen {
         }
 
         renderPanelHeader(
-                nvg,
+                canvas,
                 sidebarY(layout.analysisPanelY()),
                 "Gathering Analysis",
                 showClusters ? clusterScoreMode.label() : "Nodes",
                 WorldMapSidebarPanel.GATHERING_ANALYSIS);
         if (panelExpanded(WorldMapSidebarPanel.GATHERING_ANALYSIS)) {
-            renderGatheringAnalysisToggles(nvg, sidebarY(layout.clustersY()));
+            renderGatheringAnalysisToggles(canvas, sidebarY(layout.clustersY()));
         }
 
         renderPanelHeader(
-                nvg,
+                canvas,
                 sidebarY(layout.filtersPanelY()),
                 "Resource Filters",
                 selectedResourceFilters.isEmpty() ? "All" : selectedResourceFilters.size() + " selected",
                 WorldMapSidebarPanel.RESOURCE_FILTERS);
         if (panelExpanded(WorldMapSidebarPanel.RESOURCE_FILTERS)) {
-            drawText(nvg, PADDING, sidebarY(layout.resourceLabelY()), 12, "Resource", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawText(canvas, PADDING, sidebarY(layout.resourceLabelY()), 12, "Resource", SUBTEXT_COLOR, TextAlignment.LEFT);
             renderSearchInput(
-                    nvg,
+                    canvas,
                     sidebarY(layout.resourceInputY()),
                     resourceDropdownOpen,
                     resourceInputFocused,
                     resourceSearch,
                     selectedResourceLabel());
-            drawText(nvg, PADDING, sidebarY(layout.professionLabelY()), 12, "Professions", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawText(canvas, PADDING, sidebarY(layout.professionLabelY()), 12, "Professions", SUBTEXT_COLOR, TextAlignment.LEFT);
             float professionY = sidebarY(layout.professionStartY());
             for (GatheringProfession profession : gatheringProfessions()) {
                 boolean active = professionToggles.getOrDefault(profession, true);
-                drawToggle(nvg, PADDING, professionY, SIDEBAR_WIDTH - PADDING * 2, TOGGLE_HEIGHT, profession, active);
+                drawToggle(canvas, PADDING, professionY, SIDEBAR_WIDTH - PADDING * 2, TOGGLE_HEIGHT, profession, active);
                 professionY += TOGGLE_HEIGHT + 6;
             }
         }
 
         if (resourceDropdownOpen) {
-            renderResourceDropdown(nvg, sidebarY(layout.resourceInputY()) + INPUT_HEIGHT);
+            renderResourceDropdown(canvas, sidebarY(layout.resourceInputY()) + INPUT_HEIGHT);
         }
         if (territoryDropdownOpen) {
-            renderTerritoryDropdown(nvg, sidebarY(layout.territoryInputY()) + INPUT_HEIGHT);
+            renderTerritoryDropdown(canvas, sidebarY(layout.territoryInputY()) + INPUT_HEIGHT);
         }
         sidebarContentHeight = layout.endY() + PADDING;
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
-        nvgResetScissor(nvg);
-        renderSidebarScrollbar(nvg, screenHeight);
+        canvas.resetScissor();
+        renderSidebarScrollbar(canvas, screenHeight);
     }
 
-    private void renderWorldEventSidebar(long nvg) {
+    private void renderWorldEventSidebar(UiCanvas canvas) {
         float screenHeight = uiScreenHeight();
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         WorldEventSidebarLayout layout = worldEventSidebarLayout();
-        NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
-        NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, HEADER_COLOR);
-        drawText(nvg, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", TITLE_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, HEADER_COLOR);
+        drawText(canvas, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", TITLE_COLOR, TextAlignment.CENTER);
 
-        drawButton(nvg, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
-        drawButton(nvg, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
-        drawMapModeControl(nvg, layout.modeY());
-        nvgScissor(nvg, 0, SIDEBAR_PANEL_TOP, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_PANEL_TOP));
+        drawButton(canvas, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
+        drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
+        drawMapModeControl(canvas, layout.modeY());
+        canvas.scissor(0, SIDEBAR_PANEL_TOP, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_PANEL_TOP));
 
         renderPanelHeader(
-                nvg,
+                canvas,
                 sidebarY(layout.displayPanelY()),
                 "Event Display",
                 worldEventDisplayFilter.label(),
                 WorldMapSidebarPanel.EVENT_DISPLAY);
         if (panelExpanded(WorldMapSidebarPanel.EVENT_DISPLAY)) {
-            drawText(nvg, PADDING, sidebarY(layout.filterLabelY()), 12, "Visible Events", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            drawWorldEventFilterControl(nvg, sidebarY(layout.filterY()));
+            drawText(canvas, PADDING, sidebarY(layout.filterLabelY()), 12, "Visible Events", SUBTEXT_COLOR, TextAlignment.LEFT);
+            drawWorldEventFilterControl(canvas, sidebarY(layout.filterY()));
         }
 
         renderPanelHeader(
-                nvg,
+                canvas,
                 sidebarY(layout.trackingPanelY()),
                 "Tracking",
                 SeqClient.getConfigManager().trackedWorldEventIds().size() + " tracked",
                 WorldMapSidebarPanel.EVENT_TRACKING);
         if (panelExpanded(WorldMapSidebarPanel.EVENT_TRACKING)) {
-            drawWorldEventTrackingListControl(nvg, sidebarY(layout.eventFilterY()));
+            drawWorldEventTrackingListControl(canvas, sidebarY(layout.eventFilterY()));
             renderSearchInput(
-                    nvg,
+                    canvas,
                     sidebarY(layout.eventInputY()),
                     worldEventDropdownOpen,
                     worldEventInputFocused,
@@ -1074,166 +1033,166 @@ public class WorldMapScreen extends Screen {
         }
 
         if (worldEventDropdownOpen) {
-            renderWorldEventDropdown(nvg, sidebarY(layout.eventInputY()) + INPUT_HEIGHT);
+            renderWorldEventDropdown(canvas, sidebarY(layout.eventInputY()) + INPUT_HEIGHT);
         }
         sidebarContentHeight = layout.endY() + PADDING;
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
-        nvgResetScissor(nvg);
-        renderSidebarScrollbar(nvg, screenHeight);
+        canvas.resetScissor();
+        renderSidebarScrollbar(canvas, screenHeight);
     }
 
-    private void renderInsightsSidebar(long nvg) {
+    private void renderInsightsSidebar(UiCanvas canvas) {
         float screenWidth = uiScreenWidth();
         float screenHeight = uiScreenHeight();
         if (!insightsSidebarOpen) {
             drawText(
-                    nvg,
+                    canvas,
                     screenWidth - INSIGHTS_RAIL_WIDTH / 2f,
                     10 + BUTTON_HEIGHT / 2f,
                     16,
                     "<",
                     TEXT_COLOR,
-                    NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                    TextAlignment.CENTER);
             return;
         }
 
         float x = screenWidth - INSIGHTS_SIDEBAR_WIDTH;
         InsightsLayout layout = insightsLayout();
-        NVGWrapper.drawRect(nvg, x, 0, INSIGHTS_SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
-        NVGWrapper.drawRect(nvg, x, 0, INSIGHTS_SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, HEADER_COLOR);
-        drawText(nvg, x + PADDING, 22, 16, "Insights", TITLE_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawButton(nvg, x + INSIGHTS_SIDEBAR_WIDTH - PADDING - 24, 10, 24, BUTTON_HEIGHT, ">", false);
-        nvgScissor(nvg, x, SIDEBAR_HEADER_HEIGHT, INSIGHTS_SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_HEADER_HEIGHT));
+        canvas.fillRect(x, 0, INSIGHTS_SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
+        canvas.fillRect(x, 0, INSIGHTS_SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, HEADER_COLOR);
+        drawText(canvas, x + PADDING, 22, 16, "Insights", TITLE_COLOR, TextAlignment.LEFT);
+        drawButton(canvas, x + INSIGHTS_SIDEBAR_WIDTH - PADDING - 24, 10, 24, BUTTON_HEIGHT, ">", false);
+        canvas.scissor(x, SIDEBAR_HEADER_HEIGHT, INSIGHTS_SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_HEADER_HEIGHT));
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
-            renderWorldEventInsights(nvg, x, layout);
+            renderWorldEventInsights(canvas, x, layout);
         } else {
-            renderGatheringInsights(nvg, x, screenHeight, layout);
+            renderGatheringInsights(canvas, x, screenHeight, layout);
         }
-        nvgResetScissor(nvg);
+        canvas.resetScissor();
     }
 
-    private void renderGatheringInsights(long nvg, float x, float screenHeight, InsightsLayout layout) {
+    private void renderGatheringInsights(UiCanvas canvas, float x, float screenHeight, InsightsLayout layout) {
         float contentX = x + PADDING;
         float contentWidth = INSIGHTS_SIDEBAR_WIDTH - PADDING * 2;
-        drawInsightsSectionTitle(nvg, contentX, layout.overviewY(), "Overview");
-        drawInsightRow(nvg, contentX, layout.overviewY() + 18, contentWidth, "Scope", gatheringAnalysisScope.label());
-        drawInsightRow(nvg, contentX, layout.overviewY() + 34, contentWidth, "Matching nodes", String.valueOf(cachedFilteredNodes.size()));
-        drawInsightRow(nvg, contentX, layout.overviewY() + 50, contentWidth, "Clusters", String.valueOf(cachedClusters.size()));
+        drawInsightsSectionTitle(canvas, contentX, layout.overviewY(), "Overview");
+        drawInsightRow(canvas, contentX, layout.overviewY() + 18, contentWidth, "Scope", gatheringAnalysisScope.label());
+        drawInsightRow(canvas, contentX, layout.overviewY() + 34, contentWidth, "Matching nodes", String.valueOf(cachedFilteredNodes.size()));
+        drawInsightRow(canvas, contentX, layout.overviewY() + 50, contentWidth, "Clusters", String.valueOf(cachedClusters.size()));
         if (showDebugInfo) {
-            drawInsightRow(nvg, contentX, layout.overviewY() + 66, contentWidth, "Map source", displayMapImageSource());
-            drawInsightRow(nvg, contentX, layout.overviewY() + 82, contentWidth, "HQ status", mapImageService.hqStatus());
+            drawInsightRow(canvas, contentX, layout.overviewY() + 66, contentWidth, "Map source", displayMapImageSource());
+            drawInsightRow(canvas, contentX, layout.overviewY() + 82, contentWidth, "HQ status", mapImageService.hqStatus());
         }
 
         if (selectedTerritory != null) {
-            drawInsightsSectionTitle(nvg, contentX, layout.territoryY() - 8, "Territory");
-            renderSelectedTerritoryDetail(nvg, contentX, layout.territoryY() + 4, contentWidth, selectedTerritory);
+            drawInsightsSectionTitle(canvas, contentX, layout.territoryY() - 8, "Territory");
+            renderSelectedTerritoryDetail(canvas, contentX, layout.territoryY() + 4, contentWidth, selectedTerritory);
         }
 
         GatheringNodeCluster clusterDetail = selectedCluster != null ? selectedCluster : hoveredCluster;
         GatheringNode nodeDetail = selectedNode != null ? selectedNode : hoveredNode;
-        drawInsightsSectionTitle(nvg, contentX, layout.entityY() - 8, "Selection");
+        drawInsightsSectionTitle(canvas, contentX, layout.entityY() - 8, "Selection");
         if (clusterDetail != null) {
-            renderClusterDetail(nvg, contentX, layout.entityY() + 4, contentWidth, clusterDetail);
+            renderClusterDetail(canvas, contentX, layout.entityY() + 4, contentWidth, clusterDetail);
         } else if (nodeDetail != null) {
-            renderNodeDetail(nvg, contentX, layout.entityY() + 4, contentWidth, nodeDetail);
+            renderNodeDetail(canvas, contentX, layout.entityY() + 4, contentWidth, nodeDetail);
         } else {
             drawFittedText(
-                    nvg,
+                    canvas,
                     contentX,
                     layout.entityY() + 18,
                     11,
                     "Hover or select a node, cluster, or territory",
                     SUBTEXT_COLOR,
                     contentWidth,
-                    NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+                    TextAlignment.LEFT);
         }
 
         if (!showClusters || cachedClusters.isEmpty()) {
             return;
         }
         float topY = layout.topClustersY();
-        drawInsightsSectionTitle(nvg, contentX, topY, "Top Clusters");
+        drawInsightsSectionTitle(canvas, contentX, topY, "Top Clusters");
         topY += 12;
         int availableRows = Math.max(0, (int) ((screenHeight - topY - PADDING) / 40));
         int rowCount = Math.min(Math.min(SIDEBAR_CLUSTER_LIMIT, cachedClusters.size()), availableRows);
         for (int index = 0; index < rowCount; index++) {
             GatheringNodeCluster cluster = cachedClusters.get(index);
             boolean active = cluster == selectedCluster;
-            NVGWrapper.drawRect(nvg, contentX, topY, contentWidth, 34, active ? CONTROL_ACTIVE : CONTROL_COLOR);
-            NVGWrapper.drawRectOutline(nvg, contentX, topY, contentWidth, 34, 1, BORDER_COLOR);
-            drawFittedText(nvg, contentX + 8, topY + 11, 11, "#" + (index + 1) + " " + cluster.resource() + " | " + cluster.score() + "%", TEXT_COLOR, contentWidth - 16, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            drawFittedText(nvg, contentX + 8, topY + 26, 10, cluster.nodeCount() + " nodes | " + Math.round(cluster.averageSpacing()) + "m", SUBTEXT_COLOR, contentWidth - 16, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            canvas.fillRect(contentX, topY, contentWidth, 34, active ? CONTROL_ACTIVE : CONTROL_COLOR);
+            canvas.strokeRect(contentX, topY, contentWidth, 34, 1, BORDER_COLOR);
+            drawFittedText(canvas, contentX + 8, topY + 11, 11, "#" + (index + 1) + " " + cluster.resource() + " | " + cluster.score() + "%", TEXT_COLOR, contentWidth - 16, TextAlignment.LEFT);
+            drawFittedText(canvas, contentX + 8, topY + 26, 10, cluster.nodeCount() + " nodes | " + Math.round(cluster.averageSpacing()) + "m", SUBTEXT_COLOR, contentWidth - 16, TextAlignment.LEFT);
             topY += 40;
         }
     }
 
-    private void renderWorldEventInsights(long nvg, float x, InsightsLayout layout) {
+    private void renderWorldEventInsights(UiCanvas canvas, float x, InsightsLayout layout) {
         float contentX = x + PADDING;
         float contentWidth = INSIGHTS_SIDEBAR_WIDTH - PADDING * 2;
         long visibleCount = allWorldEvents.stream().filter(WorldEventDefinition::isVisible).count();
-        drawInsightsSectionTitle(nvg, contentX, layout.overviewY(), "Overview");
-        drawInsightRow(nvg, contentX, layout.overviewY() + 18, contentWidth, "Visible", visibleWorldEvents.size() + " shown / " + visibleCount + " active");
-        drawInsightRow(nvg, contentX, layout.overviewY() + 34, contentWidth, "Tracked", String.valueOf(SeqClient.getConfigManager().trackedWorldEventIds().size()));
-        drawInsightRow(nvg, contentX, layout.overviewY() + 50, contentWidth, "API", worldEventService.status());
+        drawInsightsSectionTitle(canvas, contentX, layout.overviewY(), "Overview");
+        drawInsightRow(canvas, contentX, layout.overviewY() + 18, contentWidth, "Visible", visibleWorldEvents.size() + " shown / " + visibleCount + " active");
+        drawInsightRow(canvas, contentX, layout.overviewY() + 34, contentWidth, "Tracked", String.valueOf(SeqClient.getConfigManager().trackedWorldEventIds().size()));
+        drawInsightRow(canvas, contentX, layout.overviewY() + 50, contentWidth, "API", worldEventService.status());
 
         WorldEventDefinition detail = selectedWorldEvent != null ? selectedWorldEvent : hoveredWorldEvent;
-        drawInsightsSectionTitle(nvg, contentX, layout.eventDetailY() - 8, "Selection");
+        drawInsightsSectionTitle(canvas, contentX, layout.eventDetailY() - 8, "Selection");
         if (detail != null) {
-            renderWorldEventDetail(nvg, contentX, layout.eventDetailY() + 4, contentWidth, detail, selectedWorldEvent != null);
+            renderWorldEventDetail(canvas, contentX, layout.eventDetailY() + 4, contentWidth, detail, selectedWorldEvent != null);
         } else {
-            drawFittedText(nvg, contentX, layout.eventDetailY() + 18, 11, "Hover or select a world event", SUBTEXT_COLOR, contentWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawFittedText(canvas, contentX, layout.eventDetailY() + 18, 11, "Hover or select a world event", SUBTEXT_COLOR, contentWidth, TextAlignment.LEFT);
         }
     }
 
-    private void drawInsightsSectionTitle(long nvg, float x, float y, String label) {
-        drawText(nvg, x, y, 12, label, SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    private void drawInsightsSectionTitle(UiCanvas canvas, float x, float y, String label) {
+        drawText(canvas, x, y, 12, label, SUBTEXT_COLOR, TextAlignment.LEFT);
     }
 
-    private void drawInsightRow(long nvg, float x, float y, float width, String label, String value) {
-        drawFittedText(nvg, x, y, 10, label, SUBTEXT_COLOR, width * 0.42f, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawFittedText(nvg, x + width, y, 10, value, TEXT_COLOR, width * 0.58f, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    private void drawInsightRow(UiCanvas canvas, float x, float y, float width, String label, String value) {
+        drawFittedText(canvas, x, y, 10, label, SUBTEXT_COLOR, width * 0.42f, TextAlignment.LEFT);
+        drawFittedText(canvas, x + width, y, 10, value, TEXT_COLOR, width * 0.58f, TextAlignment.RIGHT);
     }
 
-    private void renderClusterDetail(long nvg, float x, float y, float width, GatheringNodeCluster cluster) {
-        NVGWrapper.drawRect(nvg, x, y, width, CLUSTER_DETAIL_HEIGHT, new Color(28, 28, 38, 210));
-        NVGWrapper.drawRectOutline(nvg, x, y, width, CLUSTER_DETAIL_HEIGHT, 1, BORDER_COLOR);
+    private void renderClusterDetail(UiCanvas canvas, float x, float y, float width, GatheringNodeCluster cluster) {
+        canvas.fillRect(x, y, width, CLUSTER_DETAIL_HEIGHT, new Color(28, 28, 38, 210));
+        canvas.strokeRect(x, y, width, CLUSTER_DETAIL_HEIGHT, 1, BORDER_COLOR);
         float textWidth = width - 16;
-        drawFittedText(nvg, x + 8, y + 17, 14, cluster.resource(), TEXT_COLOR, textWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawFittedText(nvg, x + 8, y + 36, 12, cluster.nodeCount() + " nodes | score " + cluster.score() + "%", SUBTEXT_COLOR, textWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawFittedText(nvg, x + 8, y + 55, 12, Math.round(cluster.averageSpacing()) + "m spacing", SUBTEXT_COLOR, textWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawFittedText(nvg, x + 8, y + 74, 12, cluster.profession().name(), cluster.profession().color(), textWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawFittedText(nvg, x + 8, y + 93, 12, clusterCoords(cluster), SUBTEXT_COLOR, textWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawFittedText(canvas, x + 8, y + 17, 14, cluster.resource(), TEXT_COLOR, textWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 36, 12, cluster.nodeCount() + " nodes | score " + cluster.score() + "%", SUBTEXT_COLOR, textWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 55, 12, Math.round(cluster.averageSpacing()) + "m spacing", SUBTEXT_COLOR, textWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 74, 12, cluster.profession().name(), cluster.profession().color(), textWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 93, 12, clusterCoords(cluster), SUBTEXT_COLOR, textWidth, TextAlignment.LEFT);
     }
 
-    private void renderNodeDetail(long nvg, float x, float y, float width, GatheringNode node) {
-        NVGWrapper.drawRect(nvg, x, y, width, NODE_DETAIL_HEIGHT, new Color(28, 28, 38, 210));
-        NVGWrapper.drawRectOutline(nvg, x, y, width, NODE_DETAIL_HEIGHT, 1, BORDER_COLOR);
-        drawFittedText(nvg, x + 8, y + 17, 14, node.resource(), TEXT_COLOR, width - 16, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawFittedText(nvg, x + 8, y + 38, 12, nodeCoords(node), SUBTEXT_COLOR, width - 16, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    private void renderNodeDetail(UiCanvas canvas, float x, float y, float width, GatheringNode node) {
+        canvas.fillRect(x, y, width, NODE_DETAIL_HEIGHT, new Color(28, 28, 38, 210));
+        canvas.strokeRect(x, y, width, NODE_DETAIL_HEIGHT, 1, BORDER_COLOR);
+        drawFittedText(canvas, x + 8, y + 17, 14, node.resource(), TEXT_COLOR, width - 16, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 38, 12, nodeCoords(node), SUBTEXT_COLOR, width - 16, TextAlignment.LEFT);
     }
 
     private void renderWorldEventDetail(
-            long nvg,
+            UiCanvas canvas,
             float x,
             float y,
             float width,
             WorldEventDefinition event,
             boolean allowTrackingButton) {
         float textWidth = width - 16;
-        NVGWrapper.drawRect(nvg, x, y, width, WORLD_EVENT_DETAIL_HEIGHT, new Color(28, 28, 38, 220));
-        NVGWrapper.drawRectOutline(nvg, x, y, width, WORLD_EVENT_DETAIL_HEIGHT, 1, BORDER_COLOR);
-        drawFittedText(nvg, x + 8, y + 16, 14, event.name(), TEXT_COLOR, textWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        canvas.fillRect(x, y, width, WORLD_EVENT_DETAIL_HEIGHT, new Color(28, 28, 38, 220));
+        canvas.strokeRect(x, y, width, WORLD_EVENT_DETAIL_HEIGHT, 1, BORDER_COLOR);
+        drawFittedText(canvas, x + 8, y + 16, 14, event.name(), TEXT_COLOR, textWidth, TextAlignment.LEFT);
         String metadata = worldEventMetadata(event);
-        drawFittedText(nvg, x + 8, y + 35, 11, metadata, SUBTEXT_COLOR, textWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawFittedText(nvg, x + 8, y + 53, 11, worldEventScheduleLabel(event.schedule()), SUBTEXT_COLOR, textWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawFittedText(canvas, x + 8, y + 35, 11, metadata, SUBTEXT_COLOR, textWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 53, 11, worldEventScheduleLabel(event.schedule()), SUBTEXT_COLOR, textWidth, TextAlignment.LEFT);
         String locationLabel = event.locations().size() == 1
                 ? worldEventCoordinates(event.locations().getFirst())
                 : event.locations().size() + " possible locations";
-        drawFittedText(nvg, x + 8, y + 71, 11, locationLabel, SUBTEXT_COLOR, textWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawFittedText(canvas, x + 8, y + 71, 11, locationLabel, SUBTEXT_COLOR, textWidth, TextAlignment.LEFT);
         if (allowTrackingButton) {
             boolean tracked = SeqClient.getConfigManager().trackedWorldEventIds().contains(event.internalName());
             drawButton(
-                    nvg,
+                    canvas,
                     x + 8,
                     y + 88,
                     width - 16,
@@ -1243,7 +1202,7 @@ public class WorldMapScreen extends Screen {
         }
     }
 
-    private void drawMapModeControl(long nvg, float y) {
+    private void drawMapModeControl(UiCanvas canvas, float y) {
         float width = SIDEBAR_WIDTH - PADDING * 2;
         float segmentWidth = width / MapDisplayMode.values().length;
         for (int index = 0; index < MapDisplayMode.values().length; index++) {
@@ -1251,13 +1210,13 @@ public class WorldMapScreen extends Screen {
             float x = PADDING + index * segmentWidth;
             boolean active = displayMode == mode;
             boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
-            NVGWrapper.drawRect(nvg, x, y, segmentWidth, BUTTON_HEIGHT, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
-            NVGWrapper.drawRectOutline(nvg, x, y, segmentWidth, BUTTON_HEIGHT, 1, BORDER_COLOR);
-            drawText(nvg, x + segmentWidth / 2f, y + BUTTON_HEIGHT / 2f, 11, mode.label(), TEXT_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
+            canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, BORDER_COLOR);
+            drawText(canvas, x + segmentWidth / 2f, y + BUTTON_HEIGHT / 2f, 11, mode.label(), TEXT_COLOR, TextAlignment.CENTER);
         }
     }
 
-    private void drawWorldEventFilterControl(long nvg, float y) {
+    private void drawWorldEventFilterControl(UiCanvas canvas, float y) {
         float width = SIDEBAR_WIDTH - PADDING * 2;
         float segmentWidth = width / WorldEventDisplayFilter.values().length;
         for (int index = 0; index < WorldEventDisplayFilter.values().length; index++) {
@@ -1265,18 +1224,18 @@ public class WorldMapScreen extends Screen {
             float x = PADDING + index * segmentWidth;
             boolean active = worldEventDisplayFilter == filter;
             boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
-            NVGWrapper.drawRect(nvg, x, y, segmentWidth, BUTTON_HEIGHT, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
-            NVGWrapper.drawRectOutline(nvg, x, y, segmentWidth, BUTTON_HEIGHT, 1, BORDER_COLOR);
-            drawText(nvg, x + segmentWidth / 2f, y + BUTTON_HEIGHT / 2f, 11, filter.label(), TEXT_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
+            canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, BORDER_COLOR);
+            drawText(canvas, x + segmentWidth / 2f, y + BUTTON_HEIGHT / 2f, 11, filter.label(), TEXT_COLOR, TextAlignment.CENTER);
         }
     }
 
-    private void drawWorldEventTrackingListControl(long nvg, float y) {
+    private void drawWorldEventTrackingListControl(UiCanvas canvas, float y) {
         float width = SIDEBAR_WIDTH - PADDING * 2;
         float segmentWidth = width / 2f;
-        drawTrackingListSegment(nvg, PADDING, y, segmentWidth, "All Events", !worldEventDropdownTrackedOnly);
+        drawTrackingListSegment(canvas, PADDING, y, segmentWidth, "All Events", !worldEventDropdownTrackedOnly);
         drawTrackingListSegment(
-                nvg,
+                canvas,
                 PADDING + segmentWidth,
                 y,
                 segmentWidth,
@@ -1284,23 +1243,23 @@ public class WorldMapScreen extends Screen {
                 worldEventDropdownTrackedOnly);
     }
 
-    private void drawTrackingListSegment(long nvg, float x, float y, float width, String label, boolean active) {
+    private void drawTrackingListSegment(UiCanvas canvas, float x, float y, float width, String label, boolean active) {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, width, BUTTON_HEIGHT);
-        NVGWrapper.drawRect(nvg, x, y, width, BUTTON_HEIGHT, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
-        NVGWrapper.drawRectOutline(nvg, x, y, width, BUTTON_HEIGHT, 1, BORDER_COLOR);
+        canvas.fillRect(x, y, width, BUTTON_HEIGHT, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
+        canvas.strokeRect(x, y, width, BUTTON_HEIGHT, 1, BORDER_COLOR);
         drawFittedText(
-                nvg,
+                canvas,
                 x + width / 2f,
                 y + BUTTON_HEIGHT / 2f,
                 11,
                 label,
                 TEXT_COLOR,
                 width - 10,
-                NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                TextAlignment.CENTER);
     }
 
     private void renderPanelHeader(
-            long nvg,
+            UiCanvas canvas,
             float y,
             String label,
             String summary,
@@ -1313,47 +1272,43 @@ public class WorldMapScreen extends Screen {
                 y,
                 SIDEBAR_WIDTH - PADDING * 2,
                 PANEL_HEADER_HEIGHT);
-        NVGWrapper.drawRect(
-                nvg,
-                PADDING,
+        canvas.fillRect(PADDING,
                 y,
                 SIDEBAR_WIDTH - PADDING * 2,
                 PANEL_HEADER_HEIGHT,
                 hovered ? CONTROL_HOVER : new Color(33, 33, 44, 235));
-        NVGWrapper.drawRectOutline(
-                nvg,
-                PADDING,
+        canvas.strokeRect(PADDING,
                 y,
                 SIDEBAR_WIDTH - PADDING * 2,
                 PANEL_HEADER_HEIGHT,
                 1,
                 BORDER_COLOR);
         drawText(
-                nvg,
+                canvas,
                 PADDING + 10,
                 y + PANEL_HEADER_HEIGHT / 2f,
                 12,
                 expanded ? "v" : ">",
                 SUBTEXT_COLOR,
-                NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                TextAlignment.CENTER);
         drawFittedText(
-                nvg,
+                canvas,
                 PADDING + 22,
                 y + PANEL_HEADER_HEIGHT / 2f,
                 12,
                 label,
                 TEXT_COLOR,
                 PANEL_LABEL_WIDTH,
-                NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+                TextAlignment.LEFT);
         drawFittedText(
-                nvg,
+                canvas,
                 SIDEBAR_WIDTH - PADDING - 8,
                 y + PANEL_HEADER_HEIGHT / 2f,
                 10,
                 summary,
                 SUBTEXT_COLOR,
                 PANEL_SUMMARY_WIDTH,
-                NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+                TextAlignment.RIGHT);
     }
 
     private boolean panelExpanded(WorldMapSidebarPanel panel) {
@@ -1383,16 +1338,16 @@ public class WorldMapScreen extends Screen {
                 GatheringProfession.FISHING);
     }
 
-    private void renderTerritoryToggles(long nvg, float y) {
+    private void renderTerritoryToggles(UiCanvas canvas, float y) {
         float fullWidth = SIDEBAR_WIDTH - PADDING * 2;
         if (!showTerritories) {
-            drawButton(nvg, PADDING, y, fullWidth, BUTTON_HEIGHT, "Territory Borders Off", false);
+            drawButton(canvas, PADDING, y, fullWidth, BUTTON_HEIGHT, "Territory Borders Off", false);
             return;
         }
         float splitWidth = (fullWidth - SPLIT_CONTROL_GAP) / 2f;
-        drawButton(nvg, PADDING, y, splitWidth, BUTTON_HEIGHT, "Borders On", true);
+        drawButton(canvas, PADDING, y, splitWidth, BUTTON_HEIGHT, "Borders On", true);
         drawButton(
-                nvg,
+                canvas,
                 PADDING + splitWidth + SPLIT_CONTROL_GAP,
                 y,
                 splitWidth,
@@ -1401,16 +1356,16 @@ public class WorldMapScreen extends Screen {
                 showTerritoryNames);
     }
 
-    private void renderGatheringAnalysisToggles(long nvg, float y) {
+    private void renderGatheringAnalysisToggles(UiCanvas canvas, float y) {
         float fullWidth = SIDEBAR_WIDTH - PADDING * 2;
         if (!showClusters) {
-            drawButton(nvg, PADDING, y, fullWidth, BUTTON_HEIGHT, "Gathering Clusters Off", false);
+            drawButton(canvas, PADDING, y, fullWidth, BUTTON_HEIGHT, "Gathering Clusters Off", false);
             return;
         }
         float splitWidth = (fullWidth - SPLIT_CONTROL_GAP) / 2f;
-        drawButton(nvg, PADDING, y, splitWidth, BUTTON_HEIGHT, "Clusters On", true);
+        drawButton(canvas, PADDING, y, splitWidth, BUTTON_HEIGHT, "Clusters On", true);
         drawButton(
-                nvg,
+                canvas,
                 PADDING + splitWidth + SPLIT_CONTROL_GAP,
                 y,
                 splitWidth,
@@ -1420,27 +1375,27 @@ public class WorldMapScreen extends Screen {
     }
 
     private void renderSearchInput(
-            long nvg,
+            UiCanvas canvas,
             float y,
             boolean dropdownOpen,
             boolean inputFocused,
             String search,
             String unfocusedValue) {
-        NVGWrapper.drawRect(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, dropdownOpen ? CONTROL_HOVER : CONTROL_COLOR);
-        NVGWrapper.drawRectOutline(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, 1, BORDER_COLOR);
+        canvas.fillRect(PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, dropdownOpen ? CONTROL_HOVER : CONTROL_COLOR);
+        canvas.strokeRect(PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, 1, BORDER_COLOR);
         String value = inputFocused ? search : unfocusedValue;
         Color valueColor = value == null || value.isBlank() ? SUBTEXT_COLOR : TEXT_COLOR;
         String displayValue = value == null || value.isBlank() ? "Search" : value;
         float inputTextWidth = SIDEBAR_WIDTH - PADDING * 2 - 30;
-        drawFittedText(nvg, PADDING + 8, y + INPUT_HEIGHT / 2f, 12, displayValue, valueColor, inputTextWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawFittedText(canvas, PADDING + 8, y + INPUT_HEIGHT / 2f, 12, displayValue, valueColor, inputTextWidth, TextAlignment.LEFT);
         if (inputFocused) {
-            float cursorX = PADDING + 10 + Math.min(textWidth(nvg, value), inputTextWidth);
-            drawText(nvg, cursorX, y + INPUT_HEIGHT / 2f, 12, "|", TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            float cursorX = PADDING + 10 + Math.min(textWidth(value, 12), inputTextWidth);
+            drawText(canvas, cursorX, y + INPUT_HEIGHT / 2f, 12, "|", TEXT_COLOR, TextAlignment.LEFT);
         }
-        drawText(nvg, SIDEBAR_WIDTH - PADDING - 10, y + INPUT_HEIGHT / 2f, 12, dropdownOpen ? "^" : "v", SUBTEXT_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        drawText(canvas, SIDEBAR_WIDTH - PADDING - 10, y + INPUT_HEIGHT / 2f, 12, dropdownOpen ? "^" : "v", SUBTEXT_COLOR, TextAlignment.CENTER);
     }
 
-    private void drawScopeControl(long nvg, float y) {
+    private void drawScopeControl(UiCanvas canvas, float y) {
         float width = SIDEBAR_WIDTH - PADDING * 2;
         float segmentWidth = width / GatheringAnalysisScope.values().length;
         for (int index = 0; index < GatheringAnalysisScope.values().length; index++) {
@@ -1453,59 +1408,59 @@ public class WorldMapScreen extends Screen {
             if (!enabled) {
                 background = new Color(background.getRed(), background.getGreen(), background.getBlue(), 105);
             }
-            NVGWrapper.drawRect(nvg, x, y, segmentWidth, BUTTON_HEIGHT, background);
-            NVGWrapper.drawRectOutline(nvg, x, y, segmentWidth, BUTTON_HEIGHT, 1, BORDER_COLOR);
+            canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, background);
+            canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, BORDER_COLOR);
             drawFittedText(
-                    nvg,
+                    canvas,
                     x + segmentWidth / 2f,
                     y + BUTTON_HEIGHT / 2f,
                     10,
                     scope.label(),
                     enabled ? TEXT_COLOR : SUBTEXT_COLOR,
                     segmentWidth - 8,
-                    NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                    TextAlignment.CENTER);
         }
     }
 
     private void renderSelectedTerritoryDetail(
-            long nvg,
+            UiCanvas canvas,
             float x,
             float y,
             float width,
             GuildTerritory territory) {
-        NVGWrapper.drawRect(nvg, x, y, width, TERRITORY_DETAIL_HEIGHT, new Color(28, 28, 38, 210));
-        NVGWrapper.drawRectOutline(nvg, x, y, width, TERRITORY_DETAIL_HEIGHT, 1, SELECTED_TERRITORY_COLOR);
+        canvas.fillRect(x, y, width, TERRITORY_DETAIL_HEIGHT, new Color(28, 28, 38, 210));
+        canvas.strokeRect(x, y, width, TERRITORY_DETAIL_HEIGHT, 1, SELECTED_TERRITORY_COLOR);
         float detailWidth = width - 16;
         int totalNodes = cachedTerritoryNodeCounts.getOrDefault(territory.name(), 0);
         int matchingNodes = selectedTerritoryMatchingNodeCount;
-        drawFittedText(nvg, x + 8, y + 17, 14, territory.name(), TEXT_COLOR, detailWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawFittedText(nvg, x + 8, y + 36, 11, totalNodes + " total nodes | " + matchingNodes + " matching", SUBTEXT_COLOR, detailWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawFittedText(nvg, x + 8, y + 56, 10, territoryBoundsLabel(territory), SUBTEXT_COLOR, detailWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawFittedText(canvas, x + 8, y + 17, 14, territory.name(), TEXT_COLOR, detailWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 36, 11, totalNodes + " total nodes | " + matchingNodes + " matching", SUBTEXT_COLOR, detailWidth, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 56, 10, territoryBoundsLabel(territory), SUBTEXT_COLOR, detailWidth, TextAlignment.LEFT);
     }
 
-    private void drawButton(long nvg, float x, float y, float w, float h, String label, boolean active) {
+    private void drawButton(UiCanvas canvas, float x, float y, float w, float h, String label, boolean active) {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
-        NVGWrapper.drawRect(nvg, x, y, w, h, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
-        NVGWrapper.drawRectOutline(nvg, x, y, w, h, 1, BORDER_COLOR);
-        drawText(nvg, x + w / 2f, y + h / 2f, 12, label, TEXT_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        canvas.fillRect(x, y, w, h, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
+        canvas.strokeRect(x, y, w, h, 1, BORDER_COLOR);
+        drawText(canvas, x + w / 2f, y + h / 2f, 12, label, TEXT_COLOR, TextAlignment.CENTER);
     }
 
-    private void drawToggle(long nvg, float x, float y, float w, float h, GatheringProfession profession, boolean active) {
-        drawButton(nvg, x, y, w, h, displayProfession(profession), active);
-        drawCircle(nvg, x + 13, y + h / 2f, 4, profession.color());
+    private void drawToggle(UiCanvas canvas, float x, float y, float w, float h, GatheringProfession profession, boolean active) {
+        drawButton(canvas, x, y, w, h, displayProfession(profession), active);
+        drawCircle(canvas, x + 13, y + h / 2f, 4, profession.color());
     }
 
-    private void renderResourceDropdown(long nvg, float y) {
+    private void renderResourceDropdown(UiCanvas canvas, float y) {
         List<String> resources = resourceDropdownOptions();
         int visibleRows = Math.min(RESOURCE_DROPDOWN_VISIBLE_ROWS, resources.size());
         resourceDropdownScroll = clampResourceDropdownScroll(resourceDropdownScroll, resources.size());
         float x = PADDING;
         float width = SIDEBAR_WIDTH - PADDING * 2;
         float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
-        NVGWrapper.drawRect(nvg, x, y, width, height, new Color(22, 22, 30, 248));
-        NVGWrapper.drawRectOutline(nvg, x, y, width, height, 1, BORDER_COLOR);
+        canvas.fillRect(x, y, width, height, new Color(22, 22, 30, 248));
+        canvas.strokeRect(x, y, width, height, 1, BORDER_COLOR);
         if (resources.isEmpty()) {
-            drawText(nvg, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", SUBTEXT_COLOR, TextAlignment.LEFT);
             return;
         }
         for (int index = 0; index < visibleRows; index++) {
@@ -1515,28 +1470,28 @@ public class WorldMapScreen extends Screen {
                     : selectedResourceFilters.contains(resource);
             boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT, width, RESOURCE_DROPDOWN_ROW_HEIGHT);
             if (selected || hovered) {
-                NVGWrapper.drawRect(nvg, x + 1, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1, width - 2, RESOURCE_DROPDOWN_ROW_HEIGHT - 2, selected ? CONTROL_ACTIVE : CONTROL_HOVER);
+                canvas.fillRect(x + 1, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1, width - 2, RESOURCE_DROPDOWN_ROW_HEIGHT - 2, selected ? CONTROL_ACTIVE : CONTROL_HOVER);
             }
             String label = resource.isBlank() ? "All resources" : resource;
-            drawFittedText(nvg, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, label, resource.isBlank() ? SUBTEXT_COLOR : TEXT_COLOR, width - 16, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawFittedText(canvas, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, label, resource.isBlank() ? SUBTEXT_COLOR : TEXT_COLOR, width - 16, TextAlignment.LEFT);
         }
         if (resources.size() > visibleRows) {
             String range = (resourceDropdownScroll + 1) + "-" + (resourceDropdownScroll + visibleRows) + "/" + resources.size();
-            drawText(nvg, x + width - 8, y + height - 7, 9, range, SUBTEXT_COLOR, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            drawText(canvas, x + width - 8, y + height - 7, 9, range, SUBTEXT_COLOR, TextAlignment.RIGHT);
         }
     }
 
-    private void renderTerritoryDropdown(long nvg, float y) {
+    private void renderTerritoryDropdown(UiCanvas canvas, float y) {
         List<GuildTerritory> territories = territoryDropdownOptions();
         int visibleRows = Math.min(TERRITORY_DROPDOWN_VISIBLE_ROWS, territories.size());
         territoryDropdownScroll = clampDropdownScroll(territoryDropdownScroll, territories.size(), TERRITORY_DROPDOWN_VISIBLE_ROWS);
         float x = PADDING;
         float width = SIDEBAR_WIDTH - PADDING * 2;
         float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
-        NVGWrapper.drawRect(nvg, x, y, width, height, new Color(22, 22, 30, 248));
-        NVGWrapper.drawRectOutline(nvg, x, y, width, height, 1, BORDER_COLOR);
+        canvas.fillRect(x, y, width, height, new Color(22, 22, 30, 248));
+        canvas.strokeRect(x, y, width, height, 1, BORDER_COLOR);
         if (territories.isEmpty()) {
-            drawText(nvg, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", SUBTEXT_COLOR, TextAlignment.LEFT);
             return;
         }
         for (int index = 0; index < visibleRows; index++) {
@@ -1544,17 +1499,17 @@ public class WorldMapScreen extends Screen {
             boolean selected = territory.equals(selectedTerritory);
             boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT, width, RESOURCE_DROPDOWN_ROW_HEIGHT);
             if (selected || hovered) {
-                NVGWrapper.drawRect(nvg, x + 1, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1, width - 2, RESOURCE_DROPDOWN_ROW_HEIGHT - 2, selected ? CONTROL_ACTIVE : CONTROL_HOVER);
+                canvas.fillRect(x + 1, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1, width - 2, RESOURCE_DROPDOWN_ROW_HEIGHT - 2, selected ? CONTROL_ACTIVE : CONTROL_HOVER);
             }
-            drawFittedText(nvg, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, territory.name(), TEXT_COLOR, width - 16, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawFittedText(canvas, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, territory.name(), TEXT_COLOR, width - 16, TextAlignment.LEFT);
         }
         if (territories.size() > visibleRows) {
             String range = (territoryDropdownScroll + 1) + "-" + (territoryDropdownScroll + visibleRows) + "/" + territories.size();
-            drawText(nvg, x + width - 8, y + height - 7, 9, range, SUBTEXT_COLOR, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            drawText(canvas, x + width - 8, y + height - 7, 9, range, SUBTEXT_COLOR, TextAlignment.RIGHT);
         }
     }
 
-    private void renderWorldEventDropdown(long nvg, float y) {
+    private void renderWorldEventDropdown(UiCanvas canvas, float y) {
         List<WorldEventDefinition> events = worldEventDropdownOptions();
         int visibleRows = Math.min(WORLD_EVENT_DROPDOWN_VISIBLE_ROWS, events.size());
         worldEventDropdownScroll = clampDropdownScroll(
@@ -1565,10 +1520,10 @@ public class WorldMapScreen extends Screen {
         float width = SIDEBAR_WIDTH - PADDING * 2;
         float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
         Set<String> tracked = SeqClient.getConfigManager().trackedWorldEventIds();
-        NVGWrapper.drawRect(nvg, x, y, width, height, new Color(22, 22, 30, 248));
-        NVGWrapper.drawRectOutline(nvg, x, y, width, height, 1, BORDER_COLOR);
+        canvas.fillRect(x, y, width, height, new Color(22, 22, 30, 248));
+        canvas.strokeRect(x, y, width, height, 1, BORDER_COLOR);
         if (events.isEmpty()) {
-            drawText(nvg, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", SUBTEXT_COLOR, TextAlignment.LEFT);
             return;
         }
         for (int index = 0; index < visibleRows; index++) {
@@ -1582,9 +1537,7 @@ public class WorldMapScreen extends Screen {
                     width,
                     RESOURCE_DROPDOWN_ROW_HEIGHT);
             if (selected || hovered) {
-                NVGWrapper.drawRect(
-                        nvg,
-                        x + 1,
+                canvas.fillRect(x + 1,
                         y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1,
                         width - 2,
                         RESOURCE_DROPDOWN_ROW_HEIGHT - 2,
@@ -1592,22 +1545,22 @@ public class WorldMapScreen extends Screen {
             }
             String label = (selected ? "[x] " : "[ ] ") + event.name();
             drawFittedText(
-                    nvg,
+                    canvas,
                     x + 8,
                     y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f,
                     11,
                     label,
                     event.isVisible() ? TEXT_COLOR : SUBTEXT_COLOR,
                     width - 16,
-                    NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+                    TextAlignment.LEFT);
         }
         if (events.size() > visibleRows) {
             String range = (worldEventDropdownScroll + 1) + "-" + (worldEventDropdownScroll + visibleRows) + "/" + events.size();
-            drawText(nvg, x + width - 8, y + height - 7, 9, range, SUBTEXT_COLOR, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            drawText(canvas, x + width - 8, y + height - 7, 9, range, SUBTEXT_COLOR, TextAlignment.RIGHT);
         }
     }
 
-    private void renderSidebarScrollbar(long nvg, float screenHeight) {
+    private void renderSidebarScrollbar(UiCanvas canvas, float screenHeight) {
         float viewportHeight = Math.max(0, screenHeight - SIDEBAR_PANEL_TOP);
         float maxScroll = sidebarMaxScroll(screenHeight);
         if (maxScroll <= 0 || viewportHeight <= 0) {
@@ -1619,8 +1572,8 @@ public class WorldMapScreen extends Screen {
         float scrollableContentHeight = Math.max(viewportHeight, sidebarContentHeight - SIDEBAR_PANEL_TOP);
         float thumbHeight = Math.max(24, trackHeight * (viewportHeight / scrollableContentHeight));
         float thumbY = trackY + (trackHeight - thumbHeight) * (sidebarScroll / maxScroll);
-        NVGWrapper.drawRect(nvg, trackX, trackY, 3, trackHeight, new Color(255, 255, 255, 28));
-        NVGWrapper.drawRect(nvg, trackX, thumbY, 3, thumbHeight, new Color(255, 255, 255, 110));
+        canvas.fillRect(trackX, trackY, 3, trackHeight, new Color(255, 255, 255, 28));
+        canvas.fillRect(trackX, thumbY, 3, thumbHeight, new Color(255, 255, 255, 110));
     }
 
     private String centerPlayerButtonLabel() {
@@ -1699,39 +1652,39 @@ public class WorldMapScreen extends Screen {
         return Math.round(cluster.centerX()) + " " + Math.round(cluster.centerZ());
     }
 
-    private void renderNodeTooltip(long nvg, GatheringNode node) {
+    private void renderNodeTooltip(UiCanvas canvas, GatheringNode node) {
         String title = node.resource() + " Lv. " + node.level();
         String subtitle = nodeCoords(node);
         float x = tooltipX(180);
         float y = Math.max(8, nvgMouseY + 12);
-        NVGWrapper.drawRect(nvg, x, y, 180, 42, new Color(18, 18, 24, 235));
-        NVGWrapper.drawRectOutline(nvg, x, y, 180, 42, 1, BORDER_COLOR);
-        drawFittedText(nvg, x + 8, y + 15, 12, title, TEXT_COLOR, 164, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawFittedText(nvg, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 164, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        canvas.fillRect(x, y, 180, 42, new Color(18, 18, 24, 235));
+        canvas.strokeRect(x, y, 180, 42, 1, BORDER_COLOR);
+        drawFittedText(canvas, x + 8, y + 15, 12, title, TEXT_COLOR, 164, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 164, TextAlignment.LEFT);
     }
 
-    private void renderClusterTooltip(long nvg, GatheringNodeCluster cluster) {
+    private void renderClusterTooltip(UiCanvas canvas, GatheringNodeCluster cluster) {
         String title = cluster.resource() + " | score " + cluster.score() + "%";
         String subtitle = cluster.nodeCount() + " nodes | " + Math.round(cluster.averageSpacing()) + "m";
         float x = tooltipX(200);
         float y = Math.max(8, nvgMouseY + 12);
-        NVGWrapper.drawRect(nvg, x, y, 200, 42, new Color(18, 18, 24, 235));
-        NVGWrapper.drawRectOutline(nvg, x, y, 200, 42, 1, BORDER_COLOR);
-        drawFittedText(nvg, x + 8, y + 15, 12, title, TEXT_COLOR, 184, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawFittedText(nvg, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 184, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        canvas.fillRect(x, y, 200, 42, new Color(18, 18, 24, 235));
+        canvas.strokeRect(x, y, 200, 42, 1, BORDER_COLOR);
+        drawFittedText(canvas, x + 8, y + 15, 12, title, TEXT_COLOR, 184, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 184, TextAlignment.LEFT);
     }
 
-    private void renderTerritoryTooltip(long nvg, GuildTerritory territory) {
+    private void renderTerritoryTooltip(UiCanvas canvas, GuildTerritory territory) {
         String subtitle = cachedTerritoryNodeCounts.getOrDefault(territory.name(), 0) + " gathering nodes";
         float x = tooltipX(200);
         float y = Math.max(8, nvgMouseY + 12);
-        NVGWrapper.drawRect(nvg, x, y, 200, 42, new Color(18, 18, 24, 235));
-        NVGWrapper.drawRectOutline(nvg, x, y, 200, 42, 1, BORDER_COLOR);
-        drawFittedText(nvg, x + 8, y + 15, 12, territory.name(), TEXT_COLOR, 184, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawFittedText(nvg, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 184, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        canvas.fillRect(x, y, 200, 42, new Color(18, 18, 24, 235));
+        canvas.strokeRect(x, y, 200, 42, 1, BORDER_COLOR);
+        drawFittedText(canvas, x + 8, y + 15, 12, territory.name(), TEXT_COLOR, 184, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 184, TextAlignment.LEFT);
     }
 
-    private void renderWorldEventTooltip(long nvg, WorldEventDefinition event, int locationIndex) {
+    private void renderWorldEventTooltip(UiCanvas canvas, WorldEventDefinition event, int locationIndex) {
         WorldEventLocation location = event.locations().get(Math.max(0, locationIndex));
         String locationLabel = event.locations().size() > 1
                 ? "Possible " + (locationIndex + 1) + "/" + event.locations().size()
@@ -1740,10 +1693,10 @@ public class WorldMapScreen extends Screen {
         String subtitle = worldEventScheduleLabel(event.schedule()) + " | " + locationLabel;
         float x = tooltipX(210);
         float y = Math.max(8, nvgMouseY + 12);
-        NVGWrapper.drawRect(nvg, x, y, 210, 42, new Color(18, 18, 24, 235));
-        NVGWrapper.drawRectOutline(nvg, x, y, 210, 42, 1, BORDER_COLOR);
-        drawFittedText(nvg, x + 8, y + 15, 12, event.name(), TEXT_COLOR, 194, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        drawFittedText(nvg, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 194, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        canvas.fillRect(x, y, 210, 42, new Color(18, 18, 24, 235));
+        canvas.strokeRect(x, y, 210, 42, 1, BORDER_COLOR);
+        drawFittedText(canvas, x + 8, y + 15, 12, event.name(), TEXT_COLOR, 194, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 194, TextAlignment.LEFT);
     }
 
     private float tooltipX(float width) {
@@ -2487,8 +2440,8 @@ public class WorldMapScreen extends Screen {
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (draggingMap) {
-            centerX -= NVGContext.mouseDelta(deltaX) / pixelsPerBlock;
-            centerZ -= NVGContext.mouseDelta(deltaY) / pixelsPerBlock;
+            centerX -= MinecraftUiRenderer.mouseDelta(deltaX) / pixelsPerBlock;
+            centerZ -= MinecraftUiRenderer.mouseDelta(deltaY) / pixelsPerBlock;
             hoveredNode = null;
             hoveredCluster = null;
             hoveredTerritory = null;
@@ -2675,55 +2628,50 @@ public class WorldMapScreen extends Screen {
         return super.keyPressed(keyEvent);
     }
 
-    private static void drawCircle(long nvg, float x, float y, float radius, Color color) {
-        nvgBeginPath(nvg);
-        nvgCircle(nvg, x, y, radius);
-        var nvgColor = NVGContext.nvgColor(color);
-        nvgFillColor(nvg, nvgColor);
-        nvgFill(nvg);
-        nvgClosePath(nvg);
-        nvgColor.free();
+    private static void drawCircle(UiCanvas canvas, float x, float y, float radius, Color color) {
+        canvas.fillCircle(x, y, radius, color);
     }
 
-    private static void drawCircleOutline(long nvg, float x, float y, float radius, float width, Color color) {
-        nvgBeginPath(nvg);
-        nvgCircle(nvg, x, y, radius);
-        var nvgColor = NVGContext.nvgColor(color);
-        nvgStrokeWidth(nvg, width);
-        nvgStrokeColor(nvg, nvgColor);
-        nvgStroke(nvg);
-        nvgClosePath(nvg);
-        nvgColor.free();
+    private static void drawCircleOutline(UiCanvas canvas, float x, float y, float radius, float width, Color color) {
+        canvas.strokeCircle(x, y, radius, width, color);
     }
 
-    private static void drawText(long nvg, float x, float y, float size, String text, Color color, int align) {
-        nvgFontSize(nvg, size);
-        nvgTextAlign(nvg, align);
-        var nvgColor = NVGContext.nvgColor(color);
-        nvgFillColor(nvg, nvgColor);
-        nvgText(nvg, x, y, text);
-        nvgColor.free();
+    private static void drawText(
+            UiCanvas canvas, float x, float y, float size, String text, Color color, TextAlignment align) {
+        canvas.drawText(text, x, y, new UiCanvas.TextStyle(
+                SeqClient.getFontManager().getSelectedFont(),
+                size,
+                color,
+                align.horizontalAlign(),
+                UiCanvas.VerticalAlign.MIDDLE));
     }
 
-    private static void drawSidebarText(long nvg, float x, float y, float size, String text, Color color) {
-        drawFittedText(nvg, x, y, size, text, color, SIDEBAR_WIDTH - x - PADDING, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    private static void drawSidebarText(UiCanvas canvas, float x, float y, float size, String text, Color color) {
+        drawFittedText(canvas, x, y, size, text, color, SIDEBAR_WIDTH - x - PADDING, TextAlignment.LEFT);
     }
 
-    private static void drawFittedText(long nvg, float x, float y, float size, String text, Color color, float maxWidth, int align) {
-        nvgFontSize(nvg, size);
-        String fitted = fitText(nvg, text, maxWidth);
-        drawText(nvg, x, y, size, fitted, color, align);
+    private static void drawFittedText(
+            UiCanvas canvas,
+            float x,
+            float y,
+            float size,
+            String text,
+            Color color,
+            float maxWidth,
+            TextAlignment align) {
+        String fitted = fitText(canvas, text, maxWidth, size);
+        drawText(canvas, x, y, size, fitted, color, align);
     }
 
-    private static String fitText(long nvg, String text, float maxWidth) {
+    private static String fitText(UiCanvas canvas, String text, float maxWidth, float size) {
         if (text == null || text.isEmpty() || maxWidth <= 0) {
             return "";
         }
-        if (textWidth(nvg, text) <= maxWidth) {
+        if (textWidth(text, size) <= maxWidth) {
             return text;
         }
         String ellipsis = "...";
-        if (textWidth(nvg, ellipsis) > maxWidth) {
+        if (textWidth(ellipsis, size) > maxWidth) {
             return "";
         }
         int low = 0;
@@ -2731,7 +2679,7 @@ public class WorldMapScreen extends Screen {
         while (low < high) {
             int mid = (low + high + 1) / 2;
             String candidate = text.substring(0, mid).stripTrailing() + ellipsis;
-            if (textWidth(nvg, candidate) <= maxWidth) {
+            if (textWidth(candidate, size) <= maxWidth) {
                 low = mid;
             } else {
                 high = mid - 1;
@@ -2740,12 +2688,11 @@ public class WorldMapScreen extends Screen {
         return text.substring(0, low).stripTrailing() + ellipsis;
     }
 
-    private static float textWidth(long nvg, String text) {
+    private static float textWidth(String text, float size) {
         if (text == null || text.isEmpty()) {
             return 0;
         }
-        float[] bounds = new float[4];
-        return nvgTextBounds(nvg, 0, 0, text, bounds);
+        return UiRenderer.measureText(text, SeqClient.getFontManager().getSelectedFont(), size).width();
     }
 
     private static String displayProfession(GatheringProfession profession) {
@@ -2762,19 +2709,19 @@ public class WorldMapScreen extends Screen {
     }
 
     private float scaledMouseX(double rawX) {
-        return NVGContext.mouseX(rawX);
+        return MinecraftUiRenderer.mouseX(rawX);
     }
 
     private float scaledMouseY(double rawY) {
-        return NVGContext.mouseY(rawY);
+        return MinecraftUiRenderer.mouseY(rawY);
     }
 
     private static float uiScreenWidth() {
-        return NVGContext.screenWidth();
+        return MinecraftUiRenderer.screenWidth();
     }
 
     private static float uiScreenHeight() {
-        return NVGContext.screenHeight();
+        return MinecraftUiRenderer.screenHeight();
     }
 
     private static boolean isHovered(float mx, float my, float x, float y, float w, float h) {
@@ -2803,6 +2750,22 @@ public class WorldMapScreen extends Screen {
             case GLFW.GLFW_KEY_APOSTROPHE -> '\'';
             default -> null;
         };
+    }
+
+    private enum TextAlignment {
+        LEFT(UiCanvas.HorizontalAlign.LEFT),
+        CENTER(UiCanvas.HorizontalAlign.CENTER),
+        RIGHT(UiCanvas.HorizontalAlign.RIGHT);
+
+        private final UiCanvas.HorizontalAlign horizontalAlign;
+
+        TextAlignment(UiCanvas.HorizontalAlign horizontalAlign) {
+            this.horizontalAlign = horizontalAlign;
+        }
+
+        private UiCanvas.HorizontalAlign horizontalAlign() {
+            return horizontalAlign;
+        }
     }
 
     private void applyResourceAutocompleteSelection() {

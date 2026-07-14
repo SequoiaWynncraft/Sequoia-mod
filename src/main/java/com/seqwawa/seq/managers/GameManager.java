@@ -2,9 +2,6 @@ package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.accessors.EventBusAccessor;
 import com.seqwawa.seq.client.SeqClient;
-import org.lwjgl.system.MemoryUtil;
-
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -32,16 +29,7 @@ public class GameManager implements EventBusAccessor {
                 throw new IOException("Resource not found: " + resourcePath);
             }
 
-            ByteArrayOutputStream os = new ByteArrayOutputStream();
-            os.write(input.readAllBytes());
-            byte[] fontBytes = os.toByteArray();
-            ByteBuffer byteBuffer = MemoryUtil.memAlloc(fontBytes.length);
-            byteBuffer.put(fontBytes);
-            //why do we flip i have no idea someone on stack over flow said to
-            byteBuffer.flip();
-
-            // Load font with NanoVG
-            SeqClient.getFontManager().addFont(byteBuffer, fontName);
+            SeqClient.getFontManager().addFont(ByteBuffer.wrap(input.readAllBytes()), fontName);
         } catch (IOException e) {
             throw new FontLoadException("Error loading font from resources: " + resourcePath, e);
         }

@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.UUID;
 import lombok.Getter;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
@@ -46,7 +47,7 @@ import com.seqwawa.seq.radiance.RadianceCheckerClient;
 import com.seqwawa.seq.ui.SequoiaScreen;
 import com.seqwawa.seq.update.UpdateManager;
 import com.seqwawa.seq.utils.WynnClassCache;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
+import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import org.slf4j.Logger;
 
 public class SeqClient implements ClientModInitializer {
@@ -203,6 +204,7 @@ public class SeqClient implements ClientModInitializer {
         SeqCommand.register();
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> MinecraftUiRenderer.shutdown());
 
         KeyMapping.Category category =
                 KeyMapping.Category.register(Identifier.fromNamespaceAndPath("sequoia-mod", "controls"));
@@ -455,7 +457,7 @@ public class SeqClient implements ClientModInitializer {
     @Subscribe(Preference.CALLER) // to stay in thread
     public void onMinecraftFinishedLoading(MinecraftFinishedLoading ignored) {
         // after minecraft done loading
-        NVGContext.init();
+        MinecraftUiRenderer.initialize();
         SeqClient.gameManager.loadFont();
         SeqClient.assetManager = new AssetManager();
 

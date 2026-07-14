@@ -2,12 +2,9 @@ package com.seqwawa.seq.ui.widget;
 
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
-import com.seqwawa.seq.utils.rendering.nvg.NVGWrapper;
+import com.seqwawa.seq.utils.rendering.UiCanvas;
 
 import java.awt.*;
-
-import static org.lwjgl.nanovg.NanoVG.*;
 
 public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
     private static final float TOGGLE_WIDTH = 36;
@@ -26,17 +23,11 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
     }
 
     @Override
-    public void render(long nvg, float mouseX, float mouseY) {
+    public void render(UiCanvas canvas, float mouseX, float mouseY) {
         String fontName = SeqClient.getFontManager().getSelectedFont();
 
-        // Label
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var labelColor = NVGContext.nvgColor(LABEL_COLOR);
-        nvgFillColor(nvg, labelColor);
-        nvgText(nvg, x + 8, y + height / 2f, getDisplayName());
-        labelColor.free();
+        canvas.drawText(getDisplayName(), x + 8, y + height / 2f, textStyle(
+                fontName, LABEL_COLOR, UiCanvas.HorizontalAlign.LEFT));
 
         // Toggle
         float toggleX = x + width - TOGGLE_WIDTH - 8;
@@ -44,14 +35,20 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
         boolean on = setting.getValue();
 
         Color bgColor = on ? ON_COLOR : OFF_COLOR;
-        NVGWrapper.drawRect(nvg, toggleX, toggleY, TOGGLE_WIDTH, TOGGLE_HEIGHT, bgColor);
+        canvas.fillRect(toggleX, toggleY, TOGGLE_WIDTH, TOGGLE_HEIGHT, bgColor);
 
         float knobSize = TOGGLE_HEIGHT - KNOB_PADDING * 2;
         float knobX = on
                 ? toggleX + TOGGLE_WIDTH - knobSize - KNOB_PADDING
                 : toggleX + KNOB_PADDING;
         float knobY = toggleY + KNOB_PADDING;
-        NVGWrapper.drawRect(nvg, knobX, knobY, knobSize, knobSize, KNOB_COLOR);
+        canvas.fillRect(knobX, knobY, knobSize, knobSize, KNOB_COLOR);
+    }
+
+    private static UiCanvas.TextStyle textStyle(
+            String font, Color color, UiCanvas.HorizontalAlign horizontalAlign) {
+        return new UiCanvas.TextStyle(
+                font, FONT_SIZE, color, horizontalAlign, UiCanvas.VerticalAlign.MIDDLE);
     }
 
     @Override
