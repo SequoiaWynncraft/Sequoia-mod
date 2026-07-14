@@ -8,6 +8,7 @@ public final class WorldMapSettings {
     private static final WorldMapSettings INSTANCE = new WorldMapSettings();
 
     private final EnumMap<GatheringProfession, Boolean> professionToggles = new EnumMap<>(GatheringProfession.class);
+    private final EnumMap<WorldMapSidebarPanel, Boolean> sidebarPanels = new EnumMap<>(WorldMapSidebarPanel.class);
     private final Set<String> resourceFilters = new TreeSet<>();
     private int clusterEps = GatheringNodeClusterer.DEFAULT_EPS;
     private int clusterMinSamples = GatheringNodeClusterer.DEFAULT_MIN_SAMPLES;
@@ -19,12 +20,16 @@ public final class WorldMapSettings {
     private GatheringAnalysisScope gatheringAnalysisScope = GatheringAnalysisScope.ALL;
     private MapDisplayMode displayMode = MapDisplayMode.GATHERING;
     private WorldEventDisplayFilter worldEventDisplayFilter = WorldEventDisplayFilter.ALL;
+    private boolean insightsSidebarOpen = true;
     private String selectedTerritoryName;
     private long version;
 
     private WorldMapSettings() {
         for (GatheringProfession profession : GatheringProfession.values()) {
             professionToggles.put(profession, true);
+        }
+        for (WorldMapSidebarPanel panel : WorldMapSidebarPanel.values()) {
+            sidebarPanels.put(panel, true);
         }
     }
 
@@ -124,6 +129,24 @@ public final class WorldMapSettings {
         this.worldEventDisplayFilter = worldEventDisplayFilter == null
                 ? WorldEventDisplayFilter.ALL
                 : worldEventDisplayFilter;
+    }
+
+    public synchronized boolean insightsSidebarOpen() {
+        return insightsSidebarOpen;
+    }
+
+    public synchronized void setInsightsSidebarOpen(boolean insightsSidebarOpen) {
+        this.insightsSidebarOpen = insightsSidebarOpen;
+    }
+
+    public synchronized boolean sidebarPanelExpanded(WorldMapSidebarPanel panel) {
+        return sidebarPanels.getOrDefault(panel, true);
+    }
+
+    public synchronized void setSidebarPanelExpanded(WorldMapSidebarPanel panel, boolean expanded) {
+        if (panel != null) {
+            sidebarPanels.put(panel, expanded);
+        }
     }
 
     public synchronized void setGatheringAnalysisScope(GatheringAnalysisScope gatheringAnalysisScope) {
