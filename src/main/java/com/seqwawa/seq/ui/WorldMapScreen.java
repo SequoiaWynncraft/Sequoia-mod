@@ -141,6 +141,9 @@ public class WorldMapScreen extends Screen {
     private WorldEventDisplayFilter worldEventDisplayFilter = WorldEventDisplayFilter.ALL;
     private List<WorldEventDefinition> allWorldEvents = List.of();
     private List<WorldEventDefinition> visibleWorldEvents = List.of();
+    private Set<String> cachedTrackedWorldEventIds = Set.of();
+    private long cachedWorldEventSnapshotVersion = -1;
+    private WorldEventDisplayFilter cachedWorldEventDisplayFilter;
     private WorldEventDefinition hoveredWorldEvent;
     private int hoveredWorldEventLocationIndex = -1;
     private WorldEventDefinition selectedWorldEvent;
@@ -312,11 +315,21 @@ public class WorldMapScreen extends Screen {
     }
 
     private void refreshWorldEvents() {
-        allWorldEvents = worldEventService.snapshot().events();
+        WorldEventService.Snapshot snapshot = worldEventService.snapshot();
+        Set<String> trackedWorldEventIds = SeqClient.getConfigManager().trackedWorldEventIds();
+        if (snapshot.version() == cachedWorldEventSnapshotVersion
+                && worldEventDisplayFilter == cachedWorldEventDisplayFilter
+                && trackedWorldEventIds.equals(cachedTrackedWorldEventIds)) {
+            return;
+        }
+        cachedWorldEventSnapshotVersion = snapshot.version();
+        cachedWorldEventDisplayFilter = worldEventDisplayFilter;
+        cachedTrackedWorldEventIds = trackedWorldEventIds;
+        allWorldEvents = snapshot.events();
         visibleWorldEvents = WorldEventFilters.visibleEvents(
                 allWorldEvents,
                 worldEventDisplayFilter,
-                SeqClient.getConfigManager().trackedWorldEventIds());
+                cachedTrackedWorldEventIds);
         selectedWorldEvent = WorldEventFilters.retainVisibleSelection(selectedWorldEvent, visibleWorldEvents);
     }
 
@@ -325,7 +338,6 @@ public class WorldMapScreen extends Screen {
         hoveredWorldEventLocationIndex = -1;
         boolean allowHover = !draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY);
         MapBounds visibleBounds = viewport.visibleBounds();
-        Set<String> tracked = SeqClient.getConfigManager().trackedWorldEventIds();
         AssetManager.Asset markerAsset = worldEventMarkerAsset();
 
         if (allowHover) {
@@ -354,7 +366,7 @@ public class WorldMapScreen extends Screen {
         canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         for (WorldEventDefinition event : visibleWorldEvents) {
             boolean eventSelected = selectedWorldEvent != null && selectedWorldEvent.runId().equals(event.runId());
-            boolean eventTracked = tracked.contains(event.internalName());
+            boolean eventTracked = cachedTrackedWorldEventIds.contains(event.internalName());
             for (int locationIndex = 0; locationIndex < event.locations().size(); locationIndex++) {
                 WorldEventLocation location = event.locations().get(locationIndex);
                 if (!visibleBounds.contains(location.x(), location.z())) {
@@ -1006,7 +1018,7 @@ public class WorldMapScreen extends Screen {
                 canvas,
                 sidebarY(layout.trackingPanelY()),
                 "Tracking",
-                SeqClient.getConfigManager().trackedWorldEventIds().size() + " tracked",
+                cachedTrackedWorldEventIds.size() + " tracked",
                 WorldMapSidebarPanel.EVENT_TRACKING);
         if (panelExpanded(WorldMapSidebarPanel.EVENT_TRACKING)) {
             drawWorldEventTrackingListControl(canvas, sidebarY(layout.eventFilterY()));
@@ -1119,7 +1131,7 @@ public class WorldMapScreen extends Screen {
         long visibleCount = allWorldEvents.stream().filter(WorldEventDefinition::isVisible).count();
         drawInsightsSectionTitle(canvas, contentX, layout.overviewY(), "Overview");
         drawInsightRow(canvas, contentX, layout.overviewY() + 18, contentWidth, "Visible", visibleWorldEvents.size() + " shown / " + visibleCount + " active");
-        drawInsightRow(canvas, contentX, layout.overviewY() + 34, contentWidth, "Tracked", String.valueOf(SeqClient.getConfigManager().trackedWorldEventIds().size()));
+        drawInsightRow(canvas, contentX, layout.overviewY() + 34, contentWidth, "Tracked", String.valueOf(cachedTrackedWorldEventIds.size()));
         drawInsightRow(canvas, contentX, layout.overviewY() + 50, contentWidth, "API", worldEventService.status());
 
         WorldEventDefinition detail = selectedWorldEvent != null ? selectedWorldEvent : hoveredWorldEvent;
@@ -1177,7 +1189,7 @@ public class WorldMapScreen extends Screen {
                 : event.locations().size() + " possible locations";
         drawFittedText(canvas, x + 8, y + 71, 11, locationLabel, color(MAP_SUBTEXT), textWidth, TextAlignment.LEFT);
         if (allowTrackingButton) {
-            boolean tracked = SeqClient.getConfigManager().trackedWorldEventIds().contains(event.internalName());
+            boolean tracked = cachedTrackedWorldEventIds.contains(event.internalName());
             drawButton(
                     canvas,
                     x + 8,
@@ -1506,7 +1518,6 @@ public class WorldMapScreen extends Screen {
         float x = PADDING;
         float width = SIDEBAR_WIDTH - PADDING * 2;
         float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
-        Set<String> tracked = SeqClient.getConfigManager().trackedWorldEventIds();
         canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY, 248));
         canvas.strokeRect(x, y, width, height, 1, color(MAP_BORDER));
         if (events.isEmpty()) {
@@ -1515,7 +1526,7 @@ public class WorldMapScreen extends Screen {
         }
         for (int index = 0; index < visibleRows; index++) {
             WorldEventDefinition event = events.get(worldEventDropdownScroll + index);
-            boolean selected = tracked.contains(event.internalName());
+            boolean selected = cachedTrackedWorldEventIds.contains(event.internalName());
             boolean hovered = isHovered(
                     nvgMouseX,
                     nvgMouseY,
@@ -1811,13 +1822,13 @@ public class WorldMapScreen extends Screen {
         String query = worldEventInputFocused ? worldEventSearch : "";
         return WorldEventFilters.trackingOptions(
                 allWorldEvents,
-                SeqClient.getConfigManager().trackedWorldEventIds(),
+                cachedTrackedWorldEventIds,
                 worldEventDropdownTrackedOnly,
                 query);
     }
 
     private String trackedWorldEventLabel() {
-        int tracked = SeqClient.getConfigManager().trackedWorldEventIds().size();
+        int tracked = cachedTrackedWorldEventIds.size();
         return tracked == 0 ? "Manage tracked events" : tracked + " tracked events";
     }
 
@@ -2909,7 +2920,7 @@ public class WorldMapScreen extends Screen {
     }
 
     private void toggleTrackedWorldEvent(WorldEventDefinition event, boolean keepOpen) {
-        boolean tracked = SeqClient.getConfigManager().trackedWorldEventIds().contains(event.internalName());
+        boolean tracked = cachedTrackedWorldEventIds.contains(event.internalName());
         SeqClient.getConfigManager().setWorldEventTracked(event.internalName(), !tracked);
         worldEventDropdownOpen = keepOpen;
         worldEventInputFocused = keepOpen;

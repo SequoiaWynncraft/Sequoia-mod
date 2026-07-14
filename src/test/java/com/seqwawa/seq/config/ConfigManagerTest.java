@@ -106,14 +106,16 @@ class ConfigManagerTest {
     @Test
     void persistsUiSizeSetting() {
         Path configPath = tempDir.resolve("config").resolve("sequoia.json");
-        Setting.IntSetting setting = new Setting.IntSetting("ui_size_percent", "ui", 100, 75, 150, 5);
+        Setting.IntSetting setting = new Setting.IntSetting("ui_size_percent", "ui", 100, 75, 150, 5)
+                .allowOutOfRangeManualInput();
         ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
         manager.register(setting);
 
         setting.setValueFromManualInput(175);
         manager.save();
 
-        Setting.IntSetting reloadedSetting = new Setting.IntSetting("ui_size_percent", "ui", 100, 75, 150, 5);
+        Setting.IntSetting reloadedSetting = new Setting.IntSetting("ui_size_percent", "ui", 100, 75, 150, 5)
+                .allowOutOfRangeManualInput();
         ConfigManager reloaded = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
         reloaded.register(reloadedSetting);
         reloaded.load();

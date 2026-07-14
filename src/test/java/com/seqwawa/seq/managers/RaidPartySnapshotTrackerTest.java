@@ -23,9 +23,9 @@ class RaidPartySnapshotTrackerTest {
     }
 
     @Test
-    void resolvesACompletionPartyFromTheLargerRaidSnapshot() {
+    void usesFullSnapshotWhenCompletionListsGuildSubset() {
         assertEquals(
-                List.of("ActualAlly", "OtherPlayer"),
+                List.of("LocalPlayer", "ActualAlly", "OtherPlayer", "FourthPlayer"),
                 RaidPartySnapshotTracker.choosePartyMembers(
                         List.of("AllyNickname", "OtherPlayer"),
                         List.of(
@@ -34,6 +34,21 @@ class RaidPartySnapshotTrackerTest {
                                 member("OtherPlayer", "OtherPlayer"),
                                 member("FourthPlayer", "FourthPlayer")),
                         2));
+    }
+
+    @Test
+    void keepsParsedNamesWhenSnapshotHasWrongSize() {
+        List<String> parsed = List.of("LocalPlayer", "Second", "Third", "Fourth");
+
+        assertEquals(
+                parsed,
+                RaidPartySnapshotTracker.choosePartyMembers(
+                        parsed,
+                        List.of(
+                                member("LocalPlayer", "LocalPlayer"),
+                                member("Second", "Second"),
+                                member("Third", "Third")),
+                        4));
     }
 
     @Test
@@ -50,16 +65,16 @@ class RaidPartySnapshotTrackerTest {
     }
 
     @Test
-    void keepsAReplacementMemberThatIsNotInTheSnapshot() {
-        List<String> parsed = List.of("LocalPlayer", "Second", "Third", "NewFourth");
+    void keepsParsedNamesWhenSnapshotDoesNotOverlapCompletion() {
+        List<String> parsed = List.of("NewOne", "NewSecond", "NewThird", "NewFourth");
 
         assertEquals(
                 parsed,
                 RaidPartySnapshotTracker.choosePartyMembers(
                         parsed,
                         List.of(
-                                member("LocalPlayer", "LocalPlayer"),
-                                member("Second", "Second"),
+                                member("OtherOne", "OtherOne"),
+                                member("OldSecond", "OldSecond"),
                                 member("Third", "Third"),
                                 member("OldFourth", "OldFourth")),
                         4));

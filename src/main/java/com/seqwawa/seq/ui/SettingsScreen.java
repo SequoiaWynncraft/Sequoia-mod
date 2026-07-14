@@ -99,7 +99,7 @@ public class SettingsScreen extends Screen {
         if (setting instanceof Setting.BooleanSetting b)
             return new BooleanWidget(b);
         if (setting instanceof Setting.IntSetting i)
-            return new SliderWidget(i);
+            return new SliderWidget(i, i == SeqClient.getUiSizePercentSetting());
         if (setting instanceof Setting.DoubleSetting d)
             return new SliderWidget(d);
         if (setting instanceof Setting.FloatSetting f)
