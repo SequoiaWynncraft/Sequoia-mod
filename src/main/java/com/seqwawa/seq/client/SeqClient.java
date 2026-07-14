@@ -474,7 +474,8 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.IntSetting("guild_storage_aspect_threshold_percent", "guild_storage", 100, 0, 100);
         easterEggsSetting = new Setting.BooleanSetting("enable_easter_eggs", "ui", true);
         startupVideoSetting = new Setting.BooleanSetting("startup_video", "ui", false);
-        uiSizePercentSetting = new Setting.IntSetting("ui_size_percent", "ui", 100, 75, 150, 5);
+        uiSizePercentSetting = new Setting.IntSetting("ui_size_percent", "ui", 100, 75, 150, 5)
+                .allowOutOfRangeManualInput();
         announceOpenPartiesSetting = new Setting.BooleanSetting("announce_open_parties", "party_finder", true);
         announceOpenPartiesIntervalMinutesSetting =
                 new Setting.IntSetting("announce_open_parties_interval_minutes", "party_finder", 5, 1, 60);
