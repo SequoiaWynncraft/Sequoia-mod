@@ -175,9 +175,9 @@ public final class NanoVgBackend implements UiRenderBackend {
             return;
         }
         RenderSystem.assertOnRenderThread();
-        float fixedScale = metrics.pixelRatio();
-        float width = (int) (mc.getWindow().getWidth() / fixedScale);
-        float height = (int) (mc.getWindow().getHeight() / fixedScale);
+        float layoutScale = metrics.pixelRatio();
+        float width = (int) (mc.getWindow().getWidth() / layoutScale);
+        float height = (int) (mc.getWindow().getHeight() / layoutScale);
         NanoVgCanvas canvas = new NanoVgCanvas(context, metrics);
 
         int prevProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
@@ -286,7 +286,7 @@ public final class NanoVgBackend implements UiRenderBackend {
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
 
-            nvgBeginFrame(context, width, height, fixedScale);
+            nvgBeginFrame(context, width, height, metrics.renderPixelRatio());
             frameStarted = true;
             commands.forEach(command -> runDraw(command, canvas));
             nvgEndFrame(context);

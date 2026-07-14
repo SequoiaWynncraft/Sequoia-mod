@@ -12,6 +12,8 @@ Screen commands are tied to the screen instance that submitted them. HUD command
 
 `NVGContext` and `NVGWrapper` are compatibility APIs for the remaining Party Finder renderer. New or modified UI should use `UiCanvas`; compatibility usage should not spread to other screens or managers. A future backend can implement `UiRenderBackend` and `UiCanvas` without changing migrated screens.
 
+`UiRenderMetrics` separates the layout pixel ratio from NanoVG's render pixel ratio. Layout dimensions and input conversion use the former, while the latter applies capped oversampling for sharper text and vector edges without changing UI size or hitboxes. At large manually entered UI scales, the render ratio never drops below the layout ratio.
+
 ## Themes
 
 UI colors are semantic tokens defined by `UiColor`. Screens request tokens through `ThemeManager.color(...)`; they should not declare screen-level color palettes. Shared surface, text, control, status, and map tokens keep layout code independent from concrete RGBA values.

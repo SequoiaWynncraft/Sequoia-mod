@@ -7,6 +7,8 @@ public record UiRenderMetrics(
         double minecraftGuiScale,
         float uiScale) {
     public static final float BASE_PIXEL_RATIO = 2f;
+    public static final float RENDER_QUALITY_MULTIPLIER = 1.5f;
+    public static final float MAX_OVERSAMPLED_PIXEL_RATIO = 4f;
     public static final float MIN_UI_SCALE = 0.1f;
     public static final float MAX_UI_SCALE = 10f;
 
@@ -19,6 +21,15 @@ public record UiRenderMetrics(
 
     public float pixelRatio() {
         return BASE_PIXEL_RATIO * uiScale;
+    }
+
+    /** NanoVG raster density, kept separate so higher quality does not alter layout or input coordinates. */
+    public float renderPixelRatio() {
+        float layoutPixelRatio = pixelRatio();
+        float oversampledPixelRatio = Math.min(
+                layoutPixelRatio * RENDER_QUALITY_MULTIPLIER,
+                MAX_OVERSAMPLED_PIXEL_RATIO);
+        return Math.max(layoutPixelRatio, oversampledPixelRatio);
     }
 
     public float width() {

@@ -10,6 +10,7 @@ class UiRenderMetricsTest {
         UiRenderMetrics metrics = new UiRenderMetrics(1920, 1080, 2.0, 1.5f);
 
         assertEquals(3f, metrics.pixelRatio());
+        assertEquals(4f, metrics.renderPixelRatio());
         assertEquals(640f, metrics.width());
         assertEquals(360f, metrics.height());
         assertEquals(200f, metrics.mouseX(300));
@@ -27,6 +28,24 @@ class UiRenderMetricsTest {
         assertEquals(1f, metrics.uiScale());
         assertEquals(0.5f, metrics.width());
         assertEquals(0.5f, metrics.height());
+    }
+
+    @Test
+    void oversamplesNanoVgWithoutChangingLayoutScale() {
+        UiRenderMetrics metrics = new UiRenderMetrics(1920, 1080, 2.0, 1f);
+
+        assertEquals(2f, metrics.pixelRatio());
+        assertEquals(3f, metrics.renderPixelRatio());
+        assertEquals(960f, metrics.width());
+        assertEquals(540f, metrics.height());
+    }
+
+    @Test
+    void neverUndersamplesLargeManualUiScales() {
+        UiRenderMetrics metrics = new UiRenderMetrics(1920, 1080, 2.0, 3f);
+
+        assertEquals(6f, metrics.pixelRatio());
+        assertEquals(6f, metrics.renderPixelRatio());
     }
 
     @Test
