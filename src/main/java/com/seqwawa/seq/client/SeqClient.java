@@ -37,6 +37,7 @@ import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
+import com.seqwawa.seq.managers.WorldEventManager;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
@@ -140,6 +141,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting showPartyHealthBarsSetting;
 
     @Getter
+    public static Setting.BooleanSetting notifyTrackedWorldEventsSetting;
+
+    @Getter
     public static WynnPartySyncManager wynnPartySyncManager;
 
     @Getter
@@ -156,6 +160,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static SeqBadgeNametagRendererHandle seqBadgeNametagRenderer;
+
+    @Getter
+    public static WorldEventManager worldEventManager;
 
     private static KeyMapping openScreenKey;
     private static KeyMapping shareBombsKey;
@@ -188,6 +195,7 @@ public class SeqClient implements ClientModInitializer {
         configManager.migrateToken();
         leaderboardBadgeService = LeaderboardBadgeService.getInstance();
         seqBadgeNametagRenderer = SeqBadgeNametagRenderers.createIfAvailable();
+        worldEventManager = WorldEventManager.getInstance();
         authService = MinecraftAuthService.getInstance();
         SeqCommand.register();
         RadianceCheckerClient.initialize();
@@ -217,6 +225,12 @@ public class SeqClient implements ClientModInitializer {
             String currentHost = WynncraftServerPolicy.currentNormalizedHost();
             WynncraftServerPolicy.Scope previousServerScope = lastServerScope;
             logServerScopeChange(serverScope, currentHost);
+            if (worldEventManager != null) {
+                worldEventManager.tick(
+                        client,
+                        serverScope,
+                        notifyTrackedWorldEventsSetting != null && notifyTrackedWorldEventsSetting.getValue());
+            }
             if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
                 RadianceCheckerClient.reset();
                 ConnectionManager.disconnectForBlockedServer();
@@ -469,6 +483,8 @@ public class SeqClient implements ClientModInitializer {
         showOwnLeaderboardBadgeSetting =
                 new Setting.BooleanSetting("show_own_leaderboard_badge", "leaderboard_badges", true);
         showPartyHealthBarsSetting = new Setting.BooleanSetting("show_party_healthbars", "raids", true);
+        notifyTrackedWorldEventsSetting =
+                new Setting.BooleanSetting("notify_tracked_world_events", "world_events", false);
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
@@ -489,6 +505,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(showInsigniaBadgesSetting);
         getConfigManager().register(showOwnLeaderboardBadgeSetting);
         getConfigManager().register(showPartyHealthBarsSetting);
+        getConfigManager().register(notifyTrackedWorldEventsSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.

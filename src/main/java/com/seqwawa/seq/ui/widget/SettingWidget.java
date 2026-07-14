@@ -31,6 +31,8 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("show_insignia_badges", "Show insignia badges");
         DISPLAY_NAME_OVERRIDES.put("show_own_leaderboard_badge", "Show own badges");
         DISPLAY_NAME_OVERRIDES.put("show_party_healthbars", "Show party health bars");
+        DISPLAY_NAME_OVERRIDES.put("notify_tracked_world_events", "Notify tracked world events");
+        DISPLAY_NAME_OVERRIDES.put("world_events", "World Events");
 
         TOKEN_REPLACEMENTS.put("discord", "Discord");
         TOKEN_REPLACEMENTS.put("bridge", "Chat");

@@ -21,7 +21,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - In-game Discord chat bridge
 - Party finder commands and UI
 - Raid tracking and announcements
-- Interactive world map with gathering analysis and guild territory borders
+- Interactive world map with gathering nodes analysis and active world events
 - Guild-specific settings and status screens
 
 ## Requirements
@@ -101,9 +101,11 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 
 ## World map
 
-Run `/seq map` to open the world map. Guild territory borders can be hovered or clicked, and the territory search centers the map on an exact territory.
+Run `/seq map` to open the world map. Use the Gathering / Events control to switch between gathering analysis with guild territories and API-visible world events.
 
 Gathering analysis supports three scopes: all bundled gathering nodes, nodes inside any guild territory, or nodes inside the selected territory. Resource, profession, cluster, and score controls continue to refine the active scope.
+
+The Events view shows runs currently visible through the Wynncraft API. Choose All or Tracked to filter the markers, click a marker for event details, and use Track Event or the searchable tracking dropdown to manage persistent tracking. The management list can be limited to Tracked Only for quick removal. Tracked-event detection messages can be enabled in the World Events settings category.
 
 ## Settings
 
@@ -112,6 +114,7 @@ The settings screen has toggles for:
 - Auto connect to the Sequoia backend
 - Discord chat display
 - Raid auto-announce
+- Tracked world-event notifications
 - Update checks on startup
 
 ## Installation
