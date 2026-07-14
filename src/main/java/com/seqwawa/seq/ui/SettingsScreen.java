@@ -93,6 +93,12 @@ public class SettingsScreen extends Screen {
         buildWidgets();
     }
 
+    @Override
+    public void removed() {
+        SeqClient.getConfigManager().save();
+        super.removed();
+    }
+
     private void buildWidgets() {
         Map<String, List<SettingWidget<?>>> temp = new LinkedHashMap<>();
 
@@ -114,7 +120,7 @@ public class SettingsScreen extends Screen {
         if (setting instanceof Setting.BooleanSetting b)
             return new BooleanWidget(b);
         if (setting instanceof Setting.IntSetting i)
-            return new SliderWidget(i);
+            return new SliderWidget(i, i == SeqClient.getUiSizePercentSetting());
         if (setting instanceof Setting.DoubleSetting d)
             return new SliderWidget(d);
         if (setting instanceof Setting.FloatSetting f)
@@ -142,13 +148,12 @@ public class SettingsScreen extends Screen {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        double guiScale = SeqClient.mc.getWindow().getGuiScale();
-        nvgMouseX = (float) (mouseX * guiScale / 2.0);
-        nvgMouseY = (float) (mouseY * guiScale / 2.0);
+        nvgMouseX = NVGContext.mouseX(mouseX);
+        nvgMouseY = NVGContext.mouseY(mouseY);
 
         NVGContext.renderDeferred(nvg -> {
-            float screenWidth = SeqClient.mc.getWindow().getWidth() / 2f;
-            float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+            float screenWidth = NVGContext.screenWidth();
+            float screenHeight = NVGContext.screenHeight();
             String fontName = SeqClient.getFontManager().getSelectedFont();
 
             // Fill entire screen
@@ -355,12 +360,11 @@ public class SettingsScreen extends Screen {
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
         if (click.button() == 0) {
-            double guiScale = SeqClient.mc.getWindow().getGuiScale();
-            float mx = (float) (click.x() * guiScale / 2.0);
-            float my = (float) (click.y() * guiScale / 2.0);
+            float mx = NVGContext.mouseX(click.x());
+            float my = NVGContext.mouseY(click.y());
 
-            float screenWidth = SeqClient.mc.getWindow().getWidth() / 2f;
-            float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+            float screenWidth = NVGContext.screenWidth();
+            float screenHeight = NVGContext.screenHeight();
 
             // Sidebar button clicks
             float btnX = SIDEBAR_PADDING;
@@ -482,9 +486,8 @@ public class SettingsScreen extends Screen {
     @Override
     public boolean mouseReleased(@NotNull MouseButtonEvent click) {
         scrollbarDragging = false;
-        double guiScale = SeqClient.mc.getWindow().getGuiScale();
-        float mx = (float) (click.x() * guiScale / 2.0);
-        float my = (float) (click.y() * guiScale / 2.0);
+        float mx = NVGContext.mouseX(click.x());
+        float my = NVGContext.mouseY(click.y());
 
         for (List<SettingWidget<?>> widgets : categories.values()) {
             for (SettingWidget<?> widget : widgets) {
@@ -496,12 +499,11 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
-        double guiScale = SeqClient.mc.getWindow().getGuiScale();
-        float mx = (float) (click.x() * guiScale / 2.0);
-        float my = (float) (click.y() * guiScale / 2.0);
+        float mx = NVGContext.mouseX(click.x());
+        float my = NVGContext.mouseY(click.y());
 
         if (scrollbarDragging && maxScroll > 0) {
-            float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+            float screenHeight = NVGContext.screenHeight();
             float contentHeight = screenHeight - HEADER_HEIGHT;
             float thumbRatio = contentHeight / (contentHeight + maxScroll);
             float thumbHeight = Math.max(20, contentHeight * thumbRatio);

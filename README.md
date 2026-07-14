@@ -21,6 +21,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - In-game Discord chat bridge
 - Party finder commands and UI
 - Raid tracking and announcements
+- Interactive world map with gathering nodes analysis and active world events
 - Guild-specific settings and status screens
 
 ## Requirements
@@ -44,6 +45,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 
 - `/seq`: open the main Sequoia screen
 - `/seq p`: open the Sequoia party finder UI
+- `/seq map`: open the Sequoia world map
 - `/seq connect`: connect to the backend
 - `/seq status`: show connection state
 - `/seq logout`: clear the current backend session
@@ -65,6 +67,12 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - `/seq request tome <reason>`
 - `/seq ignore <IGN>`
 - `/seq unignore <IGN>`
+- `/seq map`
+- `/seq map params`
+- `/seq map eps <blocks>`
+- `/seq map minSamples <count>`
+- `/seq map reset`
+- `/seq map debug`
 - `/seq party`
 - `/seq p`
 - `/seq party list`
@@ -91,13 +99,25 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 
 </details>
 
+## World map
+
+Run `/seq map` to open the world map. Use the Gathering / Events control to switch between gathering analysis with guild territories and API-visible world events.
+
+Navigation and map mode controls remain pinned in the left sidebar. Its map, analysis, filter, display, and tracking groups can be folded independently, while selection details and map insights are available from the collapsible right sidebar.
+
+Gathering analysis supports three scopes: all bundled gathering nodes, nodes inside any guild territory, or nodes inside the selected territory. Resource, profession, cluster, and score controls continue to refine the active scope.
+
+The Events view shows runs currently visible through the Wynncraft API. Choose All or Tracked to filter the markers, click a marker for event details, and use Track Event or the searchable tracking dropdown to manage persistent tracking. The management list can be limited to Tracked Only for quick removal. Tracked-event detection messages can be enabled in the World Events settings category.
+
 ## Settings
 
-The settings screen has toggles for:
+The settings screen includes controls for:
 
 - Auto connect to the Sequoia backend
 - Discord chat display
 - Raid auto-announce
+- Tracked world-event notifications
+- Global Sequoia UI size
 - Update checks on startup
 
 ## Installation

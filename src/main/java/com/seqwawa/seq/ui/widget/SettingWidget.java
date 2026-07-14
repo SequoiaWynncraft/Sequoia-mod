@@ -25,12 +25,15 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("check_updates", "Check for updates on startup");
         DISPLAY_NAME_OVERRIDES.put("enable_easter_eggs", "Enable easter eggs");
         DISPLAY_NAME_OVERRIDES.put("startup_video", "Startup video");
+        DISPLAY_NAME_OVERRIDES.put("ui_size_percent", "UI size %");
         DISPLAY_NAME_OVERRIDES.put("enable_radiance_visualiser", "Enable Radiance visualiser");
         DISPLAY_NAME_OVERRIDES.put("leaderboard_badges", "Badges");
         DISPLAY_NAME_OVERRIDES.put("show_raid_badges", "Show raid badges");
         DISPLAY_NAME_OVERRIDES.put("show_insignia_badges", "Show insignia badges");
         DISPLAY_NAME_OVERRIDES.put("show_own_leaderboard_badge", "Show own badges");
         DISPLAY_NAME_OVERRIDES.put("show_party_healthbars", "Show party health bars");
+        DISPLAY_NAME_OVERRIDES.put("notify_tracked_world_events", "Notify tracked world events");
+        DISPLAY_NAME_OVERRIDES.put("world_events", "World Events");
 
         TOKEN_REPLACEMENTS.put("discord", "Discord");
         TOKEN_REPLACEMENTS.put("bridge", "Chat");

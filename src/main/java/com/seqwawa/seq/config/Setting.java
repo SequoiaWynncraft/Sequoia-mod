@@ -52,6 +52,7 @@ public abstract class Setting<T> {
         @Getter private final int min;
         @Getter private final int max;
         @Getter private final int increment;
+        private boolean allowOutOfRangeManualInput;
 
         public IntSetting(String name, String category, int defaultValue, int min, int max) {
             this(name, category, defaultValue, min, max, 1);
@@ -69,6 +70,19 @@ public abstract class Setting<T> {
             super.setValue(Math.max(min, Math.min(max, value)));
         }
 
+        public void setValueFromManualInput(Integer value) {
+            if (allowOutOfRangeManualInput) {
+                super.setValue(value);
+            } else {
+                setValue(value);
+            }
+        }
+
+        public IntSetting allowOutOfRangeManualInput() {
+            allowOutOfRangeManualInput = true;
+            return this;
+        }
+
         @Override
         public JsonElement serialize() {
             return new JsonPrimitive(getValue());
@@ -77,7 +91,12 @@ public abstract class Setting<T> {
         @Override
         public void deserialize(JsonElement element) {
             if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
-                setValue(element.getAsInt());
+                int value = element.getAsInt();
+                if (allowOutOfRangeManualInput) {
+                    setValueFromManualInput(value);
+                } else {
+                    setValue(value);
+                }
             }
         }
     }
@@ -86,6 +105,7 @@ public abstract class Setting<T> {
         @Getter private final double min;
         @Getter private final double max;
         @Getter private final double increment;
+        private boolean allowOutOfRangeManualInput;
 
         public DoubleSetting(String name, String category, double defaultValue, double min, double max) {
             this(name, category, defaultValue, min, max, 0.1);
@@ -103,6 +123,19 @@ public abstract class Setting<T> {
             super.setValue(Math.max(min, Math.min(max, value)));
         }
 
+        public void setValueFromManualInput(Double value) {
+            if (allowOutOfRangeManualInput) {
+                super.setValue(value);
+            } else {
+                setValue(value);
+            }
+        }
+
+        public DoubleSetting allowOutOfRangeManualInput() {
+            allowOutOfRangeManualInput = true;
+            return this;
+        }
+
         @Override
         public JsonElement serialize() {
             return new JsonPrimitive(getValue());
@@ -111,7 +144,12 @@ public abstract class Setting<T> {
         @Override
         public void deserialize(JsonElement element) {
             if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
-                setValue(element.getAsDouble());
+                double value = element.getAsDouble();
+                if (allowOutOfRangeManualInput) {
+                    setValueFromManualInput(value);
+                } else {
+                    setValue(value);
+                }
             }
         }
     }
@@ -120,6 +158,7 @@ public abstract class Setting<T> {
         @Getter private final float min;
         @Getter private final float max;
         @Getter private final float increment;
+        private boolean allowOutOfRangeManualInput;
 
         public FloatSetting(String name, String category, float defaultValue, float min, float max) {
             this(name, category, defaultValue, min, max, 0.1f);
@@ -137,6 +176,19 @@ public abstract class Setting<T> {
             super.setValue(Math.max(min, Math.min(max, value)));
         }
 
+        public void setValueFromManualInput(Float value) {
+            if (allowOutOfRangeManualInput) {
+                super.setValue(value);
+            } else {
+                setValue(value);
+            }
+        }
+
+        public FloatSetting allowOutOfRangeManualInput() {
+            allowOutOfRangeManualInput = true;
+            return this;
+        }
+
         @Override
         public JsonElement serialize() {
             return new JsonPrimitive(getValue());
@@ -145,7 +197,12 @@ public abstract class Setting<T> {
         @Override
         public void deserialize(JsonElement element) {
             if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
-                setValue(element.getAsFloat());
+                float value = element.getAsFloat();
+                if (allowOutOfRangeManualInput) {
+                    setValueFromManualInput(value);
+                } else {
+                    setValue(value);
+                }
             }
         }
     }

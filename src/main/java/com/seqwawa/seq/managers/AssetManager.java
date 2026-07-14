@@ -32,6 +32,7 @@ public class AssetManager {
         "tna.png",
         "twp.png",
         "annihilation.png",
+        "world_event.png",
         "starup.png",
         "cross.png",
         "gaz_ears.png",

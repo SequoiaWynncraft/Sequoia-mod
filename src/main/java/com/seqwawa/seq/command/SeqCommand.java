@@ -31,7 +31,7 @@ import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.PartyListing;
 import com.seqwawa.seq.map.GatheringClusterCache;
 import com.seqwawa.seq.map.GatheringMapImageService;
-import com.seqwawa.seq.map.GatheringMapSettings;
+import com.seqwawa.seq.map.WorldMapSettings;
 import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyRole;
@@ -39,7 +39,7 @@ import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.AuthException;
-import com.seqwawa.seq.ui.GatheringMapScreen;
+import com.seqwawa.seq.ui.WorldMapScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.utils.PlayerNameCache;
 
@@ -310,7 +310,7 @@ public class SeqCommand {
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildMapCommand() {
                 return ClientCommandManager.literal("map")
-                                .executes(SeqCommand::openGatheringMapScreen)
+                                .executes(SeqCommand::openWorldMapScreen)
                                 .then(ClientCommandManager.literal("params")
                                                 .executes(SeqCommand::runMapParams))
                                 .then(ClientCommandManager.literal("eps")
@@ -378,8 +378,8 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int openGatheringMapScreen(CommandContext<FabricClientCommandSource> ctx) {
-                SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new GatheringMapScreen(SeqClient.mc.screen)));
+        private static int openWorldMapScreen(CommandContext<FabricClientCommandSource> ctx) {
+                SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new WorldMapScreen(SeqClient.mc.screen)));
                 return 1;
         }
 
@@ -444,7 +444,7 @@ public class SeqCommand {
         }
 
         private static int runMapParams(CommandContext<FabricClientCommandSource> ctx) {
-                GatheringMapSettings settings = GatheringMapSettings.getInstance();
+                WorldMapSettings settings = WorldMapSettings.getInstance();
                 sendFeedback(
                                 ctx.getSource(),
                                 "Map clustering: " + settings.describe()
@@ -455,7 +455,7 @@ public class SeqCommand {
 
         private static int runMapClusterEps(CommandContext<FabricClientCommandSource> ctx) {
                 int epsBlocks = IntegerArgumentType.getInteger(ctx, "blocks");
-                GatheringMapSettings.getInstance().setClusterEps(epsBlocks);
+                WorldMapSettings.getInstance().setClusterEps(epsBlocks);
                 GatheringClusterCache.getInstance().clear();
                 sendFeedback(
                                 ctx.getSource(),
@@ -465,7 +465,7 @@ public class SeqCommand {
 
         private static int runMapClusterMinSamples(CommandContext<FabricClientCommandSource> ctx) {
                 int minSamples = IntegerArgumentType.getInteger(ctx, "count");
-                GatheringMapSettings.getInstance().setClusterMinSamples(minSamples);
+                WorldMapSettings.getInstance().setClusterMinSamples(minSamples);
                 GatheringClusterCache.getInstance().clear();
                 sendFeedback(
                                 ctx.getSource(),
@@ -474,17 +474,17 @@ public class SeqCommand {
         }
 
         private static int runMapClusterReset(CommandContext<FabricClientCommandSource> ctx) {
-                GatheringMapSettings.getInstance().resetClusterParams();
+                WorldMapSettings.getInstance().resetClusterParams();
                 GatheringClusterCache.getInstance().clear();
                 sendFeedback(
                                 ctx.getSource(),
-                                "Map clustering reset to " + GatheringMapSettings.getInstance().describe()
+                                "Map clustering reset to " + WorldMapSettings.getInstance().describe()
                                                 + ". Cluster cache cleared.");
                 return 1;
         }
 
         private static int runMapDebugToggle(CommandContext<FabricClientCommandSource> ctx) {
-                boolean enabled = GatheringMapSettings.getInstance().toggleDebugInfo();
+                boolean enabled = WorldMapSettings.getInstance().toggleDebugInfo();
                 GatheringMapImageService imageService = GatheringMapImageService.getInstance();
                 sendFeedback(
                                 ctx.getSource(),

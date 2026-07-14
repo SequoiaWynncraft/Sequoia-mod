@@ -32,12 +32,14 @@ public class ConfigManager {
     private static final String STARTUP_VIDEO_Y_KEY = "_startup_video_y";
     private static final String STARTUP_VIDEO_WIDTH_KEY = "_startup_video_width";
     private static final String STARTUP_VIDEO_HEIGHT_KEY = "_startup_video_height";
+    private static final String TRACKED_WORLD_EVENTS_KEY = "_tracked_world_events";
     private static final Pattern MINECRAFT_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private final Path configPath;
     private final Path legacyTokenFile;
     private final List<Setting<?>> settings = new ArrayList<>();
     private final Set<String> ignoredBridgeUsers = new LinkedHashSet<>();
+    private final Set<String> trackedWorldEventIds = new LinkedHashSet<>();
     private String authToken;
     private Instant authTokenExpiresAt;
     private String minecraftUuid;
@@ -184,6 +186,22 @@ public class ConfigManager {
         return List.copyOf(ignoredBridgeUsers);
     }
 
+    public Set<String> trackedWorldEventIds() {
+        return Set.copyOf(trackedWorldEventIds);
+    }
+
+    public boolean setWorldEventTracked(String internalName, boolean tracked) {
+        String normalized = normalizeWorldEventId(internalName);
+        if (normalized == null) {
+            return false;
+        }
+        boolean changed = tracked ? trackedWorldEventIds.add(normalized) : trackedWorldEventIds.remove(normalized);
+        if (changed) {
+            save();
+        }
+        return changed;
+    }
+
     public void setBombSharePromptSeen(boolean bombSharePromptSeen) {
         this.bombSharePromptSeen = bombSharePromptSeen;
         save();
@@ -238,6 +256,13 @@ public class ConfigManager {
                 }
                 root.add(IGNORED_BRIDGE_USERS_KEY, ignoredUsers);
             }
+            if (!trackedWorldEventIds.isEmpty()) {
+                JsonArray trackedEvents = new JsonArray();
+                for (String internalName : trackedWorldEventIds) {
+                    trackedEvents.add(internalName);
+                }
+                root.add(TRACKED_WORLD_EVENTS_KEY, trackedEvents);
+            }
             root.addProperty(BOMB_SHARE_PROMPT_SEEN_KEY, bombSharePromptSeen);
             if (startupVideoX != null
                     && startupVideoY != null
@@ -282,6 +307,20 @@ public class ConfigManager {
                     }
                 }
             }
+            trackedWorldEventIds.clear();
+            if (root != null && root.has(TRACKED_WORLD_EVENTS_KEY) && root.get(TRACKED_WORLD_EVENTS_KEY).isJsonArray()) {
+                for (JsonElement element : root.getAsJsonArray(TRACKED_WORLD_EVENTS_KEY)) {
+                    if (element == null
+                            || !element.isJsonPrimitive()
+                            || !element.getAsJsonPrimitive().isString()) {
+                        continue;
+                    }
+                    String normalized = normalizeWorldEventId(element.getAsString());
+                    if (normalized != null) {
+                        trackedWorldEventIds.add(normalized);
+                    }
+                }
+            }
             if (root != null
                     && root.has(BOMB_SHARE_PROMPT_SEEN_KEY)
                     && root.get(BOMB_SHARE_PROMPT_SEEN_KEY).isJsonPrimitive()) {
@@ -321,6 +360,14 @@ public class ConfigManager {
         try (Writer writer = new OutputStreamWriter(new FileOutputStream(configPath.toFile()), StandardCharsets.UTF_8)) {
             GSON.toJson(root, writer);
         }
+    }
+
+    private static String normalizeWorldEventId(String internalName) {
+        if (internalName == null) {
+            return null;
+        }
+        String normalized = internalName.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private static boolean removePersistedAuthSession(JsonObject root) {

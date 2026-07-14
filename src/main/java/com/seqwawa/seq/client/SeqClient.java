@@ -37,6 +37,7 @@ import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
+import com.seqwawa.seq.managers.WorldEventManager;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
@@ -110,6 +111,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting startupVideoSetting;
 
     @Getter
+    public static Setting.IntSetting uiSizePercentSetting;
+
+    @Getter
     public static Setting.BooleanSetting announceOpenPartiesSetting;
 
     @Getter
@@ -140,6 +144,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting showPartyHealthBarsSetting;
 
     @Getter
+    public static Setting.BooleanSetting notifyTrackedWorldEventsSetting;
+
+    @Getter
     public static WynnPartySyncManager wynnPartySyncManager;
 
     @Getter
@@ -156,6 +163,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static SeqBadgeNametagRendererHandle seqBadgeNametagRenderer;
+
+    @Getter
+    public static WorldEventManager worldEventManager;
 
     private static KeyMapping openScreenKey;
     private static KeyMapping shareBombsKey;
@@ -188,6 +198,7 @@ public class SeqClient implements ClientModInitializer {
         configManager.migrateToken();
         leaderboardBadgeService = LeaderboardBadgeService.getInstance();
         seqBadgeNametagRenderer = SeqBadgeNametagRenderers.createIfAvailable();
+        worldEventManager = WorldEventManager.getInstance();
         authService = MinecraftAuthService.getInstance();
         SeqCommand.register();
         RadianceCheckerClient.initialize();
@@ -217,6 +228,12 @@ public class SeqClient implements ClientModInitializer {
             String currentHost = WynncraftServerPolicy.currentNormalizedHost();
             WynncraftServerPolicy.Scope previousServerScope = lastServerScope;
             logServerScopeChange(serverScope, currentHost);
+            if (worldEventManager != null) {
+                worldEventManager.tick(
+                        client,
+                        serverScope,
+                        notifyTrackedWorldEventsSetting != null && notifyTrackedWorldEventsSetting.getValue());
+            }
             if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
                 RadianceCheckerClient.reset();
                 ConnectionManager.disconnectForBlockedServer();
@@ -457,6 +474,8 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.IntSetting("guild_storage_aspect_threshold_percent", "guild_storage", 100, 0, 100);
         easterEggsSetting = new Setting.BooleanSetting("enable_easter_eggs", "ui", true);
         startupVideoSetting = new Setting.BooleanSetting("startup_video", "ui", false);
+        uiSizePercentSetting = new Setting.IntSetting("ui_size_percent", "ui", 100, 75, 150, 5)
+                .allowOutOfRangeManualInput();
         announceOpenPartiesSetting = new Setting.BooleanSetting("announce_open_parties", "party_finder", true);
         announceOpenPartiesIntervalMinutesSetting =
                 new Setting.IntSetting("announce_open_parties_interval_minutes", "party_finder", 5, 1, 60);
@@ -469,6 +488,8 @@ public class SeqClient implements ClientModInitializer {
         showOwnLeaderboardBadgeSetting =
                 new Setting.BooleanSetting("show_own_leaderboard_badge", "leaderboard_badges", true);
         showPartyHealthBarsSetting = new Setting.BooleanSetting("show_party_healthbars", "raids", true);
+        notifyTrackedWorldEventsSetting =
+                new Setting.BooleanSetting("notify_tracked_world_events", "world_events", false);
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
@@ -479,6 +500,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(guildStorageAspectNotifyValueSetting);
         getConfigManager().register(easterEggsSetting);
         getConfigManager().register(startupVideoSetting);
+        getConfigManager().register(uiSizePercentSetting);
         getConfigManager().register(announceOpenPartiesSetting);
         getConfigManager().register(announceOpenPartiesIntervalMinutesSetting);
         getConfigManager().register(syncWynnPartySetting);
@@ -489,6 +511,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(showInsigniaBadgesSetting);
         getConfigManager().register(showOwnLeaderboardBadgeSetting);
         getConfigManager().register(showPartyHealthBarsSetting);
+        getConfigManager().register(notifyTrackedWorldEventsSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.
