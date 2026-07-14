@@ -7,11 +7,13 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ConfigManagerTest {
 
@@ -70,5 +72,34 @@ class ConfigManagerTest {
         assertFalse(json.contains("_minecraft_username"));
         assertTrue(json.contains("_discord_username"));
         assertTrue(json.contains("network.auto_connect"));
+    }
+
+    @Test
+    void persistsTrackedWorldEventIdsIncludingUnknownEvents() throws Exception {
+        Path configPath = tempDir.resolve("config").resolve("sequoia.json");
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+
+        assertTrue(manager.setWorldEventTracked("known-event", true));
+        assertTrue(manager.setWorldEventTracked("temporarily-unknown", true));
+
+        ConfigManager reloaded = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        reloaded.load();
+        assertEquals(Set.of("known-event", "temporarily-unknown"), reloaded.trackedWorldEventIds());
+    }
+
+    @Test
+    void ignoresMalformedTrackedWorldEventEntries() throws Exception {
+        Path configPath = tempDir.resolve("config").resolve("sequoia.json");
+        Files.createDirectories(configPath.getParent());
+        Files.writeString(configPath, """
+                {
+                  "_tracked_world_events": ["valid", "", 12, null, {"id": "bad"}]
+                }
+                """);
+
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        manager.load();
+
+        assertEquals(Set.of("valid"), manager.trackedWorldEventIds());
     }
 }

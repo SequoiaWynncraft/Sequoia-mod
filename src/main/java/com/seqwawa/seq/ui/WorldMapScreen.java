@@ -1,6 +1,8 @@
 package com.seqwawa.seq.ui;
 
 import java.awt.Color;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -33,8 +35,16 @@ import com.seqwawa.seq.map.GuildTerritoryIndex;
 import com.seqwawa.seq.map.GuildTerritoryService;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapBounds;
+import com.seqwawa.seq.map.MapDisplayMode;
 import com.seqwawa.seq.map.MapViewport;
+import com.seqwawa.seq.map.WorldEventDefinition;
+import com.seqwawa.seq.map.WorldEventDisplayFilter;
+import com.seqwawa.seq.map.WorldEventFilters;
+import com.seqwawa.seq.map.WorldEventLocation;
+import com.seqwawa.seq.map.WorldEventMarkerHitTester;
+import com.seqwawa.seq.map.WorldEventService;
 import com.seqwawa.seq.map.WorldMapSettings;
+import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.map.GatheringMapImageService.TileKey;
 import com.seqwawa.seq.map.GatheringMapImageService.TileSet;
 import com.seqwawa.seq.utils.TextInputHelper;
@@ -59,6 +69,9 @@ public class WorldMapScreen extends Screen {
     private static final float RESOURCE_DROPDOWN_ROW_HEIGHT = 20;
     private static final int RESOURCE_DROPDOWN_VISIBLE_ROWS = 8;
     private static final int TERRITORY_DROPDOWN_VISIBLE_ROWS = 8;
+    private static final int WORLD_EVENT_DROPDOWN_VISIBLE_ROWS = 8;
+    private static final float WORLD_EVENT_DETAIL_HEIGHT = 122;
+    private static final String WORLD_EVENT_MARKER_ASSET = "world_event";
     private static final float MIN_HULL_PADDING_PX = 4f;
     private static final float MAX_HULL_PADDING_PX = 12f;
     private static final int HULL_SMOOTHING_PASSES = 2;
@@ -82,6 +95,8 @@ public class WorldMapScreen extends Screen {
     private static final Color SELECTED_CLUSTER_COLOR = new Color(235, 58, 58, 255);
     private static final Color TERRITORY_COLOR = new Color(75, 194, 205, 175);
     private static final Color SELECTED_TERRITORY_COLOR = new Color(255, 204, 82, 235);
+    private static final Color WORLD_EVENT_COLOR = new Color(62, 190, 218, 245);
+    private static final Color TRACKED_WORLD_EVENT_COLOR = new Color(255, 194, 72, 250);
 
     private final Screen parent;
     private final GatheringNodeService nodeService = GatheringNodeService.getInstance();
@@ -89,6 +104,7 @@ public class WorldMapScreen extends Screen {
     private final GatheringMapImageService mapImageService = GatheringMapImageService.getInstance();
     private final WorldMapSettings mapSettings = WorldMapSettings.getInstance();
     private final GatheringClusterCache clusterCache = GatheringClusterCache.getInstance();
+    private final WorldEventService worldEventService = WorldEventService.getInstance();
     private final EnumMap<GatheringProfession, Boolean> professionToggles = new EnumMap<>(GatheringProfession.class);
 
     private double centerX = (MapCalibration.MIN_WORLD_X + MapCalibration.MAX_WORLD_X) / 2.0;
@@ -102,11 +118,16 @@ public class WorldMapScreen extends Screen {
     private boolean territoryDropdownOpen;
     private boolean territoryInputFocused;
     private int territoryDropdownScroll;
+    private boolean worldEventDropdownOpen;
+    private boolean worldEventInputFocused;
+    private boolean worldEventDropdownTrackedOnly;
+    private int worldEventDropdownScroll;
     private float sidebarScroll;
     private float sidebarContentHeight;
     private long centerPlayerWarningUntilMs;
     private String resourceSearch = "";
     private String territorySearch = "";
+    private String worldEventSearch = "";
     private final Set<String> selectedResourceFilters = new TreeSet<>();
     private GatheringNode hoveredNode;
     private GatheringNode selectedNode;
@@ -121,6 +142,13 @@ public class WorldMapScreen extends Screen {
     private boolean showDebugInfo;
     private ClusterScoreMode clusterScoreMode = ClusterScoreMode.FOUR_TICK;
     private GatheringAnalysisScope gatheringAnalysisScope = GatheringAnalysisScope.ALL;
+    private MapDisplayMode displayMode = MapDisplayMode.GATHERING;
+    private WorldEventDisplayFilter worldEventDisplayFilter = WorldEventDisplayFilter.ALL;
+    private List<WorldEventDefinition> allWorldEvents = List.of();
+    private List<WorldEventDefinition> visibleWorldEvents = List.of();
+    private WorldEventDefinition hoveredWorldEvent;
+    private int hoveredWorldEventLocationIndex = -1;
+    private WorldEventDefinition selectedWorldEvent;
     private List<GatheringNode> cachedSourceNodes = List.of();
     private List<GatheringNode> cachedFilteredNodes = List.of();
     private List<GatheringNodeCluster> cachedClusters = List.of();
@@ -156,11 +184,14 @@ public class WorldMapScreen extends Screen {
         showDebugInfo = mapSettings.showDebugInfo();
         clusterScoreMode = mapSettings.clusterScoreMode();
         gatheringAnalysisScope = mapSettings.gatheringAnalysisScope();
+        displayMode = mapSettings.displayMode();
+        worldEventDisplayFilter = mapSettings.worldEventDisplayFilter();
         territoryService.loadBundledTerritories();
         territoryIndex = territoryService.index();
         restoreSelectedTerritory();
         nodeService.loadBundledNodes();
         mapImageService.requestLoad();
+        SeqClient.getWorldEventManager().requestMapRefresh();
     }
 
     @Override
@@ -196,7 +227,11 @@ public class WorldMapScreen extends Screen {
             fitFullMap(mapW, mapH);
         }
 
-        refreshClusterAnalysisIfNeeded();
+        if (displayMode == MapDisplayMode.GATHERING) {
+            refreshClusterAnalysisIfNeeded();
+        } else {
+            refreshWorldEvents();
+        }
         MapViewport viewport = new MapViewport(centerX, centerZ, pixelsPerBlock, mapX, mapY, mapW, mapH);
         NVGContext.renderDeferred(nvg -> renderNvg(nvg, viewport));
     }
@@ -207,6 +242,13 @@ public class WorldMapScreen extends Screen {
 
         renderMapBackground(nvg, viewport);
         NVGWrapper.drawRect(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(), MAP_TINT);
+        if (displayMode == MapDisplayMode.WORLD_EVENTS) {
+            renderWorldEvents(nvg, viewport);
+            renderPlayer(nvg, viewport);
+            renderSidebar(nvg);
+            return;
+        }
+
         renderTerritories(nvg, viewport);
         boolean clusterMode = shouldRenderClusters();
         if (clusterMode) {
@@ -275,6 +317,94 @@ public class WorldMapScreen extends Screen {
                     new Color(color.getRed(), color.getGreen(), color.getBlue(), selected || hovered ? 235 : 115));
         }
         nvgResetScissor(nvg);
+    }
+
+    private void refreshWorldEvents() {
+        allWorldEvents = worldEventService.snapshot().events();
+        visibleWorldEvents = WorldEventFilters.visibleEvents(
+                allWorldEvents,
+                worldEventDisplayFilter,
+                SeqClient.getConfigManager().trackedWorldEventIds());
+        selectedWorldEvent = WorldEventFilters.retainVisibleSelection(selectedWorldEvent, visibleWorldEvents);
+    }
+
+    private void renderWorldEvents(long nvg, MapViewport viewport) {
+        hoveredWorldEvent = null;
+        hoveredWorldEventLocationIndex = -1;
+        boolean allowHover = !draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY);
+        MapBounds visibleBounds = viewport.visibleBounds();
+        Set<String> tracked = SeqClient.getConfigManager().trackedWorldEventIds();
+        AssetManager.Asset markerAsset = worldEventMarkerAsset();
+
+        if (allowHover) {
+            List<WorldEventMarkerHitTester.Candidate> candidates = new ArrayList<>();
+            for (WorldEventDefinition event : visibleWorldEvents) {
+                for (int locationIndex = 0; locationIndex < event.locations().size(); locationIndex++) {
+                    WorldEventLocation location = event.locations().get(locationIndex);
+                    if (!visibleBounds.contains(location.x(), location.z())) {
+                        continue;
+                    }
+                    float x = viewport.worldToScreenX(location.x());
+                    float y = viewport.worldToScreenZ(location.z());
+                    candidates.add(new WorldEventMarkerHitTester.Candidate(
+                            event,
+                            locationIndex,
+                            Math.hypot(nvgMouseX - x, nvgMouseY - y)));
+                }
+            }
+            WorldEventMarkerHitTester.Candidate closest = WorldEventMarkerHitTester.closest(candidates, 9);
+            if (closest != null) {
+                hoveredWorldEvent = closest.event();
+                hoveredWorldEventLocationIndex = closest.locationIndex();
+            }
+        }
+
+        nvgScissor(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+        for (WorldEventDefinition event : visibleWorldEvents) {
+            boolean eventSelected = selectedWorldEvent != null && selectedWorldEvent.runId().equals(event.runId());
+            boolean eventTracked = tracked.contains(event.internalName());
+            for (int locationIndex = 0; locationIndex < event.locations().size(); locationIndex++) {
+                WorldEventLocation location = event.locations().get(locationIndex);
+                if (!visibleBounds.contains(location.x(), location.z())) {
+                    continue;
+                }
+                float x = viewport.worldToScreenX(location.x());
+                float y = viewport.worldToScreenZ(location.z());
+                float areaRadius = (float) (location.radius() * viewport.pixelsPerBlock());
+                if (areaRadius >= 5) {
+                    Color areaColor = eventTracked ? TRACKED_WORLD_EVENT_COLOR : WORLD_EVENT_COLOR;
+                    drawCircleOutline(nvg, x, y, areaRadius, 1, new Color(
+                            areaColor.getRed(), areaColor.getGreen(), areaColor.getBlue(), eventSelected ? 150 : 65));
+                }
+
+                Color markerColor = eventTracked ? TRACKED_WORLD_EVENT_COLOR : WORLD_EVENT_COLOR;
+                boolean highlighted = eventSelected || (event.equals(hoveredWorldEvent) && locationIndex == hoveredWorldEventLocationIndex);
+                if (markerAsset == null) {
+                    drawCircle(nvg, x, y, highlighted ? 8 : 7, new Color(0, 0, 0, 190));
+                    drawCircle(nvg, x, y, highlighted ? 5.5f : 4.5f, eventSelected ? PLAYER_COLOR : markerColor);
+                } else {
+                    float outerRadius = highlighted ? 9 : 8;
+                    float assetSize = highlighted ? 12 : 11;
+                    drawCircle(nvg, x, y, outerRadius, new Color(0, 0, 0, 210));
+                    drawCircle(nvg, x, y, outerRadius - 1.5f, markerColor);
+                    NVGWrapper.drawImage(
+                            nvg,
+                            markerAsset,
+                            x - assetSize / 2,
+                            y - assetSize / 2,
+                            assetSize,
+                            assetSize,
+                            255);
+                    if (eventSelected) {
+                        drawCircleOutline(nvg, x, y, outerRadius + 1, 1.5f, PLAYER_COLOR);
+                    }
+                }
+            }
+        }
+        nvgResetScissor(nvg);
+        if (hoveredWorldEvent != null) {
+            renderWorldEventTooltip(nvg, hoveredWorldEvent, hoveredWorldEventLocationIndex);
+        }
     }
 
     private void renderTerritoryNames(long nvg, MapViewport viewport) {
@@ -810,6 +940,10 @@ public class WorldMapScreen extends Screen {
     }
 
     private void renderSidebar(long nvg) {
+        if (displayMode == MapDisplayMode.WORLD_EVENTS) {
+            renderWorldEventSidebar(nvg);
+            return;
+        }
         float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         SidebarLayout layout = sidebarLayout();
@@ -820,6 +954,7 @@ public class WorldMapScreen extends Screen {
         nvgScissor(nvg, 0, SIDEBAR_HEADER_HEIGHT, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_HEADER_HEIGHT));
         drawButton(nvg, PADDING, sidebarY(layout.backY()), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
         drawButton(nvg, PADDING, sidebarY(layout.centerY()), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
+        drawMapModeControl(nvg, sidebarY(layout.modeY()));
         renderTerritoryToggles(nvg, sidebarY(layout.territoryToggleY()));
 
         drawText(nvg, PADDING, sidebarY(layout.scopeLabelY()), 12, "Gathering Scope", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
@@ -916,6 +1051,148 @@ public class WorldMapScreen extends Screen {
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         nvgResetScissor(nvg);
         renderSidebarScrollbar(nvg, screenHeight);
+    }
+
+    private void renderWorldEventSidebar(long nvg) {
+        float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+        sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
+        WorldEventSidebarLayout layout = worldEventSidebarLayout();
+        NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
+        NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, HEADER_COLOR);
+        drawText(nvg, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", TITLE_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+
+        nvgScissor(nvg, 0, SIDEBAR_HEADER_HEIGHT, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_HEADER_HEIGHT));
+        drawButton(nvg, PADDING, sidebarY(layout.backY()), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
+        drawButton(nvg, PADDING, sidebarY(layout.centerY()), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
+        drawMapModeControl(nvg, sidebarY(layout.modeY()));
+
+        drawText(nvg, PADDING, sidebarY(layout.filterLabelY()), 12, "Visible Events", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawWorldEventFilterControl(nvg, sidebarY(layout.filterY()));
+
+        drawText(nvg, PADDING, sidebarY(layout.eventLabelY()), 12, "Manage Tracking", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawWorldEventTrackingListControl(nvg, sidebarY(layout.eventFilterY()));
+        float eventInputY = sidebarY(layout.eventInputY());
+        renderSearchInput(
+                nvg,
+                eventInputY,
+                worldEventDropdownOpen,
+                worldEventInputFocused,
+                worldEventSearch,
+                trackedWorldEventLabel());
+
+        long visibleCount = allWorldEvents.stream().filter(WorldEventDefinition::isVisible).count();
+        drawSidebarText(
+                nvg,
+                PADDING,
+                sidebarY(layout.statusY()),
+                11,
+                visibleWorldEvents.size() + " shown | " + visibleCount + " active",
+                SUBTEXT_COLOR);
+        drawSidebarText(nvg, PADDING, sidebarY(layout.statusY() + 16), 10, worldEventService.status(), SUBTEXT_COLOR);
+
+        WorldEventDefinition detail = selectedWorldEvent != null ? selectedWorldEvent : hoveredWorldEvent;
+        float y = sidebarY(layout.detailY());
+        if (detail != null) {
+            renderWorldEventDetail(nvg, y, detail, selectedWorldEvent != null);
+            y += WORLD_EVENT_DETAIL_HEIGHT + 14;
+        } else {
+            drawSidebarText(nvg, PADDING, y + 10, 11, "No event selected", SUBTEXT_COLOR);
+            y += 32;
+        }
+
+        if (worldEventDropdownOpen) {
+            renderWorldEventDropdown(nvg, eventInputY + INPUT_HEIGHT);
+        }
+        sidebarContentHeight = y + sidebarScroll + PADDING;
+        sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
+        nvgResetScissor(nvg);
+        renderSidebarScrollbar(nvg, screenHeight);
+    }
+
+    private void renderWorldEventDetail(
+            long nvg,
+            float y,
+            WorldEventDefinition event,
+            boolean allowTrackingButton) {
+        float width = SIDEBAR_WIDTH - PADDING * 2;
+        float textWidth = width - 16;
+        NVGWrapper.drawRect(nvg, PADDING, y, width, WORLD_EVENT_DETAIL_HEIGHT, new Color(28, 28, 38, 220));
+        NVGWrapper.drawRectOutline(nvg, PADDING, y, width, WORLD_EVENT_DETAIL_HEIGHT, 1, BORDER_COLOR);
+        drawFittedText(nvg, PADDING + 8, y + 16, 14, event.name(), TEXT_COLOR, textWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        String metadata = worldEventMetadata(event);
+        drawFittedText(nvg, PADDING + 8, y + 35, 11, metadata, SUBTEXT_COLOR, textWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawFittedText(nvg, PADDING + 8, y + 53, 11, worldEventScheduleLabel(event.schedule()), SUBTEXT_COLOR, textWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        String locationLabel = event.locations().size() == 1
+                ? worldEventCoordinates(event.locations().getFirst())
+                : event.locations().size() + " possible locations";
+        drawFittedText(nvg, PADDING + 8, y + 71, 11, locationLabel, SUBTEXT_COLOR, textWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        if (allowTrackingButton) {
+            boolean tracked = SeqClient.getConfigManager().trackedWorldEventIds().contains(event.internalName());
+            drawButton(
+                    nvg,
+                    PADDING + 8,
+                    y + 88,
+                    width - 16,
+                    24,
+                    tracked ? "Untrack Event" : "Track Event",
+                    tracked);
+        }
+    }
+
+    private void drawMapModeControl(long nvg, float y) {
+        float width = SIDEBAR_WIDTH - PADDING * 2;
+        float segmentWidth = width / MapDisplayMode.values().length;
+        for (int index = 0; index < MapDisplayMode.values().length; index++) {
+            MapDisplayMode mode = MapDisplayMode.values()[index];
+            float x = PADDING + index * segmentWidth;
+            boolean active = displayMode == mode;
+            boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
+            NVGWrapper.drawRect(nvg, x, y, segmentWidth, BUTTON_HEIGHT, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
+            NVGWrapper.drawRectOutline(nvg, x, y, segmentWidth, BUTTON_HEIGHT, 1, BORDER_COLOR);
+            drawText(nvg, x + segmentWidth / 2f, y + BUTTON_HEIGHT / 2f, 11, mode.label(), TEXT_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        }
+    }
+
+    private void drawWorldEventFilterControl(long nvg, float y) {
+        float width = SIDEBAR_WIDTH - PADDING * 2;
+        float segmentWidth = width / WorldEventDisplayFilter.values().length;
+        for (int index = 0; index < WorldEventDisplayFilter.values().length; index++) {
+            WorldEventDisplayFilter filter = WorldEventDisplayFilter.values()[index];
+            float x = PADDING + index * segmentWidth;
+            boolean active = worldEventDisplayFilter == filter;
+            boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
+            NVGWrapper.drawRect(nvg, x, y, segmentWidth, BUTTON_HEIGHT, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
+            NVGWrapper.drawRectOutline(nvg, x, y, segmentWidth, BUTTON_HEIGHT, 1, BORDER_COLOR);
+            drawText(nvg, x + segmentWidth / 2f, y + BUTTON_HEIGHT / 2f, 11, filter.label(), TEXT_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        }
+    }
+
+    private void drawWorldEventTrackingListControl(long nvg, float y) {
+        float width = SIDEBAR_WIDTH - PADDING * 2;
+        float segmentWidth = width / 2f;
+        drawTrackingListSegment(nvg, PADDING, y, segmentWidth, "All Events", !worldEventDropdownTrackedOnly);
+        drawTrackingListSegment(
+                nvg,
+                PADDING + segmentWidth,
+                y,
+                segmentWidth,
+                "Tracked Only",
+                worldEventDropdownTrackedOnly);
+    }
+
+    private void drawTrackingListSegment(long nvg, float x, float y, float width, String label, boolean active) {
+        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, width, BUTTON_HEIGHT);
+        NVGWrapper.drawRect(nvg, x, y, width, BUTTON_HEIGHT, active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR);
+        NVGWrapper.drawRectOutline(nvg, x, y, width, BUTTON_HEIGHT, 1, BORDER_COLOR);
+        drawFittedText(
+                nvg,
+                x + width / 2f,
+                y + BUTTON_HEIGHT / 2f,
+                11,
+                label,
+                TEXT_COLOR,
+                width - 10,
+                NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     }
 
     private void renderTerritoryToggles(long nvg, float y) {
@@ -1066,6 +1343,59 @@ public class WorldMapScreen extends Screen {
         }
     }
 
+    private void renderWorldEventDropdown(long nvg, float y) {
+        List<WorldEventDefinition> events = worldEventDropdownOptions();
+        int visibleRows = Math.min(WORLD_EVENT_DROPDOWN_VISIBLE_ROWS, events.size());
+        worldEventDropdownScroll = clampDropdownScroll(
+                worldEventDropdownScroll,
+                events.size(),
+                WORLD_EVENT_DROPDOWN_VISIBLE_ROWS);
+        float x = PADDING;
+        float width = SIDEBAR_WIDTH - PADDING * 2;
+        float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
+        Set<String> tracked = SeqClient.getConfigManager().trackedWorldEventIds();
+        NVGWrapper.drawRect(nvg, x, y, width, height, new Color(22, 22, 30, 248));
+        NVGWrapper.drawRectOutline(nvg, x, y, width, height, 1, BORDER_COLOR);
+        if (events.isEmpty()) {
+            drawText(nvg, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            return;
+        }
+        for (int index = 0; index < visibleRows; index++) {
+            WorldEventDefinition event = events.get(worldEventDropdownScroll + index);
+            boolean selected = tracked.contains(event.internalName());
+            boolean hovered = isHovered(
+                    nvgMouseX,
+                    nvgMouseY,
+                    x,
+                    y + index * RESOURCE_DROPDOWN_ROW_HEIGHT,
+                    width,
+                    RESOURCE_DROPDOWN_ROW_HEIGHT);
+            if (selected || hovered) {
+                NVGWrapper.drawRect(
+                        nvg,
+                        x + 1,
+                        y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1,
+                        width - 2,
+                        RESOURCE_DROPDOWN_ROW_HEIGHT - 2,
+                        selected ? CONTROL_ACTIVE : CONTROL_HOVER);
+            }
+            String label = (selected ? "[x] " : "[ ] ") + event.name();
+            drawFittedText(
+                    nvg,
+                    x + 8,
+                    y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f,
+                    11,
+                    label,
+                    event.isVisible() ? TEXT_COLOR : SUBTEXT_COLOR,
+                    width - 16,
+                    NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        }
+        if (events.size() > visibleRows) {
+            String range = (worldEventDropdownScroll + 1) + "-" + (worldEventDropdownScroll + visibleRows) + "/" + events.size();
+            drawText(nvg, x + width - 8, y + height - 7, 9, range, SUBTEXT_COLOR, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        }
+    }
+
     private void renderSidebarScrollbar(long nvg, float screenHeight) {
         float viewportHeight = Math.max(0, screenHeight - SIDEBAR_HEADER_HEIGHT);
         float maxScroll = sidebarMaxScroll(screenHeight);
@@ -1086,6 +1416,36 @@ public class WorldMapScreen extends Screen {
     }
 
     private boolean copyHoveredCoordinates(float mx, float my, float sidebarMy, float screenWidth, float screenHeight) {
+        if (displayMode == MapDisplayMode.WORLD_EVENTS) {
+            WorldEventSidebarLayout layout = worldEventSidebarLayout();
+            if (selectedWorldEvent != null
+                    && isHovered(
+                            mx,
+                            sidebarMy,
+                            PADDING,
+                            layout.detailY(),
+                            SIDEBAR_WIDTH - PADDING * 2,
+                            WORLD_EVENT_DETAIL_HEIGHT)) {
+                copyToClipboard(worldEventCoordinates(selectedWorldEvent.locations().getFirst()));
+                return true;
+            }
+            MapViewport viewport = new MapViewport(
+                    centerX,
+                    centerZ,
+                    pixelsPerBlock,
+                    SIDEBAR_WIDTH,
+                    0,
+                    screenWidth - SIDEBAR_WIDTH,
+                    screenHeight);
+            if (viewport.isInsideScreen(mx, my)
+                    && hoveredWorldEvent != null
+                    && hoveredWorldEventLocationIndex >= 0) {
+                copyToClipboard(worldEventCoordinates(
+                        hoveredWorldEvent.locations().get(hoveredWorldEventLocationIndex)));
+                return true;
+            }
+            return false;
+        }
         GatheringNodeCluster clusterDetail = selectedCluster != null ? selectedCluster : hoveredCluster;
         GatheringNode detail = selectedNode != null ? selectedNode : hoveredNode;
         float detailY = sidebarEntityDetailY();
@@ -1155,6 +1515,21 @@ public class WorldMapScreen extends Screen {
         NVGWrapper.drawRectOutline(nvg, x, y, 200, 42, 1, BORDER_COLOR);
         drawFittedText(nvg, x + 8, y + 15, 12, territory.name(), TEXT_COLOR, 184, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         drawFittedText(nvg, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 184, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    }
+
+    private void renderWorldEventTooltip(long nvg, WorldEventDefinition event, int locationIndex) {
+        WorldEventLocation location = event.locations().get(Math.max(0, locationIndex));
+        String locationLabel = event.locations().size() > 1
+                ? "Possible " + (locationIndex + 1) + "/" + event.locations().size()
+                        + ": " + worldEventCoordinates(location)
+                : worldEventCoordinates(location);
+        String subtitle = worldEventScheduleLabel(event.schedule()) + " | " + locationLabel;
+        float x = Math.min(nvgMouseX + 12, SeqClient.mc.getWindow().getWidth() / 2f - 220);
+        float y = Math.max(8, nvgMouseY + 12);
+        NVGWrapper.drawRect(nvg, x, y, 210, 42, new Color(18, 18, 24, 235));
+        NVGWrapper.drawRectOutline(nvg, x, y, 210, 42, 1, BORDER_COLOR);
+        drawFittedText(nvg, x + 8, y + 15, 12, event.name(), TEXT_COLOR, 194, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawFittedText(nvg, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 194, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
     }
 
     private void refreshClusterAnalysisIfNeeded() {
@@ -1269,6 +1644,60 @@ public class WorldMapScreen extends Screen {
                 })
                 .toList();
         return java.util.stream.Stream.concat(prefixMatches.stream(), substringMatches.stream()).toList();
+    }
+
+    private List<WorldEventDefinition> worldEventDropdownOptions() {
+        String query = worldEventInputFocused ? worldEventSearch : "";
+        return WorldEventFilters.trackingOptions(
+                allWorldEvents,
+                SeqClient.getConfigManager().trackedWorldEventIds(),
+                worldEventDropdownTrackedOnly,
+                query);
+    }
+
+    private String trackedWorldEventLabel() {
+        int tracked = SeqClient.getConfigManager().trackedWorldEventIds().size();
+        return tracked == 0 ? "Manage tracked events" : tracked + " tracked events";
+    }
+
+    private static String worldEventMetadata(WorldEventDefinition event) {
+        List<String> metadata = new ArrayList<>();
+        if (event.level() != null) {
+            metadata.add("Lv. " + event.level());
+        }
+        if (event.difficulty() != null) {
+            metadata.add(displayEnumValue(event.difficulty()));
+        }
+        if (event.length() != null) {
+            metadata.add(displayEnumValue(event.length()));
+        }
+        return metadata.isEmpty() ? "World event" : String.join(" | ", metadata);
+    }
+
+    private static String displayEnumValue(String value) {
+        String lower = value.toLowerCase(Locale.ROOT).replace('_', ' ');
+        return lower.isEmpty() ? "" : Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
+    }
+
+    private static String worldEventScheduleLabel(Instant schedule) {
+        if (schedule == null) {
+            return "Not scheduled";
+        }
+        Instant now = Instant.now();
+        if (!schedule.isAfter(now)) {
+            long minutes = Math.max(0, Duration.between(schedule, now).toMinutes());
+            return minutes == 0 ? "Started" : "Started " + minutes + "m ago";
+        }
+        long seconds = Duration.between(now, schedule).getSeconds();
+        return "Starts in " + Math.max(1, (seconds + 59) / 60) + "m";
+    }
+
+    private static String worldEventCoordinates(WorldEventLocation location) {
+        return Math.round(location.x()) + " " + Math.round(location.y()) + " " + Math.round(location.z());
+    }
+
+    private static AssetManager.Asset worldEventMarkerAsset() {
+        return SeqClient.assetManager == null ? null : SeqClient.assetManager.getAsset(WORLD_EVENT_MARKER_ASSET);
     }
 
     private void restoreSelectedTerritory() {
@@ -1477,6 +1906,12 @@ public class WorldMapScreen extends Screen {
         if (mx >= 0 && mx <= SIDEBAR_WIDTH && my < SIDEBAR_HEADER_HEIGHT) {
             return true;
         }
+        if (displayMode == MapDisplayMode.WORLD_EVENTS) {
+            if (mouseClickedWorldEvents(mx, my, sidebarMy, screenWidth, screenHeight)) {
+                return true;
+            }
+            return super.mouseClicked(click, outsideScreen);
+        }
         SidebarLayout layout = sidebarLayout();
 
         if (territoryDropdownOpen) {
@@ -1509,6 +1944,10 @@ public class WorldMapScreen extends Screen {
             if (!centerOnPlayer()) {
                 centerPlayerWarningUntilMs = System.currentTimeMillis() + CENTER_PLAYER_WARNING_DURATION_MS;
             }
+            return true;
+        }
+        if (isHovered(mx, sidebarMy, PADDING, layout.modeY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+            setDisplayMode(mapModeAt(mx));
             return true;
         }
         float territoryToggleWidth = SIDEBAR_WIDTH - PADDING * 2;
@@ -1629,6 +2068,114 @@ public class WorldMapScreen extends Screen {
         return super.mouseClicked(click, outsideScreen);
     }
 
+    private boolean mouseClickedWorldEvents(
+            float mx,
+            float my,
+            float sidebarMy,
+            float screenWidth,
+            float screenHeight) {
+        WorldEventSidebarLayout layout = worldEventSidebarLayout();
+        if (worldEventDropdownOpen) {
+            List<WorldEventDefinition> events = worldEventDropdownOptions();
+            int visibleRows = Math.min(WORLD_EVENT_DROPDOWN_VISIBLE_ROWS, events.size());
+            float dropdownY = layout.eventInputY() - sidebarScroll + INPUT_HEIGHT;
+            if (visibleRows > 0
+                    && isHovered(
+                            mx,
+                            my,
+                            PADDING,
+                            dropdownY,
+                            SIDEBAR_WIDTH - PADDING * 2,
+                            visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
+                int optionIndex = Math.min(
+                        visibleRows - 1,
+                        Math.max(0, (int) ((my - dropdownY) / RESOURCE_DROPDOWN_ROW_HEIGHT)));
+                toggleTrackedWorldEvent(events.get(worldEventDropdownScroll + optionIndex), true);
+                return true;
+            }
+        }
+        if (isHovered(mx, sidebarMy, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+            SeqClient.mc.setScreen(parent);
+            return true;
+        }
+        if (isHovered(mx, sidebarMy, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+            if (!centerOnPlayer()) {
+                centerPlayerWarningUntilMs = System.currentTimeMillis() + CENTER_PLAYER_WARNING_DURATION_MS;
+            }
+            return true;
+        }
+        if (isHovered(mx, sidebarMy, PADDING, layout.modeY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+            setDisplayMode(mapModeAt(mx));
+            return true;
+        }
+        if (isHovered(mx, sidebarMy, PADDING, layout.filterY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+            WorldEventDisplayFilter filter = worldEventFilterAt(mx);
+            if (filter != null) {
+                worldEventDisplayFilter = filter;
+                mapSettings.setWorldEventDisplayFilter(filter);
+                refreshWorldEvents();
+            }
+            return true;
+        }
+        if (isHovered(
+                mx,
+                sidebarMy,
+                PADDING,
+                layout.eventFilterY(),
+                SIDEBAR_WIDTH - PADDING * 2,
+                BUTTON_HEIGHT)) {
+            float midpoint = PADDING + (SIDEBAR_WIDTH - PADDING * 2) / 2f;
+            worldEventDropdownTrackedOnly = mx >= midpoint;
+            worldEventDropdownOpen = true;
+            worldEventInputFocused = true;
+            worldEventDropdownScroll = 0;
+            return true;
+        }
+        if (isHovered(mx, sidebarMy, PADDING, layout.eventInputY(), SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT)) {
+            boolean shouldOpen = !worldEventDropdownOpen;
+            closeResourceSearch();
+            closeTerritorySearch();
+            worldEventInputFocused = shouldOpen;
+            worldEventDropdownOpen = shouldOpen;
+            worldEventSearch = "";
+            worldEventDropdownScroll = 0;
+            return true;
+        }
+        if (selectedWorldEvent != null
+                && isHovered(
+                        mx,
+                        sidebarMy,
+                        PADDING + 8,
+                        layout.detailY() + 88,
+                        SIDEBAR_WIDTH - PADDING * 2 - 16,
+                        24)) {
+            toggleTrackedWorldEvent(selectedWorldEvent, false);
+            return true;
+        }
+        if (worldEventDropdownOpen) {
+            closeWorldEventSearch();
+            return true;
+        }
+
+        MapViewport viewport = new MapViewport(
+                centerX,
+                centerZ,
+                pixelsPerBlock,
+                SIDEBAR_WIDTH,
+                0,
+                screenWidth - SIDEBAR_WIDTH,
+                screenHeight);
+        if (viewport.isInsideScreen(mx, my)) {
+            selectedWorldEvent = hoveredWorldEvent;
+            draggingMap = true;
+            hoveredWorldEvent = null;
+            hoveredWorldEventLocationIndex = -1;
+            closeSearchDropdowns();
+            return true;
+        }
+        return false;
+    }
+
     @Override
     public boolean mouseReleased(@NotNull MouseButtonEvent click) {
         draggingMap = false;
@@ -1644,6 +2191,8 @@ public class WorldMapScreen extends Screen {
             hoveredNode = null;
             hoveredCluster = null;
             hoveredTerritory = null;
+            hoveredWorldEvent = null;
+            hoveredWorldEventLocationIndex = -1;
             return true;
         }
         return super.mouseDragged(click, deltaX, deltaY);
@@ -1653,6 +2202,25 @@ public class WorldMapScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         float mx = scaledMouseX(mouseX);
         float my = scaledMouseY(mouseY);
+        if (displayMode == MapDisplayMode.WORLD_EVENTS && worldEventDropdownOpen) {
+            WorldEventSidebarLayout eventLayout = worldEventSidebarLayout();
+            List<WorldEventDefinition> events = worldEventDropdownOptions();
+            int visibleRows = Math.min(WORLD_EVENT_DROPDOWN_VISIBLE_ROWS, events.size());
+            float dropdownY = eventLayout.eventInputY() - sidebarScroll + INPUT_HEIGHT;
+            if (isHovered(
+                    mx,
+                    my,
+                    PADDING,
+                    dropdownY,
+                    SIDEBAR_WIDTH - PADDING * 2,
+                    visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
+                worldEventDropdownScroll = clampDropdownScroll(
+                        worldEventDropdownScroll + (scrollY > 0 ? -1 : 1),
+                        events.size(),
+                        WORLD_EVENT_DROPDOWN_VISIBLE_ROWS);
+                return true;
+            }
+        }
         SidebarLayout layout = sidebarLayout();
         if (territoryDropdownOpen) {
             List<GuildTerritory> territories = territoryDropdownOptions();
@@ -1697,6 +2265,38 @@ public class WorldMapScreen extends Screen {
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
         int keyCode = keyEvent.key();
+        if (worldEventInputFocused) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                closeWorldEventSearch();
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                applyWorldEventAutocompleteSelection();
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (!worldEventSearch.isEmpty()) {
+                    worldEventSearch = worldEventSearch.substring(0, worldEventSearch.length() - 1);
+                }
+                worldEventDropdownOpen = true;
+                worldEventDropdownScroll = 0;
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_DELETE) {
+                worldEventSearch = "";
+                worldEventDropdownOpen = true;
+                worldEventDropdownScroll = 0;
+                return true;
+            }
+            Character typedCharacter = searchCharacter(keyEvent);
+            if (typedCharacter != null) {
+                worldEventSearch += typedCharacter;
+                worldEventDropdownOpen = true;
+                worldEventDropdownScroll = 0;
+                return true;
+            }
+            return true;
+        }
         if (territoryInputFocused) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 closeTerritorySearch();
@@ -1763,7 +2363,8 @@ public class WorldMapScreen extends Screen {
             }
             return true;
         }
-        if ((resourceDropdownOpen || territoryDropdownOpen) && keyCode == GLFW.GLFW_KEY_ESCAPE) {
+        if ((resourceDropdownOpen || territoryDropdownOpen || worldEventDropdownOpen)
+                && keyCode == GLFW.GLFW_KEY_ESCAPE) {
             closeSearchDropdowns();
             return true;
         }
@@ -1776,6 +2377,17 @@ public class WorldMapScreen extends Screen {
         var nvgColor = NVGContext.nvgColor(color);
         nvgFillColor(nvg, nvgColor);
         nvgFill(nvg);
+        nvgClosePath(nvg);
+        nvgColor.free();
+    }
+
+    private static void drawCircleOutline(long nvg, float x, float y, float radius, float width, Color color) {
+        nvgBeginPath(nvg);
+        nvgCircle(nvg, x, y, radius);
+        var nvgColor = NVGContext.nvgColor(color);
+        nvgStrokeWidth(nvg, width);
+        nvgStrokeColor(nvg, nvgColor);
+        nvgStroke(nvg);
         nvgClosePath(nvg);
         nvgColor.free();
     }
@@ -1921,6 +2533,21 @@ public class WorldMapScreen extends Screen {
         closeTerritorySearch();
     }
 
+    private void applyWorldEventAutocompleteSelection() {
+        String search = worldEventSearch.trim();
+        WorldEventDefinition match = allWorldEvents.stream()
+                .filter(event -> event.name().equalsIgnoreCase(search))
+                .findFirst()
+                .orElse(null);
+        if (match == null) {
+            List<WorldEventDefinition> options = worldEventDropdownOptions();
+            match = options.isEmpty() ? null : options.getFirst();
+        }
+        if (match != null) {
+            toggleTrackedWorldEvent(match, true);
+        }
+    }
+
     private void selectTerritory(GuildTerritory territory, boolean centerOnTerritory) {
         selectedTerritory = territory;
         mapSettings.setSelectedTerritoryName(territory == null ? null : territory.name());
@@ -1955,9 +2582,47 @@ public class WorldMapScreen extends Screen {
         return GatheringAnalysisScope.values()[index];
     }
 
+    private MapDisplayMode mapModeAt(float mouseX) {
+        float segmentWidth = (SIDEBAR_WIDTH - PADDING * 2) / MapDisplayMode.values().length;
+        int index = (int) ((mouseX - PADDING) / segmentWidth);
+        return index >= 0 && index < MapDisplayMode.values().length ? MapDisplayMode.values()[index] : null;
+    }
+
+    private WorldEventDisplayFilter worldEventFilterAt(float mouseX) {
+        float segmentWidth = (SIDEBAR_WIDTH - PADDING * 2) / WorldEventDisplayFilter.values().length;
+        int index = (int) ((mouseX - PADDING) / segmentWidth);
+        return index >= 0 && index < WorldEventDisplayFilter.values().length
+                ? WorldEventDisplayFilter.values()[index]
+                : null;
+    }
+
+    private void setDisplayMode(MapDisplayMode mode) {
+        if (mode == null || mode == displayMode) {
+            return;
+        }
+        displayMode = mode;
+        mapSettings.setDisplayMode(mode);
+        sidebarScroll = 0;
+        draggingMap = false;
+        selectedNode = null;
+        selectedCluster = null;
+        hoveredNode = null;
+        hoveredCluster = null;
+        hoveredTerritory = null;
+        selectedWorldEvent = null;
+        hoveredWorldEvent = null;
+        hoveredWorldEventLocationIndex = -1;
+        closeSearchDropdowns();
+        if (mode == MapDisplayMode.WORLD_EVENTS) {
+            SeqClient.getWorldEventManager().requestMapRefresh();
+            refreshWorldEvents();
+        }
+    }
+
     private void closeSearchDropdowns() {
         closeResourceSearch();
         closeTerritorySearch();
+        closeWorldEventSearch();
     }
 
     private void closeResourceSearch() {
@@ -1972,6 +2637,25 @@ public class WorldMapScreen extends Screen {
         territoryInputFocused = false;
         territorySearch = "";
         territoryDropdownScroll = 0;
+    }
+
+    private void closeWorldEventSearch() {
+        worldEventDropdownOpen = false;
+        worldEventInputFocused = false;
+        worldEventSearch = "";
+        worldEventDropdownScroll = 0;
+    }
+
+    private void toggleTrackedWorldEvent(WorldEventDefinition event, boolean keepOpen) {
+        boolean tracked = SeqClient.getConfigManager().trackedWorldEventIds().contains(event.internalName());
+        SeqClient.getConfigManager().setWorldEventTracked(event.internalName(), !tracked);
+        worldEventDropdownOpen = keepOpen;
+        worldEventInputFocused = keepOpen;
+        if (!keepOpen) {
+            worldEventSearch = "";
+            worldEventDropdownScroll = 0;
+        }
+        refreshWorldEvents();
     }
 
     private void toggleResourceFilter(String resource, boolean keepOpen) {
@@ -2038,6 +2722,8 @@ public class WorldMapScreen extends Screen {
         y += BUTTON_HEIGHT + 8;
         float centerY = y;
         y += BUTTON_HEIGHT + 18;
+        float modeY = y;
+        y += BUTTON_HEIGHT + 18;
         float territoryToggleY = y;
         y += BUTTON_HEIGHT + 18;
         float scopeLabelY = y;
@@ -2068,6 +2754,7 @@ public class WorldMapScreen extends Screen {
         return new SidebarLayout(
                 backY,
                 centerY,
+                modeY,
                 territoryToggleY,
                 scopeLabelY,
                 scopeY,
@@ -2083,6 +2770,40 @@ public class WorldMapScreen extends Screen {
                 y);
     }
 
+    private WorldEventSidebarLayout worldEventSidebarLayout() {
+        float y = 58;
+        float backY = y;
+        y += BUTTON_HEIGHT + 8;
+        float centerY = y;
+        y += BUTTON_HEIGHT + 18;
+        float modeY = y;
+        y += BUTTON_HEIGHT + 18;
+        float filterLabelY = y;
+        y += 12;
+        float filterY = y;
+        y += BUTTON_HEIGHT + 18;
+        float eventLabelY = y;
+        y += 12;
+        float eventFilterY = y;
+        y += BUTTON_HEIGHT + 8;
+        float eventInputY = y;
+        y += INPUT_HEIGHT + 18;
+        float statusY = y;
+        y += 40;
+        float detailY = y;
+        return new WorldEventSidebarLayout(
+                backY,
+                centerY,
+                modeY,
+                filterLabelY,
+                filterY,
+                eventLabelY,
+                eventFilterY,
+                eventInputY,
+                statusY,
+                detailY);
+    }
+
     private static double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
     }
@@ -2094,6 +2815,7 @@ public class WorldMapScreen extends Screen {
     private record SidebarLayout(
             float backY,
             float centerY,
+            float modeY,
             float territoryToggleY,
             float scopeLabelY,
             float scopeY,
@@ -2106,6 +2828,18 @@ public class WorldMapScreen extends Screen {
             float resourceInputY,
             float professionLabelY,
             float professionStartY,
+            float detailY) {}
+
+    private record WorldEventSidebarLayout(
+            float backY,
+            float centerY,
+            float modeY,
+            float filterLabelY,
+            float filterY,
+            float eventLabelY,
+            float eventFilterY,
+            float eventInputY,
+            float statusY,
             float detailY) {}
 
     private record ClusterOutlineShape(

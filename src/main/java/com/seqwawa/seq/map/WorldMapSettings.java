@@ -17,6 +17,8 @@ public final class WorldMapSettings {
     private boolean showDebugInfo;
     private ClusterScoreMode clusterScoreMode = ClusterScoreMode.FOUR_TICK;
     private GatheringAnalysisScope gatheringAnalysisScope = GatheringAnalysisScope.ALL;
+    private MapDisplayMode displayMode = MapDisplayMode.GATHERING;
+    private WorldEventDisplayFilter worldEventDisplayFilter = WorldEventDisplayFilter.ALL;
     private String selectedTerritoryName;
     private long version;
 
@@ -104,6 +106,24 @@ public final class WorldMapSettings {
 
     public synchronized GatheringAnalysisScope gatheringAnalysisScope() {
         return gatheringAnalysisScope;
+    }
+
+    public synchronized MapDisplayMode displayMode() {
+        return displayMode;
+    }
+
+    public synchronized void setDisplayMode(MapDisplayMode displayMode) {
+        this.displayMode = displayMode == null ? MapDisplayMode.GATHERING : displayMode;
+    }
+
+    public synchronized WorldEventDisplayFilter worldEventDisplayFilter() {
+        return worldEventDisplayFilter;
+    }
+
+    public synchronized void setWorldEventDisplayFilter(WorldEventDisplayFilter worldEventDisplayFilter) {
+        this.worldEventDisplayFilter = worldEventDisplayFilter == null
+                ? WorldEventDisplayFilter.ALL
+                : worldEventDisplayFilter;
     }
 
     public synchronized void setGatheringAnalysisScope(GatheringAnalysisScope gatheringAnalysisScope) {
