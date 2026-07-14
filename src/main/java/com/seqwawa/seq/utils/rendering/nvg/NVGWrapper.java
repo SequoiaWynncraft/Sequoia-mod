@@ -67,7 +67,8 @@ public class NVGWrapper {
     }
 
     public static NVGColor nvgColor(Color color) {
-        NVGColor nvgColor = NVGColor.create();
+        // Callers release this struct with free(), so it must come from LWJGL's native allocator.
+        NVGColor nvgColor = NVGColor.malloc();
         nvgColor.r(color.getRed() / 255.0f);
         nvgColor.g(color.getGreen() / 255.0f);
         nvgColor.b(color.getBlue() / 255.0f);
