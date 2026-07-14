@@ -19,7 +19,6 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
     private static final float TEXT_BOX_HEIGHT = 18;
     private static final float CONTROL_GAP = 8;
     private static final float COMPACT_SLIDER_WIDTH_RATIO = 0.25f;
-    private static final String UI_SIZE_SETTING = "ui_size_percent";
 
     private static final Color TRACK_COLOR = new Color(50, 50, 60, 200);
     private static final Color FILL_COLOR = new Color(160, 130, 220, 255);
@@ -39,13 +38,19 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
     private final double max;
     private final double increment;
     private final boolean isInteger;
+    private final boolean compact;
 
     public SliderWidget(Setting.IntSetting setting) {
+        this(setting, false);
+    }
+
+    public SliderWidget(Setting.IntSetting setting, boolean compact) {
         super(setting);
         this.min = setting.getMin();
         this.max = setting.getMax();
         this.increment = setting.getIncrement();
         this.isInteger = true;
+        this.compact = compact;
         this.height = 40;
     }
 
@@ -55,6 +60,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         this.max = setting.getMax();
         this.increment = setting.getIncrement();
         this.isInteger = false;
+        this.compact = false;
         this.height = 40;
     }
 
@@ -64,6 +70,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         this.max = setting.getMax();
         this.increment = setting.getIncrement();
         this.isInteger = false;
+        this.compact = false;
         this.height = 40;
     }
 
@@ -234,7 +241,6 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
     private SliderLayout layout() {
         float sliderX = x + 8;
         float fullSliderWidth = Math.max(1, width - TEXT_BOX_WIDTH - 24);
-        boolean compact = UI_SIZE_SETTING.equals(setting.getName());
         float sliderWidth = compact ? fullSliderWidth * COMPACT_SLIDER_WIDTH_RATIO : fullSliderWidth;
         float textBoxX = compact
                 ? sliderX + sliderWidth + CONTROL_GAP
