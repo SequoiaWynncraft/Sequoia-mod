@@ -21,16 +21,20 @@ import org.lwjgl.nanovg.NVGPaint;
 import org.lwjgl.system.MemoryUtil;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.map.ClusterScoreMode;
+import com.seqwawa.seq.map.GatheringAnalysisScope;
 import com.seqwawa.seq.map.GatheringClusterCache;
 import com.seqwawa.seq.map.GatheringMapImageService;
-import com.seqwawa.seq.map.GatheringMapSettings;
 import com.seqwawa.seq.map.GatheringNode;
 import com.seqwawa.seq.map.GatheringNodeCluster;
 import com.seqwawa.seq.map.GatheringNodeService;
 import com.seqwawa.seq.map.GatheringProfession;
+import com.seqwawa.seq.map.GuildTerritory;
+import com.seqwawa.seq.map.GuildTerritoryIndex;
+import com.seqwawa.seq.map.GuildTerritoryService;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapViewport;
+import com.seqwawa.seq.map.WorldMapSettings;
 import com.seqwawa.seq.map.GatheringMapImageService.TileKey;
 import com.seqwawa.seq.map.GatheringMapImageService.TileSet;
 import com.seqwawa.seq.utils.TextInputHelper;
@@ -39,7 +43,7 @@ import com.seqwawa.seq.utils.rendering.nvg.NVGWrapper;
 
 import static org.lwjgl.nanovg.NanoVG.*;
 
-public class GatheringMapScreen extends Screen {
+public class WorldMapScreen extends Screen {
     private static final float SIDEBAR_WIDTH = 230;
     private static final float PADDING = 12;
     private static final float BUTTON_HEIGHT = 24;
@@ -47,11 +51,14 @@ public class GatheringMapScreen extends Screen {
     private static final float INPUT_HEIGHT = 24;
     private static final float SIDEBAR_HEADER_HEIGHT = 44;
     private static final float SIDEBAR_SCROLL_STEP = 28;
+    private static final float TERRITORY_TOGGLE_GAP = 4;
     private static final long CENTER_PLAYER_WARNING_DURATION_MS = 6_767;
     private static final float CLUSTER_DETAIL_HEIGHT = 110;
     private static final float NODE_DETAIL_HEIGHT = 58;
+    private static final float TERRITORY_DETAIL_HEIGHT = 76;
     private static final float RESOURCE_DROPDOWN_ROW_HEIGHT = 20;
     private static final int RESOURCE_DROPDOWN_VISIBLE_ROWS = 8;
+    private static final int TERRITORY_DROPDOWN_VISIBLE_ROWS = 8;
     private static final float MIN_HULL_PADDING_PX = 4f;
     private static final float MAX_HULL_PADDING_PX = 12f;
     private static final int HULL_SMOOTHING_PASSES = 2;
@@ -59,6 +66,7 @@ public class GatheringMapScreen extends Screen {
     private static final double MAX_PIXELS_PER_BLOCK = 2.5;
     private static final double NODE_DETAIL_PIXELS_PER_BLOCK = 0.42;
     private static final double CLUSTER_BADGE_PIXELS_PER_BLOCK = 0.65;
+    private static final double TERRITORY_FOCUS_MAX_PIXELS_PER_BLOCK = 1.25;
     private static final int SIDEBAR_CLUSTER_LIMIT = 5;
     private static final Color SIDEBAR_COLOR = new Color(18, 18, 24, 235);
     private static final Color MAP_TINT = new Color(4, 7, 10, 32);
@@ -72,11 +80,14 @@ public class GatheringMapScreen extends Screen {
     private static final Color TITLE_COLOR = new Color(170, 145, 230, 255);
     private static final Color PLAYER_COLOR = new Color(255, 255, 255, 255);
     private static final Color SELECTED_CLUSTER_COLOR = new Color(235, 58, 58, 255);
+    private static final Color TERRITORY_COLOR = new Color(75, 194, 205, 175);
+    private static final Color SELECTED_TERRITORY_COLOR = new Color(255, 204, 82, 235);
 
     private final Screen parent;
     private final GatheringNodeService nodeService = GatheringNodeService.getInstance();
+    private final GuildTerritoryService territoryService = GuildTerritoryService.getInstance();
     private final GatheringMapImageService mapImageService = GatheringMapImageService.getInstance();
-    private final GatheringMapSettings mapSettings = GatheringMapSettings.getInstance();
+    private final WorldMapSettings mapSettings = WorldMapSettings.getInstance();
     private final GatheringClusterCache clusterCache = GatheringClusterCache.getInstance();
     private final EnumMap<GatheringProfession, Boolean> professionToggles = new EnumMap<>(GatheringProfession.class);
 
@@ -88,21 +99,33 @@ public class GatheringMapScreen extends Screen {
     private boolean resourceDropdownOpen;
     private boolean resourceInputFocused;
     private int resourceDropdownScroll;
+    private boolean territoryDropdownOpen;
+    private boolean territoryInputFocused;
+    private int territoryDropdownScroll;
     private float sidebarScroll;
     private float sidebarContentHeight;
     private long centerPlayerWarningUntilMs;
     private String resourceSearch = "";
+    private String territorySearch = "";
     private final Set<String> selectedResourceFilters = new TreeSet<>();
     private GatheringNode hoveredNode;
     private GatheringNode selectedNode;
     private GatheringNodeCluster hoveredCluster;
     private GatheringNodeCluster selectedCluster;
+    private GuildTerritoryIndex territoryIndex = GuildTerritoryIndex.EMPTY;
+    private GuildTerritory hoveredTerritory;
+    private GuildTerritory selectedTerritory;
     private boolean showClusters = true;
+    private boolean showTerritories;
+    private boolean showTerritoryNames;
     private boolean showDebugInfo;
     private ClusterScoreMode clusterScoreMode = ClusterScoreMode.FOUR_TICK;
+    private GatheringAnalysisScope gatheringAnalysisScope = GatheringAnalysisScope.ALL;
     private List<GatheringNode> cachedSourceNodes = List.of();
     private List<GatheringNode> cachedFilteredNodes = List.of();
     private List<GatheringNodeCluster> cachedClusters = List.of();
+    private Map<String, Integer> cachedTerritoryNodeCounts = Map.of();
+    private int selectedTerritoryMatchingNodeCount;
     private final Map<GatheringNodeCluster, ClusterOutlineShape> clusterOutlineShapes = new IdentityHashMap<>();
     private double clusterOutlineScale = Double.NaN;
     private List<String> cachedResourceOptions = List.of();
@@ -122,14 +145,20 @@ public class GatheringMapScreen extends Screen {
     private float nvgMouseX;
     private float nvgMouseY;
 
-    public GatheringMapScreen(Screen parent) {
-        super(Component.literal("Sequoia Gathering Map"));
+    public WorldMapScreen(Screen parent) {
+        super(Component.literal("Sequoia Map"));
         this.parent = parent;
         professionToggles.putAll(mapSettings.professionToggles());
         selectedResourceFilters.addAll(mapSettings.resourceFilters());
         showClusters = mapSettings.showClusters();
+        showTerritories = mapSettings.showTerritories();
+        showTerritoryNames = mapSettings.showTerritoryNames();
         showDebugInfo = mapSettings.showDebugInfo();
         clusterScoreMode = mapSettings.clusterScoreMode();
+        gatheringAnalysisScope = mapSettings.gatheringAnalysisScope();
+        territoryService.loadBundledTerritories();
+        territoryIndex = territoryService.index();
+        restoreSelectedTerritory();
         nodeService.loadBundledNodes();
         mapImageService.requestLoad();
     }
@@ -178,7 +207,14 @@ public class GatheringMapScreen extends Screen {
 
         renderMapBackground(nvg, viewport);
         NVGWrapper.drawRect(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(), MAP_TINT);
+        renderTerritories(nvg, viewport);
         boolean clusterMode = shouldRenderClusters();
+        if (clusterMode) {
+            hoveredNode = null;
+        }
+        if (!showClusters || cachedClusters.isEmpty()) {
+            hoveredCluster = null;
+        }
         if (showClusters && !cachedClusters.isEmpty()) {
             renderClusterHulls(nvg, viewport, !draggingMap);
             if (clusterMode) {
@@ -192,10 +228,189 @@ public class GatheringMapScreen extends Screen {
             }
         }
         renderPlayer(nvg, viewport);
+        renderTerritoryNames(nvg, viewport);
         if (!draggingMap && hoveredCluster != null && (clusterMode || hoveredNode == null)) {
             renderClusterTooltip(nvg, hoveredCluster);
+        } else if (!draggingMap && hoveredNode == null && hoveredTerritory != null) {
+            renderTerritoryTooltip(nvg, hoveredTerritory);
         }
         renderSidebar(nvg);
+    }
+
+    private void renderTerritories(long nvg, MapViewport viewport) {
+        hoveredTerritory = null;
+        if (!showTerritories) {
+            return;
+        }
+        if (!draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY)) {
+            hoveredTerritory = territoryIndex.territoryAt(
+                    viewport.screenToWorldX(nvgMouseX),
+                    viewport.screenToWorldZ(nvgMouseY));
+        }
+        MapBounds visibleBounds = viewport.visibleBounds();
+        nvgScissor(nvg, viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+        for (GuildTerritory territory : territoryIndex.territories()) {
+            MapBounds bounds = territory.bounds();
+            if (!intersects(visibleBounds, bounds)) {
+                continue;
+            }
+            float x = viewport.worldToScreenX(bounds.minX());
+            float y = viewport.worldToScreenZ(bounds.minZ());
+            float width = viewport.worldToScreenX(bounds.maxX()) - x;
+            float height = viewport.worldToScreenZ(bounds.maxZ()) - y;
+            boolean selected = territory.equals(selectedTerritory);
+            boolean hovered = territory.equals(hoveredTerritory);
+            Color color = selected ? SELECTED_TERRITORY_COLOR : TERRITORY_COLOR;
+            if (selected || hovered) {
+                int alpha = selected ? 38 : 24;
+                NVGWrapper.drawRect(nvg, x, y, width, height, new Color(color.getRed(), color.getGreen(), color.getBlue(), alpha));
+            }
+            NVGWrapper.drawRectOutline(
+                    nvg,
+                    x,
+                    y,
+                    width,
+                    height,
+                    selected || hovered ? 1.8f : 0.8f,
+                    new Color(color.getRed(), color.getGreen(), color.getBlue(), selected || hovered ? 235 : 115));
+        }
+        nvgResetScissor(nvg);
+    }
+
+    private void renderTerritoryNames(long nvg, MapViewport viewport) {
+        if (!showTerritories || !showTerritoryNames) {
+            return;
+        }
+        MapBounds visibleBounds = viewport.visibleBounds();
+        for (GuildTerritory territory : territoryIndex.territories()) {
+            MapBounds bounds = territory.bounds();
+            if (!intersects(visibleBounds, bounds)) {
+                continue;
+            }
+            float x = viewport.worldToScreenX(bounds.minX());
+            float y = viewport.worldToScreenZ(bounds.minZ());
+            float width = viewport.worldToScreenX(bounds.maxX()) - x;
+            float height = viewport.worldToScreenZ(bounds.maxZ()) - y;
+            TerritoryLabelLayout label = fitTerritoryLabel(nvg, territory.name(), width - 8, height - 6);
+            if (label == null) {
+                continue;
+            }
+
+            float clipX = Math.max(x, viewport.screenX());
+            float clipY = Math.max(y, viewport.screenY());
+            float clipMaxX = Math.min(x + width, viewport.screenX() + viewport.screenWidth());
+            float clipMaxY = Math.min(y + height, viewport.screenY() + viewport.screenHeight());
+            if (clipMaxX <= clipX || clipMaxY <= clipY) {
+                continue;
+            }
+
+            Color textColor = territory.equals(selectedTerritory)
+                    ? SELECTED_TERRITORY_COLOR
+                    : territory.equals(hoveredTerritory) ? new Color(185, 247, 250, 255) : TEXT_COLOR;
+            float totalHeight = label.lines().size() * label.lineHeight();
+            float lineY = y + (height - totalHeight) / 2f + label.lineHeight() / 2f;
+            nvgSave(nvg);
+            nvgScissor(nvg, clipX, clipY, clipMaxX - clipX, clipMaxY - clipY);
+            for (String line : label.lines()) {
+                drawText(
+                        nvg,
+                        x + width / 2f + 1,
+                        lineY + 1,
+                        label.fontSize(),
+                        line,
+                        new Color(0, 0, 0, 210),
+                        NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                drawText(
+                        nvg,
+                        x + width / 2f,
+                        lineY,
+                        label.fontSize(),
+                        line,
+                        textColor,
+                        NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+                lineY += label.lineHeight();
+            }
+            nvgRestore(nvg);
+        }
+    }
+
+    private static TerritoryLabelLayout fitTerritoryLabel(long nvg, String name, float maxWidth, float maxHeight) {
+        if (maxWidth < 4 || maxHeight < 6) {
+            return null;
+        }
+        for (float fontSize = 11; fontSize >= 6; fontSize--) {
+            nvgFontSize(nvg, fontSize);
+            List<String> lines = wrapTerritoryName(nvg, name, maxWidth);
+            float lineHeight = fontSize + 2;
+            if (!lines.isEmpty() && lines.size() * lineHeight <= maxHeight) {
+                return new TerritoryLabelLayout(lines, fontSize, lineHeight);
+            }
+        }
+        return null;
+    }
+
+    private static List<String> wrapTerritoryName(long nvg, String name, float maxWidth) {
+        List<String> lines = new ArrayList<>();
+        StringBuilder currentLine = new StringBuilder();
+        for (String word : name.trim().split("\\s+")) {
+            String candidate = currentLine.isEmpty() ? word : currentLine + " " + word;
+            if (textWidth(nvg, candidate) <= maxWidth) {
+                currentLine.setLength(0);
+                currentLine.append(candidate);
+                continue;
+            }
+            if (!currentLine.isEmpty()) {
+                lines.add(currentLine.toString());
+                currentLine.setLength(0);
+            }
+            if (textWidth(nvg, word) <= maxWidth) {
+                currentLine.append(word);
+                continue;
+            }
+            List<String> pieces = splitTerritoryWord(nvg, word, maxWidth);
+            if (pieces.isEmpty()) {
+                return List.of();
+            }
+            lines.addAll(pieces.subList(0, pieces.size() - 1));
+            currentLine.append(pieces.getLast());
+        }
+        if (!currentLine.isEmpty()) {
+            lines.add(currentLine.toString());
+        }
+        return List.copyOf(lines);
+    }
+
+    private static List<String> splitTerritoryWord(long nvg, String word, float maxWidth) {
+        List<String> pieces = new ArrayList<>();
+        StringBuilder piece = new StringBuilder();
+        for (int index = 0; index < word.length(); index++) {
+            char character = word.charAt(index);
+            String candidate = piece.toString() + character;
+            if (textWidth(nvg, candidate) <= maxWidth) {
+                piece.append(character);
+                continue;
+            }
+            if (piece.isEmpty()) {
+                return List.of();
+            }
+            pieces.add(piece.toString());
+            piece.setLength(0);
+            if (textWidth(nvg, String.valueOf(character)) > maxWidth) {
+                return List.of();
+            }
+            piece.append(character);
+        }
+        if (!piece.isEmpty()) {
+            pieces.add(piece.toString());
+        }
+        return pieces;
+    }
+
+    private static boolean intersects(MapBounds left, MapBounds right) {
+        return left.maxX() >= right.minX()
+                && left.minX() <= right.maxX()
+                && left.maxZ() >= right.minZ()
+                && left.minZ() <= right.maxZ();
     }
 
     private void renderMapBackground(long nvg, MapViewport viewport) {
@@ -597,51 +812,49 @@ public class GatheringMapScreen extends Screen {
     private void renderSidebar(long nvg) {
         float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
+        SidebarLayout layout = sidebarLayout();
         NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
         NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, HEADER_COLOR);
-        drawText(nvg, SIDEBAR_WIDTH / 2f, 22, 18, "Gathering Map", TITLE_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        drawText(nvg, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", TITLE_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 
         nvgScissor(nvg, 0, SIDEBAR_HEADER_HEIGHT, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_HEADER_HEIGHT));
-        float y = 58 - sidebarScroll;
-        drawButton(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
-        y += BUTTON_HEIGHT + 8;
-        drawButton(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
-        y += BUTTON_HEIGHT + 18;
-        drawButton(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, showClusters ? "Clusters On" : "Clusters Off", showClusters);
-        y += BUTTON_HEIGHT + 8;
-        drawButton(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Score " + clusterScoreMode.label(), true);
-        y += BUTTON_HEIGHT + 18;
+        drawButton(nvg, PADDING, sidebarY(layout.backY()), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
+        drawButton(nvg, PADDING, sidebarY(layout.centerY()), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
+        renderTerritoryToggles(nvg, sidebarY(layout.territoryToggleY()));
+
+        drawText(nvg, PADDING, sidebarY(layout.scopeLabelY()), 12, "Gathering Scope", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawScopeControl(nvg, sidebarY(layout.scopeY()));
+
+        drawText(nvg, PADDING, sidebarY(layout.territoryLabelY()), 12, "Territory", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        float territoryInputY = sidebarY(layout.territoryInputY());
+        renderSearchInput(
+                nvg,
+                territoryInputY,
+                territoryDropdownOpen,
+                territoryInputFocused,
+                territorySearch,
+                selectedTerritory == null ? "Find territory" : selectedTerritory.name());
+
+        drawButton(nvg, PADDING, sidebarY(layout.clustersY()), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, showClusters ? "Clusters On" : "Clusters Off", showClusters);
+        drawButton(nvg, PADDING, sidebarY(layout.scoreY()), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Score " + clusterScoreMode.label(), true);
 
         if (showDebugInfo) {
-            drawSidebarText(nvg, PADDING, y, 11, "Map source: " + displayMapImageSource(), SUBTEXT_COLOR);
-            y += 18;
-            drawSidebarText(nvg, PADDING, y, 11, "HQ status: " + mapImageService.hqStatus(), SUBTEXT_COLOR);
-            y += 18;
+            drawSidebarText(nvg, PADDING, sidebarY(layout.debugY()), 11, "Map source: " + displayMapImageSource(), SUBTEXT_COLOR);
+            drawSidebarText(nvg, PADDING, sidebarY(layout.debugY() + 18), 11, "HQ status: " + mapImageService.hqStatus(), SUBTEXT_COLOR);
         }
 
-        drawText(nvg, PADDING, y, 12, "Resource", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        y += 12;
-        float resourceInputY = y;
-        Color inputColor = resourceDropdownOpen ? CONTROL_HOVER : CONTROL_COLOR;
-        NVGWrapper.drawRect(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, inputColor);
-        NVGWrapper.drawRectOutline(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, 1, BORDER_COLOR);
-        String value = resourceInputFocused ? resourceSearch : selectedResourceLabel();
-        Color valueColor = value.isBlank() || (!resourceInputFocused && selectedResourceFilters.isEmpty())
-                ? SUBTEXT_COLOR
-                : TEXT_COLOR;
-        String displayValue = value.isBlank() && !resourceInputFocused ? "All resources" : value;
-        float inputTextWidth = SIDEBAR_WIDTH - PADDING * 2 - 30;
-        drawFittedText(nvg, PADDING + 8, y + INPUT_HEIGHT / 2f, 12, displayValue, valueColor, inputTextWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        if (resourceInputFocused) {
-            nvgFontSize(nvg, 12);
-            float cursorX = PADDING + 10 + Math.min(textWidth(nvg, value), inputTextWidth);
-            drawText(nvg, cursorX, y + INPUT_HEIGHT / 2f, 12, "|", TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        }
-        drawText(nvg, SIDEBAR_WIDTH - PADDING - 10, y + INPUT_HEIGHT / 2f, 12, resourceDropdownOpen ? "^" : "v", SUBTEXT_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        y += INPUT_HEIGHT + 18;
+        drawText(nvg, PADDING, sidebarY(layout.resourceLabelY()), 12, "Resource", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        float resourceInputY = sidebarY(layout.resourceInputY());
+        renderSearchInput(
+                nvg,
+                resourceInputY,
+                resourceDropdownOpen,
+                resourceInputFocused,
+                resourceSearch,
+                selectedResourceLabel());
 
-        drawText(nvg, PADDING, y, 12, "Professions", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        y += 12;
+        drawText(nvg, PADDING, sidebarY(layout.professionLabelY()), 12, "Professions", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        float y = sidebarY(layout.professionStartY());
         for (GatheringProfession profession : List.of(
                 GatheringProfession.WOODCUTTING,
                 GatheringProfession.MINING,
@@ -651,7 +864,12 @@ public class GatheringMapScreen extends Screen {
             drawToggle(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, TOGGLE_HEIGHT, profession, active);
             y += TOGGLE_HEIGHT + 6;
         }
-        y += 12;
+
+        y = sidebarY(layout.detailY());
+        if (selectedTerritory != null) {
+            renderSelectedTerritoryDetail(nvg, y, selectedTerritory);
+            y += TERRITORY_DETAIL_HEIGHT + 14;
+        }
 
         GatheringNodeCluster clusterDetail = selectedCluster != null ? selectedCluster : hoveredCluster;
         GatheringNode detail = selectedNode != null ? selectedNode : hoveredNode;
@@ -691,10 +909,90 @@ public class GatheringMapScreen extends Screen {
         if (resourceDropdownOpen) {
             renderResourceDropdown(nvg, resourceInputY + INPUT_HEIGHT);
         }
+        if (territoryDropdownOpen) {
+            renderTerritoryDropdown(nvg, territoryInputY + INPUT_HEIGHT);
+        }
         sidebarContentHeight = y + sidebarScroll + PADDING;
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         nvgResetScissor(nvg);
         renderSidebarScrollbar(nvg, screenHeight);
+    }
+
+    private void renderTerritoryToggles(long nvg, float y) {
+        float fullWidth = SIDEBAR_WIDTH - PADDING * 2;
+        if (!showTerritories) {
+            drawButton(nvg, PADDING, y, fullWidth, BUTTON_HEIGHT, "Territory Borders Off", false);
+            return;
+        }
+        float splitWidth = (fullWidth - TERRITORY_TOGGLE_GAP) / 2f;
+        drawButton(nvg, PADDING, y, splitWidth, BUTTON_HEIGHT, "Borders On", true);
+        drawButton(
+                nvg,
+                PADDING + splitWidth + TERRITORY_TOGGLE_GAP,
+                y,
+                splitWidth,
+                BUTTON_HEIGHT,
+                showTerritoryNames ? "Names On" : "Names Off",
+                showTerritoryNames);
+    }
+
+    private void renderSearchInput(
+            long nvg,
+            float y,
+            boolean dropdownOpen,
+            boolean inputFocused,
+            String search,
+            String unfocusedValue) {
+        NVGWrapper.drawRect(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, dropdownOpen ? CONTROL_HOVER : CONTROL_COLOR);
+        NVGWrapper.drawRectOutline(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, 1, BORDER_COLOR);
+        String value = inputFocused ? search : unfocusedValue;
+        Color valueColor = value == null || value.isBlank() ? SUBTEXT_COLOR : TEXT_COLOR;
+        String displayValue = value == null || value.isBlank() ? "Search" : value;
+        float inputTextWidth = SIDEBAR_WIDTH - PADDING * 2 - 30;
+        drawFittedText(nvg, PADDING + 8, y + INPUT_HEIGHT / 2f, 12, displayValue, valueColor, inputTextWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        if (inputFocused) {
+            float cursorX = PADDING + 10 + Math.min(textWidth(nvg, value), inputTextWidth);
+            drawText(nvg, cursorX, y + INPUT_HEIGHT / 2f, 12, "|", TEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        }
+        drawText(nvg, SIDEBAR_WIDTH - PADDING - 10, y + INPUT_HEIGHT / 2f, 12, dropdownOpen ? "^" : "v", SUBTEXT_COLOR, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    }
+
+    private void drawScopeControl(long nvg, float y) {
+        float width = SIDEBAR_WIDTH - PADDING * 2;
+        float segmentWidth = width / GatheringAnalysisScope.values().length;
+        for (int index = 0; index < GatheringAnalysisScope.values().length; index++) {
+            GatheringAnalysisScope scope = GatheringAnalysisScope.values()[index];
+            float x = PADDING + index * segmentWidth;
+            boolean enabled = scope != GatheringAnalysisScope.SELECTED_TERRITORY || selectedTerritory != null;
+            boolean active = gatheringAnalysisScope == scope;
+            boolean hovered = enabled && isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
+            Color background = active ? CONTROL_ACTIVE : hovered ? CONTROL_HOVER : CONTROL_COLOR;
+            if (!enabled) {
+                background = new Color(background.getRed(), background.getGreen(), background.getBlue(), 105);
+            }
+            NVGWrapper.drawRect(nvg, x, y, segmentWidth, BUTTON_HEIGHT, background);
+            NVGWrapper.drawRectOutline(nvg, x, y, segmentWidth, BUTTON_HEIGHT, 1, BORDER_COLOR);
+            drawFittedText(
+                    nvg,
+                    x + segmentWidth / 2f,
+                    y + BUTTON_HEIGHT / 2f,
+                    10,
+                    scope.label(),
+                    enabled ? TEXT_COLOR : SUBTEXT_COLOR,
+                    segmentWidth - 8,
+                    NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        }
+    }
+
+    private void renderSelectedTerritoryDetail(long nvg, float y, GuildTerritory territory) {
+        NVGWrapper.drawRect(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, TERRITORY_DETAIL_HEIGHT, new Color(28, 28, 38, 210));
+        NVGWrapper.drawRectOutline(nvg, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, TERRITORY_DETAIL_HEIGHT, 1, SELECTED_TERRITORY_COLOR);
+        float detailWidth = SIDEBAR_WIDTH - PADDING * 2 - 16;
+        int totalNodes = cachedTerritoryNodeCounts.getOrDefault(territory.name(), 0);
+        int matchingNodes = selectedTerritoryMatchingNodeCount;
+        drawFittedText(nvg, PADDING + 8, y + 17, 14, territory.name(), TEXT_COLOR, detailWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawFittedText(nvg, PADDING + 8, y + 36, 11, totalNodes + " total nodes | " + matchingNodes + " matching", SUBTEXT_COLOR, detailWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawFittedText(nvg, PADDING + 8, y + 56, 10, territoryBoundsLabel(territory), SUBTEXT_COLOR, detailWidth, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
     }
 
     private void drawButton(long nvg, float x, float y, float w, float h, String label, boolean active) {
@@ -740,6 +1038,34 @@ public class GatheringMapScreen extends Screen {
         }
     }
 
+    private void renderTerritoryDropdown(long nvg, float y) {
+        List<GuildTerritory> territories = territoryDropdownOptions();
+        int visibleRows = Math.min(TERRITORY_DROPDOWN_VISIBLE_ROWS, territories.size());
+        territoryDropdownScroll = clampDropdownScroll(territoryDropdownScroll, territories.size(), TERRITORY_DROPDOWN_VISIBLE_ROWS);
+        float x = PADDING;
+        float width = SIDEBAR_WIDTH - PADDING * 2;
+        float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
+        NVGWrapper.drawRect(nvg, x, y, width, height, new Color(22, 22, 30, 248));
+        NVGWrapper.drawRectOutline(nvg, x, y, width, height, 1, BORDER_COLOR);
+        if (territories.isEmpty()) {
+            drawText(nvg, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", SUBTEXT_COLOR, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            return;
+        }
+        for (int index = 0; index < visibleRows; index++) {
+            GuildTerritory territory = territories.get(territoryDropdownScroll + index);
+            boolean selected = territory.equals(selectedTerritory);
+            boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT, width, RESOURCE_DROPDOWN_ROW_HEIGHT);
+            if (selected || hovered) {
+                NVGWrapper.drawRect(nvg, x + 1, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1, width - 2, RESOURCE_DROPDOWN_ROW_HEIGHT - 2, selected ? CONTROL_ACTIVE : CONTROL_HOVER);
+            }
+            drawFittedText(nvg, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, territory.name(), TEXT_COLOR, width - 16, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        }
+        if (territories.size() > visibleRows) {
+            String range = (territoryDropdownScroll + 1) + "-" + (territoryDropdownScroll + visibleRows) + "/" + territories.size();
+            drawText(nvg, x + width - 8, y + height - 7, 9, range, SUBTEXT_COLOR, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        }
+    }
+
     private void renderSidebarScrollbar(long nvg, float screenHeight) {
         float viewportHeight = Math.max(0, screenHeight - SIDEBAR_HEADER_HEIGHT);
         float maxScroll = sidebarMaxScroll(screenHeight);
@@ -762,7 +1088,7 @@ public class GatheringMapScreen extends Screen {
     private boolean copyHoveredCoordinates(float mx, float my, float sidebarMy, float screenWidth, float screenHeight) {
         GatheringNodeCluster clusterDetail = selectedCluster != null ? selectedCluster : hoveredCluster;
         GatheringNode detail = selectedNode != null ? selectedNode : hoveredNode;
-        float detailY = sidebarDetailY();
+        float detailY = sidebarEntityDetailY();
         if (clusterDetail != null && isHovered(mx, sidebarMy, PADDING, detailY, SIDEBAR_WIDTH - PADDING * 2, CLUSTER_DETAIL_HEIGHT)) {
             copyToClipboard(clusterCoords(clusterDetail));
             return true;
@@ -821,26 +1147,50 @@ public class GatheringMapScreen extends Screen {
         drawFittedText(nvg, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 184, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
     }
 
+    private void renderTerritoryTooltip(long nvg, GuildTerritory territory) {
+        String subtitle = cachedTerritoryNodeCounts.getOrDefault(territory.name(), 0) + " gathering nodes";
+        float x = Math.min(nvgMouseX + 12, SeqClient.mc.getWindow().getWidth() / 2f - 210);
+        float y = Math.max(8, nvgMouseY + 12);
+        NVGWrapper.drawRect(nvg, x, y, 200, 42, new Color(18, 18, 24, 235));
+        NVGWrapper.drawRectOutline(nvg, x, y, 200, 42, 1, BORDER_COLOR);
+        drawFittedText(nvg, x + 8, y + 15, 12, territory.name(), TEXT_COLOR, 184, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        drawFittedText(nvg, x + 8, y + 31, 11, subtitle, SUBTEXT_COLOR, 184, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    }
+
     private void refreshClusterAnalysisIfNeeded() {
         List<GatheringNode> sourceNodes = nodeService.nodes();
+        GuildTerritoryIndex currentTerritoryIndex = territoryService.index();
+        boolean territoryIndexChanged = currentTerritoryIndex != territoryIndex;
+        if (territoryIndexChanged) {
+            territoryIndex = currentTerritoryIndex;
+            restoreSelectedTerritory();
+        }
+        boolean sourceNodesChanged = sourceNodes != cachedSourceNodes;
         long settingsVersion = mapSettings.version();
         String key = clusterKey();
         if (sourceNodes == cachedSourceNodes && settingsVersion == cachedSettingsVersion && key.equals(cachedClusterKey)) {
             return;
         }
         cachedSourceNodes = sourceNodes;
+        if (sourceNodesChanged || territoryIndexChanged) {
+            cachedTerritoryNodeCounts = countNodesByTerritory(sourceNodes);
+        }
         cachedSettingsVersion = settingsVersion;
         cachedClusterKey = key;
         GatheringClusterCache.Result result = clusterCache.getOrCompute(
                 sourceNodes,
                 selectedResourceFilters,
                 professionToggles,
+                territoryIndex,
+                gatheringAnalysisScope,
+                selectedTerritory == null ? null : selectedTerritory.name(),
                 clusterScoreMode,
                 mapSettings.clusterEps(),
                 mapSettings.clusterMinSamples());
         cachedFilteredNodes = result.filteredNodes();
         cachedResourceOptions = result.resourceOptions();
         cachedClusters = result.clusters();
+        refreshSelectedTerritoryMatchingCount();
         clusterOutlineShapes.clear();
         clusterOutlineScale = Double.NaN;
         hoveredNode = null;
@@ -855,6 +1205,12 @@ public class GatheringMapScreen extends Screen {
                 + professionToggles.getOrDefault(GatheringProfession.MINING, true)
                 + professionToggles.getOrDefault(GatheringProfession.FARMING, true)
                 + professionToggles.getOrDefault(GatheringProfession.FISHING, true)
+                + "|"
+                + territoryIndex.contentHash()
+                + "|"
+                + gatheringAnalysisScope.name()
+                + "|"
+                + (selectedTerritory == null ? "" : selectedTerritory.name())
                 + "|"
                 + clusterScoreMode.name();
     }
@@ -896,6 +1252,67 @@ public class GatheringMapScreen extends Screen {
                         allResourcesMatch,
                         java.util.stream.Stream.concat(prefixMatches.stream(), substringMatches.stream()))
                 .toList();
+    }
+
+    private List<GuildTerritory> territoryDropdownOptions() {
+        String query = territoryInputFocused ? territorySearch.trim().toLowerCase(Locale.ROOT) : "";
+        if (query.isEmpty()) {
+            return territoryIndex.territories();
+        }
+        List<GuildTerritory> prefixMatches = territoryIndex.territories().stream()
+                .filter(territory -> territory.name().toLowerCase(Locale.ROOT).startsWith(query))
+                .toList();
+        List<GuildTerritory> substringMatches = territoryIndex.territories().stream()
+                .filter(territory -> {
+                    String name = territory.name().toLowerCase(Locale.ROOT);
+                    return !name.startsWith(query) && name.contains(query);
+                })
+                .toList();
+        return java.util.stream.Stream.concat(prefixMatches.stream(), substringMatches.stream()).toList();
+    }
+
+    private void restoreSelectedTerritory() {
+        String selectedName = mapSettings.selectedTerritoryName();
+        selectedTerritory = territoryIndex.territory(selectedName);
+        if (selectedName != null && selectedTerritory == null) {
+            mapSettings.setSelectedTerritoryName(null);
+            gatheringAnalysisScope = GatheringAnalysisScope.ALL;
+            mapSettings.setGatheringAnalysisScope(gatheringAnalysisScope);
+        }
+    }
+
+    private static int territoryNodeCount(GuildTerritory territory, List<GatheringNode> nodes) {
+        if (territory == null || nodes == null || nodes.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        for (GatheringNode node : nodes) {
+            if (territory.contains(node.x(), node.z())) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private Map<String, Integer> countNodesByTerritory(List<GatheringNode> nodes) {
+        Map<String, Integer> counts = new HashMap<>();
+        for (GuildTerritory territory : territoryIndex.territories()) {
+            int count = territoryNodeCount(territory, nodes);
+            if (count > 0) {
+                counts.put(territory.name(), count);
+            }
+        }
+        return Map.copyOf(counts);
+    }
+
+    private void refreshSelectedTerritoryMatchingCount() {
+        selectedTerritoryMatchingNodeCount = territoryNodeCount(selectedTerritory, cachedFilteredNodes);
+    }
+
+    private static String territoryBoundsLabel(GuildTerritory territory) {
+        MapBounds bounds = territory.bounds();
+        return Math.round(bounds.minX()) + ", " + Math.round(bounds.minZ()) + " to "
+                + Math.round(bounds.maxX()) + ", " + Math.round(bounds.maxZ());
     }
 
     private String selectedResourceLabel() {
@@ -1060,60 +1477,107 @@ public class GatheringMapScreen extends Screen {
         if (mx >= 0 && mx <= SIDEBAR_WIDTH && my < SIDEBAR_HEADER_HEIGHT) {
             return true;
         }
-        if (isHovered(mx, sidebarMy, PADDING, 58, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+        SidebarLayout layout = sidebarLayout();
+
+        if (territoryDropdownOpen) {
+            List<GuildTerritory> territories = territoryDropdownOptions();
+            int visibleRows = Math.min(TERRITORY_DROPDOWN_VISIBLE_ROWS, territories.size());
+            float dropdownY = layout.territoryInputY() - sidebarScroll + INPUT_HEIGHT;
+            if (visibleRows > 0 && isHovered(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2, visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
+                int optionIndex = Math.min(visibleRows - 1, Math.max(0, (int) ((my - dropdownY) / RESOURCE_DROPDOWN_ROW_HEIGHT)));
+                selectTerritory(territories.get(territoryDropdownScroll + optionIndex), true);
+                closeTerritorySearch();
+                return true;
+            }
+        }
+        if (resourceDropdownOpen) {
+            List<String> resources = resourceDropdownOptions();
+            int visibleRows = Math.min(RESOURCE_DROPDOWN_VISIBLE_ROWS, resources.size());
+            float dropdownY = layout.resourceInputY() - sidebarScroll + INPUT_HEIGHT;
+            if (visibleRows > 0 && isHovered(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2, visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
+                int optionIndex = Math.min(visibleRows - 1, Math.max(0, (int) ((my - dropdownY) / RESOURCE_DROPDOWN_ROW_HEIGHT)));
+                toggleResourceFilter(resources.get(resourceDropdownScroll + optionIndex), true);
+                return true;
+            }
+        }
+
+        if (isHovered(mx, sidebarMy, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
             SeqClient.mc.setScreen(parent);
             return true;
         }
-        if (isHovered(mx, sidebarMy, PADDING, 58 + BUTTON_HEIGHT + 8, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+        if (isHovered(mx, sidebarMy, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
             if (!centerOnPlayer()) {
                 centerPlayerWarningUntilMs = System.currentTimeMillis() + CENTER_PLAYER_WARNING_DURATION_MS;
             }
             return true;
         }
-        float clustersButtonY = 58 + BUTTON_HEIGHT + 8 + BUTTON_HEIGHT + 18;
-        if (isHovered(mx, sidebarMy, PADDING, clustersButtonY, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+        float territoryToggleWidth = SIDEBAR_WIDTH - PADDING * 2;
+        if (isHovered(mx, sidebarMy, PADDING, layout.territoryToggleY(), territoryToggleWidth, BUTTON_HEIGHT)) {
+            if (!showTerritories) {
+                showTerritories = true;
+                mapSettings.setShowTerritories(true);
+                return true;
+            }
+            float splitWidth = (territoryToggleWidth - TERRITORY_TOGGLE_GAP) / 2f;
+            if (mx <= PADDING + splitWidth) {
+                showTerritories = false;
+                mapSettings.setShowTerritories(false);
+                hoveredTerritory = null;
+            } else if (mx >= PADDING + splitWidth + TERRITORY_TOGGLE_GAP) {
+                showTerritoryNames = !showTerritoryNames;
+                mapSettings.setShowTerritoryNames(showTerritoryNames);
+            }
+            return true;
+        }
+        if (isHovered(mx, sidebarMy, PADDING, layout.scopeY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+            GatheringAnalysisScope scope = scopeAt(mx);
+            if (scope != null && (scope != GatheringAnalysisScope.SELECTED_TERRITORY || selectedTerritory != null)) {
+                gatheringAnalysisScope = scope;
+                mapSettings.setGatheringAnalysisScope(scope);
+                selectedNode = null;
+                selectedCluster = null;
+                cachedClusterKey = "";
+            }
+            return true;
+        }
+        if (isHovered(mx, sidebarMy, PADDING, layout.territoryInputY(), SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT)) {
+            boolean shouldOpen = !territoryDropdownOpen;
+            closeResourceSearch();
+            territoryInputFocused = shouldOpen;
+            territoryDropdownOpen = shouldOpen;
+            territorySearch = "";
+            territoryDropdownScroll = 0;
+            return true;
+        }
+        if (isHovered(mx, sidebarMy, PADDING, layout.clustersY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
             showClusters = !showClusters;
             mapSettings.setShowClusters(showClusters);
             selectedCluster = null;
             selectedNode = null;
             return true;
         }
-        float scoreButtonY = clustersButtonY + BUTTON_HEIGHT + 8;
-        if (isHovered(mx, sidebarMy, PADDING, scoreButtonY, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+        if (isHovered(mx, sidebarMy, PADDING, layout.scoreY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
             clusterScoreMode = clusterScoreMode.next();
             mapSettings.setClusterScoreMode(clusterScoreMode);
             selectedCluster = null;
             cachedClusterKey = "";
             return true;
         }
-
-        float inputY = scoreButtonY + BUTTON_HEIGHT + 18 + (showDebugInfo ? 36 : 0) + 12;
-        if (resourceDropdownOpen) {
-            List<String> resources = resourceDropdownOptions();
-            int visibleRows = Math.min(RESOURCE_DROPDOWN_VISIBLE_ROWS, resources.size());
-            float dropdownY = inputY - sidebarScroll + INPUT_HEIGHT;
-            if (isHovered(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2, visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
-                int optionIndex = Math.min(visibleRows - 1, Math.max(0, (int) ((my - dropdownY) / RESOURCE_DROPDOWN_ROW_HEIGHT)));
-                toggleResourceFilter(resources.get(resourceDropdownScroll + optionIndex), true);
-                return true;
-            }
-        }
-        if (isHovered(mx, sidebarMy, PADDING, inputY, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT)) {
+        if (isHovered(mx, sidebarMy, PADDING, layout.resourceInputY(), SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT)) {
             boolean shouldOpen = !resourceDropdownOpen;
+            closeTerritorySearch();
             resourceInputFocused = shouldOpen;
             resourceDropdownOpen = shouldOpen;
             resourceSearch = "";
             resourceDropdownScroll = 0;
             return true;
         }
-        if (resourceDropdownOpen) {
-            resourceDropdownOpen = false;
-            resourceInputFocused = false;
-            resourceSearch = "";
+        if (resourceDropdownOpen || territoryDropdownOpen) {
+            closeSearchDropdowns();
             return true;
         }
 
-        float toggleY = inputY + INPUT_HEIGHT + 18 + 12;
+        float toggleY = layout.professionStartY();
         for (GatheringProfession profession : List.of(
                 GatheringProfession.WOODCUTTING,
                 GatheringProfession.MINING,
@@ -1145,17 +1609,21 @@ public class GatheringMapScreen extends Screen {
 
         MapViewport viewport = new MapViewport(centerX, centerZ, pixelsPerBlock, SIDEBAR_WIDTH, 0, screenWidth - SIDEBAR_WIDTH, screenHeight);
         if (viewport.isInsideScreen(mx, my)) {
-            selectedCluster = shouldRenderClusters() || hoveredNode == null ? hoveredCluster : selectedCluster;
-            selectedNode = shouldRenderClusters() ? null : hoveredNode;
+            boolean clusterMode = shouldRenderClusters();
+            GatheringNodeCluster clickedCluster = clusterMode || hoveredNode == null ? hoveredCluster : null;
+            GatheringNode clickedNode = clusterMode ? null : hoveredNode;
+            selectedCluster = clickedCluster;
+            selectedNode = clickedNode;
             if (selectedNode != null) {
                 selectedCluster = null;
+            } else if (selectedCluster == null && hoveredTerritory != null) {
+                selectTerritory(hoveredTerritory, false);
             }
             draggingMap = true;
             hoveredNode = null;
             hoveredCluster = null;
-            resourceDropdownOpen = false;
-            resourceInputFocused = false;
-            resourceSearch = "";
+            hoveredTerritory = null;
+            closeSearchDropdowns();
             return true;
         }
         return super.mouseClicked(click, outsideScreen);
@@ -1175,6 +1643,7 @@ public class GatheringMapScreen extends Screen {
             centerZ -= (deltaY * guiScale / 2.0) / pixelsPerBlock;
             hoveredNode = null;
             hoveredCluster = null;
+            hoveredTerritory = null;
             return true;
         }
         return super.mouseDragged(click, deltaX, deltaY);
@@ -1184,11 +1653,23 @@ public class GatheringMapScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         float mx = scaledMouseX(mouseX);
         float my = scaledMouseY(mouseY);
+        SidebarLayout layout = sidebarLayout();
+        if (territoryDropdownOpen) {
+            List<GuildTerritory> territories = territoryDropdownOptions();
+            int visibleRows = Math.min(TERRITORY_DROPDOWN_VISIBLE_ROWS, territories.size());
+            float dropdownY = layout.territoryInputY() - sidebarScroll + INPUT_HEIGHT;
+            if (isHovered(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2, visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
+                territoryDropdownScroll = clampDropdownScroll(
+                        territoryDropdownScroll + (scrollY > 0 ? -1 : 1),
+                        territories.size(),
+                        TERRITORY_DROPDOWN_VISIBLE_ROWS);
+                return true;
+            }
+        }
         if (resourceDropdownOpen) {
-            float inputY = 58 + BUTTON_HEIGHT + 8 + BUTTON_HEIGHT + 18 + BUTTON_HEIGHT + 8 + BUTTON_HEIGHT + 18 + 12;
             List<String> resources = resourceDropdownOptions();
             int visibleRows = Math.min(RESOURCE_DROPDOWN_VISIBLE_ROWS, resources.size());
-            float dropdownY = inputY - sidebarScroll + INPUT_HEIGHT;
+            float dropdownY = layout.resourceInputY() - sidebarScroll + INPUT_HEIGHT;
             if (isHovered(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2, visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
                 resourceDropdownScroll = clampResourceDropdownScroll(resourceDropdownScroll + (scrollY > 0 ? -1 : 1), resources.size());
                 return true;
@@ -1216,6 +1697,38 @@ public class GatheringMapScreen extends Screen {
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
         int keyCode = keyEvent.key();
+        if (territoryInputFocused) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                closeTerritorySearch();
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
+                applyTerritoryAutocompleteSelection();
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (!territorySearch.isEmpty()) {
+                    territorySearch = territorySearch.substring(0, territorySearch.length() - 1);
+                }
+                territoryDropdownOpen = true;
+                territoryDropdownScroll = 0;
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_DELETE) {
+                territorySearch = "";
+                territoryDropdownOpen = true;
+                territoryDropdownScroll = 0;
+                return true;
+            }
+            Character typedCharacter = searchCharacter(keyEvent);
+            if (typedCharacter != null) {
+                territorySearch += typedCharacter;
+                territoryDropdownOpen = true;
+                territoryDropdownScroll = 0;
+                return true;
+            }
+            return true;
+        }
         if (resourceInputFocused) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 resourceDropdownOpen = false;
@@ -1241,7 +1754,7 @@ public class GatheringMapScreen extends Screen {
                 resourceDropdownScroll = 0;
                 return true;
             }
-            Character typedCharacter = resourceSearchCharacter(keyEvent);
+            Character typedCharacter = searchCharacter(keyEvent);
             if (typedCharacter != null) {
                 resourceSearch += typedCharacter;
                 resourceDropdownOpen = true;
@@ -1250,8 +1763,8 @@ public class GatheringMapScreen extends Screen {
             }
             return true;
         }
-        if (resourceDropdownOpen && keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            resourceDropdownOpen = false;
+        if ((resourceDropdownOpen || territoryDropdownOpen) && keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            closeSearchDropdowns();
             return true;
         }
         return super.keyPressed(keyEvent);
@@ -1344,7 +1857,7 @@ public class GatheringMapScreen extends Screen {
         return mx >= x && mx <= x + w && my >= y && my <= y + h;
     }
 
-    private static Character resourceSearchCharacter(KeyEvent keyEvent) {
+    private static Character searchCharacter(KeyEvent keyEvent) {
         Character typedCharacter = TextInputHelper.getTypedCharacter(keyEvent);
         if (typedCharacter != null && TextInputHelper.isPrintableCharacter(typedCharacter)) {
             return Character.toUpperCase(typedCharacter);
@@ -1392,6 +1905,75 @@ public class GatheringMapScreen extends Screen {
         }
     }
 
+    private void applyTerritoryAutocompleteSelection() {
+        String search = territorySearch.trim();
+        GuildTerritory match = territoryIndex.territories().stream()
+                .filter(territory -> territory.name().equalsIgnoreCase(search))
+                .findFirst()
+                .orElse(null);
+        if (match == null) {
+            List<GuildTerritory> options = territoryDropdownOptions();
+            match = options.isEmpty() ? null : options.getFirst();
+        }
+        if (match != null) {
+            selectTerritory(match, true);
+        }
+        closeTerritorySearch();
+    }
+
+    private void selectTerritory(GuildTerritory territory, boolean centerOnTerritory) {
+        selectedTerritory = territory;
+        mapSettings.setSelectedTerritoryName(territory == null ? null : territory.name());
+        selectedNode = null;
+        selectedCluster = null;
+        cachedClusterKey = "";
+        refreshSelectedTerritoryMatchingCount();
+        if (territory == null || !centerOnTerritory) {
+            return;
+        }
+        centerX = territory.centerX();
+        centerZ = territory.centerZ();
+        float screenWidth = SeqClient.mc.getWindow().getWidth() / 2f;
+        float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+        double width = Math.max(1, territory.bounds().maxX() - territory.bounds().minX());
+        double height = Math.max(1, territory.bounds().maxZ() - territory.bounds().minZ());
+        double xScale = Math.max(1, screenWidth - SIDEBAR_WIDTH) / width;
+        double zScale = Math.max(1, screenHeight) / height;
+        pixelsPerBlock = clamp(
+                Math.min(xScale, zScale) * 0.48,
+                MIN_PIXELS_PER_BLOCK,
+                TERRITORY_FOCUS_MAX_PIXELS_PER_BLOCK);
+    }
+
+    private GatheringAnalysisScope scopeAt(float mouseX) {
+        float width = SIDEBAR_WIDTH - PADDING * 2;
+        float segmentWidth = width / GatheringAnalysisScope.values().length;
+        int index = (int) ((mouseX - PADDING) / segmentWidth);
+        if (index < 0 || index >= GatheringAnalysisScope.values().length) {
+            return null;
+        }
+        return GatheringAnalysisScope.values()[index];
+    }
+
+    private void closeSearchDropdowns() {
+        closeResourceSearch();
+        closeTerritorySearch();
+    }
+
+    private void closeResourceSearch() {
+        resourceDropdownOpen = false;
+        resourceInputFocused = false;
+        resourceSearch = "";
+        resourceDropdownScroll = 0;
+    }
+
+    private void closeTerritorySearch() {
+        territoryDropdownOpen = false;
+        territoryInputFocused = false;
+        territorySearch = "";
+        territoryDropdownScroll = 0;
+    }
+
     private void toggleResourceFilter(String resource, boolean keepOpen) {
         String nextResource = resource == null ? "" : resource;
         if (nextResource.isBlank()) {
@@ -1412,7 +1994,11 @@ public class GatheringMapScreen extends Screen {
     }
 
     private static int clampResourceDropdownScroll(int scroll, int optionCount) {
-        return Math.max(0, Math.min(scroll, Math.max(0, optionCount - RESOURCE_DROPDOWN_VISIBLE_ROWS)));
+        return clampDropdownScroll(scroll, optionCount, RESOURCE_DROPDOWN_VISIBLE_ROWS);
+    }
+
+    private static int clampDropdownScroll(int scroll, int optionCount, int visibleRows) {
+        return Math.max(0, Math.min(scroll, Math.max(0, optionCount - visibleRows)));
     }
 
     private float clampSidebarScroll(float scroll, float screenHeight) {
@@ -1425,7 +2011,7 @@ public class GatheringMapScreen extends Screen {
     }
 
     private float sidebarTopClusterY() {
-        float y = sidebarDetailY();
+        float y = sidebarEntityDetailY();
         if (selectedCluster != null || hoveredCluster != null) {
             y += CLUSTER_DETAIL_HEIGHT + 14;
         } else if (selectedNode != null || hoveredNode != null) {
@@ -1434,21 +2020,67 @@ public class GatheringMapScreen extends Screen {
         return y + 12;
     }
 
-    private float sidebarDetailY() {
+    private float sidebarEntityDetailY() {
+        float y = sidebarLayout().detailY();
+        if (selectedTerritory != null) {
+            y += TERRITORY_DETAIL_HEIGHT + 14;
+        }
+        return y;
+    }
+
+    private float sidebarY(float contentY) {
+        return contentY - sidebarScroll;
+    }
+
+    private SidebarLayout sidebarLayout() {
         float y = 58;
+        float backY = y;
         y += BUTTON_HEIGHT + 8;
+        float centerY = y;
         y += BUTTON_HEIGHT + 18;
+        float territoryToggleY = y;
+        y += BUTTON_HEIGHT + 18;
+        float scopeLabelY = y;
+        y += 12;
+        float scopeY = y;
+        y += BUTTON_HEIGHT + 18;
+        float territoryLabelY = y;
+        y += 12;
+        float territoryInputY = y;
+        y += INPUT_HEIGHT + 18;
+        float clustersY = y;
         y += BUTTON_HEIGHT + 8;
+        float scoreY = y;
         y += BUTTON_HEIGHT + 18;
+        float debugY = y;
         if (showDebugInfo) {
             y += 36;
         }
+        float resourceLabelY = y;
         y += 12;
+        float resourceInputY = y;
         y += INPUT_HEIGHT + 18;
+        float professionLabelY = y;
         y += 12;
+        float professionStartY = y;
         y += (TOGGLE_HEIGHT + 6) * 4;
         y += 12;
-        return y;
+        return new SidebarLayout(
+                backY,
+                centerY,
+                territoryToggleY,
+                scopeLabelY,
+                scopeY,
+                territoryLabelY,
+                territoryInputY,
+                clustersY,
+                scoreY,
+                debugY,
+                resourceLabelY,
+                resourceInputY,
+                professionLabelY,
+                professionStartY,
+                y);
     }
 
     private static double clamp(double value, double min, double max) {
@@ -1456,6 +2088,25 @@ public class GatheringMapScreen extends Screen {
     }
 
     private record ScreenPoint(float x, float y) {}
+
+    private record TerritoryLabelLayout(List<String> lines, float fontSize, float lineHeight) {}
+
+    private record SidebarLayout(
+            float backY,
+            float centerY,
+            float territoryToggleY,
+            float scopeLabelY,
+            float scopeY,
+            float territoryLabelY,
+            float territoryInputY,
+            float clustersY,
+            float scoreY,
+            float debugY,
+            float resourceLabelY,
+            float resourceInputY,
+            float professionLabelY,
+            float professionStartY,
+            float detailY) {}
 
     private record ClusterOutlineShape(
             List<ScreenPoint> points,
