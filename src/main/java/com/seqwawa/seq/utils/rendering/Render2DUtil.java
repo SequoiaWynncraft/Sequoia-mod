@@ -92,9 +92,8 @@ public class Render2DUtil {
         // Set up projection matrix with proper FOV
         float fov = mc.gameRenderer.getFov(cam, tickdelta, true);
 
-        // Use scaled window dimensions
-        cachedScreenWidth = mc.getWindow().getGuiScaledWidth();
-        cachedScreenHeight = mc.getWindow().getGuiScaledHeight();
+        cachedScreenWidth = Math.max(1, Math.round(NVGContext.screenWidth()));
+        cachedScreenHeight = Math.max(1, Math.round(NVGContext.screenHeight()));
 
         cachedProjectionMatrix.identity().setPerspective(
                 (float) Math.toRadians(fov),

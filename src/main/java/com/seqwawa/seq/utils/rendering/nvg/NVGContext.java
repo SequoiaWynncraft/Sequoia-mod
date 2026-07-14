@@ -26,6 +26,10 @@ import static org.lwjgl.nanovg.NanoVGGL3.NVG_STENCIL_STROKES;
 
 public class NVGContext {
 
+    private static final float BASE_PIXEL_RATIO = 2f;
+    private static final float MIN_UI_SCALE = 0.1f;
+    private static final float MAX_UI_SCALE = 10f;
+
     @Getter
     private static long context = -1L;
     private static boolean available = true;
@@ -92,7 +96,39 @@ public class NVGContext {
         if (!available || context <= 0L) {
             return;
         }
-        renderWithScale(drawCall, 2f);
+        renderWithScale(drawCall, pixelRatio());
+    }
+
+    public static float uiScale() {
+        var setting = SeqClient.getUiSizePercentSetting();
+        if (setting == null) {
+            return 1f;
+        }
+        return Math.max(MIN_UI_SCALE, Math.min(MAX_UI_SCALE, setting.getValue() / 100f));
+    }
+
+    public static float screenWidth() {
+        return mc.getWindow().getWidth() / pixelRatio();
+    }
+
+    public static float screenHeight() {
+        return mc.getWindow().getHeight() / pixelRatio();
+    }
+
+    public static float mouseX(double rawX) {
+        return (float) (rawX * mc.getWindow().getGuiScale() / pixelRatio());
+    }
+
+    public static float mouseY(double rawY) {
+        return (float) (rawY * mc.getWindow().getGuiScale() / pixelRatio());
+    }
+
+    public static double mouseDelta(double rawDelta) {
+        return rawDelta * mc.getWindow().getGuiScale() / pixelRatio();
+    }
+
+    private static float pixelRatio() {
+        return BASE_PIXEL_RATIO * uiScale();
     }
 
     public static void renderWithScale(LongConsumer drawCall, float fixedScale) {
@@ -280,7 +316,7 @@ public class NVGContext {
         if (!available || context <= 0L) {
             return;
         }
-        float contentscale = mc.getWindow().getGuiScale();
+        float contentscale = (float) mc.getWindow().getGuiScale() * uiScale();
         float width = (int) (mc.getWindow().getWidth() / contentscale);
         float height = (int) (mc.getWindow().getHeight() / contentscale);
         try {

@@ -69,6 +69,10 @@ public abstract class Setting<T> {
             super.setValue(Math.max(min, Math.min(max, value)));
         }
 
+        public void setValueFromManualInput(Integer value) {
+            super.setValue(value);
+        }
+
         @Override
         public JsonElement serialize() {
             return new JsonPrimitive(getValue());
@@ -77,7 +81,7 @@ public abstract class Setting<T> {
         @Override
         public void deserialize(JsonElement element) {
             if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
-                setValue(element.getAsInt());
+                setValueFromManualInput(element.getAsInt());
             }
         }
     }
@@ -103,6 +107,10 @@ public abstract class Setting<T> {
             super.setValue(Math.max(min, Math.min(max, value)));
         }
 
+        public void setValueFromManualInput(Double value) {
+            super.setValue(value);
+        }
+
         @Override
         public JsonElement serialize() {
             return new JsonPrimitive(getValue());
@@ -111,7 +119,7 @@ public abstract class Setting<T> {
         @Override
         public void deserialize(JsonElement element) {
             if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
-                setValue(element.getAsDouble());
+                setValueFromManualInput(element.getAsDouble());
             }
         }
     }
@@ -137,6 +145,10 @@ public abstract class Setting<T> {
             super.setValue(Math.max(min, Math.min(max, value)));
         }
 
+        public void setValueFromManualInput(Float value) {
+            super.setValue(value);
+        }
+
         @Override
         public JsonElement serialize() {
             return new JsonPrimitive(getValue());
@@ -145,7 +157,7 @@ public abstract class Setting<T> {
         @Override
         public void deserialize(JsonElement element) {
             if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isNumber()) {
-                setValue(element.getAsFloat());
+                setValueFromManualInput(element.getAsFloat());
             }
         }
     }

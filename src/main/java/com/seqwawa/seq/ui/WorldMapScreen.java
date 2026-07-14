@@ -220,12 +220,11 @@ public class WorldMapScreen extends Screen {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        double guiScale = SeqClient.mc.getWindow().getGuiScale();
-        nvgMouseX = (float) (mouseX * guiScale / 2.0);
-        nvgMouseY = (float) (mouseY * guiScale / 2.0);
+        nvgMouseX = NVGContext.mouseX(mouseX);
+        nvgMouseY = NVGContext.mouseY(mouseY);
 
-        float screenWidth = SeqClient.mc.getWindow().getWidth() / 2f;
-        float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+        float screenWidth = uiScreenWidth();
+        float screenHeight = uiScreenHeight();
         showDebugInfo = mapSettings.showDebugInfo();
         float mapX = SIDEBAR_WIDTH;
         float mapY = 0;
@@ -956,7 +955,7 @@ public class WorldMapScreen extends Screen {
             renderWorldEventSidebar(nvg);
             return;
         }
-        float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+        float screenHeight = uiScreenHeight();
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         SidebarLayout layout = sidebarLayout();
         NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
@@ -1034,7 +1033,7 @@ public class WorldMapScreen extends Screen {
     }
 
     private void renderWorldEventSidebar(long nvg) {
-        float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+        float screenHeight = uiScreenHeight();
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         WorldEventSidebarLayout layout = worldEventSidebarLayout();
         NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
@@ -1084,8 +1083,8 @@ public class WorldMapScreen extends Screen {
     }
 
     private void renderInsightsSidebar(long nvg) {
-        float screenWidth = SeqClient.mc.getWindow().getWidth() / 2f;
-        float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+        float screenWidth = uiScreenWidth();
+        float screenHeight = uiScreenHeight();
         if (!insightsSidebarOpen) {
             drawText(
                     nvg,
@@ -1748,7 +1747,7 @@ public class WorldMapScreen extends Screen {
     }
 
     private float tooltipX(float width) {
-        float screenWidth = SeqClient.mc.getWindow().getWidth() / 2f;
+        float screenWidth = uiScreenWidth();
         return Math.max(
                 SIDEBAR_WIDTH + 8,
                 Math.min(nvgMouseX + 12, screenWidth - insightsSidebarInset() - width - 8));
@@ -2112,8 +2111,8 @@ public class WorldMapScreen extends Screen {
         float mx = scaledMouseX(click.x());
         float my = scaledMouseY(click.y());
         float sidebarMy = my + sidebarScroll;
-        float screenWidth = SeqClient.mc.getWindow().getWidth() / 2f;
-        float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+        float screenWidth = uiScreenWidth();
+        float screenHeight = uiScreenHeight();
 
         if (click.button() == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
             if (copyHoveredCoordinates(mx, my, sidebarMy, screenWidth, screenHeight)) {
@@ -2488,9 +2487,8 @@ public class WorldMapScreen extends Screen {
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (draggingMap) {
-            double guiScale = SeqClient.mc.getWindow().getGuiScale();
-            centerX -= (deltaX * guiScale / 2.0) / pixelsPerBlock;
-            centerZ -= (deltaY * guiScale / 2.0) / pixelsPerBlock;
+            centerX -= NVGContext.mouseDelta(deltaX) / pixelsPerBlock;
+            centerZ -= NVGContext.mouseDelta(deltaY) / pixelsPerBlock;
             hoveredNode = null;
             hoveredCluster = null;
             hoveredTerritory = null;
@@ -2546,8 +2544,8 @@ public class WorldMapScreen extends Screen {
                 return true;
             }
         }
-        float screenWidth = SeqClient.mc.getWindow().getWidth() / 2f;
-        float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+        float screenWidth = uiScreenWidth();
+        float screenHeight = uiScreenHeight();
         if (mx >= insightsSidebarX(screenWidth) && mx <= screenWidth) {
             return true;
         }
@@ -2763,12 +2761,20 @@ public class WorldMapScreen extends Screen {
         };
     }
 
-    private static float scaledMouseX(double rawX) {
-        return (float) (rawX * SeqClient.mc.getWindow().getGuiScale() / 2.0);
+    private float scaledMouseX(double rawX) {
+        return NVGContext.mouseX(rawX);
     }
 
-    private static float scaledMouseY(double rawY) {
-        return (float) (rawY * SeqClient.mc.getWindow().getGuiScale() / 2.0);
+    private float scaledMouseY(double rawY) {
+        return NVGContext.mouseY(rawY);
+    }
+
+    private static float uiScreenWidth() {
+        return NVGContext.screenWidth();
+    }
+
+    private static float uiScreenHeight() {
+        return NVGContext.screenHeight();
     }
 
     private static boolean isHovered(float mx, float my, float x, float y, float w, float h) {
@@ -2866,8 +2872,8 @@ public class WorldMapScreen extends Screen {
         }
         centerX = territory.centerX();
         centerZ = territory.centerZ();
-        float screenWidth = SeqClient.mc.getWindow().getWidth() / 2f;
-        float screenHeight = SeqClient.mc.getWindow().getHeight() / 2f;
+        float screenWidth = uiScreenWidth();
+        float screenHeight = uiScreenHeight();
         double width = Math.max(1, territory.bounds().maxX() - territory.bounds().minX());
         double height = Math.max(1, territory.bounds().maxZ() - territory.bounds().minZ());
         double xScale = Math.max(1, screenWidth - SIDEBAR_WIDTH - insightsSidebarInset()) / width;
