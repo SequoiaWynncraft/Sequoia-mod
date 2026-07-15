@@ -8,10 +8,18 @@ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.scores.DisplaySlot;
+import net.minecraft.world.scores.Objective;
+import net.minecraft.world.scores.PlayerScoreEntry;
+import net.minecraft.world.scores.Scoreboard;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.network.WynncraftServerPolicy;
 
 import static com.seqwawa.seq.halcyon.HalcyonRingRenderer.renderRingWall;
 
@@ -32,11 +40,34 @@ public final class LightRoom {
         WorldRenderEvents.BEFORE_DEBUG_RENDER.register(LightRoom::Render);
     }
 
+    private static boolean isEnabled() {
+        return WynncraftServerPolicy.isCurrentServerAllowed()
+            && (SeqClient.getLightRoomVisualiserSetting() == null || SeqClient.getLightRoomVisualiserSetting().getValue());
+    }
+
+    /**
+     * Reads the actual sidebar text (title + score lines). {@code Scoreboard.toString()} only returns
+     * the object's identity string, so the room-state checks must read the SIDEBAR objective directly.
+     */
+    private static String readSidebarText(Minecraft client) {
+        Scoreboard scoreboard = client.level.getScoreboard();
+        Objective sidebar = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR);
+        if (sidebar == null) return "";
+
+        StringBuilder text = new StringBuilder(sidebar.getDisplayName().getString());
+        for (PlayerScoreEntry entry : scoreboard.listPlayerScores(sidebar)) {
+            Component display = entry.display();
+            text.append('\n').append(display != null ? display.getString() : entry.owner());
+        }
+        return text.toString();
+    }
+
     public static void Tick(Minecraft client){
+        if(!isEnabled()) return;
         if(client.player == null) return;
         if(client.level == null) return;
 
-        String scoreboard = client.level.getScoreboard().toString();
+        String scoreboard = readSidebarText(client);
         prepRoom = scoreboard.contains("Gather the Light!");
         inRoom = scoreboard.contains("Find and kill");
 
@@ -54,6 +85,7 @@ public final class LightRoom {
             if(player.position().distanceTo(LightPos) <= 1.5){
                 if(!possibleLightHolders.contains(player)){
                     possibleLightHolders.add(player);
+                    System.out.println("Player "+player.getName()+" is under");
                 }
                 playerUnderLight++;
             }
@@ -63,11 +95,13 @@ public final class LightRoom {
                 }
             }
             if(playerUnderLight >= 60 && possibleLightHolders.size() == 1){
+                System.out.println(player + "is Holding light");
                 LightHolder = possibleLightHolders.getFirst();
             }
         });
     }
     public static void Render(WorldRenderContext context) {
+        if(!isEnabled()) return;
         if(!inRoom) return;
         if(LightHolder == null) return;
         float tickDelta = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
@@ -77,5 +111,6 @@ public final class LightRoom {
         VertexConsumer vertices = context.consumers().getBuffer(RenderTypes.debugQuads());
 
         renderRingWall(vertices, pose, center, camera, radius);
+        System.out.println("rendering at " + center);
     }
 }

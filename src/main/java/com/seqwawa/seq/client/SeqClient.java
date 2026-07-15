@@ -134,6 +134,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting halcyonRangeVisualiserSetting;
 
     @Getter
+    public static Setting.BooleanSetting lightRoomVisualiserSetting;
+
+    @Getter
     public static Setting.BooleanSetting showRaidBadgesSetting;
 
     @Getter
@@ -468,6 +471,7 @@ public class SeqClient implements ClientModInitializer {
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
         radianceCheckerSetting = new Setting.BooleanSetting("enable_radiance_visualiser", "raids", true);
         halcyonRangeVisualiserSetting = new Setting.BooleanSetting("enable_halcyon_range_visualiser", "raids", true);
+        lightRoomVisualiserSetting = new Setting.BooleanSetting("enable_light_room_visualiser", "raids", true);
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
@@ -510,6 +514,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(receiveBombShareRequestsSetting);
         getConfigManager().register(radianceCheckerSetting);
         getConfigManager().register(halcyonRangeVisualiserSetting);
+        getConfigManager().register(lightRoomVisualiserSetting);
         getConfigManager().register(showRaidBadgesSetting);
         getConfigManager().register(showInsigniaBadgesSetting);
         getConfigManager().register(showOwnLeaderboardBadgeSetting);
