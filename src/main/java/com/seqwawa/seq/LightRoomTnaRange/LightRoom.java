@@ -85,7 +85,6 @@ public final class LightRoom {
             if(player.position().distanceTo(LightPos) <= 1.5){
                 if(!possibleLightHolders.contains(player)){
                     possibleLightHolders.add(player);
-                    System.out.println("Player "+player.getName()+" is under");
                 }
                 playerUnderLight++;
             }
@@ -95,7 +94,6 @@ public final class LightRoom {
                 }
             }
             if(playerUnderLight >= 60 && possibleLightHolders.size() == 1){
-                System.out.println(player + "is Holding light");
                 LightHolder = possibleLightHolders.getFirst();
             }
         });
@@ -111,6 +109,5 @@ public final class LightRoom {
         VertexConsumer vertices = context.consumers().getBuffer(RenderTypes.debugQuads());
 
         renderRingWall(vertices, pose, center, camera, radius);
-        System.out.println("rendering at " + center);
     }
 }
