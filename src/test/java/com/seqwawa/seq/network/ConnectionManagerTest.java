@@ -134,11 +134,29 @@ class ConnectionManagerTest {
     }
 
     @Test
-    void unscopedGuildMembershipRejectsRemainVisible() {
-        assertFalse(ConnectionManager.isSilentGuildChatMembershipReject(
+    void unscopedGuildMembershipRejectIdentifiesNonMemberSession() {
+        assertTrue(ConnectionManager.isSessionMembershipReject(
                 "not_in_guild", null, "this feature is limited to sequoia members"));
+        assertTrue(ConnectionManager.isSessionMembershipReject(
+                "not_in_guild", "", "you must be a member of sequoia guild to use this feature"));
+    }
+
+    @Test
+    void scopedMembershipRejectDoesNotDisableWholeSession() {
+        assertFalse(ConnectionManager.isSessionMembershipReject(
+                "not_in_guild", "guild_chat", "guild chat sender is not in sequoia"));
         assertFalse(ConnectionManager.isSilentGuildChatMembershipReject(
                 "not_in_guild", "guild_bank_event", "this feature is limited to sequoia members"));
+    }
+
+    @Test
+    void memberOnlyOutboundTypesExcludeUnrestrictedPartyClassUpdates() {
+        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_chat"));
+        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_storage_snapshot"));
+        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_war_submission"));
+        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("party_sync_snapshot"));
+        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("get_connected"));
+        assertFalse(ConnectionManager.isSequoiaMemberOnlyType("party_class_update"));
     }
 
     @Test
