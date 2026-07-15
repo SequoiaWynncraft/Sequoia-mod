@@ -10,7 +10,9 @@ class WynncraftServerPolicyTest {
     @Test
     void classifyAddressAllowsMainWynncraftHosts() {
         assertEquals(WynncraftServerPolicy.Scope.MAIN, WynncraftServerPolicy.classifyAddress("wynncraft.com"));
+        assertEquals(WynncraftServerPolicy.Scope.MAIN, WynncraftServerPolicy.classifyAddress("wynncraft.net"));
         assertEquals(WynncraftServerPolicy.Scope.MAIN, WynncraftServerPolicy.classifyAddress("play.wynncraft.com"));
+        assertEquals(WynncraftServerPolicy.Scope.MAIN, WynncraftServerPolicy.classifyAddress("play.wynncraft.net"));
         assertEquals(
                 WynncraftServerPolicy.Scope.MAIN,
                 WynncraftServerPolicy.classifyAddress("wc3.wynncraft.com:25565"));
@@ -19,9 +21,13 @@ class WynncraftServerPolicyTest {
     @Test
     void classifyAddressBlocksBetaHosts() {
         assertEquals(WynncraftServerPolicy.Scope.BLOCKED, WynncraftServerPolicy.classifyAddress("beta.wynncraft.com"));
+        assertEquals(WynncraftServerPolicy.Scope.BLOCKED, WynncraftServerPolicy.classifyAddress("beta.wynncraft.net"));
         assertEquals(
                 WynncraftServerPolicy.Scope.BLOCKED,
                 WynncraftServerPolicy.classifyAddress("wc1.beta.wynncraft.com:25565"));
+        assertEquals(
+                WynncraftServerPolicy.Scope.BLOCKED,
+                WynncraftServerPolicy.classifyAddress("wc1.beta.wynncraft.net:25565"));
     }
 
     @Test
