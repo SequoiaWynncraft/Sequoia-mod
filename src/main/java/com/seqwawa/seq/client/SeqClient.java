@@ -7,6 +7,8 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.logging.LogUtils;
 import java.util.Objects;
 import java.util.UUID;
+
+import com.seqwawa.seq.LightRoomTnaRange.LightRoom;
 import lombok.Getter;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -203,6 +205,7 @@ public class SeqClient implements ClientModInitializer {
         SeqCommand.register();
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
+        LightRoom.init();
 
         KeyMapping.Category category =
                 KeyMapping.Category.register(Identifier.fromNamespaceAndPath("sequoia-mod", "controls"));

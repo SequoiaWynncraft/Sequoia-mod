@@ -51,7 +51,7 @@ public final class HalcyonRingRenderer {
 		renderRingWall(vertices, pose, center, camera, radius);
 	}
 
-	private static void renderRingWall(VertexConsumer vertices, PoseStack.Pose pose, Vec3 center, Vec3 camera, double radius) {
+	public static void renderRingWall(VertexConsumer vertices, PoseStack.Pose pose, Vec3 center, Vec3 camera, double radius) {
 		double bottomY = center.y + BOTTOM_Y_OFFSET - camera.y;
 		double topY = center.y + TOP_Y_OFFSET - camera.y;
 
