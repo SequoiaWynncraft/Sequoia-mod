@@ -62,10 +62,20 @@ public final class LightRoom {
         return text.toString();
     }
 
+    private static void clearTracking(){
+        prepRoom = false;
+        inRoom = false;
+        wasPrep = false;
+        LightHolder = null;
+        possibleLightHolders.clear();
+        playerUnderLight = 0;
+    }
+
     public static void Tick(Minecraft client){
-        if(!isEnabled()) return;
-        if(client.player == null) return;
-        if(client.level == null) return;
+        if(!isEnabled() || client.player == null || client.level == null){
+            clearTracking();
+            return;
+        }
 
         String scoreboard = readSidebarText(client);
         prepRoom = scoreboard.contains("Gather the Light!");
