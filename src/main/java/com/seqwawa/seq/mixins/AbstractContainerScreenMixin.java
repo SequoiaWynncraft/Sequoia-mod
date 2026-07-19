@@ -1,12 +1,10 @@
 package com.seqwawa.seq.mixins;
 
-import com.mojang.authlib.minecraft.client.MinecraftClient;
 import com.seqwawa.seq.client.SeqClient;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import com.seqwawa.seq.ui.GuildStorageShortcutOverlay;
 import net.minecraft.world.inventory.ClickType;
@@ -54,6 +52,10 @@ public abstract class AbstractContainerScreenMixin<T extends AbstractContainerMe
 
     @Inject(method = "slotClicked", at = @At("HEAD"))
     private void seq$clickWarQueueButton(Slot slot, int i, int j, ClickType clickType, CallbackInfo ci) {
+        if (clickType != ClickType.PICKUP && clickType != ClickType.SWAP) {
+            return;
+        }
+
         if (SeqClient.getGuildWarTracker() != null && slot != null && Minecraft.getInstance().screen != null) {
             SeqClient.getGuildWarTracker().onSlotClick(Minecraft.getInstance().screen.getTitle().getString(), slot.getItem());
         }
