@@ -182,7 +182,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             return;
         }
         SeqClient.LOGGER.info(item.getHoverName().getString());
-        if (!item.getHoverName().getString().startsWith("§6§lAttack")) {
+        if (!item.getHoverName().getString().matches("^§.§lAttack.*$")) {
             return;
         }
         String territoryName = mName.group(1);
