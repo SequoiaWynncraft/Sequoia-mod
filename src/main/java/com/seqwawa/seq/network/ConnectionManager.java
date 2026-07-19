@@ -1192,6 +1192,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             SeqClient.LOGGER.debug("[WebSocket] Guild war queue submission disabled for non-member session");
             return true;
         }
+        if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
+            SeqClient.LOGGER.warn("[WebSocket] Queueing guild_war_queue until Wynncraft host is confirmed");
+            return false;
+        }
 
         if (!authenticated || !isOpen()) {
             SeqClient.LOGGER.warn(
