@@ -21,6 +21,8 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
+
+import com.seqwawa.seq.model.GuildWarQueueSubmission;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import org.java_websocket.client.WebSocketClient;
@@ -1165,6 +1167,53 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
 
         return sendGuildWarSubmissionNow(submission, false);
+    }
+
+    public boolean sendGuildWarQueue(GuildWarQueueSubmission submission) {
+        if (submission == null
+                || submission.territory() == null
+                || submission.territory().isBlank()
+                || submission.submittedBy() == null
+                || submission.submittedBy().isBlank()
+                || submission.submittedAt() == null
+                || submission.submittedAt().isBlank()
+                || submission.defenseRating() == null
+                || submission.defenseRating().isBlank()) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarQueue dropped: invalid payload");
+            return false;
+        }
+
+        WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+        if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarQueue dropped outside main Wynncraft host");
+            return false;
+        }
+        if (memberFeaturesDisabled) {
+            SeqClient.LOGGER.debug("[WebSocket] Guild war queue submission disabled for non-member session");
+            return true;
+        }
+
+        if (!authenticated || !isOpen()) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildWarQueue dropped open={} authenticated={}", isOpen(), authenticated);
+            return false;
+        }
+        if (authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildWarQueue dropped authFailed={} notInGuild={}", authFailed, notInGuild);
+            return false;
+        }
+
+        JsonObject msg = new JsonObject();
+        msg.addProperty("territory", submission.territory());
+        msg.addProperty("submitted_by", submission.submittedBy());
+        msg.addProperty("submitted_at", submission.submittedAt());
+        msg.addProperty("defense_rating", submission.defenseRating());
+        msg.addProperty("queue_minutes", submission.queueMinutes());
+
+        send("guild_war_queue", msg);
+
+        return true;
     }
 
     public static void flushPendingOutbound() {
