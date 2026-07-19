@@ -174,6 +174,9 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
 
     @Override
     public void onSlotClick(String screenName, ItemStack item) {
+        if (!trackingEnabled.getAsBoolean()) {
+            return;
+        }
         Matcher mName = QUEUE_NAME.matcher(screenName);
         if (!mName.find()) {
             return;
