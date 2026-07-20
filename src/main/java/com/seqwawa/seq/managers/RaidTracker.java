@@ -215,7 +215,8 @@ public class RaidTracker {
         return plain != null
                 && plain.contains("finished")
                 && plain.contains("and claimed")
-                && plain.contains("Guild Experience");
+                && plain.contains("Guild")
+                && plain.contains("Experience");
     }
 
     private static List<String> parseDisplayedNames(String namesPart) {
