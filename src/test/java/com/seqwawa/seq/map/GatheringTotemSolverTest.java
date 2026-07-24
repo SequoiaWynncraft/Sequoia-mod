@@ -60,6 +60,19 @@ class GatheringTotemSolverTest {
     }
 
     @Test
+    void selectsTheDeterministicNearestIntegerInsideANarrowFeasibleRegion() {
+        GatheringTotemSolver.Placement placement = solve(
+                List.of(node(0, 0, "OAK"), node(103, 0, "OAK")),
+                Set.of(),
+                null,
+                List.of());
+
+        assertEquals(2, placement.nodeCount());
+        assertEquals(51, placement.x());
+        assertEquals(0, placement.z());
+    }
+
+    @Test
     void returnsEveryDistinctHullWithTheSameOptimalNodeCount() {
         List<GatheringNode> nodes = List.of(
                 node(0, 0, "OAK"),

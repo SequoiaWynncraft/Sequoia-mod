@@ -127,8 +127,7 @@ public final class GatheringTotemSolver {
         return optimalCandidates.entries().stream()
                 .map(entry -> {
                     List<GatheringNode> coveredNodes = entry.getKey().nodes();
-                    PlacementRegion placementRegion =
-                            buildPlacementRegion(coveredNodes, spatialIndex, entry.getValue());
+                    PlacementRegion placementRegion = buildPlacementRegion(coveredNodes, entry.getValue());
                     List<GatheringNode> finalCoveredNodes = spatialIndex.within(
                             placementRegion.bestPosition().x(),
                             placementRegion.bestPosition().z(),
@@ -176,7 +175,6 @@ public final class GatheringTotemSolver {
 
     private static PlacementRegion buildPlacementRegion(
             List<GatheringNode> coveredNodes,
-            SpatialIndex spatialIndex,
             Candidate originalBest) {
         List<Position> feasiblePoints = new ArrayList<>();
         for (GatheringNode node : coveredNodes) {
@@ -212,7 +210,7 @@ public final class GatheringTotemSolver {
 
         List<Position> initialHull = convexHull(feasiblePoints);
         Position regionCenter = polygonCenter(initialHull);
-        Position bestPosition = bestIntegerPosition(coveredNodes, spatialIndex, regionCenter);
+        Position bestPosition = bestIntegerPosition(coveredNodes, initialHull, regionCenter);
         if (bestPosition == null) {
             bestPosition = regionCenter;
         }
@@ -241,46 +239,61 @@ public final class GatheringTotemSolver {
 
     private static Position bestIntegerPosition(
             List<GatheringNode> coveredNodes,
-            SpatialIndex spatialIndex,
+            List<Position> feasibleHull,
             Position regionCenter) {
-        double minX = coveredNodes.stream()
-                .mapToDouble(node -> node.x() - EFFECTIVE_NODE_RADIUS)
-                .max()
-                .orElse(regionCenter.x());
-        double maxX = coveredNodes.stream()
-                .mapToDouble(node -> node.x() + EFFECTIVE_NODE_RADIUS)
+        int minX = (int) Math.ceil(feasibleHull.stream()
+                .mapToDouble(Position::x)
                 .min()
-                .orElse(regionCenter.x());
-        double minZ = coveredNodes.stream()
-                .mapToDouble(node -> node.z() - EFFECTIVE_NODE_RADIUS)
+                .orElse(regionCenter.x()) - DISTANCE_EPSILON);
+        int maxX = (int) Math.floor(feasibleHull.stream()
+                .mapToDouble(Position::x)
                 .max()
-                .orElse(regionCenter.z());
-        double maxZ = coveredNodes.stream()
-                .mapToDouble(node -> node.z() + EFFECTIVE_NODE_RADIUS)
-                .min()
-                .orElse(regionCenter.z());
-        Candidate best = null;
-        double bestCenterDistance = Double.POSITIVE_INFINITY;
-        for (int x = (int) Math.ceil(minX); x <= (int) Math.floor(maxX); x++) {
-            for (int z = (int) Math.ceil(minZ); z <= (int) Math.floor(maxZ); z++) {
-                Position position = new Position(x, z);
-                if (!isValidPosition(position, coveredNodes)) {
-                    continue;
-                }
-                Candidate candidate = candidateAt(x, z, spatialIndex);
-                double centerDistance = Math.hypot(x - regionCenter.x(), z - regionCenter.z());
+                .orElse(regionCenter.x()) + DISTANCE_EPSILON);
+        Position best = null;
+        double bestCenterDistanceSquared = Double.POSITIVE_INFINITY;
+        for (int x = minX; x <= maxX; x++) {
+            // Every point in these ranges covers this entry's already-global-maximal node set,
+            // so rescoring each lattice point through the spatial index cannot improve it.
+            IntegerRange zRange = feasibleIntegerZRange(x, coveredNodes);
+            if (zRange == null) {
+                continue;
+            }
+            for (int z = zRange.min(); z <= zRange.max(); z++) {
+                double dx = x - regionCenter.x();
+                double dz = z - regionCenter.z();
+                double centerDistanceSquared = dx * dx + dz * dz;
                 if (best == null
-                        || candidate.nodeCount() > best.nodeCount()
-                        || (candidate.nodeCount() == best.nodeCount()
-                                && (centerDistance < bestCenterDistance - DISTANCE_EPSILON
-                                        || (Math.abs(centerDistance - bestCenterDistance) <= DISTANCE_EPSILON
-                                                && hasEarlierCoordinates(candidate, best))))) {
-                    best = candidate;
-                    bestCenterDistance = centerDistance;
+                        || centerDistanceSquared < bestCenterDistanceSquared - DISTANCE_EPSILON
+                        || (Math.abs(centerDistanceSquared - bestCenterDistanceSquared) <= DISTANCE_EPSILON
+                                && (x < best.x() || x == best.x() && z < best.z()))) {
+                    best = new Position(x, z);
+                    bestCenterDistanceSquared = centerDistanceSquared;
                 }
             }
         }
-        return best == null ? null : new Position(best.x(), best.z());
+        return best;
+    }
+
+    private static IntegerRange feasibleIntegerZRange(int x, List<GatheringNode> coveredNodes) {
+        double radiusSquared = EFFECTIVE_NODE_RADIUS * EFFECTIVE_NODE_RADIUS + DISTANCE_EPSILON;
+        double minZ = Double.NEGATIVE_INFINITY;
+        double maxZ = Double.POSITIVE_INFINITY;
+        for (GatheringNode node : coveredNodes) {
+            double dx = node.x() - x;
+            double remainingRadiusSquared = radiusSquared - dx * dx;
+            if (remainingRadiusSquared < 0) {
+                return null;
+            }
+            double zOffset = Math.sqrt(remainingRadiusSquared);
+            minZ = Math.max(minZ, node.z() - zOffset);
+            maxZ = Math.min(maxZ, node.z() + zOffset);
+            if (minZ > maxZ) {
+                return null;
+            }
+        }
+        int minIntegerZ = (int) Math.ceil(minZ - DISTANCE_EPSILON);
+        int maxIntegerZ = (int) Math.floor(maxZ + DISTANCE_EPSILON);
+        return minIntegerZ <= maxIntegerZ ? new IntegerRange(minIntegerZ, maxIntegerZ) : null;
     }
 
     private static boolean isValidPosition(Position position, List<GatheringNode> coveredNodes) {
@@ -448,6 +461,8 @@ public final class GatheringTotemSolver {
     private record AngleEvent(double angle, int starts, int ends) {}
 
     private record Cell(int x, int z) {}
+
+    private record IntegerRange(int min, int max) {}
 
     private static final class OptimalCandidates {
         private final SpatialIndex spatialIndex;
