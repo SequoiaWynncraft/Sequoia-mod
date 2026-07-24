@@ -185,6 +185,8 @@ public class SettingsScreen extends Screen {
             drawSidebarButton(nvg, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
                     btnW, "Settings", true);
             drawSidebarButton(nvg, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
+                    btnW, "Map", false);
+            drawSidebarButton(nvg, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
                     btnW, "Github", false);
 
             // === Main Content Panel (fills rest of screen) ===
@@ -387,8 +389,14 @@ public class SettingsScreen extends Screen {
                     SIDEBAR_BUTTON_HEIGHT)) {
                 return true;
             }
-            // Github
+            // Map
             if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3, btnW,
+                    SIDEBAR_BUTTON_HEIGHT)) {
+                SeqClient.mc.setScreen(new WorldMapScreen(this));
+                return true;
+            }
+            // Github
+            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4, btnW,
                     SIDEBAR_BUTTON_HEIGHT)) {
                 try {
                     java.net.URI uri = java.net.URI.create(GITHUB_URL);

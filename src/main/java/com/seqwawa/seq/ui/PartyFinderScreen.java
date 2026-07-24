@@ -547,6 +547,14 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 btnX,
                 btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
                 btnW,
+                "Map",
+                false);
+        drawSidebarButton(
+                nvg,
+                fontName,
+                btnX,
+                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
+                btnW,
                 "Github",
                 false);
     }
@@ -2121,6 +2129,16 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 my,
                 btnX,
                 btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
+                btnW,
+                SIDEBAR_BUTTON_HEIGHT)) {
+            SeqClient.mc.setScreen(new WorldMapScreen(this));
+            return true;
+        }
+        if (isHovered(
+                mx,
+                my,
+                btnX,
+                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
                 btnW,
                 SIDEBAR_BUTTON_HEIGHT)) {
             try {
