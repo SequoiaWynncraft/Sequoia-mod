@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.config.Setting;
 import java.util.List;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
@@ -18,7 +19,12 @@ class ChatRegexFilterManagerTest {
         assertFalse(manager.builtInFilters().getFirst().enabledSetting().getValue());
         assertFalse(manager.shouldFilter(guildMessage("GaztheCat", "check your dms")));
         assertEquals(
-                List.of("enable_regex_filters", "economy", "guild_bank", "gaz_death_message"),
+                List.of(
+                        "enable_regex_filters",
+                        "economy",
+                        "economy_resource_alerts_only",
+                        "guild_bank",
+                        "gaz_death_message"),
                 manager.settings().stream().map(setting -> setting.getName()).toList());
     }
 
@@ -36,6 +42,12 @@ class ChatRegexFilterManagerTest {
             "󏿼󐀆 Territory Lake Rieke is using more resources than it can\n󏿼󐀆 store!",
             "󏿼󐀆 Torment removed Larger Resource Storage bonus from \n󏿼󐀆 Citadel's Shadow",
             "󏿼󐀆 Kablob set Larger Resource Storage bonus to level 1 on \n󏿼󐀆 Citadel's Shadow",
+            "󏿼󐀆 Sorrow applied the loadout ragebait on Void Valley",
+            "󏿼󐀆 Charlvtte applied the loadout :void: on Royal Gate§b,\n"
+                    + "󏿼󐀆 §3Wellspring of Eternity§b, §3Fort Torann§b, §3Royal Dam§b,\n"
+                    + "󏿼󐀆 §3Xima Valley§b, §3Forts in Fall§b, §3The Frog Bog§b,\n"
+                    + "󏿼󐀆 §3Citadel's Shadow§b, §3Void Valley§b, §3Toxic Caves§b, "
+                    + "and §3Final Step",
             "󏿼󐀆 Territory Lake Rieke production has stabilised",
             "󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿂󐀆"
                     + "§aCopied to clipboard: §fTerritory Royal Gate is producing more resources than it\n"
@@ -56,8 +68,32 @@ class ChatRegexFilterManagerTest {
         manager.builtInFilters().getFirst().enabledSetting().setValue(true);
 
         assertFalse(manager.shouldFilter("Torment: I changed 2 upgrades on my build"));
+        assertFalse(manager.shouldFilter("Sorrow: I applied the loadout ragebait on Void Valley"));
         assertFalse(manager.shouldFilter("Territory Lake Rieke is under attack!"));
         assertFalse(manager.shouldFilter("Territory Lake Rieke production increased"));
+    }
+
+    @Test
+    void economyCanFilterOnlyResourceStorageAlerts() {
+        ChatRegexFilterManager manager = new ChatRegexFilterManager(() -> true);
+        manager.enabledSetting().setValue(true);
+        Setting.BooleanSetting economySetting =
+                manager.builtInFilters().getFirst().enabledSetting();
+
+        assertFalse(manager.economyAlertsOnlySetting().isVisible());
+
+        economySetting.setValue(true);
+        manager.economyAlertsOnlySetting().setValue(true);
+
+        assertTrue(manager.economyAlertsOnlySetting().isVisible());
+        assertTrue(manager.shouldFilter(
+                "󏿼󐀆 Territory Lake Rieke is using more resources than it can\n󏿼󐀆 store!"));
+        assertTrue(manager.shouldFilter(
+                "󏿼󐀆 Territory Royal Gate is producing more resources than it can store!"));
+        assertFalse(manager.shouldFilter(
+                "󏿼󐀆 Sorrow applied the loadout ragebait on Void Valley"));
+        assertFalse(manager.shouldFilter(
+                "󏿼󐀆 Territory Lake Rieke production has stabilised"));
     }
 
     @Test
