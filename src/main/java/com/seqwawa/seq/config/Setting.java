@@ -2,6 +2,8 @@ package com.seqwawa.seq.config;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
+import java.util.Objects;
+import java.util.function.BooleanSupplier;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -12,6 +14,7 @@ public abstract class Setting<T> {
     @Setter
     private T value;
     private final T defaultValue;
+    private BooleanSupplier visibilityCondition = () -> true;
 
     protected Setting(String name, String category, T defaultValue) {
         this.name = name;
@@ -22,6 +25,14 @@ public abstract class Setting<T> {
 
     public void reset() {
         this.value = defaultValue;
+    }
+
+    public void setVisibilityCondition(BooleanSupplier visibilityCondition) {
+        this.visibilityCondition = Objects.requireNonNull(visibilityCondition);
+    }
+
+    public boolean isVisible() {
+        return visibilityCondition.getAsBoolean();
     }
 
     public abstract JsonElement serialize();

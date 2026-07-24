@@ -267,7 +267,10 @@ public class SettingsScreen extends Screen {
             int settingIndex = 0;
             for (Map.Entry<String, List<SettingWidget<?>>> entry : categories.entrySet()) {
                 String category = entry.getKey();
-                List<SettingWidget<?>> widgets = entry.getValue();
+                List<SettingWidget<?>> widgets = visibleWidgets(entry.getValue());
+                if (widgets.isEmpty()) {
+                    continue;
+                }
                 boolean collapsed = isCategoryCollapsed(category);
 
                 // Filter widgets by search
@@ -448,7 +451,10 @@ public class SettingsScreen extends Screen {
 
             for (Map.Entry<String, List<SettingWidget<?>>> entry : categories.entrySet()) {
                 String category = entry.getKey();
-                List<SettingWidget<?>> widgets = entry.getValue();
+                List<SettingWidget<?>> widgets = visibleWidgets(entry.getValue());
+                if (widgets.isEmpty()) {
+                    continue;
+                }
                 boolean collapsed = isCategoryCollapsed(category);
 
                 // Filter widgets by search
@@ -579,6 +585,12 @@ public class SettingsScreen extends Screen {
 
     private boolean isCategoryCollapsed(String category) {
         return searchQuery.isEmpty() && collapsedCategories.contains(category);
+    }
+
+    private List<SettingWidget<?>> visibleWidgets(List<SettingWidget<?>> widgets) {
+        return widgets.stream()
+                .filter(widget -> widget.getSetting().isVisible())
+                .toList();
     }
 
     @Override
