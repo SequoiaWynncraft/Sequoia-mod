@@ -275,7 +275,7 @@ public final class GatheringTotemSolver {
     }
 
     private static IntegerRange feasibleIntegerZRange(int x, List<GatheringNode> coveredNodes) {
-        double radiusSquared = EFFECTIVE_NODE_RADIUS * EFFECTIVE_NODE_RADIUS + DISTANCE_EPSILON;
+        double radiusSquared = validPositionRadiusSquared();
         double minZ = Double.NEGATIVE_INFINITY;
         double maxZ = Double.POSITIVE_INFINITY;
         for (GatheringNode node : coveredNodes) {
@@ -297,7 +297,7 @@ public final class GatheringTotemSolver {
     }
 
     private static boolean isValidPosition(Position position, List<GatheringNode> coveredNodes) {
-        double radiusSquared = EFFECTIVE_NODE_RADIUS * EFFECTIVE_NODE_RADIUS + DISTANCE_EPSILON;
+        double radiusSquared = validPositionRadiusSquared();
         for (GatheringNode node : coveredNodes) {
             double dx = node.x() - position.x();
             double dz = node.z() - position.z();
@@ -306,6 +306,11 @@ public final class GatheringTotemSolver {
             }
         }
         return true;
+    }
+
+    private static double validPositionRadiusSquared() {
+        double validRadius = EFFECTIVE_NODE_RADIUS + DISTANCE_EPSILON;
+        return validRadius * validRadius;
     }
 
     private static List<Position> convexHull(List<Position> positions) {
