@@ -26,6 +26,7 @@ import com.seqwawa.seq.halcyon.HalcyonRangeVisualiserClient;
 import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.BombShareManager;
 import com.seqwawa.seq.managers.ChatManager;
+import com.seqwawa.seq.managers.ChatRegexFilterManager;
 import com.seqwawa.seq.managers.FontManager;
 import com.seqwawa.seq.managers.GameManager;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
@@ -77,6 +78,9 @@ public class SeqClient implements ClientModInitializer {
     public static MinecraftAuthService authService;
 
     public static ChatManager chatManager;
+
+    @Getter
+    public static ChatRegexFilterManager chatRegexFilterManager;
 
     @Getter
     public static BombShareManager bombShareManager;
@@ -199,6 +203,9 @@ public class SeqClient implements ClientModInitializer {
         chatManager = new ChatManager();
         bombShareManager = new BombShareManager();
         configManager = new ConfigManager();
+        chatRegexFilterManager = new ChatRegexFilterManager();
+        chatRegexFilterManager.settings().forEach(configManager::register);
+        chatRegexFilterManager.registerIncomingHooks();
         configManager.load();
         configManager.migrateToken();
         leaderboardBadgeService = LeaderboardBadgeService.getInstance();
