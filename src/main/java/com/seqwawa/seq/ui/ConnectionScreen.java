@@ -120,7 +120,8 @@ public class ConnectionScreen extends Screen {
         drawSidebarButton(nvg, fontName, btnX, btnY, btnW, "Partyfinder", false);
         drawSidebarButton(nvg, fontName, btnX, btnY + step, btnW, "Connection", true);
         drawSidebarButton(nvg, fontName, btnX, btnY + step * 2, btnW, "Settings", false);
-        drawSidebarButton(nvg, fontName, btnX, btnY + step * 3, btnW, "Github", false);
+        drawSidebarButton(nvg, fontName, btnX, btnY + step * 3, btnW, "Map", false);
+        drawSidebarButton(nvg, fontName, btnX, btnY + step * 4, btnW, "Github", false);
     }
 
     private void renderHeader(long nvg, String fontName, float panelX, float panelWidth) {
@@ -300,6 +301,10 @@ public class ConnectionScreen extends Screen {
             return true;
         }
         if (isHovered(mx, my, btnX, btnY + step * 3, btnW, SIDEBAR_BUTTON_HEIGHT)) {
+            SeqClient.mc.setScreen(new WorldMapScreen(this));
+            return true;
+        }
+        if (isHovered(mx, my, btnX, btnY + step * 4, btnW, SIDEBAR_BUTTON_HEIGHT)) {
             openGithub();
             return true;
         }
