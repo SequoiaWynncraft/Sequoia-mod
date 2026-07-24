@@ -37,6 +37,8 @@ class ChatRegexFilterManagerTest {
         String[] messages = {
             "󏿼󐀆 Torment changed 2 upgrades on Alder Understory",
             "󏿼󐀆 Kablob changed 3 bonuses on Citadel's Shadow",
+            "󏿼󏿿󏿾 Cal_and_Ben changed the global tax to 70%",
+            "󏿼󏿿󏿾 know_your_limits changed the tax of Espren to 69%",
             "󏿼󐀆 Torment set Efficient Resources bonus to level 3 on Lake\n󏿼󐀆 Rieke",
             "󏿼󏿿󏿾 Territory Citadel's Shadow is using more resources than it\n󏿼󐀆 can store!",
             "󏿼󐀆 Territory Lake Rieke is using more resources than it can\n󏿼󐀆 store!",
@@ -68,6 +70,7 @@ class ChatRegexFilterManagerTest {
         manager.builtInFilters().getFirst().enabledSetting().setValue(true);
 
         assertFalse(manager.shouldFilter("Torment: I changed 2 upgrades on my build"));
+        assertFalse(manager.shouldFilter("Cal_and_Ben: I changed the global tax to 70%"));
         assertFalse(manager.shouldFilter("Sorrow: I applied the loadout ragebait on Void Valley"));
         assertFalse(manager.shouldFilter("Territory Lake Rieke is under attack!"));
         assertFalse(manager.shouldFilter("Territory Lake Rieke production increased"));
@@ -92,6 +95,8 @@ class ChatRegexFilterManagerTest {
                 "󏿼󐀆 Territory Royal Gate is producing more resources than it can store!"));
         assertFalse(manager.shouldFilter(
                 "󏿼󐀆 Sorrow applied the loadout ragebait on Void Valley"));
+        assertFalse(manager.shouldFilter(
+                "󏿼󏿿󏿾 Cal_and_Ben changed the global tax to 70%"));
         assertFalse(manager.shouldFilter(
                 "󏿼󐀆 Territory Lake Rieke production has stabilised"));
     }
