@@ -1,5 +1,6 @@
 package com.seqwawa.seq.radiance;
 
+import com.seqwawa.seq.client.SeqClient;
 import java.util.List;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -11,8 +12,14 @@ import org.joml.Vector3fc;
 public final class PingRenderer {
     private static final int WORLD_RING_SEGMENTS = 32;
     private static final int WORLD_RING_PARTICLES_PER_TICK = 2;
+    private static final int DEFAULT_MARKER_COLOR = 0xFF0000;
+    private static boolean colorPreviewActive;
 
     private PingRenderer() {}
+
+    public static void setColorPreviewActive(boolean active) {
+        colorPreviewActive = active;
+    }
 
     public static void renderOverlay(GuiGraphics guiGraphics, DeltaTracker deltaTracker) {
         Minecraft client = Minecraft.getInstance();
@@ -35,13 +42,30 @@ public final class PingRenderer {
             int x = Math.round(screenPos.x());
             int y = Math.round(screenPos.y());
 
-            guiGraphics.fill(x - 2, y - 4, x + 2, y + 4, 0xFFFF0000);
-            guiGraphics.fill(x - 4, y - 2, x + 4, y + 2, 0xFFFF0000);
-
-            String label = "Radiance";
-            int textWidth = client.font.width(label);
-            guiGraphics.drawString(client.font, label, x - textWidth / 2, y - 16, 0xFFFFFFFF);
+            drawMarker(guiGraphics, client, x, y, "Radiance");
         }
+
+        if (colorPreviewActive) {
+            int x = guiGraphics.guiWidth() / 2;
+            int y = guiGraphics.guiHeight() / 2 + 28;
+            drawMarker(guiGraphics, client, x, y, "Radiance preview");
+        }
+    }
+
+    private static void drawMarker(
+            GuiGraphics guiGraphics, Minecraft client, int x, int y, String label) {
+        int markerColor = 0xFF000000 | getConfiguredMarkerColor();
+        guiGraphics.fill(x - 2, y - 4, x + 2, y + 4, markerColor);
+        guiGraphics.fill(x - 4, y - 2, x + 4, y + 2, markerColor);
+
+        int textWidth = client.font.width(label);
+        guiGraphics.drawString(client.font, label, x - textWidth / 2, y - 16, 0xFFFFFFFF);
+    }
+
+    private static int getConfiguredMarkerColor() {
+        return SeqClient.getRadianceMarkerColorSetting() == null
+                ? DEFAULT_MARKER_COLOR
+                : SeqClient.getRadianceMarkerColorSetting().getValue();
     }
 
     public static boolean renderWorld(Minecraft client, WorldPing ping) {

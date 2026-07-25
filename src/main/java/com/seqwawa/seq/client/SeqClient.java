@@ -135,10 +135,19 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting radianceCheckerSetting;
 
     @Getter
+    public static Setting.ColorSetting radianceMarkerColorSetting;
+
+    @Getter
     public static Setting.BooleanSetting halcyonRangeVisualiserSetting;
 
     @Getter
+    public static Setting.ColorSetting halcyonRingColorSetting;
+
+    @Getter
     public static Setting.BooleanSetting lightRoomVisualiserSetting;
+
+    @Getter
+    public static Setting.ColorSetting lightRoomRingColorSetting;
 
     @Getter
     public static Setting.BooleanSetting showRaidBadgesSetting;
@@ -477,8 +486,14 @@ public class SeqClient implements ClientModInitializer {
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
         radianceCheckerSetting = new Setting.BooleanSetting("enable_radiance_visualiser", "raids", true);
+        radianceMarkerColorSetting = new Setting.ColorSetting("radiance_marker_color", "raids", 0xFF0000);
+        radianceMarkerColorSetting.setVisibilityCondition(() -> radianceCheckerSetting.getValue());
         halcyonRangeVisualiserSetting = new Setting.BooleanSetting("enable_halcyon_range_visualiser", "raids", true);
+        halcyonRingColorSetting = new Setting.ColorSetting("halcyon_ring_color", "raids", 0x00FFFF);
+        halcyonRingColorSetting.setVisibilityCondition(() -> halcyonRangeVisualiserSetting.getValue());
         lightRoomVisualiserSetting = new Setting.BooleanSetting("enable_light_room_visualiser", "raids", true);
+        lightRoomRingColorSetting = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF);
+        lightRoomRingColorSetting.setVisibilityCondition(() -> lightRoomVisualiserSetting.getValue());
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
@@ -520,8 +535,11 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(syncWynnPartySetting);
         getConfigManager().register(receiveBombShareRequestsSetting);
         getConfigManager().register(radianceCheckerSetting);
+        getConfigManager().register(radianceMarkerColorSetting);
         getConfigManager().register(halcyonRangeVisualiserSetting);
+        getConfigManager().register(halcyonRingColorSetting);
         getConfigManager().register(lightRoomVisualiserSetting);
+        getConfigManager().register(lightRoomRingColorSetting);
         getConfigManager().register(showRaidBadgesSetting);
         getConfigManager().register(showInsigniaBadgesSetting);
         getConfigManager().register(showOwnLeaderboardBadgeSetting);

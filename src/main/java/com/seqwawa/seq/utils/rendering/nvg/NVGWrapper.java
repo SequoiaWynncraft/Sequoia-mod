@@ -187,6 +187,21 @@ public class NVGWrapper {
         paint2.free();
     }
 
+    public static void drawVerticalGradient(long context, float x, float y, float width, float height, Color color1, Color color2) {
+        nvgBeginPath(context);
+        nvgRect(context, x, y, width, height);
+        NVGColor nvgColor1 = nvgColor(color1);
+        NVGColor nvgColor2 = nvgColor(color2);
+        NVGPaint paint = NVGPaint.calloc();
+        NanoVG.nvgLinearGradient(context, x, y, x, y + height, nvgColor1, nvgColor2, paint);
+        nvgFillPaint(context, paint);
+        nvgFill(context);
+        nvgClosePath(context);
+        nvgColor1.free();
+        nvgColor2.free();
+        paint.free();
+    }
+
 
 
     public static void drawDropShadow(long context, float x, float y, float width, float height, float radius, float blur, float spread, Color shadowColor, int alpha) {

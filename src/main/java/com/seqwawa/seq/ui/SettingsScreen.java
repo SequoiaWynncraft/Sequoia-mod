@@ -1,6 +1,10 @@
 package com.seqwawa.seq.ui;
 
+import com.seqwawa.seq.LightRoomTnaRange.LightRoom;
+import com.seqwawa.seq.halcyon.HalcyonRingRenderer;
+import com.seqwawa.seq.radiance.PingRenderer;
 import com.seqwawa.seq.ui.widget.BooleanWidget;
+import com.seqwawa.seq.ui.widget.ColorWidget;
 import com.seqwawa.seq.ui.widget.EnumWidget;
 import com.seqwawa.seq.ui.widget.SettingWidget;
 import com.seqwawa.seq.ui.widget.SliderWidget;
@@ -95,6 +99,10 @@ public class SettingsScreen extends Screen {
 
     @Override
     public void removed() {
+        deactivateColorPreviews();
+        LightRoom.setColorPreviewActive(false);
+        HalcyonRingRenderer.setColorPreviewActive(false);
+        PingRenderer.setColorPreviewActive(false);
         SeqClient.getConfigManager().save();
         super.removed();
     }
@@ -119,6 +127,8 @@ public class SettingsScreen extends Screen {
     private SettingWidget<?> createWidget(Setting<?> setting) {
         if (setting instanceof Setting.BooleanSetting b)
             return new BooleanWidget(b);
+        if (setting instanceof Setting.ColorSetting c)
+            return createColorWidget(c);
         if (setting instanceof Setting.IntSetting i)
             return new SliderWidget(i, i == SeqClient.getUiSizePercentSetting());
         if (setting instanceof Setting.DoubleSetting d)
@@ -130,6 +140,29 @@ public class SettingsScreen extends Screen {
         if (setting instanceof Setting.StringSetting s)
             return new StringWidget(s);
         return null;
+    }
+
+    private ColorWidget createColorWidget(Setting.ColorSetting setting) {
+        if (setting == SeqClient.getLightRoomRingColorSetting()) {
+            return new ColorWidget(setting, LightRoom::setColorPreviewActive);
+        }
+        if (setting == SeqClient.getHalcyonRingColorSetting()) {
+            return new ColorWidget(setting, HalcyonRingRenderer::setColorPreviewActive);
+        }
+        if (setting == SeqClient.getRadianceMarkerColorSetting()) {
+            return new ColorWidget(setting, PingRenderer::setColorPreviewActive);
+        }
+        return new ColorWidget(setting, null);
+    }
+
+    private void deactivateColorPreviews() {
+        for (List<SettingWidget<?>> widgets : categories.values()) {
+            for (SettingWidget<?> widget : widgets) {
+                if (widget instanceof ColorWidget colorWidget) {
+                    colorWidget.deactivatePreview();
+                }
+            }
+        }
     }
 
     private boolean matchesSearch(String settingName, String categoryName) {
