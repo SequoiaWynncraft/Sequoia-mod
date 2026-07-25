@@ -25,6 +25,7 @@ import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.managers.BombShareManager;
+import com.seqwawa.seq.managers.GazDeathMessageEffect;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyFinderManager;
@@ -93,6 +94,11 @@ public class SeqCommand {
                                                         return 1;
                                                 }))
                                 .then(ClientCommandManager.literal("status").executes(SeqCommand::runStatus))
+                                .then(ClientCommandManager.literal("gaz-death-test")
+                                                .executes(ctx -> {
+                                                        GazDeathMessageEffect.showForLocalPlayer();
+                                                        return 1;
+                                                }))
                                 .then(ClientCommandManager.literal("logout")
                                                 .executes(ctx -> {
                                                         ConnectionManager.getInstance().disconnect();

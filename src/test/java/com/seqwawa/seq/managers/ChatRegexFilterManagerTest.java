@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.config.Setting;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import org.junit.jupiter.api.Test;
@@ -147,8 +148,9 @@ class ChatRegexFilterManagerTest {
     @Test
     void gazFilterRequiresEasterEggsAndCanonicalUsername() {
         boolean[] easterEggsEnabled = {false};
+        AtomicInteger deathMessages = new AtomicInteger();
         ChatRegexFilterManager manager =
-                new ChatRegexFilterManager(() -> easterEggsEnabled[0]);
+                new ChatRegexFilterManager(() -> easterEggsEnabled[0], deathMessages::incrementAndGet);
         manager.enabledSetting().setValue(true);
         ChatRegexFilterManager.BuiltInFilter gazFilter = manager.builtInFilters().stream()
                 .filter(filter -> filter.id().equals("gaz_death_message"))
@@ -159,18 +161,22 @@ class ChatRegexFilterManagerTest {
 
         assertFalse(gazFilter.enabledSetting().isVisible());
         assertFalse(manager.shouldFilter(providedMessage));
+        assertEquals(0, deathMessages.get());
 
         easterEggsEnabled[0] = true;
         assertTrue(gazFilter.enabledSetting().isVisible());
-        assertTrue(manager.shouldFilter(providedMessage));
-        assertTrue(manager.shouldFilter(guildMessage("GAZTHECAT", "check your DM")));
+        assertFalse(manager.shouldFilter(providedMessage));
+        assertFalse(manager.shouldFilter(guildMessage("GAZTHECAT", "check your DM")));
         assertFalse(manager.shouldFilter(guildMessage("SomeoneElse", "star check your dms")));
         assertFalse(manager.shouldFilter(guildMessage("GaztheCat", "star check your messages")));
+        assertEquals(2, deathMessages.get());
     }
 
     @Test
     void gazFilterResolvesNicknameFromMessageMetadata() {
-        ChatRegexFilterManager manager = new ChatRegexFilterManager(() -> true);
+        AtomicInteger deathMessages = new AtomicInteger();
+        ChatRegexFilterManager manager =
+                new ChatRegexFilterManager(() -> true, deathMessages::incrementAndGet);
         manager.enabledSetting().setValue(true);
         manager.builtInFilters().stream()
                 .filter(filter -> filter.id().equals("gaz_death_message"))
@@ -186,9 +192,10 @@ class ChatRegexFilterManagerTest {
                         .withStyle(Style.EMPTY.withInsertion("GaztheCat")))
                 .append(Component.literal(": star check your dms"));
 
-        assertTrue(manager.shouldFilter(message));
+        assertFalse(manager.shouldFilter(message));
         assertFalse(manager.shouldFilter(Component.literal(
                 "󏿼󏿿󏿾 Rallying Fervor: star check your dms")));
+        assertEquals(1, deathMessages.get());
     }
 
     private static Component guildMessage(String canonicalUsername, String content) {

@@ -44,14 +44,20 @@ public final class ChatRegexFilterManager {
             new Setting.BooleanSetting("enable_regex_filters", SETTINGS_CATEGORY, false);
     private final Setting.BooleanSetting economyAlertsOnlySetting;
     private final List<BuiltInFilter> builtInFilters;
+    private final Runnable gazDeathMessageEffect;
     private boolean hooksRegistered;
 
     public ChatRegexFilterManager() {
-        this(ChatRegexFilterManager::easterEggsEnabled);
+        this(ChatRegexFilterManager::easterEggsEnabled, GazDeathMessageEffect::showForLocalPlayer);
     }
 
     ChatRegexFilterManager(BooleanSupplier easterEggsEnabled) {
+        this(easterEggsEnabled, () -> {});
+    }
+
+    ChatRegexFilterManager(BooleanSupplier easterEggsEnabled, Runnable gazDeathMessageEffect) {
         Objects.requireNonNull(easterEggsEnabled);
+        this.gazDeathMessageEffect = Objects.requireNonNull(gazDeathMessageEffect);
         Setting.BooleanSetting gazDeathSetting =
                 new Setting.BooleanSetting("gaz_death_message", SETTINGS_CATEGORY, false);
         gazDeathSetting.setVisibilityCondition(easterEggsEnabled);
@@ -129,6 +135,10 @@ public final class ChatRegexFilterManager {
         }
         for (BuiltInFilter filter : builtInFilters) {
             if (filter.matches(message, normalizedMessage)) {
+                if (filter.id().equals("gaz_death_message")) {
+                    gazDeathMessageEffect.run();
+                    continue;
+                }
                 return true;
             }
         }
