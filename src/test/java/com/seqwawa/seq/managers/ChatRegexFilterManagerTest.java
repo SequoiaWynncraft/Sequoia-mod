@@ -24,8 +24,7 @@ class ChatRegexFilterManagerTest {
                         "enable_regex_filters",
                         "economy",
                         "economy_resource_alerts_only",
-                        "guild_bank",
-                        "gaz_death_message"),
+                        "guild_bank"),
                 manager.settings().stream().map(setting -> setting.getName()).toList());
     }
 
@@ -146,44 +145,29 @@ class ChatRegexFilterManagerTest {
     }
 
     @Test
-    void gazFilterRequiresEasterEggsAndCanonicalUsername() {
+    void gazEffectRequiresOnlyGeneralEasterEggSettingAndCanonicalUsername() {
         boolean[] easterEggsEnabled = {false};
         AtomicInteger deathMessages = new AtomicInteger();
         ChatRegexFilterManager manager =
                 new ChatRegexFilterManager(() -> easterEggsEnabled[0], deathMessages::incrementAndGet);
-        manager.enabledSetting().setValue(true);
-        ChatRegexFilterManager.BuiltInFilter gazFilter = manager.builtInFilters().stream()
-                .filter(filter -> filter.id().equals("gaz_death_message"))
-                .findFirst()
-                .orElseThrow();
-        gazFilter.enabledSetting().setValue(true);
         Component providedMessage = guildMessage("GaztheCat", "star check your dms");
 
-        assertFalse(gazFilter.enabledSetting().isVisible());
-        assertFalse(manager.shouldFilter(providedMessage));
+        assertTrue(manager.shouldAllowIncoming(providedMessage));
         assertEquals(0, deathMessages.get());
 
         easterEggsEnabled[0] = true;
-        assertTrue(gazFilter.enabledSetting().isVisible());
-        assertFalse(manager.shouldFilter(providedMessage));
-        assertFalse(manager.shouldFilter(guildMessage("GAZTHECAT", "check your DM")));
-        assertFalse(manager.shouldFilter(guildMessage("SomeoneElse", "star check your dms")));
-        assertFalse(manager.shouldFilter(guildMessage("GaztheCat", "star check your messages")));
+        assertTrue(manager.shouldAllowIncoming(providedMessage));
+        assertTrue(manager.shouldAllowIncoming(guildMessage("GAZTHECAT", "check your DM")));
+        assertTrue(manager.shouldAllowIncoming(guildMessage("SomeoneElse", "star check your dms")));
+        assertTrue(manager.shouldAllowIncoming(guildMessage("GaztheCat", "star check your messages")));
         assertEquals(2, deathMessages.get());
     }
 
     @Test
-    void gazFilterResolvesNicknameFromMessageMetadata() {
+    void gazEffectResolvesNicknameFromMessageMetadata() {
         AtomicInteger deathMessages = new AtomicInteger();
         ChatRegexFilterManager manager =
                 new ChatRegexFilterManager(() -> true, deathMessages::incrementAndGet);
-        manager.enabledSetting().setValue(true);
-        manager.builtInFilters().stream()
-                .filter(filter -> filter.id().equals("gaz_death_message"))
-                .findFirst()
-                .orElseThrow()
-                .enabledSetting()
-                .setValue(true);
 
         Component message = Component.empty()
                 .append(Component.literal("󏿼󏿿󏿾 "))
@@ -192,10 +176,29 @@ class ChatRegexFilterManagerTest {
                         .withStyle(Style.EMPTY.withInsertion("GaztheCat")))
                 .append(Component.literal(": star check your dms"));
 
-        assertFalse(manager.shouldFilter(message));
-        assertFalse(manager.shouldFilter(Component.literal(
+        assertTrue(manager.shouldAllowIncoming(message));
+        assertTrue(manager.shouldAllowIncoming(Component.literal(
                 "󏿼󏿿󏿾 Rallying Fervor: star check your dms")));
         assertEquals(1, deathMessages.get());
+    }
+
+    @Test
+    void gazEffectAcceptsPunctuationAndIgnBeforeOrAfterReminder() {
+        AtomicInteger deathMessages = new AtomicInteger();
+        ChatRegexFilterManager manager =
+                new ChatRegexFilterManager(() -> true, deathMessages::incrementAndGet);
+
+        List<String> reminders = List.of(
+                "Cela41, check dm.",
+                "check your dm, Cela41!",
+                "Cela41... check, your d.m.s!!!",
+                "check-dms / Cela41");
+
+        for (String reminder : reminders) {
+            assertTrue(manager.shouldAllowIncoming(guildMessage("GaztheCat", reminder)), reminder);
+        }
+
+        assertEquals(reminders.size(), deathMessages.get());
     }
 
     private static Component guildMessage(String canonicalUsername, String content) {

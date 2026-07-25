@@ -38,7 +38,6 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("show_party_healthbars", "Show party health bars");
         DISPLAY_NAME_OVERRIDES.put("notify_tracked_world_events", "Notify tracked world events");
         DISPLAY_NAME_OVERRIDES.put("world_events", "World Events");
-        DISPLAY_NAME_OVERRIDES.put("gaz_death_message", "Gaz death message");
         DISPLAY_NAME_OVERRIDES.put("economy_resource_alerts_only", "Only filter resource alerts");
 
         TOKEN_REPLACEMENTS.put("discord", "Discord");

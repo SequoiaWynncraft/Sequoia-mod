@@ -37,13 +37,14 @@ public final class ChatRegexFilterManager {
             "^[^:]{1,64} (?:deposited \\d+x .+ to|withdrew \\d+x .+ from) "
                     + "the Guild Bank \\([^)]+\\)$",
             Pattern.CASE_INSENSITIVE);
-    private static final Pattern CHECK_YOUR_DMS_PATTERN =
-            Pattern.compile("\\bcheck\\s+your\\s+dms?\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CHECK_DMS_PATTERN =
+            Pattern.compile("\\bcheck(?:\\s+your)?\\s+d\\s*m\\s*s?\\b", Pattern.CASE_INSENSITIVE);
 
     private final Setting.BooleanSetting enabledSetting =
             new Setting.BooleanSetting("enable_regex_filters", SETTINGS_CATEGORY, false);
     private final Setting.BooleanSetting economyAlertsOnlySetting;
     private final List<BuiltInFilter> builtInFilters;
+    private final BooleanSupplier easterEggsEnabled;
     private final Runnable gazDeathMessageEffect;
     private boolean hooksRegistered;
 
@@ -56,11 +57,8 @@ public final class ChatRegexFilterManager {
     }
 
     ChatRegexFilterManager(BooleanSupplier easterEggsEnabled, Runnable gazDeathMessageEffect) {
-        Objects.requireNonNull(easterEggsEnabled);
+        this.easterEggsEnabled = Objects.requireNonNull(easterEggsEnabled);
         this.gazDeathMessageEffect = Objects.requireNonNull(gazDeathMessageEffect);
-        Setting.BooleanSetting gazDeathSetting =
-                new Setting.BooleanSetting("gaz_death_message", SETTINGS_CATEGORY, false);
-        gazDeathSetting.setVisibilityCondition(easterEggsEnabled);
         Setting.BooleanSetting economySetting =
                 new Setting.BooleanSetting("economy", SETTINGS_CATEGORY, false);
         economyAlertsOnlySetting =
@@ -70,18 +68,11 @@ public final class ChatRegexFilterManager {
                 new BuiltInFilter(
                         "economy",
                         economySetting,
-                        (message, normalized) -> matchesEconomy(normalized),
-                        () -> true),
+                        (message, normalized) -> matchesEconomy(normalized)),
                 new BuiltInFilter(
                         "guild_bank",
                         new Setting.BooleanSetting("guild_bank", SETTINGS_CATEGORY, false),
-                        (message, normalized) -> GUILD_BANK_PATTERN.matcher(normalized).matches(),
-                        () -> true),
-                new BuiltInFilter(
-                        "gaz_death_message",
-                        gazDeathSetting,
-                        ChatRegexFilterManager::matchesGazDmReminder,
-                        easterEggsEnabled));
+                        (message, normalized) -> GUILD_BANK_PATTERN.matcher(normalized).matches()));
     }
 
     public List<Setting<?>> settings() {
@@ -114,10 +105,10 @@ public final class ChatRegexFilterManager {
         }
         hooksRegistered = true;
         ClientReceiveMessageEvents.ALLOW_GAME.register(
-                (message, overlay) -> overlay || !shouldFilter(message));
+                (message, overlay) -> overlay || shouldAllowIncoming(message));
         ClientReceiveMessageEvents.ALLOW_CHAT.register(
                 (message, signedMessage, sender, params, receptionTimestamp) ->
-                        !shouldFilter(message));
+                        shouldAllowIncoming(message));
     }
 
     public boolean shouldFilter(String message) {
@@ -135,21 +126,32 @@ public final class ChatRegexFilterManager {
         }
         for (BuiltInFilter filter : builtInFilters) {
             if (filter.matches(message, normalizedMessage)) {
-                if (filter.id().equals("gaz_death_message")) {
-                    gazDeathMessageEffect.run();
-                    continue;
-                }
                 return true;
             }
         }
         return false;
     }
 
-    private static boolean matchesGazDmReminder(Component message, String normalizedMessage) {
+    boolean shouldAllowIncoming(Component message) {
+        if (easterEggsEnabled.getAsBoolean() && matchesGazDmReminder(message)) {
+            gazDeathMessageEffect.run();
+        }
+        return !shouldFilter(message);
+    }
+
+    private static boolean matchesGazDmReminder(Component message) {
+        if (message == null) {
+            return false;
+        }
         ChatManager.ParsedMessage parsed = ChatManager.parseGuildMessage(message);
         return parsed != null
                 && GAZ_USERNAME.equals(parsed.username().toLowerCase(Locale.ROOT))
-                && CHECK_YOUR_DMS_PATTERN.matcher(parsed.message()).find();
+                && CHECK_DMS_PATTERN.matcher(normalizeGazReminder(parsed.message())).find();
+    }
+
+    private static String normalizeGazReminder(String message) {
+        String normalized = PacketTextNormalizer.normalizeForParsing(message);
+        return normalized.replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
     }
 
     private boolean matchesEconomy(String normalizedMessage) {
@@ -169,17 +171,14 @@ public final class ChatRegexFilterManager {
         private final String id;
         private final Setting.BooleanSetting enabledSetting;
         private final BiPredicate<Component, String> matcher;
-        private final BooleanSupplier available;
 
         private BuiltInFilter(
                 String id,
                 Setting.BooleanSetting enabledSetting,
-                BiPredicate<Component, String> matcher,
-                BooleanSupplier available) {
+                BiPredicate<Component, String> matcher) {
             this.id = id;
             this.enabledSetting = enabledSetting;
             this.matcher = matcher;
-            this.available = available;
         }
 
         public String id() {
@@ -191,8 +190,7 @@ public final class ChatRegexFilterManager {
         }
 
         private boolean matches(Component message, String normalizedMessage) {
-            return available.getAsBoolean()
-                    && enabledSetting.getValue()
+            return enabledSetting.getValue()
                     && matcher.test(message, normalizedMessage);
         }
     }
