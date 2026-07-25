@@ -31,7 +31,10 @@ public final class LightRoom {
     private static boolean prepRoom = false;
     private static boolean inRoom = false;
     private static final int radius = 7;
+    private static final int DEFAULT_RING_COLOR = 0x00FFFF;
+    private static final int RING_ALPHA = 230;
     private static boolean wasPrep = false;
+    private static boolean colorPreviewActive = false;
 
     private LightRoom() {}
 
@@ -43,6 +46,16 @@ public final class LightRoom {
     private static boolean isEnabled() {
         return WynncraftServerPolicy.isCurrentServerAllowed()
             && (SeqClient.getLightRoomVisualiserSetting() == null || SeqClient.getLightRoomVisualiserSetting().getValue());
+    }
+
+    public static void setColorPreviewActive(boolean active) {
+        colorPreviewActive = active;
+    }
+
+    private static int getRingColor() {
+        return SeqClient.getLightRoomRingColorSetting() == null
+            ? DEFAULT_RING_COLOR
+            : SeqClient.getLightRoomRingColorSetting().getValue();
     }
 
     /**
@@ -110,14 +123,24 @@ public final class LightRoom {
     }
     public static void Render(WorldRenderContext context) {
         if(!isEnabled()) return;
-        if(!inRoom) return;
-        if(LightHolder == null) return;
-        float tickDelta = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
-        Vec3 center = LightHolder.getPosition(tickDelta);
-        Vec3 camera = Minecraft.getInstance().gameRenderer.getMainCamera().position();
+        Minecraft client = Minecraft.getInstance();
+        if(client.player == null || client.level == null) return;
+
+        AbstractClientPlayer ringCenter;
+        if(colorPreviewActive) {
+            ringCenter = client.player;
+        } else {
+            if(!inRoom) return;
+            if(LightHolder == null) return;
+            ringCenter = LightHolder;
+        }
+
+        float tickDelta = client.getDeltaTracker().getGameTimeDeltaPartialTick(false);
+        Vec3 center = ringCenter.getPosition(tickDelta);
+        Vec3 camera = client.gameRenderer.getMainCamera().position();
         PoseStack.Pose pose = context.matrices().last();
         VertexConsumer vertices = context.consumers().getBuffer(RenderTypes.debugQuads());
 
-        renderRingWall(vertices, pose, center, camera, radius);
+        renderRingWall(vertices, pose, center, camera, radius, getRingColor(), RING_ALPHA);
     }
 }

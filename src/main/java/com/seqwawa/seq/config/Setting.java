@@ -2,6 +2,7 @@ package com.seqwawa.seq.config;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import lombok.Getter;
@@ -233,6 +234,77 @@ public abstract class Setting<T> {
             if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()) {
                 setValue(element.getAsString());
             }
+        }
+    }
+
+    public static class ColorSetting extends Setting<Integer> {
+        private static final int RGB_MASK = 0xFFFFFF;
+
+        public ColorSetting(String name, String category, int defaultRgb) {
+            super(name, category, defaultRgb & RGB_MASK);
+        }
+
+        @Override
+        public void setValue(Integer value) {
+            if (value != null) {
+                super.setValue(value & RGB_MASK);
+            }
+        }
+
+        public boolean setHexValue(String hexValue) {
+            Integer parsed = parseHex(hexValue);
+            if (parsed == null) {
+                return false;
+            }
+            setValue(parsed);
+            return true;
+        }
+
+        public String getHexValue() {
+            return String.format(Locale.ROOT, "#%06X", getValue());
+        }
+
+        public static boolean isValidHex(String hexValue) {
+            return parseHex(hexValue) != null;
+        }
+
+        public static String normalizeHex(String hexValue) {
+            Integer parsed = parseHex(hexValue);
+            return parsed == null ? null : String.format(Locale.ROOT, "#%06X", parsed);
+        }
+
+        @Override
+        public JsonElement serialize() {
+            return new JsonPrimitive(getHexValue());
+        }
+
+        @Override
+        public void deserialize(JsonElement element) {
+            if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()) {
+                setHexValue(element.getAsString());
+            }
+        }
+
+        private static Integer parseHex(String hexValue) {
+            if (hexValue == null) {
+                return null;
+            }
+
+            String normalized = hexValue.trim();
+            if (normalized.startsWith("#")) {
+                normalized = normalized.substring(1);
+            }
+            if (normalized.length() != 6) {
+                return null;
+            }
+
+            for (int i = 0; i < normalized.length(); i++) {
+                if (Character.digit(normalized.charAt(i), 16) < 0) {
+                    return null;
+                }
+            }
+
+            return Integer.parseInt(normalized, 16);
         }
     }
 
