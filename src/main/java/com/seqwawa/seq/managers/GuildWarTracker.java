@@ -48,7 +48,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     private static final Pattern QUEUE_DEFENSE = Pattern.compile("Territory Defences: §.(.+)");
     private static final Pattern QUEUE_TIMER = Pattern.compile("Time to Start: §.(\\d+)m");
     private static final Set<String> DEFENSE_LEVELS = Set.of("Very Low", "Low", "Medium", "High", "Very High");
-    private static final Duration QUEUE_ATTEMPT_TIMEOUT = Duration.ofMillis(2500);
+    private static final long QUEUE_ATTEMPT_TIMEOUT_MS = 2500L;
 
     private final WarInfoProvider warInfoProvider;
     private final PlayerContext playerContext;
@@ -62,7 +62,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     private boolean wynnDeathListenerRegistered;
 
     private QueueAttemptInfo queueAttempt;
-    private Instant queueAttemptTime;
+    private long queueAttemptTime;
 
     public GuildWarTracker() {
         this(
@@ -172,7 +172,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     }
 
     private void attemptQueueStart(String cleaned) {
-        if (queueAttemptTime == null || queueAttemptTime.plus(QUEUE_ATTEMPT_TIMEOUT).isBefore(Instant.now())) {
+        if (queueAttempt == null || queueAttemptTime + QUEUE_ATTEMPT_TIMEOUT_MS < clock.getAsLong()) {
             return;
         }
         Matcher matcher = QUEUE_START.matcher(cleaned);
@@ -188,7 +188,6 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         }
         submitQueue(queueAttempt);
         queueAttempt = null;
-        queueAttemptTime = null;
     }
 
     @SubscribeEvent
@@ -248,7 +247,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         }
 
         queueAttempt = new QueueAttemptInfo(territoryName, defense, timer);
-        queueAttemptTime = Instant.now();
+        queueAttemptTime = clock.getAsLong();
 
         SeqClient.LOGGER.info(
                 "[GuildWarTracker] Queue attempt stored territory='{}' defense='{}' timer={}m",
