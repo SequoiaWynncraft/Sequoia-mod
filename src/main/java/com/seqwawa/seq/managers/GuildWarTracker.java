@@ -179,8 +179,8 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         if (!matcher.find()) {
             return;
         }
-        String territory = matcher.group(1);
-        if (!territory.equals(queueAttempt.territory())) {
+        String territory = matcher.group(1).trim().toLowerCase();
+        if (!territory.equals(queueAttempt.territory().toLowerCase())) {
             SeqClient.LOGGER.info(
                     "[GuildWarTracker] Queued territory name did not match stored='{}' queued='{}'",
                     queueAttempt.territory(), territory);
@@ -221,7 +221,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         if (!item.getHoverName().getString().matches("^§.§lAttack.*$")) {
             return;
         }
-        String territoryName = mName.group(1);
+        String territoryName = mName.group(1).trim();
         String defense = null;
         int timer = -1;
 
