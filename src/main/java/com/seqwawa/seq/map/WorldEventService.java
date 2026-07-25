@@ -89,7 +89,7 @@ public final class WorldEventService {
         return true;
     }
 
-    private void completeRefresh(HttpResponse<String> response, Throwable throwable) {
+    private synchronized void completeRefresh(HttpResponse<String> response, Throwable throwable) {
         try {
             if (throwable != null) {
                 throw new IllegalStateException("request failed", throwable);
