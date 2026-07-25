@@ -17,6 +17,7 @@ import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.Member;
 import com.seqwawa.seq.model.PartyCloseReason;
+import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
@@ -251,7 +252,9 @@ public class PartyFinderManager implements NotificationAccessor {
                                         PartyRegion.NA,
                                         PartyRole.DPS,
                                         null,
-                                        currentLeaderWorldName()),
+                                        currentLeaderWorldName(),
+                                        PartyJoinPolicy.INVITE_ONLY,
+                                        0),
                         listing -> applyCreatedListingState(listing),
                         "Unable to create party",
                         "Failed to create party",
@@ -292,7 +295,8 @@ public class PartyFinderManager implements NotificationAccessor {
                                         listing.strict(),
                                         region,
                                         listing.note(),
-                                        currentLeaderWorldName()),
+                                        currentLeaderWorldName(),
+                                        listing.resolvedJoinPolicy()),
                         this::applyUpdatedCurrentListingState,
                         "Unable to update party",
                         "Failed to update party",
@@ -550,13 +554,36 @@ public class PartyFinderManager implements NotificationAccessor {
 
     public CompletableFuture<Listing> createParty(
             long activityId, PartyMode mode, PartyRegion region, PartyRole role, String note) {
-        return createParty(List.of(activityId), mode, false, region, role, note);
+        return createParty(
+                List.of(activityId), mode, false, region, role, note, PartyJoinPolicy.INVITE_ONLY, 0);
     }
 
     public CompletableFuture<Listing> createParty(
             List<Long> activityIds, PartyMode mode, boolean strict, PartyRegion region, PartyRole role, String note) {
+        return createParty(
+                activityIds, mode, strict, region, role, note, PartyJoinPolicy.INVITE_ONLY, 0);
+    }
+
+    public CompletableFuture<Listing> createParty(
+            List<Long> activityIds,
+            PartyMode mode,
+            boolean strict,
+            PartyRegion region,
+            PartyRole role,
+            String note,
+            PartyJoinPolicy joinPolicy,
+            int reservedSlots) {
         return ApiClient.getInstance()
-                .createListing(activityIds, mode, strict, region, role, note, currentLeaderWorldName())
+                .createListing(
+                        activityIds,
+                        mode,
+                        strict,
+                        region,
+                        role,
+                        note,
+                        currentLeaderWorldName(),
+                        joinPolicy,
+                        reservedSlots)
                 .thenApply(listing -> {
                     applyCreatedListingState(listing);
                     return listing;
@@ -984,6 +1011,9 @@ public class PartyFinderManager implements NotificationAccessor {
 
     private String createdListingNotificationTarget(Listing listing, String myUUID) {
         if (listing == null || myUUID == null || myUUID.isBlank()) {
+            return null;
+        }
+        if (listing.resolvedJoinPolicy() != PartyJoinPolicy.OPEN) {
             return null;
         }
 
@@ -1810,7 +1840,12 @@ public class PartyFinderManager implements NotificationAccessor {
      * Extracts activityIds from raid tags, mode from Chill/Grind tag.
      */
     public void createParty(
-            List<String> tags, String role, int reservedSlots, boolean strictRoles, PartyRegion region) {
+            List<String> tags,
+            String role,
+            int reservedSlots,
+            boolean strictRoles,
+            PartyRegion region,
+            PartyJoinPolicy joinPolicy) {
         // Separate party-mode tags from raid/activity display names
         PartyMode mode = PartyMode.CHILL;
         List<String> raidDisplayNames = new ArrayList<>();
@@ -1871,17 +1906,26 @@ public class PartyFinderManager implements NotificationAccessor {
         final boolean strict = mode == PartyMode.GRIND && strictRoles;
         final PartyRegion selectedRegion = region != null ? region : PartyRegion.NA;
 
-        int requestedReservedSlots = reservedSlots;
-        createParty(activityIds, mode, strict, selectedRegion, createRole, null).thenAccept(listing -> {
-            if (listing == null) {
-                return;
-            }
-            applyReservedSlotTarget(listing.id(), requestedReservedSlots, "create");
-        });
+        PartyJoinPolicy selectedJoinPolicy =
+                joinPolicy != null ? joinPolicy : PartyJoinPolicy.INVITE_ONLY;
+        createParty(
+                activityIds,
+                mode,
+                strict,
+                selectedRegion,
+                createRole,
+                null,
+                selectedJoinPolicy,
+                reservedSlots);
     }
 
     public void updateParty(
-            List<String> tags, String role, int reservedSlots, boolean strictRoles, PartyRegion region) {
+            List<String> tags,
+            String role,
+            int reservedSlots,
+            boolean strictRoles,
+            PartyRegion region,
+            PartyJoinPolicy joinPolicy) {
         if (currentListing == null) {
             pushUiError("Unable to update party: no active listing.");
             return;
@@ -1930,6 +1974,9 @@ public class PartyFinderManager implements NotificationAccessor {
         PartyRegion selectedRegion =
                 region != null ? region : (currentListing.region() != null ? currentListing.region() : PartyRegion.NA);
         boolean strict = mode == PartyMode.GRIND && strictRoles;
+        PartyJoinPolicy selectedJoinPolicy = joinPolicy != null
+                ? joinPolicy
+                : currentListing.resolvedJoinPolicy();
         ApiClient.getInstance()
                 .updateListing(
                         currentListing.id(),
@@ -1938,7 +1985,8 @@ public class PartyFinderManager implements NotificationAccessor {
                         strict,
                         selectedRegion,
                         currentListing.note(),
-                        currentLeaderWorldName())
+                        currentLeaderWorldName(),
+                        selectedJoinPolicy)
                 .thenAccept(listing -> {
                     if (listing != null) {
                         applyUpdatedCurrentListingState(listing);
@@ -2087,6 +2135,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return source.stream()
                 .filter(Objects::nonNull)
                 .filter(listing -> listing.status() == PartyStatus.OPEN)
+                .filter(listing -> listing.resolvedJoinPolicy() == PartyJoinPolicy.OPEN)
                 .filter(listing -> listing.occupiedSlotCount() < listing.maxPartySize())
                 .filter(listing -> !uuidEquals(myUUID, listing.leaderUUID()))
                 .filter(listing -> !listingContainsPlayer(listing, myUUID))
@@ -2201,6 +2250,8 @@ public class PartyFinderManager implements NotificationAccessor {
         String normalized = backendError.toLowerCase(Locale.ROOT);
         return switch (normalized) {
             case "listing is not open for new members" -> "This party is currently closed by the leader.";
+            case "listing is invite only", "listing requires an invite" ->
+                "This party is invite only. Ask the leader for an invite.";
             case "party is already full" -> "This party is already full.";
             case "invite has expired" -> "This invite has expired.";
             case "invite is no longer active" -> "This invite is no longer active.";
@@ -2735,6 +2786,9 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     private static String validateReservedSlotsForInvite(Listing listing) {
+        if (listing != null && listing.resolvedJoinPolicy() == PartyJoinPolicy.INVITE_ONLY) {
+            return null;
+        }
         if (inferReservedSlotCount(listing) > 0) {
             return null;
         }

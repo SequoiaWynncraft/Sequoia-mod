@@ -1,6 +1,7 @@
 package com.seqwawa.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.time.Instant;
 import java.util.List;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.Member;
+import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
@@ -66,5 +68,54 @@ class PartyListingTest {
 
         assertEquals("EU21 · Chill · The Nameless Anomaly", listing.displayLabel());
         assertEquals("EU21", listing.tags.get(1));
+        assertEquals(PartyJoinPolicy.OPEN, listing.joinPolicy);
+    }
+
+    @Test
+    void inviteOnlyListingDoesNotExposePublicJoinAction() {
+        PartyListing listing = new PartyListing(new Listing(
+                2L,
+                List.of(new Activity(1L, "TNA", 4)),
+                null,
+                "leader",
+                PartyMode.CHILL,
+                false,
+                PartyRegion.EU,
+                "EU21",
+                PartyStatus.OPEN,
+                null,
+                null,
+                List.of(new Member("leader", PartyRole.DPS, WynnClassType.MAGE, Instant.EPOCH)),
+                List.of(),
+                Instant.EPOCH,
+                PartyJoinPolicy.INVITE_ONLY));
+
+        assertEquals(PartyJoinPolicy.INVITE_ONLY, listing.joinPolicy);
+        assertFalse(listing.isJoinable());
+    }
+
+    @Test
+    void missingJoinPolicyFromLegacyBackendDefaultsToOpen() {
+        Listing legacyListing = new Listing(
+                3L,
+                List.of(new Activity(1L, "TNA", 4)),
+                null,
+                "leader",
+                PartyMode.CHILL,
+                false,
+                PartyRegion.EU,
+                "EU21",
+                PartyStatus.OPEN,
+                null,
+                null,
+                List.of(new Member("leader", PartyRole.DPS, WynnClassType.MAGE, Instant.EPOCH)),
+                List.of(),
+                Instant.EPOCH,
+                null);
+
+        PartyListing listing = new PartyListing(legacyListing);
+
+        assertEquals(PartyJoinPolicy.OPEN, legacyListing.resolvedJoinPolicy());
+        assertEquals(PartyJoinPolicy.OPEN, listing.joinPolicy);
     }
 }
