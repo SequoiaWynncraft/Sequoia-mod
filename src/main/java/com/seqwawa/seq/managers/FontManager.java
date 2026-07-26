@@ -4,9 +4,9 @@ import lombok.Getter;
 import lombok.Setter;
 import net.minecraft.client.gui.GuiGraphics;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
+import com.seqwawa.seq.utils.rendering.UiCanvas;
+import com.seqwawa.seq.utils.rendering.UiRenderer;
 import com.seqwawa.seq.utils.rendering.nvg.string.coloredstring.ColoredString;
-import org.lwjgl.nanovg.NVGColor;
 
 import java.awt.*;
 import java.nio.ByteBuffer;
@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static com.seqwawa.seq.client.SeqClient.mc;
-import static org.lwjgl.nanovg.NanoVG.*;
 
 @Getter
 public class FontManager {
@@ -55,13 +54,17 @@ public class FontManager {
     }
 
     public void addFont(String fileLocation, String name) {
-        nvgCreateFont(NVGContext.getContext(), name.split("\\.")[0], fileLocation);
-        addLoadedFont(name.split("\\.")[0]);
+        String fontName = name.split("\\.")[0];
+        if (UiRenderer.registerFont(fontName, fileLocation)) {
+            addLoadedFont(fontName);
+        }
     }
 
     public void addFont(ByteBuffer byteBuffer, String name) {
-        nvgCreateFontMem(NVGContext.getContext(), name.split("\\.")[0], byteBuffer, false);
-        addLoadedFont(name.split("\\.")[0]);
+        String fontName = name.split("\\.")[0];
+        if (UiRenderer.registerFont(fontName, byteBuffer)) {
+            addLoadedFont(fontName);
+        }
     }
 
     public void renderTextMultiColorCenteredString(int x, int y, boolean shadow, ColoredString... strings) {
@@ -92,7 +95,6 @@ public class FontManager {
     }
 
     public void renderTextMultiColorCustom(int x, int y, boolean shadow, ColoredString... strings) {
-        long vg = NVGContext.getContext();
         float xOffset = 0;
 
 
@@ -103,22 +105,12 @@ public class FontManager {
 
             //shadows
             if (shadow && shadowsEnabled && shadowOffset > 0.0f) {
-                nvgFontFace(vg, selectedFont);
-                NVGColor shadowColor = NVGContext.nvgColor(Color.BLACK);
-                nvgFillColor(vg, shadowColor);
-                nvgFontSize(vg, fontSize);
-                nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-                nvgText(vg, baseX + shadowOffset, baseY + shadowOffset, data.getText());
+                drawCanvasText(selectedFont, data.getText(), baseX + shadowOffset, baseY + shadowOffset, Color.BLACK);
 
             }
 
             //useful stuff
-            nvgFontFace(vg, selectedFont);
-            NVGColor textColor = NVGContext.nvgColor(data.getColor());
-            nvgFillColor(vg, textColor);
-            nvgFontSize(vg, fontSize);
-            nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-            nvgText(vg, baseX, baseY, data.getText());
+            drawCanvasText(selectedFont, data.getText(), baseX, baseY, data.getColor());
 
             String s = data.getText().endsWith(" ") ? " " : "";
             xOffset += getStringWidth(data.getText() + s, selectedFont);
@@ -147,90 +139,58 @@ public class FontManager {
     }
 
     public float getStringsWidth(ColoredString... strings) {
-        // Use NanoVG for custom font measurement
         float size = 0;
-        float[] bounds = new float[4]; // Left, top, width, height
         for (ColoredString s : strings) {
-            nvgFontSize(NVGContext.getContext(), fontSize);
-            nvgFontFace(NVGContext.getContext(), selectedFont);
             int startIndex = s.getText().length() - 1;
             String val = s.getText().substring(Math.max(startIndex, 0)).equalsIgnoreCase(" ") ? " " : "";
-            nvgTextBounds(NVGContext.getContext(), 0, 0, s.getText() + val, bounds);
-            size += bounds[2];
+            size += UiRenderer.measureText(s.getText() + val, selectedFont, fontSize).width();
         }
 
         return size;
     }
 
     public float getStringWidth(String s, String selectedFont) {
-        float[] bounds = new float[4]; // minx, miny, maxx, maxy
-        nvgFontSize(NVGContext.getContext(), fontSize);
-        nvgFontFace(NVGContext.getContext(), selectedFont);
-        nvgTextBounds(NVGContext.getContext(), 0, 0, s, bounds);
-
-        return bounds[2] - bounds[0];
+        return UiRenderer.measureText(s, selectedFont, fontSize).width();
     }
 
     public float getFontHeight(String selectedFont) {
-        float[] bounds = new float[4]; // minx, miny, maxx, maxy
-        nvgFontSize(NVGContext.getContext(), fontSize);
-        nvgFontFace(NVGContext.getContext(), selectedFont);
-        nvgTextBounds(NVGContext.getContext(), 0, 0, "Meow", bounds);
-
-        return bounds[3] - bounds[1];
+        return UiRenderer.measureText("Meow", selectedFont, fontSize).height();
     }
 
     public void renderTextWithFont(String font, String text, int x, int y, Color color, boolean shadow) {
-        long vg = NVGContext.getContext();
         float baseX = snapCoord(x);
         float baseY = snapCoord(y);
 
         if (shadow && shadowsEnabled && shadowOffset > 0.0f) {
-            nvgFontFace(vg, font);
-            NVGColor nvgColor1 = NVGContext.nvgColor(Color.BLACK);
-            nvgFillColor(vg, nvgColor1);
-            nvgFontSize(vg, fontSize);
-            nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-            nvgText(vg, baseX + shadowOffset, baseY + shadowOffset, text);
+            drawCanvasText(font, text, baseX + shadowOffset, baseY + shadowOffset, Color.BLACK);
         }
 
-        nvgFontFace(vg, font);
-        NVGColor nvgColor = NVGContext.nvgColor(color);
-        nvgFillColor(vg, nvgColor);
-        nvgFontSize(vg, fontSize);
-        nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-        nvgText(vg, baseX, baseY, text);
-
-
+        drawCanvasText(font, text, baseX, baseY, color);
     }
 
     protected void drawTextCustom(String text, float x, float y, Color color, boolean shadow) {
-        long vg = NVGContext.getContext();
         float baseX = snapCoord(x);
         float baseY = snapCoord(y);
 
-        nvgGlobalAlpha(vg, 1.0f);
-        nvgFontBlur(vg, 0.0f);
-
         if (shadow && shadowsEnabled && shadowOffset > 0.0f) {
-            nvgFontFace(vg, selectedFont);
-            NVGColor nvgColor1 = NVGContext.nvgColor(new Color(0,0,0, color.getAlpha()));
-            nvgFillColor(vg, nvgColor1);
-            nvgFontSize(vg, fontSize);
-            nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-            nvgText(vg, baseX + shadowOffset, baseY + shadowOffset, text);
+            drawCanvasText(selectedFont, text, baseX + shadowOffset, baseY + shadowOffset,
+                    new Color(0, 0, 0, color.getAlpha()));
         }
 
-        nvgFontFace(vg, selectedFont);
-        NVGColor nvgColor = NVGContext.nvgColor(color);
-        nvgFillColor(vg, nvgColor);
-        nvgFontSize(vg, fontSize);
-        nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-        nvgText(vg, baseX, baseY, text);
+        drawCanvasText(selectedFont, text, baseX, baseY, color);
     }
 
     public void drawCenteredText(String font, String text, int centerX, int y, Color color, boolean shadow) {
         renderTextWithFont(font, text, (int) (centerX - getStringWidth(text, font) / 2), y, color, shadow);
+    }
+
+    private void drawCanvasText(String font, String text, float x, float y, Color color) {
+        UiRenderer.currentCanvas().drawText(text, x, y, new UiCanvas.TextStyle(
+                font,
+                fontSize,
+                color,
+                UiCanvas.HorizontalAlign.LEFT,
+                UiCanvas.VerticalAlign.TOP));
     }
 
     private float snapCoord(float value) {

@@ -5,13 +5,10 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.*;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
-import com.seqwawa.seq.utils.rendering.nvg.NVGWrapper;
 
 import java.awt.*;
 import java.lang.Math;
 
-import static org.lwjgl.nanovg.NanoVG.*;
 import static com.seqwawa.seq.client.SeqClient.mc;
 
 public class Render2DUtil {
@@ -92,8 +89,8 @@ public class Render2DUtil {
         // Set up projection matrix with proper FOV
         float fov = mc.gameRenderer.getFov(cam, tickdelta, true);
 
-        cachedScreenWidth = Math.max(1, Math.round(NVGContext.screenWidth()));
-        cachedScreenHeight = Math.max(1, Math.round(NVGContext.screenHeight()));
+        cachedScreenWidth = Math.max(1, Math.round(MinecraftUiRenderer.screenWidth()));
+        cachedScreenHeight = Math.max(1, Math.round(MinecraftUiRenderer.screenHeight()));
 
         cachedProjectionMatrix.identity().setPerspective(
                 (float) Math.toRadians(fov),
@@ -177,28 +174,28 @@ public class Render2DUtil {
      * Draws a filled rectangle using NanoVG
      */
     public void fillRect(float x, float y, float width, float height, Color color) {
-        NVGWrapper.drawRect(NVGContext.getContext(), x, y, width, height, color);
+        UiRenderer.currentCanvas().fillRect(x, y, width, height, color);
     }
 
     /**
      * Saves the current NanoVG transformation state
      */
     public void pushTransform() {
-        nvgSave(NVGContext.getContext());
+        UiRenderer.currentCanvas().save();
     }
 
     /**
      * Restores the previous NanoVG transformation state
      */
     public void popTransform() {
-        nvgRestore(NVGContext.getContext());
+        UiRenderer.currentCanvas().restore();
     }
 
     /**
      * Translates the NanoVG coordinate system
      */
     public void translate(float x, float y) {
-        nvgTranslate(NVGContext.getContext(), x, y);
+        UiRenderer.currentCanvas().translate(x, y);
     }
 
     /**
@@ -206,56 +203,56 @@ public class Render2DUtil {
      * @param angleDegrees Angle in degrees
      */
     public void rotate(float angleDegrees) {
-        nvgRotate(NVGContext.getContext(), (float) Math.toRadians(angleDegrees));
+        UiRenderer.currentCanvas().rotateDegrees(angleDegrees);
     }
 
     /**
      * Scales the NanoVG coordinate system
      */
     public void scale(float x, float y) {
-        nvgScale(NVGContext.getContext(), x, y);
+        UiRenderer.currentCanvas().scale(x, y);
     }
 
     /**
      * Draws a rectangle outline using NanoVG
      */
     public void drawRectOutline(float x, float y, float width, float height, float thickness, Color color) {
-        NVGWrapper.drawRectOutline(NVGContext.getContext(), x, y, width, height, thickness, color);
+        UiRenderer.currentCanvas().strokeRect(x, y, width, height, thickness, color);
     }
 
     /**
      * Draws a rounded rectangle using NanoVG
      */
     public void drawRoundedRect(float x, float y, float width, float height, float radius, Color color) {
-        NVGWrapper.drawRoundedRect(NVGContext.getContext(), x, y, width, height, radius, color);
+        UiRenderer.currentCanvas().fillRoundedRect(x, y, width, height, radius, color);
     }
 
     /**
      * Draws a horizontal line using NanoVG
      */
     public void drawHorizontalLine(float x, float width, float y, Color color) {
-        NVGWrapper.drawHorizontalLine(NVGContext.getContext(), x, width, y, color);
+        UiRenderer.currentCanvas().fillRect(x, y, width, 1, color);
     }
 
     /**
      * Draws a vertical line using NanoVG
      */
     public void drawVerticalLine(float y, float height, float x, Color color) {
-        NVGWrapper.drawVerticalLine(NVGContext.getContext(), y, height, x, color);
+        UiRenderer.currentCanvas().fillRect(x, y, 1, height, color);
     }
 
     /**
      * Draws a diagonal line using NanoVG
      */
     public void drawDiagonalLine(float x1, float y1, float x2, float y2, int thickness, Color color) {
-        NVGWrapper.drawDiagonalLine(NVGContext.getContext(), x1, y1, x2, y2, thickness, color);
+        UiRenderer.currentCanvas().strokeLine(x1, y1, x2, y2, thickness, color);
     }
 
     /**
      * Draws a horizontal gradient using NanoVG
      */
     public void drawHorizontalGradient(float x, float y, float width, float height, Color color1, Color color2) {
-        NVGWrapper.drawHorizontalGradient(NVGContext.getContext(), x, y, width, height, color1, color2);
+        UiRenderer.currentCanvas().fillHorizontalGradient(x, y, width, height, color1, color2);
     }
 
     /**

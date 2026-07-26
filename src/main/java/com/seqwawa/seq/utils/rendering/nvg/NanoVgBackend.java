@@ -7,65 +7,42 @@ import com.mojang.blaze3d.opengl.GlTexture;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.GpuTexture;
-import lombok.Getter;
 import com.seqwawa.seq.client.SeqClient;
-import org.lwjgl.nanovg.NVGColor;
+import com.seqwawa.seq.utils.rendering.UiCanvas;
+import com.seqwawa.seq.utils.rendering.UiRenderBackend;
+import com.seqwawa.seq.utils.rendering.UiImage;
+import com.seqwawa.seq.utils.rendering.UiRenderMetrics;
+import com.seqwawa.seq.utils.rendering.UiTextMetrics;
 import org.lwjgl.nanovg.NanoVGGL3;
 import org.lwjgl.opengl.*;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 
-import java.awt.*;
-import java.util.ArrayDeque;
-import java.util.Queue;
-import java.util.function.LongConsumer;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.function.Consumer;
 
 import static com.seqwawa.seq.client.SeqClient.mc;
 import static org.lwjgl.nanovg.NanoVG.*;
 import static org.lwjgl.nanovg.NanoVGGL3.NVG_ANTIALIAS;
 import static org.lwjgl.nanovg.NanoVGGL3.NVG_STENCIL_STROKES;
 
-public class NVGContext {
+public final class NanoVgBackend implements UiRenderBackend {
 
-    private static final float BASE_PIXEL_RATIO = 2f;
-    private static final float MIN_UI_SCALE = 0.1f;
-    private static final float MAX_UI_SCALE = 10f;
+    private long context = -1L;
+    private boolean available = true;
+    private boolean fatalErrorLogged;
+    private final List<ByteBuffer> fontBuffers = new ArrayList<>();
+    private final Set<Integer> imageHandles = new HashSet<>();
 
-    @Getter
-    private static long context = -1L;
-    private static boolean available = true;
-    private static boolean fatalErrorLogged = false;
-
-    private static final Queue<LongConsumer> deferredDrawCalls = new ArrayDeque<>();
-
-    private NVGContext() {
-    }
-
-    /**
-     * Queues a draw call to be rendered after the HUD, so it appears on top of hotbar/crosshair.
-     * Flushed by InGameHudMixin at the tail of Gui.render().
-     */
-    public static void renderDeferred(LongConsumer drawCall) {
-        if (!available) {
-            return;
+    @Override
+    public boolean initialize() {
+        if (context > 0L) {
+            return true;
         }
-        deferredDrawCalls.add(drawCall);
-    }
-
-    /**
-     * Executes all deferred draw calls. Called from InGameHudMixin after HUD rendering.
-     */
-    public static void flushDeferred() {
-        if (!available) {
-            deferredDrawCalls.clear();
-            return;
-        }
-        LongConsumer drawCall;
-        while ((drawCall = deferredDrawCalls.poll()) != null) {
-            render(drawCall);
-        }
-    }
-
-    public static void init() {
         try {
             context = NanoVGGL3.nvgCreate(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
             if (context == 0 || context == -1L) {
@@ -78,9 +55,34 @@ public class NVGContext {
         } catch (Throwable t) {
             disableNanoVG("NanoVG initialization failed; disabling NVG rendering", t);
         }
+        return available;
     }
 
-    public static void bindFrameBuffer() {
+    @Override
+    public void close() {
+        try {
+            if (context > 0L) {
+                NanoVGGL3.nvgDelete(context);
+            }
+        } finally {
+            context = -1L;
+            available = false;
+            fontBuffers.forEach(MemoryUtil::memFree);
+            fontBuffers.clear();
+            imageHandles.clear();
+        }
+    }
+
+    @Override
+    public boolean isAvailable() {
+        return available && context > 0L;
+    }
+
+    long context() {
+        return context;
+    }
+
+    private void bindFrameBuffer() {
         RenderTarget framebuffer = mc.getMainRenderTarget();
         GpuTexture gpuTexture = framebuffer.getColorTexture();
         GpuTexture gpuTexture2 = framebuffer.getDepthTexture();
@@ -92,52 +94,91 @@ public class NVGContext {
         GlStateManager._viewport(0, 0, gpuTexture.getWidth(0), gpuTexture.getHeight(0));
     }
 
-    public static void render(LongConsumer drawCall) {
+    @Override
+    public void renderFrame(UiRenderMetrics metrics, List<Consumer<UiCanvas>> commands) {
         if (!available || context <= 0L) {
             return;
         }
-        renderWithScale(drawCall, pixelRatio());
+        renderWithScale(commands, metrics);
     }
 
-    public static float uiScale() {
-        var setting = SeqClient.getUiSizePercentSetting();
-        if (setting == null) {
-            return 1f;
+    @Override
+    public boolean registerFont(String name, ByteBuffer data) {
+        if (!isAvailable() || name == null || name.isBlank() || data == null) {
+            return false;
         }
-        return Math.max(MIN_UI_SCALE, Math.min(MAX_UI_SCALE, setting.getValue() / 100f));
+        ByteBuffer ownedData = MemoryUtil.memAlloc(data.remaining());
+        ownedData.put(data.duplicate()).flip();
+        int fontId = nvgCreateFontMem(context, name, ownedData, false);
+        if (fontId == -1) {
+            MemoryUtil.memFree(ownedData);
+            return false;
+        }
+        fontBuffers.add(ownedData);
+        return true;
     }
 
-    public static float screenWidth() {
-        return mc.getWindow().getWidth() / pixelRatio();
+    @Override
+    public boolean registerFont(String name, String filePath) {
+        return isAvailable()
+                && name != null
+                && !name.isBlank()
+                && filePath != null
+                && nvgCreateFont(context, name, filePath) != -1;
     }
 
-    public static float screenHeight() {
-        return mc.getWindow().getHeight() / pixelRatio();
+    @Override
+    public UiTextMetrics measureText(String text, String font, float size) {
+        if (!isAvailable()) {
+            return new UiTextMetrics(0, 0, 0, 0);
+        }
+        float[] bounds = new float[4];
+        nvgFontSize(context, size);
+        nvgFontFace(context, font);
+        nvgTextBounds(context, 0, 0, text, bounds);
+        return new UiTextMetrics(bounds[0], bounds[1], bounds[2], bounds[3]);
     }
 
-    public static float mouseX(double rawX) {
-        return (float) (rawX * mc.getWindow().getGuiScale() / pixelRatio());
+    @Override
+    public UiImage createImage(ByteBuffer data, boolean nearestNeighbor) {
+        if (!isAvailable() || data == null) {
+            return null;
+        }
+        int flags = nearestNeighbor ? NVG_IMAGE_NEAREST : 0;
+        ByteBuffer nativeData = MemoryUtil.memAlloc(data.remaining());
+        int handle;
+        try {
+            nativeData.put(data.duplicate()).flip();
+            handle = nvgCreateImageMem(context, flags, nativeData);
+        } finally {
+            MemoryUtil.memFree(nativeData);
+        }
+        if (handle == 0) {
+            return null;
+        }
+        int[] width = new int[1];
+        int[] height = new int[1];
+        nvgImageSize(context, handle, width, height);
+        imageHandles.add(handle);
+        return new NanoVgImage(handle, width[0], height[0]);
     }
 
-    public static float mouseY(double rawY) {
-        return (float) (rawY * mc.getWindow().getGuiScale() / pixelRatio());
+    @Override
+    public void deleteImage(UiImage image) {
+        if (isAvailable() && image instanceof NanoVgImage nanoVgImage && imageHandles.remove(nanoVgImage.handle())) {
+            nvgDeleteImage(context, nanoVgImage.handle());
+        }
     }
 
-    public static double mouseDelta(double rawDelta) {
-        return rawDelta * mc.getWindow().getGuiScale() / pixelRatio();
-    }
-
-    private static float pixelRatio() {
-        return BASE_PIXEL_RATIO * uiScale();
-    }
-
-    public static void renderWithScale(LongConsumer drawCall, float fixedScale) {
+    private void renderWithScale(List<Consumer<UiCanvas>> commands, UiRenderMetrics metrics) {
         if (!available || context <= 0L) {
             return;
         }
         RenderSystem.assertOnRenderThread();
-        float width = (int) (mc.getWindow().getWidth() / fixedScale);
-        float height = (int) (mc.getWindow().getHeight() / fixedScale);
+        float layoutScale = metrics.pixelRatio();
+        float width = (int) (mc.getWindow().getWidth() / layoutScale);
+        float height = (int) (mc.getWindow().getHeight() / layoutScale);
+        NanoVgCanvas canvas = new NanoVgCanvas(context, metrics);
 
         int prevProgram = GL11.glGetInteger(GL20.GL_CURRENT_PROGRAM);
         int prevVao = GL11.glGetInteger(GL30.GL_VERTEX_ARRAY_BINDING);
@@ -212,8 +253,11 @@ public class NVGContext {
             prevSamplerBindings[i] = GL11.glGetInteger(GL33.GL_SAMPLER_BINDING);
         }
 
-        GL33.glBindSampler(0,0);
-        bindFrameBuffer();
+        boolean frameStarted = false;
+        Throwable renderFailure = null;
+        try {
+            GL33.glBindSampler(0, 0);
+            bindFrameBuffer();
 
         // Reset GL state to ensure consistent UI rendering (use raw GL to avoid desyncing RenderSystem state cache)
         GL11.glDisable(GL11.GL_DEPTH_TEST);
@@ -242,15 +286,24 @@ public class NVGContext {
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
 
-        try {
-            nvgBeginFrame(context, width, height, fixedScale);
-            drawCall.accept(context);
+            nvgBeginFrame(context, width, height, metrics.renderPixelRatio());
+            frameStarted = true;
+            commands.forEach(command -> runDraw(command, canvas));
             nvgEndFrame(context);
+            frameStarted = false;
         } catch (LinkageError e) {
-            disableNanoVG("NanoVG linkage error during render; disabling NVG rendering", e);
-        }
-        GlStateManager._glBindFramebuffer(GlConst.GL_FRAMEBUFFER, prevFramebuffer);
-        GL11.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+            renderFailure = e;
+        } catch (Throwable e) {
+            renderFailure = e;
+        } finally {
+            if (frameStarted && context > 0L) {
+                try {
+                    nvgCancelFrame(context);
+                } catch (Throwable ignored) {
+                }
+            }
+            GlStateManager._glBindFramebuffer(GlConst.GL_FRAMEBUFFER, prevFramebuffer);
+            GL11.glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
         if (prevDepthTest) {
             GL11.glEnable(GL11.GL_DEPTH_TEST);
         } else {
@@ -307,51 +360,32 @@ public class NVGContext {
             GlStateManager._bindTexture(prevTextureBindings[i]);
         }
         GlStateManager._activeTexture(prevActiveTexture);
-        GL20.glUseProgram(prevProgram);
-
-
+            GL20.glUseProgram(prevProgram);
+        }
+        if (renderFailure != null) {
+            String message = renderFailure instanceof LinkageError
+                    ? "NanoVG linkage error during render; disabling NVG rendering"
+                    : "NanoVG backend failed during render; disabling NVG rendering";
+            disableNanoVG(message, renderFailure);
+        }
     }
 
-    public static void renderText(LongConsumer drawCall) {
-        if (!available || context <= 0L) {
-            return;
-        }
-        float contentscale = (float) mc.getWindow().getGuiScale() * uiScale();
-        float width = (int) (mc.getWindow().getWidth() / contentscale);
-        float height = (int) (mc.getWindow().getHeight() / contentscale);
+    private static void runDraw(Consumer<UiCanvas> draw, UiCanvas canvas) {
         try {
-            nvgSave(context);
-            nvgBeginFrame(context, width, height, contentscale);
-
-            drawCall.accept(context);
-            nvgEndFrame(context);
-        } catch (LinkageError e) {
-            disableNanoVG("NanoVG linkage error during text render; disabling NVG rendering", e);
+            draw.accept(canvas);
+        } catch (LinkageError error) {
+            throw error;
+        } catch (Throwable error) {
+            SeqClient.LOGGER.error("UI draw callback failed; skipping the remainder of that callback", error);
         }
-
     }
 
-    public static NVGColor nvgColor(Color color) {
-        NVGColor colorBuffer = NVGColor.calloc();
-        colorBuffer.r(color.getRed() / 255.0f);
-        colorBuffer.g(color.getGreen() / 255.0f);
-        colorBuffer.b(color.getBlue() / 255.0f);
-        colorBuffer.a(color.getAlpha() / 255.0f);
-        return colorBuffer;
-    }
-
-    public static void restoreState() {
-        GlStateManager._disableCull();
-        GlStateManager._disableDepthTest();
-        GlStateManager._enableBlend();
-        GlStateManager._blendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ZERO, GL11.GL_ONE);
-
-    }
-
-    private static void disableNanoVG(String message, Throwable t) {
-        available = false;
-        context = -1L;
-        deferredDrawCalls.clear();
+    private void disableNanoVG(String message, Throwable t) {
+        try {
+            close();
+        } catch (Throwable cleanupError) {
+            t.addSuppressed(cleanupError);
+        }
         if (!fatalErrorLogged) {
             SeqClient.LOGGER.error(message, t);
             fatalErrorLogged = true;

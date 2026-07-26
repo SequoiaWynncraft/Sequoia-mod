@@ -1,5 +1,9 @@
 package com.seqwawa.seq.ui;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.theme.UiColor.*;
+
+import java.awt.Color;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -7,18 +11,10 @@ import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.update.UpdateManager;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
-import com.seqwawa.seq.utils.rendering.nvg.NVGWrapper;
+import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
+import com.seqwawa.seq.utils.rendering.UiCanvas;
+import com.seqwawa.seq.utils.rendering.UiRenderer;
 
-import java.awt.*;
-
-import static org.lwjgl.nanovg.NanoVG.NVG_ALIGN_CENTER;
-import static org.lwjgl.nanovg.NanoVG.NVG_ALIGN_MIDDLE;
-import static org.lwjgl.nanovg.NanoVG.nvgFillColor;
-import static org.lwjgl.nanovg.NanoVG.nvgFontFace;
-import static org.lwjgl.nanovg.NanoVG.nvgFontSize;
-import static org.lwjgl.nanovg.NanoVG.nvgText;
-import static org.lwjgl.nanovg.NanoVG.nvgTextAlign;
 
 public class UpdatePromptScreen extends Screen {
     private static final float PANEL_WIDTH = 340;
@@ -26,13 +22,6 @@ public class UpdatePromptScreen extends Screen {
     private static final float BUTTON_WIDTH = 96;
     private static final float BUTTON_HEIGHT = 22;
     private static final float BUTTON_SPACING = 12;
-
-    private static final Color BG_OVERLAY = new Color(0, 0, 0, 150);
-    private static final Color PANEL_BG = new Color(24, 24, 34, 240);
-    private static final Color TITLE_COLOR = new Color(190, 150, 255, 255);
-    private static final Color TEXT_COLOR = new Color(225, 225, 235, 255);
-    private static final Color BUTTON_COLOR = new Color(55, 55, 70, 220);
-    private static final Color BUTTON_HOVER = new Color(85, 70, 130, 230);
 
     private final Screen parent;
     private final String installedVersion;
@@ -52,63 +41,56 @@ public class UpdatePromptScreen extends Screen {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        nvgMouseX = NVGContext.mouseX(mouseX);
-        nvgMouseY = NVGContext.mouseY(mouseY);
+        nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
+        nvgMouseY = MinecraftUiRenderer.mouseY(mouseY);
 
-        NVGContext.renderDeferred(nvg -> {
-            float screenWidth = NVGContext.screenWidth();
-            float screenHeight = NVGContext.screenHeight();
+        UiRenderer.renderScreen(this, canvas -> {
+            float screenWidth = canvas.metrics().width();
+            float screenHeight = canvas.metrics().height();
 
-            NVGWrapper.drawRect(nvg, 0, 0, screenWidth, screenHeight, BG_OVERLAY);
+            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY, 150));
 
             float panelX = (screenWidth - PANEL_WIDTH) / 2f;
             float panelY = (screenHeight - PANEL_HEIGHT) / 2f;
-            NVGWrapper.drawRect(nvg, panelX, panelY, PANEL_WIDTH, PANEL_HEIGHT, PANEL_BG);
+            canvas.fillRect(panelX, panelY, PANEL_WIDTH, PANEL_HEIGHT, color(BACKGROUND_BODY_OPAQUE, 240));
 
             String fontName = SeqClient.getFontManager().getSelectedFont();
-            nvgFontFace(nvg, fontName);
-            nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-
-            nvgFontSize(nvg, 16);
-            var titleCol = NVGContext.nvgColor(TITLE_COLOR);
-            nvgFillColor(nvg, titleCol);
-            nvgText(nvg, panelX + PANEL_WIDTH / 2f, panelY + 26, "Sequoia update available");
-            titleCol.free();
-
-            nvgFontSize(nvg, 12);
-            var textCol = NVGContext.nvgColor(TEXT_COLOR);
-            nvgFillColor(nvg, textCol);
-            nvgText(nvg, panelX + PANEL_WIDTH / 2f, panelY + 62,
+            drawCenteredText(canvas, fontName, 16, color(ACCENT_PRIMARY_HOVER), panelX + PANEL_WIDTH / 2f, panelY + 26,
+                    "Sequoia update available");
+            drawCenteredText(canvas, fontName, 12, color(TEXT_SECONDARY), panelX + PANEL_WIDTH / 2f, panelY + 62,
                     "Current: " + installedVersion + "   Latest: " + release.tagName());
-            nvgText(nvg, panelX + PANEL_WIDTH / 2f, panelY + 82,
+            drawCenteredText(canvas, fontName, 12, color(TEXT_SECONDARY), panelX + PANEL_WIDTH / 2f, panelY + 82,
                     "Update downloads and installs the new jar.");
-            nvgText(nvg, panelX + PANEL_WIDTH / 2f, panelY + 100,
+            drawCenteredText(canvas, fontName, 12, color(TEXT_SECONDARY), panelX + PANEL_WIDTH / 2f, panelY + 100,
                     "Restart is required after install.");
-            textCol.free();
 
             float buttonsTotalWidth = BUTTON_WIDTH * 3 + BUTTON_SPACING * 2;
             float startX = panelX + (PANEL_WIDTH - buttonsTotalWidth) / 2f;
             float buttonY = panelY + PANEL_HEIGHT - 42;
 
-            drawButton(nvg, fontName, startX, buttonY, "Ignore");
-            drawButton(nvg, fontName, startX + BUTTON_WIDTH + BUTTON_SPACING, buttonY, "Update");
-            drawButton(nvg, fontName, startX + (BUTTON_WIDTH + BUTTON_SPACING) * 2, buttonY, "Update+Exit");
+            drawButton(canvas, fontName, startX, buttonY, "Ignore");
+            drawButton(canvas, fontName, startX + BUTTON_WIDTH + BUTTON_SPACING, buttonY, "Update");
+            drawButton(canvas, fontName, startX + (BUTTON_WIDTH + BUTTON_SPACING) * 2, buttonY, "Update+Exit");
         });
     }
 
-    private void drawButton(long nvg, String fontName, float x, float y, String label) {
+    private void drawButton(UiCanvas canvas, String fontName, float x, float y, String label) {
         boolean hovered = nvgMouseX >= x && nvgMouseX <= x + BUTTON_WIDTH
                 && nvgMouseY >= y && nvgMouseY <= y + BUTTON_HEIGHT;
 
-        NVGWrapper.drawRect(nvg, x, y, BUTTON_WIDTH, BUTTON_HEIGHT, hovered ? BUTTON_HOVER : BUTTON_COLOR);
+        canvas.fillRect(x, y, BUTTON_WIDTH, BUTTON_HEIGHT, hovered ? color(ACCENT_PRIMARY_DARK_HOVER, 230) : color(CONTROL_INPUT_HOVER, 220));
+        drawCenteredText(canvas, fontName, 11, color(TEXT_SECONDARY),
+                x + BUTTON_WIDTH / 2f, y + BUTTON_HEIGHT / 2f, label);
+    }
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, 11);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var textColor = NVGContext.nvgColor(TEXT_COLOR);
-        nvgFillColor(nvg, textColor);
-        nvgText(nvg, x + BUTTON_WIDTH / 2f, y + BUTTON_HEIGHT / 2f, label);
-        textColor.free();
+    private static void drawCenteredText(
+            UiCanvas canvas, String font, float size, Color color, float x, float y, String text) {
+        canvas.drawText(text, x, y, new UiCanvas.TextStyle(
+                font,
+                size,
+                color,
+                UiCanvas.HorizontalAlign.CENTER,
+                UiCanvas.VerticalAlign.MIDDLE));
     }
 
     @Override
@@ -117,11 +99,11 @@ public class UpdatePromptScreen extends Screen {
             return super.mouseClicked(click, outsideScreen);
         }
 
-        float mx = NVGContext.mouseX(click.x());
-        float my = NVGContext.mouseY(click.y());
+        float mx = MinecraftUiRenderer.mouseX(click.x());
+        float my = MinecraftUiRenderer.mouseY(click.y());
 
-        float screenWidth = NVGContext.screenWidth();
-        float screenHeight = NVGContext.screenHeight();
+        float screenWidth = MinecraftUiRenderer.screenWidth();
+        float screenHeight = MinecraftUiRenderer.screenHeight();
         float panelX = (screenWidth - PANEL_WIDTH) / 2f;
         float panelY = (screenHeight - PANEL_HEIGHT) / 2f;
 

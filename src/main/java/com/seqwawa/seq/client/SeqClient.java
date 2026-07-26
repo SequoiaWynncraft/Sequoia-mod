@@ -11,6 +11,7 @@ import java.util.UUID;
 import com.seqwawa.seq.LightRoomTnaRange.LightRoom;
 import lombok.Getter;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
@@ -39,6 +40,7 @@ import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
+import com.seqwawa.seq.managers.ThemeManager;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.managers.WorldEventManager;
 import com.seqwawa.seq.model.WynnClassType;
@@ -49,7 +51,7 @@ import com.seqwawa.seq.radiance.RadianceCheckerClient;
 import com.seqwawa.seq.ui.SequoiaScreen;
 import com.seqwawa.seq.update.UpdateManager;
 import com.seqwawa.seq.utils.WynnClassCache;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
+import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import org.slf4j.Logger;
 
 public class SeqClient implements ClientModInitializer {
@@ -120,6 +122,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.IntSetting uiSizePercentSetting;
 
     @Getter
+    public static Setting.ChoiceSetting themeSetting;
+
+    @Getter
     public static Setting.BooleanSetting announceOpenPartiesSetting;
 
     @Getter
@@ -148,6 +153,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static Setting.ColorSetting lightRoomRingColorSetting;
+
+    @Getter
+    public static Setting.BooleanSetting lightRoomDebugSetting;
 
     @Getter
     public static Setting.BooleanSetting showRaidBadgesSetting;
@@ -217,6 +225,7 @@ public class SeqClient implements ClientModInitializer {
         chatRegexFilterManager.registerIncomingHooks();
         configManager.load();
         configManager.migrateToken();
+        ThemeManager.initialize();
         leaderboardBadgeService = LeaderboardBadgeService.getInstance();
         seqBadgeNametagRenderer = SeqBadgeNametagRenderers.createIfAvailable();
         worldEventManager = WorldEventManager.getInstance();
@@ -224,6 +233,7 @@ public class SeqClient implements ClientModInitializer {
         SeqCommand.register();
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> MinecraftUiRenderer.shutdown());
         LightRoom.init();
 
         KeyMapping.Category category =
@@ -477,7 +487,7 @@ public class SeqClient implements ClientModInitializer {
     @Subscribe(Preference.CALLER) // to stay in thread
     public void onMinecraftFinishedLoading(MinecraftFinishedLoading ignored) {
         // after minecraft done loading
-        NVGContext.init();
+        MinecraftUiRenderer.initialize();
         SeqClient.gameManager.loadFont();
         SeqClient.assetManager = new AssetManager();
 
@@ -494,6 +504,8 @@ public class SeqClient implements ClientModInitializer {
         lightRoomVisualiserSetting = new Setting.BooleanSetting("enable_light_room_visualiser", "raids", true);
         lightRoomRingColorSetting = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF);
         lightRoomRingColorSetting.setVisibilityCondition(() -> lightRoomVisualiserSetting.getValue());
+        lightRoomDebugSetting = new Setting.BooleanSetting("debug_tna_r2_tracker", "raids", false);
+        lightRoomDebugSetting.setVisibilityCondition(() -> lightRoomVisualiserSetting.getValue());
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
@@ -505,6 +517,12 @@ public class SeqClient implements ClientModInitializer {
         startupVideoSetting = new Setting.BooleanSetting("startup_video", "ui", false);
         uiSizePercentSetting = new Setting.IntSetting("ui_size_percent", "ui", 100, 75, 150, 5)
                 .allowOutOfRangeManualInput();
+        themeSetting = new Setting.ChoiceSetting(
+                "theme",
+                "ui",
+                ThemeManager.currentTheme().name(),
+                ThemeManager.loadedThemeNames(),
+                ThemeManager::setCurrentTheme);
         announceOpenPartiesSetting = new Setting.BooleanSetting("announce_open_parties", "party_finder", true);
         announceOpenPartiesIntervalMinutesSetting =
                 new Setting.IntSetting("announce_open_parties_interval_minutes", "party_finder", 5, 1, 60);
@@ -530,6 +548,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(easterEggsSetting);
         getConfigManager().register(startupVideoSetting);
         getConfigManager().register(uiSizePercentSetting);
+        getConfigManager().register(themeSetting);
         getConfigManager().register(announceOpenPartiesSetting);
         getConfigManager().register(announceOpenPartiesIntervalMinutesSetting);
         getConfigManager().register(syncWynnPartySetting);
@@ -540,6 +559,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(halcyonRingColorSetting);
         getConfigManager().register(lightRoomVisualiserSetting);
         getConfigManager().register(lightRoomRingColorSetting);
+        getConfigManager().register(lightRoomDebugSetting);
         getConfigManager().register(showRaidBadgesSetting);
         getConfigManager().register(showInsigniaBadgesSetting);
         getConfigManager().register(showOwnLeaderboardBadgeSetting);

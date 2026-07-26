@@ -1,0 +1,78 @@
+# Copy this file to config/sequoia/themes/<name>.theme.yml.
+# Theme names may contain lowercase letters, numbers, underscores, and hyphens.
+name: example_theme
+
+# Palette aliases are optional. The bundled themes intentionally use direct values.
+# palette:
+#   brand: &brand [160, 130, 220, 255]
+# An alias can then replace a direct value, for example: primary: *brand
+
+background:
+  overlay: [10, 10, 16, 100]
+  modal_overlay: [0, 0, 0, 160]
+  sidebar: [18, 18, 26, 200]
+  body: [22, 22, 30, 100]
+  body_opaque: [20, 20, 30, 255]
+  header: [26, 26, 36, 110]
+  content: [30, 30, 42, 110]
+  content_focused: [26, 26, 36, 120]
+  popup: [40, 40, 55, 240]
+
+accent:
+  primary: [160, 130, 220, 255]
+  primary_hover: [190, 160, 250, 255]
+  primary_dark: [60, 30, 120, 255]
+  primary_dark_hover: [80, 50, 140, 255]
+  disabled: [60, 60, 70, 255]
+  secondary: [80, 80, 100, 255]
+  divider: [40, 40, 55, 255]
+
+text:
+  primary: [255, 255, 255, 255]
+  secondary: [220, 220, 230, 255]
+  muted: [160, 160, 180, 255]
+  disabled: [120, 120, 130, 255]
+
+control:
+  input: [35, 35, 48, 255]
+  input_secondary: [80, 80, 100, 255]
+  input_hover: [55, 55, 75, 255]
+  border: [130, 100, 200, 180]
+  scrollbar_track: [30, 30, 42, 255]
+  scrollbar_thumb: [160, 130, 220, 255]
+  danger: [200, 60, 60, 200]
+  danger_hover: [220, 80, 80, 220]
+  warning: [220, 176, 88, 255]
+  success: [88, 196, 122, 255]
+
+status:
+  success_background: [56, 140, 88, 220]
+  success_border: [88, 196, 122, 255]
+  warning_background: [148, 108, 44, 220]
+  warning_border: [220, 176, 88, 255]
+  danger_background: [160, 64, 72, 220]
+  danger_border: [226, 108, 118, 255]
+
+map:
+  sidebar: [18, 18, 24, 235]
+  tint: [4, 7, 10, 32]
+  header: [28, 28, 38, 230]
+  control: [42, 42, 54, 220]
+  control_inactive: [33, 33, 44, 235]
+  control_hover: [62, 62, 82, 235]
+  control_active: [92, 74, 138, 235]
+  border: [92, 92, 115, 180]
+  text: [240, 240, 245, 255]
+  subtext: [175, 175, 190, 255]
+  title: [170, 145, 230, 255]
+  player: [255, 255, 255, 255]
+  selected_cluster: [235, 58, 58, 255]
+  territory: [75, 194, 205, 175]
+  territory_hover_text: [185, 247, 250, 255]
+  selected_territory: [255, 204, 82, 235]
+  world_event: [62, 190, 218, 245]
+  tracked_world_event: [255, 194, 72, 250]
+  totem: [255, 194, 72, 245]
+  totem_muted: [190, 150, 76, 130]
+  totem_range: [74, 220, 235, 235]
+  totem_reach: [126, 232, 242, 175]

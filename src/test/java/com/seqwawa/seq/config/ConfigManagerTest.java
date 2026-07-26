@@ -7,7 +7,9 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -121,6 +123,27 @@ class ConfigManagerTest {
         reloaded.load();
 
         assertEquals(175, reloadedSetting.getValue());
+    }
+
+    @Test
+    void persistsAndAppliesChoiceSetting() {
+        Path configPath = tempDir.resolve("config").resolve("sequoia.json");
+        Setting.ChoiceSetting setting = new Setting.ChoiceSetting(
+                "theme", "ui", "default", List.of("default", "high_contrast"), ignored -> {});
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        manager.register(setting);
+        setting.setValue("high_contrast");
+        manager.save();
+
+        AtomicReference<String> applied = new AtomicReference<>();
+        Setting.ChoiceSetting reloadedSetting = new Setting.ChoiceSetting(
+                "theme", "ui", "default", List.of("default", "high_contrast"), applied::set);
+        ConfigManager reloaded = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        reloaded.register(reloadedSetting);
+        reloaded.load();
+
+        assertEquals("high_contrast", reloadedSetting.getValue());
+        assertEquals("high_contrast", applied.get());
     }
 
     @Test

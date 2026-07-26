@@ -1,6 +1,8 @@
 package com.seqwawa.seq.config;
 
 import com.google.gson.JsonPrimitive;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -8,6 +10,30 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SettingTest {
+
+    @Test
+    void choiceSettingAcceptsKnownOptionsAndAppliesChanges() {
+        AtomicReference<String> applied = new AtomicReference<>();
+        Setting.ChoiceSetting setting = new Setting.ChoiceSetting(
+                "theme", "ui", "default", List.of("default", "contrast"), applied::set);
+
+        setting.setValue("contrast");
+
+        assertEquals("contrast", setting.getValue());
+        assertEquals("contrast", applied.get());
+    }
+
+    @Test
+    void choiceSettingRejectsUnknownDeserializedOptions() {
+        AtomicReference<String> applied = new AtomicReference<>();
+        Setting.ChoiceSetting setting = new Setting.ChoiceSetting(
+                "theme", "ui", "default", List.of("default", "contrast"), applied::set);
+
+        setting.deserialize(new JsonPrimitive("missing"));
+
+        assertEquals("default", setting.getValue());
+        assertEquals(null, applied.get());
+    }
 
     @Test
     void manualNumericValuesAreClampedByDefault() {

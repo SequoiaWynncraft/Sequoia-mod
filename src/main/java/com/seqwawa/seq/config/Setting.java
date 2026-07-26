@@ -2,9 +2,11 @@ package com.seqwawa.seq.config;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -305,6 +307,40 @@ public abstract class Setting<T> {
             }
 
             return Integer.parseInt(normalized, 16);
+        }
+    }
+
+    @Getter
+    public static class ChoiceSetting extends StringSetting {
+        private final List<String> options;
+        private final Consumer<String> changeListener;
+
+        public ChoiceSetting(
+                String name,
+                String category,
+                String defaultValue,
+                List<String> options,
+                Consumer<String> changeListener) {
+            super(name, category, defaultValue);
+            this.options = List.copyOf(options);
+            if (this.options.isEmpty() || !this.options.contains(defaultValue)) {
+                throw new IllegalArgumentException("Choice setting options must contain the default value");
+            }
+            this.changeListener = Objects.requireNonNull(changeListener, "changeListener");
+        }
+
+        @Override
+        public void setValue(String value) {
+            if (!options.contains(value)) {
+                return;
+            }
+            super.setValue(value);
+            changeListener.accept(value);
+        }
+
+        @Override
+        public void reset() {
+            setValue(getDefaultValue());
         }
     }
 

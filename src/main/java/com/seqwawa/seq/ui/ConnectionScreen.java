@@ -1,5 +1,8 @@
 package com.seqwawa.seq.ui;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.theme.UiColor.*;
+
 import java.awt.Color;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -8,19 +11,9 @@ import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.network.ConnectionManager;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
-import com.seqwawa.seq.utils.rendering.nvg.NVGWrapper;
-
-import static org.lwjgl.nanovg.NanoVG.NVG_ALIGN_CENTER;
-import static org.lwjgl.nanovg.NanoVG.NVG_ALIGN_LEFT;
-import static org.lwjgl.nanovg.NanoVG.NVG_ALIGN_MIDDLE;
-import static org.lwjgl.nanovg.NanoVG.NVG_ALIGN_RIGHT;
-import static org.lwjgl.nanovg.NanoVG.nvgFillColor;
-import static org.lwjgl.nanovg.NanoVG.nvgFontFace;
-import static org.lwjgl.nanovg.NanoVG.nvgFontSize;
-import static org.lwjgl.nanovg.NanoVG.nvgText;
-import static org.lwjgl.nanovg.NanoVG.nvgTextAlign;
-import static org.lwjgl.nanovg.NanoVG.nvgTextBounds;
+import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
+import com.seqwawa.seq.utils.rendering.UiCanvas;
+import com.seqwawa.seq.utils.rendering.UiRenderer;
 
 public class ConnectionScreen extends Screen {
     private static final float SIDEBAR_WIDTH = 140;
@@ -46,26 +39,6 @@ public class ConnectionScreen extends Screen {
     private static final float NOTE_OFFSET = 22;
     private static final float AUTH_BUTTON_WIDTH = 118;
 
-    private static final Color BG_COLOR = new Color(10, 10, 16, 100);
-    private static final Color SIDEBAR_COLOR = new Color(18, 18, 26, 200);
-    private static final Color PANEL_COLOR = new Color(22, 22, 30, 100);
-    private static final Color HEADER_COLOR = new Color(26, 26, 36, 110);
-    private static final Color TITLE_COLOR = new Color(160, 130, 220, 255);
-    private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
-    private static final Color SUBTEXT_COLOR = new Color(180, 180, 200, 255);
-    private static final Color DIVIDER_COLOR = new Color(40, 40, 55, 255);
-    private static final Color SEARCH_BG = new Color(30, 30, 40, 255);
-    private static final Color SEARCH_PLACEHOLDER = new Color(100, 100, 120, 200);
-    private static final Color SIDEBAR_BUTTON_COLOR = new Color(30, 30, 42, 110);
-    private static final Color SIDEBAR_BUTTON_HOVER = new Color(42, 42, 58, 120);
-    private static final Color SIDEBAR_BUTTON_ACTIVE = new Color(80, 50, 140, 120);
-    private static final Color PRIMARY_BUTTON = new Color(160, 130, 220, 255);
-    private static final Color PRIMARY_BUTTON_HOVER = new Color(176, 148, 236, 255);
-    private static final Color DANGER_BUTTON = new Color(220, 45, 60, 255);
-    private static final Color DANGER_BUTTON_HOVER = new Color(236, 65, 80, 255);
-    private static final Color CONNECTED_COLOR = new Color(0, 225, 90, 255);
-    private static final Color DISCONNECTED_COLOR = new Color(235, 55, 55, 255);
-
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
 
     private float nvgMouseX;
@@ -79,74 +52,56 @@ public class ConnectionScreen extends Screen {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        nvgMouseX = NVGContext.mouseX(mouseX);
-        nvgMouseY = NVGContext.mouseY(mouseY);
+        nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
+        nvgMouseY = MinecraftUiRenderer.mouseY(mouseY);
 
-        NVGContext.renderDeferred(nvg -> {
-            float screenWidth = NVGContext.screenWidth();
-            float screenHeight = NVGContext.screenHeight();
+        UiRenderer.renderScreen(this, canvas -> {
+            float screenWidth = canvas.metrics().width();
+            float screenHeight = canvas.metrics().height();
             float panelX = SIDEBAR_WIDTH;
             float panelWidth = screenWidth - SIDEBAR_WIDTH;
             String fontName = SeqClient.getFontManager().getSelectedFont();
 
-            NVGWrapper.drawRect(nvg, 0, 0, screenWidth, screenHeight, BG_COLOR);
-            renderSidebar(nvg, fontName, screenHeight);
+            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_OVERLAY));
+            renderSidebar(canvas, fontName, screenHeight);
 
-            NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, PANEL_COLOR);
-            NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, HEADER_HEIGHT, HEADER_COLOR);
-            renderHeader(nvg, fontName, panelX, panelWidth);
-            renderStatusPanel(nvg, fontName, panelX, panelWidth, screenHeight);
+            canvas.fillRect(panelX, 0, panelWidth, screenHeight, color(BACKGROUND_BODY));
+            canvas.fillRect(panelX, 0, panelWidth, HEADER_HEIGHT, color(BACKGROUND_HEADER));
+            renderHeader(canvas, fontName, panelX, panelWidth);
+            renderStatusPanel(canvas, fontName, panelX, panelWidth, screenHeight);
         });
     }
 
-    private void renderSidebar(long nvg, String fontName, float screenHeight) {
-        NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, screenHeight, SIDEBAR_COLOR);
+    private void renderSidebar(UiCanvas canvas, String fontName, float screenHeight) {
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(BACKGROUND_SIDEBAR));
+        drawText(canvas, fontName, SIDEBAR_TITLE_SIZE, color(ACCENT_PRIMARY),
+                UiCanvas.HorizontalAlign.CENTER, SIDEBAR_WIDTH / 2f, 22, "Sequoia");
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, SIDEBAR_TITLE_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var titleColor = NVGContext.nvgColor(TITLE_COLOR);
-        nvgFillColor(nvg, titleColor);
-        nvgText(nvg, SIDEBAR_WIDTH / 2f, 22, "Sequoia");
-        titleColor.free();
-
-        NVGWrapper.drawRect(nvg, SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, DIVIDER_COLOR);
+        canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_DIVIDER));
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
         float btnY = 50;
         float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
 
-        drawSidebarButton(nvg, fontName, btnX, btnY, btnW, "Partyfinder", false);
-        drawSidebarButton(nvg, fontName, btnX, btnY + step, btnW, "Connection", true);
-        drawSidebarButton(nvg, fontName, btnX, btnY + step * 2, btnW, "Settings", false);
-        drawSidebarButton(nvg, fontName, btnX, btnY + step * 3, btnW, "Map", false);
-        drawSidebarButton(nvg, fontName, btnX, btnY + step * 4, btnW, "Github", false);
+        drawSidebarButton(canvas, fontName, btnX, btnY, btnW, "Partyfinder", false);
+        drawSidebarButton(canvas, fontName, btnX, btnY + step, btnW, "Connection", true);
+        drawSidebarButton(canvas, fontName, btnX, btnY + step * 2, btnW, "Settings", false);
+        drawSidebarButton(canvas, fontName, btnX, btnY + step * 3, btnW, "Map", false);
+        drawSidebarButton(canvas, fontName, btnX, btnY + step * 4, btnW, "Github", false);
     }
 
-    private void renderHeader(long nvg, String fontName, float panelX, float panelWidth) {
+    private void renderHeader(UiCanvas canvas, String fontName, float panelX, float panelWidth) {
         float searchX = panelX + SEARCH_BAR_MARGIN;
         float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
-        NVGWrapper.drawRect(nvg, searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, SEARCH_BG);
-
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, 12);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var placeholder = NVGContext.nvgColor(SEARCH_PLACEHOLDER);
-        nvgFillColor(nvg, placeholder);
-        nvgText(nvg, searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, "Search...");
-        placeholder.free();
-
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, TITLE_FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        var title = NVGContext.nvgColor(TITLE_COLOR);
-        nvgFillColor(nvg, title);
-        nvgText(nvg, panelX + panelWidth - SEARCH_BAR_MARGIN, HEADER_HEIGHT / 2f, "Connection");
-        title.free();
+        canvas.fillRect(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, color(CONTROL_INPUT));
+        drawText(canvas, fontName, 12, color(TEXT_DISABLED), UiCanvas.HorizontalAlign.LEFT,
+                searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, "Search...");
+        drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY), UiCanvas.HorizontalAlign.RIGHT,
+                panelX + panelWidth - SEARCH_BAR_MARGIN, HEADER_HEIGHT / 2f, "Connection");
     }
 
-    private void renderStatusPanel(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
+    private void renderStatusPanel(UiCanvas canvas, String fontName, float panelX, float panelWidth, float screenHeight) {
         ConnectionManager connectionManager = ConnectionManager.getInstance();
         boolean connected = ConnectionManager.isConnected();
         boolean authenticated = SeqClient.getConfigManager().getToken() != null
@@ -164,36 +119,36 @@ public class ConnectionScreen extends Screen {
         float dividerY = authButtonY + BUTTON_HEIGHT + 18;
 
         drawStatusLine(
-                nvg,
+                canvas,
                 fontName,
                 baseX,
                 connectionLineY,
                 "Connection status:",
                 connected ? "Connected" : "Disconnected",
-                connected ? CONNECTED_COLOR : DISCONNECTED_COLOR);
+                connected ? color(CONTROL_SUCCESS) : color(CONTROL_DANGER));
         if (uptime != null && connected) {
-            drawMetaLine(nvg, fontName, baseX, connectionMetaY, "Uptime: " + uptime);
+            drawMetaLine(canvas, fontName, baseX, connectionMetaY, "Uptime: " + uptime);
         }
 
         ButtonBounds connectionButton = new ButtonBounds(baseX, connectionButtonY, BUTTON_WIDTH, BUTTON_HEIGHT);
         drawActionButton(
-                nvg,
+                canvas,
                 fontName,
                 connectionButton,
                 connected ? "Disconnect" : "Connect",
-                connected ? DANGER_BUTTON : PRIMARY_BUTTON,
-                connected ? DANGER_BUTTON_HOVER : PRIMARY_BUTTON_HOVER);
+                connected ? color(CONTROL_DANGER) : color(ACCENT_PRIMARY),
+                connected ? color(CONTROL_DANGER_HOVER) : color(ACCENT_PRIMARY_HOVER));
 
         drawStatusLine(
-                nvg,
+                canvas,
                 fontName,
                 baseX,
                 authLineY,
                 "Backend session:",
                 authenticated ? "Ready" : "Not ready",
-                authenticated ? CONNECTED_COLOR : DISCONNECTED_COLOR);
+                authenticated ? color(CONTROL_SUCCESS) : color(CONTROL_DANGER));
         drawMetaLine(
-                nvg,
+                canvas,
                 fontName,
                 baseX,
                 authMetaY,
@@ -205,74 +160,49 @@ public class ConnectionScreen extends Screen {
         if (authenticated) {
             ButtonBounds authButton = new ButtonBounds(baseX, authButtonY, AUTH_BUTTON_WIDTH, BUTTON_HEIGHT);
             drawActionButton(
-                    nvg,
+                    canvas,
                     fontName,
                     authButton,
                     "Clear session",
-                    DANGER_BUTTON,
-                    DANGER_BUTTON_HOVER);
+                    color(CONTROL_DANGER),
+                    color(CONTROL_DANGER_HOVER));
         }
 
-        NVGWrapper.drawRect(nvg, baseX, dividerY, panelWidth - 68, 1, DIVIDER_COLOR);
+        canvas.fillRect(baseX, dividerY, panelWidth - 68, 1, color(ACCENT_DIVIDER));
         drawMetaLine(
-                nvg,
+                canvas,
                 fontName,
                 baseX,
                 dividerY + NOTE_OFFSET,
                 "Connect verifies your Minecraft session and checks your Discord link automatically.");
     }
 
-    private void drawStatusLine(long nvg, String fontName, float x, float y, String label, String value, Color valueColor) {
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, LABEL_FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var labelColor = NVGContext.nvgColor(TEXT_COLOR);
-        nvgFillColor(nvg, labelColor);
-        nvgText(nvg, x, y, label);
-        labelColor.free();
-
-        float valueX = x + measureTextWidth(nvg, fontName, LABEL_FONT_SIZE, label) + 10;
-        var statusColor = NVGContext.nvgColor(valueColor);
-        nvgFillColor(nvg, statusColor);
-        nvgText(nvg, valueX, y, value);
-        statusColor.free();
+    private void drawStatusLine(
+            UiCanvas canvas, String fontName, float x, float y, String label, String value, Color valueColor) {
+        drawText(canvas, fontName, LABEL_FONT_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.LEFT, x, y, label);
+        float valueX = x + measureTextWidth(fontName, LABEL_FONT_SIZE, label) + 10;
+        drawText(canvas, fontName, LABEL_FONT_SIZE, valueColor, UiCanvas.HorizontalAlign.LEFT, valueX, y, value);
     }
 
-    private void drawMetaLine(long nvg, String fontName, float x, float y, String text) {
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, META_FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var color = NVGContext.nvgColor(SUBTEXT_COLOR);
-        nvgFillColor(nvg, color);
-        nvgText(nvg, x, y, text);
-        color.free();
+    private void drawMetaLine(UiCanvas canvas, String fontName, float x, float y, String text) {
+        drawText(canvas, fontName, META_FONT_SIZE, color(TEXT_MUTED), UiCanvas.HorizontalAlign.LEFT, x, y, text);
     }
 
-    private void drawSidebarButton(long nvg, String fontName, float x, float y, float w, String label, boolean active) {
+    private void drawSidebarButton(
+            UiCanvas canvas, String fontName, float x, float y, float w, String label, boolean active) {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
-        Color bgColor = active ? SIDEBAR_BUTTON_ACTIVE : (hovered ? SIDEBAR_BUTTON_HOVER : SIDEBAR_BUTTON_COLOR);
-        NVGWrapper.drawRect(nvg, x, y, w, SIDEBAR_BUTTON_HEIGHT, bgColor);
-
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, SIDEBAR_BUTTON_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var textColor = NVGContext.nvgColor(TEXT_COLOR);
-        nvgFillColor(nvg, textColor);
-        nvgText(nvg, x + w / 2f, y + SIDEBAR_BUTTON_HEIGHT / 2f, label);
-        textColor.free();
+        Color bgColor = active ? color(ACCENT_PRIMARY_DARK_HOVER, 120) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
+        canvas.fillRect(x, y, w, SIDEBAR_BUTTON_HEIGHT, bgColor);
+        drawText(canvas, fontName, SIDEBAR_BUTTON_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
+                x + w / 2f, y + SIDEBAR_BUTTON_HEIGHT / 2f, label);
     }
 
-    private void drawActionButton(long nvg, String fontName, ButtonBounds bounds, String label, Color base, Color hover) {
+    private void drawActionButton(
+            UiCanvas canvas, String fontName, ButtonBounds bounds, String label, Color base, Color hover) {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, bounds.x(), bounds.y(), bounds.w(), bounds.h());
-        NVGWrapper.drawRect(nvg, bounds.x(), bounds.y(), bounds.w(), bounds.h(), hovered ? hover : base);
-
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, VALUE_FONT_SIZE - 2);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var textColor = NVGContext.nvgColor(TEXT_COLOR);
-        nvgFillColor(nvg, textColor);
-        nvgText(nvg, bounds.x() + bounds.w() / 2f, bounds.y() + bounds.h() / 2f, label);
-        textColor.free();
+        canvas.fillRect(bounds.x(), bounds.y(), bounds.w(), bounds.h(), hovered ? hover : base);
+        drawText(canvas, fontName, VALUE_FONT_SIZE - 2, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
+                bounds.x() + bounds.w() / 2f, bounds.y() + bounds.h() / 2f, label);
     }
 
     @Override
@@ -281,8 +211,8 @@ public class ConnectionScreen extends Screen {
             return super.mouseClicked(click, outsideScreen);
         }
 
-        float mx = NVGContext.mouseX(click.x());
-        float my = NVGContext.mouseY(click.y());
+        float mx = MinecraftUiRenderer.mouseX(click.x());
+        float my = MinecraftUiRenderer.mouseY(click.y());
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
@@ -348,10 +278,21 @@ public class ConnectionScreen extends Screen {
         return new ButtonBounds(baseX, authButtonY, AUTH_BUTTON_WIDTH, BUTTON_HEIGHT);
     }
 
-    private float measureTextWidth(long nvg, String fontName, float fontSize, String text) {
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, fontSize);
-        return nvgTextBounds(nvg, 0, 0, text, new float[4]);
+    private float measureTextWidth(String fontName, float fontSize, String text) {
+        return UiRenderer.measureText(text, fontName, fontSize).width();
+    }
+
+    private static void drawText(
+            UiCanvas canvas,
+            String font,
+            float size,
+            Color color,
+            UiCanvas.HorizontalAlign horizontalAlign,
+            float x,
+            float y,
+            String text) {
+        canvas.drawText(text, x, y, new UiCanvas.TextStyle(
+                font, size, color, horizontalAlign, UiCanvas.VerticalAlign.MIDDLE));
     }
 
     private void openGithub() {

@@ -11,10 +11,9 @@ import javax.imageio.ImageIO;
 import lombok.Getter;
 import lombok.Setter;
 import net.minecraft.resources.Identifier;
-import org.lwjgl.system.MemoryUtil;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
-import com.seqwawa.seq.utils.rendering.nvg.NVGWrapper;
+import com.seqwawa.seq.utils.rendering.UiImage;
+import com.seqwawa.seq.utils.rendering.UiRenderer;
 
 public class AssetManager {
 
@@ -56,18 +55,18 @@ public class AssetManager {
                     continue;
                 }
 
-                BufferedImage bufferedImage = ImageIO.read(resource.openStream());
+                BufferedImage bufferedImage = ImageIO.read(resource);
                 Identifier identifier = SeqClient.getFileLocation("textures/icons/" + assetName);
                 Asset asset = new Asset(identifier, bufferedImage, bufferedImage.getWidth(), bufferedImage.getHeight());
                 assetsMap.put(assetName, asset);
             }
-            linkAssetsToNanoVG();
+            linkAssetsToRenderer();
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    public void linkAssetsToNanoVG() {
+    public void linkAssetsToRenderer() {
         assetsMap.forEach((s, asset) -> {
             ByteArrayOutputStream os = new ByteArrayOutputStream();
             try {
@@ -76,12 +75,7 @@ public class AssetManager {
                 throw new RuntimeException(e);
             }
             byte[] imageBytes = os.toByteArray();
-            ByteBuffer byteBuffer = MemoryUtil.memAlloc(imageBytes.length);
-            byteBuffer.put(imageBytes);
-            byteBuffer.flip();
-
-            asset.image = NVGWrapper.loadImageFromInputStream(NVGContext.getContext(), byteBuffer);
-            MemoryUtil.memFree(byteBuffer);
+            asset.image = UiRenderer.createImage(ByteBuffer.wrap(imageBytes), true);
         });
     }
 
@@ -104,7 +98,7 @@ public class AssetManager {
 
         Identifier identifier;
         BufferedImage bufferedImage;
-        int image;
+        UiImage image;
         int width;
         int height;
 

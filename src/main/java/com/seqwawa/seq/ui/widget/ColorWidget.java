@@ -1,17 +1,18 @@
 package com.seqwawa.seq.ui.widget;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.theme.UiColor.*;
+
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.utils.TextInputHelper;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
-import com.seqwawa.seq.utils.rendering.nvg.NVGWrapper;
+import com.seqwawa.seq.utils.rendering.UiCanvas;
+import com.seqwawa.seq.utils.rendering.UiRenderer;
 import java.awt.Color;
 import java.util.Locale;
 import java.util.function.Consumer;
 import net.minecraft.client.input.KeyEvent;
 import org.lwjgl.glfw.GLFW;
-
-import static org.lwjgl.nanovg.NanoVG.*;
 
 public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
     private static final float COLLAPSED_HEIGHT = 42;
@@ -28,16 +29,6 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
     private static final float SATURATION_VALUE_HEIGHT = 72;
     private static final float HUE_BAR_GAP = 7;
     private static final float HUE_BAR_HEIGHT = 12;
-
-    private static final Color LABEL_COLOR = new Color(220, 220, 220, 255);
-    private static final Color TEXT_BOX_BG = new Color(30, 30, 40, 200);
-    private static final Color TEXT_BOX_ACTIVE = new Color(50, 50, 70, 220);
-    private static final Color TEXT_BOX_BORDER = new Color(130, 100, 200, 180);
-    private static final Color INVALID_BORDER = new Color(225, 75, 85, 230);
-    private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
-    private static final Color BUTTON_BG = new Color(40, 40, 54, 220);
-    private static final Color BUTTON_ACTIVE = new Color(85, 55, 145, 230);
-    private static final Color PICKER_BORDER = new Color(15, 15, 20, 255);
 
     private final Consumer<Boolean> previewStateConsumer;
     private boolean editing;
@@ -60,140 +51,145 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
     }
 
     @Override
-    public void render(long nvg, float mouseX, float mouseY) {
+    public void render(UiCanvas canvas, float mouseX, float mouseY) {
         cursorBlink++;
         String fontName = SeqClient.getFontManager().getSelectedFont();
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-        var labelColor = NVGContext.nvgColor(LABEL_COLOR);
-        nvgFillColor(nvg, labelColor);
-        nvgText(nvg, x + MARGIN, y + 2, getDisplayName());
-        labelColor.free();
+        drawText(
+                canvas,
+                fontName,
+                FONT_SIZE,
+                color(TEXT_SECONDARY),
+                UiCanvas.HorizontalAlign.LEFT,
+                UiCanvas.VerticalAlign.TOP,
+                x + MARGIN,
+                y + 2,
+                getDisplayName());
 
-        drawHexInput(nvg, fontName);
-        drawSwatch(nvg);
+        drawHexInput(canvas, fontName);
+        drawSwatch(canvas);
         if (previewStateConsumer != null) {
-            drawPreviewButton(nvg, fontName);
+            drawPreviewButton(canvas, fontName);
         }
 
         if (expanded) {
-            drawColorPicker(nvg);
+            drawColorPicker(canvas);
         }
     }
 
-    private void drawHexInput(long nvg, String fontName) {
+    private void drawHexInput(UiCanvas canvas, String fontName) {
         float boxX = hexBoxX();
         float boxY = controlY();
-        Color boxColor = editing ? TEXT_BOX_ACTIVE : TEXT_BOX_BG;
-        NVGWrapper.drawRect(nvg, boxX, boxY, HEX_BOX_WIDTH, CONTROL_HEIGHT, boxColor);
+        Color boxColor = editing ? color(CONTROL_INPUT_HOVER, 220) : color(CONTROL_INPUT, 200);
+        canvas.fillRect(boxX, boxY, HEX_BOX_WIDTH, CONTROL_HEIGHT, boxColor);
 
         boolean validBuffer = Setting.ColorSetting.isValidHex(editBuffer);
         if (editing || !validBuffer) {
-            NVGWrapper.drawRectOutline(
-                    nvg,
+            canvas.strokeRect(
                     boxX,
                     boxY,
                     HEX_BOX_WIDTH,
                     CONTROL_HEIGHT,
                     1,
-                    validBuffer ? TEXT_BOX_BORDER : INVALID_BORDER);
+                    validBuffer ? color(CONTROL_BORDER) : color(CONTROL_DANGER_HOVER, 230));
         }
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var textColor = NVGContext.nvgColor(TEXT_COLOR);
-        nvgFillColor(nvg, textColor);
         String renderedValue = "#" + (editing ? editBuffer : hexDigits(setting));
-        nvgSave(nvg);
-        nvgScissor(nvg, boxX, boxY, HEX_BOX_WIDTH, CONTROL_HEIGHT);
-        nvgText(nvg, boxX + 5, boxY + CONTROL_HEIGHT / 2f, renderedValue);
-        nvgRestore(nvg);
-        textColor.free();
+        canvas.save();
+        canvas.scissor(boxX, boxY, HEX_BOX_WIDTH, CONTROL_HEIGHT);
+        drawText(
+                canvas,
+                fontName,
+                FONT_SIZE,
+                color(TEXT_PRIMARY),
+                UiCanvas.HorizontalAlign.LEFT,
+                UiCanvas.VerticalAlign.MIDDLE,
+                boxX + 5,
+                boxY + CONTROL_HEIGHT / 2f,
+                renderedValue);
+        canvas.restore();
 
         if (editing && (cursorBlink / 1000) % 2 == 0) {
-            float[] bounds = new float[4];
-            float textWidth = nvgTextBounds(nvg, 0, 0, "#" + editBuffer, bounds);
-            NVGWrapper.drawRect(
-                    nvg,
+            float textWidth = UiRenderer.measureText("#" + editBuffer, fontName, FONT_SIZE).width();
+            canvas.fillRect(
                     boxX + 5 + textWidth + 1,
                     boxY + 3,
                     1,
                     CONTROL_HEIGHT - 6,
-                    TEXT_COLOR);
+                    color(TEXT_PRIMARY));
         }
     }
 
-    private void drawSwatch(long nvg) {
+    private void drawSwatch(UiCanvas canvas) {
         float swatchX = swatchX();
         float swatchY = controlY();
         Color selected = new Color(setting.getValue());
-        NVGWrapper.drawRect(nvg, swatchX, swatchY, SWATCH_WIDTH, CONTROL_HEIGHT, selected);
-        NVGWrapper.drawRectOutline(
-                nvg,
+        canvas.fillRect(swatchX, swatchY, SWATCH_WIDTH, CONTROL_HEIGHT, selected);
+        canvas.strokeRect(
                 swatchX,
                 swatchY,
                 SWATCH_WIDTH,
                 CONTROL_HEIGHT,
                 expanded ? 2 : 1,
-                expanded ? TEXT_BOX_BORDER : PICKER_BORDER);
+                expanded ? color(CONTROL_BORDER) : color(BACKGROUND_BODY_OPAQUE));
     }
 
-    private void drawPreviewButton(long nvg, String fontName) {
+    private void drawPreviewButton(UiCanvas canvas, String fontName) {
         float buttonX = previewButtonX();
         float buttonY = controlY();
-        NVGWrapper.drawRect(
-                nvg,
+        canvas.fillRect(
                 buttonX,
                 buttonY,
                 PREVIEW_BUTTON_WIDTH,
                 CONTROL_HEIGHT,
-                previewActive ? BUTTON_ACTIVE : BUTTON_BG);
+                previewActive
+                        ? color(ACCENT_PRIMARY_DARK_HOVER, 230)
+                        : color(CONTROL_INPUT_HOVER, 220));
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, FONT_SIZE - 1);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var textColor = NVGContext.nvgColor(TEXT_COLOR);
-        nvgFillColor(nvg, textColor);
-        nvgText(
-                nvg,
+        drawText(
+                canvas,
+                fontName,
+                FONT_SIZE - 1,
+                color(TEXT_PRIMARY),
+                UiCanvas.HorizontalAlign.CENTER,
+                UiCanvas.VerticalAlign.MIDDLE,
                 buttonX + PREVIEW_BUTTON_WIDTH / 2f,
                 buttonY + CONTROL_HEIGHT / 2f,
                 previewActive ? "Preview on" : "Preview");
-        textColor.free();
     }
 
-    private void drawColorPicker(long nvg) {
+    private void drawColorPicker(UiCanvas canvas) {
         float pickerX = pickerX();
         float pickerY = pickerY();
         float pickerWidth = pickerWidth();
         Color pureHue = new Color(Color.HSBtoRGB(hue, 1f, 1f));
 
-        NVGWrapper.drawHorizontalGradient(
-                nvg,
+        canvas.fillHorizontalGradient(
                 pickerX,
                 pickerY,
                 pickerWidth,
                 SATURATION_VALUE_HEIGHT,
                 Color.WHITE,
                 pureHue);
-        NVGWrapper.drawVerticalGradient(
-                nvg,
+        canvas.fillVerticalGradient(
                 pickerX,
                 pickerY,
                 pickerWidth,
                 SATURATION_VALUE_HEIGHT,
                 new Color(0, 0, 0, 0),
                 Color.BLACK);
-        NVGWrapper.drawRectOutline(
-                nvg, pickerX, pickerY, pickerWidth, SATURATION_VALUE_HEIGHT, 1, PICKER_BORDER);
+        canvas.strokeRect(
+                pickerX,
+                pickerY,
+                pickerWidth,
+                SATURATION_VALUE_HEIGHT,
+                1,
+                color(BACKGROUND_BODY_OPAQUE));
 
         float markerX = pickerX + saturation * pickerWidth;
         float markerY = pickerY + (1f - brightness) * SATURATION_VALUE_HEIGHT;
-        NVGWrapper.drawRectOutline(nvg, markerX - 3, markerY - 3, 6, 6, 1, Color.BLACK);
-        NVGWrapper.drawRectOutline(nvg, markerX - 2, markerY - 2, 4, 4, 1, Color.WHITE);
+        canvas.strokeRect(markerX - 3, markerY - 3, 6, 6, 1, Color.BLACK);
+        canvas.strokeRect(markerX - 2, markerY - 2, 4, 4, 1, Color.WHITE);
 
         float hueY = hueBarY();
         Color[] hueStops = {
@@ -207,8 +203,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
         };
         float sectionWidth = pickerWidth / (hueStops.length - 1);
         for (int i = 0; i < hueStops.length - 1; i++) {
-            NVGWrapper.drawHorizontalGradient(
-                    nvg,
+            canvas.fillHorizontalGradient(
                     pickerX + sectionWidth * i,
                     hueY,
                     sectionWidth,
@@ -216,17 +211,39 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                     hueStops[i],
                     hueStops[i + 1]);
         }
-        NVGWrapper.drawRectOutline(nvg, pickerX, hueY, pickerWidth, HUE_BAR_HEIGHT, 1, PICKER_BORDER);
+        canvas.strokeRect(
+                pickerX,
+                hueY,
+                pickerWidth,
+                HUE_BAR_HEIGHT,
+                1,
+                color(BACKGROUND_BODY_OPAQUE));
 
         float hueMarkerX = pickerX + hue * pickerWidth;
-        NVGWrapper.drawRectOutline(
-                nvg,
+        canvas.strokeRect(
                 hueMarkerX - 2,
                 hueY - 2,
                 4,
                 HUE_BAR_HEIGHT + 4,
                 1,
                 Color.WHITE);
+    }
+
+    private static void drawText(
+            UiCanvas canvas,
+            String font,
+            float size,
+            Color color,
+            UiCanvas.HorizontalAlign horizontalAlign,
+            UiCanvas.VerticalAlign verticalAlign,
+            float x,
+            float y,
+            String text) {
+        canvas.drawText(
+                text,
+                x,
+                y,
+                new UiCanvas.TextStyle(font, size, color, horizontalAlign, verticalAlign));
     }
 
     @Override

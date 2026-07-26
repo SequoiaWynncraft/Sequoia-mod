@@ -3,6 +3,7 @@ package com.seqwawa.seq.ui.widget;
 import lombok.Getter;
 import net.minecraft.client.input.KeyEvent;
 import com.seqwawa.seq.config.Setting;
+import com.seqwawa.seq.utils.rendering.UiCanvas;
 
 import java.util.HashMap;
 import java.util.Locale;
@@ -65,7 +66,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
         this.height = height;
     }
 
-    public abstract void render(long nvg, float mouseX, float mouseY);
+    public abstract void render(UiCanvas canvas, float mouseX, float mouseY);
 
     public abstract boolean mouseClicked(float mouseX, float mouseY, int button);
 
