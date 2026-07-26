@@ -140,6 +140,25 @@ final class NanoVgCanvas implements UiCanvas {
     }
 
     @Override
+    public void fillVerticalGradient(
+            float x, float y, float width, float height, Color startColor, Color endColor) {
+        NVGColor start = NVGWrapper.nvgColor(startColor);
+        NVGColor end = NVGWrapper.nvgColor(endColor);
+        try (NVGPaint paint = NVGPaint.calloc()) {
+            org.lwjgl.nanovg.NanoVG.nvgLinearGradient(
+                    context, x, y, x, y + height, start, end, paint);
+            nvgBeginPath(context);
+            nvgRect(context, x, y, width, height);
+            nvgFillPaint(context, paint);
+            nvgFill(context);
+            nvgClosePath(context);
+        } finally {
+            start.free();
+            end.free();
+        }
+    }
+
+    @Override
     public void drawImage(UiImage image, float x, float y, float width, float height, float alpha) {
         NanoVgImage nanoVgImage = requireImage(image);
         try (NVGPaint paint = NVGPaint.calloc()) {

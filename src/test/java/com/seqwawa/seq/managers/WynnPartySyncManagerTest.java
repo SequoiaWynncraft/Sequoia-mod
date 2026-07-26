@@ -49,6 +49,22 @@ class WynnPartySyncManagerTest {
     }
 
     @Test
+    void joinBeforeLeavePreservesReplacementUntilPartyReturnsWithinCapacity() throws Exception {
+        WynnPartySyncManager manager = new WynnPartySyncManager();
+
+        manager.onSystemChat(Component.literal("Party members: cela41, tung, tungtung, and tungtungtung"));
+        manager.onSystemChat(Component.literal("sahur has joined your party, say hello!"));
+
+        assertEquals(List.of("cela41", "tung", "tungtung", "tungtungtung", "sahur"), memberUsernames(manager));
+        assertEquals(true, WynnPartySyncManager.shouldDeferOverCapacitySnapshot(memberUsernames(manager).size(), 4));
+
+        manager.onSystemChat(Component.literal("tung has left the party!"));
+
+        assertEquals(List.of("cela41", "tungtung", "tungtungtung", "sahur"), memberUsernames(manager));
+        assertEquals(false, WynnPartySyncManager.shouldDeferOverCapacitySnapshot(memberUsernames(manager).size(), 4));
+    }
+
+    @Test
     void authoritativeMembersSnapshotFallsBackLeaderToFirstMemberWhenCurrentLeaderMissing() throws Exception {
         WynnPartySyncManager manager = new WynnPartySyncManager();
 

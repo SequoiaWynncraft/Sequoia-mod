@@ -21,6 +21,8 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
+
+import com.seqwawa.seq.model.GuildWarQueueSubmission;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import org.java_websocket.client.WebSocketClient;
@@ -46,7 +48,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static final int MAX_GUILD_CHAT_MESSAGE_LENGTH = 512;
     private static final long AUTH_BACKOFF_BASE_MS = 2_000;
     private static final long AUTH_BACKOFF_CAP_MS = 60_000;
-    private static final long PRIVILEGED_SEND_THROTTLE_MS = 150;
+    private static final long PRIVILEGED_SEND_THROTTLE_MS = 50;
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Pattern URL_PATTERN = Pattern.compile("^(https?://).+", Pattern.CASE_INSENSITIVE);
     private static final Map<String, Integer> VERSION_REMINDER_INTERVALS = Map.of(
@@ -79,6 +81,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private Instant connectedSince;
 
     private Consumer<List<String>> connectedUsersCallback;
+    private volatile boolean membershipProbePending;
+    private volatile boolean memberFeaturesDisabled;
     private volatile long nextAllowedAuthAttemptAtMs;
     private volatile int authAttempt;
     private volatile long nextPrivilegedSendAtMs;
@@ -235,6 +239,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             authenticated = false;
             authFailed = false;
             notInGuild = false;
+            membershipProbePending = false;
+            memberFeaturesDisabled = false;
             connectedSince = null;
             instance = null;
             if (userInitiated) {
@@ -246,6 +252,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         authenticated = false;
         authFailed = false;
         notInGuild = false;
+        membershipProbePending = false;
+        memberFeaturesDisabled = false;
         connectedSince = null;
         if (userInitiated) {
             notify("Disconnected");
@@ -267,6 +275,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         authenticated = false;
         authFailed = false;
         notInGuild = false;
+        membershipProbePending = false;
+        memberFeaturesDisabled = false;
         connectedSince = null;
         autoReconnect = true;
         authAttempt = 0;
@@ -298,6 +308,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         authenticated = false;
         authFailed = false;
         notInGuild = false;
+        membershipProbePending = false;
+        memberFeaturesDisabled = false;
         connectedSince = null;
         instance = null;
         handleWebSocketAuthRejection(code, reason);
@@ -481,18 +493,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     // ── Outgoing messages ──
 
-    private void send(String type, JsonObject payload) {
+    private boolean send(String type, JsonObject payload) {
         if (isServerScopedType(type) && WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
             SeqClient.LOGGER.warn("[WebSocket] Dropping {} outside confirmed main Wynncraft host", type);
-            return;
+            return false;
         }
         if (isAuthenticatedOutboundType(type) && !canSendAuthenticated(type)) {
-            return;
+            return false;
         }
         if (isThrottleLimitedType(type) && !canSendThrottleLimited(type)) {
-            return;
+            return false;
         }
         sendPrepared(type, payload);
+        return true;
     }
 
     private void sendPrepared(String type, JsonObject payload) {
@@ -700,7 +713,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     public void requestConnectedUsers(Consumer<List<String>> callback) {
         SeqClient.LOGGER.info("[WebSocket] requestConnectedUsers open={} authenticated={}", isOpen(), authenticated);
-        if (!isOpen() || !authenticated || authFailed || notInGuild || !WynncraftServerPolicy.isCurrentServerAllowed()) {
+        if (!isOpen()
+                || !authenticated
+                || authFailed
+                || notInGuild
+                || memberFeaturesDisabled
+                || !WynncraftServerPolicy.isCurrentServerAllowed()) {
             callback.accept(List.of());
             return;
         }
@@ -1122,6 +1140,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             SeqClient.LOGGER.warn("[WebSocket] sendGuildWarSubmission dropped outside main Wynncraft host");
             return false;
         }
+        if (memberFeaturesDisabled) {
+            SeqClient.LOGGER.debug("[WebSocket] Guild war submission disabled for non-member session");
+            return true;
+        }
         if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
             SeqClient.LOGGER.warn("[WebSocket] Queueing guild_war_submission until Wynncraft host is confirmed");
             pendingGuildWarSubmissions.addLast(submission);
@@ -1148,6 +1170,57 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return sendGuildWarSubmissionNow(submission, false);
     }
 
+    public boolean sendGuildWarQueue(GuildWarQueueSubmission submission) {
+        if (submission == null
+                || submission.territory() == null
+                || submission.territory().isBlank()
+                || submission.submittedBy() == null
+                || submission.submittedBy().isBlank()
+                || submission.submittedAt() == null
+                || submission.submittedAt().isBlank()
+                || submission.defenseRating() == null
+                || submission.defenseRating().isBlank()) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarQueue dropped: invalid payload");
+            return false;
+        }
+
+        WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+        if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarQueue dropped outside main Wynncraft host");
+            return false;
+        }
+        if (memberFeaturesDisabled) {
+            SeqClient.LOGGER.debug("[WebSocket] Guild war queue submission disabled for non-member session");
+            return true;
+        }
+        if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
+            SeqClient.LOGGER.warn("[WebSocket] Queueing guild_war_queue until Wynncraft host is confirmed");
+            return false;
+        }
+
+        if (!authenticated || !isOpen()) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildWarQueue dropped open={} authenticated={}", isOpen(), authenticated);
+            return false;
+        }
+        if (authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildWarQueue dropped authFailed={} notInGuild={}", authFailed, notInGuild);
+            return false;
+        }
+
+        JsonObject msg = new JsonObject();
+        msg.addProperty("territory", submission.territory());
+        msg.addProperty("submitted_by", submission.submittedBy());
+        msg.addProperty("submitted_at", submission.submittedAt());
+        msg.addProperty("defense_rating", submission.defenseRating());
+        msg.addProperty("queue_minutes", submission.queueMinutes());
+
+        send("guild_war_queue", msg);
+
+        return true;
+    }
+
     public static void flushPendingOutbound() {
         if (instance == null) {
             return;
@@ -1172,6 +1245,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || !authenticated
                 || authFailed
                 || notInGuild
+                || memberFeaturesDisabled
                 || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
             return;
         }
@@ -1186,6 +1260,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private boolean sendGuildWarSubmissionNow(GuildWarSubmission submission, boolean replay) {
+        if (memberFeaturesDisabled) {
+            return true;
+        }
         if (!canSendAuthenticated("guild_war_submission") || !canSendThrottleLimited("guild_war_submission")) {
             return false;
         }
@@ -1258,8 +1335,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 leaderUsername,
                 usernames.size(),
                 memberUsernames);
-        send("party_sync_snapshot", msg);
-        return true;
+        return send("party_sync_snapshot", msg);
     }
 
     public boolean sendPartySyncMemberRemoved(String username, String reason) {
@@ -1286,8 +1362,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         msg.addProperty("username", username);
         msg.addProperty("reason", reason);
         SeqClient.LOGGER.info("[WebSocket] Sending party_sync_member_removed username={} reason={}", username, reason);
-        send("party_sync_member_removed", msg);
-        return true;
+        return send("party_sync_member_removed", msg);
     }
 
     public void sendLocalPartyClassUpdate() {
@@ -1315,6 +1390,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     authenticated = true;
                     authFailed = false;
                     notInGuild = false;
+                    memberFeaturesDisabled = false;
+                    membershipProbePending = true;
                     authAttempt = 0;
                     nextAllowedAuthAttemptAtMs = 0;
                     connectedSince = Instant.now();
@@ -1327,10 +1404,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     } else {
                         clearDiscordUsername();
                     }
+                    sendPrepared("get_connected", null);
                     flushPendingGuildWarSubmissions();
                     sendLocalPartyClassUpdate();
                 }
                 case "connected_users" -> {
+                    boolean wasMembershipProbe = membershipProbePending;
+                    membershipProbePending = false;
+                    memberFeaturesDisabled = false;
                     List<String> users = new ArrayList<>();
                     json.getAsJsonArray("users").forEach(el -> users.add(el.getAsString()));
                     SeqClient.LOGGER.info(
@@ -1340,7 +1421,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     if (connectedUsersCallback != null) {
                         connectedUsersCallback.accept(users);
                         connectedUsersCallback = null;
-                    } else {
+                    } else if (!wasMembershipProbe) {
                         SeqClient.LOGGER.warn("[WebSocket] connected_users had no callback listener");
                     }
                 }
@@ -1486,6 +1567,17 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     String capability = extractCapability(json);
                     int status = extractStatusCode(json);
                     String normalized = error.toLowerCase(Locale.ROOT);
+
+                    if (isSilentGuildChatMembershipReject(backendCode, capability, normalized)) {
+                        SeqClient.LOGGER.info("[WebSocket] Guild chat relay rejected because sender is not in guild");
+                        return;
+                    }
+
+                    if (isSessionMembershipReject(backendCode, capability, normalized)) {
+                        disableMemberFeaturesForSession();
+                        return;
+                    }
+
                     SeqClient.LOGGER.warn(
                             "[WebSocket] Backend error status={} code={} message={}", status, backendCode, error);
 
@@ -1516,11 +1608,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                                 ? "Backend token expired. Re-authentication required."
                                                 : "Backend rejected the stored token. Re-authentication required.");
                         notify(SeqClient.getAuthService().getLastError().getMessage());
-                        return;
-                    }
-
-                    if (isSilentGuildChatMembershipReject(backendCode, capability, normalized)) {
-                        SeqClient.LOGGER.info("[WebSocket] Guild chat relay rejected because sender is not in guild");
                         return;
                     }
 
@@ -1676,7 +1763,24 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     notInGuild);
             return false;
         }
+        if (memberFeaturesDisabled && isSequoiaMemberOnlyType(type)) {
+            SeqClient.LOGGER.debug("[WebSocket] Dropping disabled Sequoia-only feature type={}", type);
+            return false;
+        }
         return true;
+    }
+
+    private void disableMemberFeaturesForSession() {
+        membershipProbePending = false;
+        pendingGuildWarSubmissions.clear();
+        if (memberFeaturesDisabled) {
+            SeqClient.LOGGER.debug("[WebSocket] Additional non-member feature rejection suppressed");
+            return;
+        }
+
+        memberFeaturesDisabled = true;
+        SeqClient.LOGGER.info("[WebSocket] Non-member session detected; Sequoia-only features are disabled");
+        notify("You are not a Sequoia member. Sequoia-only features are disabled for this session.");
     }
 
     private boolean canSendThrottleLimited(String type) {
@@ -1691,6 +1795,21 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     static boolean isAuthenticatedOutboundType(String type) {
         return isServerScopedType(type);
+    }
+
+    static boolean isSequoiaMemberOnlyType(String type) {
+        return "bomb_share_request".equals(type)
+                || "bomb_share_submit".equals(type)
+                || "guild_chat".equals(type)
+                || "guild_alliance_update".equals(type)
+                || "guild_raid_announcement".equals(type)
+                || "guild_bank_event".equals(type)
+                || "guild_storage_snapshot".equals(type)
+                || "guild_storage_reward".equals(type)
+                || "guild_war_submission".equals(type)
+                || "party_sync_snapshot".equals(type)
+                || "party_sync_member_removed".equals(type)
+                || "get_connected".equals(type);
     }
 
     static boolean isServerScopedType(String type) {
@@ -1823,6 +1942,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 && "guild_chat".equalsIgnoreCase(capability)
                 && normalizedMessage != null
                 && normalizedMessage.contains("guild");
+    }
+
+    static boolean isSessionMembershipReject(String backendCode, String capability, String normalizedMessage) {
+        return "not_in_guild".equalsIgnoreCase(backendCode)
+                && (capability == null || capability.isBlank())
+                && normalizedMessage != null
+                && normalizedMessage.contains("sequoia")
+                && normalizedMessage.contains("member");
     }
 
     private static boolean isCapabilityAuthorizationReject(int status, String capability) {

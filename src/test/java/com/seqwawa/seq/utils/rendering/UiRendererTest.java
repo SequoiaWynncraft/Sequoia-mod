@@ -195,6 +195,11 @@ class UiRendererTest {
         }
 
         @Override
+        public void fillVerticalGradient(
+                float x, float y, float width, float height, Color startColor, Color endColor) {
+        }
+
+        @Override
         public void drawImage(UiImage image, float x, float y, float width, float height, float alpha) {
         }
 

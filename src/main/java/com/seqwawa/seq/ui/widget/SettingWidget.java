@@ -28,6 +28,10 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("startup_video", "Startup video");
         DISPLAY_NAME_OVERRIDES.put("ui_size_percent", "UI size %");
         DISPLAY_NAME_OVERRIDES.put("enable_radiance_visualiser", "Enable Radiance visualiser");
+        DISPLAY_NAME_OVERRIDES.put("radiance_marker_color", "Radiance marker color");
+        DISPLAY_NAME_OVERRIDES.put("halcyon_ring_color", "Halcyon ring color");
+        DISPLAY_NAME_OVERRIDES.put("enable_light_room_visualiser", "Light Range Visualizer in TNA");
+        DISPLAY_NAME_OVERRIDES.put("light_room_ring_color", "Light Room ring color");
         DISPLAY_NAME_OVERRIDES.put("leaderboard_badges", "Badges");
         DISPLAY_NAME_OVERRIDES.put("show_raid_badges", "Show raid badges");
         DISPLAY_NAME_OVERRIDES.put("show_insignia_badges", "Show insignia badges");
@@ -35,6 +39,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("show_party_healthbars", "Show party health bars");
         DISPLAY_NAME_OVERRIDES.put("notify_tracked_world_events", "Notify tracked world events");
         DISPLAY_NAME_OVERRIDES.put("world_events", "World Events");
+        DISPLAY_NAME_OVERRIDES.put("economy_resource_alerts_only", "Only filter resource alerts");
 
         TOKEN_REPLACEMENTS.put("discord", "Discord");
         TOKEN_REPLACEMENTS.put("bridge", "Chat");

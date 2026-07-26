@@ -13,11 +13,18 @@ public final class WorldMapSettings {
     private int clusterEps = GatheringNodeClusterer.DEFAULT_EPS;
     private int clusterMinSamples = GatheringNodeClusterer.DEFAULT_MIN_SAMPLES;
     private boolean showClusters = true;
+    private boolean gatheringTotemSolverEnabled;
+    private boolean showGatheringTotemHulls = true;
+    private boolean showGatheringTotemPlayerRadius = true;
+    private boolean showGatheringTotemNodeReach = true;
+    private boolean showGatheringTotemCoveredNodes = true;
+    private boolean showOtherOptimalGatheringTotems = true;
     private boolean showTerritories;
     private boolean showTerritoryNames;
     private boolean showDebugInfo;
     private ClusterScoreMode clusterScoreMode = ClusterScoreMode.FOUR_TICK;
     private GatheringAnalysisScope gatheringAnalysisScope = GatheringAnalysisScope.ALL;
+    private GatheringTotemSearchTarget gatheringTotemSearchTarget = GatheringTotemSearchTarget.ALL_FILTERED;
     private MapDisplayMode displayMode = MapDisplayMode.GATHERING;
     private WorldEventDisplayFilter worldEventDisplayFilter = WorldEventDisplayFilter.ALL;
     private boolean insightsSidebarOpen = true;
@@ -74,6 +81,64 @@ public final class WorldMapSettings {
 
     public synchronized void setShowClusters(boolean showClusters) {
         this.showClusters = showClusters;
+    }
+
+    public synchronized boolean gatheringTotemSolverEnabled() {
+        return gatheringTotemSolverEnabled;
+    }
+
+    public synchronized void setGatheringTotemSolverEnabled(boolean gatheringTotemSolverEnabled) {
+        this.gatheringTotemSolverEnabled = gatheringTotemSolverEnabled;
+    }
+
+    public synchronized GatheringTotemSearchTarget gatheringTotemSearchTarget() {
+        return gatheringTotemSearchTarget;
+    }
+
+    public synchronized void setGatheringTotemSearchTarget(GatheringTotemSearchTarget gatheringTotemSearchTarget) {
+        this.gatheringTotemSearchTarget = gatheringTotemSearchTarget == null
+                ? GatheringTotemSearchTarget.ALL_FILTERED
+                : gatheringTotemSearchTarget;
+    }
+
+    public synchronized boolean showGatheringTotemHulls() {
+        return showGatheringTotemHulls;
+    }
+
+    public synchronized void setShowGatheringTotemHulls(boolean showGatheringTotemHulls) {
+        this.showGatheringTotemHulls = showGatheringTotemHulls;
+    }
+
+    public synchronized boolean showGatheringTotemPlayerRadius() {
+        return showGatheringTotemPlayerRadius;
+    }
+
+    public synchronized void setShowGatheringTotemPlayerRadius(boolean showGatheringTotemPlayerRadius) {
+        this.showGatheringTotemPlayerRadius = showGatheringTotemPlayerRadius;
+    }
+
+    public synchronized boolean showGatheringTotemNodeReach() {
+        return showGatheringTotemNodeReach;
+    }
+
+    public synchronized void setShowGatheringTotemNodeReach(boolean showGatheringTotemNodeReach) {
+        this.showGatheringTotemNodeReach = showGatheringTotemNodeReach;
+    }
+
+    public synchronized boolean showGatheringTotemCoveredNodes() {
+        return showGatheringTotemCoveredNodes;
+    }
+
+    public synchronized void setShowGatheringTotemCoveredNodes(boolean showGatheringTotemCoveredNodes) {
+        this.showGatheringTotemCoveredNodes = showGatheringTotemCoveredNodes;
+    }
+
+    public synchronized boolean showOtherOptimalGatheringTotems() {
+        return showOtherOptimalGatheringTotems;
+    }
+
+    public synchronized void setShowOtherOptimalGatheringTotems(boolean showOtherOptimalGatheringTotems) {
+        this.showOtherOptimalGatheringTotems = showOtherOptimalGatheringTotems;
     }
 
     public synchronized boolean showTerritories() {

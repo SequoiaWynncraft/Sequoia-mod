@@ -17,6 +17,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
@@ -33,6 +34,12 @@ import com.seqwawa.seq.map.GatheringNode;
 import com.seqwawa.seq.map.GatheringNodeCluster;
 import com.seqwawa.seq.map.GatheringNodeService;
 import com.seqwawa.seq.map.GatheringProfession;
+import com.seqwawa.seq.map.GatheringTotemHitTester;
+import com.seqwawa.seq.map.GatheringTotemResults;
+import com.seqwawa.seq.map.GatheringTotemSearchTarget;
+import com.seqwawa.seq.map.GatheringTotemSolver;
+import com.seqwawa.seq.map.GatheringTotemSolver.Placement;
+import com.seqwawa.seq.map.GatheringTotemSolver.Position;
 import com.seqwawa.seq.map.GuildTerritory;
 import com.seqwawa.seq.map.GuildTerritoryIndex;
 import com.seqwawa.seq.map.GuildTerritoryService;
@@ -88,10 +95,14 @@ public class WorldMapScreen extends Screen {
     private static final int HULL_SMOOTHING_PASSES = 2;
     private static final double MIN_PIXELS_PER_BLOCK = 0.035;
     private static final double MAX_PIXELS_PER_BLOCK = 2.5;
+    private static final double TWO_PI = Math.PI * 2.0;
     private static final double NODE_DETAIL_PIXELS_PER_BLOCK = 0.42;
     private static final double CLUSTER_BADGE_PIXELS_PER_BLOCK = 0.65;
     private static final double TERRITORY_FOCUS_MAX_PIXELS_PER_BLOCK = 1.25;
     private static final int SIDEBAR_CLUSTER_LIMIT = 5;
+    private static final int TOTEM_RESULT_VISIBLE_ROWS = 4;
+    private static final float TOTEM_RESULT_ROW_HEIGHT = 28;
+    private static final long TOTEM_SOLVE_DEBOUNCE_MS = 200;
     private final Screen parent;
     private final GatheringNodeService nodeService = GatheringNodeService.getInstance();
     private final GuildTerritoryService territoryService = GuildTerritoryService.getInstance();
@@ -132,11 +143,18 @@ public class WorldMapScreen extends Screen {
     private GuildTerritory hoveredTerritory;
     private GuildTerritory selectedTerritory;
     private boolean showClusters = true;
+    private boolean gatheringTotemSolverEnabled;
+    private boolean showGatheringTotemHulls = true;
+    private boolean showGatheringTotemPlayerRadius = true;
+    private boolean showGatheringTotemNodeReach = true;
+    private boolean showGatheringTotemCoveredNodes = true;
+    private boolean showOtherOptimalGatheringTotems = true;
     private boolean showTerritories;
     private boolean showTerritoryNames;
     private boolean showDebugInfo;
     private ClusterScoreMode clusterScoreMode = ClusterScoreMode.FOUR_TICK;
     private GatheringAnalysisScope gatheringAnalysisScope = GatheringAnalysisScope.ALL;
+    private GatheringTotemSearchTarget gatheringTotemSearchTarget = GatheringTotemSearchTarget.ALL_FILTERED;
     private MapDisplayMode displayMode = MapDisplayMode.GATHERING;
     private WorldEventDisplayFilter worldEventDisplayFilter = WorldEventDisplayFilter.ALL;
     private List<WorldEventDefinition> allWorldEvents = List.of();
@@ -150,6 +168,19 @@ public class WorldMapScreen extends Screen {
     private List<GatheringNode> cachedSourceNodes = List.of();
     private List<GatheringNode> cachedFilteredNodes = List.of();
     private List<GatheringNodeCluster> cachedClusters = List.of();
+    private List<Placement> gatheringTotemPlacements = List.of();
+    private Placement gatheringTotemPlacement;
+    private Placement hoveredGatheringTotemPlacement;
+    private String selectedGatheringTotemPlacementKey;
+    private int gatheringTotemResultScroll;
+    private CompletableFuture<List<Placement>> pendingGatheringTotemSolve;
+    private String pendingGatheringTotemKey = "";
+    private String solvedGatheringTotemKey = "";
+    private String observedGatheringTotemKey = "";
+    private String gatheringTotemSolveError;
+    private long gatheringTotemSolveNotBeforeMs;
+    private long gatheringTotemRequestGeneration;
+    private long pendingGatheringTotemGeneration;
     private Map<String, Integer> cachedTerritoryNodeCounts = Map.of();
     private int selectedTerritoryMatchingNodeCount;
     private final Map<GatheringNodeCluster, ClusterOutlineShape> clusterOutlineShapes = new IdentityHashMap<>();
@@ -157,6 +188,7 @@ public class WorldMapScreen extends Screen {
     private List<String> cachedResourceOptions = List.of();
     private String cachedClusterKey = "";
     private long cachedSettingsVersion = -1;
+    private long gatheringAnalysisVersion;
     private UiImage mapImage;
     private boolean mapImageLoadAttempted;
     private long loadedMapImageVersion = -1;
@@ -177,6 +209,13 @@ public class WorldMapScreen extends Screen {
         professionToggles.putAll(mapSettings.professionToggles());
         selectedResourceFilters.addAll(mapSettings.resourceFilters());
         showClusters = mapSettings.showClusters();
+        gatheringTotemSolverEnabled = mapSettings.gatheringTotemSolverEnabled();
+        gatheringTotemSearchTarget = mapSettings.gatheringTotemSearchTarget();
+        showGatheringTotemHulls = mapSettings.showGatheringTotemHulls();
+        showGatheringTotemPlayerRadius = mapSettings.showGatheringTotemPlayerRadius();
+        showGatheringTotemNodeReach = mapSettings.showGatheringTotemNodeReach();
+        showGatheringTotemCoveredNodes = mapSettings.showGatheringTotemCoveredNodes();
+        showOtherOptimalGatheringTotems = mapSettings.showOtherOptimalGatheringTotems();
         showTerritories = mapSettings.showTerritories();
         showTerritoryNames = mapSettings.showTerritoryNames();
         showDebugInfo = mapSettings.showDebugInfo();
@@ -195,6 +234,7 @@ public class WorldMapScreen extends Screen {
 
     @Override
     public void removed() {
+        resetGatheringTotemSolve();
         UiRenderer.renderResource(canvas -> {
             if (mapImage != null) {
                 UiRenderer.deleteImage(mapImage);
@@ -227,6 +267,7 @@ public class WorldMapScreen extends Screen {
 
         if (displayMode == MapDisplayMode.GATHERING) {
             refreshClusterAnalysisIfNeeded();
+            refreshGatheringTotemPlacement();
         } else {
             refreshWorldEvents();
         }
@@ -265,9 +306,12 @@ public class WorldMapScreen extends Screen {
                 renderClusterBadges(canvas, viewport, false);
             }
         }
+        renderGatheringTotemPlacements(canvas, viewport);
         renderPlayer(canvas, viewport);
         renderTerritoryNames(canvas, viewport);
-        if (!draggingMap && hoveredCluster != null && (clusterMode || hoveredNode == null)) {
+        if (!draggingMap && hoveredGatheringTotemPlacement != null) {
+            renderGatheringTotemTooltip(canvas, hoveredGatheringTotemPlacement);
+        } else if (!draggingMap && hoveredCluster != null && (clusterMode || hoveredNode == null)) {
             renderClusterTooltip(canvas, hoveredCluster);
         } else if (!draggingMap && hoveredNode == null && hoveredTerritory != null) {
             renderTerritoryTooltip(canvas, hoveredTerritory);
@@ -892,6 +936,137 @@ public class WorldMapScreen extends Screen {
         }
     }
 
+    private void renderGatheringTotemPlacements(UiCanvas canvas, MapViewport viewport) {
+        if (!gatheringTotemSolverEnabled || gatheringTotemPlacements.isEmpty()) {
+            hoveredGatheringTotemPlacement = null;
+            return;
+        }
+        List<Placement> visiblePlacements = visibleGatheringTotemPlacements();
+        hoveredGatheringTotemPlacement = !draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY)
+                ? gatheringTotemPlacementAt(
+                        visiblePlacements,
+                        viewport,
+                        nvgMouseX,
+                        nvgMouseY)
+                : null;
+        for (Placement placement : visiblePlacements) {
+            if (placement != gatheringTotemPlacement) {
+                renderGatheringTotemPlacement(
+                        canvas,
+                        viewport,
+                        placement,
+                        false,
+                        placement == hoveredGatheringTotemPlacement);
+            }
+        }
+        if (gatheringTotemPlacement != null) {
+            renderGatheringTotemPlacement(
+                    canvas,
+                    viewport,
+                    gatheringTotemPlacement,
+                    true,
+                    gatheringTotemPlacement == hoveredGatheringTotemPlacement);
+        }
+    }
+
+    private void renderGatheringTotemPlacement(
+            UiCanvas canvas,
+            MapViewport viewport,
+            Placement placement,
+            boolean selected,
+            boolean hovered) {
+        List<Position> hull = placement.validCenterHull();
+        if (hull.isEmpty()) {
+            return;
+        }
+        List<UiCanvas.Point> screenHull = hull.stream()
+                .map(position -> new UiCanvas.Point(
+                        viewport.worldToScreenX(position.x()),
+                        viewport.worldToScreenZ(position.z())))
+                .toList();
+
+        canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+        float x = viewport.worldToScreenX(placement.x());
+        float z = viewport.worldToScreenZ(placement.z());
+        if (selected && showGatheringTotemPlayerRadius) {
+            drawCircleOutline(
+                    canvas,
+                    x,
+                    z,
+                    (float) (GatheringTotemSolver.TOTEM_RADIUS * viewport.pixelsPerBlock()),
+                    hovered ? 2.4f : 1.8f,
+                    color(MAP_TOTEM_RANGE));
+        }
+        if (selected && showGatheringTotemNodeReach) {
+            drawDashedCircle(
+                    canvas,
+                    x,
+                    z,
+                    (float) (GatheringTotemSolver.EFFECTIVE_NODE_RADIUS * viewport.pixelsPerBlock()),
+                    color(MAP_TOTEM_REACH));
+        }
+
+        if (showGatheringTotemHulls) {
+            Color hullColor = selected ? color(MAP_TOTEM) : color(MAP_TOTEM_MUTED);
+            if (screenHull.size() == 1) {
+                drawCircle(canvas, screenHull.getFirst().x(), screenHull.getFirst().y(), hovered ? 7 : 5, hullColor);
+            } else {
+                boolean closed = screenHull.size() > 2;
+                Color fill = selected && closed
+                        ? withAlpha(color(MAP_TOTEM), hovered ? 76 : 44)
+                        : null;
+                canvas.fillAndStrokePolygon(
+                        screenHull,
+                        fill,
+                        hullColor,
+                        selected ? (hovered ? 2.8f : 2) : (hovered ? 2 : 1.2f),
+                        closed);
+            }
+        }
+
+        if (selected && showGatheringTotemCoveredNodes) {
+            for (GatheringNode node : placement.coveredNodes()) {
+                if (!viewport.visibleBounds().contains(node.x(), node.z())) {
+                    continue;
+                }
+                drawCircle(
+                        canvas,
+                        viewport.worldToScreenX(node.x()),
+                        viewport.worldToScreenZ(node.z()),
+                        2.5f,
+                        color(MAP_TOTEM));
+            }
+        }
+        float markerRadius = selected ? 6 : 4.5f;
+        drawCircle(canvas, x, z, markerRadius + 2, color(BACKGROUND_MODAL_OVERLAY, selected ? 220 : 165));
+        drawCircle(canvas, x, z, markerRadius, selected ? color(MAP_PLAYER) : color(MAP_TOTEM_MUTED));
+        drawCircle(canvas, x, z, selected ? 3 : 2.25f, color(MAP_TOTEM));
+        canvas.resetScissor();
+    }
+
+    private static void drawDashedCircle(UiCanvas canvas, float x, float y, float radius, Color color) {
+        int segments = 48;
+        canvas.beginPath();
+        for (int segment = 0; segment < segments; segment += 2) {
+            double startAngle = TWO_PI * segment / segments;
+            double endAngle = TWO_PI * (segment + 1) / segments;
+            canvas.moveTo(
+                    x + (float) Math.cos(startAngle) * radius,
+                    y + (float) Math.sin(startAngle) * radius);
+            canvas.lineTo(
+                    x + (float) Math.cos(endAngle) * radius,
+                    y + (float) Math.sin(endAngle) * radius);
+        }
+        canvas.strokePath(1.5f, color);
+    }
+
+    private List<Placement> visibleGatheringTotemPlacements() {
+        if (showOtherOptimalGatheringTotems || gatheringTotemPlacement == null) {
+            return gatheringTotemPlacements;
+        }
+        return List.of(gatheringTotemPlacement);
+    }
+
     private void renderPlayer(UiCanvas canvas, MapViewport viewport) {
         if (SeqClient.mc.player == null) {
             return;
@@ -976,6 +1151,16 @@ public class WorldMapScreen extends Screen {
                 drawToggle(canvas, PADDING, professionY, SIDEBAR_WIDTH - PADDING * 2, TOGGLE_HEIGHT, profession, active);
                 professionY += TOGGLE_HEIGHT + 6;
             }
+        }
+
+        renderPanelHeader(
+                canvas,
+                sidebarY(layout.totemPanelY()),
+                "Totem Solver",
+                gatheringTotemPanelSummary(),
+                WorldMapSidebarPanel.TOTEM_SOLVER);
+        if (panelExpanded(WorldMapSidebarPanel.TOTEM_SOLVER)) {
+            renderGatheringTotemControls(canvas, totemSolverLayout(layout.totemPanelY()));
         }
 
         if (resourceDropdownOpen) {
@@ -1077,9 +1262,31 @@ public class WorldMapScreen extends Screen {
         drawInsightRow(canvas, contentX, layout.overviewY() + 18, contentWidth, "Scope", gatheringAnalysisScope.label());
         drawInsightRow(canvas, contentX, layout.overviewY() + 34, contentWidth, "Matching nodes", String.valueOf(cachedFilteredNodes.size()));
         drawInsightRow(canvas, contentX, layout.overviewY() + 50, contentWidth, "Clusters", String.valueOf(cachedClusters.size()));
+        float overviewRowY = layout.overviewY() + 66;
         if (showDebugInfo) {
-            drawInsightRow(canvas, contentX, layout.overviewY() + 66, contentWidth, "Map source", displayMapImageSource());
-            drawInsightRow(canvas, contentX, layout.overviewY() + 82, contentWidth, "HQ status", mapImageService.hqStatus());
+            drawInsightRow(canvas, contentX, overviewRowY, contentWidth, "Map source", displayMapImageSource());
+            drawInsightRow(canvas, contentX, overviewRowY + 16, contentWidth, "HQ status", mapImageService.hqStatus());
+            overviewRowY += 32;
+        }
+        if (gatheringTotemSolverEnabled) {
+            String coverage = pendingGatheringTotemSolve != null
+                    ? "Optimizing..."
+                    : gatheringTotemPlacement == null
+                            ? "No eligible nodes"
+                            : gatheringTotemPlacement.nodeCount()
+                                    + (gatheringTotemPlacement.clusterFocused() ? " nodes (cluster)" : " nodes")
+                                    + (gatheringTotemPlacements.size() > 1
+                                            ? " · " + gatheringTotemPlacements.size() + " spots"
+                                            : "");
+            String expectedYield = gatheringTotemPlacement == null
+                    ? "-"
+                    : String.format(Locale.ROOT, "%.1f items", gatheringTotemPlacement.expectedItemsPerGather());
+            String placementCoordinates = gatheringTotemPlacement == null
+                    ? "-"
+                    : Math.round(gatheringTotemPlacement.x()) + " " + Math.round(gatheringTotemPlacement.z());
+            drawInsightRow(canvas, contentX, overviewRowY, contentWidth, "Totem (52 reach)", coverage);
+            drawInsightRow(canvas, contentX, overviewRowY + 16, contentWidth, "Expected (30% double)", expectedYield);
+            drawInsightRow(canvas, contentX, overviewRowY + 32, contentWidth, "Placement X Z", placementCoordinates);
         }
 
         if (selectedTerritory != null) {
@@ -1373,6 +1580,355 @@ public class WorldMapScreen extends Screen {
                 true);
     }
 
+    private void renderGatheringTotemControls(UiCanvas canvas, TotemSolverLayout layout) {
+        drawButton(
+                canvas,
+                PADDING,
+                sidebarY(layout.enabledY()),
+                SIDEBAR_WIDTH - PADDING * 2,
+                BUTTON_HEIGHT,
+                gatheringTotemSolverEnabled ? "Totem Solver On" : "Totem Solver Off",
+                gatheringTotemSolverEnabled);
+        drawGatheringTotemTargetControl(canvas, sidebarY(layout.targetY()));
+        drawFittedText(
+                canvas,
+                PADDING,
+                sidebarY(layout.filterSummaryY()),
+                10,
+                "Scope: " + gatheringTotemScopeSummary(),
+                color(MAP_SUBTEXT),
+                SIDEBAR_WIDTH - PADDING * 2,
+                TextAlignment.LEFT);
+        drawFittedText(
+                canvas,
+                PADDING,
+                sidebarY(layout.filterSummaryY() + 14),
+                10,
+                "Resources: " + selectedResourceLabel(),
+                color(MAP_SUBTEXT),
+                SIDEBAR_WIDTH - PADDING * 2,
+                TextAlignment.LEFT);
+        drawButton(
+                canvas,
+                PADDING,
+                sidebarY(layout.refreshY()),
+                SIDEBAR_WIDTH - PADDING * 2,
+                BUTTON_HEIGHT,
+                pendingGatheringTotemSolve == null ? "Refresh" : "Optimizing...",
+                pendingGatheringTotemSolve != null);
+
+        drawText(
+                canvas,
+                PADDING,
+                sidebarY(layout.layerLabelY()),
+                11,
+                "Display Layers",
+                color(MAP_SUBTEXT),
+                TextAlignment.LEFT);
+        renderGatheringTotemLayerButtons(canvas, sidebarY(layout.layerStartY()));
+        renderGatheringTotemLegend(canvas, sidebarY(layout.legendY()));
+
+        drawText(
+                canvas,
+                PADDING,
+                sidebarY(layout.resultsLabelY()),
+                11,
+                gatheringTotemStatus(),
+                color(MAP_SUBTEXT),
+                TextAlignment.LEFT);
+        renderGatheringTotemResults(canvas, sidebarY(layout.resultsStartY()));
+
+        float actionWidth = (SIDEBAR_WIDTH - PADDING * 2 - SPLIT_CONTROL_GAP) / 2f;
+        drawButton(
+                canvas,
+                PADDING,
+                sidebarY(layout.actionsY()),
+                actionWidth,
+                BUTTON_HEIGHT,
+                "Center",
+                false);
+        drawButton(
+                canvas,
+                PADDING + actionWidth + SPLIT_CONTROL_GAP,
+                sidebarY(layout.actionsY()),
+                actionWidth,
+                BUTTON_HEIGHT,
+                "Copy X Z",
+                false);
+    }
+
+    private void drawGatheringTotemTargetControl(UiCanvas canvas, float y) {
+        float width = SIDEBAR_WIDTH - PADDING * 2;
+        float segmentWidth = width / GatheringTotemSearchTarget.values().length;
+        for (int index = 0; index < GatheringTotemSearchTarget.values().length; index++) {
+            GatheringTotemSearchTarget target = GatheringTotemSearchTarget.values()[index];
+            float x = PADDING + index * segmentWidth;
+            boolean active = gatheringTotemSearchTarget == target;
+            boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
+            Color background = active
+                    ? color(MAP_CONTROL_ACTIVE)
+                    : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL);
+            canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, background);
+            canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, color(MAP_BORDER));
+            drawFittedText(
+                    canvas,
+                    x + segmentWidth / 2f,
+                    y + BUTTON_HEIGHT / 2f,
+                    10,
+                    target == GatheringTotemSearchTarget.ALL_FILTERED ? "All Filtered" : "Cluster",
+                    color(MAP_TEXT),
+                    segmentWidth - 8,
+                    TextAlignment.CENTER);
+        }
+    }
+
+    private void renderGatheringTotemLayerButtons(UiCanvas canvas, float startY) {
+        String[] labels = {"Hulls", "50 Range", "+2 Reach", "Nodes", "Other Spots"};
+        float gap = 4;
+        float width = (SIDEBAR_WIDTH - PADDING * 2 - gap) / 2f;
+        for (int index = 0; index < labels.length; index++) {
+            int column = index % 2;
+            int row = index / 2;
+            drawButton(
+                    canvas,
+                    PADDING + column * (width + gap),
+                    startY + row * (TOGGLE_HEIGHT + gap),
+                    width,
+                    TOGGLE_HEIGHT,
+                    labels[index],
+                    gatheringTotemLayerEnabled(index));
+        }
+    }
+
+    private void renderGatheringTotemLegend(UiCanvas canvas, float y) {
+        drawCircle(canvas, PADDING + 5, y, 3.5f, color(MAP_TOTEM));
+        drawText(canvas, PADDING + 14, y, 9, "amber hull = valid totem positions", color(MAP_SUBTEXT), TextAlignment.LEFT);
+        drawCircleOutline(canvas, PADDING + 5, y + 13, 4, 1.5f, color(MAP_TOTEM_RANGE));
+        drawText(canvas, PADDING + 14, y + 13, 9, "solid cyan = 50 player range", color(MAP_SUBTEXT), TextAlignment.LEFT);
+        drawText(canvas, PADDING + 5, y + 26, 10, "--", color(MAP_TOTEM_REACH), TextAlignment.CENTER);
+        drawText(canvas, PADDING + 14, y + 26, 9, "dashed cyan = 52 node reach", color(MAP_SUBTEXT), TextAlignment.LEFT);
+        drawCircle(canvas, PADDING + 5, y + 39, 3.5f, color(MAP_PLAYER));
+        drawText(canvas, PADDING + 14, y + 39, 9, "bright marker = best integer spot", color(MAP_SUBTEXT), TextAlignment.LEFT);
+    }
+
+    private void renderGatheringTotemResults(UiCanvas canvas, float startY) {
+        gatheringTotemResultScroll = clampDropdownScroll(
+                gatheringTotemResultScroll,
+                gatheringTotemPlacements.size(),
+                TOTEM_RESULT_VISIBLE_ROWS);
+        if (gatheringTotemPlacements.isEmpty()) {
+            drawFittedText(
+                    canvas,
+                    PADDING + 8,
+                    startY + 14,
+                    10,
+                    gatheringTotemStatus(),
+                    color(MAP_SUBTEXT),
+                    SIDEBAR_WIDTH - PADDING * 2 - 16,
+                    TextAlignment.LEFT);
+            return;
+        }
+        int visibleRows = Math.min(
+                TOTEM_RESULT_VISIBLE_ROWS,
+                gatheringTotemPlacements.size() - gatheringTotemResultScroll);
+        for (int row = 0; row < visibleRows; row++) {
+            int resultIndex = gatheringTotemResultScroll + row;
+            Placement placement = gatheringTotemPlacements.get(resultIndex);
+            float y = startY + row * TOTEM_RESULT_ROW_HEIGHT;
+            boolean active = placement == gatheringTotemPlacement;
+            canvas.fillRect(
+                    PADDING,
+                    y,
+                    SIDEBAR_WIDTH - PADDING * 2,
+                    TOTEM_RESULT_ROW_HEIGHT - 3,
+                    active ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL));
+            canvas.strokeRect(
+                    PADDING,
+                    y,
+                    SIDEBAR_WIDTH - PADDING * 2,
+                    TOTEM_RESULT_ROW_HEIGHT - 3,
+                    1,
+                    color(MAP_BORDER));
+            drawFittedText(
+                    canvas,
+                    PADDING + 7,
+                    y + 9,
+                    10,
+                    "#" + (resultIndex + 1) + " · " + placement.nodeCount() + " nodes",
+                    color(MAP_TEXT),
+                    SIDEBAR_WIDTH - PADDING * 2 - 14,
+                    TextAlignment.LEFT);
+            drawFittedText(
+                    canvas,
+                    PADDING + 7,
+                    y + 20,
+                    9,
+                    totemCoords(placement),
+                    color(MAP_SUBTEXT),
+                    SIDEBAR_WIDTH - PADDING * 2 - 14,
+                    TextAlignment.LEFT);
+        }
+    }
+
+    private String gatheringTotemPanelSummary() {
+        if (!gatheringTotemSolverEnabled) {
+            return "Off";
+        }
+        if (gatheringTotemSearchTarget == GatheringTotemSearchTarget.SELECTED_CLUSTER && selectedCluster == null) {
+            return "No cluster";
+        }
+        if (gatheringTotemOptimizing()) {
+            return "Working";
+        }
+        if (gatheringTotemPlacement == null) {
+            return gatheringTotemSolveError == null ? "No results" : "Failed";
+        }
+        return gatheringTotemPlacement.nodeCount() + " x" + gatheringTotemPlacements.size();
+    }
+
+    private String gatheringTotemStatus() {
+        if (!gatheringTotemSolverEnabled) {
+            return "Disabled";
+        }
+        if (gatheringTotemSearchTarget == GatheringTotemSearchTarget.SELECTED_CLUSTER && selectedCluster == null) {
+            return "Select a cluster";
+        }
+        if (gatheringTotemOptimizing()) {
+            return "Optimizing...";
+        }
+        if (gatheringTotemSolveError != null) {
+            return "Optimization failed";
+        }
+        if (gatheringTotemPlacement == null) {
+            return "No results";
+        }
+        return gatheringTotemPlacement.nodeCount()
+                + " nodes · "
+                + gatheringTotemPlacements.size()
+                + (gatheringTotemPlacements.size() == 1 ? " optimal spot" : " optimal spots");
+    }
+
+    private boolean gatheringTotemOptimizing() {
+        if (!gatheringTotemSolverEnabled
+                || gatheringTotemSearchTarget == GatheringTotemSearchTarget.SELECTED_CLUSTER
+                        && selectedCluster == null) {
+            return false;
+        }
+        return pendingGatheringTotemSolve != null
+                || !gatheringTotemKey().equals(solvedGatheringTotemKey);
+    }
+
+    private String gatheringTotemScopeSummary() {
+        if (gatheringAnalysisScope == GatheringAnalysisScope.SELECTED_TERRITORY && selectedTerritory != null) {
+            return selectedTerritory.name();
+        }
+        return gatheringAnalysisScope.label();
+    }
+
+    private boolean gatheringTotemLayerEnabled(int index) {
+        return switch (index) {
+            case 0 -> showGatheringTotemHulls;
+            case 1 -> showGatheringTotemPlayerRadius;
+            case 2 -> showGatheringTotemNodeReach;
+            case 3 -> showGatheringTotemCoveredNodes;
+            case 4 -> showOtherOptimalGatheringTotems;
+            default -> false;
+        };
+    }
+
+    private void toggleGatheringTotemLayer(int index) {
+        switch (index) {
+            case 0 -> {
+                showGatheringTotemHulls = !showGatheringTotemHulls;
+                mapSettings.setShowGatheringTotemHulls(showGatheringTotemHulls);
+            }
+            case 1 -> {
+                showGatheringTotemPlayerRadius = !showGatheringTotemPlayerRadius;
+                mapSettings.setShowGatheringTotemPlayerRadius(showGatheringTotemPlayerRadius);
+            }
+            case 2 -> {
+                showGatheringTotemNodeReach = !showGatheringTotemNodeReach;
+                mapSettings.setShowGatheringTotemNodeReach(showGatheringTotemNodeReach);
+            }
+            case 3 -> {
+                showGatheringTotemCoveredNodes = !showGatheringTotemCoveredNodes;
+                mapSettings.setShowGatheringTotemCoveredNodes(showGatheringTotemCoveredNodes);
+            }
+            case 4 -> {
+                showOtherOptimalGatheringTotems = !showOtherOptimalGatheringTotems;
+                mapSettings.setShowOtherOptimalGatheringTotems(showOtherOptimalGatheringTotems);
+            }
+            default -> {
+                return;
+            }
+        }
+    }
+
+    private GatheringTotemSearchTarget gatheringTotemTargetAt(float mouseX) {
+        float width = SIDEBAR_WIDTH - PADDING * 2;
+        float segmentWidth = width / GatheringTotemSearchTarget.values().length;
+        int index = Math.min(
+                GatheringTotemSearchTarget.values().length - 1,
+                Math.max(0, (int) ((mouseX - PADDING) / segmentWidth)));
+        return GatheringTotemSearchTarget.values()[index];
+    }
+
+    private void selectGatheringTotemPlacement(Placement placement) {
+        if (placement == null) {
+            return;
+        }
+        gatheringTotemPlacement = placement;
+        selectedGatheringTotemPlacementKey = placement.key();
+        gatheringTotemResultScroll = resultScrollForSelection();
+    }
+
+    private int resultScrollForSelection() {
+        if (gatheringTotemPlacement == null || gatheringTotemPlacements.isEmpty()) {
+            return 0;
+        }
+        int index = gatheringTotemPlacements.indexOf(gatheringTotemPlacement);
+        if (index < 0) {
+            return clampDropdownScroll(
+                    gatheringTotemResultScroll,
+                    gatheringTotemPlacements.size(),
+                    TOTEM_RESULT_VISIBLE_ROWS);
+        }
+        if (index < gatheringTotemResultScroll) {
+            return index;
+        }
+        if (index >= gatheringTotemResultScroll + TOTEM_RESULT_VISIBLE_ROWS) {
+            return Math.max(0, index - TOTEM_RESULT_VISIBLE_ROWS + 1);
+        }
+        return clampDropdownScroll(
+                gatheringTotemResultScroll,
+                gatheringTotemPlacements.size(),
+                TOTEM_RESULT_VISIBLE_ROWS);
+    }
+
+    private void centerOnGatheringTotemPlacement() {
+        if (gatheringTotemPlacement == null) {
+            return;
+        }
+        double minX = gatheringTotemPlacement.x() - GatheringTotemSolver.EFFECTIVE_NODE_RADIUS;
+        double maxX = gatheringTotemPlacement.x() + GatheringTotemSolver.EFFECTIVE_NODE_RADIUS;
+        double minZ = gatheringTotemPlacement.z() - GatheringTotemSolver.EFFECTIVE_NODE_RADIUS;
+        double maxZ = gatheringTotemPlacement.z() + GatheringTotemSolver.EFFECTIVE_NODE_RADIUS;
+        for (Position position : gatheringTotemPlacement.validCenterHull()) {
+            minX = Math.min(minX, position.x());
+            maxX = Math.max(maxX, position.x());
+            minZ = Math.min(minZ, position.z());
+            maxZ = Math.max(maxZ, position.z());
+        }
+        centerX = (minX + maxX) / 2.0;
+        centerZ = (minZ + maxZ) / 2.0;
+        double availableWidth = Math.max(1, uiScreenWidth() - SIDEBAR_WIDTH - insightsSidebarInset() - 48);
+        double availableHeight = Math.max(1, uiScreenHeight() - 48);
+        pixelsPerBlock = clamp(
+                Math.min(availableWidth / Math.max(1, maxX - minX), availableHeight / Math.max(1, maxZ - minZ)),
+                MIN_PIXELS_PER_BLOCK,
+                MAX_PIXELS_PER_BLOCK);
+    }
+
     private void renderSearchInput(
             UiCanvas canvas,
             float y,
@@ -1604,6 +2160,28 @@ public class WorldMapScreen extends Screen {
             }
             return false;
         }
+        if (gatheringTotemSolverEnabled && gatheringTotemPlacement != null) {
+            float totemRowsY = insights.overviewY() + 58 + (showDebugInfo ? 32 : 0);
+            if (insightsSidebarOpen
+                    && isHovered(
+                            mx,
+                            my,
+                            insightsX + PADDING,
+                            totemRowsY,
+                            INSIGHTS_SIDEBAR_WIDTH - PADDING * 2,
+                            48)) {
+                copyToClipboard(totemCoords(gatheringTotemPlacement));
+                return true;
+            }
+            MapViewport viewport = mapViewport(screenWidth, screenHeight);
+            Placement clickedPlacement = viewport.isInsideScreen(mx, my)
+                    ? gatheringTotemPlacementAt(visibleGatheringTotemPlacements(), viewport, mx, my)
+                    : null;
+            if (clickedPlacement != null) {
+                copyToClipboard(totemCoords(clickedPlacement));
+                return true;
+            }
+        }
         GatheringNodeCluster clusterDetail = selectedCluster != null ? selectedCluster : hoveredCluster;
         GatheringNode detail = selectedNode != null ? selectedNode : hoveredNode;
         float detailY = insights.entityY() + 4;
@@ -1650,6 +2228,102 @@ public class WorldMapScreen extends Screen {
         return Math.round(cluster.centerX()) + " " + Math.round(cluster.centerZ());
     }
 
+    private static String totemCoords(Placement placement) {
+        return Math.round(placement.x()) + " " + Math.round(placement.z());
+    }
+
+    private Placement gatheringTotemPlacementAt(
+            List<Placement> placements,
+            MapViewport viewport,
+            float mouseX,
+            float mouseY) {
+        Placement closestMarker = null;
+        double closestMarkerDistance = 9;
+        for (Placement placement : placements) {
+            float bestX = viewport.worldToScreenX(placement.x());
+            float bestZ = viewport.worldToScreenZ(placement.z());
+            double distance = Math.hypot(mouseX - bestX, mouseY - bestZ);
+            if (distance <= closestMarkerDistance) {
+                closestMarker = placement;
+                closestMarkerDistance = distance;
+            }
+        }
+        if (closestMarker != null) {
+            return closestMarker;
+        }
+        if (gatheringTotemPlacement != null
+                && placements.contains(gatheringTotemPlacement)
+                && isGatheringTotemPlacementHovered(
+                        gatheringTotemPlacement,
+                        viewport,
+                        mouseX,
+                        mouseY)) {
+            return gatheringTotemPlacement;
+        }
+        for (Placement placement : placements) {
+            if (placement == gatheringTotemPlacement) {
+                continue;
+            }
+            if (isGatheringTotemPlacementHovered(placement, viewport, mouseX, mouseY)) {
+                if (placement.validCenterHull().size() < 3) {
+                    return placement;
+                }
+            }
+        }
+        return GatheringTotemHitTester.containingHull(
+                placements,
+                gatheringTotemPlacement,
+                viewport.screenToWorldX(mouseX),
+                viewport.screenToWorldZ(mouseY));
+    }
+
+    private static boolean isGatheringTotemPlacementHovered(
+            Placement placement,
+            MapViewport viewport,
+            float mouseX,
+            float mouseY) {
+        List<Position> hull = placement.validCenterHull();
+        if (hull.size() == 1) {
+            return Math.hypot(
+                            mouseX - viewport.worldToScreenX(hull.getFirst().x()),
+                            mouseY - viewport.worldToScreenZ(hull.getFirst().z()))
+                    <= 9;
+        }
+        if (hull.size() == 2) {
+            return distanceToSegment(
+                            mouseX,
+                            mouseY,
+                            viewport.worldToScreenX(hull.getFirst().x()),
+                            viewport.worldToScreenZ(hull.getFirst().z()),
+                            viewport.worldToScreenX(hull.getLast().x()),
+                            viewport.worldToScreenZ(hull.getLast().z()))
+                    <= 6;
+        }
+        return GatheringTotemHitTester.contains(
+                hull,
+                viewport.screenToWorldX(mouseX),
+                viewport.screenToWorldZ(mouseY));
+    }
+
+    private static double distanceToSegment(
+            double pointX,
+            double pointY,
+            double startX,
+            double startY,
+            double endX,
+            double endY) {
+        double dx = endX - startX;
+        double dy = endY - startY;
+        if (dx == 0 && dy == 0) {
+            return Math.hypot(pointX - startX, pointY - startY);
+        }
+        double t = clamp(
+                ((pointX - startX) * dx + (pointY - startY) * dy) / (dx * dx + dy * dy),
+                0,
+                1);
+        return Math.hypot(pointX - (startX + t * dx), pointY - (startY + t * dy));
+    }
+
     private void renderNodeTooltip(UiCanvas canvas, GatheringNode node) {
         String title = node.resource() + " Lv. " + node.level();
         String subtitle = nodeCoords(node);
@@ -1659,6 +2333,24 @@ public class WorldMapScreen extends Screen {
         canvas.strokeRect(x, y, 180, 42, 1, color(MAP_BORDER));
         drawFittedText(canvas, x + 8, y + 15, 12, title, color(MAP_TEXT), 164, TextAlignment.LEFT);
         drawFittedText(canvas, x + 8, y + 31, 11, subtitle, color(MAP_SUBTEXT), 164, TextAlignment.LEFT);
+    }
+
+    private void renderGatheringTotemTooltip(UiCanvas canvas, Placement placement) {
+        int index = gatheringTotemPlacements.indexOf(placement);
+        String title = "#"
+                + (index < 0 ? "?" : index + 1)
+                + " of "
+                + gatheringTotemPlacements.size()
+                + " · "
+                + placement.nodeCount()
+                + " nodes";
+        String subtitle = totemCoords(placement) + " · Right-click to copy";
+        float x = tooltipX(210);
+        float y = Math.max(8, nvgMouseY + 12);
+        canvas.fillRect(x, y, 210, 42, color(MAP_SIDEBAR));
+        canvas.strokeRect(x, y, 210, 42, 1, color(MAP_BORDER));
+        drawFittedText(canvas, x + 8, y + 15, 12, title, color(MAP_TEXT), 194, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 31, 11, subtitle, color(MAP_SUBTEXT), 194, TextAlignment.LEFT);
     }
 
     private void renderClusterTooltip(UiCanvas canvas, GatheringNodeCluster cluster) {
@@ -1737,12 +2429,165 @@ public class WorldMapScreen extends Screen {
         cachedFilteredNodes = result.filteredNodes();
         cachedResourceOptions = result.resourceOptions();
         cachedClusters = result.clusters();
+        gatheringAnalysisVersion++;
         refreshSelectedTerritoryMatchingCount();
         clusterOutlineShapes.clear();
         clusterOutlineScale = Double.NaN;
         hoveredNode = null;
         hoveredCluster = null;
         clearInvalidSelections();
+    }
+
+    private void refreshGatheringTotemPlacement() {
+        if (!gatheringTotemSolverEnabled) {
+            if (pendingGatheringTotemSolve != null
+                    || gatheringTotemPlacement != null
+                    || !gatheringTotemPlacements.isEmpty()) {
+                resetGatheringTotemSolve();
+            }
+            return;
+        }
+
+        String requestKey = gatheringTotemKey();
+        long now = System.currentTimeMillis();
+        if (!requestKey.equals(observedGatheringTotemKey)) {
+            invalidateGatheringTotemSolve(requestKey, now + TOTEM_SOLVE_DEBOUNCE_MS);
+        }
+        if (gatheringTotemSearchTarget == GatheringTotemSearchTarget.SELECTED_CLUSTER
+                && selectedCluster == null) {
+            solvedGatheringTotemKey = requestKey;
+            return;
+        }
+
+        if (pendingGatheringTotemSolve != null) {
+            if (!pendingGatheringTotemSolve.isDone()) {
+                return;
+            }
+            String completedKey = pendingGatheringTotemKey;
+            long completedGeneration = pendingGatheringTotemGeneration;
+            try {
+                List<Placement> completed = pendingGatheringTotemSolve.join();
+                if (requestKey.equals(completedKey)
+                        && completedGeneration == gatheringTotemRequestGeneration) {
+                    gatheringTotemPlacements = GatheringTotemResults.ordered(
+                            completed,
+                            currentPlayerTotemPosition());
+                    gatheringTotemPlacement = GatheringTotemResults.select(
+                            gatheringTotemPlacements,
+                            selectedGatheringTotemPlacementKey);
+                    selectedGatheringTotemPlacementKey = gatheringTotemPlacement == null
+                            ? null
+                            : gatheringTotemPlacement.key();
+                    gatheringTotemResultScroll = resultScrollForSelection();
+                    gatheringTotemSolveError = null;
+                    solvedGatheringTotemKey = requestKey;
+                }
+            } catch (RuntimeException exception) {
+                if (requestKey.equals(completedKey)
+                        && completedGeneration == gatheringTotemRequestGeneration) {
+                    gatheringTotemPlacements = List.of();
+                    gatheringTotemPlacement = null;
+                    gatheringTotemSolveError = exception.getMessage() == null
+                            ? exception.getClass().getSimpleName()
+                            : exception.getMessage();
+                    solvedGatheringTotemKey = requestKey;
+                    SeqClient.LOGGER.warn("[GatheringMap] Gathering totem optimization failed.", exception);
+                }
+            } finally {
+                pendingGatheringTotemSolve = null;
+                pendingGatheringTotemKey = "";
+                pendingGatheringTotemGeneration = 0;
+            }
+        }
+        if (requestKey.equals(solvedGatheringTotemKey)
+                || now < gatheringTotemSolveNotBeforeMs) {
+            return;
+        }
+
+        List<GatheringNode> eligibleNodes = List.copyOf(cachedFilteredNodes);
+        Set<String> resources = Set.copyOf(selectedResourceFilters);
+        GuildTerritory territory = gatheringAnalysisScope == GatheringAnalysisScope.SELECTED_TERRITORY
+                ? selectedTerritory
+                : null;
+        List<GatheringNode> clusterNodes =
+                gatheringTotemSearchTarget == GatheringTotemSearchTarget.SELECTED_CLUSTER
+                                && selectedCluster != null
+                        ? List.copyOf(selectedCluster.nodes())
+                        : List.of();
+        gatheringTotemPlacements = List.of();
+        gatheringTotemPlacement = null;
+        gatheringTotemSolveError = null;
+        pendingGatheringTotemKey = requestKey;
+        pendingGatheringTotemGeneration = gatheringTotemRequestGeneration;
+        pendingGatheringTotemSolve = CompletableFuture.supplyAsync(
+                () -> GatheringTotemSolver.solveAll(eligibleNodes, resources, territory, clusterNodes));
+    }
+
+    private String gatheringTotemKey() {
+        String clusterSelection = gatheringTotemSearchTarget == GatheringTotemSearchTarget.SELECTED_CLUSTER
+                ? selectedCluster == null
+                        ? "none"
+                        : selectedCluster.id()
+                                + ":"
+                                + selectedCluster.resource()
+                                + ":"
+                                + selectedCluster.nodes().hashCode()
+                : "global";
+        return cachedClusterKey
+                + "|analysis:"
+                + gatheringAnalysisVersion
+                + "|totem:"
+                + gatheringTotemSearchTarget.name()
+                + "|"
+                + clusterSelection;
+    }
+
+    private void invalidateGatheringTotemSolve(String requestKey, long notBeforeMs) {
+        if (pendingGatheringTotemSolve != null) {
+            pendingGatheringTotemSolve.cancel(true);
+        }
+        gatheringTotemRequestGeneration++;
+        pendingGatheringTotemSolve = null;
+        pendingGatheringTotemKey = "";
+        pendingGatheringTotemGeneration = 0;
+        solvedGatheringTotemKey = "";
+        observedGatheringTotemKey = requestKey;
+        gatheringTotemSolveNotBeforeMs = notBeforeMs;
+        gatheringTotemSolveError = null;
+        gatheringTotemPlacements = List.of();
+        gatheringTotemPlacement = null;
+        hoveredGatheringTotemPlacement = null;
+        gatheringTotemResultScroll = 0;
+    }
+
+    private void refreshGatheringTotemPlacementNow() {
+        invalidateGatheringTotemSolve(gatheringTotemKey(), 0);
+        refreshGatheringTotemPlacement();
+    }
+
+    private Position currentPlayerTotemPosition() {
+        if (SeqClient.mc.player == null) {
+            return null;
+        }
+        return new Position(SeqClient.mc.player.getX(), SeqClient.mc.player.getZ());
+    }
+
+    private void resetGatheringTotemSolve() {
+        if (pendingGatheringTotemSolve != null) {
+            pendingGatheringTotemSolve.cancel(true);
+        }
+        gatheringTotemRequestGeneration++;
+        pendingGatheringTotemSolve = null;
+        pendingGatheringTotemKey = "";
+        pendingGatheringTotemGeneration = 0;
+        solvedGatheringTotemKey = "";
+        observedGatheringTotemKey = "";
+        gatheringTotemSolveNotBeforeMs = 0;
+        gatheringTotemSolveError = null;
+        gatheringTotemPlacements = List.of();
+        gatheringTotemPlacement = null;
+        hoveredGatheringTotemPlacement = null;
+        gatheringTotemResultScroll = 0;
     }
 
     private String clusterKey() {
@@ -2133,6 +2978,10 @@ public class WorldMapScreen extends Screen {
             togglePanel(WorldMapSidebarPanel.GATHERING_ANALYSIS);
             return true;
         }
+        if (isHovered(mx, sidebarMy, PADDING, layout.totemPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)) {
+            togglePanel(WorldMapSidebarPanel.TOTEM_SOLVER);
+            return true;
+        }
         if (isHovered(mx, sidebarMy, PADDING, layout.filtersPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)) {
             togglePanel(WorldMapSidebarPanel.RESOURCE_FILTERS);
             return true;
@@ -2202,6 +3051,106 @@ public class WorldMapScreen extends Screen {
             }
             return true;
         }
+        TotemSolverLayout totemLayout = totemSolverLayout(layout.totemPanelY());
+        if (totemLayout.enabledY() >= 0) {
+            if (isHovered(
+                    mx,
+                    sidebarMy,
+                    PADDING,
+                    totemLayout.enabledY(),
+                    SIDEBAR_WIDTH - PADDING * 2,
+                    BUTTON_HEIGHT)) {
+                gatheringTotemSolverEnabled = !gatheringTotemSolverEnabled;
+                mapSettings.setGatheringTotemSolverEnabled(gatheringTotemSolverEnabled);
+                resetGatheringTotemSolve();
+                return true;
+            }
+            if (isHovered(
+                    mx,
+                    sidebarMy,
+                    PADDING,
+                    totemLayout.targetY(),
+                    SIDEBAR_WIDTH - PADDING * 2,
+                    BUTTON_HEIGHT)) {
+                GatheringTotemSearchTarget target = gatheringTotemTargetAt(mx);
+                gatheringTotemSearchTarget = target;
+                mapSettings.setGatheringTotemSearchTarget(target);
+                invalidateGatheringTotemSolve(
+                        gatheringTotemKey(),
+                        System.currentTimeMillis() + TOTEM_SOLVE_DEBOUNCE_MS);
+                return true;
+            }
+            if (isHovered(
+                    mx,
+                    sidebarMy,
+                    PADDING,
+                    totemLayout.refreshY(),
+                    SIDEBAR_WIDTH - PADDING * 2,
+                    BUTTON_HEIGHT)) {
+                if (gatheringTotemSolverEnabled) {
+                    refreshGatheringTotemPlacementNow();
+                }
+                return true;
+            }
+
+            float layerGap = 4;
+            float layerWidth = (SIDEBAR_WIDTH - PADDING * 2 - layerGap) / 2f;
+            for (int index = 0; index < 5; index++) {
+                int column = index % 2;
+                int row = index / 2;
+                if (isHovered(
+                        mx,
+                        sidebarMy,
+                        PADDING + column * (layerWidth + layerGap),
+                        totemLayout.layerStartY() + row * (TOGGLE_HEIGHT + layerGap),
+                        layerWidth,
+                        TOGGLE_HEIGHT)) {
+                    toggleGatheringTotemLayer(index);
+                    return true;
+                }
+            }
+
+            if (isHovered(
+                    mx,
+                    sidebarMy,
+                    PADDING,
+                    totemLayout.resultsStartY(),
+                    SIDEBAR_WIDTH - PADDING * 2,
+                    TOTEM_RESULT_VISIBLE_ROWS * TOTEM_RESULT_ROW_HEIGHT)) {
+                int row = Math.max(
+                        0,
+                        (int) ((sidebarMy - totemLayout.resultsStartY()) / TOTEM_RESULT_ROW_HEIGHT));
+                int index = gatheringTotemResultScroll + row;
+                if (index < gatheringTotemPlacements.size()) {
+                    selectGatheringTotemPlacement(gatheringTotemPlacements.get(index));
+                }
+                return true;
+            }
+
+            float actionWidth = (SIDEBAR_WIDTH - PADDING * 2 - SPLIT_CONTROL_GAP) / 2f;
+            if (isHovered(
+                    mx,
+                    sidebarMy,
+                    PADDING,
+                    totemLayout.actionsY(),
+                    actionWidth,
+                    BUTTON_HEIGHT)) {
+                centerOnGatheringTotemPlacement();
+                return true;
+            }
+            if (isHovered(
+                    mx,
+                    sidebarMy,
+                    PADDING + actionWidth + SPLIT_CONTROL_GAP,
+                    totemLayout.actionsY(),
+                    actionWidth,
+                    BUTTON_HEIGHT)) {
+                if (gatheringTotemPlacement != null) {
+                    copyToClipboard(totemCoords(gatheringTotemPlacement));
+                }
+                return true;
+            }
+        }
         if (layout.resourceInputY() >= 0
                 && isHovered(mx, sidebarMy, PADDING, layout.resourceInputY(), SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT)) {
             boolean shouldOpen = !resourceDropdownOpen;
@@ -2234,6 +3183,15 @@ public class WorldMapScreen extends Screen {
 
         MapViewport viewport = mapViewport(screenWidth, screenHeight);
         if (viewport.isInsideScreen(mx, my)) {
+            Placement clickedPlacement = gatheringTotemSolverEnabled
+                    ? gatheringTotemPlacementAt(visibleGatheringTotemPlacements(), viewport, mx, my)
+                    : null;
+            if (clickedPlacement != null) {
+                selectGatheringTotemPlacement(clickedPlacement);
+                hoveredGatheringTotemPlacement = clickedPlacement;
+                closeSearchDropdowns();
+                return true;
+            }
             boolean clusterMode = shouldRenderClusters();
             GatheringNodeCluster clickedCluster = clusterMode || hoveredNode == null ? hoveredCluster : null;
             GatheringNode clickedNode = clusterMode ? null : hoveredNode;
@@ -2492,6 +3450,23 @@ public class WorldMapScreen extends Screen {
             float dropdownY = layout.resourceInputY() - sidebarScroll + INPUT_HEIGHT;
             if (isHovered(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2, visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
                 resourceDropdownScroll = clampResourceDropdownScroll(resourceDropdownScroll + (scrollY > 0 ? -1 : 1), resources.size());
+                return true;
+            }
+        }
+        TotemSolverLayout totemLayout = totemSolverLayout(layout.totemPanelY());
+        if (totemLayout.resultsStartY() >= 0) {
+            float resultsY = totemLayout.resultsStartY() - sidebarScroll;
+            if (isHovered(
+                    mx,
+                    my,
+                    PADDING,
+                    resultsY,
+                    SIDEBAR_WIDTH - PADDING * 2,
+                    TOTEM_RESULT_VISIBLE_ROWS * TOTEM_RESULT_ROW_HEIGHT)) {
+                gatheringTotemResultScroll = clampDropdownScroll(
+                        gatheringTotemResultScroll + (scrollY > 0 ? -1 : 1),
+                        gatheringTotemPlacements.size(),
+                        TOTEM_RESULT_VISIBLE_ROWS);
                 return true;
             }
         }
@@ -2996,6 +3971,9 @@ public class WorldMapScreen extends Screen {
             return new InsightsLayout(overviewY, -1, -1, -1, overviewY + 82);
         }
         float y = overviewY + (showDebugInfo ? 106 : 74);
+        if (gatheringTotemSolverEnabled) {
+            y += 48;
+        }
         float territoryY = -1;
         if (selectedTerritory != null) {
             territoryY = y;
@@ -3061,6 +4039,9 @@ public class WorldMapScreen extends Screen {
             professionStartY = y;
             y += (TOGGLE_HEIGHT + 6) * gatheringProfessions().size();
         }
+        y += PANEL_GAP;
+        float totemPanelY = y;
+        y = totemSolverLayout(totemPanelY).endY();
         return new SidebarLayout(
                 backY,
                 centerY,
@@ -3073,11 +4054,52 @@ public class WorldMapScreen extends Screen {
                 territoryInputY,
                 analysisPanelY,
                 clustersY,
+                totemPanelY,
                 filtersPanelY,
                 resourceLabelY,
                 resourceInputY,
                 professionLabelY,
                 professionStartY,
+                y);
+    }
+
+    private TotemSolverLayout totemSolverLayout(float panelY) {
+        float y = panelY + PANEL_HEADER_HEIGHT;
+        if (!panelExpanded(WorldMapSidebarPanel.TOTEM_SOLVER)) {
+            return new TotemSolverLayout(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, y);
+        }
+        y += 8;
+        float enabledY = y;
+        y += BUTTON_HEIGHT + 6;
+        float targetY = y;
+        y += BUTTON_HEIGHT + 8;
+        float filterSummaryY = y + 5;
+        y += 34;
+        float refreshY = y;
+        y += BUTTON_HEIGHT + 8;
+        float layerLabelY = y + 5;
+        y += 14;
+        float layerStartY = y;
+        y += 3 * (TOGGLE_HEIGHT + 4);
+        float legendY = y + 2;
+        y += 52;
+        float resultsLabelY = y + 5;
+        y += 14;
+        float resultsStartY = y;
+        y += TOTEM_RESULT_VISIBLE_ROWS * TOTEM_RESULT_ROW_HEIGHT;
+        float actionsY = y;
+        y += BUTTON_HEIGHT + 8;
+        return new TotemSolverLayout(
+                enabledY,
+                targetY,
+                filterSummaryY,
+                refreshY,
+                layerLabelY,
+                layerStartY,
+                legendY,
+                resultsLabelY,
+                resultsStartY,
+                actionsY,
                 y);
     }
 
@@ -3145,11 +4167,25 @@ public class WorldMapScreen extends Screen {
             float territoryInputY,
             float analysisPanelY,
             float clustersY,
+            float totemPanelY,
             float filtersPanelY,
             float resourceLabelY,
             float resourceInputY,
             float professionLabelY,
             float professionStartY,
+            float endY) {}
+
+    private record TotemSolverLayout(
+            float enabledY,
+            float targetY,
+            float filterSummaryY,
+            float refreshY,
+            float layerLabelY,
+            float layerStartY,
+            float legendY,
+            float resultsLabelY,
+            float resultsStartY,
+            float actionsY,
             float endY) {}
 
     private record WorldEventSidebarLayout(

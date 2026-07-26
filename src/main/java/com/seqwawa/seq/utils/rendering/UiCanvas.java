@@ -24,6 +24,9 @@ public interface UiCanvas {
     void fillHorizontalGradient(
             float x, float y, float width, float height, Color startColor, Color endColor);
 
+    void fillVerticalGradient(
+            float x, float y, float width, float height, Color startColor, Color endColor);
+
     void drawImage(UiImage image, float x, float y, float width, float height, float alpha);
 
     void fillCurrentPathWithImage(UiImage image, float x, float y, float width, float height, float alpha);

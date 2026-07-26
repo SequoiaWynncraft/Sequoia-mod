@@ -65,3 +65,7 @@ map:
   selected_territory: [255, 211, 84, 255]
   world_event: [68, 197, 255, 255]
   tracked_world_event: [255, 196, 64, 255]
+  totem: [255, 196, 64, 255]
+  totem_muted: [214, 170, 84, 190]
+  totem_range: [64, 232, 255, 255]
+  totem_reach: [128, 240, 255, 220]

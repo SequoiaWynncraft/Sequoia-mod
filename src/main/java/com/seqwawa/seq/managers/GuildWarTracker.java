@@ -1,11 +1,14 @@
 package com.seqwawa.seq.managers;
 
+import com.seqwawa.seq.model.GuildWarQueueSubmission;
 import com.wynntils.core.WynntilsMod;
 import com.wynntils.core.components.Models;
 import com.wynntils.models.character.event.CharacterDeathEvent;
 import com.wynntils.models.war.type.WarBattleInfo;
 import com.wynntils.models.war.type.WarTowerState;
 import com.wynntils.utils.type.RangedValue;
+
+import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -13,12 +16,17 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TooltipFlag;
 import net.neoforged.bus.api.SubscribeEvent;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.GuildWarSubmission;
@@ -34,7 +42,13 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     private static final Pattern VALID_USERNAME = Pattern.compile("^[a-zA-Z0-9_]{3,16}$");
     private static final Pattern TERRITORY_CAPTURED = Pattern.compile("(?i)Territory\\s+Captured");
     private static final Pattern CAPTURED_TERRITORY = Pattern.compile("(?i)Captured\\s+\"([^\"]+)\"");
+    private static final Pattern QUEUE_START = Pattern.compile("(?i)The\\s+war\\s+for\\s+([\\w' \\-]+)\\s+will");
     private static final Pattern SEASON_RATING = Pattern.compile("(?i)\\+\\s*(\\d+)\\s+Season(?:al)?\\s+Rating");
+    private static final Pattern QUEUE_NAME = Pattern.compile("Attacking: (.+)");
+    private static final Pattern QUEUE_DEFENSE = Pattern.compile("Territory Defences: §.(.+)");
+    private static final Pattern QUEUE_TIMER = Pattern.compile("Time to Start: §.(\\d+)m");
+    private static final Set<String> DEFENSE_LEVELS = Set.of("Very Low", "Low", "Medium", "High", "Very High");
+    private static final long QUEUE_ATTEMPT_TIMEOUT_MS = 2500L;
 
     private final WarInfoProvider warInfoProvider;
     private final PlayerContext playerContext;
@@ -47,11 +61,24 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     private int lastProcessedStateHash;
     private boolean wynnDeathListenerRegistered;
 
+    private QueueAttemptInfo queueAttempt;
+    private long queueAttemptTime;
+
     public GuildWarTracker() {
         this(
                 () -> Models.GuildWarTower.getWarBattleInfo().orElse(null),
                 new RuntimePlayerContext(),
-                submission -> ConnectionManager.getInstance().sendGuildWarSubmission(submission),
+                new SubmissionPublisher() {
+                    @Override
+                    public boolean publishWar(GuildWarSubmission submission) {
+                        return ConnectionManager.getInstance().sendGuildWarSubmission(submission);
+                    }
+
+                    @Override
+                    public boolean publishQueue(GuildWarQueueSubmission submission) {
+                        return ConnectionManager.getInstance().sendGuildWarQueue(submission);
+                    }
+                },
                 () -> SeqClient.getTrackGuildWarsSetting() == null
                         || SeqClient.getTrackGuildWarsSetting().getValue(),
                 System::currentTimeMillis,
@@ -90,9 +117,19 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         }
 
         String cleaned = PacketTextNormalizer.normalizeForParsing(message.getString());
-        if (cleaned.isEmpty() || !TERRITORY_CAPTURED.matcher(cleaned).find()) {
+        if (cleaned.isEmpty()) {
             return;
         }
+
+        attemptTerritoryCapture(cleaned);
+        attemptQueueStart(cleaned);
+    }
+
+    private void attemptTerritoryCapture(String cleaned) {
+        if (!TERRITORY_CAPTURED.matcher(cleaned).find()) {
+            return;
+        }
+
         if (!trackingEnabled.getAsBoolean()) {
             SeqClient.LOGGER.warn("[GuildWarTracker] Ignoring completion chat because track_guild_wars is disabled");
             return;
@@ -134,6 +171,25 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         }
     }
 
+    private void attemptQueueStart(String cleaned) {
+        if (queueAttempt == null || queueAttemptTime + QUEUE_ATTEMPT_TIMEOUT_MS < clock.getAsLong()) {
+            return;
+        }
+        Matcher matcher = QUEUE_START.matcher(cleaned);
+        if (!matcher.find()) {
+            return;
+        }
+        String territory = matcher.group(1).trim().toLowerCase();
+        if (!territory.equals(queueAttempt.territory().toLowerCase())) {
+            SeqClient.LOGGER.info(
+                    "[GuildWarTracker] Queued territory name did not match stored='{}' queued='{}'",
+                    queueAttempt.territory(), territory);
+            return;
+        }
+        submitQueue(queueAttempt);
+        queueAttempt = null;
+    }
+
     @SubscribeEvent
     public void onCharacterDeathEvent(CharacterDeathEvent event) {
         onCharacterDeath();
@@ -150,6 +206,53 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         activeContext = null;
         lastProcessedBattleId = null;
         lastProcessedStateHash = 0;
+        queueAttempt = null;
+    }
+
+    @Override
+    public void onSlotClick(String screenName, ItemStack item) {
+        if (!trackingEnabled.getAsBoolean()) {
+            return;
+        }
+        Matcher mName = QUEUE_NAME.matcher(screenName);
+        if (!mName.find()) {
+            return;
+        }
+        if (!item.getHoverName().getString().matches("^§.§lAttack.*$")) {
+            return;
+        }
+        String territoryName = mName.group(1).trim();
+        String defense = null;
+        int timer = -1;
+
+        for (Component component : item.getTooltipLines(Item.TooltipContext.EMPTY, Minecraft.getInstance().player, TooltipFlag.NORMAL)) {
+            String lineContent = component.getString();
+            Matcher mDefense = QUEUE_DEFENSE.matcher(lineContent);
+            if (mDefense.find()) {
+                defense = mDefense.group(1);
+            }
+            Matcher mTimer = QUEUE_TIMER.matcher(lineContent);
+            if (mTimer.find()) {
+                timer = Integer.parseInt(mTimer.group(1));
+            }
+        }
+
+        if (defense == null || timer == -1) {
+            SeqClient.LOGGER.warn("[GuildWarTracker] Failed to parse queue item tooltip, territory='{}'", territoryName);
+            return;
+        }
+
+        if (!DEFENSE_LEVELS.contains(defense)) {
+            SeqClient.LOGGER.warn("[GuildWarTracker] Invalid queue defense, territory='{}' defense='{}'", territoryName, defense);
+            return;
+        }
+
+        queueAttempt = new QueueAttemptInfo(territoryName, defense, timer);
+        queueAttemptTime = clock.getAsLong();
+
+        SeqClient.LOGGER.info(
+                "[GuildWarTracker] Queue attempt stored territory='{}' defense='{}' timer={}m",
+                territoryName, defense, timer);
     }
 
     private void trackWarState() {
@@ -272,7 +375,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
                 seasonRating,
                 completed ? completedAt : null);
 
-        if (submissionPublisher.publish(submission)) {
+        if (submissionPublisher.publishWar(submission)) {
             context.submissionSent = true;
             context.pendingSubmission = false;
             return;
@@ -283,6 +386,42 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
                 warrers,
                 completedAt,
                 seasonRating);
+    }
+
+    private void submitQueue(QueueAttemptInfo info) {
+        String localUuid = trimToNull(playerContext.localUuid());
+        if (localUuid == null) {
+            return;
+        }
+
+        long submittedAtMillis = clock.getAsLong();
+        String submittedAt = toRfc3339(submittedAtMillis);
+
+        SeqClient.LOGGER.info(
+                "[GuildWarTracker] Submitting queue territory='{}' defense='{}' timer={}m",
+                info.territory(),
+                info.rating(),
+                info.queueMinutes()
+        );
+
+        GuildWarQueueSubmission submission = new GuildWarQueueSubmission(
+                info.territory(),
+                localUuid,
+                submittedAt,
+                info.rating(),
+                info.queueMinutes()
+        );
+
+        if (submissionPublisher.publishQueue(submission)) {
+            return;
+        }
+
+        SeqClient.LOGGER.warn(
+                "[GuildWarTracker] Submission failed queue territory='{}' defense='{}' timer={}m",
+                info.territory(),
+                info.rating(),
+                info.queueMinutes()
+        );
     }
 
     private WarSummary buildSummary(WarBattleInfo info) {
@@ -442,8 +581,11 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     }
 
     interface SubmissionPublisher {
-        boolean publish(GuildWarSubmission submission);
+        boolean publishWar(GuildWarSubmission submission);
+        boolean publishQueue(GuildWarQueueSubmission submission);
     }
+
+    private record QueueAttemptInfo(String territory, String rating, int queueMinutes) {}
 
     private record WarSummary(String territory, GuildWarSubmission.TowerStats stats) {}
 

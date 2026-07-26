@@ -1,6 +1,7 @@
 package com.seqwawa.seq.managers;
 
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * Minimal guild war tracker contract exposed to the rest of the mod without
@@ -12,4 +13,6 @@ public interface GuildWarTrackerHandle {
     void onSystemChat(Component message);
 
     void reset();
+
+    void onSlotClick(String screenName, ItemStack item);
 }

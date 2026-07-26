@@ -214,8 +214,9 @@ public class RaidTracker {
     private static boolean isRaidCandidateText(String plain) {
         return plain != null
                 && plain.contains("finished")
-                && plain.contains("and claimed")
-                && plain.contains("Guild Experience");
+                && plain.contains("claimed")
+                && plain.contains("Guild")
+                && plain.contains("Experience");
     }
 
     private static List<String> parseDisplayedNames(String namesPart) {

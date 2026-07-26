@@ -4,8 +4,12 @@ import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import java.awt.Color;
+import com.seqwawa.seq.LightRoomTnaRange.LightRoom;
+import com.seqwawa.seq.halcyon.HalcyonRingRenderer;
+import com.seqwawa.seq.radiance.PingRenderer;
 import com.seqwawa.seq.ui.widget.BooleanWidget;
 import com.seqwawa.seq.ui.widget.ChoiceWidget;
+import com.seqwawa.seq.ui.widget.ColorWidget;
 import com.seqwawa.seq.ui.widget.EnumWidget;
 import com.seqwawa.seq.ui.widget.SettingWidget;
 import com.seqwawa.seq.ui.widget.SliderWidget;
@@ -75,6 +79,10 @@ public class SettingsScreen extends Screen {
 
     @Override
     public void removed() {
+        deactivateColorPreviews();
+        LightRoom.setColorPreviewActive(false);
+        HalcyonRingRenderer.setColorPreviewActive(false);
+        PingRenderer.setColorPreviewActive(false);
         SeqClient.getConfigManager().save();
         super.removed();
     }
@@ -99,6 +107,8 @@ public class SettingsScreen extends Screen {
     private SettingWidget<?> createWidget(Setting<?> setting) {
         if (setting instanceof Setting.BooleanSetting b)
             return new BooleanWidget(b);
+        if (setting instanceof Setting.ColorSetting c)
+            return createColorWidget(c);
         if (setting instanceof Setting.IntSetting i)
             return new SliderWidget(i, i == SeqClient.getUiSizePercentSetting());
         if (setting instanceof Setting.DoubleSetting d)
@@ -112,6 +122,29 @@ public class SettingsScreen extends Screen {
         if (setting instanceof Setting.StringSetting s)
             return new StringWidget(s);
         return null;
+    }
+
+    private ColorWidget createColorWidget(Setting.ColorSetting setting) {
+        if (setting == SeqClient.getLightRoomRingColorSetting()) {
+            return new ColorWidget(setting, LightRoom::setColorPreviewActive);
+        }
+        if (setting == SeqClient.getHalcyonRingColorSetting()) {
+            return new ColorWidget(setting, HalcyonRingRenderer::setColorPreviewActive);
+        }
+        if (setting == SeqClient.getRadianceMarkerColorSetting()) {
+            return new ColorWidget(setting, PingRenderer::setColorPreviewActive);
+        }
+        return new ColorWidget(setting, null);
+    }
+
+    private void deactivateColorPreviews() {
+        for (List<SettingWidget<?>> widgets : categories.values()) {
+            for (SettingWidget<?> widget : widgets) {
+                if (widget instanceof ColorWidget colorWidget) {
+                    colorWidget.deactivatePreview();
+                }
+            }
+        }
     }
 
     private boolean matchesSearch(String settingName, String categoryName) {
@@ -162,6 +195,8 @@ public class SettingsScreen extends Screen {
             drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
                     btnW, "Settings", true);
             drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
+                    btnW, "Map", false);
+            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
                     btnW, "Github", false);
 
             // === Main Content Panel (fills rest of screen) ===
@@ -228,7 +263,10 @@ public class SettingsScreen extends Screen {
             int settingIndex = 0;
             for (Map.Entry<String, List<SettingWidget<?>>> entry : categories.entrySet()) {
                 String category = entry.getKey();
-                List<SettingWidget<?>> widgets = entry.getValue();
+                List<SettingWidget<?>> widgets = visibleWidgets(entry.getValue());
+                if (widgets.isEmpty()) {
+                    continue;
+                }
                 boolean collapsed = isCategoryCollapsed(category);
 
                 // Filter widgets by search
@@ -348,8 +386,14 @@ public class SettingsScreen extends Screen {
                     SIDEBAR_BUTTON_HEIGHT)) {
                 return true;
             }
-            // Github
+            // Map
             if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3, btnW,
+                    SIDEBAR_BUTTON_HEIGHT)) {
+                SeqClient.mc.setScreen(new WorldMapScreen(this));
+                return true;
+            }
+            // Github
+            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4, btnW,
                     SIDEBAR_BUTTON_HEIGHT)) {
                 try {
                     java.net.URI uri = java.net.URI.create(GITHUB_URL);
@@ -401,7 +445,10 @@ public class SettingsScreen extends Screen {
 
             for (Map.Entry<String, List<SettingWidget<?>>> entry : categories.entrySet()) {
                 String category = entry.getKey();
-                List<SettingWidget<?>> widgets = entry.getValue();
+                List<SettingWidget<?>> widgets = visibleWidgets(entry.getValue());
+                if (widgets.isEmpty()) {
+                    continue;
+                }
                 boolean collapsed = isCategoryCollapsed(category);
 
                 // Filter widgets by search
@@ -532,6 +579,12 @@ public class SettingsScreen extends Screen {
 
     private boolean isCategoryCollapsed(String category) {
         return searchQuery.isEmpty() && collapsedCategories.contains(category);
+    }
+
+    private List<SettingWidget<?>> visibleWidgets(List<SettingWidget<?>> widgets) {
+        return widgets.stream()
+                .filter(widget -> widget.getSetting().isVisible())
+                .toList();
     }
 
     @Override

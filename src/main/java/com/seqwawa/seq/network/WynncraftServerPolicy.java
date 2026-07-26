@@ -33,16 +33,19 @@ public final class WynncraftServerPolicy {
         if (normalizedHost == null) {
             return Scope.UNKNOWN;
         }
-        if ("wynncraft.com".equals(normalizedHost)) {
-            return Scope.MAIN;
-        }
-        if ("beta.wynncraft.com".equals(normalizedHost) || normalizedHost.endsWith(".beta.wynncraft.com")) {
+        if (isHostOrSubdomain(normalizedHost, "beta.wynncraft.com")
+                || isHostOrSubdomain(normalizedHost, "beta.wynncraft.net")) {
             return Scope.BLOCKED;
         }
-        if (normalizedHost.endsWith(".wynncraft.com")) {
+        if (isHostOrSubdomain(normalizedHost, "wynncraft.com")
+                || isHostOrSubdomain(normalizedHost, "wynncraft.net")) {
             return Scope.MAIN;
         }
         return Scope.BLOCKED;
+    }
+
+    private static boolean isHostOrSubdomain(String host, String domain) {
+        return domain.equals(host) || host.endsWith("." + domain);
     }
 
     static Scope classifyCurrentServer(

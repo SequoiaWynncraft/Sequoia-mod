@@ -65,7 +65,11 @@ public enum UiColor {
     MAP_TERRITORY_HOVER_TEXT("map.territory_hover_text", rgba(185, 247, 250, 255)),
     MAP_SELECTED_TERRITORY("map.selected_territory", rgba(255, 204, 82, 235)),
     MAP_WORLD_EVENT("map.world_event", rgba(62, 190, 218, 245)),
-    MAP_TRACKED_WORLD_EVENT("map.tracked_world_event", rgba(255, 194, 72, 250));
+    MAP_TRACKED_WORLD_EVENT("map.tracked_world_event", rgba(255, 194, 72, 250)),
+    MAP_TOTEM("map.totem", rgba(255, 194, 72, 245)),
+    MAP_TOTEM_MUTED("map.totem_muted", rgba(190, 150, 76, 130)),
+    MAP_TOTEM_RANGE("map.totem_range", rgba(74, 220, 235, 235)),
+    MAP_TOTEM_REACH("map.totem_reach", rgba(126, 232, 242, 175));
 
     private static final Map<String, UiColor> BY_KEY = Arrays.stream(values())
             .collect(Collectors.toUnmodifiableMap(UiColor::key, Function.identity()));

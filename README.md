@@ -41,6 +41,10 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 5. **Check status** - run `/seq status` to make sure you're connected.
 6. **Configure** - press `O` and open settings to toggle Discord chat, raid announcements, and related behavior.
 
+Linked players who are not Sequoia members can still use Party Finder and unrestricted local features. When such a
+session connects, the mod shows one notice and disables Sequoia-only integrations for that session; later membership
+rejections stay silent.
+
 ## Common commands
 
 - `/seq`: open the main Sequoia screen

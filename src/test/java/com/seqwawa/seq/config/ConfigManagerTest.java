@@ -145,4 +145,42 @@ class ConfigManagerTest {
         assertEquals("high_contrast", reloadedSetting.getValue());
         assertEquals("high_contrast", applied.get());
     }
+
+    @Test
+    void persistsColorSettingsAsCanonicalHex() throws Exception {
+        Path configPath = tempDir.resolve("config").resolve("sequoia.json");
+        Setting.ColorSetting lightRoom = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF);
+        Setting.ColorSetting halcyon = new Setting.ColorSetting("halcyon_ring_color", "raids", 0x00FFFF);
+        Setting.ColorSetting radiance = new Setting.ColorSetting("radiance_marker_color", "raids", 0xFF0000);
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        manager.register(lightRoom);
+        manager.register(halcyon);
+        manager.register(radiance);
+
+        lightRoom.setHexValue("#a1b2c3");
+        halcyon.setHexValue("#123456");
+        radiance.setHexValue("#fedcba");
+        manager.save();
+
+        String json = Files.readString(configPath);
+        assertTrue(json.contains("\"raids.light_room_ring_color\": \"#A1B2C3\""));
+        assertTrue(json.contains("\"raids.halcyon_ring_color\": \"#123456\""));
+        assertTrue(json.contains("\"raids.radiance_marker_color\": \"#FEDCBA\""));
+
+        Setting.ColorSetting reloadedLightRoom =
+                new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF);
+        Setting.ColorSetting reloadedHalcyon =
+                new Setting.ColorSetting("halcyon_ring_color", "raids", 0x00FFFF);
+        Setting.ColorSetting reloadedRadiance =
+                new Setting.ColorSetting("radiance_marker_color", "raids", 0xFF0000);
+        ConfigManager reloaded = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        reloaded.register(reloadedLightRoom);
+        reloaded.register(reloadedHalcyon);
+        reloaded.register(reloadedRadiance);
+        reloaded.load();
+
+        assertEquals("#A1B2C3", reloadedLightRoom.getHexValue());
+        assertEquals("#123456", reloadedHalcyon.getHexValue());
+        assertEquals("#FEDCBA", reloadedRadiance.getHexValue());
+    }
 }

@@ -6,6 +6,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SettingTest {
 
@@ -106,5 +108,47 @@ class SettingTest {
         assertEquals(175, intSetting.getValue());
         assertEquals(2.25, doubleSetting.getValue());
         assertEquals(2.25f, floatSetting.getValue());
+    }
+
+    @Test
+    void colorSettingAcceptsAndCanonicalizesSixDigitHex() {
+        Setting.ColorSetting setting = new Setting.ColorSetting("color", "test", 0x00FFFF);
+
+        assertTrue(setting.setHexValue(" #a1b2c3 "));
+
+        assertEquals(0xA1B2C3, setting.getValue());
+        assertEquals("#A1B2C3", setting.getHexValue());
+        assertEquals(new JsonPrimitive("#A1B2C3"), setting.serialize());
+    }
+
+    @Test
+    void colorSettingRejectsInvalidHexWithoutLosingLastValidColor() {
+        Setting.ColorSetting setting = new Setting.ColorSetting("color", "test", 0x00FFFF);
+        setting.setHexValue("#123456");
+
+        assertFalse(setting.setHexValue("#XYZXYZ"));
+        assertFalse(setting.setHexValue("#123"));
+        assertFalse(setting.setHexValue("1234567"));
+
+        assertEquals(0x123456, setting.getValue());
+    }
+
+    @Test
+    void colorSettingIgnoresMalformedSerializedValues() {
+        Setting.ColorSetting setting = new Setting.ColorSetting("color", "test", 0x00FFFF);
+
+        setting.deserialize(new JsonPrimitive("#not-a-color"));
+        setting.deserialize(new JsonPrimitive(0x123456));
+
+        assertEquals("#00FFFF", setting.getHexValue());
+    }
+
+    @Test
+    void colorSettingMasksAlphaFromDirectRgbUpdates() {
+        Setting.ColorSetting setting = new Setting.ColorSetting("color", "test", 0x00FFFF);
+
+        setting.setValue(0xFFA1B2C3);
+
+        assertEquals(0xA1B2C3, setting.getValue());
     }
 }

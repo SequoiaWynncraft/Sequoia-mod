@@ -161,6 +161,15 @@ public class WynnPartySyncManager {
                     currentListing.id());
             return;
         }
+        if (shouldDeferOverCapacitySnapshot(
+                observedState.memberUsernames.size(), currentListing.maxPartySize())) {
+            SeqClient.LOGGER.debug(
+                    "[WynnPartySync] Deferring over-capacity snapshot listingId={} members={} maxPartySize={}",
+                    currentListing.id(),
+                    observedState.memberUsernames.size(),
+                    currentListing.maxPartySize());
+            return;
+        }
 
         Instant now = Instant.now();
         String snapshotKey = buildSnapshotKey(currentListing.id());
@@ -184,6 +193,10 @@ public class WynnPartySyncManager {
             lastSentSnapshotKey = snapshotKey;
             lastSentSnapshotAt = now;
         }
+    }
+
+    static boolean shouldDeferOverCapacitySnapshot(int observedMemberCount, int maxPartySize) {
+        return maxPartySize > 0 && observedMemberCount > maxPartySize;
     }
 
     public void reset() {
