@@ -49,6 +49,7 @@ import com.seqwawa.seq.map.GuildTerritoryIndex;
 import com.seqwawa.seq.map.GuildTerritoryService;
 import com.seqwawa.seq.map.IngredientFarmSpot;
 import com.seqwawa.seq.map.IngredientFarmSpotCatalog;
+import com.seqwawa.seq.map.IngredientMapCategory;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapDisplayMode;
@@ -113,6 +114,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final int SIDEBAR_CLUSTER_LIMIT = 5;
     private static final int TOTEM_RESULT_VISIBLE_ROWS = 4;
     private static final float TOTEM_RESULT_ROW_HEIGHT = 28;
+    private static final float INGREDIENT_FARM_SPOT_ROW_HEIGHT = 52;
     private static final long TOTEM_SOLVE_DEBOUNCE_MS = 200;
     private final Screen parent;
     private final MapFocus mapFocus;
@@ -182,6 +184,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private WorldEventDefinition selectedWorldEvent;
     private MapFocus.Marker hoveredFocusMarker;
     private MapFocus.Marker selectedFocusMarker;
+    private IngredientMapCategory ingredientMapCategory = IngredientMapCategory.SPAWNS;
+    private IngredientFarmSpot hoveredIngredientFarmSpot;
+    private IngredientFarmSpot selectedIngredientFarmSpot;
     private List<GatheringNode> cachedSourceNodes = List.of();
     private List<GatheringNode> cachedFilteredNodes = List.of();
     private List<GatheringNodeCluster> cachedClusters = List.of();
@@ -237,6 +242,19 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             MapFocus mapFocus,
             ItemStack mapFocusIcon,
             GameProfile mapFocusSkinProfile) {
+        this(parent, mapFocus, mapFocusIcon, mapFocusSkinProfile, null);
+    }
+
+    public WorldMapScreen(Screen parent, IngredientFarmSpot farmSpot) {
+        this(parent, null, ItemStack.EMPTY, null, farmSpot);
+    }
+
+    private WorldMapScreen(
+            Screen parent,
+            MapFocus mapFocus,
+            ItemStack mapFocusIcon,
+            GameProfile mapFocusSkinProfile,
+            IngredientFarmSpot farmSpot) {
         super(Component.literal("Sequoia Map"));
         this.parent = parent;
         this.mapFocus = mapFocus;
@@ -245,6 +263,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 ? null
                 : SeqClient.mc.getSkinManager().createLookup(mapFocusSkinProfile, false);
         this.selectedFocusMarker = mapFocus == null ? null : mapFocus.selectedMarker();
+        this.selectedIngredientFarmSpot = farmSpot;
+        this.ingredientMapCategory =
+                farmSpot == null ? IngredientMapCategory.SPAWNS : IngredientMapCategory.TOTEM_SPOTS;
         professionToggles.putAll(mapSettings.professionToggles());
         selectedResourceFilters.addAll(mapSettings.resourceFilters());
         showClusters = mapSettings.showClusters();
@@ -260,7 +281,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         showDebugInfo = mapSettings.showDebugInfo();
         clusterScoreMode = mapSettings.clusterScoreMode();
         gatheringAnalysisScope = mapSettings.gatheringAnalysisScope();
-        displayMode = mapFocus == null || mapFocus.markers().isEmpty()
+        displayMode = (mapFocus == null || mapFocus.markers().isEmpty()) && farmSpot == null
                 ? mapSettings.displayMode()
                 : MapDisplayMode.INGREDIENTS;
         worldEventDisplayFilter = mapSettings.worldEventDisplayFilter();
@@ -303,7 +324,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
         if (!initializedViewport) {
             initializedViewport = true;
-            if (hasMapFocus()) {
+            if (selectedIngredientFarmSpot != null) {
+                centerOnIngredientFarmSpot(selectedIngredientFarmSpot);
+            } else if (hasMapFocus()) {
                 fitMapFocus(mapW, mapH);
             } else {
                 fitFullMap(mapW, mapH);
@@ -322,6 +345,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private void renderNvg(UiCanvas canvas, MapViewport viewport) {
         hoveredFocusMarker = null;
+        hoveredIngredientFarmSpot = null;
         focusIconOverlays.clear();
         renderMapBackground(canvas, viewport);
         canvas.fillRect(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(), color(MAP_TINT));
@@ -333,7 +357,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return;
         }
         if (displayMode == MapDisplayMode.INGREDIENTS) {
-            renderMapFocus(canvas, viewport);
+            if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
+                renderIngredientFarmSpotMarkers(canvas, viewport);
+            } else {
+                renderMapFocus(canvas, viewport);
+            }
             renderPlayer(canvas, viewport);
             renderSidebar(canvas);
             renderInsightsSidebar(canvas);
@@ -434,6 +462,62 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (hoveredFocusMarker != null) {
             renderMapFocusTooltip(canvas, hoveredFocusMarker);
         }
+    }
+
+    private void renderIngredientFarmSpotMarkers(UiCanvas canvas, MapViewport viewport) {
+        List<IngredientFarmSpot> spots = IngredientFarmSpotCatalog.all();
+        MapBounds visibleBounds = viewport.visibleBounds();
+        if (!draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY)) {
+            double closestDistance = 11;
+            for (IngredientFarmSpot spot : spots) {
+                if (!visibleBounds.contains(spot.x(), spot.z())) {
+                    continue;
+                }
+                double distance = Math.hypot(
+                        nvgMouseX - viewport.worldToScreenX(spot.x()),
+                        nvgMouseY - viewport.worldToScreenZ(spot.z()));
+                if (distance <= closestDistance) {
+                    hoveredIngredientFarmSpot = spot;
+                    closestDistance = distance;
+                }
+            }
+        }
+
+        canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+        for (IngredientFarmSpot spot : spots) {
+            if (!visibleBounds.contains(spot.x(), spot.z())) {
+                continue;
+            }
+            float x = viewport.worldToScreenX(spot.x());
+            float y = viewport.worldToScreenZ(spot.z());
+            boolean selected = spot.equals(selectedIngredientFarmSpot);
+            boolean hovered = spot.equals(hoveredIngredientFarmSpot);
+            Color markerColor = selected ? color(MAP_SELECTED_TERRITORY) : color(ACCENT_PRIMARY);
+            float areaRadius = (float) (spot.radius() * viewport.pixelsPerBlock());
+            if (areaRadius >= 4) {
+                drawCircle(canvas, x, y, areaRadius, withAlpha(markerColor, selected ? 34 : 20));
+                drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, withAlpha(markerColor, 145));
+            }
+            float markerRadius = selected || hovered ? 9 : 7;
+            drawCircle(canvas, x, y, markerRadius + 2, color(BACKGROUND_MODAL_OVERLAY, 190));
+            drawCircle(canvas, x, y, markerRadius, markerColor);
+            drawText(canvas, x, y + 0.5f, 10, "T", color(MAP_TEXT), TextAlignment.CENTER);
+        }
+        canvas.resetScissor();
+
+        if (hoveredIngredientFarmSpot != null) {
+            renderIngredientFarmSpotTooltip(canvas, hoveredIngredientFarmSpot);
+        }
+    }
+
+    private void renderIngredientFarmSpotTooltip(UiCanvas canvas, IngredientFarmSpot spot) {
+        String subtitle = spot.coordinates() + " · " + String.join(", ", spot.ingredients());
+        float x = tooltipX(250);
+        float y = Math.max(58, nvgMouseY + 12);
+        canvas.fillRect(x, y, 250, 42, color(MAP_SIDEBAR));
+        canvas.strokeRect(x, y, 250, 42, 1, color(MAP_BORDER));
+        drawFittedText(canvas, x + 8, y + 15, 12, spot.name(), color(MAP_TEXT), 234, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 31, 10, subtitle, color(MAP_SUBTEXT), 234, TextAlignment.LEFT);
     }
 
     @Override
@@ -1406,7 +1490,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         drawMapModeControl(canvas, layout.modeY());
 
         float contentWidth = SIDEBAR_WIDTH - PADDING * 2;
-        drawText(canvas, PADDING, layout.titleY(), 13, "Ingredient Spawns", color(MAP_TITLE), TextAlignment.LEFT);
+        drawIngredientMapCategoryControl(canvas, layout.titleY());
+        if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
+            renderIngredientFarmSpotSidebar(canvas, layout, contentWidth);
+            return;
+        }
+
         drawButton(canvas, PADDING, layout.guideY(), contentWidth, BUTTON_HEIGHT, "Choose Ingredient", false);
         if (!hasMapFocus()) {
             drawFittedText(
@@ -1464,26 +1553,33 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                     TextAlignment.LEFT);
             drawButton(canvas, PADDING, layout.copyY(), contentWidth, BUTTON_HEIGHT, "Copy Selected Coordinates", false);
         }
-
-        renderIngredientFarmSpots(canvas, layout, contentWidth);
     }
 
-    private void renderIngredientFarmSpots(
+    private void renderIngredientFarmSpotSidebar(
             UiCanvas canvas, IngredientSidebarLayout layout, float contentWidth) {
         drawText(
                 canvas,
                 PADDING,
-                layout.farmSpotsTitleY(),
-                12,
-                "Mob Totem Farming Spots",
+                layout.guideY(),
+                13,
+                "All Mob Totem Spots",
                 color(MAP_TITLE),
                 TextAlignment.LEFT);
-        List<IngredientFarmSpot> spots = IngredientFarmSpotCatalog.forIngredient(mapFocus.title());
+        List<IngredientFarmSpot> spots = IngredientFarmSpotCatalog.all();
+        drawText(
+                canvas,
+                PADDING,
+                layout.ingredientY(),
+                10,
+                spots.size() + (spots.size() == 1 ? " curated location" : " curated locations"),
+                color(MAP_SUBTEXT),
+                TextAlignment.LEFT);
+        drawButton(canvas, PADDING, layout.fitY(), contentWidth, BUTTON_HEIGHT, "Fit All Totem Spots", false);
         if (spots.isEmpty()) {
             drawFittedText(
                     canvas,
                     PADDING,
-                    layout.farmSpotsDetailY(),
+                    layout.selectedTitleY(),
                     10,
                     "No curated farming spots have been added yet.",
                     color(MAP_SUBTEXT),
@@ -1492,26 +1588,76 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return;
         }
 
-        drawText(
-                canvas,
-                PADDING,
-                layout.farmSpotsDetailY(),
-                10,
-                spots.size() + (spots.size() == 1 ? " recommended spot" : " recommended spots"),
-                color(MAP_SUBTEXT),
-                TextAlignment.LEFT);
-        float rowY = layout.farmSpotsDetailY() + 20;
-        for (IngredientFarmSpot spot : spots.stream().limit(3).toList()) {
-            drawFittedText(
-                    canvas,
+        float rowY = layout.selectedTitleY();
+        for (IngredientFarmSpot spot : spots) {
+            boolean selected = spot.equals(selectedIngredientFarmSpot);
+            boolean hovered = isHovered(
+                    nvgMouseX,
+                    nvgMouseY,
                     PADDING,
                     rowY,
-                    10,
-                    spot.name() + " · " + spot.coordinates(),
-                    color(MAP_TEXT),
                     contentWidth,
+                    INGREDIENT_FARM_SPOT_ROW_HEIGHT - 4);
+            canvas.fillRect(
+                    PADDING,
+                    rowY,
+                    contentWidth,
+                    INGREDIENT_FARM_SPOT_ROW_HEIGHT - 4,
+                    selected ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
+            drawFittedText(
+                    canvas,
+                    PADDING + 7,
+                    rowY + 14,
+                    11,
+                    spot.name(),
+                    color(MAP_TEXT),
+                    contentWidth - 14,
                     TextAlignment.LEFT);
-            rowY += 18;
+            drawFittedText(
+                    canvas,
+                    PADDING + 7,
+                    rowY + 31,
+                    10,
+                    spot.coordinates(),
+                    color(MAP_SUBTEXT),
+                    contentWidth - 14,
+                    TextAlignment.LEFT);
+            drawFittedText(
+                    canvas,
+                    PADDING + 7,
+                    rowY + 44,
+                    9,
+                    String.join(", ", spot.ingredients()),
+                    color(MAP_SUBTEXT),
+                    contentWidth - 14,
+                    TextAlignment.LEFT);
+            rowY += INGREDIENT_FARM_SPOT_ROW_HEIGHT;
+        }
+    }
+
+    private void drawIngredientMapCategoryControl(UiCanvas canvas, float y) {
+        float width = SIDEBAR_WIDTH - PADDING * 2;
+        float segmentWidth = width / IngredientMapCategory.values().length;
+        for (int index = 0; index < IngredientMapCategory.values().length; index++) {
+            IngredientMapCategory category = IngredientMapCategory.values()[index];
+            float x = PADDING + index * segmentWidth;
+            boolean active = ingredientMapCategory == category;
+            boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
+            canvas.fillRect(
+                    x,
+                    y,
+                    segmentWidth,
+                    BUTTON_HEIGHT,
+                    active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
+            canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, color(MAP_BORDER));
+            drawText(
+                    canvas,
+                    x + segmentWidth / 2f,
+                    y + BUTTON_HEIGHT / 2f,
+                    10,
+                    category.label(),
+                    color(MAP_TEXT),
+                    TextAlignment.CENTER);
         }
     }
 
@@ -1550,6 +1696,47 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private void renderIngredientInsights(UiCanvas canvas, float x) {
         float contentX = x + PADDING;
         float contentWidth = INSIGHTS_SIDEBAR_WIDTH - PADDING * 2;
+        if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
+            drawInsightsSectionTitle(canvas, contentX, 60, "Mob Totem Spots");
+            drawInsightRow(
+                    canvas,
+                    contentX,
+                    84,
+                    contentWidth,
+                    "Curated locations",
+                    String.valueOf(IngredientFarmSpotCatalog.all().size()));
+            if (selectedIngredientFarmSpot != null) {
+                drawInsightsSectionTitle(canvas, contentX, 118, "Selected Spot");
+                drawFittedText(
+                        canvas,
+                        contentX,
+                        142,
+                        12,
+                        selectedIngredientFarmSpot.name(),
+                        color(MAP_TEXT),
+                        contentWidth,
+                        TextAlignment.LEFT);
+                drawFittedText(
+                        canvas,
+                        contentX,
+                        160,
+                        11,
+                        selectedIngredientFarmSpot.coordinates(),
+                        color(MAP_SUBTEXT),
+                        contentWidth,
+                        TextAlignment.LEFT);
+                drawFittedText(
+                        canvas,
+                        contentX,
+                        178,
+                        10,
+                        String.join(", ", selectedIngredientFarmSpot.ingredients()),
+                        color(MAP_SUBTEXT),
+                        contentWidth,
+                        TextAlignment.LEFT);
+            }
+            return;
+        }
         drawInsightsSectionTitle(canvas, contentX, 60, "Ingredient");
         if (!hasMapFocus()) {
             drawFittedText(
@@ -2471,6 +2658,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private boolean copyHoveredCoordinates(float mx, float my, float sidebarMy, float screenWidth, float screenHeight) {
         MapViewport viewport = mapViewport(screenWidth, screenHeight);
+        if (viewport.isInsideScreen(mx, my) && hoveredIngredientFarmSpot != null) {
+            copyToClipboard(hoveredIngredientFarmSpot.coordinates());
+            return true;
+        }
         if (viewport.isInsideScreen(mx, my) && hoveredFocusMarker != null) {
             copyToClipboard(hoveredFocusMarker.coordinates());
             return true;
@@ -3242,6 +3433,43 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 MAX_PIXELS_PER_BLOCK);
     }
 
+    private void fitIngredientFarmSpots(float screenWidth, float screenHeight) {
+        List<IngredientFarmSpot> spots = IngredientFarmSpotCatalog.all();
+        if (spots.isEmpty()) {
+            return;
+        }
+        double minX = spots.stream().mapToDouble(IngredientFarmSpot::x).min().orElse(0);
+        double maxX = spots.stream().mapToDouble(IngredientFarmSpot::x).max().orElse(0);
+        double minZ = spots.stream().mapToDouble(IngredientFarmSpot::z).min().orElse(0);
+        double maxZ = spots.stream().mapToDouble(IngredientFarmSpot::z).max().orElse(0);
+        centerX = (minX + maxX) / 2.0;
+        centerZ = (minZ + maxZ) / 2.0;
+        MapViewport viewport = mapViewport(screenWidth, screenHeight);
+        double spanX = Math.max(80, maxX - minX);
+        double spanZ = Math.max(80, maxZ - minZ);
+        double xScale = Math.max(1, viewport.screenWidth() - 80) / spanX;
+        double zScale = Math.max(1, viewport.screenHeight() - 100) / spanZ;
+        pixelsPerBlock = clamp(
+                Math.min(Math.min(xScale, zScale) * 0.9, CONTEXT_FOCUS_MAX_PIXELS_PER_BLOCK),
+                MIN_PIXELS_PER_BLOCK,
+                MAX_PIXELS_PER_BLOCK);
+    }
+
+    private void selectIngredientFarmSpot(IngredientFarmSpot spot) {
+        if (spot == null) {
+            return;
+        }
+        ingredientMapCategory = IngredientMapCategory.TOTEM_SPOTS;
+        selectedIngredientFarmSpot = spot;
+        centerOnIngredientFarmSpot(spot);
+    }
+
+    private void centerOnIngredientFarmSpot(IngredientFarmSpot spot) {
+        centerX = spot.x();
+        centerZ = spot.z();
+        pixelsPerBlock = Math.max(pixelsPerBlock, 0.35);
+    }
+
     private boolean centerOnPlayer() {
         if (SeqClient.mc.player == null) {
             return false;
@@ -3282,6 +3510,15 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return true;
         }
         MapViewport focusedViewport = mapViewport(screenWidth, screenHeight);
+        if (displayMode == MapDisplayMode.INGREDIENTS
+                && focusedViewport.isInsideScreen(mx, my)
+                && hoveredIngredientFarmSpot != null) {
+            selectIngredientFarmSpot(hoveredIngredientFarmSpot);
+            draggingMap = true;
+            hoveredIngredientFarmSpot = null;
+            closeSearchDropdowns();
+            return true;
+        }
         if (displayMode == MapDisplayMode.INGREDIENTS
                 && focusedViewport.isInsideScreen(mx, my)
                 && hoveredFocusMarker != null) {
@@ -3600,16 +3837,57 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             setDisplayMode(mapModeAt(mx));
             return true;
         }
-        if (isHovered(mx, my, PADDING, layout.guideY(), buttonWidth, BUTTON_HEIGHT)) {
+        if (isHovered(mx, my, PADDING, layout.titleY(), buttonWidth, BUTTON_HEIGHT)) {
+            IngredientMapCategory nextCategory = ingredientMapCategoryAt(mx);
+            if (nextCategory != ingredientMapCategory) {
+                ingredientMapCategory = nextCategory;
+                if (nextCategory == IngredientMapCategory.TOTEM_SPOTS) {
+                    if (selectedIngredientFarmSpot != null) {
+                        centerOnIngredientFarmSpot(selectedIngredientFarmSpot);
+                    } else {
+                        fitIngredientFarmSpots(screenWidth, screenHeight);
+                    }
+                } else if (hasMapFocus()) {
+                    MapViewport viewport = mapViewport(screenWidth, screenHeight);
+                    fitMapFocus(viewport.screenWidth(), viewport.screenHeight());
+                }
+            }
+            hoveredFocusMarker = null;
+            hoveredIngredientFarmSpot = null;
+            return true;
+        }
+        if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
+            if (isHovered(mx, my, PADDING, layout.fitY(), buttonWidth, BUTTON_HEIGHT)) {
+                fitIngredientFarmSpots(screenWidth, screenHeight);
+                return true;
+            }
+            float rowY = layout.selectedTitleY();
+            for (IngredientFarmSpot spot : IngredientFarmSpotCatalog.all()) {
+                if (isHovered(
+                        mx,
+                        my,
+                        PADDING,
+                        rowY,
+                        buttonWidth,
+                        INGREDIENT_FARM_SPOT_ROW_HEIGHT - 4)) {
+                    selectIngredientFarmSpot(spot);
+                    return true;
+                }
+                rowY += INGREDIENT_FARM_SPOT_ROW_HEIGHT;
+            }
+        } else if (isHovered(mx, my, PADDING, layout.guideY(), buttonWidth, BUTTON_HEIGHT)) {
             SeqClient.mc.setScreen(new IngredientGuideScreen(this));
             return true;
         }
-        if (hasMapFocus() && isHovered(mx, my, PADDING, layout.fitY(), buttonWidth, BUTTON_HEIGHT)) {
+        if (ingredientMapCategory == IngredientMapCategory.SPAWNS
+                && hasMapFocus()
+                && isHovered(mx, my, PADDING, layout.fitY(), buttonWidth, BUTTON_HEIGHT)) {
             MapViewport viewport = mapViewport(screenWidth, screenHeight);
             fitMapFocus(viewport.screenWidth(), viewport.screenHeight());
             return true;
         }
-        if (selectedFocusMarker != null
+        if (ingredientMapCategory == IngredientMapCategory.SPAWNS
+                && selectedFocusMarker != null
                 && isHovered(mx, my, PADDING, layout.copyY(), buttonWidth, BUTTON_HEIGHT)) {
             copyToClipboard(selectedFocusMarker.coordinates());
             return true;
@@ -3819,6 +4097,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             hoveredWorldEvent = null;
             hoveredWorldEventLocationIndex = -1;
             hoveredFocusMarker = null;
+            hoveredIngredientFarmSpot = null;
             return true;
         }
         return super.mouseDragged(click, deltaX, deltaY);
@@ -4257,6 +4536,14 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         return index >= 0 && index < MapDisplayMode.values().length ? MapDisplayMode.values()[index] : null;
     }
 
+    private IngredientMapCategory ingredientMapCategoryAt(float mouseX) {
+        float segmentWidth = (SIDEBAR_WIDTH - PADDING * 2) / IngredientMapCategory.values().length;
+        int index = (int) ((mouseX - PADDING) / segmentWidth);
+        return index >= 0 && index < IngredientMapCategory.values().length
+                ? IngredientMapCategory.values()[index]
+                : ingredientMapCategory;
+    }
+
     private WorldEventDisplayFilter worldEventFilterAt(float mouseX) {
         float segmentWidth = (SIDEBAR_WIDTH - PADDING * 2) / WorldEventDisplayFilter.values().length;
         int index = (int) ((mouseX - PADDING) / segmentWidth);
@@ -4285,9 +4572,14 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (mode == MapDisplayMode.WORLD_EVENTS) {
             SeqClient.getWorldEventManager().requestMapRefresh();
             refreshWorldEvents();
-        } else if (mode == MapDisplayMode.INGREDIENTS && hasMapFocus()) {
-            MapViewport viewport = mapViewport(uiScreenWidth(), uiScreenHeight());
-            fitMapFocus(viewport.screenWidth(), viewport.screenHeight());
+        } else if (mode == MapDisplayMode.INGREDIENTS) {
+            if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS
+                    && selectedIngredientFarmSpot != null) {
+                centerOnIngredientFarmSpot(selectedIngredientFarmSpot);
+            } else if (hasMapFocus()) {
+                MapViewport viewport = mapViewport(uiScreenWidth(), uiScreenHeight());
+                fitMapFocus(viewport.screenWidth(), viewport.screenHeight());
+            }
         }
     }
 
@@ -4412,16 +4704,14 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float backY = 58;
         float centerY = backY + BUTTON_HEIGHT + 8;
         float modeY = centerY + BUTTON_HEIGHT + 18;
-        float titleY = modeY + BUTTON_HEIGHT + 24;
-        float guideY = titleY + 18;
+        float titleY = modeY + BUTTON_HEIGHT + 18;
+        float guideY = titleY + BUTTON_HEIGHT + 18;
         float ingredientY = guideY + BUTTON_HEIGHT + 20;
         float summaryY = ingredientY + 20;
         float fitY = summaryY + 18;
         float selectedTitleY = fitY + BUTTON_HEIGHT + 26;
         float selectedDetailY = selectedTitleY + 24;
         float copyY = selectedDetailY + 44;
-        float farmSpotsTitleY = copyY + BUTTON_HEIGHT + 24;
-        float farmSpotsDetailY = farmSpotsTitleY + 24;
         return new IngredientSidebarLayout(
                 backY,
                 centerY,
@@ -4433,9 +4723,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 fitY,
                 selectedTitleY,
                 selectedDetailY,
-                copyY,
-                farmSpotsTitleY,
-                farmSpotsDetailY);
+                copyY);
     }
 
     private SidebarLayout sidebarLayout() {
@@ -4622,9 +4910,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float fitY,
             float selectedTitleY,
             float selectedDetailY,
-            float copyY,
-            float farmSpotsTitleY,
-            float farmSpotsDetailY) {}
+            float copyY) {}
 
     private record SidebarLayout(
             float backY,

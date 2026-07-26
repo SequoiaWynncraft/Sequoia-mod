@@ -24,6 +24,8 @@ import com.seqwawa.seq.managers.IngredientGuideManager.SortDirection;
 import com.seqwawa.seq.managers.IngredientGuideManager.SortKey;
 import com.seqwawa.seq.managers.IngredientGuideSessionSettings;
 import com.seqwawa.seq.managers.IngredientItemIconFactory;
+import com.seqwawa.seq.map.IngredientFarmSpot;
+import com.seqwawa.seq.map.IngredientFarmSpotCatalog;
 import com.seqwawa.seq.map.MapFocus;
 import com.seqwawa.seq.model.IngredientGuideEntry;
 import com.seqwawa.seq.model.IngredientGuideEntry.DropSource;
@@ -58,6 +60,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static final float SORT_ROW_GAP = 4;
     private static final float SORT_DIRECTION_WIDTH = 76;
     private static final float ROW_HEIGHT = 43;
+    private static final float FARM_SPOT_ROW_HEIGHT = 58;
     private static final float SCROLL_STEP = 34;
     private static final float SCROLLBAR_WIDTH = 3;
     private static final float SCROLLBAR_HIT_WIDTH = 9;
@@ -75,11 +78,14 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private final IngredientGuideSessionSettings sessionSettings = IngredientGuideSessionSettings.getInstance();
     private final List<LocationHitbox> locationHitboxes = new ArrayList<>();
     private ActionHitbox showAllMapHitbox;
+    private ActionHitbox showFarmSpotMapHitbox;
 
     private long observedSnapshotVersion = -1;
     private String observedQuery = "";
     private List<IngredientGuideEntry> visibleIngredients = List.of();
     private IngredientGuideEntry selectedIngredient;
+    private GuideCategory guideCategory = GuideCategory.INGREDIENTS;
+    private IngredientFarmSpot selectedFarmSpot;
     private String searchQuery = "";
     private boolean searchFocused;
     private SortKey primarySortKey;
@@ -113,6 +119,9 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         primarySortDirection = sortOrder.primaryDirection();
         secondarySortKey = sortOrder.secondaryKey();
         secondarySortDirection = sortOrder.secondaryDirection();
+        selectedFarmSpot = IngredientFarmSpotCatalog.all().isEmpty()
+                ? null
+                : IngredientFarmSpotCatalog.all().getFirst();
         manager.requestRefresh();
     }
 
@@ -140,12 +149,118 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         canvas.fillRect(0, 0, screenWidth, HEADER_HEIGHT, color(BACKGROUND_HEADER, 245));
         drawText(canvas, "Ingredient Guide", OUTER_MARGIN, HEADER_HEIGHT / 2f, 20, color(ACCENT_PRIMARY),
                 UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
-        drawText(canvas, manager.status(), screenWidth - 92, HEADER_HEIGHT / 2f, 11, color(TEXT_MUTED),
-                UiCanvas.HorizontalAlign.RIGHT, UiCanvas.VerticalAlign.MIDDLE);
-        drawButton(canvas, screenWidth - 82, 9, 68, 24, manager.isLoading() ? "Loading" : "Refresh");
+        drawGuideCategoryControl(canvas, screenWidth / 2f - 112, 9, 224);
+        if (guideCategory == GuideCategory.INGREDIENTS) {
+            drawText(canvas, manager.status(), screenWidth - 92, HEADER_HEIGHT / 2f, 11, color(TEXT_MUTED),
+                    UiCanvas.HorizontalAlign.RIGHT, UiCanvas.VerticalAlign.MIDDLE);
+            drawButton(canvas, screenWidth - 82, 9, 68, 24, manager.isLoading() ? "Loading" : "Refresh");
+            renderIngredientList(canvas, listX, panelTop, listWidth, panelHeight);
+            renderIngredientDetail(canvas, detailX, panelTop, detailWidth, panelHeight);
+        } else {
+            renderFarmSpotList(canvas, listX, panelTop, listWidth, panelHeight);
+            renderFarmSpotDetail(canvas, detailX, panelTop, detailWidth, panelHeight);
+        }
+    }
 
-        renderIngredientList(canvas, listX, panelTop, listWidth, panelHeight);
-        renderIngredientDetail(canvas, detailX, panelTop, detailWidth, panelHeight);
+    private void renderFarmSpotList(UiCanvas canvas, float x, float y, float width, float height) {
+        canvas.fillRoundedRect(x, y, width, height, PANEL_RADIUS, color(BACKGROUND_BODY_OPAQUE, 245));
+        List<IngredientFarmSpot> spots = IngredientFarmSpotCatalog.all();
+        drawText(canvas, spots.size() + " mob totem spots", x + 11, y + 17, 11, color(TEXT_MUTED),
+                UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+        float rowsTop = y + 32;
+        float rowsHeight = Math.max(0, height - 40);
+        maxListScroll = Math.max(0, spots.size() * FARM_SPOT_ROW_HEIGHT - rowsHeight);
+        listScroll = clamp(listScroll, 0, maxListScroll);
+        canvas.scissor(x, rowsTop, width, rowsHeight);
+        try {
+            for (int index = 0; index < spots.size(); index++) {
+                IngredientFarmSpot spot = spots.get(index);
+                float rowY = rowsTop + index * FARM_SPOT_ROW_HEIGHT - listScroll;
+                boolean selected = spot.equals(selectedFarmSpot);
+                boolean hovered = contains(
+                        nvgMouseX, nvgMouseY, x + 6, rowY + 2, width - 12, FARM_SPOT_ROW_HEIGHT - 4);
+                if (selected || hovered) {
+                    canvas.fillRoundedRect(
+                            x + 6,
+                            rowY + 2,
+                            width - 12,
+                            FARM_SPOT_ROW_HEIGHT - 4,
+                            5,
+                            selected ? color(BACKGROUND_CONTENT_FOCUSED, 245) : color(CONTROL_INPUT_HOVER, 210));
+                }
+                drawText(canvas, ellipsize(spot.name(), width - 32, 12), x + 14, rowY + 16, 12,
+                        color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+                drawText(canvas, spot.coordinates(), x + 14, rowY + 33, 10, color(TEXT_MUTED),
+                        UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+                String targets = String.join(", ", spot.ingredients());
+                drawText(canvas, ellipsize(targets, width - 32, 9), x + 14, rowY + 48, 9, color(TEXT_SECONDARY),
+                        UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+            }
+        } finally {
+            canvas.resetScissor();
+        }
+        drawScrollbar(
+                canvas,
+                x + width - 5,
+                rowsTop,
+                rowsHeight,
+                listScroll,
+                maxListScroll,
+                ScrollbarTarget.INGREDIENT_LIST);
+    }
+
+    private void renderFarmSpotDetail(UiCanvas canvas, float x, float y, float width, float height) {
+        canvas.fillRoundedRect(x, y, width, height, PANEL_RADIUS, color(BACKGROUND_BODY_OPAQUE, 245));
+        locationHitboxes.clear();
+        showAllMapHitbox = null;
+        showFarmSpotMapHitbox = null;
+        maxDetailScroll = 0;
+        detailScroll = 0;
+        if (selectedFarmSpot == null) {
+            drawText(canvas, "Select a mob totem farming spot", x + width / 2f, y + height / 2f, 14,
+                    color(TEXT_MUTED), UiCanvas.HorizontalAlign.CENTER, UiCanvas.VerticalAlign.MIDDLE);
+            return;
+        }
+
+        float contentX = x + 16;
+        float contentWidth = Math.max(1, width - 32);
+        float cursorY = y + 24;
+        drawText(canvas, ellipsize(selectedFarmSpot.name(), contentWidth, 20), contentX, cursorY, 20,
+                color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+        cursorY += 30;
+        drawText(canvas, selectedFarmSpot.coordinates(), contentX, cursorY, 12, color(ACCENT_PRIMARY),
+                UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+        if (selectedFarmSpot.radius() > 0) {
+            drawText(canvas, "Radius " + selectedFarmSpot.radius(), contentX + contentWidth, cursorY, 10,
+                    color(TEXT_MUTED), UiCanvas.HorizontalAlign.RIGHT, UiCanvas.VerticalAlign.MIDDLE);
+        }
+        cursorY += 26;
+        drawButton(canvas, contentX, cursorY, Math.min(150, contentWidth), 24, "Show on map");
+        showFarmSpotMapHitbox = new ActionHitbox(contentX, cursorY, Math.min(150, contentWidth), 24);
+        cursorY += 48;
+
+        drawText(canvas, "INGREDIENTS", contentX, cursorY, 11, color(ACCENT_PRIMARY),
+                UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+        cursorY += 21;
+        drawText(canvas, String.join(", ", selectedFarmSpot.ingredients()), contentX, cursorY, 12,
+                color(TEXT_SECONDARY), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+        cursorY += 32;
+        drawText(canvas, "MOBS", contentX, cursorY, 11, color(ACCENT_PRIMARY),
+                UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+        cursorY += 21;
+        String mobs = selectedFarmSpot.mobs().isEmpty()
+                ? "Mob names not catalogued yet"
+                : String.join(", ", selectedFarmSpot.mobs());
+        drawText(canvas, mobs, contentX, cursorY, 12, color(TEXT_SECONDARY),
+                UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+        if (!selectedFarmSpot.notes().isBlank()) {
+            cursorY += 32;
+            drawText(canvas, "NOTES", contentX, cursorY, 11, color(ACCENT_PRIMARY),
+                    UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+            cursorY += 21;
+            drawText(canvas, selectedFarmSpot.notes(), contentX, cursorY, 11, color(TEXT_MUTED),
+                    UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+        }
     }
 
     private void renderIngredientList(UiCanvas canvas, float x, float y, float width, float height) {
@@ -226,6 +341,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         canvas.fillRoundedRect(x, y, width, height, PANEL_RADIUS, color(BACKGROUND_BODY_OPAQUE, 245));
         locationHitboxes.clear();
         showAllMapHitbox = null;
+        showFarmSpotMapHitbox = null;
         if (selectedIngredient == null) {
             String message = manager.isLoading() ? "Loading ingredient data..." : "Select an ingredient";
             drawText(canvas, message, x + width / 2f, y + height / 2f, 14, color(TEXT_MUTED),
@@ -434,10 +550,58 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         float detailX = OUTER_MARGIN + listWidth + 10;
         float detailWidth = Math.max(150, screenWidth - detailX - OUTER_MARGIN);
 
-        if (contains(mx, my, screenWidth - 82, 9, 68, 24)) {
+        float categoryX = screenWidth / 2f - 112;
+        if (contains(mx, my, categoryX, 9, 224, 24)) {
+            GuideCategory nextCategory = mx < categoryX + 112
+                    ? GuideCategory.INGREDIENTS
+                    : GuideCategory.TOTEM_SPOTS;
+            if (nextCategory != guideCategory) {
+                guideCategory = nextCategory;
+                searchFocused = false;
+                listScroll = 0;
+                detailScroll = 0;
+                draggedScrollbar = null;
+            }
+            return true;
+        }
+        if (guideCategory == GuideCategory.INGREDIENTS
+                && contains(mx, my, screenWidth - 82, 9, 68, 24)) {
             manager.requestRefresh(true);
             return true;
         }
+
+        if (guideCategory == GuideCategory.TOTEM_SPOTS) {
+            searchFocused = false;
+            float rowsTop = panelTop + 32;
+            float rowsHeight = Math.max(0, panelHeight - 40);
+            if (startScrollbarDrag(
+                    ScrollbarTarget.INGREDIENT_LIST,
+                    scrollbarGeometry(
+                            OUTER_MARGIN + listWidth - 5,
+                            rowsTop,
+                            rowsHeight,
+                            listScroll,
+                            maxListScroll),
+                    mx,
+                    my,
+                    listScroll)) {
+                return true;
+            }
+            if (contains(mx, my, OUTER_MARGIN, rowsTop, listWidth, rowsHeight)) {
+                int index = (int) ((my - rowsTop + listScroll) / FARM_SPOT_ROW_HEIGHT);
+                List<IngredientFarmSpot> spots = IngredientFarmSpotCatalog.all();
+                if (index >= 0 && index < spots.size()) {
+                    selectedFarmSpot = spots.get(index);
+                    return true;
+                }
+            }
+            if (showFarmSpotMapHitbox != null && showFarmSpotMapHitbox.contains(mx, my)) {
+                openFarmSpotMap();
+                return true;
+            }
+            return super.mouseClicked(click, outsideScreen);
+        }
+
         if (contains(mx, my, OUTER_MARGIN + 9, panelTop + 9, listWidth - 18, SEARCH_HEIGHT)) {
             searchFocused = true;
             return true;
@@ -549,7 +713,9 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         float trackHeight;
         float maxScroll;
         if (draggedScrollbar == ScrollbarTarget.INGREDIENT_LIST) {
-            trackHeight = Math.max(0, panelTop + panelHeight - listLayout.rowsTop() - 8);
+            trackHeight = guideCategory == GuideCategory.TOTEM_SPOTS
+                    ? Math.max(0, panelHeight - 40)
+                    : Math.max(0, panelTop + panelHeight - listLayout.rowsTop() - 8);
             maxScroll = maxListScroll;
         } else {
             trackHeight = panelHeight - 16;
@@ -601,6 +767,12 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         }
     }
 
+    private void openFarmSpotMap() {
+        if (selectedFarmSpot != null) {
+            SeqClient.mc.setScreen(new WorldMapScreen(this, selectedFarmSpot));
+        }
+    }
+
     private static String markerId(int sourceIndex, int locationIndex) {
         return sourceIndex + ":" + locationIndex;
     }
@@ -646,7 +818,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             }
             return true;
         }
-        if (key == GLFW.GLFW_KEY_SLASH) {
+        if (guideCategory == GuideCategory.INGREDIENTS && key == GLFW.GLFW_KEY_SLASH) {
             searchFocused = true;
             return true;
         }
@@ -671,6 +843,34 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         drawText(canvas, label, x + width / 2f, y + height / 2f, 10,
                 hovered ? color(ACCENT_PRIMARY_HOVER) : color(TEXT_SECONDARY),
                 UiCanvas.HorizontalAlign.CENTER, UiCanvas.VerticalAlign.MIDDLE);
+    }
+
+    private void drawGuideCategoryControl(UiCanvas canvas, float x, float y, float width) {
+        float segmentWidth = width / 2f;
+        for (int index = 0; index < GuideCategory.values().length; index++) {
+            GuideCategory category = GuideCategory.values()[index];
+            float segmentX = x + index * segmentWidth;
+            boolean active = guideCategory == category;
+            boolean hovered = contains(nvgMouseX, nvgMouseY, segmentX, y, segmentWidth, 24);
+            canvas.fillRect(
+                    segmentX,
+                    y,
+                    segmentWidth,
+                    24,
+                    active
+                            ? color(BACKGROUND_CONTENT_FOCUSED, 255)
+                            : hovered ? color(CONTROL_INPUT_HOVER, 245) : color(CONTROL_INPUT, 235));
+            canvas.strokeRect(segmentX, y, segmentWidth, 24, 1, color(ACCENT_DIVIDER));
+            drawText(
+                    canvas,
+                    category.label(),
+                    segmentX + segmentWidth / 2f,
+                    y + 12,
+                    10,
+                    active ? color(ACCENT_PRIMARY) : color(TEXT_SECONDARY),
+                    UiCanvas.HorizontalAlign.CENTER,
+                    UiCanvas.VerticalAlign.MIDDLE);
+        }
     }
 
     private void drawSortRow(
@@ -922,6 +1122,21 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
 
     private record IngredientListLayout(
             float primarySortY, float secondarySortY, float summaryY, float rowsTop) {}
+
+    private enum GuideCategory {
+        INGREDIENTS("Ingredients"),
+        TOTEM_SPOTS("Totem Spots");
+
+        private final String label;
+
+        GuideCategory(String label) {
+            this.label = label;
+        }
+
+        private String label() {
+            return label;
+        }
+    }
 
     private enum ScrollbarTarget {
         INGREDIENT_LIST,
