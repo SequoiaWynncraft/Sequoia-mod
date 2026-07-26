@@ -48,7 +48,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static final int MAX_GUILD_CHAT_MESSAGE_LENGTH = 512;
     private static final long AUTH_BACKOFF_BASE_MS = 2_000;
     private static final long AUTH_BACKOFF_CAP_MS = 60_000;
-    private static final long PRIVILEGED_SEND_THROTTLE_MS = 150;
+    private static final long PRIVILEGED_SEND_THROTTLE_MS = 50;
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Pattern URL_PATTERN = Pattern.compile("^(https?://).+", Pattern.CASE_INSENSITIVE);
     private static final Map<String, Integer> VERSION_REMINDER_INTERVALS = Map.of(
@@ -493,18 +493,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     // ── Outgoing messages ──
 
-    private void send(String type, JsonObject payload) {
+    private boolean send(String type, JsonObject payload) {
         if (isServerScopedType(type) && WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
             SeqClient.LOGGER.warn("[WebSocket] Dropping {} outside confirmed main Wynncraft host", type);
-            return;
+            return false;
         }
         if (isAuthenticatedOutboundType(type) && !canSendAuthenticated(type)) {
-            return;
+            return false;
         }
         if (isThrottleLimitedType(type) && !canSendThrottleLimited(type)) {
-            return;
+            return false;
         }
         sendPrepared(type, payload);
+        return true;
     }
 
     private void sendPrepared(String type, JsonObject payload) {
@@ -1334,8 +1335,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 leaderUsername,
                 usernames.size(),
                 memberUsernames);
-        send("party_sync_snapshot", msg);
-        return true;
+        return send("party_sync_snapshot", msg);
     }
 
     public boolean sendPartySyncMemberRemoved(String username, String reason) {
@@ -1362,8 +1362,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         msg.addProperty("username", username);
         msg.addProperty("reason", reason);
         SeqClient.LOGGER.info("[WebSocket] Sending party_sync_member_removed username={} reason={}", username, reason);
-        send("party_sync_member_removed", msg);
-        return true;
+        return send("party_sync_member_removed", msg);
     }
 
     public void sendLocalPartyClassUpdate() {

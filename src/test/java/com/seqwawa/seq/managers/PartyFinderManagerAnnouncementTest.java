@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.Member;
+import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
@@ -29,6 +30,9 @@ class PartyFinderManagerAnnouncementTest {
         Listing full = listing(11L, "leader-b", PartyStatus.OPEN, 4, 0, BASE_TIME.minusSeconds(60));
         Listing closed = listing(12L, "leader-c", PartyStatus.CLOSED, 1, 0, BASE_TIME.minusSeconds(90));
         Listing ownListing = listing(13L, LOCAL_UUID, PartyStatus.OPEN, 1, 0, BASE_TIME.minusSeconds(120));
+        Listing inviteOnly = withJoinPolicy(
+                listing(15L, "leader-e", PartyStatus.OPEN, 1, 0, BASE_TIME.minusSeconds(135)),
+                PartyJoinPolicy.INVITE_ONLY);
         Listing reservedForLocal = listing(
                 14L,
                 "leader-d",
@@ -39,7 +43,7 @@ class PartyFinderManagerAnnouncementTest {
                 List.of(new Member(LOCAL_UUID, PartyRole.HEALER, WynnClassType.MAGE, BASE_TIME.minusSeconds(149))));
 
         List<Listing> candidates = PartyFinderManager.selectOpenPartyAnnouncementCandidates(
-                List.of(eligible, full, closed, ownListing, reservedForLocal),
+                List.of(eligible, full, closed, ownListing, inviteOnly, reservedForLocal),
                 LOCAL_UUID);
 
         assertEquals(1, candidates.size());
@@ -238,6 +242,25 @@ class PartyFinderManagerAnnouncementTest {
                     BASE_TIME.plusSeconds(i)));
         }
         return members;
+    }
+
+    private static Listing withJoinPolicy(Listing listing, PartyJoinPolicy joinPolicy) {
+        return new Listing(
+                listing.id(),
+                listing.activities(),
+                listing.activity(),
+                listing.leaderUUID(),
+                listing.mode(),
+                listing.strict(),
+                listing.region(),
+                listing.world(),
+                listing.status(),
+                listing.closeReason(),
+                listing.note(),
+                listing.members(),
+                listing.reservedSlots(),
+                listing.createdAt(),
+                joinPolicy);
     }
 
     private static List<Member> reserved(int reservedCount, Instant createdAt) {

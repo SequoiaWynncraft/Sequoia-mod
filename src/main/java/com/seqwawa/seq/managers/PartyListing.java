@@ -12,6 +12,7 @@ import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.Member;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyCloseReason;
+import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyStatus;
@@ -162,6 +163,7 @@ public class PartyListing {
     public final String leaderUUID;
     public final PartyStatus status;
     public final PartyCloseReason closeReason;
+    public final PartyJoinPolicy joinPolicy;
     private final Listing backing;
 
     public PartyListing(Listing listing) {
@@ -170,6 +172,7 @@ public class PartyListing {
         this.leaderUUID = listing.leaderUUID();
         this.status = listing.status();
         this.closeReason = listing.closeReason();
+        this.joinPolicy = listing.resolvedJoinPolicy();
         this.expanded = false; // managed externally by PartyFinderManager's expanded state map
         this.maxSize = listing.maxPartySize();
         this.occupiedSlots = listing.occupiedSlotCount();
@@ -298,7 +301,7 @@ public class PartyListing {
     }
 
     public boolean isJoinable() {
-        return status == PartyStatus.OPEN;
+        return status == PartyStatus.OPEN && joinPolicy == PartyJoinPolicy.OPEN;
     }
 
     public boolean isAutoCapacityClosed() {

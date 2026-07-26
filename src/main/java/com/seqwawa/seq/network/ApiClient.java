@@ -22,6 +22,7 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyMode;
+import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.RankProfilesResponse;
@@ -105,7 +106,7 @@ public class ApiClient {
 
     public CompletableFuture<Listing> createListing(
             List<Long> activityIds, PartyMode mode, boolean strict, PartyRegion region, PartyRole role, String note) {
-        return createListing(activityIds, mode, strict, region, role, note, null);
+        return createListing(activityIds, mode, strict, region, role, note, null, PartyJoinPolicy.OPEN);
     }
 
     public CompletableFuture<Listing> createListing(
@@ -116,8 +117,51 @@ public class ApiClient {
             PartyRole role,
             String note,
             String world) {
+        return createListing(activityIds, mode, strict, region, role, note, world, PartyJoinPolicy.OPEN);
+    }
+
+    public CompletableFuture<Listing> createListing(
+            List<Long> activityIds,
+            PartyMode mode,
+            boolean strict,
+            PartyRegion region,
+            PartyRole role,
+            String note,
+            String world,
+            PartyJoinPolicy joinPolicy) {
+        return createListing(activityIds, mode, strict, region, role, note, world, joinPolicy, 0);
+    }
+
+    public CompletableFuture<Listing> createListing(
+            List<Long> activityIds,
+            PartyMode mode,
+            boolean strict,
+            PartyRegion region,
+            PartyRole role,
+            String note,
+            String world,
+            PartyJoinPolicy joinPolicy,
+            int reservedSlots) {
+        JsonObject body = buildCreateListingPayload(
+                activityIds, mode, strict, region, role, note, world, joinPolicy, reservedSlots);
+        return post("/party-finder/listings", body, Listing.class);
+    }
+
+    static JsonObject buildCreateListingPayload(
+            List<Long> activityIds,
+            PartyMode mode,
+            boolean strict,
+            PartyRegion region,
+            PartyRole role,
+            String note,
+            String world,
+            PartyJoinPolicy joinPolicy,
+            int reservedSlots) {
         if (activityIds == null || activityIds.isEmpty()) {
             throw new IllegalArgumentException("activityIds must not be empty");
+        }
+        if (reservedSlots < 0) {
+            throw new IllegalArgumentException("reservedSlots must not be negative");
         }
         JsonObject body = new JsonObject();
         JsonArray activityIdsJson = new JsonArray();
@@ -137,9 +181,12 @@ public class ApiClient {
         body.addProperty("strict", strict);
         body.addProperty("region", region.name());
         body.addProperty("role", role.name());
+        body.addProperty(
+                "joinPolicy", (joinPolicy != null ? joinPolicy : PartyJoinPolicy.OPEN).name());
+        body.addProperty("reservedSlots", reservedSlots);
         if (note != null && !note.isBlank()) body.addProperty("note", note);
         if (world != null && !world.isBlank()) body.addProperty("world", world);
-        return post("/party-finder/listings", body, Listing.class);
+        return body;
     }
 
     public CompletableFuture<Listing> joinListing(long id, PartyRole role) {
@@ -222,7 +269,7 @@ public class ApiClient {
 
     public CompletableFuture<Listing> updateListing(
             long id, List<Long> activityIds, PartyMode mode, boolean strict, PartyRegion region, String note) {
-        return updateListing(id, activityIds, mode, strict, region, note, null);
+        return updateListing(id, activityIds, mode, strict, region, note, null, PartyJoinPolicy.OPEN);
     }
 
     public CompletableFuture<Listing> updateListing(
@@ -233,6 +280,18 @@ public class ApiClient {
             PartyRegion region,
             String note,
             String world) {
+        return updateListing(id, activityIds, mode, strict, region, note, world, PartyJoinPolicy.OPEN);
+    }
+
+    public CompletableFuture<Listing> updateListing(
+            long id,
+            List<Long> activityIds,
+            PartyMode mode,
+            boolean strict,
+            PartyRegion region,
+            String note,
+            String world,
+            PartyJoinPolicy joinPolicy) {
         if (activityIds == null || activityIds.isEmpty()) {
             throw new IllegalArgumentException("activityIds must not be empty");
         }
@@ -252,6 +311,8 @@ public class ApiClient {
         body.addProperty("mode", mode.name());
         body.addProperty("strict", strict);
         body.addProperty("region", region.name());
+        body.addProperty(
+                "joinPolicy", (joinPolicy != null ? joinPolicy : PartyJoinPolicy.OPEN).name());
         if (note != null) {
             body.addProperty("note", note);
         }

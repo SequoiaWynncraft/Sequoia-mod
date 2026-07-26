@@ -23,6 +23,7 @@ import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.PartyListing;
 import com.seqwawa.seq.managers.PartyMember;
 import com.seqwawa.seq.model.Activity;
+import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyStatus;
@@ -85,7 +86,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     // Modal layout
     private static final float MODAL_WIDTH = 300;
     private static final float MODAL_HEIGHT = 200;
-    private static final float PARTY_MODAL_HEIGHT = 248;
+    private static final float PARTY_MODAL_HEIGHT = 294;
     private static final float RAID_CIRCLE_SIZE = 36;
     private static final float RAID_CIRCLE_SPACING = 12;
     private static final float MODAL_DROPDOWN_W = 80;
@@ -94,6 +95,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float MODAL_BUTTON_H = 24;
     private static final float REGION_BUTTON_W = 40;
     private static final float REGION_BUTTON_SPACING = 8;
+    private static final float JOIN_POLICY_BUTTON_W = 88;
+    private static final float JOIN_POLICY_BUTTON_SPACING = 8;
 
     // Tag selector/filter overlay layout
     private static final float TAG_OVERLAY_WIDTH = 260;
@@ -241,6 +244,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private int modalReservedSlots = 0;
     private boolean modalStrictRoles = false;
     private PartyRegion modalSelectedRegion = PartyRegion.NA;
+    private PartyJoinPolicy modalJoinPolicy = PartyJoinPolicy.INVITE_ONLY;
     private boolean reservedSlotsFocused = false;
     private String reservedSlotsInput = "0";
     private long nextLoadingNameRefreshAtMs = 0L;
@@ -673,11 +677,21 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             String fontName,
             HeaderButtonBounds bounds,
             PartyStatus status,
-            PartyCloseReason closeReason) {
+            PartyCloseReason closeReason,
+            PartyJoinPolicy joinPolicy) {
         if (bounds == null) {
             return;
         }
-        drawStatusBadge(nvg, fontName, bounds.x(), bounds.y(), bounds.w(), bounds.h(), status, closeReason);
+        drawStatusBadge(
+                nvg,
+                fontName,
+                bounds.x(),
+                bounds.y(),
+                bounds.w(),
+                bounds.h(),
+                status,
+                closeReason,
+                joinPolicy);
     }
 
     private void drawStatusBadge(
@@ -688,7 +702,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float w,
             float h,
             PartyStatus status,
-            PartyCloseReason closeReason) {
+            PartyCloseReason closeReason,
+            PartyJoinPolicy joinPolicy) {
         Color bg = statusBadgeBackground(status);
         Color border = statusBadgeBorder(status);
         NVGWrapper.drawRect(nvg, x, y, w, h, bg);
@@ -699,7 +714,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         var tc = NVGContext.nvgColor(TEXT_COLOR);
         nvgFillColor(nvg, tc);
-        nvgText(nvg, x + w / 2f, y + h / 2f, statusBadgeLabel(status, closeReason));
+        nvgText(nvg, x + w / 2f, y + h / 2f, statusBadgeLabel(status, closeReason, joinPolicy));
         tc.free();
     }
 
@@ -721,7 +736,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         };
     }
 
-    private String statusBadgeLabel(PartyStatus status, PartyCloseReason closeReason) {
+    private String statusBadgeLabel(
+            PartyStatus status, PartyCloseReason closeReason, PartyJoinPolicy joinPolicy) {
+        if (status == PartyStatus.OPEN && joinPolicy == PartyJoinPolicy.INVITE_ONLY) {
+            return "INVITE";
+        }
         return switch (status) {
             case OPEN -> "OPEN";
             case FULL -> "FULL";
@@ -880,7 +899,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 STATUS_BADGE_W,
                 STATUS_BADGE_H,
                 party.status,
-                party.closeReason);
+                party.closeReason,
+                party.joinPolicy);
 
         // Collapse arrow
         nvgFontSize(nvg, 16);
@@ -978,7 +998,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 STATUS_BADGE_W,
                 STATUS_BADGE_H,
                 party.status,
-                party.closeReason);
+                party.closeReason,
+                party.joinPolicy);
         rowX += STATUS_BADGE_W + 8;
 
         float rightX = x + w - CARD_PADDING;
@@ -1546,9 +1567,64 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             regionTextColor.free();
         }
 
+        float joinPolicyLabelY = regionButtonsY + MODAL_DROPDOWN_H + 16;
+        nvgFontFace(nvg, fontName);
+        nvgFontSize(nvg, MODAL_LABEL_SIZE);
+        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        var joinPolicyLabelColor = NVGContext.nvgColor(PARTY_TYPE_TEXT);
+        nvgFillColor(nvg, joinPolicyLabelColor);
+        nvgText(nvg, modalX + MODAL_WIDTH / 2f, joinPolicyLabelY, "Who can join?");
+        joinPolicyLabelColor.free();
+
+        float joinPolicyButtonsY = joinPolicyLabelY + 12;
+        PartyJoinPolicy[] joinPolicies = {PartyJoinPolicy.OPEN, PartyJoinPolicy.INVITE_ONLY};
+        float totalJoinPolicyButtonsW = joinPolicies.length * JOIN_POLICY_BUTTON_W
+                + (joinPolicies.length - 1) * JOIN_POLICY_BUTTON_SPACING;
+        float joinPolicyStartX = modalX + (MODAL_WIDTH - totalJoinPolicyButtonsW) / 2f;
+        for (int i = 0; i < joinPolicies.length; i++) {
+            PartyJoinPolicy joinPolicy = joinPolicies[i];
+            float joinPolicyX = joinPolicyStartX + i * (JOIN_POLICY_BUTTON_W + JOIN_POLICY_BUTTON_SPACING);
+            boolean joinPolicyHovered = isHovered(
+                    nvgMouseX,
+                    nvgMouseY,
+                    joinPolicyX,
+                    joinPolicyButtonsY,
+                    JOIN_POLICY_BUTTON_W,
+                    MODAL_DROPDOWN_H);
+            boolean joinPolicySelected = modalJoinPolicy == joinPolicy;
+
+            NVGWrapper.drawRect(
+                    nvg,
+                    joinPolicyX,
+                    joinPolicyButtonsY,
+                    JOIN_POLICY_BUTTON_W,
+                    MODAL_DROPDOWN_H,
+                    joinPolicySelected ? TYPE_ICON_SELECTED : (joinPolicyHovered ? DROPDOWN_HOVER : MODAL_DROPDOWN_BG));
+            NVGWrapper.drawRectOutline(
+                    nvg,
+                    joinPolicyX,
+                    joinPolicyButtonsY,
+                    JOIN_POLICY_BUTTON_W,
+                    MODAL_DROPDOWN_H,
+                    1,
+                    joinPolicySelected ? SEARCH_BORDER : MODAL_DROPDOWN_BORDER);
+
+            nvgFontFace(nvg, fontName);
+            nvgFontSize(nvg, MODAL_LABEL_SIZE);
+            nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            var joinPolicyTextColor = NVGContext.nvgColor(TEXT_COLOR);
+            nvgFillColor(nvg, joinPolicyTextColor);
+            nvgText(
+                    nvg,
+                    joinPolicyX + JOIN_POLICY_BUTTON_W / 2f,
+                    joinPolicyButtonsY + MODAL_DROPDOWN_H / 2f,
+                    joinPolicyLabel(joinPolicy));
+            joinPolicyTextColor.free();
+        }
+
         boolean grindSelected = isModalGrindSelected();
         if (grindSelected) {
-            float strictLabelY = regionButtonsY + MODAL_DROPDOWN_H + 18;
+            float strictLabelY = joinPolicyButtonsY + MODAL_DROPDOWN_H + 18;
             float checkboxSize = 12;
             float checkboxX = modalX + MODAL_WIDTH / 2f - 72;
             float checkboxY = strictLabelY - checkboxSize / 2f;
@@ -1974,6 +2050,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         if (party == null || party.status == null) {
             return "Join";
         }
+        if (party.status == PartyStatus.OPEN && party.joinPolicy == PartyJoinPolicy.INVITE_ONLY) {
+            return "Invite";
+        }
         return switch (party.status) {
             case OPEN -> "Join";
             case CLOSED -> "Closed";
@@ -2270,7 +2349,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 if (!isMyParty && isHovered(mx, my, joinBtnX, joinBtnY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT)) {
                     if (party().getJoinedPartyIndex() == i) {
                         party().leaveParty();
-                    } else if (party().getJoinedPartyIndex() < 0) {
+                    } else if (party().getJoinedPartyIndex() < 0 && party.isJoinable()) {
                         party().joinParty(i, selectedRole);
                     }
                     return true;
@@ -2317,6 +2396,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         modalInactiveTags.add("Grind");
         modalStrictRoles = false;
         modalSelectedRegion = PartyRegion.NA;
+        modalJoinPolicy = PartyJoinPolicy.INVITE_ONLY;
     }
 
     private Set<String> getCurrentListingRaidTags() {
@@ -2361,10 +2441,17 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                         && party().getCurrentListing().region() != null
                 ? party().getCurrentListing().region()
                 : PartyRegion.NA;
+        modalJoinPolicy = party().getCurrentListing() != null
+                ? party().getCurrentListing().resolvedJoinPolicy()
+                : PartyJoinPolicy.INVITE_ONLY;
     }
 
     private boolean isModalGrindSelected() {
         return modalActiveTags.stream().anyMatch(tag -> "Grind".equalsIgnoreCase(tag));
+    }
+
+    private static String joinPolicyLabel(PartyJoinPolicy joinPolicy) {
+        return joinPolicy == PartyJoinPolicy.INVITE_ONLY ? "Invite only" : "Open";
     }
 
     private void openInviteModal() {
@@ -2625,8 +2712,29 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             }
         }
 
+        float joinPolicyLabelY = regionButtonsY + MODAL_DROPDOWN_H + 16;
+        float joinPolicyButtonsY = joinPolicyLabelY + 12;
+        PartyJoinPolicy[] joinPolicies = {PartyJoinPolicy.OPEN, PartyJoinPolicy.INVITE_ONLY};
+        float totalJoinPolicyButtonsW = joinPolicies.length * JOIN_POLICY_BUTTON_W
+                + (joinPolicies.length - 1) * JOIN_POLICY_BUTTON_SPACING;
+        float joinPolicyStartX = mX + (MODAL_WIDTH - totalJoinPolicyButtonsW) / 2f;
+        for (int i = 0; i < joinPolicies.length; i++) {
+            float joinPolicyX = joinPolicyStartX + i * (JOIN_POLICY_BUTTON_W + JOIN_POLICY_BUTTON_SPACING);
+            if (isHovered(
+                    mx,
+                    my,
+                    joinPolicyX,
+                    joinPolicyButtonsY,
+                    JOIN_POLICY_BUTTON_W,
+                    MODAL_DROPDOWN_H)) {
+                modalJoinPolicy = joinPolicies[i];
+                reservedSlotsFocused = false;
+                return true;
+            }
+        }
+
         if (isModalGrindSelected()) {
-            float strictLabelY = regionButtonsY + MODAL_DROPDOWN_H + 18;
+            float strictLabelY = joinPolicyButtonsY + MODAL_DROPDOWN_H + 18;
             float checkboxSize = 12;
             float checkboxX = mX + MODAL_WIDTH / 2f - 72;
             float checkboxY = strictLabelY - checkboxSize / 2f;
@@ -2668,9 +2776,21 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             boolean strictRoles = isModalGrindSelected() && modalStrictRoles;
 
             if (updatingParty) {
-                party().updateParty(tags, selectedRole, modalReservedSlots, strictRoles, modalSelectedRegion);
+                party().updateParty(
+                        tags,
+                        selectedRole,
+                        modalReservedSlots,
+                        strictRoles,
+                        modalSelectedRegion,
+                        modalJoinPolicy);
             } else {
-                party().createParty(tags, selectedRole, modalReservedSlots, strictRoles, modalSelectedRegion);
+                party().createParty(
+                        tags,
+                        selectedRole,
+                        modalReservedSlots,
+                        strictRoles,
+                        modalSelectedRegion,
+                        modalJoinPolicy);
             }
 
             modalOpen = false;

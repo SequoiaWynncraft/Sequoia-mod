@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.config.Setting;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import org.junit.jupiter.api.Test;
@@ -23,8 +24,7 @@ class ChatRegexFilterManagerTest {
                         "enable_regex_filters",
                         "economy",
                         "economy_resource_alerts_only",
-                        "guild_bank",
-                        "gaz_death_message"),
+                        "guild_bank"),
                 manager.settings().stream().map(setting -> setting.getName()).toList());
     }
 
@@ -51,9 +51,6 @@ class ChatRegexFilterManagerTest {
                     + "󏿼󐀆 §3Citadel's Shadow§b, §3Void Valley§b, §3Toxic Caves§b, "
                     + "and §3Final Step",
             "󏿼󐀆 Territory Lake Rieke production has stabilised",
-            "󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿂󐀆"
-                    + "§aCopied to clipboard: §fTerritory Royal Gate is producing more resources than it\n"
-                    + " can store!",
             "&b&{fr:cp}󏿼󏿿󏿾&{fr:d} Territory &3Forts in Fall&b is producing more resources than\n"
                     + "&{fr:cp}󏿼󐀆&{fr:d} it can store!"
         };
@@ -97,8 +94,10 @@ class ChatRegexFilterManagerTest {
                 "󏿼󐀆 Sorrow applied the loadout ragebait on Void Valley"));
         assertFalse(manager.shouldFilter(
                 "󏿼󏿿󏿾 Cal_and_Ben changed the global tax to 70%"));
-        assertFalse(manager.shouldFilter(
+        assertTrue(manager.shouldFilter(
                 "󏿼󐀆 Territory Lake Rieke production has stabilised"));
+        assertTrue(manager.shouldFilter(
+                "󏿼󐀆 Territory Karoc Quarry production has stabilized"));
     }
 
     @Test
@@ -145,39 +144,29 @@ class ChatRegexFilterManagerTest {
     }
 
     @Test
-    void gazFilterRequiresEasterEggsAndCanonicalUsername() {
+    void gazEffectRequiresOnlyGeneralEasterEggSettingAndCanonicalUsername() {
         boolean[] easterEggsEnabled = {false};
+        AtomicInteger deathMessages = new AtomicInteger();
         ChatRegexFilterManager manager =
-                new ChatRegexFilterManager(() -> easterEggsEnabled[0]);
-        manager.enabledSetting().setValue(true);
-        ChatRegexFilterManager.BuiltInFilter gazFilter = manager.builtInFilters().stream()
-                .filter(filter -> filter.id().equals("gaz_death_message"))
-                .findFirst()
-                .orElseThrow();
-        gazFilter.enabledSetting().setValue(true);
+                new ChatRegexFilterManager(() -> easterEggsEnabled[0], deathMessages::incrementAndGet);
         Component providedMessage = guildMessage("GaztheCat", "star check your dms");
 
-        assertFalse(gazFilter.enabledSetting().isVisible());
-        assertFalse(manager.shouldFilter(providedMessage));
+        assertTrue(manager.shouldAllowIncoming(providedMessage));
+        assertEquals(0, deathMessages.get());
 
         easterEggsEnabled[0] = true;
-        assertTrue(gazFilter.enabledSetting().isVisible());
-        assertTrue(manager.shouldFilter(providedMessage));
-        assertTrue(manager.shouldFilter(guildMessage("GAZTHECAT", "check your DM")));
-        assertFalse(manager.shouldFilter(guildMessage("SomeoneElse", "star check your dms")));
-        assertFalse(manager.shouldFilter(guildMessage("GaztheCat", "star check your messages")));
+        assertTrue(manager.shouldAllowIncoming(providedMessage));
+        assertTrue(manager.shouldAllowIncoming(guildMessage("GAZTHECAT", "check your DM")));
+        assertTrue(manager.shouldAllowIncoming(guildMessage("SomeoneElse", "star check your dms")));
+        assertTrue(manager.shouldAllowIncoming(guildMessage("GaztheCat", "star check your messages")));
+        assertEquals(2, deathMessages.get());
     }
 
     @Test
-    void gazFilterResolvesNicknameFromMessageMetadata() {
-        ChatRegexFilterManager manager = new ChatRegexFilterManager(() -> true);
-        manager.enabledSetting().setValue(true);
-        manager.builtInFilters().stream()
-                .filter(filter -> filter.id().equals("gaz_death_message"))
-                .findFirst()
-                .orElseThrow()
-                .enabledSetting()
-                .setValue(true);
+    void gazEffectResolvesNicknameFromMessageMetadata() {
+        AtomicInteger deathMessages = new AtomicInteger();
+        ChatRegexFilterManager manager =
+                new ChatRegexFilterManager(() -> true, deathMessages::incrementAndGet);
 
         Component message = Component.empty()
                 .append(Component.literal("󏿼󏿿󏿾 "))
@@ -186,9 +175,29 @@ class ChatRegexFilterManagerTest {
                         .withStyle(Style.EMPTY.withInsertion("GaztheCat")))
                 .append(Component.literal(": star check your dms"));
 
-        assertTrue(manager.shouldFilter(message));
-        assertFalse(manager.shouldFilter(Component.literal(
+        assertTrue(manager.shouldAllowIncoming(message));
+        assertTrue(manager.shouldAllowIncoming(Component.literal(
                 "󏿼󏿿󏿾 Rallying Fervor: star check your dms")));
+        assertEquals(1, deathMessages.get());
+    }
+
+    @Test
+    void gazEffectAcceptsPunctuationAndIgnBeforeOrAfterReminder() {
+        AtomicInteger deathMessages = new AtomicInteger();
+        ChatRegexFilterManager manager =
+                new ChatRegexFilterManager(() -> true, deathMessages::incrementAndGet);
+
+        List<String> reminders = List.of(
+                "Cela41, check dm.",
+                "check your dm, Cela41!",
+                "Cela41... check, your d.m.s!!!",
+                "check-dms / Cela41");
+
+        for (String reminder : reminders) {
+            assertTrue(manager.shouldAllowIncoming(guildMessage("GaztheCat", reminder)), reminder);
+        }
+
+        assertEquals(reminders.size(), deathMessages.get());
     }
 
     private static Component guildMessage(String canonicalUsername, String content) {

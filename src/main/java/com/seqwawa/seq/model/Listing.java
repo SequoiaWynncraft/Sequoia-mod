@@ -21,7 +21,44 @@ public record Listing(
         String note,
         List<Member> members,
         List<Member> reservedSlots,
-        Instant createdAt) {
+        Instant createdAt,
+        @SerializedName(
+                        value = "joinPolicy",
+                        alternate = {"join_policy"})
+                PartyJoinPolicy joinPolicy) {
+    public Listing(
+            long id,
+            List<Activity> activities,
+            Activity activity,
+            String leaderUUID,
+            PartyMode mode,
+            boolean strict,
+            PartyRegion region,
+            String world,
+            PartyStatus status,
+            PartyCloseReason closeReason,
+            String note,
+            List<Member> members,
+            List<Member> reservedSlots,
+            Instant createdAt) {
+        this(
+                id,
+                activities,
+                activity,
+                leaderUUID,
+                mode,
+                strict,
+                region,
+                world,
+                status,
+                closeReason,
+                note,
+                members,
+                reservedSlots,
+                createdAt,
+                PartyJoinPolicy.OPEN);
+    }
+
     public Listing(
             long id,
             List<Activity> activities,
@@ -50,7 +87,8 @@ public record Listing(
                 note,
                 members,
                 reservedSlots,
-                createdAt);
+                createdAt,
+                PartyJoinPolicy.OPEN);
     }
 
     public Listing(
@@ -80,7 +118,8 @@ public record Listing(
                 note,
                 members,
                 reservedSlots,
-                createdAt);
+                createdAt,
+                PartyJoinPolicy.OPEN);
     }
 
     /**
@@ -130,6 +169,10 @@ public record Listing(
 
     public int reservedSlotCount() {
         return reservedSlots != null ? reservedSlots.size() : 0;
+    }
+
+    public PartyJoinPolicy resolvedJoinPolicy() {
+        return joinPolicy != null ? joinPolicy : PartyJoinPolicy.OPEN;
     }
 
     public Member getLeader() {
