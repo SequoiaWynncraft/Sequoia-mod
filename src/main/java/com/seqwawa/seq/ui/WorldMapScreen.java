@@ -47,6 +47,8 @@ import com.seqwawa.seq.map.GatheringTotemSolver.Position;
 import com.seqwawa.seq.map.GuildTerritory;
 import com.seqwawa.seq.map.GuildTerritoryIndex;
 import com.seqwawa.seq.map.GuildTerritoryService;
+import com.seqwawa.seq.map.IngredientFarmSpot;
+import com.seqwawa.seq.map.IngredientFarmSpotCatalog;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapDisplayMode;
@@ -474,7 +476,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderMapFocusTooltip(UiCanvas canvas, MapFocus.Marker marker) {
-        String subtitle = marker.source() + " · " + marker.coordinates() + " · Right-click to copy";
+        String subtitle = marker.source() + " · " + marker.coordinates();
         float x = tooltipX(230);
         float y = Math.max(58, nvgMouseY + 12);
         canvas.fillRect(x, y, 230, 42, color(MAP_SIDEBAR));
@@ -1442,26 +1444,75 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         drawText(canvas, PADDING, layout.selectedTitleY(), 12, "Selected Spawn", color(MAP_TITLE), TextAlignment.LEFT);
         if (selectedFocusMarker == null) {
             drawText(canvas, PADDING, layout.selectedDetailY(), 10, "Click a marker to select it", color(MAP_SUBTEXT), TextAlignment.LEFT);
-            return;
+        } else {
+            drawFittedText(
+                    canvas,
+                    PADDING,
+                    layout.selectedDetailY(),
+                    11,
+                    selectedFocusMarker.source(),
+                    color(MAP_TEXT),
+                    contentWidth,
+                    TextAlignment.LEFT);
+            drawText(
+                    canvas,
+                    PADDING,
+                    layout.selectedDetailY() + 18,
+                    10,
+                    selectedFocusMarker.coordinates(),
+                    color(MAP_SUBTEXT),
+                    TextAlignment.LEFT);
+            drawButton(canvas, PADDING, layout.copyY(), contentWidth, BUTTON_HEIGHT, "Copy Selected Coordinates", false);
         }
-        drawFittedText(
-                canvas,
-                PADDING,
-                layout.selectedDetailY(),
-                11,
-                selectedFocusMarker.source(),
-                color(MAP_TEXT),
-                contentWidth,
-                TextAlignment.LEFT);
+
+        renderIngredientFarmSpots(canvas, layout, contentWidth);
+    }
+
+    private void renderIngredientFarmSpots(
+            UiCanvas canvas, IngredientSidebarLayout layout, float contentWidth) {
         drawText(
                 canvas,
                 PADDING,
-                layout.selectedDetailY() + 18,
+                layout.farmSpotsTitleY(),
+                12,
+                "Mob Totem Farming Spots",
+                color(MAP_TITLE),
+                TextAlignment.LEFT);
+        List<IngredientFarmSpot> spots = IngredientFarmSpotCatalog.forIngredient(mapFocus.title());
+        if (spots.isEmpty()) {
+            drawFittedText(
+                    canvas,
+                    PADDING,
+                    layout.farmSpotsDetailY(),
+                    10,
+                    "No curated farming spots have been added yet.",
+                    color(MAP_SUBTEXT),
+                    contentWidth,
+                    TextAlignment.LEFT);
+            return;
+        }
+
+        drawText(
+                canvas,
+                PADDING,
+                layout.farmSpotsDetailY(),
                 10,
-                selectedFocusMarker.coordinates(),
+                spots.size() + (spots.size() == 1 ? " recommended spot" : " recommended spots"),
                 color(MAP_SUBTEXT),
                 TextAlignment.LEFT);
-        drawButton(canvas, PADDING, layout.copyY(), contentWidth, BUTTON_HEIGHT, "Copy Selected Coordinates", false);
+        float rowY = layout.farmSpotsDetailY() + 20;
+        for (IngredientFarmSpot spot : spots.stream().limit(3).toList()) {
+            drawFittedText(
+                    canvas,
+                    PADDING,
+                    rowY,
+                    10,
+                    spot.name() + " · " + spot.coordinates(),
+                    color(MAP_TEXT),
+                    contentWidth,
+                    TextAlignment.LEFT);
+            rowY += 18;
+        }
     }
 
     private void renderInsightsSidebar(UiCanvas canvas) {
@@ -4369,6 +4420,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float selectedTitleY = fitY + BUTTON_HEIGHT + 26;
         float selectedDetailY = selectedTitleY + 24;
         float copyY = selectedDetailY + 44;
+        float farmSpotsTitleY = copyY + BUTTON_HEIGHT + 24;
+        float farmSpotsDetailY = farmSpotsTitleY + 24;
         return new IngredientSidebarLayout(
                 backY,
                 centerY,
@@ -4380,7 +4433,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 fitY,
                 selectedTitleY,
                 selectedDetailY,
-                copyY);
+                copyY,
+                farmSpotsTitleY,
+                farmSpotsDetailY);
     }
 
     private SidebarLayout sidebarLayout() {
@@ -4567,7 +4622,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float fitY,
             float selectedTitleY,
             float selectedDetailY,
-            float copyY) {}
+            float copyY,
+            float farmSpotsTitleY,
+            float farmSpotsDetailY) {}
 
     private record SidebarLayout(
             float backY,
