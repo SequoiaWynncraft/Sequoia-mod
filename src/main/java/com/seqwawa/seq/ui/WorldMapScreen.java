@@ -787,10 +787,11 @@ public class WorldMapScreen extends Screen {
         try {
             byte[] imageBytes = mapImageService.imageBytes();
             if (imageBytes.length == 0) {
+                loadedMapImageVersion = imageVersion;
                 return null;
             }
             mapImage = UiRenderer.createImage(ByteBuffer.wrap(imageBytes), true);
-            loadedMapImageVersion = mapImageService.version();
+            loadedMapImageVersion = imageVersion;
         } catch (RuntimeException exception) {
             SeqClient.LOGGER.warn(
                     "[GatheringMap] Could not load {} map image.",

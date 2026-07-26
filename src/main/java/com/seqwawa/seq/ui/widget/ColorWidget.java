@@ -1,5 +1,8 @@
 package com.seqwawa.seq.ui.widget;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.theme.UiColor.*;
+
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.utils.TextInputHelper;
@@ -26,16 +29,6 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
     private static final float SATURATION_VALUE_HEIGHT = 72;
     private static final float HUE_BAR_GAP = 7;
     private static final float HUE_BAR_HEIGHT = 12;
-
-    private static final Color LABEL_COLOR = new Color(220, 220, 220, 255);
-    private static final Color TEXT_BOX_BG = new Color(30, 30, 40, 200);
-    private static final Color TEXT_BOX_ACTIVE = new Color(50, 50, 70, 220);
-    private static final Color TEXT_BOX_BORDER = new Color(130, 100, 200, 180);
-    private static final Color INVALID_BORDER = new Color(225, 75, 85, 230);
-    private static final Color TEXT_COLOR = new Color(255, 255, 255, 255);
-    private static final Color BUTTON_BG = new Color(40, 40, 54, 220);
-    private static final Color BUTTON_ACTIVE = new Color(85, 55, 145, 230);
-    private static final Color PICKER_BORDER = new Color(15, 15, 20, 255);
 
     private final Consumer<Boolean> previewStateConsumer;
     private boolean editing;
@@ -66,7 +59,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                 canvas,
                 fontName,
                 FONT_SIZE,
-                LABEL_COLOR,
+                color(TEXT_SECONDARY),
                 UiCanvas.HorizontalAlign.LEFT,
                 UiCanvas.VerticalAlign.TOP,
                 x + MARGIN,
@@ -87,7 +80,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
     private void drawHexInput(UiCanvas canvas, String fontName) {
         float boxX = hexBoxX();
         float boxY = controlY();
-        Color boxColor = editing ? TEXT_BOX_ACTIVE : TEXT_BOX_BG;
+        Color boxColor = editing ? color(CONTROL_INPUT_HOVER, 220) : color(CONTROL_INPUT, 200);
         canvas.fillRect(boxX, boxY, HEX_BOX_WIDTH, CONTROL_HEIGHT, boxColor);
 
         boolean validBuffer = Setting.ColorSetting.isValidHex(editBuffer);
@@ -98,7 +91,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                     HEX_BOX_WIDTH,
                     CONTROL_HEIGHT,
                     1,
-                    validBuffer ? TEXT_BOX_BORDER : INVALID_BORDER);
+                    validBuffer ? color(CONTROL_BORDER) : color(CONTROL_DANGER_HOVER, 230));
         }
 
         String renderedValue = "#" + (editing ? editBuffer : hexDigits(setting));
@@ -108,7 +101,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                 canvas,
                 fontName,
                 FONT_SIZE,
-                TEXT_COLOR,
+                color(TEXT_PRIMARY),
                 UiCanvas.HorizontalAlign.LEFT,
                 UiCanvas.VerticalAlign.MIDDLE,
                 boxX + 5,
@@ -123,7 +116,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                     boxY + 3,
                     1,
                     CONTROL_HEIGHT - 6,
-                    TEXT_COLOR);
+                    color(TEXT_PRIMARY));
         }
     }
 
@@ -138,7 +131,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                 SWATCH_WIDTH,
                 CONTROL_HEIGHT,
                 expanded ? 2 : 1,
-                expanded ? TEXT_BOX_BORDER : PICKER_BORDER);
+                expanded ? color(CONTROL_BORDER) : color(BACKGROUND_BODY_OPAQUE));
     }
 
     private void drawPreviewButton(UiCanvas canvas, String fontName) {
@@ -149,13 +142,15 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                 buttonY,
                 PREVIEW_BUTTON_WIDTH,
                 CONTROL_HEIGHT,
-                previewActive ? BUTTON_ACTIVE : BUTTON_BG);
+                previewActive
+                        ? color(ACCENT_PRIMARY_DARK_HOVER, 230)
+                        : color(CONTROL_INPUT_HOVER, 220));
 
         drawText(
                 canvas,
                 fontName,
                 FONT_SIZE - 1,
-                TEXT_COLOR,
+                color(TEXT_PRIMARY),
                 UiCanvas.HorizontalAlign.CENTER,
                 UiCanvas.VerticalAlign.MIDDLE,
                 buttonX + PREVIEW_BUTTON_WIDTH / 2f,
@@ -183,7 +178,13 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                 SATURATION_VALUE_HEIGHT,
                 new Color(0, 0, 0, 0),
                 Color.BLACK);
-        canvas.strokeRect(pickerX, pickerY, pickerWidth, SATURATION_VALUE_HEIGHT, 1, PICKER_BORDER);
+        canvas.strokeRect(
+                pickerX,
+                pickerY,
+                pickerWidth,
+                SATURATION_VALUE_HEIGHT,
+                1,
+                color(BACKGROUND_BODY_OPAQUE));
 
         float markerX = pickerX + saturation * pickerWidth;
         float markerY = pickerY + (1f - brightness) * SATURATION_VALUE_HEIGHT;
@@ -210,7 +211,13 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                     hueStops[i],
                     hueStops[i + 1]);
         }
-        canvas.strokeRect(pickerX, hueY, pickerWidth, HUE_BAR_HEIGHT, 1, PICKER_BORDER);
+        canvas.strokeRect(
+                pickerX,
+                hueY,
+                pickerWidth,
+                HUE_BAR_HEIGHT,
+                1,
+                color(BACKGROUND_BODY_OPAQUE));
 
         float hueMarkerX = pickerX + hue * pickerWidth;
         canvas.strokeRect(
