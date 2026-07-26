@@ -97,8 +97,10 @@ class ChatRegexFilterManagerTest {
                 "󏿼󐀆 Sorrow applied the loadout ragebait on Void Valley"));
         assertFalse(manager.shouldFilter(
                 "󏿼󏿿󏿾 Cal_and_Ben changed the global tax to 70%"));
-        assertFalse(manager.shouldFilter(
+        assertTrue(manager.shouldFilter(
                 "󏿼󐀆 Territory Lake Rieke production has stabilised"));
+        assertTrue(manager.shouldFilter(
+                "󏿼󐀆 Territory Karoc Quarry production has stabilized"));
     }
 
     @Test

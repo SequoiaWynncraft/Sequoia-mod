@@ -26,12 +26,14 @@ public final class ChatRegexFilterManager {
                     + "|[^:]{1,64} set .+ bonus to level \\d+ on .+"
                     + "|[^:]{1,64} removed .+ bonus from .+"
                     + "|[^:]{1,64} applied the loadout(?:\\s+|:).+ on .+"
-                    + "|Territory .+ production has stabil(?:ised|ized)"
                     + ")$",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern ECONOMY_RESOURCE_ALERT_PATTERN = Pattern.compile(
-            "^(?:Copied to clipboard: )?Territory .+ "
-                    + "(?:is using|is producing) more resources than it can store!$",
+            "^(?:"
+                    + "(?:Copied to clipboard: )?Territory .+ "
+                    + "(?:is using|is producing) more resources than it can store!"
+                    + "|Territory .+ production has stabil(?:ised|ized)"
+                    + ")$",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern GUILD_BANK_PATTERN = Pattern.compile(
             "^[^:]{1,64} (?:deposited \\d+x .+ to|withdrew \\d+x .+ from) "
