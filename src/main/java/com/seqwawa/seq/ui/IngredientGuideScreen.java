@@ -58,6 +58,9 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static final float SORT_DIRECTION_WIDTH = 76;
     private static final float ROW_HEIGHT = 43;
     private static final float SCROLL_STEP = 34;
+    private static final float SCROLLBAR_WIDTH = 3;
+    private static final float SCROLLBAR_HIT_WIDTH = 9;
+    private static final float MIN_SCROLLBAR_THUMB_HEIGHT = 20;
     private static final float PANEL_RADIUS = 7;
     private static final Color[] TIER_COLORS = {
         new Color(150, 150, 165),
@@ -85,6 +88,9 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private float detailScroll;
     private float maxListScroll;
     private float maxDetailScroll;
+    private ScrollbarTarget draggedScrollbar;
+    private float scrollbarDragStartY;
+    private float scrollbarDragStartOffset;
     private float nvgMouseX;
     private float nvgMouseY;
     private String itemIconKey;
@@ -201,7 +207,14 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         } finally {
             canvas.resetScissor();
         }
-        drawScrollbar(canvas, x + width - 5, rowsTop, rowsHeight, listScroll, maxListScroll);
+        drawScrollbar(
+                canvas,
+                x + width - 5,
+                rowsTop,
+                rowsHeight,
+                listScroll,
+                maxListScroll,
+                ScrollbarTarget.INGREDIENT_LIST);
     }
 
     private void renderIngredientDetail(UiCanvas canvas, float x, float y, float width, float height) {
@@ -338,7 +351,14 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         float contentHeight = cursorY + detailScroll - contentTop;
         maxDetailScroll = Math.max(0, contentHeight - viewportHeight);
         detailScroll = clamp(detailScroll, 0, maxDetailScroll);
-        drawScrollbar(canvas, x + width - 5, y + 8, height - 16, detailScroll, maxDetailScroll);
+        drawScrollbar(
+                canvas,
+                x + width - 5,
+                y + 8,
+                height - 16,
+                detailScroll,
+                maxDetailScroll,
+                ScrollbarTarget.INGREDIENT_DETAIL);
     }
 
     private void refreshVisibleIngredients() {
@@ -406,6 +426,8 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         float panelTop = HEADER_HEIGHT + OUTER_MARGIN;
         float panelHeight = Math.max(120, screenHeight - panelTop - OUTER_MARGIN);
         float listWidth = clamp(screenWidth * 0.35f, 245, 355);
+        float detailX = OUTER_MARGIN + listWidth + 10;
+        float detailWidth = Math.max(150, screenWidth - detailX - OUTER_MARGIN);
 
         if (contains(mx, my, screenWidth - 82, 9, 68, 24)) {
             manager.requestRefresh(true);
@@ -418,6 +440,35 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         searchFocused = false;
 
         IngredientListLayout layout = ingredientListLayout(panelTop);
+        float rowsTop = layout.rowsTop();
+        float rowsHeight = Math.max(0, panelTop + panelHeight - rowsTop - 8);
+        if (startScrollbarDrag(
+                ScrollbarTarget.INGREDIENT_LIST,
+                scrollbarGeometry(
+                        OUTER_MARGIN + listWidth - 5,
+                        rowsTop,
+                        rowsHeight,
+                        listScroll,
+                        maxListScroll),
+                mx,
+                my,
+                listScroll)) {
+            return true;
+        }
+        if (startScrollbarDrag(
+                ScrollbarTarget.INGREDIENT_DETAIL,
+                scrollbarGeometry(
+                        detailX + detailWidth - 5,
+                        panelTop + 8,
+                        panelHeight - 16,
+                        detailScroll,
+                        maxDetailScroll),
+                mx,
+                my,
+                detailScroll)) {
+            return true;
+        }
+
         float sortX = OUTER_MARGIN + 9;
         float sortWidth = listWidth - 18;
         if (contains(mx, my, sortX, layout.primarySortY(), sortWidth, SORT_ROW_HEIGHT)) {
@@ -439,8 +490,6 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             return true;
         }
 
-        float rowsTop = layout.rowsTop();
-        float rowsHeight = Math.max(0, panelTop + panelHeight - rowsTop - 8);
         if (contains(mx, my, OUTER_MARGIN, rowsTop, listWidth, rowsHeight)) {
             int index = (int) ((my - rowsTop + listScroll) / ROW_HEIGHT);
             if (index >= 0 && index < visibleIngredients.size()) {
@@ -466,6 +515,55 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             return true;
         }
         return super.mouseClicked(click, outsideScreen);
+    }
+
+    @Override
+    public boolean mouseReleased(@NotNull MouseButtonEvent click) {
+        boolean wasDragging = draggedScrollbar != null;
+        draggedScrollbar = null;
+        if (wasDragging) {
+            return true;
+        }
+        return super.mouseReleased(click);
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
+        if (draggedScrollbar == null) {
+            return super.mouseDragged(click, deltaX, deltaY);
+        }
+
+        float screenWidth = MinecraftUiRenderer.screenWidth();
+        float screenHeight = MinecraftUiRenderer.screenHeight();
+        float panelTop = HEADER_HEIGHT + OUTER_MARGIN;
+        float panelHeight = Math.max(120, screenHeight - panelTop - OUTER_MARGIN);
+        float listWidth = clamp(screenWidth * 0.35f, 245, 355);
+        IngredientListLayout listLayout = ingredientListLayout(panelTop);
+        float trackHeight;
+        float maxScroll;
+        if (draggedScrollbar == ScrollbarTarget.INGREDIENT_LIST) {
+            trackHeight = Math.max(0, panelTop + panelHeight - listLayout.rowsTop() - 8);
+            maxScroll = maxListScroll;
+        } else {
+            trackHeight = panelHeight - 16;
+            maxScroll = maxDetailScroll;
+        }
+
+        float thumbHeight = scrollbarThumbHeight(trackHeight, maxScroll);
+        float scrollRange = trackHeight - thumbHeight;
+        if (maxScroll <= 0 || scrollRange <= 0) {
+            return true;
+        }
+
+        float mouseY = MinecraftUiRenderer.mouseY(click.y());
+        float nextScroll = scrollbarDragStartOffset
+                + ((mouseY - scrollbarDragStartY) / scrollRange) * maxScroll;
+        if (draggedScrollbar == ScrollbarTarget.INGREDIENT_LIST) {
+            listScroll = clamp(nextScroll, 0, maxListScroll);
+        } else {
+            detailScroll = clamp(nextScroll, 0, maxDetailScroll);
+        }
+        return true;
     }
 
     private void openIngredientMap(String selectedMarkerId) {
@@ -654,14 +752,71 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     }
 
     private void drawScrollbar(
-            UiCanvas canvas, float x, float y, float height, float scroll, float maxScroll) {
-        if (maxScroll <= 0 || height <= 0) {
+            UiCanvas canvas,
+            float x,
+            float y,
+            float height,
+            float scroll,
+            float maxScroll,
+            ScrollbarTarget target) {
+        ScrollbarGeometry geometry = scrollbarGeometry(x, y, height, scroll, maxScroll);
+        if (geometry == null) {
             return;
         }
-        canvas.fillRoundedRect(x, y, 3, height, 1.5f, color(CONTROL_TRACK));
-        float thumbHeight = Math.max(20, height * height / (height + maxScroll));
-        float thumbY = y + (height - thumbHeight) * (scroll / maxScroll);
-        canvas.fillRoundedRect(x, thumbY, 3, thumbHeight, 1.5f, color(CONTROL_THUMB));
+        boolean interactive = target == draggedScrollbar || geometry.containsTrack(nvgMouseX, nvgMouseY);
+        float visualWidth = interactive ? 5 : SCROLLBAR_WIDTH;
+        float visualX = geometry.x() - (visualWidth - SCROLLBAR_WIDTH) / 2f;
+        canvas.fillRoundedRect(
+                visualX,
+                geometry.y(),
+                visualWidth,
+                geometry.height(),
+                visualWidth / 2f,
+                color(CONTROL_TRACK));
+        canvas.fillRoundedRect(
+                visualX,
+                geometry.thumbY(),
+                visualWidth,
+                geometry.thumbHeight(),
+                visualWidth / 2f,
+                interactive ? color(ACCENT_PRIMARY_HOVER) : color(CONTROL_THUMB));
+    }
+
+    private boolean startScrollbarDrag(
+            ScrollbarTarget target,
+            ScrollbarGeometry geometry,
+            float mouseX,
+            float mouseY,
+            float currentScroll) {
+        if (geometry == null || !geometry.containsTrack(mouseX, mouseY)) {
+            return false;
+        }
+        draggedScrollbar = target;
+        scrollbarDragStartY = mouseY;
+        scrollbarDragStartOffset = currentScroll;
+        return true;
+    }
+
+    private static ScrollbarGeometry scrollbarGeometry(
+            float x, float y, float height, float scroll, float maxScroll) {
+        if (maxScroll <= 0 || height <= 0) {
+            return null;
+        }
+        float thumbHeight = scrollbarThumbHeight(height, maxScroll);
+        float thumbY = y + (height - thumbHeight) * (clamp(scroll, 0, maxScroll) / maxScroll);
+        return new ScrollbarGeometry(x, y, height, thumbY, thumbHeight);
+    }
+
+    private static float scrollbarThumbHeight(float trackHeight, float maxScroll) {
+        if (trackHeight <= 0) {
+            return 0;
+        }
+        if (maxScroll <= 0) {
+            return trackHeight;
+        }
+        return Math.min(
+                trackHeight,
+                Math.max(MIN_SCROLLBAR_THUMB_HEIGHT, trackHeight * trackHeight / (trackHeight + maxScroll)));
     }
 
     private static void drawText(
@@ -753,4 +908,22 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
 
     private record IngredientListLayout(
             float primarySortY, float secondarySortY, float summaryY, float rowsTop) {}
+
+    private enum ScrollbarTarget {
+        INGREDIENT_LIST,
+        INGREDIENT_DETAIL
+    }
+
+    private record ScrollbarGeometry(float x, float y, float height, float thumbY, float thumbHeight) {
+        private boolean containsTrack(float mouseX, float mouseY) {
+            float hitX = x - (SCROLLBAR_HIT_WIDTH - SCROLLBAR_WIDTH) / 2f;
+            return IngredientGuideScreen.contains(
+                    mouseX,
+                    mouseY,
+                    hitX,
+                    y,
+                    SCROLLBAR_HIT_WIDTH,
+                    height);
+        }
+    }
 }
