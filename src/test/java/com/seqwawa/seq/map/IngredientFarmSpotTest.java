@@ -37,4 +37,18 @@ class IngredientFarmSpotTest {
     void returnsNoCuratedSpotsForAnUnknownIngredient() {
         assertTrue(IngredientFarmSpotCatalog.forIngredient("Definitely Not An Ingredient").isEmpty());
     }
+
+    @Test
+    void resolvesBuiltInSpotsForEachTargetIngredient() {
+        IngredientFarmSpot kaianScroll =
+                IngredientFarmSpotCatalog.forIngredient("Kaian Scroll").getFirst();
+        IngredientFarmSpot dragonlingEgg =
+                IngredientFarmSpotCatalog.forIngredient("Dragonling Egg").getFirst();
+        IngredientFarmSpot demonicBlood =
+                IngredientFarmSpotCatalog.forIngredient("Demonic Blood").getFirst();
+
+        assertEquals("1070, 160, -4693", kaianScroll.coordinates());
+        assertEquals("909, 59, -4686", dragonlingEgg.coordinates());
+        assertEquals(dragonlingEgg, demonicBlood);
+    }
 }
