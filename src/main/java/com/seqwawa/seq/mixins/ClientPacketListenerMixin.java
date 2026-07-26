@@ -3,6 +3,7 @@ package com.seqwawa.seq.mixins;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
+import com.seqwawa.seq.LightRoomTnaRange.LightRoom;
 import com.seqwawa.seq.managers.ChatManager;
 import com.seqwawa.seq.managers.GuildBankTracker;
 import com.seqwawa.seq.managers.GuildStorageTracker;
@@ -27,6 +28,7 @@ public class ClientPacketListenerMixin {
 
     @Inject(method = "handleSystemChat", at = @At("HEAD"))
     private void seq$onHandleSystemChat(ClientboundSystemChatPacket packet, CallbackInfo ci) {
+        LightRoom.onSystemChat(packet.content(), packet.overlay());
         if (packet.overlay()) return;
 
         Component content = packet.content();

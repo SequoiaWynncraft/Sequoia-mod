@@ -155,6 +155,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.ColorSetting lightRoomRingColorSetting;
 
     @Getter
+    public static Setting.BooleanSetting lightRoomDebugLoggingSetting;
+
+    @Getter
     public static Setting.BooleanSetting showRaidBadgesSetting;
 
     @Getter
@@ -501,6 +504,8 @@ public class SeqClient implements ClientModInitializer {
         lightRoomVisualiserSetting = new Setting.BooleanSetting("enable_light_room_visualiser", "raids", true);
         lightRoomRingColorSetting = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF);
         lightRoomRingColorSetting.setVisibilityCondition(() -> lightRoomVisualiserSetting.getValue());
+        lightRoomDebugLoggingSetting = new Setting.BooleanSetting("debug_tna_r2_tracker", "raids", false);
+        lightRoomDebugLoggingSetting.setVisibilityCondition(() -> lightRoomVisualiserSetting.getValue());
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
@@ -554,6 +559,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(halcyonRingColorSetting);
         getConfigManager().register(lightRoomVisualiserSetting);
         getConfigManager().register(lightRoomRingColorSetting);
+        getConfigManager().register(lightRoomDebugLoggingSetting);
         getConfigManager().register(showRaidBadgesSetting);
         getConfigManager().register(showInsigniaBadgesSetting);
         getConfigManager().register(showOwnLeaderboardBadgeSetting);
