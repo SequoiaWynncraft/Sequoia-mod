@@ -34,6 +34,7 @@ import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
 import com.seqwawa.seq.managers.GuildWarTrackers;
+import com.seqwawa.seq.managers.IngredientGuideManager;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyHealthCache;
 import com.seqwawa.seq.managers.PartyFinderManager;
@@ -193,6 +194,9 @@ public class SeqClient implements ClientModInitializer {
     @Getter
     public static WorldEventManager worldEventManager;
 
+    @Getter
+    public static IngredientGuideManager ingredientGuideManager;
+
     private static KeyMapping openScreenKey;
     private static KeyMapping shareBombsKey;
     private static WynnClassType lastBroadcastPartyClass;
@@ -229,6 +233,7 @@ public class SeqClient implements ClientModInitializer {
         leaderboardBadgeService = LeaderboardBadgeService.getInstance();
         seqBadgeNametagRenderer = SeqBadgeNametagRenderers.createIfAvailable();
         worldEventManager = WorldEventManager.getInstance();
+        ingredientGuideManager = IngredientGuideManager.getInstance();
         authService = MinecraftAuthService.getInstance();
         SeqCommand.register();
         RadianceCheckerClient.initialize();

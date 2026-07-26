@@ -4,6 +4,7 @@ import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.managers.ThemeManager.withAlpha;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
+import com.mojang.authlib.GameProfile;
 import java.awt.Color;
 import java.nio.ByteBuffer;
 import java.time.Duration;
@@ -18,11 +19,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.PlayerSkin;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
 import com.seqwawa.seq.client.SeqClient;
@@ -46,6 +50,7 @@ import com.seqwawa.seq.map.GuildTerritoryService;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapDisplayMode;
+import com.seqwawa.seq.map.MapFocus;
 import com.seqwawa.seq.map.MapViewport;
 import com.seqwawa.seq.map.WorldEventDefinition;
 import com.seqwawa.seq.map.WorldEventDisplayFilter;
@@ -58,13 +63,16 @@ import com.seqwawa.seq.map.WorldMapSidebarPanel;
 import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.map.GatheringMapImageService.TileKey;
 import com.seqwawa.seq.map.GatheringMapImageService.TileSet;
+import com.seqwawa.seq.render.MinecraftGuiOverlay;
 import com.seqwawa.seq.utils.TextInputHelper;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiImage;
+import com.seqwawa.seq.utils.rendering.UiRenderMetrics;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
+import net.minecraft.world.item.ItemStack;
 
-public class WorldMapScreen extends Screen {
+public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final float SIDEBAR_WIDTH = 230;
     private static final float INSIGHTS_SIDEBAR_WIDTH = 250;
     private static final float INSIGHTS_RAIL_WIDTH = 28;
@@ -99,11 +107,16 @@ public class WorldMapScreen extends Screen {
     private static final double NODE_DETAIL_PIXELS_PER_BLOCK = 0.42;
     private static final double CLUSTER_BADGE_PIXELS_PER_BLOCK = 0.65;
     private static final double TERRITORY_FOCUS_MAX_PIXELS_PER_BLOCK = 1.25;
+    private static final double CONTEXT_FOCUS_MAX_PIXELS_PER_BLOCK = 0.75;
     private static final int SIDEBAR_CLUSTER_LIMIT = 5;
     private static final int TOTEM_RESULT_VISIBLE_ROWS = 4;
     private static final float TOTEM_RESULT_ROW_HEIGHT = 28;
     private static final long TOTEM_SOLVE_DEBOUNCE_MS = 200;
     private final Screen parent;
+    private final MapFocus mapFocus;
+    private final ItemStack mapFocusIcon;
+    private final Supplier<PlayerSkin> mapFocusSkinLookup;
+    private final List<FocusIconOverlay> focusIconOverlays = new ArrayList<>();
     private final GatheringNodeService nodeService = GatheringNodeService.getInstance();
     private final GuildTerritoryService territoryService = GuildTerritoryService.getInstance();
     private final GatheringMapImageService mapImageService = GatheringMapImageService.getInstance();
@@ -165,6 +178,8 @@ public class WorldMapScreen extends Screen {
     private WorldEventDefinition hoveredWorldEvent;
     private int hoveredWorldEventLocationIndex = -1;
     private WorldEventDefinition selectedWorldEvent;
+    private MapFocus.Marker hoveredFocusMarker;
+    private MapFocus.Marker selectedFocusMarker;
     private List<GatheringNode> cachedSourceNodes = List.of();
     private List<GatheringNode> cachedFilteredNodes = List.of();
     private List<GatheringNodeCluster> cachedClusters = List.of();
@@ -204,8 +219,30 @@ public class WorldMapScreen extends Screen {
     private float nvgMouseY;
 
     public WorldMapScreen(Screen parent) {
+        this(parent, null, ItemStack.EMPTY, null);
+    }
+
+    public WorldMapScreen(Screen parent, MapFocus mapFocus) {
+        this(parent, mapFocus, ItemStack.EMPTY, null);
+    }
+
+    public WorldMapScreen(Screen parent, MapFocus mapFocus, ItemStack mapFocusIcon) {
+        this(parent, mapFocus, mapFocusIcon, null);
+    }
+
+    public WorldMapScreen(
+            Screen parent,
+            MapFocus mapFocus,
+            ItemStack mapFocusIcon,
+            GameProfile mapFocusSkinProfile) {
         super(Component.literal("Sequoia Map"));
         this.parent = parent;
+        this.mapFocus = mapFocus;
+        this.mapFocusIcon = mapFocusIcon == null ? ItemStack.EMPTY : mapFocusIcon.copy();
+        this.mapFocusSkinLookup = mapFocusSkinProfile == null
+                ? null
+                : SeqClient.mc.getSkinManager().createLookup(mapFocusSkinProfile, false);
+        this.selectedFocusMarker = mapFocus == null ? null : mapFocus.selectedMarker();
         professionToggles.putAll(mapSettings.professionToggles());
         selectedResourceFilters.addAll(mapSettings.resourceFilters());
         showClusters = mapSettings.showClusters();
@@ -221,7 +258,9 @@ public class WorldMapScreen extends Screen {
         showDebugInfo = mapSettings.showDebugInfo();
         clusterScoreMode = mapSettings.clusterScoreMode();
         gatheringAnalysisScope = mapSettings.gatheringAnalysisScope();
-        displayMode = mapSettings.displayMode();
+        displayMode = mapFocus == null || mapFocus.markers().isEmpty()
+                ? mapSettings.displayMode()
+                : MapDisplayMode.WORLD_EVENTS;
         worldEventDisplayFilter = mapSettings.worldEventDisplayFilter();
         insightsSidebarOpen = mapSettings.insightsSidebarOpen();
         territoryService.loadBundledTerritories();
@@ -262,7 +301,11 @@ public class WorldMapScreen extends Screen {
 
         if (!initializedViewport) {
             initializedViewport = true;
-            fitFullMap(mapW, mapH);
+            if (hasMapFocus()) {
+                fitMapFocus(mapW, mapH);
+            } else {
+                fitFullMap(mapW, mapH);
+            }
         }
 
         if (displayMode == MapDisplayMode.GATHERING) {
@@ -276,11 +319,14 @@ public class WorldMapScreen extends Screen {
     }
 
     private void renderNvg(UiCanvas canvas, MapViewport viewport) {
+        hoveredFocusMarker = null;
+        focusIconOverlays.clear();
         renderMapBackground(canvas, viewport);
         canvas.fillRect(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(), color(MAP_TINT));
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             renderWorldEvents(canvas, viewport);
             renderPlayer(canvas, viewport);
+            renderMapFocus(canvas, viewport);
             renderSidebar(canvas);
             renderInsightsSidebar(canvas);
             return;
@@ -318,6 +364,117 @@ public class WorldMapScreen extends Screen {
         }
         renderSidebar(canvas);
         renderInsightsSidebar(canvas);
+    }
+
+    private void renderMapFocus(UiCanvas canvas, MapViewport viewport) {
+        if (!hasMapFocus()) {
+            return;
+        }
+
+        MapBounds visibleBounds = viewport.visibleBounds();
+        if (!draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY)) {
+            double closestDistance = 10;
+            for (MapFocus.Marker marker : mapFocus.markers()) {
+                if (!visibleBounds.contains(marker.x(), marker.z())) {
+                    continue;
+                }
+                double distance = Math.hypot(
+                        nvgMouseX - viewport.worldToScreenX(marker.x()),
+                        nvgMouseY - viewport.worldToScreenZ(marker.z()));
+                if (distance <= closestDistance) {
+                    hoveredFocusMarker = marker;
+                    closestDistance = distance;
+                }
+            }
+        }
+
+        canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+        for (MapFocus.Marker marker : mapFocus.markers()) {
+            if (!visibleBounds.contains(marker.x(), marker.z())) {
+                continue;
+            }
+            float x = viewport.worldToScreenX(marker.x());
+            float y = viewport.worldToScreenZ(marker.z());
+            float areaRadius = (float) (marker.radius() * viewport.pixelsPerBlock());
+            boolean selected = marker.equals(selectedFocusMarker);
+            boolean hovered = marker.equals(hoveredFocusMarker);
+            Color markerColor = selected ? color(MAP_SELECTED_TERRITORY) : color(ACCENT_PRIMARY);
+            if (areaRadius >= 4) {
+                drawCircle(canvas, x, y, areaRadius, withAlpha(markerColor, selected ? 34 : 20));
+                drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, withAlpha(markerColor, 145));
+            }
+            if (mapFocusIcon.isEmpty()) {
+                float markerRadius = selected || hovered ? 4 : 3;
+                drawCircle(canvas, x, y, markerRadius + 1.5f, color(BACKGROUND_MODAL_OVERLAY, 190));
+                drawCircle(canvas, x, y, markerRadius, markerColor);
+            } else {
+                float iconSize = selected || hovered ? 13 : 11;
+                float outlineRadius = iconSize / 2f + 1;
+                drawCircle(canvas, x, y, outlineRadius, color(BACKGROUND_MODAL_OVERLAY, 145));
+                if (selected || hovered) {
+                    drawCircleOutline(canvas, x, y, outlineRadius, 1, markerColor);
+                }
+                focusIconOverlays.add(new FocusIconOverlay(
+                        x - iconSize / 2f,
+                        y - iconSize / 2f,
+                        iconSize));
+            }
+        }
+        canvas.resetScissor();
+
+        renderMapFocusBanner(canvas, viewport);
+        if (hoveredFocusMarker != null) {
+            renderMapFocusTooltip(canvas, hoveredFocusMarker);
+        }
+    }
+
+    @Override
+    public void renderMinecraftGuiOverlay(GuiGraphics guiGraphics, UiRenderMetrics metrics) {
+        if (displayMode != MapDisplayMode.WORLD_EVENTS || mapFocusIcon.isEmpty()) {
+            return;
+        }
+        float guiUnitsPerUiUnit = metrics.pixelRatio() / (float) metrics.minecraftGuiScale();
+        for (FocusIconOverlay overlay : focusIconOverlays) {
+            float itemScale = overlay.size() * guiUnitsPerUiUnit / 16f;
+            guiGraphics.pose().pushMatrix();
+            try {
+                guiGraphics.pose().translate(
+                        overlay.x() * guiUnitsPerUiUnit,
+                        overlay.y() * guiUnitsPerUiUnit);
+                guiGraphics.pose().scale(itemScale, itemScale);
+                if (mapFocusSkinLookup != null) {
+                    PlayerFaceRenderer.draw(guiGraphics, mapFocusSkinLookup.get(), 0, 0, 16);
+                } else {
+                    guiGraphics.renderItem(mapFocusIcon, 0, 0);
+                }
+            } finally {
+                guiGraphics.pose().popMatrix();
+            }
+        }
+    }
+
+    private void renderMapFocusBanner(UiCanvas canvas, MapViewport viewport) {
+        String title = mapFocus.title();
+        String subtitle = mapFocus.markers().size() + (mapFocus.markers().size() == 1
+                ? " spawn location"
+                : " spawn locations");
+        float width = Math.min(260, Math.max(170, textWidth(title, 12) + 32));
+        float x = viewport.screenX() + (viewport.screenWidth() - width) / 2f;
+        float y = viewport.screenY() + 10;
+        canvas.fillRoundedRect(x, y, width, 42, 6, color(MAP_SIDEBAR, 235));
+        canvas.strokeRect(x, y, width, 42, 1, color(MAP_BORDER));
+        drawFittedText(canvas, x + 10, y + 14, 12, title, color(MAP_TEXT), width - 20, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 10, y + 30, 10, subtitle, color(MAP_SUBTEXT), width - 20, TextAlignment.LEFT);
+    }
+
+    private void renderMapFocusTooltip(UiCanvas canvas, MapFocus.Marker marker) {
+        String subtitle = marker.source() + " · " + marker.coordinates() + " · Right-click to copy";
+        float x = tooltipX(230);
+        float y = Math.max(58, nvgMouseY + 12);
+        canvas.fillRect(x, y, 230, 42, color(MAP_SIDEBAR));
+        canvas.strokeRect(x, y, 230, 42, 1, color(MAP_BORDER));
+        drawFittedText(canvas, x + 8, y + 15, 12, marker.label(), color(MAP_TEXT), 214, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 31, 10, subtitle, color(MAP_SUBTEXT), 214, TextAlignment.LEFT);
     }
 
     private void renderTerritories(UiCanvas canvas, MapViewport viewport) {
@@ -2136,6 +2293,11 @@ public class WorldMapScreen extends Screen {
     }
 
     private boolean copyHoveredCoordinates(float mx, float my, float sidebarMy, float screenWidth, float screenHeight) {
+        MapViewport viewport = mapViewport(screenWidth, screenHeight);
+        if (viewport.isInsideScreen(mx, my) && hoveredFocusMarker != null) {
+            copyToClipboard(hoveredFocusMarker.coordinates());
+            return true;
+        }
         float insightsX = insightsSidebarX(screenWidth);
         InsightsLayout insights = insightsLayout();
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
@@ -2151,7 +2313,6 @@ public class WorldMapScreen extends Screen {
                 copyToClipboard(worldEventCoordinates(selectedWorldEvent.locations().getFirst()));
                 return true;
             }
-            MapViewport viewport = mapViewport(screenWidth, screenHeight);
             if (viewport.isInsideScreen(mx, my)
                     && hoveredWorldEvent != null
                     && hoveredWorldEventLocationIndex >= 0) {
@@ -2174,7 +2335,6 @@ public class WorldMapScreen extends Screen {
                 copyToClipboard(totemCoords(gatheringTotemPlacement));
                 return true;
             }
-            MapViewport viewport = mapViewport(screenWidth, screenHeight);
             Placement clickedPlacement = viewport.isInsideScreen(mx, my)
                     ? gatheringTotemPlacementAt(visibleGatheringTotemPlacements(), viewport, mx, my)
                     : null;
@@ -2202,7 +2362,6 @@ public class WorldMapScreen extends Screen {
             return true;
         }
 
-        MapViewport viewport = mapViewport(screenWidth, screenHeight);
         if (!viewport.isInsideScreen(mx, my)) {
             return false;
         }
@@ -2888,6 +3047,24 @@ public class WorldMapScreen extends Screen {
         pixelsPerBlock = clamp(Math.min(xScale, zScale) * 0.92, MIN_PIXELS_PER_BLOCK, MAX_PIXELS_PER_BLOCK);
     }
 
+    private boolean hasMapFocus() {
+        return mapFocus != null && !mapFocus.markers().isEmpty();
+    }
+
+    private void fitMapFocus(float mapW, float mapH) {
+        MapBounds bounds = mapFocus.bounds();
+        centerX = (bounds.minX() + bounds.maxX()) / 2.0;
+        centerZ = (bounds.minZ() + bounds.maxZ()) / 2.0;
+        double spanX = Math.max(80, bounds.maxX() - bounds.minX());
+        double spanZ = Math.max(80, bounds.maxZ() - bounds.minZ());
+        double xScale = Math.max(1, mapW - 80) / spanX;
+        double zScale = Math.max(1, mapH - 100) / spanZ;
+        pixelsPerBlock = clamp(
+                Math.min(Math.min(xScale, zScale) * 0.9, CONTEXT_FOCUS_MAX_PIXELS_PER_BLOCK),
+                MIN_PIXELS_PER_BLOCK,
+                MAX_PIXELS_PER_BLOCK);
+    }
+
     private boolean centerOnPlayer() {
         if (SeqClient.mc.player == null) {
             return false;
@@ -2925,6 +3102,14 @@ public class WorldMapScreen extends Screen {
             return true;
         }
         if (mouseClickedInsights(mx, my, screenWidth, screenHeight)) {
+            return true;
+        }
+        MapViewport focusedViewport = mapViewport(screenWidth, screenHeight);
+        if (focusedViewport.isInsideScreen(mx, my) && hoveredFocusMarker != null) {
+            selectedFocusMarker = hoveredFocusMarker;
+            draggingMap = true;
+            hoveredFocusMarker = null;
+            closeSearchDropdowns();
             return true;
         }
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
@@ -3404,6 +3589,7 @@ public class WorldMapScreen extends Screen {
             hoveredTerritory = null;
             hoveredWorldEvent = null;
             hoveredWorldEventLocationIndex = -1;
+            hoveredFocusMarker = null;
             return true;
         }
         return super.mouseDragged(click, deltaX, deltaY);
@@ -4151,6 +4337,8 @@ public class WorldMapScreen extends Screen {
     private static double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
     }
+
+    private record FocusIconOverlay(float x, float y, float size) {}
 
     private record ScreenPoint(float x, float y) {}
 

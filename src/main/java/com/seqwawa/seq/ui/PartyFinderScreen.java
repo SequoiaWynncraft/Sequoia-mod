@@ -495,6 +495,14 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 btnX,
                 btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
                 btnW,
+                "Ingredients",
+                false);
+        drawSidebarButton(
+                canvas,
+                fontName,
+                btnX,
+                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5,
+                btnW,
                 "Github",
                 false);
     }
@@ -2270,6 +2278,16 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 my,
                 btnX,
                 btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
+                btnW,
+                SIDEBAR_BUTTON_HEIGHT)) {
+            SeqClient.mc.setScreen(new IngredientGuideScreen(this));
+            return true;
+        }
+        if (isHovered(
+                mx,
+                my,
+                btnX,
+                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5,
                 btnW,
                 SIDEBAR_BUTTON_HEIGHT)) {
             try {
