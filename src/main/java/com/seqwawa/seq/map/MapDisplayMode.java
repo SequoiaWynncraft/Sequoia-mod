@@ -2,7 +2,8 @@ package com.seqwawa.seq.map;
 
 public enum MapDisplayMode {
     GATHERING("Gathering"),
-    WORLD_EVENTS("Events");
+    WORLD_EVENTS("Events"),
+    INGREDIENTS("Ingredients");
 
     private final String label;
 

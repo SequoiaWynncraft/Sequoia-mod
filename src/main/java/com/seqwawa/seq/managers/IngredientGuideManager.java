@@ -136,6 +136,44 @@ public final class IngredientGuideManager {
                 .toList();
     }
 
+    public static List<IngredientGuideEntry> sort(
+            List<IngredientGuideEntry> ingredients,
+            SortKey primaryKey,
+            SortDirection primaryDirection,
+            SortKey secondaryKey,
+            SortDirection secondaryDirection) {
+        if (ingredients == null || ingredients.isEmpty()) {
+            return List.of();
+        }
+        SortKey resolvedPrimary = primaryKey == null ? SortKey.LEVEL : primaryKey;
+        SortDirection resolvedPrimaryDirection =
+                primaryDirection == null ? SortDirection.ASCENDING : primaryDirection;
+        SortKey resolvedSecondary = secondaryKey == null ? SortKey.RARITY : secondaryKey;
+        SortDirection resolvedSecondaryDirection =
+                secondaryDirection == null ? SortDirection.ASCENDING : secondaryDirection;
+
+        Comparator<IngredientGuideEntry> comparator =
+                directedComparator(resolvedPrimary, resolvedPrimaryDirection);
+        if (resolvedSecondary != resolvedPrimary) {
+            comparator = comparator.thenComparing(
+                    directedComparator(resolvedSecondary, resolvedSecondaryDirection));
+        }
+        comparator = comparator
+                .thenComparing(IngredientGuideEntry::displayName, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(IngredientGuideEntry::internalName, String.CASE_INSENSITIVE_ORDER);
+        return ingredients.stream().sorted(comparator).toList();
+    }
+
+    private static Comparator<IngredientGuideEntry> directedComparator(
+            SortKey key, SortDirection direction) {
+        Comparator<IngredientGuideEntry> comparator = switch (key) {
+            case LEVEL -> Comparator.comparingInt(IngredientGuideEntry::level);
+            case RARITY -> Comparator.comparingInt(IngredientGuideEntry::tier);
+            case NAME -> Comparator.comparing(IngredientGuideEntry::displayName, String.CASE_INSENSITIVE_ORDER);
+        };
+        return direction == SortDirection.DESCENDING ? comparator.reversed() : comparator;
+    }
+
     static List<IngredientGuideEntry> parseIngredients(String body) {
         JsonElement root = JsonParser.parseString(body);
         JsonArray array = ingredientArray(root);
@@ -170,10 +208,12 @@ public final class IngredientGuideManager {
         if (ingredients.isEmpty() && array.size() > 0) {
             throw new IllegalArgumentException("Ingredient response did not contain any valid ingredients.");
         }
-        return ingredients.stream()
-                .sorted(Comparator.comparingInt(IngredientGuideEntry::level)
-                        .thenComparing(IngredientGuideEntry::displayName, String.CASE_INSENSITIVE_ORDER))
-                .toList();
+        return sort(
+                ingredients,
+                SortKey.LEVEL,
+                SortDirection.ASCENDING,
+                SortKey.RARITY,
+                SortDirection.ASCENDING);
     }
 
     private static String searchableText(IngredientGuideEntry ingredient) {
@@ -357,6 +397,47 @@ public final class IngredientGuideManager {
 
         private SourceAccumulator(String name) {
             this.name = name;
+        }
+    }
+
+    public enum SortKey {
+        LEVEL("Level"),
+        RARITY("Rarity"),
+        NAME("Name");
+
+        private final String label;
+
+        SortKey(String label) {
+            this.label = label;
+        }
+
+        public String label() {
+            return label;
+        }
+    }
+
+    public enum SortDirection {
+        ASCENDING("↑", "Ascending"),
+        DESCENDING("↓", "Descending");
+
+        private final String symbol;
+        private final String label;
+
+        SortDirection(String symbol, String label) {
+            this.symbol = symbol;
+            this.label = label;
+        }
+
+        public String symbol() {
+            return symbol;
+        }
+
+        public String label() {
+            return label;
+        }
+
+        public SortDirection toggled() {
+            return this == ASCENDING ? DESCENDING : ASCENDING;
         }
     }
 

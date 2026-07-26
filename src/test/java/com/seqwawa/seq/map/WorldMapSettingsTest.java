@@ -20,6 +20,7 @@ class WorldMapSettingsTest {
         boolean originalNodeReach = settings.showGatheringTotemNodeReach();
         boolean originalCoveredNodes = settings.showGatheringTotemCoveredNodes();
         boolean originalOtherSpots = settings.showOtherOptimalGatheringTotems();
+        MapDisplayMode originalDisplayMode = settings.displayMode();
         try {
             settings.setInsightsSidebarOpen(false);
             settings.setSidebarPanelExpanded(WorldMapSidebarPanel.RESOURCE_FILTERS, false);
@@ -31,6 +32,7 @@ class WorldMapSettingsTest {
             settings.setShowGatheringTotemNodeReach(false);
             settings.setShowGatheringTotemCoveredNodes(false);
             settings.setShowOtherOptimalGatheringTotems(false);
+            settings.setDisplayMode(MapDisplayMode.INGREDIENTS);
 
             assertFalse(settings.insightsSidebarOpen());
             assertFalse(settings.sidebarPanelExpanded(WorldMapSidebarPanel.RESOURCE_FILTERS));
@@ -42,6 +44,7 @@ class WorldMapSettingsTest {
             assertFalse(settings.showGatheringTotemNodeReach());
             assertFalse(settings.showGatheringTotemCoveredNodes());
             assertFalse(settings.showOtherOptimalGatheringTotems());
+            assertEquals(MapDisplayMode.INGREDIENTS, settings.displayMode());
 
             settings.setInsightsSidebarOpen(true);
             settings.setSidebarPanelExpanded(WorldMapSidebarPanel.RESOURCE_FILTERS, true);
@@ -58,6 +61,7 @@ class WorldMapSettingsTest {
             settings.setShowGatheringTotemNodeReach(originalNodeReach);
             settings.setShowGatheringTotemCoveredNodes(originalCoveredNodes);
             settings.setShowOtherOptimalGatheringTotems(originalOtherSpots);
+            settings.setDisplayMode(originalDisplayMode);
         }
     }
 }

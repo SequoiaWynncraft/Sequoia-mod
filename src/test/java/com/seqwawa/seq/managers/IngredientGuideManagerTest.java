@@ -108,6 +108,49 @@ class IngredientGuideManagerTest {
     }
 
     @Test
+    void defaultsToLevelThenRarityOrdering() {
+        String body = """
+                [
+                  {"displayName": "Higher Level", "type": "ingredient", "tier": "TIER_0",
+                   "requirements": {"level": 20}},
+                  {"displayName": "Rare Same Level", "type": "ingredient", "tier": "TIER_3",
+                   "requirements": {"level": 10}},
+                  {"displayName": "Common Same Level", "type": "ingredient", "tier": "TIER_1",
+                   "requirements": {"level": 10}}
+                ]
+                """;
+
+        List<IngredientGuideEntry> parsed = IngredientGuideManager.parseIngredients(body);
+
+        assertEquals(
+                List.of("Common Same Level", "Rare Same Level", "Higher Level"),
+                parsed.stream().map(IngredientGuideEntry::displayName).toList());
+    }
+
+    @Test
+    void sortsWithIndependentPrimaryAndSecondaryDirections() {
+        IngredientGuideEntry commonTen = entry("Common Ten", 10, 1);
+        IngredientGuideEntry rareTen = entry("Rare Ten", 10, 3);
+        IngredientGuideEntry commonTwenty = entry("Common Twenty", 20, 1);
+
+        List<IngredientGuideEntry> ascendingSecondary = IngredientGuideManager.sort(
+                List.of(commonTen, rareTen, commonTwenty),
+                IngredientGuideManager.SortKey.LEVEL,
+                IngredientGuideManager.SortDirection.DESCENDING,
+                IngredientGuideManager.SortKey.RARITY,
+                IngredientGuideManager.SortDirection.ASCENDING);
+        List<IngredientGuideEntry> descendingSecondary = IngredientGuideManager.sort(
+                List.of(commonTen, rareTen, commonTwenty),
+                IngredientGuideManager.SortKey.LEVEL,
+                IngredientGuideManager.SortDirection.DESCENDING,
+                IngredientGuideManager.SortKey.RARITY,
+                IngredientGuideManager.SortDirection.DESCENDING);
+
+        assertEquals(List.of(commonTwenty, commonTen, rareTen), ascendingSecondary);
+        assertEquals(List.of(commonTwenty, rareTen, commonTen), descendingSecondary);
+    }
+
+    @Test
     void postsIngredientSearchAndRetainsSnapshotAfterFailure() throws Exception {
         AtomicInteger statusCode = new AtomicInteger(200);
         AtomicReference<String> responseBody = new AtomicReference<>("""
@@ -166,6 +209,17 @@ class IngredientGuideManagerTest {
                 mobs.stream()
                         .map(mob -> new IngredientGuideEntry.DropSource(mob, List.of()))
                         .toList());
+    }
+
+    private static IngredientGuideEntry entry(String name, int level, int tier) {
+        return new IngredientGuideEntry(
+                name,
+                name,
+                tier,
+                level,
+                List.of(),
+                IngredientGuideEntry.Icon.unavailable(),
+                List.of());
     }
 
     private static void respond(HttpExchange exchange, int statusCode, String body) throws IOException {
