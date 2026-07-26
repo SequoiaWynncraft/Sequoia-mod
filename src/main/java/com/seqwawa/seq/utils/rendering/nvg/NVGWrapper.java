@@ -1,8 +1,6 @@
 package com.seqwawa.seq.utils.rendering.nvg;
 
 import lombok.experimental.UtilityClass;
-import com.seqwawa.seq.managers.AssetManager;
-import com.seqwawa.seq.utils.rendering.UiRenderer;
 import org.lwjgl.nanovg.NVGColor;
 import org.lwjgl.nanovg.NVGPaint;
 import org.lwjgl.nanovg.NanoVG;
@@ -60,12 +58,6 @@ public class NVGWrapper {
         nvgColor2.free();
         paint2.free();
     }
-    public void drawImage(long context, AssetManager.Asset asset, float x, float y, float w, float h, float alpha) {
-        if (asset != null && asset.getImage() != null) {
-            UiRenderer.currentCanvas().drawImage(asset.getImage(), x, y, w, h, alpha / 255f);
-        }
-    }
-
     public static NVGColor nvgColor(Color color) {
         // Callers release this struct with free(), so it must come from LWJGL's native allocator.
         NVGColor nvgColor = NVGColor.malloc();

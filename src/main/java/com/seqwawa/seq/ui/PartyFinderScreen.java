@@ -3,8 +3,6 @@ package com.seqwawa.seq.ui;
 import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
-import static org.lwjgl.nanovg.NanoVG.*;
-
 import java.awt.Color;
 import java.util.*;
 import java.util.List;
@@ -31,8 +29,8 @@ import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyStatus;
 import com.seqwawa.seq.utils.TextInputFilters;
 import com.seqwawa.seq.utils.TextInputHelper;
-import com.seqwawa.seq.utils.rendering.nvg.NVGContext;
-import com.seqwawa.seq.utils.rendering.nvg.NVGWrapper;
+import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
+import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 
 public class PartyFinderScreen extends Screen implements PartyAccessor {
@@ -154,7 +152,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     // ── State ──
     private final Screen parent;
     private final boolean openCreateModalOnInit;
-    private float nvgMouseX, nvgMouseY;
+    private float uiMouseX, uiMouseY;
     private float scrollOffset = 0;
     private float maxScroll = 0;
     private boolean scrollbarDragging = false;
@@ -279,31 +277,32 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        nvgMouseX = NVGContext.mouseX(mouseX);
-        nvgMouseY = NVGContext.mouseY(mouseY);
+        uiMouseX = MinecraftUiRenderer.mouseX(mouseX);
+        uiMouseY = MinecraftUiRenderer.mouseY(mouseY);
 
-        NVGContext.renderDeferred(nvg -> {
-            float screenWidth = NVGContext.screenWidth();
-            float screenHeight = NVGContext.screenHeight();
+        UiRenderer.renderScreen(this, canvas -> {
+            float screenWidth = canvas.metrics().width();
+            float screenHeight = canvas.metrics().height();
             String fontName = SeqClient.getFontManager().getSelectedFont();
 
-            NVGWrapper.drawRect(nvg, 0, 0, screenWidth, screenHeight, color(BACKGROUND_OVERLAY));
-            renderSidebar(nvg, fontName, screenHeight);
+            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_OVERLAY));
+            renderSidebar(canvas, fontName, screenHeight);
 
             float panelX = SIDEBAR_WIDTH;
             float panelWidth = screenWidth - SIDEBAR_WIDTH;
 
-            NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, color(BACKGROUND_BODY));
-            NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, HEADER_HEIGHT, color(BACKGROUND_HEADER));
-            renderHeaderControls(nvg, fontName, panelX, panelWidth);
-
-            nvgFontFace(nvg, fontName);
-            nvgFontSize(nvg, TITLE_FONT_SIZE);
-            nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-            var titleCol = NVGContext.nvgColor(color(ACCENT_PRIMARY));
-            nvgFillColor(nvg, titleCol);
-            nvgText(nvg, panelX + panelWidth - SEARCH_BAR_MARGIN, HEADER_HEIGHT / 2f, "Party Finder");
-            titleCol.free();
+            canvas.fillRect(panelX, 0, panelWidth, screenHeight, color(BACKGROUND_BODY));
+            canvas.fillRect(panelX, 0, panelWidth, HEADER_HEIGHT, color(BACKGROUND_HEADER));
+            renderHeaderControls(canvas, fontName, panelX, panelWidth);
+            drawText(
+                    canvas,
+                    fontName,
+                    TITLE_FONT_SIZE,
+                    color(ACCENT_PRIMARY),
+                    panelX + panelWidth - SEARCH_BAR_MARGIN,
+                    HEADER_HEIGHT / 2f,
+                    "Party Finder",
+                    UiCanvas.HorizontalAlign.RIGHT);
 
             // Content area
             float contentX = panelX;
@@ -319,8 +318,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             hoveredKickIconX = -1;
             hoveredKickIconY = -1;
 
-            nvgSave(nvg);
-            nvgScissor(nvg, contentX, contentY, contentWidth, contentHeight);
+            canvas.save();
+            canvas.scissor(contentX, contentY, contentWidth, contentHeight);
 
             float cursorY = contentY - scrollOffset + PADDING;
             for (int i = 0; i < party().getParties().size(); i++) {
@@ -332,62 +331,63 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                         : COLLAPSED_ROW_HEIGHT;
 
                 renderPartyCard(
-                        nvg, fontName, contentX + PADDING, cursorY, contentWidth - PADDING * 2 - 6, cardH, party, i);
+                        canvas, fontName, contentX + PADDING, cursorY, contentWidth - PADDING * 2 - 6, cardH, party, i);
                 cursorY += cardH + CARD_SPACING;
             }
 
             maxScroll = Math.max(0, cursorY + scrollOffset - contentY - contentHeight);
-            nvgRestore(nvg);
+            canvas.restore();
 
             // Scrollbar
             if (maxScroll > 0) {
                 float scrollbarX = panelX + panelWidth - 5;
-                NVGWrapper.drawRect(nvg, scrollbarX, contentY, 4, contentHeight, color(CONTROL_TRACK));
+                canvas.fillRect(scrollbarX, contentY, 4, contentHeight, color(CONTROL_TRACK));
                 float thumbRatio = contentHeight / (contentHeight + maxScroll);
                 float thumbH = Math.max(20, contentHeight * thumbRatio);
                 float thumbY = contentY + (scrollOffset / maxScroll) * (contentHeight - thumbH);
-                NVGWrapper.drawRect(nvg, scrollbarX, thumbY, 4, thumbH, color(CONTROL_THUMB));
+                canvas.fillRect(scrollbarX, thumbY, 4, thumbH, color(CONTROL_THUMB));
             }
 
             // Filter + button (bottom right of content area)
             float filterX = panelX + panelWidth - FILTER_BUTTON_W - FILTER_BUTTON_MARGIN;
             float filterY = screenHeight - FILTER_BUTTON_H - FILTER_BUTTON_MARGIN;
-            boolean filterHovered = isHovered(nvgMouseX, nvgMouseY, filterX, filterY, FILTER_BUTTON_W, FILTER_BUTTON_H);
-            NVGWrapper.drawRect(
-                    nvg,
+            boolean filterHovered = isHovered(uiMouseX, uiMouseY, filterX, filterY, FILTER_BUTTON_W, FILTER_BUTTON_H);
+            canvas.fillRect(
                     filterX,
                     filterY,
                     FILTER_BUTTON_W,
                     FILTER_BUTTON_H,
                     filterHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
-            nvgFontFace(nvg, fontName);
-            nvgFontSize(nvg, HEADER_BUTTON_SIZE);
-            nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            var ftc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-            nvgFillColor(nvg, ftc);
-            nvgText(nvg, filterX + FILTER_BUTTON_W / 2f, filterY + FILTER_BUTTON_H / 2f, "Filter +");
-            ftc.free();
+            drawText(
+                    canvas,
+                    fontName,
+                    HEADER_BUTTON_SIZE,
+                    color(TEXT_PRIMARY),
+                    filterX + FILTER_BUTTON_W / 2f,
+                    filterY + FILTER_BUTTON_H / 2f,
+                    "Filter +",
+                    UiCanvas.HorizontalAlign.CENTER);
 
             // Role dropdown overlay
             if (roleDropdownOpen && !modalOpen && !inviteModalOpen && !filterScreenOpen) {
-                renderRoleDropdownMenu(nvg, fontName);
+                renderRoleDropdownMenu(canvas, fontName);
             }
 
             // Modal overlay
             if (modalOpen) {
-                renderModal(nvg, fontName, panelX, panelWidth, screenHeight);
+                renderModal(canvas, fontName, panelX, panelWidth, screenHeight);
             }
 
             if (inviteModalOpen) {
-                renderInviteModal(nvg, fontName, panelX, panelWidth, screenHeight);
+                renderInviteModal(canvas, fontName, panelX, panelWidth, screenHeight);
             }
 
             // Filter+ screen overlay (highest priority)
             if (filterScreenOpen) {
-                renderFilterScreen(nvg, fontName, panelX, panelWidth, screenHeight);
+                renderFilterScreen(canvas, fontName, panelX, panelWidth, screenHeight);
             }
 
-            renderStatusBanner(nvg, fontName, panelX, panelWidth, screenHeight);
+            renderStatusBanner(canvas, fontName, panelX, panelWidth, screenHeight);
         });
     }
 
@@ -413,7 +413,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         showStatusBanner(message);
     }
 
-    private void renderStatusBanner(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
+    private void renderStatusBanner(
+            UiCanvas canvas, String fontName, float panelX, float panelWidth, float screenHeight) {
         if (activeStatusBannerMessage == null || activeStatusBannerMessage.isBlank()) {
             return;
         }
@@ -424,48 +425,48 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             return;
         }
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, 12);
-        float[] bounds = new float[4];
-        float textW = nvgTextBounds(nvg, 0, 0, activeStatusBannerMessage, bounds);
+        float textW = textWidth(activeStatusBannerMessage, fontName, 12);
         float maxPopupW = Math.max(180f, panelWidth - 20f);
         float popupW = Math.min(maxPopupW, Math.max(STATUS_BANNER_MIN_W, textW + 28f));
 
         float popupX = panelX + (panelWidth - popupW) / 2f;
         float popupY = screenHeight - STATUS_BANNER_H - 10;
 
-        NVGWrapper.drawRect(nvg, popupX, popupY, popupW, STATUS_BANNER_H, color(ACCENT_PRIMARY_DARK, 235));
-        NVGWrapper.drawRectOutline(nvg, popupX, popupY, popupW, STATUS_BANNER_H, 1, color(ACCENT_PRIMARY));
-
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var text = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, text);
-        nvgText(nvg, popupX + popupW / 2f, popupY + STATUS_BANNER_H / 2f, activeStatusBannerMessage);
-        text.free();
+        canvas.fillRect(popupX, popupY, popupW, STATUS_BANNER_H, color(ACCENT_PRIMARY_DARK, 235));
+        canvas.strokeRect(popupX, popupY, popupW, STATUS_BANNER_H, 1, color(ACCENT_PRIMARY));
+        drawText(
+                canvas,
+                fontName,
+                12,
+                color(TEXT_PRIMARY),
+                popupX + popupW / 2f,
+                popupY + STATUS_BANNER_H / 2f,
+                activeStatusBannerMessage,
+                UiCanvas.HorizontalAlign.CENTER);
     }
 
     // ── Sidebar ──
 
-    private void renderSidebar(long nvg, String fontName, float screenHeight) {
-        NVGWrapper.drawRect(nvg, 0, 0, SIDEBAR_WIDTH, screenHeight, color(BACKGROUND_SIDEBAR));
-
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, SIDEBAR_TITLE_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var col = NVGContext.nvgColor(color(ACCENT_PRIMARY));
-        nvgFillColor(nvg, col);
-        nvgText(nvg, SIDEBAR_WIDTH / 2f, 22, "Sequoia");
-        col.free();
-
-        NVGWrapper.drawRect(nvg, SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_DIVIDER));
+    private void renderSidebar(UiCanvas canvas, String fontName, float screenHeight) {
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(BACKGROUND_SIDEBAR));
+        drawText(
+                canvas,
+                fontName,
+                SIDEBAR_TITLE_SIZE,
+                color(ACCENT_PRIMARY),
+                SIDEBAR_WIDTH / 2f,
+                22,
+                "Sequoia",
+                UiCanvas.HorizontalAlign.CENTER);
+        canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_DIVIDER));
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
         float btnY = 50;
 
-        drawSidebarButton(nvg, fontName, btnX, btnY, btnW, "Partyfinder", true);
+        drawSidebarButton(canvas, fontName, btnX, btnY, btnW, "Partyfinder", true);
         drawSidebarButton(
-                nvg,
+                canvas,
                 fontName,
                 btnX,
                 btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING),
@@ -473,7 +474,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 "Connection",
                 false);
         drawSidebarButton(
-                nvg,
+                canvas,
                 fontName,
                 btnX,
                 btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
@@ -481,7 +482,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 "Settings",
                 false);
         drawSidebarButton(
-                nvg,
+                canvas,
                 fontName,
                 btnX,
                 btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
@@ -489,7 +490,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 "Map",
                 false);
         drawSidebarButton(
-                nvg,
+                canvas,
                 fontName,
                 btnX,
                 btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
@@ -498,23 +499,25 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 false);
     }
 
-    private void drawSidebarButton(long nvg, String fontName, float x, float y, float w, String label, boolean active) {
-        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
+    private void drawSidebarButton(
+            UiCanvas canvas, String fontName, float x, float y, float w, String label, boolean active) {
+        boolean hovered = isHovered(uiMouseX, uiMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
         Color bg = active ? color(ACCENT_PRIMARY_DARK) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
-        NVGWrapper.drawRect(nvg, x, y, w, SIDEBAR_BUTTON_HEIGHT, bg);
-
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, SIDEBAR_BUTTON_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var c = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, c);
-        nvgText(nvg, x + w / 2f, y + SIDEBAR_BUTTON_HEIGHT / 2f, label);
-        c.free();
+        canvas.fillRect(x, y, w, SIDEBAR_BUTTON_HEIGHT, bg);
+        drawText(
+                canvas,
+                fontName,
+                SIDEBAR_BUTTON_SIZE,
+                color(TEXT_PRIMARY),
+                x + w / 2f,
+                y + SIDEBAR_BUTTON_HEIGHT / 2f,
+                label,
+                UiCanvas.HorizontalAlign.CENTER);
     }
 
     // ── Header ──
 
-    private void renderHeaderControls(long nvg, String fontName, float panelX, float panelWidth) {
+    private void renderHeaderControls(UiCanvas canvas, String fontName, float panelX, float panelWidth) {
         searchCursorBlink++;
         HeaderControlsLayout layout = computeHeaderControlsLayout(panelX);
         HeaderButtonBounds searchBar = layout.searchBar();
@@ -522,93 +525,97 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float searchY = searchBar.y();
 
         Color searchBg = searchFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
-        NVGWrapper.drawRect(nvg, searchX, searchY, searchBar.w(), searchBar.h(), searchBg);
+        canvas.fillRect(searchX, searchY, searchBar.w(), searchBar.h(), searchBg);
         if (searchFocused) {
-            NVGWrapper.drawRectOutline(nvg, searchX, searchY, searchBar.w(), searchBar.h(), 1, color(CONTROL_BORDER));
+            canvas.strokeRect(searchX, searchY, searchBar.w(), searchBar.h(), 1, color(CONTROL_BORDER));
         }
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, SEARCH_FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-
-        nvgSave(nvg);
-        nvgScissor(nvg, searchX, searchY, searchBar.w(), searchBar.h());
+        canvas.save();
+        canvas.scissor(searchX, searchY, searchBar.w(), searchBar.h());
         if (searchQuery.isEmpty() && !searchFocused) {
-            var ph = NVGContext.nvgColor(color(TEXT_DISABLED));
-            nvgFillColor(nvg, ph);
-            nvgText(nvg, searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, "Search...");
-            ph.free();
+            drawText(
+                    canvas,
+                    fontName,
+                    SEARCH_FONT_SIZE,
+                    color(TEXT_DISABLED),
+                    searchX + 6,
+                    searchY + SEARCH_BAR_HEIGHT / 2f,
+                    "Search...",
+                    UiCanvas.HorizontalAlign.LEFT);
         } else {
-            var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-            nvgFillColor(nvg, tc);
-            nvgText(nvg, searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, searchQuery);
-            tc.free();
+            drawText(
+                    canvas,
+                    fontName,
+                    SEARCH_FONT_SIZE,
+                    color(TEXT_PRIMARY),
+                    searchX + 6,
+                    searchY + SEARCH_BAR_HEIGHT / 2f,
+                    searchQuery,
+                    UiCanvas.HorizontalAlign.LEFT);
         }
-        nvgRestore(nvg);
+        canvas.restore();
 
         if (searchFocused && (searchCursorBlink / 1000) % 2 == 0) {
-            float[] bounds = new float[4];
-            nvgFontFace(nvg, fontName);
-            nvgFontSize(nvg, SEARCH_FONT_SIZE);
-            float textW = searchQuery.isEmpty() ? 0 : nvgTextBounds(nvg, 0, 0, searchQuery, bounds);
-            NVGWrapper.drawRect(nvg, searchX + 6 + textW + 1, searchY + 3, 1, searchBar.h() - 6, color(TEXT_PRIMARY));
+            float textW = searchQuery.isEmpty() ? 0 : textWidth(searchQuery, fontName, SEARCH_FONT_SIZE);
+            canvas.fillRect(searchX + 6 + textW + 1, searchY + 3, 1, searchBar.h() - 6, color(TEXT_PRIMARY));
         }
 
         if (party().isPartyLeader()) {
             String manageLabel = party().hasListedParty() ? "Manage Party" : "New party +";
-            drawHeaderButton(nvg, fontName, layout.manageButton(), manageLabel, color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
-            drawHeaderButton(nvg, fontName, layout.inviteButton(), "Invite", color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
+            drawHeaderButton(canvas, fontName, layout.manageButton(), manageLabel, color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
+            drawHeaderButton(canvas, fontName, layout.inviteButton(), "Invite", color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
             boolean autoClosed = isCurrentListingAutoClosed();
             String openCloseLabel = autoClosed ? "Auto-closed" : (isCurrentListingClosed() ? "Open party" : "Close party");
             Color openCloseBg = autoClosed ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_DARK_HOVER, 200);
             Color openCloseHover = autoClosed ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_DARK_HOVER, 220);
             drawHeaderButton(
-                    nvg,
+                    canvas,
                     fontName,
                     layout.openCloseButton(),
                     openCloseLabel,
                     openCloseBg,
                     openCloseHover);
             drawHeaderButton(
-                    nvg, fontName, layout.delistButton(), "Delist party", color(CONTROL_DANGER, 200), color(CONTROL_DANGER_HOVER));
-            drawHeaderButton(nvg, fontName, layout.inviteAllButton(), "Invite all", color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
+                    canvas, fontName, layout.delistButton(), "Delist party", color(CONTROL_DANGER, 200), color(CONTROL_DANGER_HOVER));
+            drawHeaderButton(canvas, fontName, layout.inviteAllButton(), "Invite all", color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
         } else {
             boolean inPartyAsMember = party().getJoinedPartyIndex() >= 0;
             Color newBg = inPartyAsMember ? color(ACCENT_DISABLED, 180) : color(ACCENT_PRIMARY, 200);
             Color newHover = inPartyAsMember ? color(ACCENT_DISABLED, 180) : color(ACCENT_PRIMARY_HOVER, 220);
-            drawHeaderButton(nvg, fontName, layout.newPartyButton(), "New party +", newBg, newHover);
+            drawHeaderButton(canvas, fontName, layout.newPartyButton(), "New party +", newBg, newHover);
         }
 
         dropdownRenderX = layout.roleDropdown().x();
         dropdownRenderY = layout.roleDropdown().y();
         dropdownRenderW = layout.roleDropdown().w();
-        renderRoleDropdownButton(nvg, fontName, layout.roleDropdown());
+        renderRoleDropdownButton(canvas, fontName, layout.roleDropdown());
     }
 
     private void drawHeaderButton(
-            long nvg, String fontName, float x, float y, float w, float h, String label, Color bg, Color hoverBg) {
-        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
-        NVGWrapper.drawRect(nvg, x, y, w, h, hovered ? hoverBg : bg);
-
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, HEADER_BUTTON_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var c = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, c);
-        nvgText(nvg, x + w / 2f, y + h / 2f, label);
-        c.free();
+            UiCanvas canvas, String fontName, float x, float y, float w, float h, String label, Color bg, Color hoverBg) {
+        boolean hovered = isHovered(uiMouseX, uiMouseY, x, y, w, h);
+        canvas.fillRect(x, y, w, h, hovered ? hoverBg : bg);
+        drawText(
+                canvas,
+                fontName,
+                HEADER_BUTTON_SIZE,
+                color(TEXT_PRIMARY),
+                x + w / 2f,
+                y + h / 2f,
+                label,
+                UiCanvas.HorizontalAlign.CENTER);
     }
 
     private void drawHeaderButton(
-            long nvg, String fontName, HeaderButtonBounds bounds, String label, Color bg, Color hoverBg) {
+            UiCanvas canvas, String fontName, HeaderButtonBounds bounds, String label, Color bg, Color hoverBg) {
         if (bounds == null) {
             return;
         }
-        drawHeaderButton(nvg, fontName, bounds.x(), bounds.y(), bounds.w(), bounds.h(), label, bg, hoverBg);
+        drawHeaderButton(canvas, fontName, bounds.x(), bounds.y(), bounds.w(), bounds.h(), label, bg, hoverBg);
     }
 
     private void drawStatusBadge(
-            long nvg,
+            UiCanvas canvas,
             String fontName,
             HeaderButtonBounds bounds,
             PartyStatus status,
@@ -618,7 +625,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             return;
         }
         drawStatusBadge(
-                nvg,
+                canvas,
                 fontName,
                 bounds.x(),
                 bounds.y(),
@@ -630,7 +637,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     }
 
     private void drawStatusBadge(
-            long nvg,
+            UiCanvas canvas,
             String fontName,
             float x,
             float y,
@@ -641,16 +648,17 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             PartyJoinPolicy joinPolicy) {
         Color bg = statusBadgeBackground(status);
         Color border = statusBadgeBorder(status);
-        NVGWrapper.drawRect(nvg, x, y, w, h, bg);
-        NVGWrapper.drawRectOutline(nvg, x, y, w, h, 1, border);
-
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, HEADER_BUTTON_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, tc);
-        nvgText(nvg, x + w / 2f, y + h / 2f, statusBadgeLabel(status, closeReason, joinPolicy));
-        tc.free();
+        canvas.fillRect(x, y, w, h, bg);
+        canvas.strokeRect(x, y, w, h, 1, border);
+        drawText(
+                canvas,
+                fontName,
+                HEADER_BUTTON_SIZE,
+                color(TEXT_PRIMARY),
+                x + w / 2f,
+                y + h / 2f,
+                statusBadgeLabel(status, closeReason, joinPolicy),
+                UiCanvas.HorizontalAlign.CENTER);
     }
 
     private Color statusBadgeBackground(PartyStatus status) {
@@ -734,68 +742,72 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     // ── Role dropdown ──
 
-    private void renderRoleDropdownButton(long nvg, String fontName, HeaderButtonBounds bounds) {
+    private void renderRoleDropdownButton(UiCanvas canvas, String fontName, HeaderButtonBounds bounds) {
         float x = bounds.x();
         float y = bounds.y();
         float w = bounds.w();
         float h = bounds.h();
-        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
-        NVGWrapper.drawRect(nvg, x, y, w, h, hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
-        NVGWrapper.drawRectOutline(nvg, x, y, w, h, 1, color(CONTROL_INPUT_SECONDARY));
+        boolean hovered = isHovered(uiMouseX, uiMouseY, x, y, w, h);
+        canvas.fillRect(x, y, w, h, hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+        canvas.strokeRect(x, y, w, h, 1, color(CONTROL_INPUT_SECONDARY));
 
         String label = selectedRole != null ? selectedRole : "Your role";
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, HEADER_BUTTON_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, tc);
-        nvgText(nvg, x + 6, y + h / 2f, label);
-        tc.free();
-
-        drawTriangle(nvg, x + w - 8, y + h / 2f, 5, false, color(ACCENT_SECONDARY));
+        drawText(
+                canvas,
+                fontName,
+                HEADER_BUTTON_SIZE,
+                color(TEXT_PRIMARY),
+                x + 6,
+                y + h / 2f,
+                label,
+                UiCanvas.HorizontalAlign.LEFT);
+        drawTriangle(canvas, x + w - 8, y + h / 2f, 5, false, color(ACCENT_SECONDARY));
     }
 
-    private void renderRoleDropdownMenu(long nvg, String fontName) {
+    private void renderRoleDropdownMenu(UiCanvas canvas, String fontName) {
         float x = dropdownRenderX;
         float y = dropdownRenderY + SEARCH_BAR_HEIGHT;
         float w = dropdownRenderW;
         float itemH = 20;
         float totalH = ROLES.length * itemH;
 
-        NVGWrapper.drawRect(nvg, x, y, w, totalH, color(BACKGROUND_POPUP));
-        NVGWrapper.drawRectOutline(nvg, x, y, w, totalH, 1, color(CONTROL_INPUT_SECONDARY));
+        canvas.fillRect(x, y, w, totalH, color(BACKGROUND_POPUP));
+        canvas.strokeRect(x, y, w, totalH, 1, color(CONTROL_INPUT_SECONDARY));
 
         for (int i = 0; i < ROLES.length; i++) {
             float itemY = y + i * itemH;
-            boolean itemHovered = isHovered(nvgMouseX, nvgMouseY, x, itemY, w, itemH);
-            if (itemHovered) NVGWrapper.drawRect(nvg, x, itemY, w, itemH, color(CONTROL_INPUT_HOVER));
-
-            nvgFontFace(nvg, fontName);
-            nvgFontSize(nvg, MEMBER_FONT_SIZE);
-            nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-            nvgFillColor(nvg, tc);
-            nvgText(nvg, x + 6, itemY + itemH / 2f, ROLES[i]);
-            tc.free();
+            boolean itemHovered = isHovered(uiMouseX, uiMouseY, x, itemY, w, itemH);
+            if (itemHovered) {
+                canvas.fillRect(x, itemY, w, itemH, color(CONTROL_INPUT_HOVER));
+            }
+            drawText(
+                    canvas,
+                    fontName,
+                    MEMBER_FONT_SIZE,
+                    color(TEXT_PRIMARY),
+                    x + 6,
+                    itemY + itemH / 2f,
+                    ROLES[i],
+                    UiCanvas.HorizontalAlign.LEFT);
         }
     }
 
     // ── Party cards ──
 
     private void renderPartyCard(
-            long nvg, String fontName, float x, float y, float w, float h, PartyListing party, int partyIndex) {
+            UiCanvas canvas, String fontName, float x, float y, float w, float h, PartyListing party, int partyIndex) {
         boolean isJoined = party().getJoinedPartyIndex() == partyIndex;
-        NVGWrapper.drawRect(nvg, x, y, w, h, party.expanded ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
+        canvas.fillRect(x, y, w, h, party.expanded ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
 
         if (party.expanded) {
-            renderExpandedCard(nvg, fontName, x, y, w, h, party, partyIndex, isJoined);
+            renderExpandedCard(canvas, fontName, x, y, w, h, party, partyIndex, isJoined);
         } else {
-            renderCollapsedCard(nvg, fontName, x, y, w, party);
+            renderCollapsedCard(canvas, fontName, x, y, w, party);
         }
     }
 
     private void renderExpandedCard(
-            long nvg,
+            UiCanvas canvas,
             String fontName,
             float x,
             float y,
@@ -808,7 +820,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         List<String> raidTags = getRenderedRaidTags(party);
 
         drawRaidIconCircle(
-                nvg,
+                canvas,
                 fontName,
                 rowX,
                 y + (CARD_HEADER_HEIGHT - TYPE_ICON_SIZE) / 2f,
@@ -817,17 +829,19 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 hasGazEarsMember(party));
         rowX += TYPE_ICON_SIZE + 6;
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, CARD_TITLE_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var countCol = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, countCol);
-        nvgText(nvg, rowX, y + CARD_HEADER_HEIGHT / 2f, party.occupiedSlots + "/" + party.maxSize);
-        countCol.free();
+        drawText(
+                canvas,
+                fontName,
+                CARD_TITLE_SIZE,
+                color(TEXT_PRIMARY),
+                rowX,
+                y + CARD_HEADER_HEIGHT / 2f,
+                party.occupiedSlots + "/" + party.maxSize,
+                UiCanvas.HorizontalAlign.LEFT);
         rowX += 46;
 
         drawStatusBadge(
-                nvg,
+                canvas,
                 fontName,
                 rowX,
                 y + (CARD_HEADER_HEIGHT - STATUS_BADGE_H) / 2f,
@@ -838,12 +852,15 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 party.joinPolicy);
 
         // Collapse arrow
-        nvgFontSize(nvg, 16);
-        nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        var arrCol = NVGContext.nvgColor(color(ACCENT_SECONDARY));
-        nvgFillColor(nvg, arrCol);
-        nvgText(nvg, x + w - CARD_PADDING, y + CARD_HEADER_HEIGHT / 2f, "-");
-        arrCol.free();
+        drawText(
+                canvas,
+                fontName,
+                16,
+                color(ACCENT_SECONDARY),
+                x + w - CARD_PADDING,
+                y + CARD_HEADER_HEIGHT / 2f,
+                "-",
+                UiCanvas.HorizontalAlign.RIGHT);
 
         // Members
         boolean isMyParty = partyIndex == party().getMyPartyIndex() && party().isPartyLeader();
@@ -852,7 +869,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         for (int mi = 0; mi < party.members.size(); mi++) {
             PartyMember member = party.members.get(mi);
             renderMemberRow(
-                    nvg,
+                    canvas,
                     fontName,
                     x + CARD_PADDING + 10,
                     memberY,
@@ -874,40 +891,46 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         boolean listingUnavailable = !isJoined && !party.isJoinable();
         boolean buttonDisabled = showJoinedDisabled || alreadyInParty || listingUnavailable;
         boolean joinHovered =
-                !buttonDisabled && isHovered(nvgMouseX, nvgMouseY, joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT);
+                !buttonDisabled && isHovered(uiMouseX, uiMouseY, joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT);
         Color joinBg =
                 buttonDisabled ? color(ACCENT_DISABLED) : (joinHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
-        NVGWrapper.drawRect(nvg, joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT, joinBg);
+        canvas.fillRect(joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT, joinBg);
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, MEMBER_FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
         Color textCol = buttonDisabled ? color(TEXT_DISABLED) : color(TEXT_PRIMARY);
         String actionText = showJoinedDisabled
                 ? "Joined"
                 : (isJoined ? "Leave" : partyActionLabel(party));
-        var jtc = NVGContext.nvgColor(textCol);
-        nvgFillColor(nvg, jtc);
-        nvgText(nvg, joinX + JOIN_BUTTON_WIDTH / 2f, joinY + BUTTON_HEIGHT / 2f, actionText);
-        jtc.free();
+        drawText(
+                canvas,
+                fontName,
+                MEMBER_FONT_SIZE,
+                textCol,
+                joinX + JOIN_BUTTON_WIDTH / 2f,
+                joinY + BUTTON_HEIGHT / 2f,
+                actionText,
+                UiCanvas.HorizontalAlign.CENTER);
 
         // Tag label
         float labelRightX = x + w - CARD_PADDING - JOIN_BUTTON_WIDTH - 8;
-        nvgFontSize(nvg, TYPE_FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        var ptc = NVGContext.nvgColor(color(TEXT_MUTED));
-        nvgFillColor(nvg, ptc);
-        nvgText(nvg, labelRightX, lastMemberCenterY, getPartyCardLabel(party));
-        ptc.free();
+        drawText(
+                canvas,
+                fontName,
+                TYPE_FONT_SIZE,
+                color(TEXT_MUTED),
+                labelRightX,
+                lastMemberCenterY,
+                getPartyCardLabel(party),
+                UiCanvas.HorizontalAlign.RIGHT);
     }
 
-    private void renderCollapsedCard(long nvg, String fontName, float x, float y, float w, PartyListing party) {
+    private void renderCollapsedCard(
+            UiCanvas canvas, String fontName, float x, float y, float w, PartyListing party) {
         float rowX = x + CARD_PADDING;
         float centerY = y + COLLAPSED_ROW_HEIGHT / 2f;
         List<String> raidTags = getRenderedRaidTags(party);
 
         drawRaidIconCircle(
-                nvg,
+                canvas,
                 fontName,
                 rowX,
                 y + (COLLAPSED_ROW_HEIGHT - TYPE_ICON_SIZE) / 2f,
@@ -916,17 +939,19 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 hasGazEarsMember(party));
         rowX += TYPE_ICON_SIZE + 6;
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, CARD_TITLE_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var cc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, cc);
-        nvgText(nvg, rowX, centerY, party.occupiedSlots + "/" + party.maxSize);
-        cc.free();
+        drawText(
+                canvas,
+                fontName,
+                CARD_TITLE_SIZE,
+                color(TEXT_PRIMARY),
+                rowX,
+                centerY,
+                party.occupiedSlots + "/" + party.maxSize,
+                UiCanvas.HorizontalAlign.LEFT);
         rowX += 42;
 
         drawStatusBadge(
-                nvg,
+                canvas,
                 fontName,
                 rowX,
                 centerY - STATUS_BADGE_H / 2f,
@@ -945,7 +970,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             }
         }
         reservedRightWidth += 6;
-        reservedRightWidth += nvgTextBounds(nvg, 0, 0, getPartyCardLabel(party), new float[4]);
+        reservedRightWidth += textWidth(getPartyCardLabel(party), fontName, TYPE_FONT_SIZE);
         float leaderTextMaxX = rightX - reservedRightWidth;
 
         PartyMember leader = party.getLeader();
@@ -954,30 +979,35 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             AssetManager.Asset starIcon = getClassIcon("star");
             if (starIcon != null) {
                 float starY = centerY - STAR_ICON_SIZE / 2f;
-                NVGWrapper.drawImage(nvg, starIcon, rowX, starY, STAR_ICON_SIZE, STAR_ICON_SIZE, 255);
+                drawImage(canvas, starIcon, rowX, starY, STAR_ICON_SIZE, STAR_ICON_SIZE, 255);
             }
             rowX += STAR_ICON_SIZE + 4;
 
-            nvgFontFace(nvg, fontName);
-            nvgFontSize(nvg, MEMBER_FONT_SIZE);
-            nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            var nc = NVGContext.nvgColor(color(TEXT_SECONDARY));
-            nvgFillColor(nvg, nc);
-            String clippedLeaderName = fitTextToWidth(nvg, leaderName, Math.max(0, leaderTextMaxX - rowX));
+            String clippedLeaderName =
+                    fitTextToWidth(leaderName, fontName, MEMBER_FONT_SIZE, Math.max(0, leaderTextMaxX - rowX));
             if (!clippedLeaderName.isEmpty()) {
-                nvgText(nvg, rowX, centerY, clippedLeaderName);
+                drawText(
+                        canvas,
+                        fontName,
+                        MEMBER_FONT_SIZE,
+                        color(TEXT_SECONDARY),
+                        rowX,
+                        centerY,
+                        clippedLeaderName,
+                        UiCanvas.HorizontalAlign.LEFT);
             }
-            nc.free();
         }
 
         // Expand "+"
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, 16);
-        nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        var pc = NVGContext.nvgColor(color(ACCENT_SECONDARY));
-        nvgFillColor(nvg, pc);
-        nvgText(nvg, rightX, centerY, "+");
-        pc.free();
+        drawText(
+                canvas,
+                fontName,
+                16,
+                color(ACCENT_SECONDARY),
+                rightX,
+                centerY,
+                "+",
+                UiCanvas.HorizontalAlign.RIGHT);
         rightX -= 22;
 
         for (int j = party.members.size() - 1; j >= 0; j--) {
@@ -985,40 +1015,42 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             if (icon != null) {
                 float iconX = rightX - CLASS_ICON_SIZE;
                 float iconY = y + (COLLAPSED_ROW_HEIGHT - CLASS_ICON_SIZE) / 2f;
-                NVGWrapper.drawImage(nvg, icon, iconX, iconY, CLASS_ICON_SIZE, CLASS_ICON_SIZE, 255);
+                drawImage(canvas, icon, iconX, iconY, CLASS_ICON_SIZE, CLASS_ICON_SIZE, 255);
                 rightX -= CLASS_ICON_SIZE + 4;
             }
         }
 
         rightX -= 6;
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, TYPE_FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-        var tc = NVGContext.nvgColor(color(TEXT_MUTED));
-        nvgFillColor(nvg, tc);
-        nvgText(nvg, rightX, centerY, getPartyCardLabel(party));
-        tc.free();
+        drawText(
+                canvas,
+                fontName,
+                TYPE_FONT_SIZE,
+                color(TEXT_MUTED),
+                rightX,
+                centerY,
+                getPartyCardLabel(party),
+                UiCanvas.HorizontalAlign.RIGHT);
     }
 
-    private String fitTextToWidth(long nvg, String text, float maxWidth) {
+    private String fitTextToWidth(String text, String fontName, float fontSize, float maxWidth) {
         if (text == null || text.isEmpty() || maxWidth <= 0) {
             return "";
         }
 
-        float fullWidth = nvgTextBounds(nvg, 0, 0, text, new float[4]);
+        float fullWidth = textWidth(text, fontName, fontSize);
         if (fullWidth <= maxWidth) {
             return text;
         }
 
         String ellipsis = "...";
-        float ellipsisWidth = nvgTextBounds(nvg, 0, 0, ellipsis, new float[4]);
+        float ellipsisWidth = textWidth(ellipsis, fontName, fontSize);
         if (ellipsisWidth > maxWidth) {
             return "";
         }
 
         for (int end = text.length() - 1; end > 0; end--) {
             String candidate = text.substring(0, end) + ellipsis;
-            if (nvgTextBounds(nvg, 0, 0, candidate, new float[4]) <= maxWidth) {
+            if (textWidth(candidate, fontName, fontSize) <= maxWidth) {
                 return candidate;
             }
         }
@@ -1027,7 +1059,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     }
 
     private void renderMemberRow(
-            long nvg,
+            UiCanvas canvas,
             String fontName,
             float x,
             float y,
@@ -1042,7 +1074,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         // Hover detection for leader management
         boolean isHoveredMember = false;
         if (amLeaderOfThisParty && !member.isLeader && !member.isReserved) {
-            if (isHovered(nvgMouseX, nvgMouseY, x, y, w, MEMBER_ROW_HEIGHT)) {
+            if (isHovered(uiMouseX, uiMouseY, x, y, w, MEMBER_ROW_HEIGHT)) {
                 isHoveredMember = true;
                 hoveredMemberPartyIndex = partyIndex;
                 hoveredMemberIndex = memberIndex;
@@ -1053,26 +1085,25 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             AssetManager.Asset starIcon = getClassIcon("star");
             if (starIcon != null) {
                 float starY = centerY - STAR_ICON_SIZE / 2f;
-                NVGWrapper.drawImage(nvg, starIcon, rowX, starY, STAR_ICON_SIZE, STAR_ICON_SIZE, 255);
+                drawImage(canvas, starIcon, rowX, starY, STAR_ICON_SIZE, STAR_ICON_SIZE, 255);
             }
         }
         rowX += STAR_ICON_SIZE + 4;
 
         // Member name - dimmed if hovered for management
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, MEMBER_FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
         Color nameColor = isHoveredMember ? color(TEXT_DISABLED, 180) : color(TEXT_SECONDARY);
         String memberName = member.displayName();
-        var nc = NVGContext.nvgColor(nameColor);
-        nvgFillColor(nvg, nc);
-        nvgText(nvg, rowX, centerY, memberName);
-        nc.free();
+        drawText(
+                canvas,
+                fontName,
+                MEMBER_FONT_SIZE,
+                nameColor,
+                rowX,
+                centerY,
+                memberName,
+                UiCanvas.HorizontalAlign.LEFT);
 
-        float[] bounds = new float[4];
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, MEMBER_FONT_SIZE);
-        float nameW = nvgTextBounds(nvg, 0, 0, memberName, bounds);
+        float nameW = textWidth(memberName, fontName, MEMBER_FONT_SIZE);
 
         // Draw promote/kick icons on hover
         if (isHoveredMember) {
@@ -1088,10 +1119,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             hoveredKickIconY = iconY;
 
             if (starupIcon != null) {
-                NVGWrapper.drawImage(nvg, starupIcon, promoteX, iconY, LEADER_ICON_SIZE, LEADER_ICON_SIZE, 255);
+                drawImage(canvas, starupIcon, promoteX, iconY, LEADER_ICON_SIZE, LEADER_ICON_SIZE, 255);
             }
             if (crossIcon != null) {
-                NVGWrapper.drawImage(nvg, crossIcon, crossX, iconY, LEADER_ICON_SIZE, LEADER_ICON_SIZE, 255);
+                drawImage(canvas, crossIcon, crossX, iconY, LEADER_ICON_SIZE, LEADER_ICON_SIZE, 255);
             }
         }
 
@@ -1100,46 +1131,45 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         AssetManager.Asset icon = getClassIcon(member.className);
         if (icon != null) {
             float iconY = y + (MEMBER_ROW_HEIGHT - CLASS_ICON_SIZE) / 2f;
-            NVGWrapper.drawImage(nvg, icon, rowX, iconY, CLASS_ICON_SIZE, CLASS_ICON_SIZE, 255);
+            drawImage(canvas, icon, rowX, iconY, CLASS_ICON_SIZE, CLASS_ICON_SIZE, 255);
             rowX += CLASS_ICON_SIZE + 6;
         }
 
         if (!member.isReserved) {
-            nvgFontFace(nvg, fontName);
-            nvgFontSize(nvg, ROLE_FONT_SIZE);
-            nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            var rc = NVGContext.nvgColor(color(TEXT_MUTED));
-            nvgFillColor(nvg, rc);
-            nvgText(nvg, rowX, centerY, "(" + member.role + ")");
-            rc.free();
+            drawText(
+                    canvas,
+                    fontName,
+                    ROLE_FONT_SIZE,
+                    color(TEXT_MUTED),
+                    rowX,
+                    centerY,
+                    "(" + member.role + ")",
+                    UiCanvas.HorizontalAlign.LEFT);
         }
     }
 
     // ── Small triangle arrow (pointing up or down) ──
 
-    private void drawTriangle(long nvg, float cx, float cy, float size, boolean up, Color color) {
+    private void drawTriangle(UiCanvas canvas, float cx, float cy, float size, boolean up, Color color) {
         float half = size / 2f;
-        nvgBeginPath(nvg);
+        canvas.beginPath();
         if (up) {
-            nvgMoveTo(nvg, cx, cy - half);
-            nvgLineTo(nvg, cx - half, cy + half);
-            nvgLineTo(nvg, cx + half, cy + half);
+            canvas.moveTo(cx, cy - half);
+            canvas.lineTo(cx - half, cy + half);
+            canvas.lineTo(cx + half, cy + half);
         } else {
-            nvgMoveTo(nvg, cx, cy + half);
-            nvgLineTo(nvg, cx - half, cy - half);
-            nvgLineTo(nvg, cx + half, cy - half);
+            canvas.moveTo(cx, cy + half);
+            canvas.lineTo(cx - half, cy - half);
+            canvas.lineTo(cx + half, cy - half);
         }
-        nvgClosePath(nvg);
-        var c = NVGContext.nvgColor(color);
-        nvgFillColor(nvg, c);
-        nvgFill(nvg);
-        c.free();
+        canvas.closePath();
+        canvas.fillPath(color);
     }
 
     // ── Pizza-slice raid icon circle ──
 
     private void drawRaidIconCircle(
-            long nvg,
+            UiCanvas canvas,
             String fontName,
             float x,
             float y,
@@ -1157,13 +1187,15 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         // Check if this raid has no icon asset (text fallback, e.g. Prelude to
         // Annihilation)
         if (raidTags.size() == 1 && PartyListing.displayNameToAssetKey(canonicalizeRaidTag(raidTags.get(0))) == null) {
-            nvgFontFace(nvg, fontName);
-            nvgFontSize(nvg, RAID_LABEL_SIZE);
-            nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-            nvgFillColor(nvg, tc);
-            nvgText(nvg, cx, cy, raidTags.get(0));
-            tc.free();
+            drawText(
+                    canvas,
+                    fontName,
+                    RAID_LABEL_SIZE,
+                    color(TEXT_PRIMARY),
+                    cx,
+                    cy,
+                    raidTags.get(0),
+                    UiCanvas.HorizontalAlign.CENTER);
             return;
         }
 
@@ -1206,21 +1238,23 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             if (count == 1) {
                 // Full circle - just fill with image
                 if (raidIcon != null) {
-                    nvgSave(nvg);
-                    nvgBeginPath(nvg);
-                    nvgCircle(nvg, cx, cy, radius);
-                    UiRenderer.currentCanvas().fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
-                    nvgClosePath(nvg);
-                    nvgRestore(nvg);
+                    canvas.save();
+                    canvas.beginPath();
+                    canvas.circle(cx, cy, radius);
+                    canvas.fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
+                    canvas.closePath();
+                    canvas.restore();
                 } else {
                     // Fallback to text
-                    nvgFontFace(nvg, fontName);
-                    nvgFontSize(nvg, RAID_LABEL_SIZE);
-                    nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-                    var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-                    nvgFillColor(nvg, tc);
-                    nvgText(nvg, cx, cy, tag);
-                    tc.free();
+                    drawText(
+                            canvas,
+                            fontName,
+                            RAID_LABEL_SIZE,
+                            color(TEXT_PRIMARY),
+                            cx,
+                            cy,
+                            tag,
+                            UiCanvas.HorizontalAlign.CENTER);
                 }
             } else if (count == 2) {
                 // Semicircle clip: edge-to-edge arc, no center vertex.
@@ -1228,100 +1262,84 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 float edgeX1 = cx + radius * (float) Math.cos(sliceStart);
                 float edgeY1 = cy + radius * (float) Math.sin(sliceStart);
 
-                nvgSave(nvg);
-                nvgBeginPath(nvg);
-                nvgMoveTo(nvg, edgeX1, edgeY1);
-                nvgArc(nvg, cx, cy, radius, sliceStart, sliceEnd, NVG_CW);
-                nvgClosePath(nvg);
+                canvas.save();
+                canvas.beginPath();
+                canvas.moveTo(edgeX1, edgeY1);
+                canvas.arc(cx, cy, radius, sliceStart, sliceEnd, UiCanvas.ArcDirection.CLOCKWISE);
+                canvas.closePath();
 
                 if (raidIcon != null) {
-                    UiRenderer.currentCanvas().fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
+                    canvas.fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
                 } else {
-                    var fc = NVGContext.nvgColor(color(ACCENT_PRIMARY, 120));
-                    nvgFillColor(nvg, fc);
-                    nvgFill(nvg);
-                    fc.free();
+                    canvas.fillPath(color(ACCENT_PRIMARY, 120));
                 }
-                nvgRestore(nvg);
+                canvas.restore();
             } else {
                 // Pie slice (3+ way)
-                nvgSave(nvg);
-                nvgBeginPath(nvg);
-                nvgMoveTo(nvg, cx, cy);
-                nvgArc(nvg, cx, cy, radius, sliceStart, sliceEnd, NVG_CW);
-                nvgClosePath(nvg);
+                canvas.save();
+                canvas.beginPath();
+                canvas.moveTo(cx, cy);
+                canvas.arc(cx, cy, radius, sliceStart, sliceEnd, UiCanvas.ArcDirection.CLOCKWISE);
+                canvas.closePath();
 
                 if (raidIcon != null) {
-                    UiRenderer.currentCanvas().fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
+                    canvas.fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
                 } else {
                     // Fallback solid color for missing icon
-                    var fc = NVGContext.nvgColor(color(ACCENT_PRIMARY, 120));
-                    nvgFillColor(nvg, fc);
-                    nvgFill(nvg);
-                    fc.free();
+                    canvas.fillPath(color(ACCENT_PRIMARY, 120));
                 }
-                nvgRestore(nvg);
+                canvas.restore();
             }
         }
 
         if (count >= 2) {
-            var splitColor = NVGContext.nvgColor(color(ACCENT_DIVIDER));
-            nvgStrokeColor(nvg, splitColor);
-            nvgStrokeWidth(nvg, 1.25f);
-
             if (count == 2) {
                 float splitAngle = startAngle;
                 float dx = radius * (float) Math.cos(splitAngle);
                 float dy = radius * (float) Math.sin(splitAngle);
-                nvgBeginPath(nvg);
-                nvgMoveTo(nvg, cx - dx, cy - dy);
-                nvgLineTo(nvg, cx + dx, cy + dy);
-                nvgStroke(nvg);
+                canvas.strokeLine(cx - dx, cy - dy, cx + dx, cy + dy, 1.25f, color(ACCENT_DIVIDER));
             } else {
                 for (int i = 0; i < count; i++) {
                     float splitAngle = startAngle + i * anglePerSlice;
                     float edgeX = cx + radius * (float) Math.cos(splitAngle);
                     float edgeY = cy + radius * (float) Math.sin(splitAngle);
-                    nvgBeginPath(nvg);
-                    nvgMoveTo(nvg, cx, cy);
-                    nvgLineTo(nvg, edgeX, edgeY);
-                    nvgStroke(nvg);
+                    canvas.strokeLine(cx, cy, edgeX, edgeY, 1.25f, color(ACCENT_DIVIDER));
                 }
             }
-
-            splitColor.free();
         }
 
         if (drawGazEarsOverlay) {
             AssetManager.Asset gazEars = getClassIcon(GAZ_EARS_ASSET);
             if (gazEars != null) {
-                NVGWrapper.drawImage(nvg, gazEars, x + size * 0.1f, y - size * 0.55f, size, size, 255);
+                drawImage(canvas, gazEars, x + size * 0.1f, y - size * 0.55f, size, size, 255);
             }
         }
     }
 
     // ── Create/Manage Party Modal ──
 
-    private void renderModal(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
+    private void renderModal(UiCanvas canvas, String fontName, float panelX, float panelWidth, float screenHeight) {
         // Darken background
-        NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
+        canvas.fillRect(panelX, 0, panelWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
 
         // Modal centered in main panel area
         modalX = panelX + (panelWidth - MODAL_WIDTH) / 2f;
         modalY = (screenHeight - PARTY_MODAL_HEIGHT) / 2f;
 
-        NVGWrapper.drawRect(nvg, modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, color(BACKGROUND_BODY_OPAQUE));
-        NVGWrapper.drawRectOutline(nvg, modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, 1, color(ACCENT_SECONDARY));
+        canvas.fillRect(modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, color(BACKGROUND_BODY_OPAQUE));
+        canvas.strokeRect(modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, 1, color(ACCENT_SECONDARY));
 
         // Title
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, MODAL_TITLE_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, tc);
         String modalTitle = party().hasListedParty() ? "Update Party" : "Create Party";
-        nvgText(nvg, modalX + MODAL_WIDTH / 2f, modalY + 18, modalTitle);
-        tc.free();
+        drawText(
+                canvas,
+                fontName,
+                MODAL_TITLE_SIZE,
+                color(TEXT_PRIMARY),
+                modalX + MODAL_WIDTH / 2f,
+                modalY + 18,
+                modalTitle,
+                UiCanvas.HorizontalAlign.CENTER);
 
         // Raid type icons row
         float totalCirclesW = RAID_TYPES.length * RAID_CIRCLE_SIZE + (RAID_TYPES.length - 1) * RAID_CIRCLE_SPACING;
@@ -1338,13 +1356,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
             // Selection highlight behind icon
             if (selected) {
-                nvgBeginPath(nvg);
-                nvgCircle(nvg, rcx, rcy, RAID_CIRCLE_SIZE / 2f - 2);
-                var fill = NVGContext.nvgColor(color(ACCENT_PRIMARY, 120));
-                nvgFillColor(nvg, fill);
-                nvgFill(nvg);
-                nvgClosePath(nvg);
-                fill.free();
+                canvas.fillCircle(rcx, rcy, RAID_CIRCLE_SIZE / 2f - 2, color(ACCENT_PRIMARY, 120));
             }
 
             // Draw raid icon image (or text fallback for raids without an asset)
@@ -1352,8 +1364,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             AssetManager.Asset raidIcon = assetKey != null ? getClassIcon(assetKey) : null;
             if (raidIcon != null) {
                 float imgInset = 4;
-                NVGWrapper.drawImage(
-                        nvg,
+                drawImage(
+                        canvas,
                         raidIcon,
                         iconX + imgInset,
                         iconY + imgInset,
@@ -1362,13 +1374,15 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                         selected ? 255 : 160);
             } else {
                 // Text fallback (e.g. ANNI)
-                nvgFontFace(nvg, fontName);
-                nvgFontSize(nvg, RAID_LABEL_SIZE);
-                nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-                var lc = NVGContext.nvgColor(selected ? color(TEXT_PRIMARY) : color(TEXT_MUTED));
-                nvgFillColor(nvg, lc);
-                nvgText(nvg, rcx, rcy, rt);
-                lc.free();
+                drawText(
+                        canvas,
+                        fontName,
+                        RAID_LABEL_SIZE,
+                        selected ? color(TEXT_PRIMARY) : color(TEXT_MUTED),
+                        rcx,
+                        rcy,
+                        rt,
+                        UiCanvas.HorizontalAlign.CENTER);
             }
         }
 
@@ -1377,27 +1391,35 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float leftColX = modalX + MODAL_WIDTH * 0.25f;
         float rightColX = modalX + MODAL_WIDTH * 0.75f;
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, MODAL_LABEL_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var l2 = NVGContext.nvgColor(color(TEXT_MUTED));
-        nvgFillColor(nvg, l2);
-        nvgText(nvg, rightColX, rowY, "Reserved slots");
-        l2.free();
+        drawText(
+                canvas,
+                fontName,
+                MODAL_LABEL_SIZE,
+                color(TEXT_MUTED),
+                rightColX,
+                rowY,
+                "Reserved slots",
+                UiCanvas.HorizontalAlign.CENTER);
 
         // Edit tags button (same color as Filter+)
         float etBtnX = leftColX - MODAL_DROPDOWN_W / 2f;
         float etBtnY = rowY + 12;
-        boolean etHovered = isHovered(nvgMouseX, nvgMouseY, etBtnX, etBtnY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H);
-        NVGWrapper.drawRect(
-                nvg, etBtnX, etBtnY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H, etHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
-
-        nvgFontSize(nvg, MODAL_LABEL_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var ptc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, ptc);
-        nvgText(nvg, leftColX, etBtnY + MODAL_DROPDOWN_H / 2f, "Edit tags");
-        ptc.free();
+        boolean etHovered = isHovered(uiMouseX, uiMouseY, etBtnX, etBtnY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H);
+        canvas.fillRect(
+                etBtnX,
+                etBtnY,
+                MODAL_DROPDOWN_W,
+                MODAL_DROPDOWN_H,
+                etHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
+        drawText(
+                canvas,
+                fontName,
+                MODAL_LABEL_SIZE,
+                color(TEXT_PRIMARY),
+                leftColX,
+                etBtnY + MODAL_DROPDOWN_H / 2f,
+                "Edit tags",
+                UiCanvas.HorizontalAlign.CENTER);
 
         // Reserved slots with up/down arrows
         float arrowW = 16;
@@ -1408,9 +1430,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float halfArrowH = MODAL_DROPDOWN_H / 2f;
 
         Color rsFieldBg = reservedSlotsFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
-        NVGWrapper.drawRect(nvg, rsBoxX, rsBoxY, rsFieldW, MODAL_DROPDOWN_H, rsFieldBg);
-        NVGWrapper.drawRectOutline(
-                nvg,
+        canvas.fillRect(rsBoxX, rsBoxY, rsFieldW, MODAL_DROPDOWN_H, rsFieldBg);
+        canvas.strokeRect(
                 rsBoxX,
                 rsBoxY,
                 rsFieldW,
@@ -1418,39 +1439,50 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 1,
                 reservedSlotsFocused ? color(CONTROL_BORDER) : color(CONTROL_INPUT_SECONDARY));
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, MODAL_LABEL_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var rsc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, rsc);
-        nvgText(
-                nvg,
+        drawText(
+                canvas,
+                fontName,
+                MODAL_LABEL_SIZE,
+                color(TEXT_PRIMARY),
                 rsBoxX + rsFieldW / 2f,
                 rsBoxY + MODAL_DROPDOWN_H / 2f,
-                reservedSlotsFocused ? reservedSlotsInput : String.valueOf(modalReservedSlots));
-        rsc.free();
+                reservedSlotsFocused ? reservedSlotsInput : String.valueOf(modalReservedSlots),
+                UiCanvas.HorizontalAlign.CENTER);
 
         // Up arrow button
-        boolean upHovered = isHovered(nvgMouseX, nvgMouseY, arrowX, rsBoxY, arrowW, halfArrowH);
-        NVGWrapper.drawRect(nvg, arrowX, rsBoxY, arrowW, halfArrowH, upHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
-        NVGWrapper.drawRectOutline(nvg, arrowX, rsBoxY, arrowW, halfArrowH, 1, color(CONTROL_INPUT_SECONDARY));
-        drawTriangle(nvg, arrowX + arrowW / 2f, rsBoxY + halfArrowH / 2f, 4, true, color(TEXT_PRIMARY));
+        boolean upHovered = isHovered(uiMouseX, uiMouseY, arrowX, rsBoxY, arrowW, halfArrowH);
+        canvas.fillRect(arrowX, rsBoxY, arrowW, halfArrowH, upHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+        canvas.strokeRect(arrowX, rsBoxY, arrowW, halfArrowH, 1, color(CONTROL_INPUT_SECONDARY));
+        drawTriangle(canvas, arrowX + arrowW / 2f, rsBoxY + halfArrowH / 2f, 4, true, color(TEXT_PRIMARY));
 
         // Down arrow button
-        boolean downHovered = isHovered(nvgMouseX, nvgMouseY, arrowX, rsBoxY + halfArrowH, arrowW, halfArrowH);
-        NVGWrapper.drawRect(
-                nvg, arrowX, rsBoxY + halfArrowH, arrowW, halfArrowH, downHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
-        NVGWrapper.drawRectOutline(nvg, arrowX, rsBoxY + halfArrowH, arrowW, halfArrowH, 1, color(CONTROL_INPUT_SECONDARY));
-        drawTriangle(nvg, arrowX + arrowW / 2f, rsBoxY + halfArrowH + halfArrowH / 2f, 4, false, color(TEXT_PRIMARY));
+        boolean downHovered = isHovered(uiMouseX, uiMouseY, arrowX, rsBoxY + halfArrowH, arrowW, halfArrowH);
+        canvas.fillRect(
+                arrowX,
+                rsBoxY + halfArrowH,
+                arrowW,
+                halfArrowH,
+                downHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+        canvas.strokeRect(
+                arrowX, rsBoxY + halfArrowH, arrowW, halfArrowH, 1, color(CONTROL_INPUT_SECONDARY));
+        drawTriangle(
+                canvas,
+                arrowX + arrowW / 2f,
+                rsBoxY + halfArrowH + halfArrowH / 2f,
+                4,
+                false,
+                color(TEXT_PRIMARY));
 
         float regionLabelY = rsBoxY + MODAL_DROPDOWN_H + 18;
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, MODAL_LABEL_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var regionLabelColor = NVGContext.nvgColor(color(TEXT_MUTED));
-        nvgFillColor(nvg, regionLabelColor);
-        nvgText(nvg, modalX + MODAL_WIDTH / 2f, regionLabelY, "Region");
-        regionLabelColor.free();
+        drawText(
+                canvas,
+                fontName,
+                MODAL_LABEL_SIZE,
+                color(TEXT_MUTED),
+                modalX + MODAL_WIDTH / 2f,
+                regionLabelY,
+                "Region",
+                UiCanvas.HorizontalAlign.CENTER);
 
         float regionButtonsY = regionLabelY + 12;
         float totalRegionButtonsW =
@@ -1462,18 +1494,16 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             PartyRegion region = PARTY_REGIONS[i];
             float regionX = regionStartX + i * (REGION_BUTTON_W + REGION_BUTTON_SPACING);
             boolean regionHovered =
-                    isHovered(nvgMouseX, nvgMouseY, regionX, regionButtonsY, REGION_BUTTON_W, MODAL_DROPDOWN_H);
+                    isHovered(uiMouseX, uiMouseY, regionX, regionButtonsY, REGION_BUTTON_W, MODAL_DROPDOWN_H);
             boolean regionSelected = selectedRegion == region;
 
-            NVGWrapper.drawRect(
-                    nvg,
+            canvas.fillRect(
                     regionX,
                     regionButtonsY,
                     REGION_BUTTON_W,
                     MODAL_DROPDOWN_H,
                     regionSelected ? color(ACCENT_PRIMARY, 120) : (regionHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT)));
-            NVGWrapper.drawRectOutline(
-                    nvg,
+            canvas.strokeRect(
                     regionX,
                     regionButtonsY,
                     REGION_BUTTON_W,
@@ -1481,23 +1511,27 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     1,
                     regionSelected ? color(CONTROL_BORDER) : color(CONTROL_INPUT_SECONDARY));
 
-            nvgFontFace(nvg, fontName);
-            nvgFontSize(nvg, MODAL_LABEL_SIZE);
-            nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            var regionTextColor = NVGContext.nvgColor(color(TEXT_PRIMARY));
-            nvgFillColor(nvg, regionTextColor);
-            nvgText(nvg, regionX + REGION_BUTTON_W / 2f, regionButtonsY + MODAL_DROPDOWN_H / 2f, region.name());
-            regionTextColor.free();
+            drawText(
+                    canvas,
+                    fontName,
+                    MODAL_LABEL_SIZE,
+                    color(TEXT_PRIMARY),
+                    regionX + REGION_BUTTON_W / 2f,
+                    regionButtonsY + MODAL_DROPDOWN_H / 2f,
+                    region.name(),
+                    UiCanvas.HorizontalAlign.CENTER);
         }
 
         float joinPolicyLabelY = regionButtonsY + MODAL_DROPDOWN_H + 16;
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, MODAL_LABEL_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var joinPolicyLabelColor = NVGContext.nvgColor(color(TEXT_MUTED));
-        nvgFillColor(nvg, joinPolicyLabelColor);
-        nvgText(nvg, modalX + MODAL_WIDTH / 2f, joinPolicyLabelY, "Who can join?");
-        joinPolicyLabelColor.free();
+        drawText(
+                canvas,
+                fontName,
+                MODAL_LABEL_SIZE,
+                color(TEXT_MUTED),
+                modalX + MODAL_WIDTH / 2f,
+                joinPolicyLabelY,
+                "Who can join?",
+                UiCanvas.HorizontalAlign.CENTER);
 
         float joinPolicyButtonsY = joinPolicyLabelY + 12;
         PartyJoinPolicy[] joinPolicies = {PartyJoinPolicy.OPEN, PartyJoinPolicy.INVITE_ONLY};
@@ -1508,16 +1542,15 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             PartyJoinPolicy joinPolicy = joinPolicies[i];
             float joinPolicyX = joinPolicyStartX + i * (JOIN_POLICY_BUTTON_W + JOIN_POLICY_BUTTON_SPACING);
             boolean joinPolicyHovered = isHovered(
-                    nvgMouseX,
-                    nvgMouseY,
+                    uiMouseX,
+                    uiMouseY,
                     joinPolicyX,
                     joinPolicyButtonsY,
                     JOIN_POLICY_BUTTON_W,
                     MODAL_DROPDOWN_H);
             boolean joinPolicySelected = modalJoinPolicy == joinPolicy;
 
-            NVGWrapper.drawRect(
-                    nvg,
+            canvas.fillRect(
                     joinPolicyX,
                     joinPolicyButtonsY,
                     JOIN_POLICY_BUTTON_W,
@@ -1525,8 +1558,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     joinPolicySelected
                             ? color(ACCENT_PRIMARY, 120)
                             : (joinPolicyHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT)));
-            NVGWrapper.drawRectOutline(
-                    nvg,
+            canvas.strokeRect(
                     joinPolicyX,
                     joinPolicyButtonsY,
                     JOIN_POLICY_BUTTON_W,
@@ -1534,17 +1566,15 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     1,
                     joinPolicySelected ? color(CONTROL_BORDER) : color(CONTROL_INPUT_SECONDARY));
 
-            nvgFontFace(nvg, fontName);
-            nvgFontSize(nvg, MODAL_LABEL_SIZE);
-            nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-            var joinPolicyTextColor = NVGContext.nvgColor(color(TEXT_PRIMARY));
-            nvgFillColor(nvg, joinPolicyTextColor);
-            nvgText(
-                    nvg,
+            drawText(
+                    canvas,
+                    fontName,
+                    MODAL_LABEL_SIZE,
+                    color(TEXT_PRIMARY),
                     joinPolicyX + JOIN_POLICY_BUTTON_W / 2f,
                     joinPolicyButtonsY + MODAL_DROPDOWN_H / 2f,
-                    joinPolicyLabel(joinPolicy));
-            joinPolicyTextColor.free();
+                    joinPolicyLabel(joinPolicy),
+                    UiCanvas.HorizontalAlign.CENTER);
         }
 
         boolean grindSelected = isModalGrindSelected();
@@ -1557,13 +1587,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             Color checkboxBg = modalStrictRoles ? color(ACCENT_PRIMARY, 120) : color(CONTROL_INPUT);
             Color checkboxBorder = modalStrictRoles ? color(CONTROL_BORDER) : color(CONTROL_INPUT_SECONDARY);
 
-            NVGWrapper.drawRect(nvg, checkboxX, checkboxY, checkboxSize, checkboxSize, checkboxBg);
-            NVGWrapper.drawRectOutline(nvg, checkboxX, checkboxY, checkboxSize, checkboxSize, 1, checkboxBorder);
+            canvas.fillRect(checkboxX, checkboxY, checkboxSize, checkboxSize, checkboxBg);
+            canvas.strokeRect(checkboxX, checkboxY, checkboxSize, checkboxSize, 1, checkboxBorder);
 
             if (modalStrictRoles) {
                 float innerInset = 3f;
-                NVGWrapper.drawRect(
-                        nvg,
+                canvas.fillRect(
                         checkboxX + innerInset,
                         checkboxY + innerInset,
                         checkboxSize - innerInset * 2,
@@ -1571,66 +1600,73 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                         color(TEXT_PRIMARY));
             }
 
-            nvgFontFace(nvg, fontName);
-            nvgFontSize(nvg, MODAL_LABEL_SIZE);
-            nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-            var strictLabelCol = NVGContext.nvgColor(color(TEXT_MUTED));
-            nvgFillColor(nvg, strictLabelCol);
-            nvgText(nvg, checkboxX + checkboxSize + 8, strictLabelY, "Strict roles");
-            strictLabelCol.free();
+            drawText(
+                    canvas,
+                    fontName,
+                    MODAL_LABEL_SIZE,
+                    color(TEXT_MUTED),
+                    checkboxX + checkboxSize + 8,
+                    strictLabelY,
+                    "Strict roles",
+                    UiCanvas.HorizontalAlign.LEFT);
         }
 
         // Create/Update button
         float createBtnX = modalX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
         float createBtnY = modalY + PARTY_MODAL_HEIGHT - MODAL_BUTTON_H - 14;
         String createLabel = party().hasListedParty() ? "Update party" : "Create party";
-        boolean createHovered = isHovered(nvgMouseX, nvgMouseY, createBtnX, createBtnY, MODAL_BUTTON_W, MODAL_BUTTON_H);
-        NVGWrapper.drawRect(
-                nvg,
+        boolean createHovered = isHovered(uiMouseX, uiMouseY, createBtnX, createBtnY, MODAL_BUTTON_W, MODAL_BUTTON_H);
+        canvas.fillRect(
                 createBtnX,
                 createBtnY,
                 MODAL_BUTTON_W,
                 MODAL_BUTTON_H,
                 createHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
 
-        nvgFontSize(nvg, MODAL_LABEL_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var cbc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, cbc);
-        nvgText(nvg, createBtnX + MODAL_BUTTON_W / 2f, createBtnY + MODAL_BUTTON_H / 2f, createLabel);
-        cbc.free();
+        drawText(
+                canvas,
+                fontName,
+                MODAL_LABEL_SIZE,
+                color(TEXT_PRIMARY),
+                createBtnX + MODAL_BUTTON_W / 2f,
+                createBtnY + MODAL_BUTTON_H / 2f,
+                createLabel,
+                UiCanvas.HorizontalAlign.CENTER);
 
         // Edit tags sub-overlay (on top of modal)
         if (editTagsScreenOpen) {
             renderEditTagsOverlay(
-                    nvg,
+                    canvas,
                     fontName,
                     panelX,
-                    panelX + (NVGContext.screenWidth() - SIDEBAR_WIDTH),
+                    panelX + (canvas.metrics().width() - SIDEBAR_WIDTH),
                     screenHeight);
         }
     }
 
     // ── Edit Tags Sub-Overlay (in modal) — same layout as Filter+ screen ──
 
-    private void renderEditTagsOverlay(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
+    private void renderEditTagsOverlay(
+            UiCanvas canvas, String fontName, float panelX, float panelWidth, float screenHeight) {
         float overlayW = TAG_OVERLAY_WIDTH;
         float overlayH = TAG_OVERLAY_HEIGHT;
         float overlayX = modalX + (MODAL_WIDTH - overlayW) / 2f;
         float overlayY = modalY + (PARTY_MODAL_HEIGHT - overlayH) / 2f;
 
-        NVGWrapper.drawRect(nvg, modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, color(BACKGROUND_MODAL_OVERLAY));
-        NVGWrapper.drawRect(nvg, overlayX, overlayY, overlayW, overlayH, color(BACKGROUND_BODY_OPAQUE));
-        NVGWrapper.drawRectOutline(nvg, overlayX, overlayY, overlayW, overlayH, 1, color(ACCENT_SECONDARY));
+        canvas.fillRect(modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, color(BACKGROUND_MODAL_OVERLAY));
+        canvas.fillRect(overlayX, overlayY, overlayW, overlayH, color(BACKGROUND_BODY_OPAQUE));
+        canvas.strokeRect(overlayX, overlayY, overlayW, overlayH, 1, color(ACCENT_SECONDARY));
 
         // Title
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, MODAL_TITLE_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, tc);
-        nvgText(nvg, overlayX + overlayW / 2f, overlayY + 18, "Tag selection");
-        tc.free();
+        drawText(
+                canvas,
+                fontName,
+                MODAL_TITLE_SIZE,
+                color(TEXT_PRIMARY),
+                overlayX + overlayW / 2f,
+                overlayY + 18,
+                "Tag selection",
+                UiCanvas.HorizontalAlign.CENTER);
 
         float boxPadding = 12;
         float boxW = overlayW - boxPadding * 2;
@@ -1639,16 +1675,20 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Active tags box
         float activeBoxY = overlayY + 34;
-        NVGWrapper.drawRect(nvg, boxX, activeBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
-        nvgFontSize(nvg, 9);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-        var al = NVGContext.nvgColor(color(TEXT_MUTED));
-        nvgFillColor(nvg, al);
-        nvgText(nvg, boxX + 4, activeBoxY + 2, "Active tags");
-        al.free();
+        canvas.fillRect(boxX, activeBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
+        drawText(
+                canvas,
+                fontName,
+                9,
+                color(TEXT_MUTED),
+                boxX + 4,
+                activeBoxY + 2,
+                "Active tags",
+                UiCanvas.HorizontalAlign.LEFT,
+                UiCanvas.VerticalAlign.TOP);
 
         renderTagChips(
-                nvg,
+                canvas,
                 fontName,
                 boxX + 4,
                 activeBoxY + 14,
@@ -1660,16 +1700,20 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Inactive tags box
         float inactiveBoxY = activeBoxY + boxH + 8;
-        NVGWrapper.drawRect(nvg, boxX, inactiveBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
-        nvgFontSize(nvg, 9);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-        var il = NVGContext.nvgColor(color(TEXT_MUTED));
-        nvgFillColor(nvg, il);
-        nvgText(nvg, boxX + 4, inactiveBoxY + 2, "Inactive tags");
-        il.free();
+        canvas.fillRect(boxX, inactiveBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
+        drawText(
+                canvas,
+                fontName,
+                9,
+                color(TEXT_MUTED),
+                boxX + 4,
+                inactiveBoxY + 2,
+                "Inactive tags",
+                UiCanvas.HorizontalAlign.LEFT,
+                UiCanvas.VerticalAlign.TOP);
 
         renderTagChips(
-                nvg,
+                canvas,
                 fontName,
                 boxX + 4,
                 inactiveBoxY + 14,
@@ -1684,38 +1728,48 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float backH = 20;
         float backX = overlayX + (overlayW - backW) / 2f;
         float backY = overlayY + overlayH - backH - 8;
-        boolean backHovered = isHovered(nvgMouseX, nvgMouseY, backX, backY, backW, backH);
-        NVGWrapper.drawRect(nvg, backX, backY, backW, backH, backHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
-
-        nvgFontSize(nvg, MEMBER_FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var bc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, bc);
-        nvgText(nvg, backX + backW / 2f, backY + backH / 2f, "< Back");
-        bc.free();
+        boolean backHovered = isHovered(uiMouseX, uiMouseY, backX, backY, backW, backH);
+        canvas.fillRect(
+                backX,
+                backY,
+                backW,
+                backH,
+                backHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
+        drawText(
+                canvas,
+                fontName,
+                MEMBER_FONT_SIZE,
+                color(TEXT_PRIMARY),
+                backX + backW / 2f,
+                backY + backH / 2f,
+                "< Back",
+                UiCanvas.HorizontalAlign.CENTER);
     }
 
     // ── Filter+ Screen ──
 
-    private void renderFilterScreen(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
-        NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
+    private void renderFilterScreen(
+            UiCanvas canvas, String fontName, float panelX, float panelWidth, float screenHeight) {
+        canvas.fillRect(panelX, 0, panelWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
 
         float filterW = TAG_OVERLAY_WIDTH;
         float filterH = TAG_OVERLAY_HEIGHT;
         float filterX = panelX + (panelWidth - filterW) / 2f;
         float filterY = (screenHeight - filterH) / 2f;
 
-        NVGWrapper.drawRect(nvg, filterX, filterY, filterW, filterH, color(BACKGROUND_BODY_OPAQUE));
-        NVGWrapper.drawRectOutline(nvg, filterX, filterY, filterW, filterH, 1, color(ACCENT_SECONDARY));
+        canvas.fillRect(filterX, filterY, filterW, filterH, color(BACKGROUND_BODY_OPAQUE));
+        canvas.strokeRect(filterX, filterY, filterW, filterH, 1, color(ACCENT_SECONDARY));
 
         // Title
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, MODAL_TITLE_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var tc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, tc);
-        nvgText(nvg, filterX + filterW / 2f, filterY + 18, "Tag filter selection");
-        tc.free();
+        drawText(
+                canvas,
+                fontName,
+                MODAL_TITLE_SIZE,
+                color(TEXT_PRIMARY),
+                filterX + filterW / 2f,
+                filterY + 18,
+                "Tag filter selection",
+                UiCanvas.HorizontalAlign.CENTER);
 
         float boxPadding = 12;
         float boxW = filterW - boxPadding * 2;
@@ -1724,16 +1778,20 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Active filters box
         float activeBoxY = filterY + 34;
-        NVGWrapper.drawRect(nvg, boxX, activeBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
-        nvgFontSize(nvg, 9);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-        var al = NVGContext.nvgColor(color(TEXT_MUTED));
-        nvgFillColor(nvg, al);
-        nvgText(nvg, boxX + 4, activeBoxY + 2, "Active filters");
-        al.free();
+        canvas.fillRect(boxX, activeBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
+        drawText(
+                canvas,
+                fontName,
+                9,
+                color(TEXT_MUTED),
+                boxX + 4,
+                activeBoxY + 2,
+                "Active filters",
+                UiCanvas.HorizontalAlign.LEFT,
+                UiCanvas.VerticalAlign.TOP);
 
         renderTagChips(
-                nvg,
+                canvas,
                 fontName,
                 boxX + 4,
                 activeBoxY + 14,
@@ -1745,16 +1803,20 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Inactive filters box
         float inactiveBoxY = activeBoxY + boxH + 8;
-        NVGWrapper.drawRect(nvg, boxX, inactiveBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
-        nvgFontSize(nvg, 9);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-        var il = NVGContext.nvgColor(color(TEXT_MUTED));
-        nvgFillColor(nvg, il);
-        nvgText(nvg, boxX + 4, inactiveBoxY + 2, "Inactive filters");
-        il.free();
+        canvas.fillRect(boxX, inactiveBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
+        drawText(
+                canvas,
+                fontName,
+                9,
+                color(TEXT_MUTED),
+                boxX + 4,
+                inactiveBoxY + 2,
+                "Inactive filters",
+                UiCanvas.HorizontalAlign.LEFT,
+                UiCanvas.VerticalAlign.TOP);
 
         renderTagChips(
-                nvg,
+                canvas,
                 fontName,
                 boxX + 4,
                 inactiveBoxY + 14,
@@ -1769,21 +1831,28 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float backH = 20;
         float backX = filterX + (filterW - backW) / 2f;
         float backY = filterY + filterH - backH - 8;
-        boolean backHovered = isHovered(nvgMouseX, nvgMouseY, backX, backY, backW, backH);
-        NVGWrapper.drawRect(nvg, backX, backY, backW, backH, backHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
-
-        nvgFontSize(nvg, MEMBER_FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var bc = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, bc);
-        nvgText(nvg, backX + backW / 2f, backY + backH / 2f, "< Back");
-        bc.free();
+        boolean backHovered = isHovered(uiMouseX, uiMouseY, backX, backY, backW, backH);
+        canvas.fillRect(
+                backX,
+                backY,
+                backW,
+                backH,
+                backHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
+        drawText(
+                canvas,
+                fontName,
+                MEMBER_FONT_SIZE,
+                color(TEXT_PRIMARY),
+                backX + backW / 2f,
+                backY + backH / 2f,
+                "< Back",
+                UiCanvas.HorizontalAlign.CENTER);
     }
 
     // ── Tag chip rendering with pendulum animation ──
 
     private void renderTagChips(
-            long nvg,
+            UiCanvas canvas,
             String fontName,
             float startX,
             float startY,
@@ -1809,14 +1878,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             if (!RAID_TYPE_SET.contains(tag)) sorted.add(tag);
         }
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, TAG_CHIP_FONT_SIZE);
-
         for (String tag : sorted) {
             String label = getTagChipLabel(tag, isActive);
-            float[] bounds = new float[4];
-            nvgTextBounds(nvg, 0, 0, label, bounds);
-            float chipW = (bounds[2] - bounds[0]) + chipPadding * 2;
+            float chipW = textWidth(label, fontName, TAG_CHIP_FONT_SIZE) + chipPadding * 2;
 
             if (curX + chipW > startX + maxWidth && curX > startX) {
                 curX = startX;
@@ -1843,26 +1907,34 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float chipCenterX = curX + chipW / 2f;
             float chipCenterY = curY + chipH / 2f;
 
-            nvgSave(nvg);
+            canvas.save();
             if (angle != 0) {
-                nvgTranslate(nvg, chipCenterX, chipCenterY);
-                nvgRotate(nvg, (float) Math.toRadians(angle));
-                nvgTranslate(nvg, -chipCenterX, -chipCenterY);
+                canvas.translate(chipCenterX, chipCenterY);
+                canvas.rotateDegrees(angle);
+                canvas.translate(-chipCenterX, -chipCenterY);
             }
 
-            boolean chipHovered = isHovered(nvgMouseX, nvgMouseY, curX, curY, chipW, chipH);
-            NVGWrapper.drawRoundedRect(nvg, curX, curY, chipW, chipH, 4, chipHovered ? color(CONTROL_INPUT_HOVER) : color(ACCENT_DIVIDER, 220));
+            boolean chipHovered = isHovered(uiMouseX, uiMouseY, curX, curY, chipW, chipH);
+            canvas.fillRoundedRect(
+                    curX,
+                    curY,
+                    chipW,
+                    chipH,
+                    4,
+                    chipHovered ? color(CONTROL_INPUT_HOVER) : color(ACCENT_DIVIDER, 220));
 
-            nvgFontFace(nvg, fontName);
-            nvgFontSize(nvg, TAG_CHIP_FONT_SIZE);
-            nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
             Color chipTextColor = RAID_TYPE_SET.contains(tag) ? color(ACCENT_PRIMARY) : color(TEXT_PRIMARY);
-            var cc = NVGContext.nvgColor(chipTextColor);
-            nvgFillColor(nvg, cc);
-            nvgText(nvg, chipCenterX, chipCenterY, label);
-            cc.free();
+            drawText(
+                    canvas,
+                    fontName,
+                    TAG_CHIP_FONT_SIZE,
+                    chipTextColor,
+                    chipCenterX,
+                    chipCenterY,
+                    label,
+                    UiCanvas.HorizontalAlign.CENTER);
 
-            nvgRestore(nvg);
+            canvas.restore();
 
             curX += chipW + chipSpacing;
         }
@@ -2058,17 +2130,72 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         return bounds != null && isHovered(mx, my, bounds.x(), bounds.y(), bounds.w(), bounds.h());
     }
 
+    private static void drawText(
+            UiCanvas canvas,
+            String fontName,
+            float fontSize,
+            Color textColor,
+            float x,
+            float y,
+            String text,
+            UiCanvas.HorizontalAlign horizontalAlign) {
+        drawText(
+                canvas,
+                fontName,
+                fontSize,
+                textColor,
+                x,
+                y,
+                text,
+                horizontalAlign,
+                UiCanvas.VerticalAlign.MIDDLE);
+    }
+
+    private static void drawText(
+            UiCanvas canvas,
+            String fontName,
+            float fontSize,
+            Color textColor,
+            float x,
+            float y,
+            String text,
+            UiCanvas.HorizontalAlign horizontalAlign,
+            UiCanvas.VerticalAlign verticalAlign) {
+        canvas.drawText(
+                text,
+                x,
+                y,
+                new UiCanvas.TextStyle(fontName, fontSize, textColor, horizontalAlign, verticalAlign));
+    }
+
+    private static float textWidth(String text, String fontName, float fontSize) {
+        return UiRenderer.measureText(text, fontName, fontSize).width();
+    }
+
+    private static void drawImage(
+            UiCanvas canvas,
+            AssetManager.Asset asset,
+            float x,
+            float y,
+            float width,
+            float height,
+            int alpha) {
+        if (asset != null && asset.getImage() != null) {
+            canvas.drawImage(asset.getImage(), x, y, width, height, Math.max(0, Math.min(255, alpha)) / 255f);
+        }
+    }
+
     // ══════════════════════════════ INPUT ══════════════════════════════
 
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
         if (click.button() != 0) return super.mouseClicked(click, outsideScreen);
 
-        float mx = NVGContext.mouseX(click.x());
-        float my = NVGContext.mouseY(click.y());
+        float mx = MinecraftUiRenderer.mouseX(click.x());
+        float my = MinecraftUiRenderer.mouseY(click.y());
 
-        float screenWidth = NVGContext.screenWidth();
-        float screenHeight = NVGContext.screenHeight();
+        float screenWidth = MinecraftUiRenderer.screenWidth();
+        float screenHeight = MinecraftUiRenderer.screenHeight();
 
         // ── Filter screen (highest priority) ──
         if (filterScreenOpen) {
@@ -2388,70 +2515,88 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         inviteUsernameInput = "";
     }
 
-    private void renderInviteModal(long nvg, String fontName, float panelX, float panelWidth, float screenHeight) {
-        NVGWrapper.drawRect(nvg, panelX, 0, panelWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
+    private void renderInviteModal(
+            UiCanvas canvas, String fontName, float panelX, float panelWidth, float screenHeight) {
+        canvas.fillRect(panelX, 0, panelWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
 
         float inviteModalX = panelX + (panelWidth - MODAL_WIDTH) / 2f;
         float inviteModalY = (screenHeight - MODAL_HEIGHT) / 2f;
 
-        NVGWrapper.drawRect(nvg, inviteModalX, inviteModalY, MODAL_WIDTH, MODAL_HEIGHT, color(BACKGROUND_BODY_OPAQUE));
-        NVGWrapper.drawRectOutline(nvg, inviteModalX, inviteModalY, MODAL_WIDTH, MODAL_HEIGHT, 1, color(ACCENT_SECONDARY));
-
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, MODAL_TITLE_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var titleColor = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, titleColor);
-        nvgText(nvg, inviteModalX + MODAL_WIDTH / 2f, inviteModalY + 22, "Invite Player");
-        titleColor.free();
+        canvas.fillRect(inviteModalX, inviteModalY, MODAL_WIDTH, MODAL_HEIGHT, color(BACKGROUND_BODY_OPAQUE));
+        canvas.strokeRect(inviteModalX, inviteModalY, MODAL_WIDTH, MODAL_HEIGHT, 1, color(ACCENT_SECONDARY));
+        drawText(
+                canvas,
+                fontName,
+                MODAL_TITLE_SIZE,
+                color(TEXT_PRIMARY),
+                inviteModalX + MODAL_WIDTH / 2f,
+                inviteModalY + 22,
+                "Invite Player",
+                UiCanvas.HorizontalAlign.CENTER);
 
         float labelY = inviteModalY + 64;
-        nvgFontSize(nvg, MODAL_LABEL_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var labelColor = NVGContext.nvgColor(color(TEXT_MUTED));
-        nvgFillColor(nvg, labelColor);
-        nvgText(nvg, inviteModalX + MODAL_WIDTH / 2f, labelY, "Username");
-        labelColor.free();
+        drawText(
+                canvas,
+                fontName,
+                MODAL_LABEL_SIZE,
+                color(TEXT_MUTED),
+                inviteModalX + MODAL_WIDTH / 2f,
+                labelY,
+                "Username",
+                UiCanvas.HorizontalAlign.CENTER);
 
         float inputW = 180;
         float inputH = MODAL_DROPDOWN_H;
         float inputX = inviteModalX + (MODAL_WIDTH - inputW) / 2f;
         float inputY = labelY + 12;
 
-        NVGWrapper.drawRect(
-                nvg, inputX, inputY, inputW, inputH, inviteUsernameFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
-        NVGWrapper.drawRectOutline(
-                nvg, inputX, inputY, inputW, inputH, 1, inviteUsernameFocused ? color(CONTROL_BORDER) : color(CONTROL_INPUT_SECONDARY));
+        canvas.fillRect(
+                inputX,
+                inputY,
+                inputW,
+                inputH,
+                inviteUsernameFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+        canvas.strokeRect(
+                inputX,
+                inputY,
+                inputW,
+                inputH,
+                1,
+                inviteUsernameFocused ? color(CONTROL_BORDER) : color(CONTROL_INPUT_SECONDARY));
 
         String inputText =
                 inviteUsernameInput.isBlank() && !inviteUsernameFocused ? "Enter username" : inviteUsernameInput;
         Color inputColor = inviteUsernameInput.isBlank() && !inviteUsernameFocused ? color(TEXT_MUTED) : color(TEXT_PRIMARY);
 
-        nvgFontFace(nvg, fontName);
-        nvgFontSize(nvg, MODAL_LABEL_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-        var inputTextColor = NVGContext.nvgColor(inputColor);
-        nvgFillColor(nvg, inputTextColor);
-        nvgText(nvg, inputX + 8, inputY + inputH / 2f, inputText);
-        inputTextColor.free();
+        drawText(
+                canvas,
+                fontName,
+                MODAL_LABEL_SIZE,
+                inputColor,
+                inputX + 8,
+                inputY + inputH / 2f,
+                inputText,
+                UiCanvas.HorizontalAlign.LEFT);
 
         float sendBtnX = inviteModalX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
         float sendBtnY = inviteModalY + MODAL_HEIGHT - MODAL_BUTTON_H - 14;
-        boolean sendHovered = isHovered(nvgMouseX, nvgMouseY, sendBtnX, sendBtnY, MODAL_BUTTON_W, MODAL_BUTTON_H);
-        NVGWrapper.drawRect(
-                nvg,
+        boolean sendHovered = isHovered(uiMouseX, uiMouseY, sendBtnX, sendBtnY, MODAL_BUTTON_W, MODAL_BUTTON_H);
+        canvas.fillRect(
                 sendBtnX,
                 sendBtnY,
                 MODAL_BUTTON_W,
                 MODAL_BUTTON_H,
                 sendHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
 
-        nvgFontSize(nvg, MEMBER_FONT_SIZE);
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        var sendTextColor = NVGContext.nvgColor(color(TEXT_PRIMARY));
-        nvgFillColor(nvg, sendTextColor);
-        nvgText(nvg, sendBtnX + MODAL_BUTTON_W / 2f, sendBtnY + MODAL_BUTTON_H / 2f, "Send");
-        sendTextColor.free();
+        drawText(
+                canvas,
+                fontName,
+                MEMBER_FONT_SIZE,
+                color(TEXT_PRIMARY),
+                sendBtnX + MODAL_BUTTON_W / 2f,
+                sendBtnY + MODAL_BUTTON_H / 2f,
+                "Send",
+                UiCanvas.HorizontalAlign.CENTER);
     }
 
     private static int estimateReservedSlotCount(Listing listing) {
@@ -2864,9 +3009,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (scrollbarDragging && maxScroll > 0) {
-            float my = NVGContext.mouseY(click.y());
+            float my = MinecraftUiRenderer.mouseY(click.y());
 
-            float screenHeight = NVGContext.screenHeight();
+            float screenHeight = MinecraftUiRenderer.screenHeight();
             float contentHeight = screenHeight - HEADER_HEIGHT;
             float thumbRatio = contentHeight / (contentHeight + maxScroll);
             float thumbH = Math.max(20, contentHeight * thumbRatio);
