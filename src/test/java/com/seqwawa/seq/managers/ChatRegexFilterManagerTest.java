@@ -51,9 +51,6 @@ class ChatRegexFilterManagerTest {
                     + "󏿼󐀆 §3Citadel's Shadow§b, §3Void Valley§b, §3Toxic Caves§b, "
                     + "and §3Final Step",
             "󏿼󐀆 Territory Lake Rieke production has stabilised",
-            "󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿿󏿂󐀆"
-                    + "§aCopied to clipboard: §fTerritory Royal Gate is producing more resources than it\n"
-                    + " can store!",
             "&b&{fr:cp}󏿼󏿿󏿾&{fr:d} Territory &3Forts in Fall&b is producing more resources than\n"
                     + "&{fr:cp}󏿼󐀆&{fr:d} it can store!"
         };

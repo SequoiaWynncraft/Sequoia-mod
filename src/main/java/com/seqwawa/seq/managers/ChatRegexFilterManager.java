@@ -30,8 +30,7 @@ public final class ChatRegexFilterManager {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern ECONOMY_RESOURCE_ALERT_PATTERN = Pattern.compile(
             "^(?:"
-                    + "(?:Copied to clipboard: )?Territory .+ "
-                    + "(?:is using|is producing) more resources than it can store!"
+                    + "Territory .+ (?:is using|is producing) more resources than it can store!"
                     + "|Territory .+ production has stabil(?:ised|ized)"
                     + ")$",
             Pattern.CASE_INSENSITIVE);
