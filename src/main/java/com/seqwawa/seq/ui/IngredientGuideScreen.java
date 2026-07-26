@@ -22,6 +22,7 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.IngredientGuideManager;
 import com.seqwawa.seq.managers.IngredientGuideManager.SortDirection;
 import com.seqwawa.seq.managers.IngredientGuideManager.SortKey;
+import com.seqwawa.seq.managers.IngredientGuideSessionSettings;
 import com.seqwawa.seq.managers.IngredientItemIconFactory;
 import com.seqwawa.seq.map.MapFocus;
 import com.seqwawa.seq.model.IngredientGuideEntry;
@@ -71,6 +72,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
 
     private final Screen parent;
     private final IngredientGuideManager manager = IngredientGuideManager.getInstance();
+    private final IngredientGuideSessionSettings sessionSettings = IngredientGuideSessionSettings.getInstance();
     private final List<LocationHitbox> locationHitboxes = new ArrayList<>();
     private ActionHitbox showAllMapHitbox;
 
@@ -80,10 +82,10 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private IngredientGuideEntry selectedIngredient;
     private String searchQuery = "";
     private boolean searchFocused;
-    private SortKey primarySortKey = SortKey.LEVEL;
-    private SortDirection primarySortDirection = SortDirection.ASCENDING;
-    private SortKey secondarySortKey = SortKey.RARITY;
-    private SortDirection secondarySortDirection = SortDirection.ASCENDING;
+    private SortKey primarySortKey;
+    private SortDirection primarySortDirection;
+    private SortKey secondarySortKey;
+    private SortDirection secondarySortDirection;
     private float listScroll;
     private float detailScroll;
     private float maxListScroll;
@@ -106,6 +108,11 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     public IngredientGuideScreen(Screen parent) {
         super(Component.literal("Ingredient Guide"));
         this.parent = parent;
+        IngredientGuideSessionSettings.SortOrder sortOrder = sessionSettings.sortOrder();
+        primarySortKey = sortOrder.primaryKey();
+        primarySortDirection = sortOrder.primaryDirection();
+        secondarySortKey = sortOrder.secondaryKey();
+        secondarySortDirection = sortOrder.secondaryDirection();
         manager.requestRefresh();
     }
 
@@ -158,7 +165,6 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 x + 9,
                 layout.primarySortY(),
                 width - 18,
-                "Primary",
                 primarySortKey,
                 primarySortDirection);
         drawSortRow(
@@ -166,7 +172,6 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 x + 9,
                 layout.secondarySortY(),
                 width - 18,
-                "Secondary",
                 secondarySortKey,
                 secondarySortDirection);
 
@@ -277,7 +282,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 showAllMapHitbox = new ActionHitbox(showAllX, showAllY, showAllWidth, 22);
             }
             drawText(canvas,
-                    selectedIngredient.dropSources().size() + " mobs  •  " + locationCount + " public spawn locations",
+                    selectedIngredient.dropSources().size() + " mobs  •  " + locationCount + " spawn locations",
                     contentX + contentWidth - (locationCount > 0 ? showAllWidth + 8 : 0), cursorY, 10, color(TEXT_MUTED),
                     UiCanvas.HorizontalAlign.RIGHT, UiCanvas.VerticalAlign.MIDDLE);
             cursorY += 18;
@@ -295,7 +300,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                     drawText(canvas, ellipsize(source.name(), contentWidth - 24, 13), contentX + 11, cursorY + 16, 13,
                             color(TEXT_SECONDARY), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
                     if (source.locations().isEmpty()) {
-                        drawText(canvas, "Public spawn coordinates unavailable", contentX + 11, cursorY + 35, 10,
+                        drawText(canvas, "Spawn coordinates unavailable", contentX + 11, cursorY + 35, 10,
                                 color(TEXT_MUTED), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
                     } else {
                         float locationY = cursorY + 29;
@@ -477,6 +482,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             } else {
                 primarySortKey = nextSortKey(primarySortKey, secondarySortKey);
             }
+            saveSortSettings();
             resortVisibleIngredients();
             return true;
         }
@@ -486,6 +492,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             } else {
                 secondarySortKey = nextSortKey(secondarySortKey, primarySortKey);
             }
+            saveSortSettings();
             resortVisibleIngredients();
             return true;
         }
@@ -671,7 +678,6 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             float x,
             float y,
             float width,
-            String role,
             SortKey key,
             SortDirection direction) {
         float keyWidth = Math.max(1, width - SORT_DIRECTION_WIDTH);
@@ -695,7 +701,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 color(ACCENT_DIVIDER));
         drawText(
                 canvas,
-                role + ": " + key.label(),
+                key.label(),
                 x + 8,
                 y + SORT_ROW_HEIGHT / 2f,
                 10,
@@ -716,6 +722,14 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private List<IngredientGuideEntry> sortedFilteredIngredients(IngredientGuideManager.Snapshot snapshot) {
         return IngredientGuideManager.sort(
                 IngredientGuideManager.filter(snapshot.ingredients(), searchQuery),
+                primarySortKey,
+                primarySortDirection,
+                secondarySortKey,
+                secondarySortDirection);
+    }
+
+    private void saveSortSettings() {
+        sessionSettings.setSortOrder(
                 primarySortKey,
                 primarySortDirection,
                 secondarySortKey,
