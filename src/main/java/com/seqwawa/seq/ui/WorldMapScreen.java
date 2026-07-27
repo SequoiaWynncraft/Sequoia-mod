@@ -49,7 +49,11 @@ import com.seqwawa.seq.map.GuildTerritoryIndex;
 import com.seqwawa.seq.map.GuildTerritoryService;
 import com.seqwawa.seq.map.IngredientFarmSpot;
 import com.seqwawa.seq.map.IngredientFarmSpotCatalog;
+import com.seqwawa.seq.map.IngredientMapSelection;
 import com.seqwawa.seq.map.IngredientMapCategory;
+import com.seqwawa.seq.map.IngredientWaypointManager;
+import com.seqwawa.seq.map.IngredientWaypointManager.Kind;
+import com.seqwawa.seq.map.IngredientWaypointManager.Waypoint;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapDisplayMode;
@@ -184,6 +188,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private WorldEventDefinition hoveredWorldEvent;
     private int hoveredWorldEventLocationIndex = -1;
     private WorldEventDefinition selectedWorldEvent;
+    private final IngredientMapSelection ingredientMapSelection = new IngredientMapSelection();
     private MapFocus.Marker hoveredFocusMarker;
     private MapFocus.Marker selectedFocusMarker;
     private IngredientMapCategory ingredientMapCategory = IngredientMapCategory.SPAWNS;
@@ -266,6 +271,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 : SeqClient.mc.getSkinManager().createLookup(mapFocusSkinProfile, false);
         this.selectedFocusMarker = mapFocus == null ? null : mapFocus.selectedMarker();
         this.selectedIngredientFarmSpot = farmSpot;
+        if (selectedFocusMarker != null) {
+            ingredientMapSelection.toggleSpawn(selectedFocusMarker.id());
+        }
+        if (selectedIngredientFarmSpot != null) {
+            ingredientMapSelection.toggleTotem(selectedIngredientFarmSpot.id());
+        }
         this.ingredientMapCategory =
                 farmSpot == null ? IngredientMapCategory.SPAWNS : IngredientMapCategory.TOTEM_SPOTS;
         professionToggles.putAll(mapSettings.professionToggles());
@@ -434,7 +445,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float x = viewport.worldToScreenX(marker.x());
             float y = viewport.worldToScreenZ(marker.z());
             float areaRadius = (float) (marker.radius() * viewport.pixelsPerBlock());
-            boolean selected = marker.equals(selectedFocusMarker);
+            boolean selected = ingredientMapSelection.isSpawnSelected(marker.id());
             boolean hovered = marker.equals(hoveredFocusMarker);
             Color markerColor = selected ? color(MAP_SELECTED_TERRITORY) : color(ACCENT_PRIMARY);
             if (areaRadius >= 4) {
@@ -492,7 +503,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             }
             float x = viewport.worldToScreenX(spot.x());
             float y = viewport.worldToScreenZ(spot.z());
-            boolean selected = spot.equals(selectedIngredientFarmSpot);
+            boolean selected = ingredientMapSelection.isTotemSelected(spot.id());
             boolean hovered = spot.equals(hoveredIngredientFarmSpot);
             Color markerColor = selected ? color(MAP_SELECTED_TERRITORY) : color(ACCENT_PRIMARY);
             float areaRadius = (float) (spot.radius() * viewport.pixelsPerBlock());
@@ -1493,6 +1504,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
         float contentWidth = SIDEBAR_WIDTH - PADDING * 2;
         drawIngredientMapCategoryControl(canvas, layout.titleY());
+        renderIngredientWaypointActions(canvas, layout, contentWidth);
         if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
             renderIngredientFarmSpotSidebar(canvas, layout, contentWidth);
             return;
@@ -1531,9 +1543,24 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 color(MAP_SUBTEXT),
                 TextAlignment.LEFT);
 
-        drawText(canvas, PADDING, layout.selectedTitleY(), 12, "Selected Spawn", color(MAP_TITLE), TextAlignment.LEFT);
+        int selectedSpawnCount = ingredientMapSelection.spawnCount();
+        drawText(
+                canvas,
+                PADDING,
+                layout.selectedTitleY(),
+                12,
+                "Selected Spawns (" + selectedSpawnCount + ")",
+                color(MAP_TITLE),
+                TextAlignment.LEFT);
         if (selectedFocusMarker == null) {
-            drawText(canvas, PADDING, layout.selectedDetailY(), 10, "Click a marker to select it", color(MAP_SUBTEXT), TextAlignment.LEFT);
+            drawText(
+                    canvas,
+                    PADDING,
+                    layout.selectedDetailY(),
+                    10,
+                    "Click markers to select multiple",
+                    color(MAP_SUBTEXT),
+                    TextAlignment.LEFT);
         } else {
             drawFittedText(
                     canvas,
@@ -1554,6 +1581,28 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                     TextAlignment.LEFT);
             drawButton(canvas, PADDING, layout.copyY(), contentWidth, BUTTON_HEIGHT, "Copy Selected Coordinates", false);
         }
+    }
+
+    private void renderIngredientWaypointActions(
+            UiCanvas canvas, IngredientSidebarLayout layout, float contentWidth) {
+        int selectedCount = ingredientMapSelection.size();
+        int waypointCount = IngredientWaypointManager.getInstance().size();
+        drawButton(
+                canvas,
+                PADDING,
+                layout.renderWaypointsY(),
+                contentWidth,
+                BUTTON_HEIGHT,
+                "Render Selected (" + selectedCount + ")",
+                selectedCount > 0);
+        drawButton(
+                canvas,
+                PADDING,
+                layout.clearWaypointsY(),
+                contentWidth,
+                BUTTON_HEIGHT,
+                "Clear Waypoints" + (waypointCount > 0 ? " (" + waypointCount + ")" : ""),
+                waypointCount > 0);
     }
 
     private void renderIngredientFarmSpotSidebar(
@@ -1582,7 +1631,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         }
 
         for (IngredientFarmSpot spot : spots) {
-            boolean selected = spot.equals(selectedIngredientFarmSpot);
+            boolean selected = ingredientMapSelection.isTotemSelected(spot.id());
             boolean hovered = isHovered(
                     nvgMouseX,
                     nvgMouseY,
@@ -1689,7 +1738,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float contentX = x + PADDING;
         float contentWidth = INSIGHTS_SIDEBAR_WIDTH - PADDING * 2;
         if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
-            drawInsightsSectionTitle(canvas, contentX, 60, "Mob Totem Spots");
+            drawInsightsSectionTitle(
+                    canvas,
+                    contentX,
+                    60,
+                    "Mob Totem Spots (" + ingredientMapSelection.totemCount() + " selected)");
             if (selectedIngredientFarmSpot != null) {
                 drawInsightsSectionTitle(canvas, contentX, 92, "Selected Spot");
                 drawFittedText(
@@ -1740,7 +1793,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         long sourceCount = mapFocus.markers().stream().map(MapFocus.Marker::source).distinct().count();
         drawInsightRow(canvas, contentX, 122, contentWidth, "Mob sources", String.valueOf(sourceCount));
         if (selectedFocusMarker != null) {
-            drawInsightsSectionTitle(canvas, contentX, 154, "Selected Spawn");
+            drawInsightsSectionTitle(
+                    canvas,
+                    contentX,
+                    154,
+                    "Selected Spawns (" + ingredientMapSelection.spawnCount() + ")");
             drawFittedText(
                     canvas,
                     contentX,
@@ -3423,8 +3480,72 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return;
         }
         ingredientMapCategory = IngredientMapCategory.TOTEM_SPOTS;
+        clearIngredientMapSelections();
+        ingredientMapSelection.toggleTotem(spot.id());
         selectedIngredientFarmSpot = spot;
         centerOnIngredientFarmSpot(spot);
+    }
+
+    private void toggleIngredientFarmSpotSelection(IngredientFarmSpot spot) {
+        boolean selected = ingredientMapSelection.toggleTotem(spot.id());
+        selectedIngredientFarmSpot = selected
+                ? spot
+                : IngredientFarmSpotCatalog.all().stream()
+                        .filter(candidate -> ingredientMapSelection.isTotemSelected(candidate.id()))
+                        .reduce((first, second) -> second)
+                        .orElse(null);
+    }
+
+    private void toggleFocusMarkerSelection(MapFocus.Marker marker) {
+        boolean selected = ingredientMapSelection.toggleSpawn(marker.id());
+        selectedFocusMarker = selected
+                ? marker
+                : mapFocus.markers().stream()
+                        .filter(candidate -> ingredientMapSelection.isSpawnSelected(candidate.id()))
+                        .reduce((first, second) -> second)
+                        .orElse(null);
+    }
+
+    private void clearIngredientMapSelections() {
+        ingredientMapSelection.clear();
+        selectedFocusMarker = null;
+        selectedIngredientFarmSpot = null;
+    }
+
+    private void renderSelectedIngredientWaypoints() {
+        if (ingredientMapSelection.isEmpty()) {
+            return;
+        }
+        List<Waypoint> waypoints = new ArrayList<>();
+        if (mapFocus != null) {
+            for (MapFocus.Marker marker : mapFocus.markers()) {
+                if (!ingredientMapSelection.isSpawnSelected(marker.id())) {
+                    continue;
+                }
+                waypoints.add(new Waypoint(
+                        "ingredient-spawn:" + mapFocus.title() + ":" + marker.id(),
+                        Kind.INGREDIENT_SPAWN,
+                        marker.label(),
+                        marker.source(),
+                        marker.x(),
+                        marker.y(),
+                        marker.z()));
+            }
+        }
+        for (IngredientFarmSpot spot : IngredientFarmSpotCatalog.all()) {
+            if (!ingredientMapSelection.isTotemSelected(spot.id())) {
+                continue;
+            }
+            waypoints.add(new Waypoint(
+                    "ingredient-totem:" + spot.id(),
+                    Kind.TOTEM_SPOT,
+                    spot.name(),
+                    String.join(", ", spot.ingredients()),
+                    spot.x(),
+                    spot.y(),
+                    spot.z()));
+        }
+        IngredientWaypointManager.getInstance().replaceAll(waypoints);
     }
 
     private void centerOnIngredientFarmSpot(IngredientFarmSpot spot) {
@@ -3476,7 +3597,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (displayMode == MapDisplayMode.INGREDIENTS
                 && focusedViewport.isInsideScreen(mx, my)
                 && hoveredIngredientFarmSpot != null) {
-            selectIngredientFarmSpot(hoveredIngredientFarmSpot);
+            toggleIngredientFarmSpotSelection(hoveredIngredientFarmSpot);
             draggingMap = true;
             hoveredIngredientFarmSpot = null;
             closeSearchDropdowns();
@@ -3485,7 +3606,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (displayMode == MapDisplayMode.INGREDIENTS
                 && focusedViewport.isInsideScreen(mx, my)
                 && hoveredFocusMarker != null) {
-            selectedFocusMarker = hoveredFocusMarker;
+            toggleFocusMarkerSelection(hoveredFocusMarker);
             draggingMap = true;
             hoveredFocusMarker = null;
             closeSearchDropdowns();
@@ -3809,6 +3930,14 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             hoveredIngredientFarmSpot = null;
             return true;
         }
+        if (isHovered(mx, my, PADDING, layout.renderWaypointsY(), buttonWidth, BUTTON_HEIGHT)) {
+            renderSelectedIngredientWaypoints();
+            return true;
+        }
+        if (isHovered(mx, my, PADDING, layout.clearWaypointsY(), buttonWidth, BUTTON_HEIGHT)) {
+            IngredientWaypointManager.getInstance().clear();
+            return true;
+        }
         if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
             float rowY = ingredientFarmSpotListY(layout);
             for (IngredientFarmSpot spot : IngredientFarmSpotCatalog.all()) {
@@ -3837,8 +3966,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
         MapViewport viewport = mapViewport(screenWidth, screenHeight);
         if (viewport.isInsideScreen(mx, my)) {
+            clearIngredientMapSelections();
             draggingMap = true;
             hoveredFocusMarker = null;
+            hoveredIngredientFarmSpot = null;
             return true;
         }
         return mx >= 0 && mx <= SIDEBAR_WIDTH;
@@ -4643,7 +4774,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float centerY = backY + BUTTON_HEIGHT + 8;
         float modeY = centerY + BUTTON_HEIGHT + 18;
         float titleY = modeY + BUTTON_HEIGHT + 18;
-        float guideY = titleY + BUTTON_HEIGHT + 18;
+        float renderWaypointsY = titleY + BUTTON_HEIGHT + 10;
+        float clearWaypointsY = renderWaypointsY + BUTTON_HEIGHT + 6;
+        float guideY = clearWaypointsY + BUTTON_HEIGHT + 18;
         float ingredientY = guideY + BUTTON_HEIGHT + 20;
         float summaryY = ingredientY + 20;
         float selectedTitleY = summaryY + 30;
@@ -4654,6 +4787,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 centerY,
                 modeY,
                 titleY,
+                renderWaypointsY,
+                clearWaypointsY,
                 guideY,
                 ingredientY,
                 summaryY,
@@ -4840,6 +4975,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float centerY,
             float modeY,
             float titleY,
+            float renderWaypointsY,
+            float clearWaypointsY,
             float guideY,
             float ingredientY,
             float summaryY,

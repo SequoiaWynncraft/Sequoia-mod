@@ -44,6 +44,7 @@ import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
 import com.seqwawa.seq.managers.ThemeManager;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.managers.WorldEventManager;
+import com.seqwawa.seq.map.IngredientWaypointRenderer;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
@@ -235,6 +236,7 @@ public class SeqClient implements ClientModInitializer {
         SeqCommand.register();
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
+        IngredientWaypointRenderer.initialize();
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> MinecraftUiRenderer.shutdown());
         LightRoom.init();
 
