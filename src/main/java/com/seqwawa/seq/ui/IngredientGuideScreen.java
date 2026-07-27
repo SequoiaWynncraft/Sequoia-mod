@@ -59,7 +59,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static final float OUTER_MARGIN = 14;
     private static final float HEADER_HEIGHT = 42;
     private static final float SEARCH_HEIGHT = 28;
-    private static final float SEARCH_SCOPE_WIDTH = 82;
+    private static final float SEARCH_SCOPE_WIDTH = 102;
     private static final float SORT_ROW_HEIGHT = 22;
     private static final float SORT_ROW_GAP = 4;
     private static final float SORT_DIRECTION_WIDTH = 76;
@@ -67,6 +67,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static final float ROW_HEIGHT = 43;
     private static final float LIST_ICON_SIZE = 28;
     private static final float FARM_SPOT_ROW_HEIGHT = 58;
+    private static final float FARM_SPOT_ICON_SIZE = 24;
     private static final float SCROLL_STEP = 34;
     private static final float SCROLLBAR_WIDTH = 3;
     private static final float SCROLLBAR_HIT_WIDTH = 9;
@@ -94,6 +95,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private IngredientFarmSpot selectedFarmSpot;
     private String searchQuery = "";
     private boolean searchFocused;
+    private boolean searchQuerySelected;
     private SearchScope searchScope;
     private SortKey primarySortKey;
     private SortDirection primarySortDirection;
@@ -179,6 +181,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         try {
             for (int index = 0; index < spots.size(); index++) {
                 IngredientFarmSpot spot = spots.get(index);
+                List<FarmSpotIngredientPreview> previews = farmSpotIngredientPreviews(spot);
                 float rowY = rowsTop + index * FARM_SPOT_ROW_HEIGHT - listScroll;
                 boolean selected = spot.equals(selectedFarmSpot);
                 boolean hovered = contains(
@@ -192,13 +195,32 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                             5,
                             selected ? color(BACKGROUND_CONTENT_FOCUSED, 245) : color(CONTROL_INPUT_HOVER, 210));
                 }
-                drawText(canvas, ellipsize(spot.name(), width - 32, 12), x + 14, rowY + 16, 12,
+                int visiblePreviewCount = Math.min(3, previews.size());
+                float previewWidth = visiblePreviewCount == 0
+                        ? 0
+                        : visiblePreviewCount * FARM_SPOT_ICON_SIZE + (visiblePreviewCount - 1) * 3 + 8;
+                float textWidth = Math.max(1, width - 32 - previewWidth);
+                drawText(canvas, ellipsize(spot.name(), textWidth, 12), x + 14, rowY + 16, 12,
                         color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
                 drawText(canvas, spot.coordinates(), x + 14, rowY + 33, 10, color(TEXT_MUTED),
                         UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
                 String targets = String.join(", ", spot.ingredients());
-                drawText(canvas, ellipsize(targets, width - 32, 9), x + 14, rowY + 48, 9, color(TEXT_SECONDARY),
+                drawText(canvas, ellipsize(targets, textWidth, 9), x + 14, rowY + 48, 9, color(TEXT_SECONDARY),
                         UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+                float previewX = x + width - 13
+                        - visiblePreviewCount * FARM_SPOT_ICON_SIZE
+                        - Math.max(0, visiblePreviewCount - 1) * 3;
+                float previewY = rowY + (FARM_SPOT_ROW_HEIGHT - FARM_SPOT_ICON_SIZE) / 2f;
+                for (int previewIndex = 0; previewIndex < visiblePreviewCount; previewIndex++) {
+                    drawFarmSpotIngredientPreview(
+                            canvas,
+                            previews.get(previewIndex),
+                            previewX + previewIndex * (FARM_SPOT_ICON_SIZE + 3),
+                            previewY,
+                            FARM_SPOT_ICON_SIZE,
+                            rowsTop,
+                            rowsTop + rowsHeight);
+                }
             }
         } finally {
             canvas.resetScissor();
@@ -235,7 +257,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         drawText(canvas, selectedFarmSpot.coordinates(), contentX, cursorY, 12, color(ACCENT_PRIMARY),
                 UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
         if (selectedFarmSpot.radius() > 0) {
-            drawText(canvas, "Radius " + selectedFarmSpot.radius(), contentX + contentWidth, cursorY, 10,
+            drawText(canvas, selectedFarmSpot.radius() + " blocks radius", contentX + contentWidth, cursorY, 10,
                     color(TEXT_MUTED), UiCanvas.HorizontalAlign.RIGHT, UiCanvas.VerticalAlign.MIDDLE);
         }
         cursorY += 26;
@@ -245,10 +267,29 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
 
         drawText(canvas, "INGREDIENTS", contentX, cursorY, 11, color(ACCENT_PRIMARY),
                 UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
-        cursorY += 21;
-        drawText(canvas, String.join(", ", selectedFarmSpot.ingredients()), contentX, cursorY, 12,
-                color(TEXT_SECONDARY), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
-        cursorY += 32;
+        cursorY += 14;
+        for (FarmSpotIngredientPreview preview : farmSpotIngredientPreviews(selectedFarmSpot)) {
+            canvas.fillRoundedRect(contentX, cursorY, contentWidth, 36, 5, color(BACKGROUND_CONTENT, 225));
+            drawFarmSpotIngredientPreview(
+                    canvas,
+                    preview,
+                    contentX + 6,
+                    cursorY + 6,
+                    24,
+                    y,
+                    y + height);
+            drawText(
+                    canvas,
+                    preview.name(),
+                    contentX + 38,
+                    cursorY + 18,
+                    12,
+                    color(TEXT_SECONDARY),
+                    UiCanvas.HorizontalAlign.LEFT,
+                    UiCanvas.VerticalAlign.MIDDLE);
+            cursorY += 42;
+        }
+        cursorY += 14;
         drawText(canvas, "MOBS", contentX, cursorY, 11, color(ACCENT_PRIMARY),
                 UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
         cursorY += 21;
@@ -295,22 +336,31 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 1,
                 color(ACCENT_DIVIDER));
         String searchText = searchQuery.isEmpty() ? searchPlaceholder(searchScope) : searchQuery;
-        drawText(canvas, ellipsize(searchText, searchWidth - SEARCH_SCOPE_WIDTH - 18, 12),
+        float searchTextMaxWidth = searchWidth - SEARCH_SCOPE_WIDTH - 18;
+        String visibleSearchText = ellipsize(searchText, searchTextMaxWidth, 12);
+        if (searchQuerySelected && !searchQuery.isEmpty()) {
+            float selectedWidth = Math.min(
+                    searchTextMaxWidth,
+                    UiRenderer.measureText(
+                                    visibleSearchText,
+                                    SeqClient.getFontManager().getSelectedFont(),
+                                    12)
+                            .width());
+            canvas.fillRoundedRect(
+                    searchX + 6,
+                    searchY + 5,
+                    selectedWidth + 6,
+                    SEARCH_HEIGHT - 10,
+                    3,
+                    color(ACCENT_PRIMARY, 90));
+        }
+        drawText(canvas, visibleSearchText,
                 searchX + 9, searchY + SEARCH_HEIGHT / 2f, 12,
                 searchQuery.isEmpty() ? color(TEXT_MUTED) : color(TEXT_PRIMARY),
                 UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
         drawText(
                 canvas,
-                searchScope.label(),
-                scopeX + 7,
-                searchY + SEARCH_HEIGHT / 2f,
-                9,
-                scopeHovered ? color(ACCENT_PRIMARY_HOVER) : color(TEXT_SECONDARY),
-                UiCanvas.HorizontalAlign.LEFT,
-                UiCanvas.VerticalAlign.MIDDLE);
-        drawText(
-                canvas,
-                ">",
+                "For: " + searchScope.label(),
                 searchX + searchWidth - 7,
                 searchY + SEARCH_HEIGHT / 2f,
                 9,
@@ -503,7 +553,9 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                                     21,
                                     4,
                                     hovered ? color(CONTROL_INPUT_HOVER, 245) : color(CONTROL_INPUT, 225));
-                            String radius = location.radius() > 0 ? "  •  radius " + location.radius() : "";
+                            String radius = location.radius() > 0
+                                    ? "  •  " + location.radius() + " blocks radius"
+                                    : "";
                             drawText(canvas, location.coordinates() + radius, contentX + 16, locationY + 10.5f, 10,
                                     color(TEXT_SECONDARY), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
                             drawText(canvas, "MAP", contentX + contentWidth - 52, locationY + 10.5f, 9,
@@ -566,6 +618,44 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         detailScroll = 0;
     }
 
+    private List<FarmSpotIngredientPreview> farmSpotIngredientPreviews(IngredientFarmSpot spot) {
+        List<IngredientGuideEntry> ingredients = manager.snapshot().ingredients();
+        return spot.ingredients().stream()
+                .map(name -> new FarmSpotIngredientPreview(
+                        name,
+                        ingredients.stream()
+                                .filter(ingredient -> ingredient.displayName().equalsIgnoreCase(name)
+                                        || ingredient.internalName().equalsIgnoreCase(name))
+                                .findFirst()
+                                .orElse(null)))
+                .toList();
+    }
+
+    private void drawFarmSpotIngredientPreview(
+            UiCanvas canvas,
+            FarmSpotIngredientPreview preview,
+            float x,
+            float y,
+            float size,
+            float viewportTop,
+            float viewportBottom) {
+        if (preview.ingredient() == null) {
+            drawText(canvas, "✦", x + size / 2f, y + size / 2f, size * 0.58f, color(TEXT_MUTED),
+                    UiCanvas.HorizontalAlign.CENTER, UiCanvas.VerticalAlign.MIDDLE);
+            return;
+        }
+        CachedIngredientIcon icon = cachedItemIcon(preview.ingredient());
+        if (!icon.stack().isEmpty()) {
+            if (y >= viewportTop && y + size <= viewportBottom) {
+                itemIconOverlays.add(new IngredientIconOverlay(icon, x, y, size));
+            }
+            return;
+        }
+        drawText(canvas, "✦", x + size / 2f, y + size / 2f, size * 0.58f,
+                tierColor(preview.ingredient().tier()),
+                UiCanvas.HorizontalAlign.CENTER, UiCanvas.VerticalAlign.MIDDLE);
+    }
+
     private CachedIngredientIcon cachedItemIcon(IngredientGuideEntry ingredient) {
         return itemIconCache.computeIfAbsent(ingredient.icon().cacheKey(), ignored -> {
             ItemStack stack = IngredientItemIconFactory.create(ingredient.icon());
@@ -625,6 +715,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             if (nextCategory != guideCategory) {
                 guideCategory = nextCategory;
                 searchFocused = false;
+                searchQuerySelected = false;
                 listScroll = 0;
                 detailScroll = 0;
                 draggedScrollbar = null;
@@ -682,9 +773,11 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 return true;
             }
             searchFocused = true;
+            searchQuerySelected = false;
             return true;
         }
         searchFocused = false;
+        searchQuerySelected = false;
 
         IngredientListLayout layout = ingredientListLayout(panelTop, hasSecondarySort());
         float sortX = OUTER_MARGIN + 9;
@@ -886,30 +979,52 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         if (searchFocused) {
             if (key == GLFW.GLFW_KEY_ESCAPE || key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
                 searchFocused = false;
+                searchQuerySelected = false;
+                return true;
+            }
+            boolean shortcutModifier =
+                    (keyEvent.modifiers() & (GLFW.GLFW_MOD_CONTROL | GLFW.GLFW_MOD_SUPER)) != 0;
+            if (shortcutModifier && key == GLFW.GLFW_KEY_A) {
+                searchQuerySelected = !searchQuery.isEmpty();
                 return true;
             }
             if (key == GLFW.GLFW_KEY_BACKSPACE) {
-                if (!searchQuery.isEmpty()) {
+                if (searchQuerySelected) {
+                    searchQuery = "";
+                } else if (!searchQuery.isEmpty()) {
                     searchQuery = searchQuery.substring(0, searchQuery.length() - 1);
                 }
+                searchQuerySelected = false;
                 return true;
             }
-            if ((keyEvent.modifiers() & GLFW.GLFW_MOD_CONTROL) != 0 && key == GLFW.GLFW_KEY_V) {
+            if (shortcutModifier && key == GLFW.GLFW_KEY_V) {
                 String clipboard = SeqClient.mc.keyboardHandler.getClipboard();
                 if (clipboard != null) {
-                    searchQuery += clipboard.replaceAll("\\p{Cntrl}", "");
+                    String pastedText = clipboard.replaceAll("\\p{Cntrl}", "");
+                    searchQuery = searchQuerySelected ? pastedText : searchQuery + pastedText;
+                    if (searchQuery.length() > 80) {
+                        searchQuery = searchQuery.substring(0, 80);
+                    }
                 }
+                searchQuerySelected = false;
                 return true;
             }
             Character character = TextInputHelper.getTypedCharacter(keyEvent);
-            if (character != null && TextInputHelper.isPrintableCharacter(character) && searchQuery.length() < 80) {
-                searchQuery += character;
+            if (character != null && TextInputHelper.isPrintableCharacter(character)) {
+                if (searchQuerySelected) {
+                    searchQuery = "";
+                }
+                if (searchQuery.length() < 80) {
+                    searchQuery += character;
+                }
+                searchQuerySelected = false;
                 return true;
             }
             return true;
         }
         if (guideCategory == GuideCategory.INGREDIENTS && key == GLFW.GLFW_KEY_SLASH) {
             searchFocused = true;
+            searchQuerySelected = false;
             return true;
         }
         return super.keyPressed(keyEvent);
@@ -1312,6 +1427,8 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
 
     private record IngredientIconOverlay(
             CachedIngredientIcon icon, float x, float y, float size) {}
+
+    private record FarmSpotIngredientPreview(String name, IngredientGuideEntry ingredient) {}
 
     private record LocationHitbox(
             float mapX,
