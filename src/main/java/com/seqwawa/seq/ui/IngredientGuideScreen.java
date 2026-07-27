@@ -59,10 +59,10 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static final float OUTER_MARGIN = 14;
     private static final float HEADER_HEIGHT = 42;
     private static final float SEARCH_HEIGHT = 28;
-    private static final float SEARCH_SCOPE_WIDTH = 102;
     private static final float SORT_ROW_HEIGHT = 22;
     private static final float SORT_ROW_GAP = 4;
     private static final float SORT_DIRECTION_WIDTH = 76;
+    private static final float SEARCH_SCOPE_WIDTH = SORT_DIRECTION_WIDTH;
     private static final float SORT_OPTION_HEIGHT = 22;
     private static final float ROW_HEIGHT = 43;
     private static final float LIST_ICON_SIZE = 28;
@@ -360,7 +360,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
         drawText(
                 canvas,
-                "For: " + searchScope.label(),
+                searchScope.label(),
                 searchX + searchWidth - 7,
                 searchY + SEARCH_HEIGHT / 2f,
                 9,
