@@ -15,14 +15,14 @@ class IngredientGuideSessionSettingsTest {
             settings.setSortOrder(
                     SortKey.RARITY,
                     SortDirection.DESCENDING,
-                    SortKey.NAME,
+                    SortKey.ALPHABETICAL,
                     SortDirection.ASCENDING);
 
             IngredientGuideSessionSettings.SortOrder retained =
                     IngredientGuideSessionSettings.getInstance().sortOrder();
             assertEquals(SortKey.RARITY, retained.primaryKey());
             assertEquals(SortDirection.DESCENDING, retained.primaryDirection());
-            assertEquals(SortKey.NAME, retained.secondaryKey());
+            assertEquals(SortKey.ALPHABETICAL, retained.secondaryKey());
             assertEquals(SortDirection.ASCENDING, retained.secondaryDirection());
         } finally {
             settings.setSortOrder(

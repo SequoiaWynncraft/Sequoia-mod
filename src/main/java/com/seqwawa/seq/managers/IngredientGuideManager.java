@@ -154,7 +154,7 @@ public final class IngredientGuideManager {
 
         Comparator<IngredientGuideEntry> comparator =
                 directedComparator(resolvedPrimary, resolvedPrimaryDirection);
-        if (resolvedSecondary != resolvedPrimary) {
+        if (resolvedPrimary != SortKey.ALPHABETICAL && resolvedSecondary != resolvedPrimary) {
             comparator = comparator.thenComparing(
                     directedComparator(resolvedSecondary, resolvedSecondaryDirection));
         }
@@ -169,7 +169,8 @@ public final class IngredientGuideManager {
         Comparator<IngredientGuideEntry> comparator = switch (key) {
             case LEVEL -> Comparator.comparingInt(IngredientGuideEntry::level);
             case RARITY -> Comparator.comparingInt(IngredientGuideEntry::tier);
-            case NAME -> Comparator.comparing(IngredientGuideEntry::displayName, String.CASE_INSENSITIVE_ORDER);
+            case ALPHABETICAL ->
+                Comparator.comparing(IngredientGuideEntry::displayName, String.CASE_INSENSITIVE_ORDER);
         };
         return direction == SortDirection.DESCENDING ? comparator.reversed() : comparator;
     }
@@ -403,7 +404,7 @@ public final class IngredientGuideManager {
     public enum SortKey {
         LEVEL("Level"),
         RARITY("Rarity"),
-        NAME("Name");
+        ALPHABETICAL("Alphabetical");
 
         private final String label;
 

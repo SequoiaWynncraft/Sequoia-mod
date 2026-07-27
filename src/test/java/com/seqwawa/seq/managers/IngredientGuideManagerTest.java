@@ -151,6 +151,35 @@ class IngredientGuideManagerTest {
     }
 
     @Test
+    void alphabeticalSortingIgnoresTheSecondarySort() {
+        IngredientGuideEntry first = new IngredientGuideEntry(
+                "Duplicate",
+                "A Duplicate",
+                1,
+                1,
+                List.of(),
+                IngredientGuideEntry.Icon.unavailable(),
+                List.of());
+        IngredientGuideEntry second = new IngredientGuideEntry(
+                "Duplicate",
+                "B Duplicate",
+                3,
+                20,
+                List.of(),
+                IngredientGuideEntry.Icon.unavailable(),
+                List.of());
+
+        List<IngredientGuideEntry> sorted = IngredientGuideManager.sort(
+                List.of(second, first),
+                IngredientGuideManager.SortKey.ALPHABETICAL,
+                IngredientGuideManager.SortDirection.ASCENDING,
+                IngredientGuideManager.SortKey.LEVEL,
+                IngredientGuideManager.SortDirection.DESCENDING);
+
+        assertEquals(List.of(first, second), sorted);
+    }
+
+    @Test
     void postsIngredientSearchAndRetainsSnapshotAfterFailure() throws Exception {
         AtomicInteger statusCode = new AtomicInteger(200);
         AtomicReference<String> responseBody = new AtomicReference<>("""

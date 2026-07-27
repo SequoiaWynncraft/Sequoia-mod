@@ -59,6 +59,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static final float SORT_ROW_HEIGHT = 22;
     private static final float SORT_ROW_GAP = 4;
     private static final float SORT_DIRECTION_WIDTH = 76;
+    private static final float SORT_OPTION_HEIGHT = 22;
     private static final float ROW_HEIGHT = 43;
     private static final float FARM_SPOT_ROW_HEIGHT = 58;
     private static final float SCROLL_STEP = 34;
@@ -92,6 +93,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private SortDirection primarySortDirection;
     private SortKey secondarySortKey;
     private SortDirection secondarySortDirection;
+    private SortDropdown openSortDropdown;
     private float listScroll;
     private float detailScroll;
     private float maxListScroll;
@@ -274,7 +276,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 searchQuery.isEmpty() ? color(TEXT_MUTED) : color(TEXT_PRIMARY),
                 UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
 
-        IngredientListLayout layout = ingredientListLayout(y);
+        IngredientListLayout layout = ingredientListLayout(y, hasSecondarySort());
         drawSortRow(
                 canvas,
                 x + 9,
@@ -282,13 +284,15 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 width - 18,
                 primarySortKey,
                 primarySortDirection);
-        drawSortRow(
-                canvas,
-                x + 9,
-                layout.secondarySortY(),
-                width - 18,
-                secondarySortKey,
-                secondarySortDirection);
+        if (hasSecondarySort()) {
+            drawSortRow(
+                    canvas,
+                    x + 9,
+                    layout.secondarySortY(),
+                    width - 18,
+                    secondarySortKey,
+                    secondarySortDirection);
+        }
 
         float summaryY = layout.summaryY();
         drawText(canvas, visibleIngredients.size() + " ingredients", x + 11, summaryY, 10, color(TEXT_MUTED),
@@ -335,6 +339,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 listScroll,
                 maxListScroll,
                 ScrollbarTarget.INGREDIENT_LIST);
+        drawOpenSortDropdown(canvas, x + 9, width - 18, layout);
     }
 
     private void renderIngredientDetail(UiCanvas canvas, float x, float y, float width, float height) {
@@ -561,11 +566,13 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 listScroll = 0;
                 detailScroll = 0;
                 draggedScrollbar = null;
+                openSortDropdown = null;
             }
             return true;
         }
         if (guideCategory == GuideCategory.INGREDIENTS
                 && contains(mx, my, screenWidth - 82, 9, 68, 24)) {
+            openSortDropdown = null;
             manager.requestRefresh(true);
             return true;
         }
@@ -604,11 +611,17 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
 
         if (contains(mx, my, OUTER_MARGIN + 9, panelTop + 9, listWidth - 18, SEARCH_HEIGHT)) {
             searchFocused = true;
+            openSortDropdown = null;
             return true;
         }
         searchFocused = false;
 
-        IngredientListLayout layout = ingredientListLayout(panelTop);
+        IngredientListLayout layout = ingredientListLayout(panelTop, hasSecondarySort());
+        float sortX = OUTER_MARGIN + 9;
+        float sortWidth = listWidth - 18;
+        if (handleOpenSortDropdownClick(mx, my, sortX, sortWidth, layout)) {
+            return true;
+        }
         float rowsTop = layout.rowsTop();
         float rowsHeight = Math.max(0, panelTop + panelHeight - rowsTop - 8);
         if (startScrollbarDrag(
@@ -638,23 +651,26 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             return true;
         }
 
-        float sortX = OUTER_MARGIN + 9;
-        float sortWidth = listWidth - 18;
         if (contains(mx, my, sortX, layout.primarySortY(), sortWidth, SORT_ROW_HEIGHT)) {
             if (mx >= sortX + sortWidth - SORT_DIRECTION_WIDTH) {
                 primarySortDirection = primarySortDirection.toggled();
+                openSortDropdown = null;
             } else {
-                primarySortKey = nextSortKey(primarySortKey, secondarySortKey);
+                openSortDropdown = SortDropdown.PRIMARY;
+                return true;
             }
             saveSortSettings();
             resortVisibleIngredients();
             return true;
         }
-        if (contains(mx, my, sortX, layout.secondarySortY(), sortWidth, SORT_ROW_HEIGHT)) {
+        if (hasSecondarySort()
+                && contains(mx, my, sortX, layout.secondarySortY(), sortWidth, SORT_ROW_HEIGHT)) {
             if (mx >= sortX + sortWidth - SORT_DIRECTION_WIDTH) {
                 secondarySortDirection = secondarySortDirection.toggled();
+                openSortDropdown = null;
             } else {
-                secondarySortKey = nextSortKey(secondarySortKey, primarySortKey);
+                openSortDropdown = SortDropdown.SECONDARY;
+                return true;
             }
             saveSortSettings();
             resortVisibleIngredients();
@@ -709,7 +725,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         float panelTop = HEADER_HEIGHT + OUTER_MARGIN;
         float panelHeight = Math.max(120, screenHeight - panelTop - OUTER_MARGIN);
         float listWidth = clamp(screenWidth * 0.35f, 245, 355);
-        IngredientListLayout listLayout = ingredientListLayout(panelTop);
+        IngredientListLayout listLayout = ingredientListLayout(panelTop, hasSecondarySort());
         float trackHeight;
         float maxScroll;
         if (draggedScrollbar == ScrollbarTarget.INGREDIENT_LIST) {
@@ -793,6 +809,10 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
         int key = keyEvent.key();
+        if (key == GLFW.GLFW_KEY_ESCAPE && openSortDropdown != null) {
+            openSortDropdown = null;
+            return true;
+        }
         if (searchFocused) {
             if (key == GLFW.GLFW_KEY_ESCAPE || key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
                 searchFocused = false;
@@ -910,6 +930,15 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 UiCanvas.VerticalAlign.MIDDLE);
         drawText(
                 canvas,
+                "v",
+                x + keyWidth - 8,
+                y + SORT_ROW_HEIGHT / 2f,
+                9,
+                keyHovered ? color(ACCENT_PRIMARY_HOVER) : color(TEXT_MUTED),
+                UiCanvas.HorizontalAlign.RIGHT,
+                UiCanvas.VerticalAlign.MIDDLE);
+        drawText(
+                canvas,
                 direction.symbol() + " " + direction.label(),
                 x + width - 7,
                 y + SORT_ROW_HEIGHT / 2f,
@@ -917,6 +946,121 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 directionHovered ? color(ACCENT_PRIMARY_HOVER) : color(TEXT_MUTED),
                 UiCanvas.HorizontalAlign.RIGHT,
                 UiCanvas.VerticalAlign.MIDDLE);
+    }
+
+    private void drawOpenSortDropdown(
+            UiCanvas canvas, float x, float width, IngredientListLayout layout) {
+        if (openSortDropdown == null
+                || (openSortDropdown == SortDropdown.SECONDARY && !hasSecondarySort())) {
+            return;
+        }
+        float menuWidth = Math.max(1, width - SORT_DIRECTION_WIDTH);
+        float anchorY = openSortDropdown == SortDropdown.PRIMARY
+                ? layout.primarySortY()
+                : layout.secondarySortY();
+        float menuY = anchorY + SORT_ROW_HEIGHT + 2;
+        List<SortKey> options = sortOptions(openSortDropdown);
+        SortKey selectedKey = openSortDropdown == SortDropdown.PRIMARY ? primarySortKey : secondarySortKey;
+        for (int index = 0; index < options.size(); index++) {
+            SortKey option = options.get(index);
+            float optionY = menuY + index * SORT_OPTION_HEIGHT;
+            boolean selected = option == selectedKey;
+            boolean hovered = contains(nvgMouseX, nvgMouseY, x, optionY, menuWidth, SORT_OPTION_HEIGHT);
+            canvas.fillRect(
+                    x,
+                    optionY,
+                    menuWidth,
+                    SORT_OPTION_HEIGHT,
+                    selected
+                            ? color(BACKGROUND_CONTENT_FOCUSED, 255)
+                            : hovered ? color(CONTROL_INPUT_HOVER, 255) : color(CONTROL_INPUT, 250));
+            canvas.strokeRect(x, optionY, menuWidth, SORT_OPTION_HEIGHT, 1, color(ACCENT_DIVIDER));
+            drawText(
+                    canvas,
+                    option.label(),
+                    x + 8,
+                    optionY + SORT_OPTION_HEIGHT / 2f,
+                    10,
+                    selected ? color(ACCENT_PRIMARY) : color(TEXT_SECONDARY),
+                    UiCanvas.HorizontalAlign.LEFT,
+                    UiCanvas.VerticalAlign.MIDDLE);
+        }
+    }
+
+    private boolean handleOpenSortDropdownClick(
+            float mouseX,
+            float mouseY,
+            float x,
+            float width,
+            IngredientListLayout layout) {
+        if (openSortDropdown == null) {
+            return false;
+        }
+        if (openSortDropdown == SortDropdown.SECONDARY && !hasSecondarySort()) {
+            openSortDropdown = null;
+            return false;
+        }
+        float menuWidth = Math.max(1, width - SORT_DIRECTION_WIDTH);
+        float anchorY = openSortDropdown == SortDropdown.PRIMARY
+                ? layout.primarySortY()
+                : layout.secondarySortY();
+        if (contains(mouseX, mouseY, x, anchorY, menuWidth, SORT_ROW_HEIGHT)) {
+            openSortDropdown = null;
+            return true;
+        }
+        List<SortKey> options = sortOptions(openSortDropdown);
+        float menuY = anchorY + SORT_ROW_HEIGHT + 2;
+        float menuHeight = options.size() * SORT_OPTION_HEIGHT;
+        if (!contains(mouseX, mouseY, x, menuY, menuWidth, menuHeight)) {
+            openSortDropdown = null;
+            return false;
+        }
+        int optionIndex = (int) ((mouseY - menuY) / SORT_OPTION_HEIGHT);
+        if (optionIndex < 0 || optionIndex >= options.size()) {
+            return true;
+        }
+        applySortSelection(openSortDropdown, options.get(optionIndex));
+        openSortDropdown = null;
+        saveSortSettings();
+        resortVisibleIngredients();
+        return true;
+    }
+
+    private void applySortSelection(SortDropdown dropdown, SortKey selectedKey) {
+        if (dropdown == SortDropdown.SECONDARY) {
+            secondarySortKey = selectedKey;
+            return;
+        }
+        SortKey previousPrimary = primarySortKey;
+        primarySortKey = selectedKey;
+        if (primarySortKey == secondarySortKey && primarySortKey != SortKey.ALPHABETICAL) {
+            secondarySortKey = previousPrimary == primarySortKey
+                    ? firstSortKeyOtherThan(primarySortKey)
+                    : previousPrimary;
+        }
+    }
+
+    private List<SortKey> sortOptions(SortDropdown dropdown) {
+        List<SortKey> options = new ArrayList<>();
+        for (SortKey key : SortKey.values()) {
+            if (dropdown == SortDropdown.PRIMARY || key != primarySortKey) {
+                options.add(key);
+            }
+        }
+        return options;
+    }
+
+    private static SortKey firstSortKeyOtherThan(SortKey excluded) {
+        for (SortKey key : SortKey.values()) {
+            if (key != excluded) {
+                return key;
+            }
+        }
+        return excluded;
+    }
+
+    private boolean hasSecondarySort() {
+        return primarySortKey != SortKey.ALPHABETICAL;
     }
 
     private List<IngredientGuideEntry> sortedFilteredIngredients(IngredientGuideManager.Snapshot snapshot) {
@@ -946,22 +1090,11 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         listScroll = 0;
     }
 
-    private static SortKey nextSortKey(SortKey current, SortKey excluded) {
-        SortKey[] keys = SortKey.values();
-        int index = current.ordinal();
-        for (int attempt = 0; attempt < keys.length; attempt++) {
-            index = (index + 1) % keys.length;
-            if (keys[index] != excluded) {
-                return keys[index];
-            }
-        }
-        return current;
-    }
-
-    private static IngredientListLayout ingredientListLayout(float panelY) {
+    private static IngredientListLayout ingredientListLayout(float panelY, boolean showSecondarySort) {
         float primarySortY = panelY + 9 + SEARCH_HEIGHT + 8;
         float secondarySortY = primarySortY + SORT_ROW_HEIGHT + SORT_ROW_GAP;
-        float summaryY = secondarySortY + SORT_ROW_HEIGHT + 11;
+        float finalSortY = showSecondarySort ? secondarySortY : primarySortY;
+        float summaryY = finalSortY + SORT_ROW_HEIGHT + 11;
         return new IngredientListLayout(primarySortY, secondarySortY, summaryY, summaryY + 12);
     }
 
@@ -1141,6 +1274,11 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private enum ScrollbarTarget {
         INGREDIENT_LIST,
         INGREDIENT_DETAIL
+    }
+
+    private enum SortDropdown {
+        PRIMARY,
+        SECONDARY
     }
 
     private record ScrollbarGeometry(float x, float y, float height, float thumbY, float thumbHeight) {
