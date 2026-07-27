@@ -2,11 +2,25 @@ package com.seqwawa.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.seqwawa.seq.managers.IngredientGuideManager.SearchScope;
 import com.seqwawa.seq.managers.IngredientGuideManager.SortDirection;
 import com.seqwawa.seq.managers.IngredientGuideManager.SortKey;
 import org.junit.jupiter.api.Test;
 
 class IngredientGuideSessionSettingsTest {
+    @Test
+    void retainsSearchScopeForTheClientSession() {
+        IngredientGuideSessionSettings settings = IngredientGuideSessionSettings.getInstance();
+        SearchScope original = settings.searchScope();
+        try {
+            settings.setSearchScope(SearchScope.MOB);
+
+            assertEquals(SearchScope.MOB, IngredientGuideSessionSettings.getInstance().searchScope());
+        } finally {
+            settings.setSearchScope(original);
+        }
+    }
+
     @Test
     void retainsSortingForTheClientSession() {
         IngredientGuideSessionSettings settings = IngredientGuideSessionSettings.getInstance();

@@ -20,6 +20,7 @@ import static com.seqwawa.seq.ui.theme.UiColor.TEXT_SECONDARY;
 
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.IngredientGuideManager;
+import com.seqwawa.seq.managers.IngredientGuideManager.SearchScope;
 import com.seqwawa.seq.managers.IngredientGuideManager.SortDirection;
 import com.seqwawa.seq.managers.IngredientGuideManager.SortKey;
 import com.seqwawa.seq.managers.IngredientGuideSessionSettings;
@@ -56,6 +57,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static final float OUTER_MARGIN = 14;
     private static final float HEADER_HEIGHT = 42;
     private static final float SEARCH_HEIGHT = 28;
+    private static final float SEARCH_SCOPE_WIDTH = 82;
     private static final float SORT_ROW_HEIGHT = 22;
     private static final float SORT_ROW_GAP = 4;
     private static final float SORT_DIRECTION_WIDTH = 76;
@@ -89,6 +91,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private IngredientFarmSpot selectedFarmSpot;
     private String searchQuery = "";
     private boolean searchFocused;
+    private SearchScope searchScope;
     private SortKey primarySortKey;
     private SortDirection primarySortDirection;
     private SortKey secondarySortKey;
@@ -121,6 +124,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         primarySortDirection = sortOrder.primaryDirection();
         secondarySortKey = sortOrder.secondaryKey();
         secondarySortDirection = sortOrder.secondaryDirection();
+        searchScope = sessionSettings.searchScope();
         selectedFarmSpot = IngredientFarmSpotCatalog.all().isEmpty()
                 ? null
                 : IngredientFarmSpotCatalog.all().getFirst();
@@ -267,14 +271,54 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
 
     private void renderIngredientList(UiCanvas canvas, float x, float y, float width, float height) {
         canvas.fillRoundedRect(x, y, width, height, PANEL_RADIUS, color(BACKGROUND_BODY_OPAQUE, 245));
+        float searchX = x + 9;
+        float searchY = y + 9;
+        float searchWidth = width - 18;
+        float scopeX = searchX + searchWidth - SEARCH_SCOPE_WIDTH;
+        boolean scopeHovered = contains(
+                nvgMouseX, nvgMouseY, scopeX, searchY, SEARCH_SCOPE_WIDTH, SEARCH_HEIGHT);
         Color searchColor = searchFocused ? color(BACKGROUND_CONTENT_FOCUSED, 255) : color(CONTROL_INPUT, 255);
-        canvas.fillRoundedRect(x + 9, y + 9, width - 18, SEARCH_HEIGHT, 5, searchColor);
-        canvas.strokeRect(x + 9, y + 9, width - 18, SEARCH_HEIGHT, 1,
+        canvas.fillRoundedRect(searchX, searchY, searchWidth, SEARCH_HEIGHT, 5, searchColor);
+        if (scopeHovered) {
+            canvas.fillRect(
+                    scopeX,
+                    searchY + 1,
+                    SEARCH_SCOPE_WIDTH - 1,
+                    SEARCH_HEIGHT - 2,
+                    color(CONTROL_INPUT_HOVER, 255));
+        }
+        canvas.strokeRect(searchX, searchY, searchWidth, SEARCH_HEIGHT, 1,
                 searchFocused ? color(CONTROL_BORDER) : color(ACCENT_DIVIDER));
-        String searchText = searchQuery.isEmpty() ? "Search ingredient, mob, profession..." : searchQuery;
-        drawText(canvas, searchText, x + 18, y + 9 + SEARCH_HEIGHT / 2f, 12,
+        canvas.strokeLine(
+                scopeX,
+                searchY + 4,
+                scopeX,
+                searchY + SEARCH_HEIGHT - 4,
+                1,
+                color(ACCENT_DIVIDER));
+        String searchText = searchQuery.isEmpty() ? searchPlaceholder(searchScope) : searchQuery;
+        drawText(canvas, ellipsize(searchText, searchWidth - SEARCH_SCOPE_WIDTH - 18, 12),
+                searchX + 9, searchY + SEARCH_HEIGHT / 2f, 12,
                 searchQuery.isEmpty() ? color(TEXT_MUTED) : color(TEXT_PRIMARY),
                 UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+        drawText(
+                canvas,
+                searchScope.label(),
+                scopeX + 7,
+                searchY + SEARCH_HEIGHT / 2f,
+                9,
+                scopeHovered ? color(ACCENT_PRIMARY_HOVER) : color(TEXT_SECONDARY),
+                UiCanvas.HorizontalAlign.LEFT,
+                UiCanvas.VerticalAlign.MIDDLE);
+        drawText(
+                canvas,
+                ">",
+                searchX + searchWidth - 7,
+                searchY + SEARCH_HEIGHT / 2f,
+                9,
+                scopeHovered ? color(ACCENT_PRIMARY_HOVER) : color(TEXT_MUTED),
+                UiCanvas.HorizontalAlign.RIGHT,
+                UiCanvas.VerticalAlign.MIDDLE);
 
         IngredientListLayout layout = ingredientListLayout(y, hasSecondarySort());
         drawSortRow(
@@ -609,9 +653,17 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             return super.mouseClicked(click, outsideScreen);
         }
 
-        if (contains(mx, my, OUTER_MARGIN + 9, panelTop + 9, listWidth - 18, SEARCH_HEIGHT)) {
-            searchFocused = true;
+        float searchX = OUTER_MARGIN + 9;
+        float searchWidth = listWidth - 18;
+        if (contains(mx, my, searchX, panelTop + 9, searchWidth, SEARCH_HEIGHT)) {
             openSortDropdown = null;
+            if (mx >= searchX + searchWidth - SEARCH_SCOPE_WIDTH) {
+                searchScope = searchScope.next();
+                sessionSettings.setSearchScope(searchScope);
+                resortVisibleIngredients();
+                return true;
+            }
+            searchFocused = true;
             return true;
         }
         searchFocused = false;
@@ -1065,7 +1117,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
 
     private List<IngredientGuideEntry> sortedFilteredIngredients(IngredientGuideManager.Snapshot snapshot) {
         return IngredientGuideManager.sort(
-                IngredientGuideManager.filter(snapshot.ingredients(), searchQuery),
+                IngredientGuideManager.filter(snapshot.ingredients(), searchQuery, searchScope),
                 primarySortKey,
                 primarySortDirection,
                 secondarySortKey,
@@ -1212,6 +1264,14 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
 
     private static String tierLabel(int tier) {
         return "Tier " + Math.max(0, Math.min(3, tier));
+    }
+
+    private static String searchPlaceholder(SearchScope scope) {
+        return switch (scope) {
+            case INGREDIENT -> "Search ingredients...";
+            case MOB -> "Search mobs...";
+            case PROFESSION -> "Search professions...";
+        };
     }
 
     private static String titleCase(String value) {

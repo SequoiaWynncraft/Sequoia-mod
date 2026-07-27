@@ -1,5 +1,6 @@
 package com.seqwawa.seq.managers;
 
+import com.seqwawa.seq.managers.IngredientGuideManager.SearchScope;
 import com.seqwawa.seq.managers.IngredientGuideManager.SortDirection;
 import com.seqwawa.seq.managers.IngredientGuideManager.SortKey;
 
@@ -11,6 +12,7 @@ public final class IngredientGuideSessionSettings {
     private static final IngredientGuideSessionSettings INSTANCE = new IngredientGuideSessionSettings();
 
     private SortOrder sortOrder = SortOrder.defaults();
+    private SearchScope searchScope = SearchScope.INGREDIENT;
 
     private IngredientGuideSessionSettings() {}
 
@@ -20,6 +22,14 @@ public final class IngredientGuideSessionSettings {
 
     public synchronized SortOrder sortOrder() {
         return sortOrder;
+    }
+
+    public synchronized SearchScope searchScope() {
+        return searchScope;
+    }
+
+    public synchronized void setSearchScope(SearchScope searchScope) {
+        this.searchScope = searchScope == null ? SearchScope.INGREDIENT : searchScope;
     }
 
     public synchronized void setSortOrder(

@@ -101,10 +101,28 @@ class IngredientGuideManagerTest {
                 entry("Sturdy Flesh", List.of("armouring"), List.of("Earth Zombie"));
         List<IngredientGuideEntry> ingredients = List.of(first, second);
 
-        assertEquals(List.of(first), IngredientGuideManager.filter(ingredients, "acidic"));
-        assertEquals(List.of(first), IngredientGuideManager.filter(ingredients, "plague doctor"));
-        assertEquals(List.of(second), IngredientGuideManager.filter(ingredients, "armouring zombie"));
-        assertEquals(ingredients, IngredientGuideManager.filter(ingredients, " "));
+        assertEquals(List.of(first), IngredientGuideManager.filter(
+                ingredients, "acidic", IngredientGuideManager.SearchScope.INGREDIENT));
+        assertEquals(List.of(first), IngredientGuideManager.filter(
+                ingredients, "plague doctor", IngredientGuideManager.SearchScope.MOB));
+        assertEquals(List.of(second), IngredientGuideManager.filter(
+                ingredients, "armouring", IngredientGuideManager.SearchScope.PROFESSION));
+        assertEquals(ingredients, IngredientGuideManager.filter(
+                ingredients, " ", IngredientGuideManager.SearchScope.INGREDIENT));
+    }
+
+    @Test
+    void searchScopeSeparatesMatchingIngredientAndMobNames() {
+        IngredientGuideEntry ingredientMatch =
+                entry("Colossus", List.of("armouring"), List.of("Stone Guardian"));
+        IngredientGuideEntry mobMatch =
+                entry("Ancient Hide", List.of("tailoring"), List.of("Colossus"));
+        List<IngredientGuideEntry> ingredients = List.of(ingredientMatch, mobMatch);
+
+        assertEquals(List.of(ingredientMatch), IngredientGuideManager.filter(
+                ingredients, "colossus", IngredientGuideManager.SearchScope.INGREDIENT));
+        assertEquals(List.of(mobMatch), IngredientGuideManager.filter(
+                ingredients, "colossus", IngredientGuideManager.SearchScope.MOB));
     }
 
     @Test

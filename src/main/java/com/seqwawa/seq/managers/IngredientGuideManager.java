@@ -122,7 +122,8 @@ public final class IngredientGuideManager {
         }
     }
 
-    public static List<IngredientGuideEntry> filter(List<IngredientGuideEntry> ingredients, String query) {
+    public static List<IngredientGuideEntry> filter(
+            List<IngredientGuideEntry> ingredients, String query, SearchScope scope) {
         if (ingredients == null || ingredients.isEmpty()) {
             return List.of();
         }
@@ -130,9 +131,13 @@ public final class IngredientGuideManager {
         if (normalized.isEmpty()) {
             return List.copyOf(ingredients);
         }
+        SearchScope resolvedScope = scope == null ? SearchScope.INGREDIENT : scope;
         List<String> terms = List.of(normalized.split("\\s+"));
         return ingredients.stream()
-                .filter(ingredient -> terms.stream().allMatch(term -> searchableText(ingredient).contains(term)))
+                .filter(ingredient -> {
+                    String searchableText = searchableText(ingredient, resolvedScope);
+                    return terms.stream().allMatch(searchableText::contains);
+                })
                 .toList();
     }
 
@@ -217,12 +222,15 @@ public final class IngredientGuideManager {
                 SortDirection.ASCENDING);
     }
 
-    private static String searchableText(IngredientGuideEntry ingredient) {
-        StringBuilder text = new StringBuilder()
-                .append(ingredient.displayName()).append(' ')
-                .append(ingredient.internalName()).append(' ');
-        ingredient.skills().forEach(skill -> text.append(skill).append(' '));
-        ingredient.dropSources().forEach(source -> text.append(source.name()).append(' '));
+    private static String searchableText(IngredientGuideEntry ingredient, SearchScope scope) {
+        StringBuilder text = new StringBuilder();
+        switch (scope) {
+            case INGREDIENT -> text
+                    .append(ingredient.displayName()).append(' ')
+                    .append(ingredient.internalName());
+            case MOB -> ingredient.dropSources().forEach(source -> text.append(source.name()).append(' '));
+            case PROFESSION -> ingredient.skills().forEach(skill -> text.append(skill).append(' '));
+        }
         return text.toString().toLowerCase(Locale.ROOT);
     }
 
@@ -439,6 +447,27 @@ public final class IngredientGuideManager {
 
         public SortDirection toggled() {
             return this == ASCENDING ? DESCENDING : ASCENDING;
+        }
+    }
+
+    public enum SearchScope {
+        INGREDIENT("Ingredient"),
+        MOB("Mob"),
+        PROFESSION("Profession");
+
+        private final String label;
+
+        SearchScope(String label) {
+            this.label = label;
+        }
+
+        public String label() {
+            return label;
+        }
+
+        public SearchScope next() {
+            SearchScope[] scopes = values();
+            return scopes[(ordinal() + 1) % scopes.length];
         }
     }
 
