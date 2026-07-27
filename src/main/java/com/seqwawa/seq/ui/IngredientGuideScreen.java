@@ -73,10 +73,10 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static final float MIN_SCROLLBAR_THUMB_HEIGHT = 20;
     private static final float PANEL_RADIUS = 7;
     private static final Color[] TIER_COLORS = {
-        new Color(150, 150, 165),
-        new Color(240, 240, 245),
-        new Color(245, 195, 72),
-        new Color(226, 94, 94)
+        new Color(102, 102, 102),
+        new Color(255, 247, 153),
+        new Color(255, 255, 0),
+        new Color(230, 77, 0)
     };
 
     private final Screen parent;
