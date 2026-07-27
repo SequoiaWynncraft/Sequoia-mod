@@ -54,6 +54,7 @@ import com.seqwawa.seq.map.IngredientMapCategory;
 import com.seqwawa.seq.map.IngredientWaypointManager;
 import com.seqwawa.seq.map.IngredientWaypointManager.Kind;
 import com.seqwawa.seq.map.IngredientWaypointManager.Waypoint;
+import com.seqwawa.seq.map.IngredientWaypointManager.WaypointIcon;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapDisplayMode;
@@ -78,6 +79,7 @@ import com.seqwawa.seq.utils.rendering.UiImage;
 import com.seqwawa.seq.utils.rendering.UiRenderMetrics;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final float SIDEBAR_WIDTH = 230;
@@ -3529,7 +3531,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                         marker.source(),
                         marker.x(),
                         marker.y(),
-                        marker.z()));
+                        marker.z(),
+                        WaypointIcon.of(mapFocusIcon, mapFocusSkinLookup)));
             }
         }
         for (IngredientFarmSpot spot : IngredientFarmSpotCatalog.all()) {
@@ -3543,7 +3546,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                     String.join(", ", spot.ingredients()),
                     spot.x(),
                     spot.y(),
-                    spot.z()));
+                    spot.z(),
+                    WaypointIcon.of(new ItemStack(Items.TOTEM_OF_UNDYING), null)));
         }
         IngredientWaypointManager.getInstance().replaceAll(waypoints);
     }

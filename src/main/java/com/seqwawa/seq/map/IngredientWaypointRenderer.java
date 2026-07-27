@@ -2,10 +2,12 @@ package com.seqwawa.seq.map;
 
 import com.seqwawa.seq.map.IngredientWaypointManager.Kind;
 import com.seqwawa.seq.map.IngredientWaypointManager.Waypoint;
+import com.seqwawa.seq.map.IngredientWaypointManager.WaypointIcon;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3fc;
@@ -14,6 +16,9 @@ public final class IngredientWaypointRenderer {
     private static final int SPAWN_COLOR = 0xFF55FFFF;
     private static final int TOTEM_COLOR = 0xFFFFAA33;
     private static final int SCREEN_MARGIN = 18;
+    private static final int ICON_SIZE = 20;
+    private static final int ICON_OUTLINE_MARGIN = 2;
+    private static final int AIM_RADIUS = ICON_SIZE / 2 + ICON_OUTLINE_MARGIN;
 
     private IngredientWaypointRenderer() {}
 
@@ -43,19 +48,26 @@ public final class IngredientWaypointRenderer {
         int y = Math.round(screenPosition.y());
         int markerColor = waypoint.kind() == Kind.TOTEM_SPOT ? TOTEM_COLOR : SPAWN_COLOR;
 
-        guiGraphics.fill(x - 4, y, x + 1, y + 5, 0xCC000000);
-        guiGraphics.fill(x, y - 4, x + 5, y + 1, 0xCC000000);
-        guiGraphics.fill(x - 3, y, x + 1, y + 4, markerColor);
-        guiGraphics.fill(x, y - 3, x + 4, y + 1, markerColor);
+        if (waypoint.icon().stack().isEmpty()) {
+            renderFallbackMarker(guiGraphics, x, y, markerColor);
+        } else {
+            renderIcon(guiGraphics, x, y, waypoint.icon(), markerColor);
+        }
 
         long distance = Math.round(client.player.position().distanceTo(
                 new Vec3(waypoint.x(), waypoint.y(), waypoint.z())));
-        String label = waypoint.label() + " · " + distance + " blocks";
-        String detail = waypoint.detail();
+        String distanceLabel = distance + " blocks";
+        boolean aimedAt = isAimedAt(
+                screenPosition, guiGraphics.guiWidth(), guiGraphics.guiHeight());
+        String label = aimedAt ? waypoint.label() + " · " + distanceLabel : distanceLabel;
+        String detail = aimedAt ? waypoint.detail() : "";
         int textWidth = Math.max(client.font.width(label), client.font.width(detail));
         int labelX = clamp(x - textWidth / 2, 3, Math.max(3, guiGraphics.guiWidth() - textWidth - 3));
         int labelHeight = detail.isEmpty() ? 11 : 20;
-        int labelY = clamp(y - labelHeight - 6, 3, Math.max(3, guiGraphics.guiHeight() - labelHeight - 1));
+        int labelY = clamp(
+                y - labelHeight - ICON_SIZE / 2 - 3,
+                3,
+                Math.max(3, guiGraphics.guiHeight() - labelHeight - 1));
         guiGraphics.fill(
                 labelX - 3,
                 labelY - 2,
@@ -66,6 +78,55 @@ public final class IngredientWaypointRenderer {
         if (!detail.isEmpty()) {
             guiGraphics.drawString(client.font, detail, labelX, labelY + 10, 0xFFBBBBBB);
         }
+    }
+
+    private static boolean isAimedAt(
+            ScreenPosition screenPosition, int screenWidth, int screenHeight) {
+        if (!screenPosition.onScreen()) {
+            return false;
+        }
+        float dx = screenPosition.x() - screenWidth / 2f;
+        float dy = screenPosition.y() - screenHeight / 2f;
+        return dx * dx + dy * dy <= AIM_RADIUS * AIM_RADIUS;
+    }
+
+    private static void renderIcon(
+            GuiGraphics guiGraphics, int x, int y, WaypointIcon icon, int markerColor) {
+        int iconX = x - ICON_SIZE / 2;
+        int iconY = y - ICON_SIZE / 2;
+        guiGraphics.renderOutline(
+                iconX - ICON_OUTLINE_MARGIN,
+                iconY - ICON_OUTLINE_MARGIN,
+                ICON_SIZE + ICON_OUTLINE_MARGIN * 2,
+                ICON_SIZE + ICON_OUTLINE_MARGIN * 2,
+                markerColor);
+        guiGraphics.renderOutline(
+                iconX - 1,
+                iconY - 1,
+                ICON_SIZE + 2,
+                ICON_SIZE + 2,
+                0xE6000000);
+
+        float scale = ICON_SIZE / 16f;
+        guiGraphics.pose().pushMatrix();
+        try {
+            guiGraphics.pose().translate(iconX, iconY);
+            guiGraphics.pose().scale(scale, scale);
+            if (icon.skinLookup() != null) {
+                PlayerFaceRenderer.draw(guiGraphics, icon.skinLookup().get(), 0, 0, 16);
+            } else {
+                guiGraphics.renderItem(icon.stack(), 0, 0);
+            }
+        } finally {
+            guiGraphics.pose().popMatrix();
+        }
+    }
+
+    private static void renderFallbackMarker(GuiGraphics guiGraphics, int x, int y, int markerColor) {
+        guiGraphics.fill(x - 4, y, x + 1, y + 5, 0xCC000000);
+        guiGraphics.fill(x, y - 4, x + 5, y + 1, 0xCC000000);
+        guiGraphics.fill(x - 3, y, x + 1, y + 4, markerColor);
+        guiGraphics.fill(x, y - 3, x + 4, y + 1, markerColor);
     }
 
     private static ScreenPosition project(
@@ -85,7 +146,7 @@ public final class IngredientWaypointRenderer {
                 || screenY < SCREEN_MARGIN
                 || screenY > screenHeight - SCREEN_MARGIN;
         if (!outside) {
-            return new ScreenPosition((float) screenX, (float) screenY);
+            return new ScreenPosition((float) screenX, (float) screenY, true);
         }
 
         double centerX = screenWidth / 2.0;
@@ -100,12 +161,13 @@ public final class IngredientWaypointRenderer {
         double scale = Math.min(1.0, Math.min(xScale, yScale));
         return new ScreenPosition(
                 (float) (centerX + dx * scale),
-                (float) (centerY + dy * scale));
+                (float) (centerY + dy * scale),
+                false);
     }
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
     }
 
-    private record ScreenPosition(float x, float y) {}
+    private record ScreenPosition(float x, float y, boolean onScreen) {}
 }

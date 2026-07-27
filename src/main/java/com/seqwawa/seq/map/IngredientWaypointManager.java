@@ -5,6 +5,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
+import net.minecraft.world.entity.player.PlayerSkin;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * Session-only waypoint state populated from selected ingredient map markers.
@@ -56,12 +59,25 @@ public final class IngredientWaypointManager {
             String detail,
             double x,
             double y,
-            double z) {
+            double z,
+            WaypointIcon icon) {
+        public Waypoint(
+                String id,
+                Kind kind,
+                String label,
+                String detail,
+                double x,
+                double y,
+                double z) {
+            this(id, kind, label, detail, x, y, z, WaypointIcon.empty());
+        }
+
         public Waypoint {
             id = requireText(id, "id");
             kind = Objects.requireNonNull(kind, "kind");
             label = requireText(label, "label");
             detail = detail == null ? "" : detail.trim();
+            icon = icon == null ? WaypointIcon.empty() : icon;
         }
 
         private static String requireText(String value, String field) {
@@ -70,6 +86,20 @@ public final class IngredientWaypointManager {
                 throw new IllegalArgumentException(field + " cannot be blank");
             }
             return normalized;
+        }
+    }
+
+    public record WaypointIcon(ItemStack stack, Supplier<PlayerSkin> skinLookup) {
+        public WaypointIcon {
+            stack = stack == null ? ItemStack.EMPTY : stack.copy();
+        }
+
+        public static WaypointIcon empty() {
+            return new WaypointIcon(ItemStack.EMPTY, null);
+        }
+
+        public static WaypointIcon of(ItemStack stack, Supplier<PlayerSkin> skinLookup) {
+            return new WaypointIcon(stack, skinLookup);
         }
     }
 }
