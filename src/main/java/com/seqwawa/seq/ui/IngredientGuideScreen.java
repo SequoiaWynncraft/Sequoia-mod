@@ -39,8 +39,10 @@ import com.seqwawa.seq.utils.rendering.UiRenderMetrics;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 import java.awt.Color;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.function.Supplier;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.PlayerFaceRenderer;
@@ -63,6 +65,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static final float SORT_DIRECTION_WIDTH = 76;
     private static final float SORT_OPTION_HEIGHT = 22;
     private static final float ROW_HEIGHT = 43;
+    private static final float LIST_ICON_SIZE = 28;
     private static final float FARM_SPOT_ROW_HEIGHT = 58;
     private static final float SCROLL_STEP = 34;
     private static final float SCROLLBAR_WIDTH = 3;
@@ -106,13 +109,8 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private float scrollbarDragStartOffset;
     private float nvgMouseX;
     private float nvgMouseY;
-    private String itemIconKey;
-    private ItemStack itemIconStack = ItemStack.EMPTY;
-    private Supplier<PlayerSkin> itemSkinLookup;
-    private boolean itemIconOverlayVisible;
-    private float itemIconOverlayX;
-    private float itemIconOverlayY;
-    private float itemIconOverlaySize;
+    private final Map<String, CachedIngredientIcon> itemIconCache = new HashMap<>();
+    private final List<IngredientIconOverlay> itemIconOverlays = new ArrayList<>();
     private String copyFeedback;
     private long copyFeedbackUntilMs;
 
@@ -141,7 +139,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     }
 
     private void renderGuide(UiCanvas canvas) {
-        itemIconOverlayVisible = false;
+        itemIconOverlays.clear();
         float screenWidth = canvas.metrics().width();
         float screenHeight = canvas.metrics().height();
         float panelTop = HEADER_HEIGHT + OUTER_MARGIN;
@@ -366,11 +364,30 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                             selected ? color(BACKGROUND_CONTENT_FOCUSED, 245) : color(CONTROL_INPUT_HOVER, 210));
                 }
                 canvas.fillCircle(x + 17, rowY + ROW_HEIGHT / 2f, 4, tierColor(ingredient.tier()));
-                drawText(canvas, ellipsize(ingredient.displayName(), width - 64, 12), x + 29, rowY + 14, 12,
+                drawText(canvas, ellipsize(ingredient.displayName(), width - 78, 12), x + 29, rowY + 14, 12,
                         color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
                 String subtitle = "Lv. " + ingredient.level() + "  •  " + tierLabel(ingredient.tier());
                 drawText(canvas, subtitle, x + 29, rowY + 30, 10, color(TEXT_MUTED),
                         UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+                CachedIngredientIcon icon = cachedItemIcon(ingredient);
+                float iconX = x + width - LIST_ICON_SIZE - 13;
+                float iconY = rowY + (ROW_HEIGHT - LIST_ICON_SIZE) / 2f;
+                if (!icon.stack().isEmpty()) {
+                    if (iconY >= rowsTop && iconY + LIST_ICON_SIZE <= rowsTop + rowsHeight) {
+                        itemIconOverlays.add(new IngredientIconOverlay(
+                                icon, iconX, iconY, LIST_ICON_SIZE));
+                    }
+                } else {
+                    drawText(
+                            canvas,
+                            "✦",
+                            iconX + LIST_ICON_SIZE / 2f,
+                            iconY + LIST_ICON_SIZE / 2f,
+                            16,
+                            tierColor(ingredient.tier()),
+                            UiCanvas.HorizontalAlign.CENTER,
+                            UiCanvas.VerticalAlign.MIDDLE);
+                }
             }
         } finally {
             canvas.resetScissor();
@@ -405,14 +422,15 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         canvas.scissor(x + 1, y + 1, width - 2, height - 2);
         float cursorY = contentTop - detailScroll;
         try {
-            ItemStack iconStack = selectedItemIcon(selectedIngredient);
+            CachedIngredientIcon icon = cachedItemIcon(selectedIngredient);
             canvas.fillRoundedRect(contentX, cursorY, 58, 58, 6, color(BACKGROUND_CONTENT, 230));
-            if (!iconStack.isEmpty()) {
-                itemIconOverlayX = contentX + 5;
-                itemIconOverlayY = cursorY + 5;
-                itemIconOverlaySize = 48;
-                itemIconOverlayVisible = itemIconOverlayY >= y + 1
-                        && itemIconOverlayY + itemIconOverlaySize <= y + height - 1;
+            if (!icon.stack().isEmpty()) {
+                float iconX = contentX + 5;
+                float iconY = cursorY + 5;
+                float iconSize = 48;
+                if (iconY >= y + 1 && iconY + iconSize <= y + height - 1) {
+                    itemIconOverlays.add(new IngredientIconOverlay(icon, iconX, iconY, iconSize));
+                }
             } else {
                 drawText(canvas, "✦", contentX + 29, cursorY + 29, 23, tierColor(selectedIngredient.tier()),
                         UiCanvas.HorizontalAlign.CENTER, UiCanvas.VerticalAlign.MIDDLE);
@@ -548,39 +566,39 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         detailScroll = 0;
     }
 
-    private ItemStack selectedItemIcon(IngredientGuideEntry ingredient) {
-        String selectedKey = ingredient.icon().cacheKey();
-        if (!selectedKey.equals(itemIconKey)) {
-            itemIconKey = selectedKey;
-            itemIconStack = IngredientItemIconFactory.create(ingredient.icon());
+    private CachedIngredientIcon cachedItemIcon(IngredientGuideEntry ingredient) {
+        return itemIconCache.computeIfAbsent(ingredient.icon().cacheKey(), ignored -> {
+            ItemStack stack = IngredientItemIconFactory.create(ingredient.icon());
             var skinProfile = IngredientItemIconFactory.skinProfile(ingredient.icon());
-            itemSkinLookup = skinProfile == null
+            Supplier<PlayerSkin> skinLookup = skinProfile == null
                     ? null
                     : SeqClient.mc.getSkinManager().createLookup(skinProfile, false);
-        }
-        return itemIconStack;
+            return new CachedIngredientIcon(stack, skinLookup);
+        });
     }
 
     @Override
     public void renderMinecraftGuiOverlay(GuiGraphics guiGraphics, UiRenderMetrics metrics) {
-        if (!itemIconOverlayVisible || itemIconStack.isEmpty()) {
+        if (itemIconOverlays.isEmpty()) {
             return;
         }
         float guiUnitsPerUiUnit = metrics.pixelRatio() / (float) metrics.minecraftGuiScale();
-        float itemScale = itemIconOverlaySize * guiUnitsPerUiUnit / 16f;
-        guiGraphics.pose().pushMatrix();
-        try {
-            guiGraphics.pose().translate(
-                    itemIconOverlayX * guiUnitsPerUiUnit,
-                    itemIconOverlayY * guiUnitsPerUiUnit);
-            guiGraphics.pose().scale(itemScale, itemScale);
-            if (itemSkinLookup != null) {
-                PlayerFaceRenderer.draw(guiGraphics, itemSkinLookup.get(), 0, 0, 16);
-            } else {
-                guiGraphics.renderItem(itemIconStack, 0, 0);
+        for (IngredientIconOverlay overlay : itemIconOverlays) {
+            float itemScale = overlay.size() * guiUnitsPerUiUnit / 16f;
+            guiGraphics.pose().pushMatrix();
+            try {
+                guiGraphics.pose().translate(
+                        overlay.x() * guiUnitsPerUiUnit,
+                        overlay.y() * guiUnitsPerUiUnit);
+                guiGraphics.pose().scale(itemScale, itemScale);
+                if (overlay.icon().skinLookup() != null) {
+                    PlayerFaceRenderer.draw(guiGraphics, overlay.icon().skinLookup().get(), 0, 0, 16);
+                } else {
+                    guiGraphics.renderItem(overlay.icon().stack(), 0, 0);
+                }
+            } finally {
+                guiGraphics.pose().popMatrix();
             }
-        } finally {
-            guiGraphics.pose().popMatrix();
         }
     }
 
@@ -1289,6 +1307,11 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static float clamp(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
     }
+
+    private record CachedIngredientIcon(ItemStack stack, Supplier<PlayerSkin> skinLookup) {}
+
+    private record IngredientIconOverlay(
+            CachedIngredientIcon icon, float x, float y, float size) {}
 
     private record LocationHitbox(
             float mapX,
