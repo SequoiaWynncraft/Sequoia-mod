@@ -1530,7 +1530,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 mapFocus.markers().size() + " locations · " + sourceCount + " mobs",
                 color(MAP_SUBTEXT),
                 TextAlignment.LEFT);
-        drawButton(canvas, PADDING, layout.fitY(), contentWidth, BUTTON_HEIGHT, "Fit All Spawns", false);
 
         drawText(canvas, PADDING, layout.selectedTitleY(), 12, "Selected Spawn", color(MAP_TITLE), TextAlignment.LEFT);
         if (selectedFocusMarker == null) {
@@ -3805,10 +3804,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             IngredientMapCategory nextCategory = ingredientMapCategoryAt(mx);
             if (nextCategory != ingredientMapCategory) {
                 ingredientMapCategory = nextCategory;
-                if (nextCategory == IngredientMapCategory.SPAWNS && hasMapFocus()) {
-                    MapViewport viewport = mapViewport(screenWidth, screenHeight);
-                    fitMapFocus(viewport.screenWidth(), viewport.screenHeight());
-                }
             }
             hoveredFocusMarker = null;
             hoveredIngredientFarmSpot = null;
@@ -3831,13 +3826,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             }
         } else if (isHovered(mx, my, PADDING, layout.guideY(), buttonWidth, BUTTON_HEIGHT)) {
             SeqClient.mc.setScreen(new IngredientGuideScreen(this));
-            return true;
-        }
-        if (ingredientMapCategory == IngredientMapCategory.SPAWNS
-                && hasMapFocus()
-                && isHovered(mx, my, PADDING, layout.fitY(), buttonWidth, BUTTON_HEIGHT)) {
-            MapViewport viewport = mapViewport(screenWidth, screenHeight);
-            fitMapFocus(viewport.screenWidth(), viewport.screenHeight());
             return true;
         }
         if (ingredientMapCategory == IngredientMapCategory.SPAWNS
@@ -4526,11 +4514,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (mode == MapDisplayMode.WORLD_EVENTS) {
             SeqClient.getWorldEventManager().requestMapRefresh();
             refreshWorldEvents();
-        } else if (mode == MapDisplayMode.INGREDIENTS) {
-            if (ingredientMapCategory == IngredientMapCategory.SPAWNS && hasMapFocus()) {
-                MapViewport viewport = mapViewport(uiScreenWidth(), uiScreenHeight());
-                fitMapFocus(viewport.screenWidth(), viewport.screenHeight());
-            }
         }
     }
 
@@ -4663,8 +4646,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float guideY = titleY + BUTTON_HEIGHT + 18;
         float ingredientY = guideY + BUTTON_HEIGHT + 20;
         float summaryY = ingredientY + 20;
-        float fitY = summaryY + 18;
-        float selectedTitleY = fitY + BUTTON_HEIGHT + 26;
+        float selectedTitleY = summaryY + 30;
         float selectedDetailY = selectedTitleY + 24;
         float copyY = selectedDetailY + 44;
         return new IngredientSidebarLayout(
@@ -4675,7 +4657,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 guideY,
                 ingredientY,
                 summaryY,
-                fitY,
                 selectedTitleY,
                 selectedDetailY,
                 copyY);
@@ -4862,7 +4843,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float guideY,
             float ingredientY,
             float summaryY,
-            float fitY,
             float selectedTitleY,
             float selectedDetailY,
             float copyY) {}
