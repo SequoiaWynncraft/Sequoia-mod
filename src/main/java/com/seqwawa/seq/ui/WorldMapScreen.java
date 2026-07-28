@@ -143,6 +143,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private double pixelsPerBlock = 0.08;
     private boolean initializedViewport;
     private boolean draggingMap;
+    private boolean mapDragMoved;
+    private boolean clearIngredientSelectionOnRelease;
     private boolean resourceDropdownOpen;
     private boolean resourceInputFocused;
     private int resourceDropdownScroll;
@@ -3627,6 +3629,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (click.button() != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             return super.mouseClicked(click, outsideScreen);
         }
+        mapDragMoved = false;
+        clearIngredientSelectionOnRelease = false;
 
         if (mx >= 0 && mx <= SIDEBAR_WIDTH && my < SIDEBAR_HEADER_HEIGHT) {
             return true;
@@ -4011,8 +4015,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
         MapViewport viewport = mapViewport(screenWidth, screenHeight);
         if (viewport.isInsideScreen(mx, my)) {
-            clearIngredientMapSelections();
             draggingMap = true;
+            clearIngredientSelectionOnRelease = true;
             hoveredFocusMarker = null;
             hoveredIngredientFarmSpot = null;
             return true;
@@ -4200,13 +4204,25 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     @Override
     public boolean mouseReleased(@NotNull MouseButtonEvent click) {
+        boolean clearIngredientSelection = click.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                && draggingMap
+                && clearIngredientSelectionOnRelease
+                && !mapDragMoved;
         draggingMap = false;
+        mapDragMoved = false;
+        clearIngredientSelectionOnRelease = false;
+        if (clearIngredientSelection) {
+            clearIngredientMapSelections();
+            return true;
+        }
         return super.mouseReleased(click);
     }
 
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (draggingMap) {
+            mapDragMoved = true;
+            clearIngredientSelectionOnRelease = false;
             centerX -= MinecraftUiRenderer.mouseDelta(deltaX) / pixelsPerBlock;
             centerZ -= MinecraftUiRenderer.mouseDelta(deltaY) / pixelsPerBlock;
             hoveredNode = null;
