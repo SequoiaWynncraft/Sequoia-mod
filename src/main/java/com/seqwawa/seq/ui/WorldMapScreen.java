@@ -69,8 +69,11 @@ import com.seqwawa.seq.map.WorldEventService;
 import com.seqwawa.seq.map.WorldMapSettings;
 import com.seqwawa.seq.map.WorldMapSidebarPanel;
 import com.seqwawa.seq.managers.AssetManager;
+import com.seqwawa.seq.managers.IngredientGuideManager;
+import com.seqwawa.seq.managers.IngredientItemIconFactory;
 import com.seqwawa.seq.map.GatheringMapImageService.TileKey;
 import com.seqwawa.seq.map.GatheringMapImageService.TileSet;
+import com.seqwawa.seq.model.IngredientGuideEntry;
 import com.seqwawa.seq.render.MinecraftGuiOverlay;
 import com.seqwawa.seq.utils.TextInputHelper;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
@@ -123,6 +126,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final float INGREDIENT_FARM_SPOT_CARD_HEIGHT = 56;
     private static final float INGREDIENT_FARM_SPOT_ROW_HEIGHT = 62;
     private static final float INGREDIENT_FARM_SPOT_CARD_PADDING = 8;
+    private static final float INGREDIENT_FARM_SPOT_ICON_SIZE = 17;
+    private static final float INGREDIENT_FARM_SPOT_ICON_GAP = 3;
     private static final ItemStack TOTEM_MAP_ICON = new ItemStack(Items.TOTEM_OF_UNDYING);
     private static final long TOTEM_SOLVE_DEBOUNCE_MS = 200;
     private final Screen parent;
@@ -134,6 +139,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private final GuildTerritoryService territoryService = GuildTerritoryService.getInstance();
     private final GatheringMapImageService mapImageService = GatheringMapImageService.getInstance();
     private final WorldMapSettings mapSettings = WorldMapSettings.getInstance();
+    private final IngredientGuideManager ingredientGuideManager = IngredientGuideManager.getInstance();
     private final GatheringClusterCache clusterCache = GatheringClusterCache.getInstance();
     private final WorldEventService worldEventService = WorldEventService.getInstance();
     private final EnumMap<GatheringProfession, Boolean> professionToggles = new EnumMap<>(GatheringProfession.class);
@@ -228,6 +234,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private boolean mapImageLoadAttempted;
     private long loadedMapImageVersion = -1;
     private final Map<TileKey, UiImage> tileImages = new HashMap<>();
+    private final Map<String, MapIngredientIcon> ingredientIconCache = new HashMap<>();
+    private Map<String, IngredientGuideEntry> cachedIngredientsByName = Map.of();
+    private long cachedIngredientSnapshotVersion = -1;
     private String loadedTileVersion = "";
     private long loadedTileContentVersion = -1;
     private TileRange cachedVisibleTileRange;
@@ -310,6 +319,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         restoreSelectedTerritory();
         nodeService.loadBundledNodes();
         mapImageService.requestLoad();
+        ingredientGuideManager.requestRefresh();
         SeqClient.getWorldEventManager().requestMapRefresh();
     }
 
@@ -1686,21 +1696,97 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                         color(MAP_SUBTEXT),
                         contentWidth - INGREDIENT_FARM_SPOT_CARD_PADDING * 2,
                         TextAlignment.LEFT);
-                drawFittedText(
+                renderIngredientFarmSpotTextures(
                         canvas,
+                        spot,
                         PADDING + INGREDIENT_FARM_SPOT_CARD_PADDING,
-                        rowY + 44,
-                        9,
-                        String.join(", ", spot.ingredients()),
-                        color(MAP_SUBTEXT),
+                        rowY + 37,
                         contentWidth - INGREDIENT_FARM_SPOT_CARD_PADDING * 2,
-                        TextAlignment.LEFT);
+                        listY,
+                        listY + listHeight);
                 rowY += INGREDIENT_FARM_SPOT_ROW_HEIGHT;
             }
         } finally {
             canvas.resetScissor();
         }
         renderIngredientFarmSpotScrollbar(canvas, listY, listHeight, maxScroll);
+    }
+
+    private void renderIngredientFarmSpotTextures(
+            UiCanvas canvas,
+            IngredientFarmSpot spot,
+            float x,
+            float y,
+            float width,
+            float viewportTop,
+            float viewportBottom) {
+        refreshIngredientEntryLookup();
+        int visibleIconCount = Math.min(
+                spot.ingredients().size(),
+                Math.max(
+                        0,
+                        (int) ((width + INGREDIENT_FARM_SPOT_ICON_GAP)
+                                / (INGREDIENT_FARM_SPOT_ICON_SIZE + INGREDIENT_FARM_SPOT_ICON_GAP))));
+        for (int index = 0; index < visibleIconCount; index++) {
+            String ingredientName = spot.ingredients().get(index);
+            IngredientGuideEntry ingredient =
+                    cachedIngredientsByName.get(ingredientName.toLowerCase(Locale.ROOT));
+            float iconX = x + index * (INGREDIENT_FARM_SPOT_ICON_SIZE + INGREDIENT_FARM_SPOT_ICON_GAP);
+            if (ingredient == null) {
+                drawText(
+                        canvas,
+                        iconX + INGREDIENT_FARM_SPOT_ICON_SIZE / 2f,
+                        y + INGREDIENT_FARM_SPOT_ICON_SIZE / 2f,
+                        10,
+                        "✦",
+                        color(MAP_SUBTEXT),
+                        TextAlignment.CENTER);
+                continue;
+            }
+            MapIngredientIcon icon = cachedIngredientIcon(ingredient);
+            if (icon.stack().isEmpty()) {
+                drawText(
+                        canvas,
+                        iconX + INGREDIENT_FARM_SPOT_ICON_SIZE / 2f,
+                        y + INGREDIENT_FARM_SPOT_ICON_SIZE / 2f,
+                        10,
+                        "✦",
+                        color(MAP_SUBTEXT),
+                        TextAlignment.CENTER);
+            } else if (y >= viewportTop && y + INGREDIENT_FARM_SPOT_ICON_SIZE <= viewportBottom) {
+                focusIconOverlays.add(new FocusIconOverlay(
+                        iconX,
+                        y,
+                        INGREDIENT_FARM_SPOT_ICON_SIZE,
+                        icon.stack(),
+                        icon.skinLookup()));
+            }
+        }
+    }
+
+    private void refreshIngredientEntryLookup() {
+        IngredientGuideManager.Snapshot snapshot = ingredientGuideManager.snapshot();
+        if (snapshot.version() == cachedIngredientSnapshotVersion) {
+            return;
+        }
+        Map<String, IngredientGuideEntry> ingredientsByName = new HashMap<>();
+        for (IngredientGuideEntry ingredient : snapshot.ingredients()) {
+            ingredientsByName.put(ingredient.displayName().toLowerCase(Locale.ROOT), ingredient);
+            ingredientsByName.put(ingredient.internalName().toLowerCase(Locale.ROOT), ingredient);
+        }
+        cachedIngredientsByName = Map.copyOf(ingredientsByName);
+        cachedIngredientSnapshotVersion = snapshot.version();
+    }
+
+    private MapIngredientIcon cachedIngredientIcon(IngredientGuideEntry ingredient) {
+        return ingredientIconCache.computeIfAbsent(ingredient.icon().cacheKey(), ignored -> {
+            ItemStack stack = IngredientItemIconFactory.create(ingredient.icon());
+            GameProfile skinProfile = IngredientItemIconFactory.skinProfile(ingredient.icon());
+            Supplier<PlayerSkin> skinLookup = skinProfile == null
+                    ? null
+                    : SeqClient.mc.getSkinManager().createLookup(skinProfile, false);
+            return new MapIngredientIcon(stack, skinLookup);
+        });
     }
 
     private void renderIngredientFarmSpotScrollbar(
@@ -5057,6 +5143,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float size,
             ItemStack stack,
             Supplier<PlayerSkin> skinLookup) {}
+
+    private record MapIngredientIcon(ItemStack stack, Supplier<PlayerSkin> skinLookup) {}
 
     private record ScreenPoint(float x, float y) {}
 
