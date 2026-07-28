@@ -6,8 +6,11 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.IngredientGuideEntry;
+import com.seqwawa.seq.model.IngredientGuideEntry.CraftingModifiers;
 import com.seqwawa.seq.model.IngredientGuideEntry.DropSource;
+import com.seqwawa.seq.model.IngredientGuideEntry.Effect;
 import com.seqwawa.seq.model.IngredientGuideEntry.Icon;
+import com.seqwawa.seq.model.IngredientGuideEntry.Modifier;
 import com.seqwawa.seq.model.IngredientGuideEntry.SpawnLocation;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -206,6 +209,8 @@ public final class IngredientGuideManager {
                         requirements == null ? 0 : optionalInt(requirements, "level", 0),
                         requirements == null ? List.of() : stringList(requirements.get("skills")),
                         parseIcon(object.get("icon")),
+                        parseEffects(object.get("identifications")),
+                        parseCraftingModifiers(object),
                         parseDropSources(object.get("droppedBy"))));
             } catch (RuntimeException ignored) {
                 // Preserve all valid entries if one API record is malformed.
@@ -270,6 +275,68 @@ public final class IngredientGuideManager {
             }
         }
         return Icon.unavailable();
+    }
+
+    private static List<Effect> parseEffects(JsonElement element) {
+        if (element == null || !element.isJsonObject()) {
+            return List.of();
+        }
+        List<Effect> effects = new ArrayList<>();
+        for (Map.Entry<String, JsonElement> entry : element.getAsJsonObject().entrySet()) {
+            if (entry.getValue() == null || !entry.getValue().isJsonObject()) {
+                continue;
+            }
+            JsonObject values = entry.getValue().getAsJsonObject();
+            Integer raw = optionalInteger(values, "raw");
+            Integer min = optionalInteger(values, "min");
+            Integer max = optionalInteger(values, "max");
+            if (raw == null && min == null && max == null) {
+                continue;
+            }
+            int fallback = raw == null ? 0 : raw;
+            int low = min == null ? fallback : min;
+            int high = max == null ? fallback : max;
+            effects.add(new Effect(entry.getKey(), Math.min(low, high), Math.max(low, high)));
+        }
+        return List.copyOf(effects);
+    }
+
+    private static CraftingModifiers parseCraftingModifiers(JsonObject ingredient) {
+        JsonObject consumable = optionalObject(ingredient, "consumableOnlyIDs");
+        JsonObject itemOnly = optionalObject(ingredient, "itemOnlyIDs");
+        JsonObject positions = optionalObject(ingredient, "ingredientPositionModifiers");
+        int duration = consumable == null ? 0 : optionalInt(consumable, "duration", 0);
+        int charges = consumable == null ? 0 : optionalInt(consumable, "charges", 0);
+        int durability = itemOnly == null ? 0 : optionalInt(itemOnly, "durabilityModifier", 0) / 1000;
+        return new CraftingModifiers(
+                duration,
+                charges,
+                durability,
+                parseNonZeroModifiers(itemOnly, Set.of("durabilityModifier")),
+                parseNonZeroModifiers(positions, Set.of()));
+    }
+
+    private static List<Modifier> parseNonZeroModifiers(JsonObject object, Set<String> excludedKeys) {
+        if (object == null || object.isEmpty()) {
+            return List.of();
+        }
+        List<Modifier> modifiers = new ArrayList<>();
+        for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
+            if (excludedKeys.contains(entry.getKey())
+                    || entry.getValue() == null
+                    || !entry.getValue().isJsonPrimitive()) {
+                continue;
+            }
+            try {
+                int value = entry.getValue().getAsInt();
+                if (value != 0) {
+                    modifiers.add(new Modifier(entry.getKey(), value));
+                }
+            } catch (RuntimeException ignored) {
+                // Ignore malformed modifier values while retaining the ingredient.
+            }
+        }
+        return List.copyOf(modifiers);
     }
 
     private static List<DropSource> parseDropSources(JsonElement element) {
@@ -389,14 +456,19 @@ public final class IngredientGuideManager {
     }
 
     private static int optionalInt(JsonObject object, String key, int fallback) {
+        Integer value = optionalInteger(object, key);
+        return value == null ? fallback : value;
+    }
+
+    private static Integer optionalInteger(JsonObject object, String key) {
         JsonElement element = object.get(key);
         if (element == null || element.isJsonNull() || !element.isJsonPrimitive()) {
-            return fallback;
+            return null;
         }
         try {
             return element.getAsInt();
         } catch (RuntimeException ignored) {
-            return fallback;
+            return null;
         }
     }
 

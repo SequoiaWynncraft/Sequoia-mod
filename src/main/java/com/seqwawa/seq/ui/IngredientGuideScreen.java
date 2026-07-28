@@ -29,7 +29,10 @@ import com.seqwawa.seq.map.IngredientFarmSpot;
 import com.seqwawa.seq.map.IngredientFarmSpotCatalog;
 import com.seqwawa.seq.map.MapFocus;
 import com.seqwawa.seq.model.IngredientGuideEntry;
+import com.seqwawa.seq.model.IngredientGuideEntry.CraftingModifiers;
 import com.seqwawa.seq.model.IngredientGuideEntry.DropSource;
+import com.seqwawa.seq.model.IngredientGuideEntry.Effect;
+import com.seqwawa.seq.model.IngredientGuideEntry.Modifier;
 import com.seqwawa.seq.model.IngredientGuideEntry.SpawnLocation;
 import com.seqwawa.seq.render.MinecraftGuiOverlay;
 import com.seqwawa.seq.utils.TextInputHelper;
@@ -499,6 +502,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             drawText(canvas, ellipsize(professions, contentWidth - 70, 10), titleX, cursorY + 53, 10,
                     color(TEXT_MUTED), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
             cursorY += 74;
+            cursorY = renderIngredientEffects(canvas, contentX, cursorY, contentWidth);
 
             int locationCount = selectedIngredient.dropSources().stream()
                     .mapToInt(source -> source.locations().size())
@@ -599,6 +603,205 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 detailScroll,
                 maxDetailScroll,
                 ScrollbarTarget.INGREDIENT_DETAIL);
+    }
+
+    private float renderIngredientEffects(
+            UiCanvas canvas, float contentX, float cursorY, float contentWidth) {
+        List<EffectLine> statLines = selectedIngredient.effects().stream()
+                .map(effect -> new EffectLine(
+                        effectDisplayName(effect.apiName()),
+                        formatEffectRange(effect)))
+                .toList();
+        List<EffectLine> modifierLines = craftingModifierLines(selectedIngredient.craftingModifiers());
+        int effectCount = statLines.size() + modifierLines.size();
+
+        canvas.strokeLine(contentX, cursorY, contentX + contentWidth, cursorY, 1, color(ACCENT_DIVIDER));
+        cursorY += 18;
+        drawText(canvas, "EFFECTS", contentX, cursorY, 11, color(ACCENT_PRIMARY),
+                UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+        drawText(canvas,
+                effectCount + (effectCount == 1 ? " effect" : " effects"),
+                contentX + contentWidth,
+                cursorY,
+                10,
+                color(TEXT_MUTED),
+                UiCanvas.HorizontalAlign.RIGHT,
+                UiCanvas.VerticalAlign.MIDDLE);
+        cursorY += 18;
+
+        if (effectCount == 0) {
+            canvas.fillRoundedRect(contentX, cursorY, contentWidth, 42, 5, color(BACKGROUND_CONTENT, 220));
+            drawText(canvas,
+                    "No crafting effects are published by the Wynncraft API.",
+                    contentX + 11,
+                    cursorY + 21,
+                    11,
+                    color(TEXT_MUTED),
+                    UiCanvas.HorizontalAlign.LEFT,
+                    UiCanvas.VerticalAlign.MIDDLE);
+            return cursorY + 52;
+        }
+        if (!modifierLines.isEmpty()) {
+            cursorY = renderEffectGroup(canvas, contentX, cursorY, contentWidth, modifierLines);
+        }
+        if (!statLines.isEmpty()) {
+            if (!modifierLines.isEmpty()) {
+                cursorY += 10;
+            }
+            cursorY = renderEffectGroup(canvas, contentX, cursorY, contentWidth, statLines);
+        }
+        return cursorY + 10;
+    }
+
+    private static float renderEffectGroup(
+            UiCanvas canvas,
+            float x,
+            float y,
+            float width,
+            List<EffectLine> lines) {
+        float rowHeight = 22;
+        float cardHeight = 8 + lines.size() * rowHeight;
+        canvas.fillRoundedRect(x, y, width, cardHeight, 5, color(BACKGROUND_CONTENT, 220));
+        for (int index = 0; index < lines.size(); index++) {
+            EffectLine line = lines.get(index);
+            float rowY = y + 4 + index * rowHeight;
+            if (index > 0) {
+                canvas.strokeLine(x + 9, rowY, x + width - 9, rowY, 1, color(ACCENT_DIVIDER));
+            }
+            float valueWidth = UiRenderer.measureText(
+                            line.value(),
+                            SeqClient.getFontManager().getSelectedFont(),
+                            10)
+                    .width();
+            String label = ellipsize(line.label() + ":", Math.max(1, width - valueWidth - 26), 10);
+            drawText(canvas,
+                    label,
+                    x + 10,
+                    rowY + rowHeight / 2f,
+                    10,
+                    color(TEXT_SECONDARY),
+                    UiCanvas.HorizontalAlign.LEFT,
+                    UiCanvas.VerticalAlign.MIDDLE);
+            float labelWidth = UiRenderer.measureText(
+                            label,
+                            SeqClient.getFontManager().getSelectedFont(),
+                            10)
+                    .width();
+            drawText(canvas,
+                    line.value(),
+                    x + 10 + labelWidth + 6,
+                    rowY + rowHeight / 2f,
+                    10,
+                    color(TEXT_PRIMARY),
+                    UiCanvas.HorizontalAlign.LEFT,
+                    UiCanvas.VerticalAlign.MIDDLE);
+        }
+        return y + cardHeight;
+    }
+
+    private static List<EffectLine> craftingModifierLines(CraftingModifiers modifiers) {
+        List<EffectLine> lines = new ArrayList<>();
+        if (modifiers.duration() != 0) {
+            lines.add(new EffectLine(
+                    "Consumable duration",
+                    formatSigned(modifiers.duration()) + " sec"));
+        }
+        if (modifiers.charges() != 0) {
+            lines.add(new EffectLine(
+                    "Consumable charges",
+                    formatSigned(modifiers.charges())));
+        }
+        if (modifiers.durability() != 0) {
+            lines.add(new EffectLine(
+                    "Item durability",
+                    formatSigned(modifiers.durability())));
+        }
+        for (Modifier requirement : modifiers.requirements()) {
+            lines.add(new EffectLine(
+                    effectDisplayName(requirement.apiName()),
+                    formatSigned(requirement.value())));
+        }
+        for (Modifier position : modifiers.positions()) {
+            lines.add(new EffectLine(
+                    "Effectiveness: " + positionLabel(position.apiName()),
+                    formatSigned(position.value()) + "%"));
+        }
+        return List.copyOf(lines);
+    }
+
+    private static String formatEffectRange(Effect effect) {
+        String unit = effectUnit(effect.apiName());
+        if (effect.min() == effect.max()) {
+            return formatSigned(effect.min()) + unit;
+        }
+        return formatSigned(effect.min()) + " to " + formatSigned(effect.max()) + unit;
+    }
+
+    private static String effectUnit(String apiName) {
+        return switch (apiName) {
+            case "lifeSteal", "manaSteal", "poison" -> "/3s";
+            case "healthRegenRaw", "manaRegen" -> "/5s";
+            case "rawAttackSpeed" -> " tier";
+            case "jumpHeight", "mainAttackRange" -> "";
+            default -> apiName.startsWith("raw") || apiName.endsWith("Raw") ? "" : "%";
+        };
+    }
+
+    private static String effectDisplayName(String apiName) {
+        if (apiName == null || apiName.isBlank()) {
+            return "Unknown effect";
+        }
+        String special = switch (apiName) {
+            case "combatExperience" -> "Combat XP Bonus";
+            case "gatherXpBonus" -> "Gathering XP Bonus";
+            case "gatherSpeed" -> "Gathering Speed";
+            default -> null;
+        };
+        if (special != null) {
+            return special;
+        }
+        String normalized = apiName;
+        if (normalized.startsWith("raw")
+                && normalized.length() > 3
+                && Character.isUpperCase(normalized.charAt(3))) {
+            normalized = normalized.substring(3);
+        }
+        if (normalized.endsWith("Raw") && normalized.length() > 3) {
+            normalized = normalized.substring(0, normalized.length() - 3);
+        }
+        normalized = normalized
+                .replaceAll("([a-z0-9])([A-Z])", "$1 $2")
+                .replace('_', ' ');
+        String[] words = normalized.split("\\s+");
+        StringBuilder displayName = new StringBuilder();
+        for (String word : words) {
+            if (word.isEmpty()) {
+                continue;
+            }
+            if (!displayName.isEmpty()) {
+                displayName.append(' ');
+            }
+            displayName.append(word.equalsIgnoreCase("xp")
+                    ? "XP"
+                    : Character.toUpperCase(word.charAt(0)) + word.substring(1));
+        }
+        return displayName.toString();
+    }
+
+    private static String positionLabel(String apiName) {
+        return switch (apiName) {
+            case "left" -> "left";
+            case "right" -> "right";
+            case "above" -> "above";
+            case "under" -> "under";
+            case "touching" -> "touching";
+            case "notTouching" -> "not touching";
+            default -> effectDisplayName(apiName).toLowerCase(Locale.ROOT);
+        };
+    }
+
+    private static String formatSigned(int value) {
+        return value > 0 ? "+" + value : Integer.toString(value);
     }
 
     private void refreshVisibleIngredients() {
@@ -1429,6 +1632,8 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             CachedIngredientIcon icon, float x, float y, float size) {}
 
     private record FarmSpotIngredientPreview(String name, IngredientGuideEntry ingredient) {}
+
+    private record EffectLine(String label, String value) {}
 
     private record LocationHitbox(
             float mapX,

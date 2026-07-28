@@ -80,6 +80,24 @@ class IngredientGuideManagerTest {
                       "icon": {
                         "value": "947322f831e3c168cfbd3e28fe925144b261e79eb39c771349fac55a8126473",
                         "format": "skin"
+                      },
+                      "identifications": {
+                        "rawHealth": {"min": -6, "raw": -6, "max": -4},
+                        "rawMainAttackDamage": {"min": 6, "raw": 6, "max": 8}
+                      },
+                      "consumableOnlyIDs": {"duration": -54, "charges": 1},
+                      "ingredientPositionModifiers": {
+                        "left": -120,
+                        "right": 0,
+                        "above": 0,
+                        "under": 0,
+                        "touching": 20,
+                        "notTouching": 0
+                      },
+                      "itemOnlyIDs": {
+                        "durabilityModifier": -73000,
+                        "strengthRequirement": 8,
+                        "dexterityRequirement": 0
                       }
                     }
                   ]
@@ -91,6 +109,16 @@ class IngredientGuideManagerTest {
         assertEquals("Dead Bee", ingredient.internalName());
         assertEquals("skin", ingredient.icon().format());
         assertEquals(63, ingredient.icon().textureHash().length());
+        assertEquals(2, ingredient.effects().size());
+        assertEquals("rawHealth", ingredient.effects().getFirst().apiName());
+        assertEquals(-6, ingredient.effects().getFirst().min());
+        assertEquals(-4, ingredient.effects().getFirst().max());
+        assertEquals(-54, ingredient.craftingModifiers().duration());
+        assertEquals(1, ingredient.craftingModifiers().charges());
+        assertEquals(-73, ingredient.craftingModifiers().durability());
+        assertEquals("strengthRequirement", ingredient.craftingModifiers().requirements().getFirst().apiName());
+        assertEquals(8, ingredient.craftingModifiers().requirements().getFirst().value());
+        assertEquals(2, ingredient.craftingModifiers().positions().size());
     }
 
     @Test
