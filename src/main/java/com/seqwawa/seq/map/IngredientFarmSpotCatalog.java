@@ -66,6 +66,20 @@ public final class IngredientFarmSpotCatalog {
                     List.of(),
                     ""),
             new IngredientFarmSpot(
+                    "rotten-teeth-1259-20-negative-5536",
+                    "Rotten Teeth",
+                    1259,
+                    20,
+                    -5536,
+                    0,
+                    List.of(
+                            "Rotten Teeth",
+                            "Ashen Hide",
+                            "Infernal Flesh",
+                            "Serpent Tongue"),
+                    List.of(),
+                    "Don't expect a LOT of serpent tongues."),
+            new IngredientFarmSpot(
                     "silent-road-664-75-negative-1040",
                     "Silent Road",
                     664,
@@ -80,6 +94,8 @@ public final class IngredientFarmSpotCatalog {
                             "Contorted Stone"),
                     List.of(),
                     ""));
+
+                    
 
     private IngredientFarmSpotCatalog() {}
 
