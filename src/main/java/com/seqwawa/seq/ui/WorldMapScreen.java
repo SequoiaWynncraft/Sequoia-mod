@@ -123,6 +123,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final float INGREDIENT_FARM_SPOT_CARD_HEIGHT = 56;
     private static final float INGREDIENT_FARM_SPOT_ROW_HEIGHT = 62;
     private static final float INGREDIENT_FARM_SPOT_CARD_PADDING = 8;
+    private static final ItemStack TOTEM_MAP_ICON = new ItemStack(Items.TOTEM_OF_UNDYING);
     private static final long TOTEM_SOLVE_DEBOUNCE_MS = 200;
     private final Screen parent;
     private final MapFocus mapFocus;
@@ -469,7 +470,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 focusIconOverlays.add(new FocusIconOverlay(
                         x - iconSize / 2f,
                         y - iconSize / 2f,
-                        iconSize));
+                        iconSize,
+                        mapFocusIcon,
+                        mapFocusSkinLookup));
             }
         }
         canvas.resetScissor();
@@ -514,10 +517,16 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 drawCircle(canvas, x, y, areaRadius, withAlpha(markerColor, selected ? 34 : 20));
                 drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, withAlpha(markerColor, 145));
             }
-            float markerRadius = selected || hovered ? 9 : 7;
-            drawCircle(canvas, x, y, markerRadius + 2, color(BACKGROUND_MODAL_OVERLAY, 190));
-            drawCircle(canvas, x, y, markerRadius, markerColor);
-            drawText(canvas, x, y + 0.5f, 10, "T", color(MAP_TEXT), TextAlignment.CENTER);
+            float iconSize = selected || hovered ? 22 : 18;
+            float outlineRadius = iconSize / 2f + 1;
+            drawCircle(canvas, x, y, outlineRadius, color(BACKGROUND_MODAL_OVERLAY, 190));
+            drawCircleOutline(canvas, x, y, outlineRadius, selected || hovered ? 1.5f : 1, markerColor);
+            focusIconOverlays.add(new FocusIconOverlay(
+                    x - iconSize / 2f,
+                    y - iconSize / 2f,
+                    iconSize,
+                    TOTEM_MAP_ICON,
+                    null));
         }
         canvas.resetScissor();
 
@@ -538,7 +547,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     @Override
     public void renderMinecraftGuiOverlay(GuiGraphics guiGraphics, UiRenderMetrics metrics) {
-        if (displayMode != MapDisplayMode.INGREDIENTS || mapFocusIcon.isEmpty()) {
+        if (displayMode != MapDisplayMode.INGREDIENTS || focusIconOverlays.isEmpty()) {
             return;
         }
         float guiUnitsPerUiUnit = metrics.pixelRatio() / (float) metrics.minecraftGuiScale();
@@ -550,10 +559,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                         overlay.x() * guiUnitsPerUiUnit,
                         overlay.y() * guiUnitsPerUiUnit);
                 guiGraphics.pose().scale(itemScale, itemScale);
-                if (mapFocusSkinLookup != null) {
-                    PlayerFaceRenderer.draw(guiGraphics, mapFocusSkinLookup.get(), 0, 0, 16);
+                if (overlay.skinLookup() != null) {
+                    PlayerFaceRenderer.draw(guiGraphics, overlay.skinLookup().get(), 0, 0, 16);
                 } else {
-                    guiGraphics.renderItem(mapFocusIcon, 0, 0);
+                    guiGraphics.renderItem(overlay.stack(), 0, 0);
                 }
             } finally {
                 guiGraphics.pose().popMatrix();
@@ -5026,7 +5035,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         return Math.max(min, Math.min(max, value));
     }
 
-    private record FocusIconOverlay(float x, float y, float size) {}
+    private record FocusIconOverlay(
+            float x,
+            float y,
+            float size,
+            ItemStack stack,
+            Supplier<PlayerSkin> skinLookup) {}
 
     private record ScreenPoint(float x, float y) {}
 
