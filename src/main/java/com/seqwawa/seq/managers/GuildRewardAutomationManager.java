@@ -20,7 +20,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemLore;
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 
 public final class GuildRewardAutomationManager {
@@ -72,10 +71,6 @@ public final class GuildRewardAutomationManager {
             RewardRequest request, CompletableFuture<AutomationResult> future, boolean openGuildManage) {
         if (activeTask != null) {
             completeRejected(future, "Another guild reward command is already running.");
-            return;
-        }
-        if (!WynntilsGuildRankAccess.isChiefOrOwner()) {
-            completeRejected(future, "Guild rewards can only be sent by chiefs or owners.");
             return;
         }
         if (request.amount() <= 0) {
