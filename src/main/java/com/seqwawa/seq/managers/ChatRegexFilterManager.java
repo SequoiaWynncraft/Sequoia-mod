@@ -22,8 +22,10 @@ public final class ChatRegexFilterManager {
     private static final Pattern ECONOMY_ACTIVITY_PATTERN = Pattern.compile(
             "^(?:"
                     + "[^:]{1,64} changed \\d+ (?:upgrades|bonuses) on .+"
-                    + "|[^:]{1,64} changed (?:the global tax|the tax of .+) to \\d+%"
+                    + "|[^:]{1,64} changed (?:the global tax|the (?:ally )?tax of .+) to \\d+%"
+                    + "|[^:]{1,64} changed the style of .+ to (?:fastest|cheapest)"
                     + "|[^:]{1,64} set .+ bonus to level \\d+ on .+"
+                    + "|[^:]{1,64} set .+ upgrade to level \\d+ on .+"
                     + "|[^:]{1,64} removed .+ bonus from .+"
                     + "|[^:]{1,64} applied the loadout(?:\\s+|:).+ on .+"
                     + ")$",
