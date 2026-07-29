@@ -32,6 +32,7 @@ public final class GuildRewardAutomationManager {
     private static final int PAGE_WAIT_TIMEOUT_TICKS = 40;
     private static final int MAX_PAGE_ADVANCES = 12;
     private static final int CLICK_DELAY_TICKS = 8;
+    private static final int EMERALD_CLICK_DELAY_TICKS = 2;
     private static final int TARGET_STABILIZE_TICKS = 8;
     private static final int MAX_CLICKS_PER_RUN = 256;
     private static final Pattern REWARD_ACTION_PATTERN = Pattern.compile(
@@ -325,6 +326,10 @@ public final class GuildRewardAutomationManager {
 
     record RewardAction(RewardType type, int hotbarButton, long amountPerClick) {}
 
+    static int rewardClickDelayTicks(RewardType type) {
+        return type == RewardType.EMERALDS ? EMERALD_CLICK_DELAY_TICKS : CLICK_DELAY_TICKS;
+    }
+
     private final class ActiveTask {
         private final RewardRequest request;
         private final CompletableFuture<AutomationResult> future;
@@ -512,7 +517,7 @@ public final class GuildRewardAutomationManager {
             } else if (request.type() != RewardType.EMERALDS) {
                 remainingAmount = Math.max(0, remainingAmount - action.get().amountPerClick());
             }
-            clickDelay = CLICK_DELAY_TICKS;
+            clickDelay = rewardClickDelayTicks(request.type());
             SeqClient.LOGGER.info(
                     "[GuildReward] Sent click {} type={} target={} hotbarButton={} amountPerClick={}",
                     clicksSent,
