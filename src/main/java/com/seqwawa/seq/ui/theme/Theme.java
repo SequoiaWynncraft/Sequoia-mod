@@ -31,6 +31,10 @@ public final class Theme {
         return new Color(color.getRed(), color.getGreen(), color.getBlue(), alpha);
     }
 
+    public Map<UiColor, Color> colors() {
+        return colors;
+    }
+
     public static Theme defaults() {
         return new Theme("default", Map.of());
     }

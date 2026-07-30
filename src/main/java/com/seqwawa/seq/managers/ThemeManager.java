@@ -4,6 +4,7 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.ui.theme.Theme;
 import com.seqwawa.seq.ui.theme.UiColor;
 import com.seqwawa.seq.utils.ThemeReader;
+import com.seqwawa.seq.utils.ThemeWriter;
 import java.awt.Color;
 import java.io.IOException;
 import java.net.URI;
@@ -16,15 +17,21 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 
 public final class ThemeManager {
     private static final String THEMES_RESOURCE = "/assets/seq/themes";
     private static final Path EXTERNAL_THEMES_DIRECTORY = Path.of("config", "sequoia", "themes");
     private static final Map<String, Theme> LOADED_THEMES = new LinkedHashMap<>();
+    private static final Set<String> BUNDLED_THEME_NAMES = new HashSet<>();
+    private static final Map<String, Path> PERSONAL_THEME_PATHS = new LinkedHashMap<>();
+    private static Path externalThemesDirectory = EXTERNAL_THEMES_DIRECTORY;
     private static volatile Theme currentTheme = Theme.defaults();
 
     private ThemeManager() {
@@ -36,8 +43,12 @@ public final class ThemeManager {
 
     static synchronized void initialize(Path externalThemesDirectory) {
         LOADED_THEMES.clear();
+        BUNDLED_THEME_NAMES.clear();
+        PERSONAL_THEME_PATHS.clear();
+        ThemeManager.externalThemesDirectory = externalThemesDirectory;
         Theme fallback = Theme.defaults();
         LOADED_THEMES.put(fallback.name(), fallback);
+        BUNDLED_THEME_NAMES.add(fallback.name());
         currentTheme = fallback;
 
         loadBundledThemes();
@@ -83,7 +94,7 @@ public final class ThemeManager {
                         .toList();
             }
             for (Path path : themeFiles) {
-                loadTheme(path);
+                loadTheme(path, false);
             }
         } catch (IOException | URISyntaxException exception) {
             SeqClient.LOGGER.warn("Could not discover bundled UI themes; using built-in colors", exception);
@@ -109,7 +120,7 @@ public final class ThemeManager {
                         .toList();
             }
             for (Path path : themeFiles) {
-                loadTheme(path);
+                loadTheme(path, true);
             }
         } catch (IOException exception) {
             SeqClient.LOGGER.warn("Could not discover external UI themes in {}", directory, exception);
@@ -120,7 +131,7 @@ public final class ThemeManager {
         return path.getFileName().toString().endsWith(".theme.yml");
     }
 
-    private static void loadTheme(Path path) {
+    private static void loadTheme(Path path, boolean personal) {
         try {
             Theme theme = ThemeReader.fromFile(path);
             Theme existing = LOADED_THEMES.get(theme.name());
@@ -129,6 +140,11 @@ public final class ThemeManager {
                 return;
             }
             LOADED_THEMES.put(theme.name(), theme);
+            if (personal) {
+                PERSONAL_THEME_PATHS.put(theme.name(), path);
+            } else {
+                BUNDLED_THEME_NAMES.add(theme.name());
+            }
         } catch (IOException exception) {
             SeqClient.LOGGER.warn("Could not load UI theme {}", path, exception);
         }
@@ -152,6 +168,42 @@ public final class ThemeManager {
 
     public static synchronized List<String> loadedThemeNames() {
         return List.copyOf(LOADED_THEMES.keySet());
+    }
+
+    public static synchronized Optional<Theme> theme(String themeName) {
+        return Optional.ofNullable(LOADED_THEMES.get(themeName));
+    }
+
+    public static synchronized boolean isPersonalTheme(String themeName) {
+        return PERSONAL_THEME_PATHS.containsKey(themeName);
+    }
+
+    public static synchronized void previewTheme(Theme theme) {
+        currentTheme = theme;
+    }
+
+    public static synchronized Path savePersonalTheme(Theme theme) throws IOException {
+        String name = theme.name();
+        if (!ThemeReader.isValidThemeName(name)) {
+            throw new IOException("Theme name must use lowercase letters, numbers, underscores, or hyphens");
+        }
+        if (BUNDLED_THEME_NAMES.contains(name)) {
+            throw new IOException("Bundled theme '" + name + "' cannot be overwritten");
+        }
+
+        Path directory = externalThemesDirectory.toAbsolutePath().normalize();
+        Path destination = PERSONAL_THEME_PATHS
+                .getOrDefault(name, directory.resolve(name + ".theme.yml"))
+                .toAbsolutePath()
+                .normalize();
+        if (!destination.startsWith(directory)) {
+            throw new IOException("Theme destination must stay inside " + directory);
+        }
+
+        ThemeWriter.write(theme, destination);
+        LOADED_THEMES.put(name, theme);
+        PERSONAL_THEME_PATHS.put(name, destination);
+        return destination;
     }
 
     public static synchronized boolean setCurrentTheme(String themeName) {
