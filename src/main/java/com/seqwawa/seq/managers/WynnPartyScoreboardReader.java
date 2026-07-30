@@ -31,9 +31,11 @@ public final class WynnPartyScoreboardReader {
             boolean alive,
             boolean fullHealthBar) {}
 
-    record PartyObservation(List<PartyHealth> members, boolean raidSidebarActive) {
+    record PartyObservation(
+            List<PartyHealth> members, List<String> canonicalRosterUsernames, boolean raidSidebarActive) {
         PartyObservation {
             members = List.copyOf(members);
+            canonicalRosterUsernames = List.copyOf(canonicalRosterUsernames);
         }
     }
 
@@ -70,17 +72,27 @@ public final class WynnPartyScoreboardReader {
 
     static PartyObservation readPartyObservation() {
         List<SidebarLine> sidebarLines = readSidebarLineComponents();
+        List<String> wynntilsPartyMembers = wynntilsPartyMembers();
         boolean raidSidebarActive = sidebarLines.stream()
                 .map(SidebarLine::text)
                 .map(String::trim)
                 .anyMatch(WynnPartyScoreboardReader::isRaidHeaderLine);
+        List<PartyHealth> partyHealth = resolvePartyHealth(
+                readPartyHealthRowsWithoutFallbacks(sidebarLines, true), wynntilsPartyMembers);
         return new PartyObservation(
-                resolvePartyHealth(readPartyHealthRowsWithoutFallbacks(sidebarLines, true)), raidSidebarActive);
+                partyHealth,
+                matchingWynntilsPartyRoster(partyHealth, wynntilsPartyMembers),
+                raidSidebarActive);
     }
 
     private static List<PartyHealth> resolvePartyHealth(List<PartyHealth> partyHealth) {
+        return resolvePartyHealth(partyHealth, wynntilsPartyMembers());
+    }
+
+    private static List<PartyHealth> resolvePartyHealth(
+            List<PartyHealth> partyHealth, List<String> wynntilsPartyMembers) {
         return withLocalUsernameForSoloUnresolvedPartyMember(
-                withWynntilsPartyMembersForUnresolvedRows(partyHealth));
+                withWynntilsPartyMembersForUnresolvedRows(partyHealth, wynntilsPartyMembers));
     }
 
     private static List<PartyHealth> readPartyHealthRowsWithoutFallbacks(
@@ -197,8 +209,8 @@ public final class WynnPartyScoreboardReader {
         return partyHealth;
     }
 
-    private static List<PartyHealth> withWynntilsPartyMembersForUnresolvedRows(List<PartyHealth> partyHealth) {
-        List<String> wynntilsPartyMembers = wynntilsPartyMembers();
+    private static List<PartyHealth> withWynntilsPartyMembersForUnresolvedRows(
+            List<PartyHealth> partyHealth, List<String> wynntilsPartyMembers) {
         List<String> selectedMembers = matchingWynntilsPartyMemberCandidate(partyHealth, wynntilsPartyMembers);
         if (selectedMembers.isEmpty()) {
             return partyHealth;
@@ -235,6 +247,27 @@ public final class WynnPartyScoreboardReader {
         for (List<String> candidate : candidates) {
             if (candidate.size() == partyHealth.size() && existingUsernamesMatch(partyHealth, candidate)) {
                 return candidate;
+            }
+        }
+        return List.of();
+    }
+
+    static List<String> matchingWynntilsPartyRoster(
+            List<PartyHealth> partyHealth, List<String> wynntilsPartyMembers) {
+        if (partyHealth.isEmpty() || wynntilsPartyMembers.isEmpty()) {
+            return List.of();
+        }
+
+        for (List<String> candidate : wynntilsPartyMemberCandidates(wynntilsPartyMembers)) {
+            if (candidate.size() != partyHealth.size()) {
+                continue;
+            }
+            boolean containsResolvedRows = partyHealth.stream()
+                    .map(PartyHealth::username)
+                    .filter(username -> username != null && !username.isBlank())
+                    .allMatch(username -> containsIgnoreCase(candidate, username));
+            if (containsResolvedRows) {
+                return List.copyOf(candidate);
             }
         }
         return List.of();

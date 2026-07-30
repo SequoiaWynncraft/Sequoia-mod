@@ -123,6 +123,45 @@ class RaidTrackerTest {
     }
 
     @Test
+    void parseRaidCompletionDoesNotSplitAndInsideNickname() {
+        RaidTracker.ParsedRaidCompletion parsed = RaidTracker.parseRaidCompletion(Component.literal(
+                "󏿼󏿿󏿾 fire and ice§c(ActualOne)§f, and AllyTwo finished "
+                        + "The Nameless Anomaly and claimed 2048x Emeralds, 2x Aspects, "
+                        + "+5183m Guild Experience"));
+
+        assertNotNull(parsed);
+        assertEquals(List.of("ActualOne", "AllyTwo"), parsed.partyMembers());
+    }
+
+    @Test
+    void parseRaidCompletionUsesMetadataAcrossLegacyFormattingCodes() {
+        Component message = Component.empty()
+                .append(Component.literal("death§c by§r choking")
+                        .withStyle(Style.EMPTY.withInsertion("ActualOne")))
+                .append(Component.literal(", and AllyTwo finished The Nameless Anomaly and claimed "
+                        + "2048x Emeralds, 2x Aspects, +5183m Guild Experience"));
+
+        RaidTracker.ParsedRaidCompletion parsed = RaidTracker.parseRaidCompletion(message);
+
+        assertNotNull(parsed);
+        assertEquals(List.of("ActualOne", "AllyTwo"), parsed.partyMembers());
+    }
+
+    @Test
+    void parseRaidCompletionAllowsAnnihilationSizedParties() {
+        RaidTracker.ParsedRaidCompletion parsed = RaidTracker.parseRaidCompletion(Component.literal(
+                "One, Two, Three, Four, Five, Six, Seven, Eight, Nine, and Ten finished "
+                        + "Prelude to Annihilation and claimed 2x Aspects, 2048x Emeralds, "
+                        + "+10367m Guild Experience"));
+
+        assertNotNull(parsed);
+        assertEquals(
+                List.of("One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"),
+                parsed.partyMembers());
+        assertEquals(10, RaidTracker.maximumPartySize(parsed.raidName()));
+    }
+
+    @Test
     void parseRaidCompletionHandlesAspectlessRewardClause() {
         RaidTracker.ParsedRaidCompletion parsed = RaidTracker.parseRaidCompletion(Component.literal(
                 "󏿼󐀆 AAA finished The Nameless Anomaly and claimed 2048x Emeralds,\n"

@@ -37,6 +37,88 @@ class RaidPartySnapshotTrackerTest {
     }
 
     @Test
+    void usesCompleteSmallerRaidSnapshotWhenCompletionListsGuildSubset() {
+        assertEquals(
+                List.of("LocalPlayer", "ActualAlly", "OtherPlayer"),
+                RaidPartySnapshotTracker.choosePartyMembers(
+                        List.of("AllyNickname"),
+                        List.of(
+                                member("LocalPlayer", "LocalPlayer"),
+                                member("AllyNickname", "ActualAlly"),
+                                member("OtherPlayer", "OtherPlayer")),
+                        1));
+    }
+
+    @Test
+    void supportsAnnihilationSizedRaidSnapshots() {
+        RaidPartySnapshotTracker.PartySnapshot annihilationParty = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(
+                        member("One", "One"),
+                        member("Two", "Two"),
+                        member("Three", "Three"),
+                        member("Four", "Four"),
+                        member("Five", "Five"),
+                        member("Six", "Six"),
+                        member("Seven", "Seven"),
+                        member("Eight", "Eight"),
+                        member("Nine", "Nine"),
+                        member("Ten", "Ten")),
+                true,
+                1_000);
+
+        assertEquals(
+                annihilationParty.usernames(),
+                RaidPartySnapshotTracker.choosePartyMembers(
+                        List.of("One", "Two"), annihilationParty, 2, 10));
+    }
+
+    @Test
+    void rejectsOversizedSnapshotForRegularRaid() {
+        List<String> parsed = List.of("One", "Two");
+        RaidPartySnapshotTracker.PartySnapshot contaminated = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(
+                        member("One", "One"),
+                        member("Two", "Two"),
+                        member("Three", "Three"),
+                        member("Four", "Four"),
+                        member("Stale", "Stale")),
+                true,
+                1_000);
+
+        assertEquals(
+                parsed,
+                RaidPartySnapshotTracker.choosePartyMembers(parsed, contaminated, 2, 4));
+    }
+
+    @Test
+    void acceptsCompleteCompatibleSupplementalRoster() {
+        assertEquals(
+                List.of("LocalPlayer", "ActualTwo", "ActualOne"),
+                RaidPartySnapshotTracker.compatibleSupplementalRoster(
+                        List.of(
+                                member("FirstNick", "ActualOne"),
+                                member("SecondNick", null),
+                                member("LocalNick", "LocalPlayer")),
+                        3,
+                        List.of("LocalPlayer", "ActualTwo", "ActualOne")));
+    }
+
+    @Test
+    void rejectsStaleOrWrongSizedSupplementalRoster() {
+        List<RaidPartySnapshotTracker.SnapshotMember> scoreboard =
+                List.of(member("FirstNick", "ActualOne"), member("SecondNick", null));
+
+        assertEquals(
+                List.of(),
+                RaidPartySnapshotTracker.compatibleSupplementalRoster(
+                        scoreboard, 2, List.of("ActualOne", "ActualTwo", "StalePlayer")));
+        assertEquals(
+                List.of(),
+                RaidPartySnapshotTracker.compatibleSupplementalRoster(
+                        scoreboard, 2, List.of("DifferentOne", "DifferentTwo")));
+    }
+
+    @Test
     void keepsParsedNamesWhenSnapshotHasWrongSize() {
         List<String> parsed = List.of("LocalPlayer", "Second", "Third", "Fourth");
 
@@ -52,9 +134,9 @@ class RaidPartySnapshotTrackerTest {
     }
 
     @Test
-    void resolvesACompletionThatDoesNotContainTheLocalPlayer() {
+    void usesCompleteSmallerSnapshotWhenCompletionDoesNotContainLocalPlayer() {
         assertEquals(
-                List.of("ActualOne", "ActualTwo"),
+                List.of("ActualOne", "ActualTwo", "LocalPlayer"),
                 RaidPartySnapshotTracker.choosePartyMembers(
                         List.of("FirstNickname", "SecondNickname"),
                         List.of(
@@ -131,8 +213,22 @@ class RaidPartySnapshotTrackerTest {
                 RaidPartySnapshotTracker.updateSnapshot(current, empty, true, 3_000);
 
         assertEquals(List.of("ActualPlayer", "LocalPlayer"), updated.usernames());
-        assertEquals(3_000, updated.capturedAtMs());
+        assertEquals(1_000, updated.capturedAtMs());
         assertEquals("ActualPlayer", updated.aliases().get("nickname"));
+    }
+
+    @Test
+    void emptyRaidObservationsDoNotKeepAStaleSnapshotAliveForever() {
+        RaidPartySnapshotTracker.PartySnapshot current = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(member("Nickname", "ActualPlayer")), true, 1_000);
+        RaidPartySnapshotTracker.PartySnapshot empty =
+                RaidPartySnapshotTracker.PartySnapshot.from(List.of(), true, 17_000);
+
+        RaidPartySnapshotTracker.PartySnapshot updated =
+                RaidPartySnapshotTracker.updateSnapshot(current, empty, true, 17_000);
+
+        assertEquals(List.of(), updated.usernames());
+        assertEquals(0, updated.capturedAtMs());
     }
 
     @Test
@@ -146,6 +242,82 @@ class RaidPartySnapshotTrackerTest {
                 RaidPartySnapshotTracker.updateSnapshot(current, observed, true, 3_000);
 
         assertEquals("ActualPlayer", updated.aliases().get("nickname"));
+        assertEquals(3_000, updated.capturedAtMs());
+    }
+
+    @Test
+    void preservesFreshFullRosterDuringCompatiblePartialObservation() {
+        RaidPartySnapshotTracker.PartySnapshot current = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(
+                        member("FirstNickname", "ActualOne"),
+                        member("SecondNickname", "ActualTwo"),
+                        member("AllyNickname", "ActualAlly"),
+                        member("LocalPlayer", "LocalPlayer")),
+                true,
+                1_000);
+        RaidPartySnapshotTracker.PartySnapshot observed = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(
+                        member("ActualOne", "ActualOne"),
+                        member("NewNickTwo", "ActualTwo"),
+                        member("LocalPlayer", "LocalPlayer")),
+                true,
+                3_000);
+
+        RaidPartySnapshotTracker.PartySnapshot updated =
+                RaidPartySnapshotTracker.updateSnapshot(current, observed, true, 3_000);
+
+        assertEquals(List.of("ActualOne", "ActualTwo", "ActualAlly", "LocalPlayer"), updated.usernames());
+        assertEquals(1_000, updated.capturedAtMs());
+        assertEquals("ActualTwo", updated.aliases().get("newnicktwo"));
+    }
+
+    @Test
+    void acceptsCompatibleSmallerRosterAfterFullRosterExpires() {
+        RaidPartySnapshotTracker.PartySnapshot current = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(
+                        member("ActualOne", "ActualOne"),
+                        member("ActualTwo", "ActualTwo"),
+                        member("ActualAlly", "ActualAlly"),
+                        member("LocalPlayer", "LocalPlayer")),
+                true,
+                1_000);
+        RaidPartySnapshotTracker.PartySnapshot observed = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(
+                        member("ActualOne", "ActualOne"),
+                        member("ActualTwo", "ActualTwo"),
+                        member("LocalPlayer", "LocalPlayer")),
+                true,
+                17_000);
+
+        RaidPartySnapshotTracker.PartySnapshot updated =
+                RaidPartySnapshotTracker.updateSnapshot(current, observed, true, 17_000);
+
+        assertEquals(List.of("ActualOne", "ActualTwo", "LocalPlayer"), updated.usernames());
+        assertEquals(17_000, updated.capturedAtMs());
+    }
+
+    @Test
+    void replacesFullRosterWhenSmallerObservationIsNotCompatible() {
+        RaidPartySnapshotTracker.PartySnapshot current = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(
+                        member("ActualOne", "ActualOne"),
+                        member("ActualTwo", "ActualTwo"),
+                        member("ActualAlly", "ActualAlly"),
+                        member("LocalPlayer", "LocalPlayer")),
+                true,
+                1_000);
+        RaidPartySnapshotTracker.PartySnapshot observed = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(
+                        member("ActualOne", "ActualOne"),
+                        member("Replacement", "Replacement"),
+                        member("LocalPlayer", "LocalPlayer")),
+                true,
+                3_000);
+
+        RaidPartySnapshotTracker.PartySnapshot updated =
+                RaidPartySnapshotTracker.updateSnapshot(current, observed, true, 3_000);
+
+        assertEquals(List.of("ActualOne", "Replacement", "LocalPlayer"), updated.usernames());
         assertEquals(3_000, updated.capturedAtMs());
     }
 
@@ -174,13 +346,13 @@ class RaidPartySnapshotTrackerTest {
         RaidPartySnapshotTracker.PartySnapshot firstRaid = RaidPartySnapshotTracker.PartySnapshot.from(
                 List.of(member("SharedNickname", "ActualOne"), member("ActualTwo", "ActualTwo")), true, 1_000);
         RaidPartySnapshotTracker.PartySnapshot laterRaid = RaidPartySnapshotTracker.PartySnapshot.from(
-                List.of(member("ActualOne", "ActualOne"), member("SharedNickname", "ActualTwo")), true, 7_000);
+                List.of(member("ActualOne", "ActualOne"), member("SharedNickname", "ActualTwo")), true, 17_000);
 
         RaidPartySnapshotTracker.PartySnapshot updated =
-                RaidPartySnapshotTracker.updateSnapshot(firstRaid, laterRaid, true, 7_000);
+                RaidPartySnapshotTracker.updateSnapshot(firstRaid, laterRaid, true, 17_000);
 
         assertEquals("ActualTwo", updated.aliases().get("sharednickname"));
-        assertEquals(7_000, updated.capturedAtMs());
+        assertEquals(17_000, updated.capturedAtMs());
     }
 
     @Test
