@@ -12,6 +12,7 @@
     "AvatarRenderStateMixin",
     "ClientPacketListenerMixin",
     "GameRendererMixin",
+    "GuildAllianceSnapshotPacketMixin",
     "InGameHudMixin",
     "ParticleEngineMixin",
     "TitleScreenMixin"

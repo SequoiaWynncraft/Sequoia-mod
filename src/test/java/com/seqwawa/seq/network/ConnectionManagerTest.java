@@ -1,14 +1,14 @@
 package com.seqwawa.seq.network;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.model.GuildWarSubmission;
 import java.util.List;
 import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import com.seqwawa.seq.model.GuildWarSubmission;
+import org.junit.jupiter.api.Test;
 
 class ConnectionManagerTest {
 
@@ -115,9 +115,11 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isServerScopedType("guild_storage_snapshot"));
         assertTrue(ConnectionManager.isServerScopedType("guild_storage_reward"));
         assertTrue(ConnectionManager.isServerScopedType("guild_alliance_update"));
+        assertTrue(ConnectionManager.isServerScopedType("guild_alliance_snapshot"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_storage_snapshot"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_storage_reward"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_alliance_update"));
+        assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_alliance_snapshot"));
     }
 
     @Test
@@ -152,6 +154,7 @@ class ConnectionManagerTest {
     @Test
     void memberOnlyOutboundTypesExcludeUnrestrictedPartyClassUpdates() {
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_chat"));
+        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_alliance_snapshot"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_storage_snapshot"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_war_submission"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("party_sync_snapshot"));
@@ -167,6 +170,37 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("bomb_share_submit"));
         assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_request"));
         assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_submit"));
+        assertFalse(ConnectionManager.isThrottleLimitedType("guild_alliance_snapshot"));
+    }
+
+    @Test
+    void guildAllianceSnapshotPayloadNormalizesNamesAndUsesExpectedShape() {
+        List<String> guildNames = ConnectionManager.normalizeGuildAllianceNames(
+                List.of(" Avicia ", "avicia", "Nefarious Ravens"));
+
+        assertEquals(List.of("Avicia", "Nefarious Ravens"), guildNames);
+
+        var payload = ConnectionManager.buildGuildAllianceSnapshotPayload(guildNames);
+        assertEquals(1, payload.size());
+        assertEquals("Avicia", payload.getAsJsonArray("guild_names").get(0).getAsString());
+        assertEquals("Nefarious Ravens", payload.getAsJsonArray("guild_names").get(1).getAsString());
+
+        assertEquals(
+                0,
+                ConnectionManager.buildGuildAllianceSnapshotPayload(List.of())
+                        .getAsJsonArray("guild_names")
+                        .size());
+    }
+
+    @Test
+    void guildAllianceSnapshotRejectsMalformedOrOversizedNames() {
+        assertNull(ConnectionManager.normalizeGuildAllianceNames(List.of("")));
+        assertNull(ConnectionManager.normalizeGuildAllianceNames(List.of("Guild: Name")));
+        assertNull(ConnectionManager.normalizeGuildAllianceNames(List.of("A".repeat(65))));
+        assertNull(ConnectionManager.normalizeGuildAllianceNames(
+                java.util.stream.IntStream.range(0, 17)
+                        .mapToObj(index -> "Guild " + index)
+                        .toList()));
     }
 
 }
