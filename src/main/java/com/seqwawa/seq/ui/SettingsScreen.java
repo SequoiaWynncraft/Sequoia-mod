@@ -44,6 +44,7 @@ public class SettingsScreen extends Screen {
     private static final float SEARCH_BAR_HEIGHT = 18;
     private static final float SEARCH_BAR_WIDTH = 180;
     private static final float SEARCH_BAR_MARGIN = 8;
+    private static final float THEME_EDITOR_BUTTON_WIDTH = 94;
 
     // Font sizes
     private static final float TITLE_FONT_SIZE = 18;
@@ -247,6 +248,31 @@ public class SettingsScreen extends Screen {
             }
 
             // Title (right side of header)
+            float themeEditorX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
+            boolean themeEditorHovered = isHovered(
+                    nvgMouseX,
+                    nvgMouseY,
+                    themeEditorX,
+                    searchY,
+                    THEME_EDITOR_BUTTON_WIDTH,
+                    SEARCH_BAR_HEIGHT);
+            canvas.fillRect(
+                    themeEditorX,
+                    searchY,
+                    THEME_EDITOR_BUTTON_WIDTH,
+                    SEARCH_BAR_HEIGHT,
+                    themeEditorHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT_SECONDARY));
+            drawText(
+                    canvas,
+                    fontName,
+                    11,
+                    color(TEXT_PRIMARY),
+                    UiCanvas.HorizontalAlign.CENTER,
+                    themeEditorX + THEME_EDITOR_BUTTON_WIDTH / 2f,
+                    searchY + SEARCH_BAR_HEIGHT / 2f,
+                    "Theme editor");
+
+            // Title (right side of header)
             drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY), UiCanvas.HorizontalAlign.RIGHT,
                     panelX + panelWidth - SEARCH_BAR_MARGIN, panelY + HEADER_HEIGHT / 2f, "Settings");
 
@@ -422,6 +448,12 @@ public class SettingsScreen extends Screen {
                 return true;
             } else if (searchFocused) {
                 searchFocused = false;
+            }
+
+            float themeEditorX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
+            if (isHovered(mx, my, themeEditorX, searchY, THEME_EDITOR_BUTTON_WIDTH, SEARCH_BAR_HEIGHT)) {
+                SeqClient.mc.setScreen(new ThemeEditorScreen(this));
+                return true;
             }
 
             // Main panel calculations

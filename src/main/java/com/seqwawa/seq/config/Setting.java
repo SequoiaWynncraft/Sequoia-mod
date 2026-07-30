@@ -312,7 +312,7 @@ public abstract class Setting<T> {
 
     @Getter
     public static class ChoiceSetting extends StringSetting {
-        private final List<String> options;
+        private List<String> options;
         private final Consumer<String> changeListener;
 
         public ChoiceSetting(
@@ -336,6 +336,15 @@ public abstract class Setting<T> {
             }
             super.setValue(value);
             changeListener.accept(value);
+        }
+
+        public void addOption(String value) {
+            if (value == null || options.contains(value)) {
+                return;
+            }
+            java.util.ArrayList<String> updated = new java.util.ArrayList<>(options);
+            updated.add(value);
+            options = List.copyOf(updated);
         }
 
         @Override

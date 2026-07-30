@@ -2,8 +2,10 @@ package com.seqwawa.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.ui.theme.Theme;
 import com.seqwawa.seq.ui.theme.UiColor;
 import java.awt.Color;
 import java.io.IOException;
@@ -11,6 +13,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.EnumMap;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -74,6 +77,38 @@ class ThemeManagerTest {
 
         assertTrue(ThemeManager.setCurrentTheme("high_contrast"));
         assertEquals(new Color(64, 220, 210, 255), ThemeManager.color(UiColor.ACCENT_PRIMARY));
+    }
+
+    @Test
+    void savesAndSelectsPersonalThemeWithoutRestarting() throws IOException {
+        Path externalThemes = tempDir.resolve("config/sequoia/themes");
+        ThemeManager.initialize(externalThemes);
+        EnumMap<UiColor, Color> colors = new EnumMap<>(ThemeManager.currentTheme().colors());
+        colors.put(UiColor.ACCENT_PRIMARY, new Color(12, 34, 56, 78));
+        Theme personal = new Theme("my_theme", colors);
+
+        Path saved = ThemeManager.savePersonalTheme(personal);
+
+        assertEquals(externalThemes.resolve("my_theme.theme.yml").toAbsolutePath(), saved);
+        assertTrue(Files.isRegularFile(saved));
+        assertTrue(ThemeManager.isPersonalTheme("my_theme"));
+        assertTrue(ThemeManager.setCurrentTheme("my_theme"));
+        assertEquals(new Color(12, 34, 56, 78), ThemeManager.color(UiColor.ACCENT_PRIMARY));
+
+        ThemeManager.initialize(externalThemes);
+        assertTrue(ThemeManager.setCurrentTheme("my_theme"));
+        assertEquals(new Color(12, 34, 56, 78), ThemeManager.color(UiColor.ACCENT_PRIMARY));
+    }
+
+    @Test
+    void refusesToOverwriteBundledTheme() {
+        ThemeManager.initialize(tempDir.resolve("themes"));
+
+        IOException exception = assertThrows(
+                IOException.class,
+                () -> ThemeManager.savePersonalTheme(new Theme("default", ThemeManager.currentTheme().colors())));
+
+        assertTrue(exception.getMessage().contains("cannot be overwritten"));
     }
 
     private static String bundledDefaultTheme() throws IOException {

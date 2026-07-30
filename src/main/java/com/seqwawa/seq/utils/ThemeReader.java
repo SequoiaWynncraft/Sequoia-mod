@@ -38,6 +38,10 @@ public final class ThemeReader {
     private ThemeReader() {
     }
 
+    public static boolean isValidThemeName(String name) {
+        return name != null && THEME_NAME.matcher(name).matches();
+    }
+
     public static Theme fromFile(Path path) throws IOException {
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             return fromReader(reader, path.toString());
@@ -88,7 +92,7 @@ public final class ThemeReader {
     }
 
     private static String requireThemeName(Object value, String source) throws IOException {
-        if (!(value instanceof String name) || !THEME_NAME.matcher(name).matches()) {
+        if (!(value instanceof String name) || !isValidThemeName(name)) {
             throw new IOException(source
                     + ": theme name must match "
                     + THEME_NAME.pattern());
