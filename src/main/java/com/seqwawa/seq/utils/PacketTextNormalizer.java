@@ -26,9 +26,10 @@ public final class PacketTextNormalizer {
             return "";
         }
 
-        String strippedFormatting = LEGACY_FORMATTING_PATTERN.matcher(rawText).replaceAll(" ").replace('§', ' ');
-        strippedFormatting = AMPERSAND_FONT_TAG_PATTERN.matcher(strippedFormatting).replaceAll(" ");
-        strippedFormatting = AMPERSAND_FORMATTING_PATTERN.matcher(strippedFormatting).replaceAll(" ");
+        String strippedFormatting = LEGACY_FORMATTING_PATTERN.matcher(rawText).replaceAll("").replace("§", "");
+        strippedFormatting = AMPERSAND_FONT_TAG_PATTERN.matcher(strippedFormatting).replaceAll("");
+        strippedFormatting = AMPERSAND_FORMATTING_PATTERN.matcher(strippedFormatting).replaceAll("");
+        strippedFormatting = joinWrappedUrlContinuations(strippedFormatting);
         StringBuilder normalized = new StringBuilder(strippedFormatting.length());
         boolean previousWasSpace = false;
 
@@ -56,6 +57,53 @@ public final class PacketTextNormalizer {
         cleaned = SLASH_SPACING_PATTERN.matcher(cleaned).replaceAll("/");
         cleaned = MULTISPACE_PATTERN.matcher(cleaned).replaceAll(" ");
         return cleaned.trim();
+    }
+
+    private static String joinWrappedUrlContinuations(String text) {
+        StringBuilder repaired = new StringBuilder(text.length());
+        boolean insideUrl = false;
+
+        for (int index = 0; index < text.length();) {
+            if (!insideUrl && startsUrlAt(text, index)) {
+                insideUrl = true;
+            }
+
+            int codePoint = text.codePointAt(index);
+            int nextIndex = index + Character.charCount(codePoint);
+            if (insideUrl && (codePoint == '\n' || codePoint == '\r')) {
+                int continuationIndex = nextIndex;
+                boolean foundPacketDecoration = false;
+                while (continuationIndex < text.length()) {
+                    int continuationCodePoint = text.codePointAt(continuationIndex);
+                    if (!Character.isWhitespace(continuationCodePoint)
+                            && !isIgnorableForParsing(continuationCodePoint)) {
+                        break;
+                    }
+                    if (continuationCodePoint != '\n'
+                            && continuationCodePoint != '\r'
+                            && !Character.isWhitespace(continuationCodePoint)) {
+                        foundPacketDecoration = true;
+                    }
+                    continuationIndex += Character.charCount(continuationCodePoint);
+                }
+                if (foundPacketDecoration) {
+                    index = continuationIndex;
+                    continue;
+                }
+            }
+
+            repaired.appendCodePoint(codePoint);
+            if (Character.isWhitespace(codePoint)) {
+                insideUrl = false;
+            }
+            index = nextIndex;
+        }
+        return repaired.toString();
+    }
+
+    private static boolean startsUrlAt(String text, int index) {
+        return text.regionMatches(true, index, "https://", 0, "https://".length())
+                || text.regionMatches(true, index, "http://", 0, "http://".length());
     }
 
     private static boolean isIgnorableForParsing(int codePoint) {

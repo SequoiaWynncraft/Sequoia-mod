@@ -75,6 +75,24 @@ class ChatManagerTest {
     }
 
     @Test
+    void parseGuildMessagePreservesWrappedWynnBuilderUrl() {
+        Component message = Component.empty()
+                .append(Component.literal("󏿼󐀆 "))
+                .append(Component.literal("Purprated").withStyle(Style.EMPTY.withInsertion("Purprated")))
+                .append(Component.literal(
+                        ": https://wynnbuilder.github.io/builder/#CW0R3\n"
+                                + "󏿼󐀆 FvSpicp9HS4xaJbHgCI15MFoupRwBzpB+rKNFq0"));
+
+        ChatManager.ParsedMessage parsed = ChatManager.parseGuildMessage(message);
+
+        assertNotNull(parsed);
+        assertEquals(
+                "https://wynnbuilder.github.io/builder/#CW0R3"
+                        + "FvSpicp9HS4xaJbHgCI15MFoupRwBzpB+rKNFq0",
+                parsed.message());
+    }
+
+    @Test
     void parseGuildMessageHandlesHoverBasedRealNameFallback() {
         Style style = Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
                 Component.literal("teslaco's real name is a3pki")));
