@@ -628,10 +628,12 @@ public final class ThemeEditorScreen extends Screen {
         SeqClient.mc.setScreen(parent);
     }
 
-    @Override
+    `@Override`
     public void removed() {
         if (previewActive) {
-            ThemeManager.setCurrentTheme(configuredThemeName);
+            if (!ThemeManager.setCurrentTheme(configuredThemeName)) {
+                ThemeManager.setCurrentTheme("default");
+            }
         }
         super.removed();
     }
