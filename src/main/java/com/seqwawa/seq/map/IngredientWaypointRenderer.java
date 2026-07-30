@@ -19,6 +19,9 @@ public final class IngredientWaypointRenderer {
     private static final int ICON_SIZE = 20;
     private static final int ICON_OUTLINE_MARGIN = 2;
     private static final int AIM_RADIUS = ICON_SIZE / 2 + ICON_OUTLINE_MARGIN;
+    private static final double MAX_DISTANCE = 8_000;
+    private static final double MAX_DISTANCE_SQUARED = MAX_DISTANCE * MAX_DISTANCE;
+    private static final double DIRECTION_EPSILON = 1.0e-8;
 
     private IngredientWaypointRenderer() {}
 
@@ -42,6 +45,13 @@ public final class IngredientWaypointRenderer {
 
     private static void renderWaypoint(
             GuiGraphics guiGraphics, Minecraft client, Waypoint waypoint) {
+        Vec3 waypointPosition = new Vec3(waypoint.x(), waypoint.y(), waypoint.z());
+        Vec3 relative = waypointPosition.subtract(client.player.position());
+        Vector3fc forward = client.gameRenderer.getMainCamera().forwardVector();
+        if (!shouldDisplay(relative.x, relative.y, relative.z, forward.x(), forward.z())) {
+            return;
+        }
+
         Vec3 worldPosition = new Vec3(waypoint.x(), waypoint.y() + 1.8, waypoint.z());
         ScreenPosition screenPosition = project(client, worldPosition, guiGraphics.guiWidth(), guiGraphics.guiHeight());
         int x = Math.round(screenPosition.x());
@@ -78,6 +88,29 @@ public final class IngredientWaypointRenderer {
         if (!detail.isEmpty()) {
             guiGraphics.drawString(client.font, detail, labelX, labelY + 10, 0xFFBBBBBB);
         }
+    }
+
+    static boolean shouldDisplay(
+            double relativeX,
+            double relativeY,
+            double relativeZ,
+            double forwardX,
+            double forwardZ) {
+        double distanceSquared =
+                relativeX * relativeX + relativeY * relativeY + relativeZ * relativeZ;
+        if (distanceSquared > MAX_DISTANCE_SQUARED) {
+            return false;
+        }
+
+        double targetHorizontalLengthSquared =
+                relativeX * relativeX + relativeZ * relativeZ;
+        double forwardHorizontalLengthSquared =
+                forwardX * forwardX + forwardZ * forwardZ;
+        if (targetHorizontalLengthSquared <= DIRECTION_EPSILON
+                || forwardHorizontalLengthSquared <= DIRECTION_EPSILON) {
+            return true;
+        }
+        return relativeX * forwardX + relativeZ * forwardZ >= 0;
     }
 
     private static boolean isAimedAt(
