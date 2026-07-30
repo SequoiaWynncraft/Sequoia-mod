@@ -210,7 +210,13 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                         color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
                 drawText(canvas, spot.coordinates(), x + 14, rowY + 33, 10, color(TEXT_MUTED),
                         UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
-                String targets = String.join(", ", spot.ingredients());
+                List<String> visibleTargets = new ArrayList<>(visiblePreviewCount);
+                for (int previewSlot = 0; previewSlot < visiblePreviewCount; previewSlot++) {
+                    int previewIndex =
+                            farmSpotPreviewIndex(previews.size(), previewSlot, previewRotationTimeMs);
+                    visibleTargets.add(previews.get(previewIndex).name());
+                }
+                String targets = String.join(", ", visibleTargets);
                 drawText(canvas, ellipsize(targets, textWidth, 9), x + 14, rowY + 48, 9, color(TEXT_SECONDARY),
                         UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
                 float previewX = x + width - 13
