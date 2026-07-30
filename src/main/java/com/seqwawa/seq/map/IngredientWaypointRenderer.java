@@ -1,14 +1,18 @@
 package com.seqwawa.seq.map;
 
 import com.seqwawa.seq.map.IngredientWaypointManager.Kind;
+import com.seqwawa.seq.map.IngredientWaypointManager.DetailLine;
 import com.seqwawa.seq.map.IngredientWaypointManager.Waypoint;
 import com.seqwawa.seq.map.IngredientWaypointManager.WaypointIcon;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
+import java.util.List;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.PlayerFaceRenderer;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3fc;
 
@@ -19,6 +23,8 @@ public final class IngredientWaypointRenderer {
     private static final int ICON_SIZE = 20;
     private static final int ICON_OUTLINE_MARGIN = 2;
     private static final int AIM_RADIUS = ICON_SIZE / 2 + ICON_OUTLINE_MARGIN;
+    private static final int MAX_DETAIL_WIDTH = 220;
+    private static final int TEXT_LINE_HEIGHT = 10;
     private static final double MAX_DISTANCE = 8_000;
     private static final double MAX_DISTANCE_SQUARED = MAX_DISTANCE * MAX_DISTANCE;
     private static final double DIRECTION_EPSILON = 1.0e-8;
@@ -70,10 +76,18 @@ public final class IngredientWaypointRenderer {
         boolean aimedAt = isAimedAt(
                 screenPosition, guiGraphics.guiWidth(), guiGraphics.guiHeight());
         String label = aimedAt ? waypoint.label() + " · " + distanceLabel : distanceLabel;
-        String detail = aimedAt ? waypoint.detail() : "";
-        int textWidth = Math.max(client.font.width(label), client.font.width(detail));
+        int detailWidth = Math.max(1, Math.min(MAX_DETAIL_WIDTH, guiGraphics.guiWidth() - 6));
+        List<RenderedDetailLine> detailLines = aimedAt
+                ? waypoint.detailLines().stream()
+                        .flatMap(detailLine -> wrapDetailLine(client, detailLine, detailWidth).stream())
+                        .toList()
+                : List.of();
+        int textWidth = client.font.width(label);
+        for (RenderedDetailLine detailLine : detailLines) {
+            textWidth = Math.max(textWidth, client.font.width(detailLine.text()));
+        }
         int labelX = clamp(x - textWidth / 2, 3, Math.max(3, guiGraphics.guiWidth() - textWidth - 3));
-        int labelHeight = detail.isEmpty() ? 11 : 20;
+        int labelHeight = 11 + detailLines.size() * TEXT_LINE_HEIGHT;
         int labelY = clamp(
                 y - labelHeight - ICON_SIZE / 2 - 3,
                 3,
@@ -85,9 +99,24 @@ public final class IngredientWaypointRenderer {
                 labelY + labelHeight,
                 0xB0000000);
         guiGraphics.drawString(client.font, label, labelX, labelY, 0xFFFFFFFF);
-        if (!detail.isEmpty()) {
-            guiGraphics.drawString(client.font, detail, labelX, labelY + 10, 0xFFBBBBBB);
+        for (int lineIndex = 0; lineIndex < detailLines.size(); lineIndex++) {
+            guiGraphics.drawString(
+                    client.font,
+                    detailLines.get(lineIndex).text(),
+                    labelX,
+                    labelY + (lineIndex + 1) * TEXT_LINE_HEIGHT,
+                    detailLines.get(lineIndex).color());
         }
+    }
+
+    private static List<RenderedDetailLine> wrapDetailLine(
+            Minecraft client, DetailLine detailLine, int maxWidth) {
+        if (detailLine.text().isEmpty()) {
+            return List.of();
+        }
+        return client.font.split(Component.literal(detailLine.text()), maxWidth).stream()
+                .map(text -> new RenderedDetailLine(text, detailLine.color()))
+                .toList();
     }
 
     static boolean shouldDisplay(
@@ -203,4 +232,6 @@ public final class IngredientWaypointRenderer {
     }
 
     private record ScreenPosition(float x, float y, boolean onScreen) {}
+
+    private record RenderedDetailLine(FormattedCharSequence text, int color) {}
 }

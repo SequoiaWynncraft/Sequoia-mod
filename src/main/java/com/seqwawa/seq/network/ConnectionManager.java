@@ -842,6 +842,49 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return true;
     }
 
+    public boolean sendGuildAllianceSnapshot(Collection<String> guildNames) {
+        List<String> safeGuildNames = normalizeGuildAllianceNames(guildNames);
+        if (safeGuildNames == null) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildAllianceSnapshot dropped invalid guild list");
+            return false;
+        }
+
+        return send("guild_alliance_snapshot", buildGuildAllianceSnapshotPayload(safeGuildNames));
+    }
+
+    static JsonObject buildGuildAllianceSnapshotPayload(List<String> guildNames) {
+        JsonArray names = new JsonArray();
+        for (String guildName : guildNames) {
+            names.add(guildName);
+        }
+
+        JsonObject payload = new JsonObject();
+        payload.add("guild_names", names);
+        return payload;
+    }
+
+    static List<String> normalizeGuildAllianceNames(Collection<String> guildNames) {
+        if (guildNames == null) {
+            return null;
+        }
+
+        Map<String, String> uniqueNames = new LinkedHashMap<>();
+        for (String guildName : guildNames) {
+            if (guildName == null) {
+                return null;
+            }
+            String trimmedName = guildName.trim();
+            if (trimmedName.isEmpty() || trimmedName.length() > 64 || trimmedName.contains(":")) {
+                return null;
+            }
+            uniqueNames.putIfAbsent(trimmedName.toLowerCase(Locale.ROOT), trimmedName);
+        }
+        if (uniqueNames.size() > 16) {
+            return null;
+        }
+        return List.copyOf(uniqueNames.values());
+    }
+
     private static JsonArray itemPreviewArray(List<ChatItemPreview> itemPreviews) {
         JsonArray previews = new JsonArray();
         if (itemPreviews == null || itemPreviews.isEmpty()) {
@@ -1802,6 +1845,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "bomb_share_submit".equals(type)
                 || "guild_chat".equals(type)
                 || "guild_alliance_update".equals(type)
+                || "guild_alliance_snapshot".equals(type)
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)
                 || "guild_storage_snapshot".equals(type)
@@ -1817,6 +1861,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "bomb_share_submit".equals(type)
                 || "guild_chat".equals(type)
                 || "guild_alliance_update".equals(type)
+                || "guild_alliance_snapshot".equals(type)
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)
                 || "guild_storage_snapshot".equals(type)
