@@ -27,6 +27,8 @@ import com.seqwawa.seq.managers.IngredientGuideSessionSettings;
 import com.seqwawa.seq.managers.IngredientItemIconFactory;
 import com.seqwawa.seq.map.IngredientFarmSpot;
 import com.seqwawa.seq.map.IngredientFarmSpotCatalog;
+import com.seqwawa.seq.map.IngredientFarmSpotDisplay;
+import com.seqwawa.seq.map.IngredientFarmSpotDisplay.Entry;
 import com.seqwawa.seq.map.MapFocus;
 import com.seqwawa.seq.model.IngredientGuideEntry;
 import com.seqwawa.seq.model.IngredientGuideEntry.CraftingModifiers;
@@ -72,14 +74,14 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static final float FARM_SPOT_ROW_HEIGHT = 58;
     private static final float FARM_SPOT_ICON_SIZE = 24;
     private static final int FARM_SPOT_PREVIEW_LIMIT = 3;
-    private static final long FARM_SPOT_PREVIEW_ROTATION_MS = 1_200;
+    private static final long FARM_SPOT_PREVIEW_ROTATION_MS = 2_500;
     private static final float SCROLL_STEP = 34;
     private static final float SCROLLBAR_WIDTH = 3;
     private static final float SCROLLBAR_HIT_WIDTH = 9;
     private static final float MIN_SCROLLBAR_THUMB_HEIGHT = 20;
     private static final float PANEL_RADIUS = 7;
     private static final Color[] TIER_COLORS = {
-        new Color(102, 102, 102),
+        new Color(153, 153, 153),
         new Color(255, 247, 153),
         new Color(255, 255, 0),
         new Color(230, 77, 0)
@@ -187,7 +189,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         try {
             for (int index = 0; index < spots.size(); index++) {
                 IngredientFarmSpot spot = spots.get(index);
-                List<FarmSpotIngredientPreview> previews = farmSpotIngredientPreviews(spot);
+                List<Entry> previews = farmSpotIngredientPreviews(spot);
                 float rowY = rowsTop + index * FARM_SPOT_ROW_HEIGHT - listScroll;
                 boolean selected = spot.equals(selectedFarmSpot);
                 boolean hovered = contains(
@@ -201,7 +203,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                             5,
                             selected ? color(BACKGROUND_CONTENT_FOCUSED, 245) : color(CONTROL_INPUT_HOVER, 210));
                 }
-                int visiblePreviewCount = Math.min(FARM_SPOT_PREVIEW_LIMIT, previews.size());
+                int visiblePreviewCount = farmSpotVisiblePreviewCount(previews.size());
                 float previewWidth = visiblePreviewCount == 0
                         ? 0
                         : visiblePreviewCount * FARM_SPOT_ICON_SIZE + (visiblePreviewCount - 1) * 3 + 8;
@@ -210,15 +212,15 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                         color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
                 drawText(canvas, spot.coordinates(), x + 14, rowY + 33, 10, color(TEXT_MUTED),
                         UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
-                List<String> visibleTargets = new ArrayList<>(visiblePreviewCount);
-                for (int previewSlot = 0; previewSlot < visiblePreviewCount; previewSlot++) {
-                    int previewIndex =
-                            farmSpotPreviewIndex(previews.size(), previewSlot, previewRotationTimeMs);
-                    visibleTargets.add(previews.get(previewIndex).name());
+                int labelIndex = farmSpotLabelIndex(previews.size(), previewRotationTimeMs);
+                if (labelIndex >= 0) {
+                    Entry label = previews.get(labelIndex);
+                    Color labelColor = label.ingredient() == null
+                            ? color(TEXT_SECONDARY)
+                            : tierColor(label.ingredient().tier());
+                    drawText(canvas, label.name(), x + 14, rowY + 48, 9, labelColor,
+                            UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
                 }
-                String targets = String.join(", ", visibleTargets);
-                drawText(canvas, ellipsize(targets, textWidth, 9), x + 14, rowY + 48, 9, color(TEXT_SECONDARY),
-                        UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
                 float previewX = x + width - 13
                         - visiblePreviewCount * FARM_SPOT_ICON_SIZE
                         - Math.max(0, visiblePreviewCount - 1) * 3;
@@ -249,8 +251,12 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 ScrollbarTarget.INGREDIENT_LIST);
     }
 
+    static int farmSpotVisiblePreviewCount(int previewCount) {
+        return Math.min(FARM_SPOT_PREVIEW_LIMIT, Math.max(0, previewCount));
+    }
+
     static int farmSpotPreviewIndex(int previewCount, int previewSlot, long timeMs) {
-        int visibleCount = Math.min(FARM_SPOT_PREVIEW_LIMIT, Math.max(0, previewCount));
+        int visibleCount = farmSpotVisiblePreviewCount(previewCount);
         if (previewSlot < 0 || previewSlot >= visibleCount) {
             return -1;
         }
@@ -258,6 +264,15 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 ? (int) Math.floorMod(timeMs / FARM_SPOT_PREVIEW_ROTATION_MS, previewCount)
                 : 0;
         return (startIndex + previewSlot) % previewCount;
+    }
+
+    static int farmSpotLabelIndex(int ingredientCount, long timeMs) {
+        if (ingredientCount <= 0) {
+            return -1;
+        }
+        return ingredientCount == 1
+                ? 0
+                : (int) Math.floorMod(timeMs / FARM_SPOT_PREVIEW_ROTATION_MS, ingredientCount);
     }
 
     private void renderFarmSpotDetail(UiCanvas canvas, float x, float y, float width, float height) {
@@ -302,13 +317,13 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             drawText(canvas, "INGREDIENTS", contentX, cursorY, 11, color(ACCENT_PRIMARY),
                     UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
             cursorY += 14;
-            for (FarmSpotIngredientPreview preview : farmSpotIngredientPreviews(selectedFarmSpot)) {
-                canvas.fillRoundedRect(contentX, cursorY, contentWidth, 36, 5, color(BACKGROUND_CONTENT, 225));
+            for (Entry preview : farmSpotIngredientPreviews(selectedFarmSpot)) {
+                canvas.fillRoundedRect(contentX, cursorY, contentWidth, 46, 5, color(BACKGROUND_CONTENT, 225));
                 drawFarmSpotIngredientPreview(
                         canvas,
                         preview,
                         contentX + 6,
-                        cursorY + 6,
+                        cursorY + 11,
                         24,
                         viewportTop,
                         viewportBottom);
@@ -316,12 +331,23 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                         canvas,
                         preview.name(),
                         contentX + 38,
-                        cursorY + 18,
+                        cursorY + 15,
                         12,
-                        color(TEXT_SECONDARY),
+                        preview.ingredient() == null
+                                ? color(TEXT_SECONDARY)
+                                : tierColor(preview.ingredient().tier()),
                         UiCanvas.HorizontalAlign.LEFT,
                         UiCanvas.VerticalAlign.MIDDLE);
-                cursorY += 42;
+                drawText(
+                        canvas,
+                        preview.metadata(),
+                        contentX + 38,
+                        cursorY + 33,
+                        9,
+                        color(TEXT_MUTED),
+                        UiCanvas.HorizontalAlign.LEFT,
+                        UiCanvas.VerticalAlign.MIDDLE);
+                cursorY += 52;
             }
             cursorY += 14;
             drawText(canvas, "MOBS", contentX, cursorY, 11, color(ACCENT_PRIMARY),
@@ -867,22 +893,20 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         detailScroll = 0;
     }
 
-    private List<FarmSpotIngredientPreview> farmSpotIngredientPreviews(IngredientFarmSpot spot) {
+    private List<Entry> farmSpotIngredientPreviews(IngredientFarmSpot spot) {
         List<IngredientGuideEntry> ingredients = manager.snapshot().ingredients();
-        return spot.ingredients().stream()
-                .map(name -> new FarmSpotIngredientPreview(
-                        name,
-                        ingredients.stream()
-                                .filter(ingredient -> ingredient.displayName().equalsIgnoreCase(name)
-                                        || ingredient.internalName().equalsIgnoreCase(name))
-                                .findFirst()
-                                .orElse(null)))
-                .toList();
+        return IngredientFarmSpotDisplay.resolve(
+                spot,
+                name -> ingredients.stream()
+                        .filter(ingredient -> ingredient.displayName().equalsIgnoreCase(name)
+                                || ingredient.internalName().equalsIgnoreCase(name))
+                        .findFirst()
+                        .orElse(null));
     }
 
     private void drawFarmSpotIngredientPreview(
             UiCanvas canvas,
-            FarmSpotIngredientPreview preview,
+            Entry preview,
             float x,
             float y,
             float size,
@@ -1680,8 +1704,6 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
 
     private record IngredientIconOverlay(
             CachedIngredientIcon icon, float x, float y, float size) {}
-
-    private record FarmSpotIngredientPreview(String name, IngredientGuideEntry ingredient) {}
 
     private record EffectLine(String label, String value) {}
 

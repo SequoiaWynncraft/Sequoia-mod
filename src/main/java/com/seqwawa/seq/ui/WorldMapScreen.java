@@ -49,9 +49,12 @@ import com.seqwawa.seq.map.GuildTerritoryIndex;
 import com.seqwawa.seq.map.GuildTerritoryService;
 import com.seqwawa.seq.map.IngredientFarmSpot;
 import com.seqwawa.seq.map.IngredientFarmSpotCatalog;
+import com.seqwawa.seq.map.IngredientFarmSpotDisplay;
+import com.seqwawa.seq.map.IngredientFarmSpotDisplay.Entry;
 import com.seqwawa.seq.map.IngredientMapSelection;
 import com.seqwawa.seq.map.IngredientMapCategory;
 import com.seqwawa.seq.map.IngredientWaypointManager;
+import com.seqwawa.seq.map.IngredientWaypointManager.DetailLine;
 import com.seqwawa.seq.map.IngredientWaypointManager.Kind;
 import com.seqwawa.seq.map.IngredientWaypointManager.Waypoint;
 import com.seqwawa.seq.map.IngredientWaypointManager.WaypointIcon;
@@ -123,8 +126,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final int SIDEBAR_CLUSTER_LIMIT = 5;
     private static final int TOTEM_RESULT_VISIBLE_ROWS = 4;
     private static final float TOTEM_RESULT_ROW_HEIGHT = 28;
-    private static final float INGREDIENT_FARM_SPOT_CARD_HEIGHT = 56;
-    private static final float INGREDIENT_FARM_SPOT_ROW_HEIGHT = 62;
+    private static final float INGREDIENT_FARM_SPOT_CARD_GAP = 6;
     private static final float INGREDIENT_FARM_SPOT_CARD_PADDING = 8;
     private static final float INGREDIENT_FARM_SPOT_ICON_SIZE = 17;
     private static final float INGREDIENT_FARM_SPOT_ICON_GAP = 3;
@@ -164,6 +166,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private float sidebarScroll;
     private float sidebarContentHeight;
     private float ingredientFarmSpotScroll;
+    private float ingredientTotemInsightsScroll;
     private boolean insightsSidebarOpen;
     private long centerPlayerWarningUntilMs;
     private String resourceSearch = "";
@@ -548,7 +551,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderIngredientFarmSpotTooltip(UiCanvas canvas, IngredientFarmSpot spot) {
-        String subtitle = spot.coordinates() + " · " + String.join(", ", spot.ingredients());
+        String ingredients = ingredientFarmSpotEntries(spot).stream()
+                .map(Entry::name)
+                .reduce((first, second) -> first + ", " + second)
+                .orElse("");
+        String subtitle = spot.coordinates() + " · " + ingredients;
         float x = tooltipX(250);
         float y = Math.max(58, nvgMouseY + 12);
         canvas.fillRect(x, y, 250, 42, color(MAP_SIDEBAR));
@@ -1645,6 +1652,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float maxScroll = ingredientFarmSpotMaxScroll(layout);
         ingredientFarmSpotScroll = (float) clamp(ingredientFarmSpotScroll, 0, maxScroll);
         float rowY = listY - ingredientFarmSpotScroll;
+        long previewRotationTimeMs = System.currentTimeMillis();
         if (spots.isEmpty()) {
             drawFittedText(
                     canvas,
@@ -1661,6 +1669,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         canvas.scissor(0, listY, SIDEBAR_WIDTH, listHeight);
         try {
             for (IngredientFarmSpot spot : spots) {
+                List<Entry> ingredients = ingredientFarmSpotEntries(spot);
+                float cardHeight = ingredientFarmSpotCardHeight(spot, ingredients, contentWidth);
                 boolean selected = ingredientMapSelection.isTotemSelected(spot.id());
                 boolean hovered = isHovered(nvgMouseX, nvgMouseY, 0, listY, SIDEBAR_WIDTH, listHeight)
                         && isHovered(
@@ -1669,42 +1679,43 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                                 PADDING,
                                 rowY,
                                 contentWidth,
-                                INGREDIENT_FARM_SPOT_CARD_HEIGHT);
+                                cardHeight);
                 canvas.fillRect(
                         PADDING,
                         rowY,
                         contentWidth,
-                        INGREDIENT_FARM_SPOT_CARD_HEIGHT,
+                        cardHeight,
                         selected
                                 ? color(MAP_CONTROL_ACTIVE)
                                 : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
-                drawFittedText(
+                float textY = drawWrappedText(
                         canvas,
                         PADDING + INGREDIENT_FARM_SPOT_CARD_PADDING,
-                        rowY + 14,
+                        rowY + 12,
                         11,
                         spot.name(),
                         color(MAP_TEXT),
                         contentWidth - INGREDIENT_FARM_SPOT_CARD_PADDING * 2,
-                        TextAlignment.LEFT);
-                drawFittedText(
+                        13);
+                textY = drawWrappedText(
                         canvas,
                         PADDING + INGREDIENT_FARM_SPOT_CARD_PADDING,
-                        rowY + 31,
+                        textY,
                         10,
                         spot.coordinates(),
                         color(MAP_SUBTEXT),
                         contentWidth - INGREDIENT_FARM_SPOT_CARD_PADDING * 2,
-                        TextAlignment.LEFT);
+                        12);
                 renderIngredientFarmSpotTextures(
                         canvas,
-                        spot,
+                        ingredients,
                         PADDING + INGREDIENT_FARM_SPOT_CARD_PADDING,
-                        rowY + 37,
+                        textY + 2,
                         contentWidth - INGREDIENT_FARM_SPOT_CARD_PADDING * 2,
                         listY,
-                        listY + listHeight);
-                rowY += INGREDIENT_FARM_SPOT_ROW_HEIGHT;
+                        listY + listHeight,
+                        previewRotationTimeMs);
+                rowY += cardHeight + INGREDIENT_FARM_SPOT_CARD_GAP;
             }
         } finally {
             canvas.resetScissor();
@@ -1714,24 +1725,39 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private void renderIngredientFarmSpotTextures(
             UiCanvas canvas,
-            IngredientFarmSpot spot,
+            List<Entry> ingredients,
             float x,
             float y,
             float width,
             float viewportTop,
-            float viewportBottom) {
-        refreshIngredientEntryLookup();
-        int visibleIconCount = Math.min(
-                spot.ingredients().size(),
-                Math.max(
-                        0,
-                        (int) ((width + INGREDIENT_FARM_SPOT_ICON_GAP)
-                                / (INGREDIENT_FARM_SPOT_ICON_SIZE + INGREDIENT_FARM_SPOT_ICON_GAP))));
-        for (int index = 0; index < visibleIconCount; index++) {
-            String ingredientName = spot.ingredients().get(index);
-            IngredientGuideEntry ingredient =
-                    cachedIngredientsByName.get(ingredientName.toLowerCase(Locale.ROOT));
-            float iconX = x + index * (INGREDIENT_FARM_SPOT_ICON_SIZE + INGREDIENT_FARM_SPOT_ICON_GAP);
+            float viewportBottom,
+            long previewRotationTimeMs) {
+        int visibleIconCount = IngredientGuideScreen.farmSpotVisiblePreviewCount(ingredients.size());
+        float iconsWidth = visibleIconCount == 0
+                ? 0
+                : visibleIconCount * INGREDIENT_FARM_SPOT_ICON_SIZE
+                        + (visibleIconCount - 1) * INGREDIENT_FARM_SPOT_ICON_GAP;
+        float iconsX = x + width - iconsWidth;
+        int labelIndex = IngredientGuideScreen.farmSpotLabelIndex(ingredients.size(), previewRotationTimeMs);
+        if (labelIndex >= 0) {
+            Entry label = ingredients.get(labelIndex);
+            drawWrappedText(
+                    canvas,
+                    x,
+                    y + INGREDIENT_FARM_SPOT_ICON_SIZE / 2f,
+                    9,
+                    label.name(),
+                    new Color(label.tierColor(), true),
+                    Math.max(1, iconsX - x - INGREDIENT_FARM_SPOT_ICON_GAP),
+                    10);
+        }
+        for (int previewSlot = 0; previewSlot < visibleIconCount; previewSlot++) {
+            int previewIndex = IngredientGuideScreen.farmSpotPreviewIndex(
+                    ingredients.size(), previewSlot, previewRotationTimeMs);
+            Entry preview = ingredients.get(previewIndex);
+            IngredientGuideEntry ingredient = preview.ingredient();
+            float iconX =
+                    iconsX + previewSlot * (INGREDIENT_FARM_SPOT_ICON_SIZE + INGREDIENT_FARM_SPOT_ICON_GAP);
             if (ingredient == null) {
                 drawText(
                         canvas,
@@ -1739,7 +1765,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                         y + INGREDIENT_FARM_SPOT_ICON_SIZE / 2f,
                         10,
                         "✦",
-                        color(MAP_SUBTEXT),
+                        new Color(preview.tierColor(), true),
                         TextAlignment.CENTER);
                 continue;
             }
@@ -1751,7 +1777,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                         y + INGREDIENT_FARM_SPOT_ICON_SIZE / 2f,
                         10,
                         "✦",
-                        color(MAP_SUBTEXT),
+                        new Color(preview.tierColor(), true),
                         TextAlignment.CENTER);
             } else if (y >= viewportTop && y + INGREDIENT_FARM_SPOT_ICON_SIZE <= viewportBottom) {
                 focusIconOverlays.add(new FocusIconOverlay(
@@ -1762,6 +1788,32 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                         icon.skinLookup()));
             }
         }
+    }
+
+    private List<Entry> ingredientFarmSpotEntries(IngredientFarmSpot spot) {
+        refreshIngredientEntryLookup();
+        return IngredientFarmSpotDisplay.resolve(
+                spot, name -> cachedIngredientsByName.get(name.toLowerCase(Locale.ROOT)));
+    }
+
+    private static float ingredientFarmSpotCardHeight(
+            IngredientFarmSpot spot, List<Entry> ingredients, float width) {
+        float innerWidth = width - INGREDIENT_FARM_SPOT_CARD_PADDING * 2;
+        int titleLines = wrappedLineCount(spot.name(), innerWidth, 11);
+        int visibleIconCount = IngredientGuideScreen.farmSpotVisiblePreviewCount(ingredients.size());
+        float iconsWidth = visibleIconCount == 0
+                ? 0
+                : visibleIconCount * INGREDIENT_FARM_SPOT_ICON_SIZE
+                        + (visibleIconCount - 1) * INGREDIENT_FARM_SPOT_ICON_GAP;
+        float labelWidth = Math.max(1, innerWidth - iconsWidth - INGREDIENT_FARM_SPOT_ICON_GAP);
+        int labelLines = ingredients.stream()
+                .mapToInt(ingredient -> wrappedLineCount(ingredient.name(), labelWidth, 9))
+                .max()
+                .orElse(0);
+        float previewHeight = Math.max(
+                visibleIconCount == 0 ? 0 : INGREDIENT_FARM_SPOT_ICON_SIZE,
+                labelLines * 10f);
+        return 34 + titleLines * 13 + previewHeight;
     }
 
     private void refreshIngredientEntryLookup() {
@@ -1854,7 +1906,22 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             renderWorldEventInsights(canvas, x, layout);
         } else if (displayMode == MapDisplayMode.INGREDIENTS) {
-            renderIngredientInsights(canvas, x);
+            if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
+                float maxScroll = ingredientTotemInsightsMaxScroll(screenHeight);
+                ingredientTotemInsightsScroll =
+                        (float) clamp(ingredientTotemInsightsScroll, 0, maxScroll);
+                canvas.save();
+                canvas.translate(0, -ingredientTotemInsightsScroll);
+                renderIngredientTotemInsights(
+                        canvas,
+                        x + PADDING,
+                        INSIGHTS_SIDEBAR_WIDTH - PADDING * 2,
+                        -ingredientTotemInsightsScroll);
+                canvas.restore();
+                renderIngredientTotemInsightsScrollbar(canvas, x, screenHeight, maxScroll);
+            } else {
+                renderIngredientInsights(canvas, x);
+            }
         } else {
             renderGatheringInsights(canvas, x, screenHeight, layout);
         }
@@ -1864,44 +1931,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private void renderIngredientInsights(UiCanvas canvas, float x) {
         float contentX = x + PADDING;
         float contentWidth = INSIGHTS_SIDEBAR_WIDTH - PADDING * 2;
-        if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
-            drawInsightsSectionTitle(
-                    canvas,
-                    contentX,
-                    60,
-                    "Mob Totem Spots (" + ingredientMapSelection.totemCount() + " selected)");
-            if (selectedIngredientFarmSpot != null) {
-                drawInsightsSectionTitle(canvas, contentX, 92, "Selected Spot");
-                drawFittedText(
-                        canvas,
-                        contentX,
-                        116,
-                        12,
-                        selectedIngredientFarmSpot.name(),
-                        color(MAP_TEXT),
-                        contentWidth,
-                        TextAlignment.LEFT);
-                drawFittedText(
-                        canvas,
-                        contentX,
-                        134,
-                        11,
-                        selectedIngredientFarmSpot.coordinates(),
-                        color(MAP_SUBTEXT),
-                        contentWidth,
-                        TextAlignment.LEFT);
-                drawFittedText(
-                        canvas,
-                        contentX,
-                        152,
-                        10,
-                        String.join(", ", selectedIngredientFarmSpot.ingredients()),
-                        color(MAP_SUBTEXT),
-                        contentWidth,
-                        TextAlignment.LEFT);
-            }
-            return;
-        }
         drawInsightsSectionTitle(canvas, contentX, 60, "Ingredient");
         if (!hasMapFocus()) {
             drawFittedText(
@@ -1944,6 +1973,312 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                     contentWidth,
                     TextAlignment.LEFT);
         }
+    }
+
+    private void renderIngredientTotemInsights(
+            UiCanvas canvas, float contentX, float contentWidth, float overlayOffsetY) {
+        if (selectedIngredientFarmSpot == null) {
+            canvas.fillRoundedRect(contentX, 60, contentWidth, 78, 5, color(MAP_HEADER, 210));
+            canvas.strokeRect(contentX, 60, contentWidth, 78, 1, color(MAP_BORDER));
+            drawText(
+                    canvas,
+                    contentX + 10,
+                    81,
+                    11,
+                    "Select a totem spot",
+                    color(MAP_TEXT),
+                    TextAlignment.LEFT);
+            drawWrappedText(
+                    canvas,
+                    contentX + 10,
+                    103,
+                    9,
+                    "Click a sidebar entry or map marker to inspect its ingredients.",
+                    color(MAP_SUBTEXT),
+                    contentWidth - 20,
+                    11);
+            return;
+        }
+
+        List<Entry> ingredients = ingredientFarmSpotEntries(selectedIngredientFarmSpot);
+        drawInsightsSectionTitle(canvas, contentX, 60, "Selected Spot");
+        float spotCardY = 72;
+        float spotCardHeight = selectedTotemSpotCardHeight(contentWidth);
+        canvas.fillRoundedRect(contentX, spotCardY, contentWidth, spotCardHeight, 5, color(MAP_HEADER, 210));
+        canvas.strokeRect(contentX, spotCardY, contentWidth, spotCardHeight, 1, color(MAP_BORDER));
+        float spotTextY = drawWrappedText(
+                canvas,
+                contentX + 9,
+                spotCardY + 14,
+                12,
+                selectedIngredientFarmSpot.name(),
+                color(MAP_TEXT),
+                contentWidth - 18,
+                14);
+        spotTextY = drawWrappedText(
+                canvas,
+                contentX + 9,
+                spotTextY + 1,
+                10,
+                selectedIngredientFarmSpot.coordinates()
+                        + (selectedIngredientFarmSpot.radius() > 0
+                                ? " · radius " + selectedIngredientFarmSpot.radius()
+                                : ""),
+                color(MAP_SUBTEXT),
+                contentWidth - 18,
+                12);
+        drawWrappedText(
+                canvas,
+                contentX + 9,
+                spotTextY + 1,
+                9,
+                ingredientTierSummary(ingredients),
+                color(MAP_SUBTEXT),
+                contentWidth - 18,
+                11);
+
+        float ingredientsTitleY = spotCardY + spotCardHeight + 15;
+        drawInsightsSectionTitle(canvas, contentX, ingredientsTitleY, "Ingredients");
+        float ingredientY = ingredientsTitleY + 14;
+        float screenHeight = uiScreenHeight();
+        for (Entry ingredient : ingredients) {
+            float cardHeight = renderIngredientInsightCard(
+                    canvas,
+                    ingredient,
+                    contentX,
+                    ingredientY,
+                    contentWidth,
+                    screenHeight,
+                    overlayOffsetY);
+            ingredientY += cardHeight + 6;
+        }
+
+        float insightY = ingredientY + 4;
+        insightY = drawWrappedText(
+                canvas,
+                contentX,
+                insightY,
+                9,
+                ingredientProfessionSummary(ingredients),
+                color(MAP_SUBTEXT),
+                contentWidth,
+                11);
+        String mobs = selectedIngredientFarmSpot.mobs().isEmpty()
+                ? "Mobs: not catalogued"
+                : "Mobs: " + String.join(", ", selectedIngredientFarmSpot.mobs());
+        insightY = drawWrappedText(
+                canvas,
+                contentX,
+                insightY + 2,
+                9,
+                mobs,
+                color(MAP_SUBTEXT),
+                contentWidth,
+                11);
+        if (!selectedIngredientFarmSpot.notes().isBlank()) {
+            drawWrappedText(
+                    canvas,
+                    contentX,
+                    insightY + 2,
+                    9,
+                    "Note: " + selectedIngredientFarmSpot.notes(),
+                    color(MAP_SUBTEXT),
+                    contentWidth,
+                    11);
+        }
+    }
+
+    private float renderIngredientInsightCard(
+            UiCanvas canvas,
+            Entry ingredient,
+            float x,
+            float y,
+            float width,
+            float screenHeight,
+            float overlayOffsetY) {
+        Color tierColor = new Color(ingredient.tierColor(), true);
+        float cardHeight = ingredientInsightCardHeight(ingredient, width);
+        canvas.fillRoundedRect(x, y, width, cardHeight, 5, color(MAP_CONTROL));
+        canvas.strokeRect(x, y, width, cardHeight, 1, color(MAP_BORDER));
+        canvas.fillRect(x, y, 3, cardHeight, tierColor);
+        renderIngredientInsightIcon(
+                canvas,
+                ingredient,
+                x + 8,
+                y + 7,
+                28,
+                screenHeight,
+                overlayOffsetY);
+        float textY = drawWrappedText(
+                canvas,
+                x + 43,
+                y + 11,
+                11,
+                ingredient.name(),
+                tierColor,
+                width - 51,
+                12);
+        drawWrappedText(
+                canvas,
+                x + 43,
+                textY + 1,
+                9,
+                ingredient.metadata(),
+                color(MAP_SUBTEXT),
+                width - 51,
+                10);
+        return cardHeight;
+    }
+
+    private void renderIngredientInsightIcon(
+            UiCanvas canvas,
+            Entry ingredient,
+            float x,
+            float y,
+            float size,
+            float screenHeight,
+            float overlayOffsetY) {
+        if (ingredient.ingredient() == null) {
+            drawText(
+                    canvas,
+                    x + size / 2f,
+                    y + size / 2f,
+                    13,
+                    "✦",
+                    new Color(ingredient.tierColor(), true),
+                    TextAlignment.CENTER);
+            return;
+        }
+        MapIngredientIcon icon = cachedIngredientIcon(ingredient.ingredient());
+        if (icon.stack().isEmpty()) {
+            drawText(
+                    canvas,
+                    x + size / 2f,
+                    y + size / 2f,
+                    13,
+                    "✦",
+                    new Color(ingredient.tierColor(), true),
+                    TextAlignment.CENTER);
+        } else {
+            float renderedY = y + overlayOffsetY;
+            if (renderedY < SIDEBAR_HEADER_HEIGHT || renderedY + size > screenHeight) {
+                return;
+            }
+            focusIconOverlays.add(new FocusIconOverlay(
+                    x,
+                    renderedY,
+                    size,
+                    icon.stack(),
+                    icon.skinLookup()));
+        }
+    }
+
+    private static String ingredientTierSummary(List<Entry> ingredients) {
+        int[] tierCounts = new int[4];
+        int unknownCount = 0;
+        for (Entry ingredient : ingredients) {
+            if (ingredient.ingredient() == null) {
+                unknownCount++;
+                continue;
+            }
+            int tier = ingredient.ingredient().tier();
+            tierCounts[Math.max(0, Math.min(tierCounts.length - 1, tier))]++;
+        }
+        List<String> summary = new ArrayList<>();
+        for (int tier = 0; tier < tierCounts.length; tier++) {
+            if (tierCounts[tier] > 0) {
+                summary.add("T" + tier + " " + tierCounts[tier]);
+            }
+        }
+        if (unknownCount > 0) {
+            summary.add("? " + unknownCount);
+        }
+        return String.join(" · ", summary);
+    }
+
+    private static String ingredientProfessionSummary(List<Entry> ingredients) {
+        Set<String> professions = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        for (Entry ingredient : ingredients) {
+            if (ingredient.ingredient() == null) {
+                continue;
+            }
+            ingredient.ingredient().skills().stream()
+                    .map(WorldMapScreen::displayEnumValue)
+                    .forEach(professions::add);
+        }
+        return professions.isEmpty()
+                ? "Professions unavailable"
+                : "Professions: " + String.join(", ", professions);
+    }
+
+    private float selectedTotemSpotCardHeight(float contentWidth) {
+        float textWidth = contentWidth - 18;
+        int nameLines = wrappedLineCount(selectedIngredientFarmSpot.name(), textWidth, 12);
+        String coordinates = selectedIngredientFarmSpot.coordinates()
+                + (selectedIngredientFarmSpot.radius() > 0
+                        ? " · radius " + selectedIngredientFarmSpot.radius()
+                        : "");
+        int coordinateLines = wrappedLineCount(coordinates, textWidth, 10);
+        int tierLines = wrappedLineCount(
+                ingredientTierSummary(ingredientFarmSpotEntries(selectedIngredientFarmSpot)),
+                textWidth,
+                9);
+        return 20 + nameLines * 14 + coordinateLines * 12 + tierLines * 11;
+    }
+
+    private static float ingredientInsightCardHeight(Entry ingredient, float width) {
+        float textWidth = width - 51;
+        int nameLines = wrappedLineCount(ingredient.name(), textWidth, 11);
+        int metadataLines = wrappedLineCount(ingredient.metadata(), textWidth, 9);
+        return Math.max(43, 17 + nameLines * 12 + metadataLines * 10);
+    }
+
+    private float ingredientTotemInsightsMaxScroll(float screenHeight) {
+        return Math.max(0, ingredientTotemInsightsContentBottom() + PADDING - screenHeight);
+    }
+
+    private float ingredientTotemInsightsContentBottom() {
+        if (selectedIngredientFarmSpot == null) {
+            return 138;
+        }
+        float contentWidth = INSIGHTS_SIDEBAR_WIDTH - PADDING * 2;
+        List<Entry> ingredients = ingredientFarmSpotEntries(selectedIngredientFarmSpot);
+        float spotCardHeight = selectedTotemSpotCardHeight(contentWidth);
+        float contentBottom = 72 + spotCardHeight + 29;
+        for (Entry ingredient : ingredients) {
+            contentBottom += ingredientInsightCardHeight(ingredient, contentWidth) + 6;
+        }
+        contentBottom += 4;
+        contentBottom += wrappedLineCount(ingredientProfessionSummary(ingredients), contentWidth, 9) * 11;
+        String mobs = selectedIngredientFarmSpot.mobs().isEmpty()
+                ? "Mobs: not catalogued"
+                : "Mobs: " + String.join(", ", selectedIngredientFarmSpot.mobs());
+        contentBottom += 2 + wrappedLineCount(mobs, contentWidth, 9) * 11;
+        if (!selectedIngredientFarmSpot.notes().isBlank()) {
+            contentBottom += 2
+                    + wrappedLineCount(
+                                    "Note: " + selectedIngredientFarmSpot.notes(),
+                                    contentWidth,
+                                    9)
+                            * 11;
+        }
+        return contentBottom;
+    }
+
+    private void renderIngredientTotemInsightsScrollbar(
+            UiCanvas canvas, float x, float screenHeight, float maxScroll) {
+        if (maxScroll <= 0) {
+            return;
+        }
+        float trackY = SIDEBAR_HEADER_HEIGHT + 4;
+        float trackHeight = Math.max(0, screenHeight - trackY - 4);
+        float viewportHeight = Math.max(1, screenHeight - SIDEBAR_HEADER_HEIGHT);
+        float contentHeight = Math.max(viewportHeight, ingredientTotemInsightsContentBottom() - SIDEBAR_HEADER_HEIGHT);
+        float thumbHeight = Math.max(24, trackHeight * viewportHeight / contentHeight);
+        float thumbY = trackY + (trackHeight - thumbHeight) * (ingredientTotemInsightsScroll / maxScroll);
+        float trackX = x + INSIGHTS_SIDEBAR_WIDTH - 5;
+        canvas.fillRect(trackX, trackY, 3, trackHeight, color(MAP_TEXT, 28));
+        canvas.fillRect(trackX, thumbY, 3, thumbHeight, color(MAP_TEXT, 110));
     }
 
     private void renderGatheringInsights(UiCanvas canvas, float x, float screenHeight, InsightsLayout layout) {
@@ -3606,6 +3941,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (spot == null) {
             return;
         }
+        ingredientTotemInsightsScroll = 0;
         ingredientMapCategory = IngredientMapCategory.TOTEM_SPOTS;
         clearIngredientMapSelections();
         ingredientMapSelection.toggleTotem(spot.id());
@@ -3614,6 +3950,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void toggleIngredientFarmSpotSelection(IngredientFarmSpot spot) {
+        ingredientTotemInsightsScroll = 0;
         boolean selected = ingredientMapSelection.toggleTotem(spot.id());
         selectedIngredientFarmSpot = selected
                 ? spot
@@ -3664,11 +4001,15 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             if (!ingredientMapSelection.isTotemSelected(spot.id())) {
                 continue;
             }
+            List<Entry> ingredients = ingredientFarmSpotEntries(spot);
             waypoints.add(new Waypoint(
                     "ingredient-totem:" + spot.id(),
                     Kind.TOTEM_SPOT,
                     spot.name(),
-                    String.join(", ", spot.ingredients()),
+                    ingredients.stream()
+                            .map(ingredient -> new DetailLine(
+                                    ingredient.displayLine(), ingredient.tierColor()))
+                            .toList(),
                     spot.x(),
                     spot.y(),
                     spot.z(),
@@ -4056,6 +4397,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             IngredientMapCategory nextCategory = ingredientMapCategoryAt(mx);
             if (nextCategory != ingredientMapCategory) {
                 ingredientMapCategory = nextCategory;
+                ingredientTotemInsightsScroll = 0;
             }
             hoveredFocusMarker = null;
             hoveredIngredientFarmSpot = null;
@@ -4075,17 +4417,21 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             if (isHovered(mx, my, 0, listY, SIDEBAR_WIDTH, listHeight)) {
                 float rowY = listY - ingredientFarmSpotScroll;
                 for (IngredientFarmSpot spot : IngredientFarmSpotCatalog.all()) {
+                    float cardHeight = ingredientFarmSpotCardHeight(
+                            spot,
+                            ingredientFarmSpotEntries(spot),
+                            buttonWidth);
                     if (isHovered(
                             mx,
                             my,
                             PADDING,
                             rowY,
                             buttonWidth,
-                            INGREDIENT_FARM_SPOT_CARD_HEIGHT)) {
+                            cardHeight)) {
                         selectIngredientFarmSpot(spot);
                         return true;
                     }
-                    rowY += INGREDIENT_FARM_SPOT_ROW_HEIGHT;
+                    rowY += cardHeight + INGREDIENT_FARM_SPOT_CARD_GAP;
                 }
             }
         } else if (isHovered(mx, my, PADDING, layout.guideY(), buttonWidth, BUTTON_HEIGHT)) {
@@ -4400,6 +4746,16 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float screenWidth = uiScreenWidth();
         float screenHeight = uiScreenHeight();
         if (mx >= insightsSidebarX(screenWidth) && mx <= screenWidth) {
+            if (insightsSidebarOpen
+                    && displayMode == MapDisplayMode.INGREDIENTS
+                    && ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS
+                    && my >= SIDEBAR_HEADER_HEIGHT
+                    && my <= screenHeight) {
+                ingredientTotemInsightsScroll = (float) clamp(
+                        ingredientTotemInsightsScroll - scrollY * SIDEBAR_SCROLL_STEP,
+                        0,
+                        ingredientTotemInsightsMaxScroll(screenHeight));
+            }
             return true;
         }
         if (mx >= 0 && mx <= SIDEBAR_WIDTH && my >= SIDEBAR_PANEL_TOP && my <= screenHeight) {
@@ -4561,6 +4917,49 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             TextAlignment align) {
         String fitted = fitText(canvas, text, maxWidth, size);
         drawText(canvas, x, y, size, fitted, color, align);
+    }
+
+    private static float drawWrappedText(
+            UiCanvas canvas,
+            float x,
+            float y,
+            float size,
+            String text,
+            Color color,
+            float maxWidth,
+            float lineHeight) {
+        List<String> lines = wrapText(text, maxWidth, size);
+        for (int index = 0; index < lines.size(); index++) {
+            drawText(canvas, x, y + index * lineHeight, size, lines.get(index), color, TextAlignment.LEFT);
+        }
+        return y + lines.size() * lineHeight;
+    }
+
+    private static int wrappedLineCount(String text, float maxWidth, float size) {
+        return wrapText(text, maxWidth, size).size();
+    }
+
+    private static List<String> wrapText(String text, float maxWidth, float size) {
+        if (text == null || text.isBlank() || maxWidth <= 0) {
+            return List.of();
+        }
+        List<String> lines = new ArrayList<>();
+        for (String paragraph : text.strip().split("\\R")) {
+            String currentLine = "";
+            for (String word : paragraph.trim().split("\\s+")) {
+                String candidate = currentLine.isEmpty() ? word : currentLine + " " + word;
+                if (currentLine.isEmpty() || textWidth(candidate, size) <= maxWidth) {
+                    currentLine = candidate;
+                } else {
+                    lines.add(currentLine);
+                    currentLine = word;
+                }
+            }
+            if (!currentLine.isEmpty()) {
+                lines.add(currentLine);
+            }
+        }
+        return List.copyOf(lines);
     }
 
     private static String fitText(UiCanvas canvas, String text, float maxWidth, float size) {
@@ -4927,11 +5326,18 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         return Math.max(0, uiScreenHeight() - ingredientFarmSpotListY(layout) - PADDING);
     }
 
-    private static float ingredientFarmSpotContentHeight() {
-        int spotCount = IngredientFarmSpotCatalog.all().size();
-        return spotCount == 0
-                ? 0
-                : (spotCount - 1) * INGREDIENT_FARM_SPOT_ROW_HEIGHT + INGREDIENT_FARM_SPOT_CARD_HEIGHT;
+    private float ingredientFarmSpotContentHeight() {
+        float contentWidth = SIDEBAR_WIDTH - PADDING * 2;
+        List<IngredientFarmSpot> spots = IngredientFarmSpotCatalog.all();
+        float height = 0;
+        for (IngredientFarmSpot spot : spots) {
+            height += ingredientFarmSpotCardHeight(
+                            spot,
+                            ingredientFarmSpotEntries(spot),
+                            contentWidth)
+                    + INGREDIENT_FARM_SPOT_CARD_GAP;
+        }
+        return spots.isEmpty() ? 0 : height - INGREDIENT_FARM_SPOT_CARD_GAP;
     }
 
     private float ingredientFarmSpotMaxScroll(IngredientSidebarLayout layout) {

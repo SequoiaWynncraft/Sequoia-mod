@@ -10,7 +10,7 @@ public final class IngredientFarmSpotCatalog {
     private static final List<IngredientFarmSpot> BUILT_IN_SPOTS = List.of(
             new IngredientFarmSpot(
                     "kaian-scroll-1070-160-negative-4693",
-                    "Kaian Scroll & Gravitation Crystal Totem Spot",
+                    "Kaian Scroll",
                     1070,
                     160,
                     -4693,
@@ -20,17 +20,17 @@ public final class IngredientFarmSpotCatalog {
                     ""),
             new IngredientFarmSpot(
                     "dragonling-demonic-909-59-negative-4686",
-                    "Dragonling Egg & Demonic Blood Totem Spot",
+                    "Dragonling Egg & Demonic Blood",
                     909,
                     59,
                     -4686,
                     0,
-                    List.of("Dragonling Egg", "Demonic Blood"),
+                    List.of("Dragonling Scale","Dragonling Egg", "Demonic Blood","Dragon Aura"),
                     List.of(),
                     ""),
             new IngredientFarmSpot(
                     "mucoid-matter-negative-1988-33-negative-692",
-                    "Mucoid Matter Totem Spot",
+                    "Mucoid Matter",
                     -1988,
                     33,
                     -692,
@@ -40,7 +40,7 @@ public final class IngredientFarmSpotCatalog {
                     ""),
             new IngredientFarmSpot(
                     "infected-mass-1311-92-negative-1036",
-                    "Infected Mass Totem Spot",
+                    "Infected Mass",
                     1311,
                     92,
                     -1036,
@@ -60,7 +60,7 @@ public final class IngredientFarmSpotCatalog {
                             "Insanity Star",
                             "Expelled Shrapnel",
                             "Soul Essence",
-                            "Toxxulous Ripper's Legs",
+                            "Toxxulous Ripper’s Legs",
                             "Myocardial Leg",
                             "Glow Bulb Seeds"),
                     List.of(),

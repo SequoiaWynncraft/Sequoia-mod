@@ -56,7 +56,7 @@ public final class IngredientWaypointManager {
             String id,
             Kind kind,
             String label,
-            String detail,
+            List<DetailLine> detailLines,
             double x,
             double y,
             double z,
@@ -72,12 +72,45 @@ public final class IngredientWaypointManager {
             this(id, kind, label, detail, x, y, z, WaypointIcon.empty());
         }
 
+        public Waypoint(
+                String id,
+                Kind kind,
+                String label,
+                String detail,
+                double x,
+                double y,
+                double z,
+                WaypointIcon icon) {
+            this(
+                    id,
+                    kind,
+                    label,
+                    detail == null || detail.isBlank()
+                            ? List.of()
+                            : List.of(new DetailLine(detail, DetailLine.DEFAULT_COLOR)),
+                    x,
+                    y,
+                    z,
+                    icon);
+        }
+
         public Waypoint {
             id = requireText(id, "id");
             kind = Objects.requireNonNull(kind, "kind");
             label = requireText(label, "label");
-            detail = detail == null ? "" : detail.trim();
+            detailLines = detailLines == null
+                    ? List.of()
+                    : detailLines.stream()
+                            .filter(Objects::nonNull)
+                            .toList();
             icon = icon == null ? WaypointIcon.empty() : icon;
+        }
+
+        public String detail() {
+            return detailLines.stream()
+                    .map(DetailLine::text)
+                    .reduce((first, second) -> first + "\n" + second)
+                    .orElse("");
         }
 
         private static String requireText(String value, String field) {
@@ -86,6 +119,14 @@ public final class IngredientWaypointManager {
                 throw new IllegalArgumentException(field + " cannot be blank");
             }
             return normalized;
+        }
+    }
+
+    public record DetailLine(String text, int color) {
+        private static final int DEFAULT_COLOR = 0xFFBBBBBB;
+
+        public DetailLine {
+            text = text == null ? "" : text.trim();
         }
     }
 

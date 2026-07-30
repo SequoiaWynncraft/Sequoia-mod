@@ -3,12 +3,22 @@ package com.seqwawa.seq.map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.map.IngredientWaypointManager.DetailLine;
 import com.seqwawa.seq.map.IngredientWaypointManager.Kind;
 import com.seqwawa.seq.map.IngredientWaypointManager.Waypoint;
 import java.util.List;
+import net.minecraft.SharedConstants;
+import net.minecraft.server.Bootstrap;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 class IngredientWaypointManagerTest {
+    @BeforeAll
+    static void bootstrapMinecraftRegistries() {
+        SharedConstants.tryDetectVersion();
+        Bootstrap.bootStrap();
+    }
+
     @Test
     void replacesAndDeduplicatesRenderedWaypointsById() {
         IngredientWaypointManager manager = new IngredientWaypointManager();
@@ -31,6 +41,24 @@ class IngredientWaypointManagerTest {
 
         assertEquals(0, manager.size());
         assertTrue(manager.waypoints().isEmpty());
+    }
+
+    @Test
+    void preservesIndividuallyColoredDetailLines() {
+        Waypoint waypoint = new Waypoint(
+                "totem",
+                Kind.TOTEM_SPOT,
+                "Totem",
+                List.of(
+                        new DetailLine("Tier zero", 0xFF999999),
+                        new DetailLine("Tier three", 0xFFE64D00)),
+                1,
+                2,
+                3,
+                null);
+
+        assertEquals(0xFF999999, waypoint.detailLines().getFirst().color());
+        assertEquals("Tier zero\nTier three", waypoint.detail());
     }
 
     private static Waypoint waypoint(String id, String label) {
