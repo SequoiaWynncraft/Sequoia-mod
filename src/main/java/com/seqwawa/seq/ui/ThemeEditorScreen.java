@@ -946,6 +946,9 @@ public final class ThemeEditorScreen extends Screen {
         String[] words = raw.split("_");
         StringBuilder display = new StringBuilder();
         for (String word : words) {
+            if (word.isEmpty()) {
+                continue;
+            }
             if (!display.isEmpty()) {
                 display.append(' ');
             }
