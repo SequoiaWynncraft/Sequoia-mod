@@ -237,6 +237,9 @@ public final class RaidPartySnapshotTracker {
             if (current.hasSameMembers(observed)) {
                 return current.mergeAliases(observed, capturedAtMs);
             }
+            if (current.containsAllMembers(observed)) {
+                return current.mergeAliases(observed, current.capturedAtMs());
+            }
             return observed;
         }
         return current;
@@ -301,6 +304,12 @@ public final class RaidPartySnapshotTracker {
             }
             return usernames.stream()
                     .allMatch(username -> other.usernames.stream().anyMatch(username::equalsIgnoreCase));
+        }
+
+        private boolean containsAllMembers(PartySnapshot other) {
+            return usernames.size() > other.usernames.size()
+                    && other.usernames.stream()
+                            .allMatch(username -> usernames.stream().anyMatch(username::equalsIgnoreCase));
         }
 
         private PartySnapshot mergeAliases(PartySnapshot other, long capturedAtMs) {
