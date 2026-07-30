@@ -71,6 +71,8 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static final float LIST_ICON_SIZE = 28;
     private static final float FARM_SPOT_ROW_HEIGHT = 58;
     private static final float FARM_SPOT_ICON_SIZE = 24;
+    private static final int FARM_SPOT_PREVIEW_LIMIT = 3;
+    private static final long FARM_SPOT_PREVIEW_ROTATION_MS = 1_200;
     private static final float SCROLL_STEP = 34;
     private static final float SCROLLBAR_WIDTH = 3;
     private static final float SCROLLBAR_HIT_WIDTH = 9;
@@ -180,6 +182,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         float rowsHeight = Math.max(0, height - 40);
         maxListScroll = Math.max(0, spots.size() * FARM_SPOT_ROW_HEIGHT - rowsHeight);
         listScroll = clamp(listScroll, 0, maxListScroll);
+        long previewRotationTimeMs = System.currentTimeMillis();
         canvas.scissor(x, rowsTop, width, rowsHeight);
         try {
             for (int index = 0; index < spots.size(); index++) {
@@ -198,7 +201,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                             5,
                             selected ? color(BACKGROUND_CONTENT_FOCUSED, 245) : color(CONTROL_INPUT_HOVER, 210));
                 }
-                int visiblePreviewCount = Math.min(3, previews.size());
+                int visiblePreviewCount = Math.min(FARM_SPOT_PREVIEW_LIMIT, previews.size());
                 float previewWidth = visiblePreviewCount == 0
                         ? 0
                         : visiblePreviewCount * FARM_SPOT_ICON_SIZE + (visiblePreviewCount - 1) * 3 + 8;
@@ -214,11 +217,13 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                         - visiblePreviewCount * FARM_SPOT_ICON_SIZE
                         - Math.max(0, visiblePreviewCount - 1) * 3;
                 float previewY = rowY + (FARM_SPOT_ROW_HEIGHT - FARM_SPOT_ICON_SIZE) / 2f;
-                for (int previewIndex = 0; previewIndex < visiblePreviewCount; previewIndex++) {
+                for (int previewSlot = 0; previewSlot < visiblePreviewCount; previewSlot++) {
+                    int previewIndex =
+                            farmSpotPreviewIndex(previews.size(), previewSlot, previewRotationTimeMs);
                     drawFarmSpotIngredientPreview(
                             canvas,
                             previews.get(previewIndex),
-                            previewX + previewIndex * (FARM_SPOT_ICON_SIZE + 3),
+                            previewX + previewSlot * (FARM_SPOT_ICON_SIZE + 3),
                             previewY,
                             FARM_SPOT_ICON_SIZE,
                             rowsTop,
@@ -238,77 +243,112 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 ScrollbarTarget.INGREDIENT_LIST);
     }
 
+    static int farmSpotPreviewIndex(int previewCount, int previewSlot, long timeMs) {
+        int visibleCount = Math.min(FARM_SPOT_PREVIEW_LIMIT, Math.max(0, previewCount));
+        if (previewSlot < 0 || previewSlot >= visibleCount) {
+            return -1;
+        }
+        int startIndex = previewCount > FARM_SPOT_PREVIEW_LIMIT
+                ? (int) Math.floorMod(timeMs / FARM_SPOT_PREVIEW_ROTATION_MS, previewCount)
+                : 0;
+        return (startIndex + previewSlot) % previewCount;
+    }
+
     private void renderFarmSpotDetail(UiCanvas canvas, float x, float y, float width, float height) {
         canvas.fillRoundedRect(x, y, width, height, PANEL_RADIUS, color(BACKGROUND_BODY_OPAQUE, 245));
         locationHitboxes.clear();
         showAllMapHitbox = null;
         showFarmSpotMapHitbox = null;
-        maxDetailScroll = 0;
-        detailScroll = 0;
         if (selectedFarmSpot == null) {
+            maxDetailScroll = 0;
+            detailScroll = 0;
             drawText(canvas, "Select a mob totem farming spot", x + width / 2f, y + height / 2f, 14,
                     color(TEXT_MUTED), UiCanvas.HorizontalAlign.CENTER, UiCanvas.VerticalAlign.MIDDLE);
             return;
         }
 
+        float viewportTop = y + 8;
+        float viewportHeight = Math.max(0, height - 16);
+        float viewportBottom = viewportTop + viewportHeight;
+        detailScroll = clamp(detailScroll, 0, maxDetailScroll);
         float contentX = x + 16;
         float contentWidth = Math.max(1, width - 32);
-        float cursorY = y + 24;
-        drawText(canvas, ellipsize(selectedFarmSpot.name(), contentWidth, 20), contentX, cursorY, 20,
-                color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
-        cursorY += 30;
-        drawText(canvas, selectedFarmSpot.coordinates(), contentX, cursorY, 12, color(ACCENT_PRIMARY),
-                UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
-        if (selectedFarmSpot.radius() > 0) {
-            drawText(canvas, selectedFarmSpot.radius() + " blocks radius", contentX + contentWidth, cursorY, 10,
-                    color(TEXT_MUTED), UiCanvas.HorizontalAlign.RIGHT, UiCanvas.VerticalAlign.MIDDLE);
-        }
-        cursorY += 26;
-        drawButton(canvas, contentX, cursorY, Math.min(150, contentWidth), 24, "Show on map");
-        showFarmSpotMapHitbox = new ActionHitbox(contentX, cursorY, Math.min(150, contentWidth), 24);
-        cursorY += 48;
+        float cursorY = y + 24 - detailScroll;
+        canvas.scissor(x, viewportTop, width, viewportHeight);
+        try {
+            drawText(canvas, ellipsize(selectedFarmSpot.name(), contentWidth, 20), contentX, cursorY, 20,
+                    color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+            cursorY += 30;
+            drawText(canvas, selectedFarmSpot.coordinates(), contentX, cursorY, 12, color(ACCENT_PRIMARY),
+                    UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+            if (selectedFarmSpot.radius() > 0) {
+                drawText(canvas, selectedFarmSpot.radius() + " blocks radius", contentX + contentWidth, cursorY, 10,
+                        color(TEXT_MUTED), UiCanvas.HorizontalAlign.RIGHT, UiCanvas.VerticalAlign.MIDDLE);
+            }
+            cursorY += 26;
+            float mapButtonWidth = Math.min(150, contentWidth);
+            drawButton(canvas, contentX, cursorY, mapButtonWidth, 24, "Show on map");
+            if (cursorY + 24 >= viewportTop && cursorY <= viewportBottom) {
+                showFarmSpotMapHitbox = new ActionHitbox(contentX, cursorY, mapButtonWidth, 24);
+            }
+            cursorY += 48;
 
-        drawText(canvas, "INGREDIENTS", contentX, cursorY, 11, color(ACCENT_PRIMARY),
-                UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
-        cursorY += 14;
-        for (FarmSpotIngredientPreview preview : farmSpotIngredientPreviews(selectedFarmSpot)) {
-            canvas.fillRoundedRect(contentX, cursorY, contentWidth, 36, 5, color(BACKGROUND_CONTENT, 225));
-            drawFarmSpotIngredientPreview(
-                    canvas,
-                    preview,
-                    contentX + 6,
-                    cursorY + 6,
-                    24,
-                    y,
-                    y + height);
-            drawText(
-                    canvas,
-                    preview.name(),
-                    contentX + 38,
-                    cursorY + 18,
-                    12,
-                    color(TEXT_SECONDARY),
-                    UiCanvas.HorizontalAlign.LEFT,
-                    UiCanvas.VerticalAlign.MIDDLE);
-            cursorY += 42;
-        }
-        cursorY += 14;
-        drawText(canvas, "MOBS", contentX, cursorY, 11, color(ACCENT_PRIMARY),
-                UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
-        cursorY += 21;
-        String mobs = selectedFarmSpot.mobs().isEmpty()
-                ? "Mob names not catalogued yet"
-                : String.join(", ", selectedFarmSpot.mobs());
-        drawText(canvas, mobs, contentX, cursorY, 12, color(TEXT_SECONDARY),
-                UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
-        if (!selectedFarmSpot.notes().isBlank()) {
-            cursorY += 32;
-            drawText(canvas, "NOTES", contentX, cursorY, 11, color(ACCENT_PRIMARY),
+            drawText(canvas, "INGREDIENTS", contentX, cursorY, 11, color(ACCENT_PRIMARY),
+                    UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+            cursorY += 14;
+            for (FarmSpotIngredientPreview preview : farmSpotIngredientPreviews(selectedFarmSpot)) {
+                canvas.fillRoundedRect(contentX, cursorY, contentWidth, 36, 5, color(BACKGROUND_CONTENT, 225));
+                drawFarmSpotIngredientPreview(
+                        canvas,
+                        preview,
+                        contentX + 6,
+                        cursorY + 6,
+                        24,
+                        viewportTop,
+                        viewportBottom);
+                drawText(
+                        canvas,
+                        preview.name(),
+                        contentX + 38,
+                        cursorY + 18,
+                        12,
+                        color(TEXT_SECONDARY),
+                        UiCanvas.HorizontalAlign.LEFT,
+                        UiCanvas.VerticalAlign.MIDDLE);
+                cursorY += 42;
+            }
+            cursorY += 14;
+            drawText(canvas, "MOBS", contentX, cursorY, 11, color(ACCENT_PRIMARY),
                     UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
             cursorY += 21;
-            drawText(canvas, selectedFarmSpot.notes(), contentX, cursorY, 11, color(TEXT_MUTED),
+            String mobs = selectedFarmSpot.mobs().isEmpty()
+                    ? "Mob names not catalogued yet"
+                    : String.join(", ", selectedFarmSpot.mobs());
+            drawText(canvas, mobs, contentX, cursorY, 12, color(TEXT_SECONDARY),
                     UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+            if (!selectedFarmSpot.notes().isBlank()) {
+                cursorY += 32;
+                drawText(canvas, "NOTES", contentX, cursorY, 11, color(ACCENT_PRIMARY),
+                        UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+                cursorY += 21;
+                drawText(canvas, selectedFarmSpot.notes(), contentX, cursorY, 11, color(TEXT_MUTED),
+                        UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+            }
+        } finally {
+            canvas.resetScissor();
         }
+
+        float contentBottom = cursorY + detailScroll + 16;
+        maxDetailScroll = Math.max(0, contentBottom - viewportBottom);
+        detailScroll = clamp(detailScroll, 0, maxDetailScroll);
+        drawScrollbar(
+                canvas,
+                x + width - 5,
+                viewportTop,
+                viewportHeight,
+                detailScroll,
+                maxDetailScroll,
+                ScrollbarTarget.INGREDIENT_DETAIL);
     }
 
     private void renderIngredientList(UiCanvas canvas, float x, float y, float width, float height) {
@@ -954,7 +994,11 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 int index = (int) ((my - rowsTop + listScroll) / FARM_SPOT_ROW_HEIGHT);
                 List<IngredientFarmSpot> spots = IngredientFarmSpotCatalog.all();
                 if (index >= 0 && index < spots.size()) {
-                    selectedFarmSpot = spots.get(index);
+                    IngredientFarmSpot nextSpot = spots.get(index);
+                    if (!nextSpot.equals(selectedFarmSpot)) {
+                        selectedFarmSpot = nextSpot;
+                        detailScroll = 0;
+                    }
                     return true;
                 }
             }

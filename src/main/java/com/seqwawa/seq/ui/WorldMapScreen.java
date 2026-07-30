@@ -4351,14 +4351,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 && mx <= SIDEBAR_WIDTH) {
             if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
                 IngredientSidebarLayout ingredientLayout = ingredientSidebarLayout();
-                float listY = ingredientFarmSpotListY(ingredientLayout);
-                float listHeight = ingredientFarmSpotListHeight(ingredientLayout);
-                if (isHovered(mx, my, 0, listY, SIDEBAR_WIDTH, listHeight)) {
-                    ingredientFarmSpotScroll = (float) clamp(
-                            ingredientFarmSpotScroll - scrollY * SIDEBAR_SCROLL_STEP,
-                            0,
-                            ingredientFarmSpotMaxScroll(ingredientLayout));
-                }
+                ingredientFarmSpotScroll = (float) clamp(
+                        ingredientFarmSpotScroll - scrollY * SIDEBAR_SCROLL_STEP,
+                        0,
+                        ingredientFarmSpotMaxScroll(ingredientLayout));
             }
             return true;
         }
