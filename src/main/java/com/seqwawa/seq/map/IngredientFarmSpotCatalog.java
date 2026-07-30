@@ -60,7 +60,7 @@ public final class IngredientFarmSpotCatalog {
                             "Insanity Star",
                             "Expelled Shrapnel",
                             "Soul Essence",
-                            "Toxxulous Ripper’s Legs",
+                            "Toxxulous Ripper's Legs",
                             "Myocardial Leg",
                             "Glow Bulb Seeds"),
                     List.of(),

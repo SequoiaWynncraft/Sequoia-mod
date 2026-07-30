@@ -76,4 +76,12 @@ class PacketTextNormalizerTest {
 
         assertEquals("Purprated: https://example.com/build check this", normalized);
     }
+
+    @Test
+    void preservesUrlBoundaryAfterUnrecognizedIgnorableCharacter() {
+        String normalized = PacketTextNormalizer.normalizeForParsing(
+                "Purprated: https://example.com/build\n\u200Bcheck this");
+
+        assertEquals("Purprated: https://example.com/build check this", normalized);
+    }
 }

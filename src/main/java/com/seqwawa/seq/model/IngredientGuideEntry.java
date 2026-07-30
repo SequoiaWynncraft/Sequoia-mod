@@ -34,10 +34,10 @@ public record IngredientGuideEntry(
     }
 
     public IngredientGuideEntry {
-        skills = List.copyOf(skills);
+        skills = skills == null ? List.of() : List.copyOf(skills);
         effects = effects == null ? List.of() : List.copyOf(effects);
         craftingModifiers = craftingModifiers == null ? CraftingModifiers.empty() : craftingModifiers;
-        dropSources = List.copyOf(dropSources);
+        dropSources = dropSources == null ? List.of() : List.copyOf(dropSources);
     }
 
     public record Icon(String format, String itemId, int modelData, String textureHash) {

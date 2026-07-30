@@ -48,7 +48,11 @@ public class GameRendererMixin {
 
         guiRenderState.reset();
         try {
-            GuiGraphics guiGraphics = new GuiGraphics(minecraft, guiRenderState, 0, 0);
+            GuiGraphics guiGraphics = new GuiGraphics(
+                    minecraft,
+                    guiRenderState,
+                    minecraft.getWindow().getGuiScaledWidth(),
+                    minecraft.getWindow().getGuiScaledHeight());
             overlay.renderMinecraftGuiOverlay(guiGraphics, MinecraftUiRenderer.metrics());
             guiGraphics.renderDeferredElements();
             guiRenderer.render(fogRenderer.getBuffer(FogRenderer.FogMode.NONE));

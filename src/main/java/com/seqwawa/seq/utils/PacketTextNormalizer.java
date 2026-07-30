@@ -17,6 +17,7 @@ public final class PacketTextNormalizer {
     private static final Pattern COMMA_SPACING_PATTERN = Pattern.compile("\\s*,\\s*");
     private static final Pattern SLASH_SPACING_PATTERN = Pattern.compile("(?<=\\d)\\s*/\\s*(?=\\d)");
     private static final Pattern MULTISPACE_PATTERN = Pattern.compile(" {2,}");
+    private static final String PACKET_DECORATION_SEQUENCE = "󏿼󐀆";
 
     private PacketTextNormalizer() {
     }
@@ -74,15 +75,15 @@ public final class PacketTextNormalizer {
                 int continuationIndex = nextIndex;
                 boolean foundPacketDecoration = false;
                 while (continuationIndex < text.length()) {
+                    if (text.startsWith(PACKET_DECORATION_SEQUENCE, continuationIndex)) {
+                        foundPacketDecoration = true;
+                        continuationIndex += PACKET_DECORATION_SEQUENCE.length();
+                        continue;
+                    }
                     int continuationCodePoint = text.codePointAt(continuationIndex);
                     if (!Character.isWhitespace(continuationCodePoint)
                             && !isIgnorableForParsing(continuationCodePoint)) {
                         break;
-                    }
-                    if (continuationCodePoint != '\n'
-                            && continuationCodePoint != '\r'
-                            && !Character.isWhitespace(continuationCodePoint)) {
-                        foundPacketDecoration = true;
                     }
                     continuationIndex += Character.charCount(continuationCodePoint);
                 }
