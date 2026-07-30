@@ -120,6 +120,8 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private float nvgMouseY;
     private final Map<String, CachedIngredientIcon> itemIconCache = new HashMap<>();
     private final List<IngredientIconOverlay> itemIconOverlays = new ArrayList<>();
+    private long cachedFarmSpotIngredientSnapshotVersion = -1;
+    private Map<String, IngredientGuideEntry> cachedFarmSpotIngredientsByName = Map.of();
     private String copyFeedback;
     private long copyFeedbackUntilMs;
 
@@ -894,14 +896,24 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     }
 
     private List<Entry> farmSpotIngredientPreviews(IngredientFarmSpot spot) {
-        List<IngredientGuideEntry> ingredients = manager.snapshot().ingredients();
+        refreshFarmSpotIngredientLookup();
         return IngredientFarmSpotDisplay.resolve(
                 spot,
-                name -> ingredients.stream()
-                        .filter(ingredient -> ingredient.displayName().equalsIgnoreCase(name)
-                                || ingredient.internalName().equalsIgnoreCase(name))
-                        .findFirst()
-                        .orElse(null));
+                name -> cachedFarmSpotIngredientsByName.get(name.toLowerCase(Locale.ROOT)));
+    }
+
+    private void refreshFarmSpotIngredientLookup() {
+        IngredientGuideManager.Snapshot snapshot = manager.snapshot();
+        if (snapshot.version() == cachedFarmSpotIngredientSnapshotVersion) {
+            return;
+        }
+        Map<String, IngredientGuideEntry> ingredientsByName = new HashMap<>();
+        for (IngredientGuideEntry ingredient : snapshot.ingredients()) {
+            ingredientsByName.put(ingredient.displayName().toLowerCase(Locale.ROOT), ingredient);
+            ingredientsByName.put(ingredient.internalName().toLowerCase(Locale.ROOT), ingredient);
+        }
+        cachedFarmSpotIngredientsByName = Map.copyOf(ingredientsByName);
+        cachedFarmSpotIngredientSnapshotVersion = snapshot.version();
     }
 
     private void drawFarmSpotIngredientPreview(

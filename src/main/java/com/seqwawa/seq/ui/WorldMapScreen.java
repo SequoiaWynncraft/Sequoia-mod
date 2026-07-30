@@ -1800,6 +1800,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             IngredientFarmSpot spot, List<Entry> ingredients, float width) {
         float innerWidth = width - INGREDIENT_FARM_SPOT_CARD_PADDING * 2;
         int titleLines = wrappedLineCount(spot.name(), innerWidth, 11);
+        int coordinateLines = wrappedLineCount(spot.coordinates(), innerWidth, 10);
         int visibleIconCount = IngredientGuideScreen.farmSpotVisiblePreviewCount(ingredients.size());
         float iconsWidth = visibleIconCount == 0
                 ? 0
@@ -1813,7 +1814,15 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float previewHeight = Math.max(
                 visibleIconCount == 0 ? 0 : INGREDIENT_FARM_SPOT_ICON_SIZE,
                 labelLines * 10f);
-        return 34 + titleLines * 13 + previewHeight;
+        float topPadding = 12;
+        float previewGap = 2;
+        float bottomPadding = 8;
+        return topPadding
+                + titleLines * 13
+                + coordinateLines * 12
+                + previewGap
+                + previewHeight
+                + bottomPadding;
     }
 
     private void refreshIngredientEntryLookup() {
