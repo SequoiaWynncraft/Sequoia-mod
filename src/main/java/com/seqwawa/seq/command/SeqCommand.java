@@ -39,6 +39,7 @@ import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.AuthException;
+import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.WorldMapScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.utils.PlayerNameCache;
@@ -111,6 +112,10 @@ public class SeqCommand {
                                 .then(buildBadgeCommand("badges"))
                                 .then(buildBadgeCommand("badge"))
                                 .then(buildMapCommand())
+                                .then(ClientCommandManager.literal("ingredients")
+                                                .executes(SeqCommand::openIngredientGuideScreen))
+                                .then(ClientCommandManager.literal("ingredient")
+                                                .executes(SeqCommand::openIngredientGuideScreen))
                                 .then(buildPartyCommand("party"))
                                 .then(buildPartyCommand("p"));
 
@@ -380,6 +385,11 @@ public class SeqCommand {
 
         private static int openWorldMapScreen(CommandContext<FabricClientCommandSource> ctx) {
                 SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new WorldMapScreen(SeqClient.mc.screen)));
+                return 1;
+        }
+
+        private static int openIngredientGuideScreen(CommandContext<FabricClientCommandSource> ctx) {
+                SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new IngredientGuideScreen(SeqClient.mc.screen)));
                 return 1;
         }
 

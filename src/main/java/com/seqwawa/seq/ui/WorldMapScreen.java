@@ -4,6 +4,7 @@ import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.managers.ThemeManager.withAlpha;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
+import com.mojang.authlib.GameProfile;
 import java.awt.Color;
 import java.nio.ByteBuffer;
 import java.time.Duration;
@@ -18,11 +19,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.PlayerSkin;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
 import com.seqwawa.seq.client.SeqClient;
@@ -43,9 +47,18 @@ import com.seqwawa.seq.map.GatheringTotemSolver.Position;
 import com.seqwawa.seq.map.GuildTerritory;
 import com.seqwawa.seq.map.GuildTerritoryIndex;
 import com.seqwawa.seq.map.GuildTerritoryService;
+import com.seqwawa.seq.map.IngredientFarmSpot;
+import com.seqwawa.seq.map.IngredientFarmSpotCatalog;
+import com.seqwawa.seq.map.IngredientMapSelection;
+import com.seqwawa.seq.map.IngredientMapCategory;
+import com.seqwawa.seq.map.IngredientWaypointManager;
+import com.seqwawa.seq.map.IngredientWaypointManager.Kind;
+import com.seqwawa.seq.map.IngredientWaypointManager.Waypoint;
+import com.seqwawa.seq.map.IngredientWaypointManager.WaypointIcon;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapDisplayMode;
+import com.seqwawa.seq.map.MapFocus;
 import com.seqwawa.seq.map.MapViewport;
 import com.seqwawa.seq.map.WorldEventDefinition;
 import com.seqwawa.seq.map.WorldEventDisplayFilter;
@@ -56,15 +69,22 @@ import com.seqwawa.seq.map.WorldEventService;
 import com.seqwawa.seq.map.WorldMapSettings;
 import com.seqwawa.seq.map.WorldMapSidebarPanel;
 import com.seqwawa.seq.managers.AssetManager;
+import com.seqwawa.seq.managers.IngredientGuideManager;
+import com.seqwawa.seq.managers.IngredientItemIconFactory;
 import com.seqwawa.seq.map.GatheringMapImageService.TileKey;
 import com.seqwawa.seq.map.GatheringMapImageService.TileSet;
+import com.seqwawa.seq.model.IngredientGuideEntry;
+import com.seqwawa.seq.render.MinecraftGuiOverlay;
 import com.seqwawa.seq.utils.TextInputHelper;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiImage;
+import com.seqwawa.seq.utils.rendering.UiRenderMetrics;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
-public class WorldMapScreen extends Screen {
+public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final float SIDEBAR_WIDTH = 230;
     private static final float INSIGHTS_SIDEBAR_WIDTH = 250;
     private static final float INSIGHTS_RAIL_WIDTH = 28;
@@ -99,15 +119,27 @@ public class WorldMapScreen extends Screen {
     private static final double NODE_DETAIL_PIXELS_PER_BLOCK = 0.42;
     private static final double CLUSTER_BADGE_PIXELS_PER_BLOCK = 0.65;
     private static final double TERRITORY_FOCUS_MAX_PIXELS_PER_BLOCK = 1.25;
+    private static final double CONTEXT_FOCUS_MAX_PIXELS_PER_BLOCK = 0.75;
     private static final int SIDEBAR_CLUSTER_LIMIT = 5;
     private static final int TOTEM_RESULT_VISIBLE_ROWS = 4;
     private static final float TOTEM_RESULT_ROW_HEIGHT = 28;
+    private static final float INGREDIENT_FARM_SPOT_CARD_HEIGHT = 56;
+    private static final float INGREDIENT_FARM_SPOT_ROW_HEIGHT = 62;
+    private static final float INGREDIENT_FARM_SPOT_CARD_PADDING = 8;
+    private static final float INGREDIENT_FARM_SPOT_ICON_SIZE = 17;
+    private static final float INGREDIENT_FARM_SPOT_ICON_GAP = 3;
+    private static final ItemStack TOTEM_MAP_ICON = new ItemStack(Items.TOTEM_OF_UNDYING);
     private static final long TOTEM_SOLVE_DEBOUNCE_MS = 200;
     private final Screen parent;
+    private final MapFocus mapFocus;
+    private final ItemStack mapFocusIcon;
+    private final Supplier<PlayerSkin> mapFocusSkinLookup;
+    private final List<FocusIconOverlay> focusIconOverlays = new ArrayList<>();
     private final GatheringNodeService nodeService = GatheringNodeService.getInstance();
     private final GuildTerritoryService territoryService = GuildTerritoryService.getInstance();
     private final GatheringMapImageService mapImageService = GatheringMapImageService.getInstance();
     private final WorldMapSettings mapSettings = WorldMapSettings.getInstance();
+    private final IngredientGuideManager ingredientGuideManager = IngredientGuideManager.getInstance();
     private final GatheringClusterCache clusterCache = GatheringClusterCache.getInstance();
     private final WorldEventService worldEventService = WorldEventService.getInstance();
     private final EnumMap<GatheringProfession, Boolean> professionToggles = new EnumMap<>(GatheringProfession.class);
@@ -117,6 +149,8 @@ public class WorldMapScreen extends Screen {
     private double pixelsPerBlock = 0.08;
     private boolean initializedViewport;
     private boolean draggingMap;
+    private boolean mapDragMoved;
+    private boolean clearIngredientSelectionOnRelease;
     private boolean resourceDropdownOpen;
     private boolean resourceInputFocused;
     private int resourceDropdownScroll;
@@ -129,6 +163,7 @@ public class WorldMapScreen extends Screen {
     private int worldEventDropdownScroll;
     private float sidebarScroll;
     private float sidebarContentHeight;
+    private float ingredientFarmSpotScroll;
     private boolean insightsSidebarOpen;
     private long centerPlayerWarningUntilMs;
     private String resourceSearch = "";
@@ -165,6 +200,12 @@ public class WorldMapScreen extends Screen {
     private WorldEventDefinition hoveredWorldEvent;
     private int hoveredWorldEventLocationIndex = -1;
     private WorldEventDefinition selectedWorldEvent;
+    private final IngredientMapSelection ingredientMapSelection = new IngredientMapSelection();
+    private MapFocus.Marker hoveredFocusMarker;
+    private MapFocus.Marker selectedFocusMarker;
+    private IngredientMapCategory ingredientMapCategory = IngredientMapCategory.SPAWNS;
+    private IngredientFarmSpot hoveredIngredientFarmSpot;
+    private IngredientFarmSpot selectedIngredientFarmSpot;
     private List<GatheringNode> cachedSourceNodes = List.of();
     private List<GatheringNode> cachedFilteredNodes = List.of();
     private List<GatheringNodeCluster> cachedClusters = List.of();
@@ -193,6 +234,9 @@ public class WorldMapScreen extends Screen {
     private boolean mapImageLoadAttempted;
     private long loadedMapImageVersion = -1;
     private final Map<TileKey, UiImage> tileImages = new HashMap<>();
+    private final Map<String, MapIngredientIcon> ingredientIconCache = new HashMap<>();
+    private Map<String, IngredientGuideEntry> cachedIngredientsByName = Map.of();
+    private long cachedIngredientSnapshotVersion = -1;
     private String loadedTileVersion = "";
     private long loadedTileContentVersion = -1;
     private TileRange cachedVisibleTileRange;
@@ -204,8 +248,52 @@ public class WorldMapScreen extends Screen {
     private float nvgMouseY;
 
     public WorldMapScreen(Screen parent) {
+        this(parent, null, ItemStack.EMPTY, null);
+    }
+
+    public WorldMapScreen(Screen parent, MapFocus mapFocus) {
+        this(parent, mapFocus, ItemStack.EMPTY, null);
+    }
+
+    public WorldMapScreen(Screen parent, MapFocus mapFocus, ItemStack mapFocusIcon) {
+        this(parent, mapFocus, mapFocusIcon, null);
+    }
+
+    public WorldMapScreen(
+            Screen parent,
+            MapFocus mapFocus,
+            ItemStack mapFocusIcon,
+            GameProfile mapFocusSkinProfile) {
+        this(parent, mapFocus, mapFocusIcon, mapFocusSkinProfile, null);
+    }
+
+    public WorldMapScreen(Screen parent, IngredientFarmSpot farmSpot) {
+        this(parent, null, ItemStack.EMPTY, null, farmSpot);
+    }
+
+    private WorldMapScreen(
+            Screen parent,
+            MapFocus mapFocus,
+            ItemStack mapFocusIcon,
+            GameProfile mapFocusSkinProfile,
+            IngredientFarmSpot farmSpot) {
         super(Component.literal("Sequoia Map"));
         this.parent = parent;
+        this.mapFocus = mapFocus;
+        this.mapFocusIcon = mapFocusIcon == null ? ItemStack.EMPTY : mapFocusIcon.copy();
+        this.mapFocusSkinLookup = mapFocusSkinProfile == null
+                ? null
+                : SeqClient.mc.getSkinManager().createLookup(mapFocusSkinProfile, false);
+        this.selectedFocusMarker = mapFocus == null ? null : mapFocus.selectedMarker();
+        this.selectedIngredientFarmSpot = farmSpot;
+        if (selectedFocusMarker != null) {
+            ingredientMapSelection.toggleSpawn(selectedFocusMarker.id());
+        }
+        if (selectedIngredientFarmSpot != null) {
+            ingredientMapSelection.toggleTotem(selectedIngredientFarmSpot.id());
+        }
+        this.ingredientMapCategory =
+                farmSpot == null ? IngredientMapCategory.SPAWNS : IngredientMapCategory.TOTEM_SPOTS;
         professionToggles.putAll(mapSettings.professionToggles());
         selectedResourceFilters.addAll(mapSettings.resourceFilters());
         showClusters = mapSettings.showClusters();
@@ -221,7 +309,9 @@ public class WorldMapScreen extends Screen {
         showDebugInfo = mapSettings.showDebugInfo();
         clusterScoreMode = mapSettings.clusterScoreMode();
         gatheringAnalysisScope = mapSettings.gatheringAnalysisScope();
-        displayMode = mapSettings.displayMode();
+        displayMode = (mapFocus == null || mapFocus.markers().isEmpty()) && farmSpot == null
+                ? mapSettings.displayMode()
+                : MapDisplayMode.INGREDIENTS;
         worldEventDisplayFilter = mapSettings.worldEventDisplayFilter();
         insightsSidebarOpen = mapSettings.insightsSidebarOpen();
         territoryService.loadBundledTerritories();
@@ -229,6 +319,7 @@ public class WorldMapScreen extends Screen {
         restoreSelectedTerritory();
         nodeService.loadBundledNodes();
         mapImageService.requestLoad();
+        ingredientGuideManager.requestRefresh();
         SeqClient.getWorldEventManager().requestMapRefresh();
     }
 
@@ -262,13 +353,19 @@ public class WorldMapScreen extends Screen {
 
         if (!initializedViewport) {
             initializedViewport = true;
-            fitFullMap(mapW, mapH);
+            if (selectedIngredientFarmSpot != null) {
+                centerOnIngredientFarmSpot(selectedIngredientFarmSpot);
+            } else if (hasMapFocus()) {
+                fitMapFocus(mapW, mapH);
+            } else {
+                fitFullMap(mapW, mapH);
+            }
         }
 
         if (displayMode == MapDisplayMode.GATHERING) {
             refreshClusterAnalysisIfNeeded();
             refreshGatheringTotemPlacement();
-        } else {
+        } else if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             refreshWorldEvents();
         }
         MapViewport viewport = new MapViewport(centerX, centerZ, pixelsPerBlock, mapX, mapY, mapW, mapH);
@@ -276,10 +373,24 @@ public class WorldMapScreen extends Screen {
     }
 
     private void renderNvg(UiCanvas canvas, MapViewport viewport) {
+        hoveredFocusMarker = null;
+        hoveredIngredientFarmSpot = null;
+        focusIconOverlays.clear();
         renderMapBackground(canvas, viewport);
         canvas.fillRect(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(), color(MAP_TINT));
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             renderWorldEvents(canvas, viewport);
+            renderPlayer(canvas, viewport);
+            renderSidebar(canvas);
+            renderInsightsSidebar(canvas);
+            return;
+        }
+        if (displayMode == MapDisplayMode.INGREDIENTS) {
+            if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
+                renderIngredientFarmSpotMarkers(canvas, viewport);
+            } else {
+                renderMapFocus(canvas, viewport);
+            }
             renderPlayer(canvas, viewport);
             renderSidebar(canvas);
             renderInsightsSidebar(canvas);
@@ -318,6 +429,181 @@ public class WorldMapScreen extends Screen {
         }
         renderSidebar(canvas);
         renderInsightsSidebar(canvas);
+    }
+
+    private void renderMapFocus(UiCanvas canvas, MapViewport viewport) {
+        if (!hasMapFocus()) {
+            return;
+        }
+
+        MapBounds visibleBounds = viewport.visibleBounds();
+        if (!draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY)) {
+            double closestDistance = 10;
+            for (MapFocus.Marker marker : mapFocus.markers()) {
+                if (!visibleBounds.contains(marker.x(), marker.z())) {
+                    continue;
+                }
+                double distance = Math.hypot(
+                        nvgMouseX - viewport.worldToScreenX(marker.x()),
+                        nvgMouseY - viewport.worldToScreenZ(marker.z()));
+                if (distance <= closestDistance) {
+                    hoveredFocusMarker = marker;
+                    closestDistance = distance;
+                }
+            }
+        }
+
+        canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+        for (MapFocus.Marker marker : mapFocus.markers()) {
+            if (!visibleBounds.contains(marker.x(), marker.z())) {
+                continue;
+            }
+            float x = viewport.worldToScreenX(marker.x());
+            float y = viewport.worldToScreenZ(marker.z());
+            float areaRadius = (float) (marker.radius() * viewport.pixelsPerBlock());
+            boolean selected = ingredientMapSelection.isSpawnSelected(marker.id());
+            boolean hovered = marker.equals(hoveredFocusMarker);
+            Color markerColor = selected ? color(MAP_SELECTED_TERRITORY) : color(ACCENT_PRIMARY);
+            if (areaRadius >= 4) {
+                drawCircle(canvas, x, y, areaRadius, withAlpha(markerColor, selected ? 34 : 20));
+                drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, withAlpha(markerColor, 145));
+            }
+            if (mapFocusIcon.isEmpty()) {
+                float markerRadius = selected || hovered ? 4 : 3;
+                drawCircle(canvas, x, y, markerRadius + 1.5f, color(BACKGROUND_MODAL_OVERLAY, 190));
+                drawCircle(canvas, x, y, markerRadius, markerColor);
+            } else {
+                float iconSize = selected || hovered ? 22 : 18;
+                float outlineRadius = iconSize / 2f + 1;
+                drawCircle(canvas, x, y, outlineRadius, color(BACKGROUND_MODAL_OVERLAY, 145));
+                if (selected || hovered) {
+                    drawCircleOutline(canvas, x, y, outlineRadius, 1, markerColor);
+                }
+                focusIconOverlays.add(new FocusIconOverlay(
+                        x - iconSize / 2f,
+                        y - iconSize / 2f,
+                        iconSize,
+                        mapFocusIcon,
+                        mapFocusSkinLookup));
+            }
+        }
+        canvas.resetScissor();
+
+        renderMapFocusBanner(canvas, viewport);
+        if (hoveredFocusMarker != null) {
+            renderMapFocusTooltip(canvas, hoveredFocusMarker);
+        }
+    }
+
+    private void renderIngredientFarmSpotMarkers(UiCanvas canvas, MapViewport viewport) {
+        List<IngredientFarmSpot> spots = IngredientFarmSpotCatalog.all();
+        MapBounds visibleBounds = viewport.visibleBounds();
+        if (!draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY)) {
+            double closestDistance = 11;
+            for (IngredientFarmSpot spot : spots) {
+                if (!visibleBounds.contains(spot.x(), spot.z())) {
+                    continue;
+                }
+                double distance = Math.hypot(
+                        nvgMouseX - viewport.worldToScreenX(spot.x()),
+                        nvgMouseY - viewport.worldToScreenZ(spot.z()));
+                if (distance <= closestDistance) {
+                    hoveredIngredientFarmSpot = spot;
+                    closestDistance = distance;
+                }
+            }
+        }
+
+        canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
+        for (IngredientFarmSpot spot : spots) {
+            if (!visibleBounds.contains(spot.x(), spot.z())) {
+                continue;
+            }
+            float x = viewport.worldToScreenX(spot.x());
+            float y = viewport.worldToScreenZ(spot.z());
+            boolean selected = ingredientMapSelection.isTotemSelected(spot.id());
+            boolean hovered = spot.equals(hoveredIngredientFarmSpot);
+            Color markerColor = selected ? color(MAP_SELECTED_TERRITORY) : color(ACCENT_PRIMARY);
+            float areaRadius = (float) (spot.radius() * viewport.pixelsPerBlock());
+            if (areaRadius >= 4) {
+                drawCircle(canvas, x, y, areaRadius, withAlpha(markerColor, selected ? 34 : 20));
+                drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, withAlpha(markerColor, 145));
+            }
+            float iconSize = selected || hovered ? 22 : 18;
+            float outlineRadius = iconSize / 2f + 1;
+            drawCircle(canvas, x, y, outlineRadius, color(BACKGROUND_MODAL_OVERLAY, 190));
+            drawCircleOutline(canvas, x, y, outlineRadius, selected || hovered ? 1.5f : 1, markerColor);
+            focusIconOverlays.add(new FocusIconOverlay(
+                    x - iconSize / 2f,
+                    y - iconSize / 2f,
+                    iconSize,
+                    TOTEM_MAP_ICON,
+                    null));
+        }
+        canvas.resetScissor();
+
+        if (hoveredIngredientFarmSpot != null) {
+            renderIngredientFarmSpotTooltip(canvas, hoveredIngredientFarmSpot);
+        }
+    }
+
+    private void renderIngredientFarmSpotTooltip(UiCanvas canvas, IngredientFarmSpot spot) {
+        String subtitle = spot.coordinates() + " · " + String.join(", ", spot.ingredients());
+        float x = tooltipX(250);
+        float y = Math.max(58, nvgMouseY + 12);
+        canvas.fillRect(x, y, 250, 42, color(MAP_SIDEBAR));
+        canvas.strokeRect(x, y, 250, 42, 1, color(MAP_BORDER));
+        drawFittedText(canvas, x + 8, y + 15, 12, spot.name(), color(MAP_TEXT), 234, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 31, 10, subtitle, color(MAP_SUBTEXT), 234, TextAlignment.LEFT);
+    }
+
+    @Override
+    public void renderMinecraftGuiOverlay(GuiGraphics guiGraphics, UiRenderMetrics metrics) {
+        if (displayMode != MapDisplayMode.INGREDIENTS || focusIconOverlays.isEmpty()) {
+            return;
+        }
+        float guiUnitsPerUiUnit = metrics.pixelRatio() / (float) metrics.minecraftGuiScale();
+        for (FocusIconOverlay overlay : focusIconOverlays) {
+            float itemScale = overlay.size() * guiUnitsPerUiUnit / 16f;
+            guiGraphics.pose().pushMatrix();
+            try {
+                guiGraphics.pose().translate(
+                        overlay.x() * guiUnitsPerUiUnit,
+                        overlay.y() * guiUnitsPerUiUnit);
+                guiGraphics.pose().scale(itemScale, itemScale);
+                if (overlay.skinLookup() != null) {
+                    PlayerFaceRenderer.draw(guiGraphics, overlay.skinLookup().get(), 0, 0, 16);
+                } else {
+                    guiGraphics.renderItem(overlay.stack(), 0, 0);
+                }
+            } finally {
+                guiGraphics.pose().popMatrix();
+            }
+        }
+    }
+
+    private void renderMapFocusBanner(UiCanvas canvas, MapViewport viewport) {
+        String title = mapFocus.title();
+        String subtitle = mapFocus.markers().size() + (mapFocus.markers().size() == 1
+                ? " spawn location"
+                : " spawn locations");
+        float width = Math.min(260, Math.max(170, textWidth(title, 12) + 32));
+        float x = viewport.screenX() + (viewport.screenWidth() - width) / 2f;
+        float y = viewport.screenY() + 10;
+        canvas.fillRoundedRect(x, y, width, 42, 6, color(MAP_SIDEBAR, 235));
+        canvas.strokeRect(x, y, width, 42, 1, color(MAP_BORDER));
+        drawFittedText(canvas, x + 10, y + 14, 12, title, color(MAP_TEXT), width - 20, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 10, y + 30, 10, subtitle, color(MAP_SUBTEXT), width - 20, TextAlignment.LEFT);
+    }
+
+    private void renderMapFocusTooltip(UiCanvas canvas, MapFocus.Marker marker) {
+        String subtitle = marker.source() + " · " + marker.coordinates();
+        float x = tooltipX(230);
+        float y = Math.max(58, nvgMouseY + 12);
+        canvas.fillRect(x, y, 230, 42, color(MAP_SIDEBAR));
+        canvas.strokeRect(x, y, 230, 42, 1, color(MAP_BORDER));
+        drawFittedText(canvas, x + 8, y + 15, 12, marker.label(), color(MAP_TEXT), 214, TextAlignment.LEFT);
+        drawFittedText(canvas, x + 8, y + 31, 10, subtitle, color(MAP_SUBTEXT), 214, TextAlignment.LEFT);
     }
 
     private void renderTerritories(UiCanvas canvas, MapViewport viewport) {
@@ -1089,6 +1375,10 @@ public class WorldMapScreen extends Screen {
             renderWorldEventSidebar(canvas);
             return;
         }
+        if (displayMode == MapDisplayMode.INGREDIENTS) {
+            renderIngredientSidebar(canvas);
+            return;
+        }
         float screenHeight = uiScreenHeight();
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         SidebarLayout layout = sidebarLayout();
@@ -1226,6 +1516,319 @@ public class WorldMapScreen extends Screen {
         renderSidebarScrollbar(canvas, screenHeight);
     }
 
+    private void renderIngredientSidebar(UiCanvas canvas) {
+        float screenHeight = uiScreenHeight();
+        IngredientSidebarLayout layout = ingredientSidebarLayout();
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(MAP_SIDEBAR));
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
+        drawText(canvas, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", color(MAP_TITLE), TextAlignment.CENTER);
+        drawButton(canvas, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
+        drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
+        drawMapModeControl(canvas, layout.modeY());
+
+        float contentWidth = SIDEBAR_WIDTH - PADDING * 2;
+        drawIngredientMapCategoryControl(canvas, layout.titleY());
+        renderIngredientWaypointActions(canvas, layout, contentWidth);
+        if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
+            renderIngredientFarmSpotSidebar(canvas, layout, contentWidth);
+            return;
+        }
+
+        drawButton(canvas, PADDING, layout.guideY(), contentWidth, BUTTON_HEIGHT, "Choose Ingredient", false);
+        if (!hasMapFocus()) {
+            drawFittedText(
+                    canvas,
+                    PADDING,
+                    layout.ingredientY(),
+                    11,
+                    "Choose an ingredient to display all of its published spawn locations.",
+                    color(MAP_SUBTEXT),
+                    contentWidth,
+                    TextAlignment.LEFT);
+            return;
+        }
+
+        drawFittedText(
+                canvas,
+                PADDING,
+                layout.ingredientY(),
+                13,
+                mapFocus.title(),
+                color(MAP_TEXT),
+                contentWidth,
+                TextAlignment.LEFT);
+        long sourceCount = mapFocus.markers().stream().map(MapFocus.Marker::source).distinct().count();
+        drawText(
+                canvas,
+                PADDING,
+                layout.summaryY(),
+                10,
+                mapFocus.markers().size() + " locations · " + sourceCount + " mobs",
+                color(MAP_SUBTEXT),
+                TextAlignment.LEFT);
+
+        int selectedSpawnCount = ingredientMapSelection.spawnCount();
+        drawText(
+                canvas,
+                PADDING,
+                layout.selectedTitleY(),
+                12,
+                "Selected Spawns (" + selectedSpawnCount + ")",
+                color(MAP_TITLE),
+                TextAlignment.LEFT);
+        if (selectedFocusMarker == null) {
+            drawText(
+                    canvas,
+                    PADDING,
+                    layout.selectedDetailY(),
+                    10,
+                    "Click markers to select multiple",
+                    color(MAP_SUBTEXT),
+                    TextAlignment.LEFT);
+        } else {
+            drawFittedText(
+                    canvas,
+                    PADDING,
+                    layout.selectedDetailY(),
+                    11,
+                    selectedFocusMarker.source(),
+                    color(MAP_TEXT),
+                    contentWidth,
+                    TextAlignment.LEFT);
+            drawText(
+                    canvas,
+                    PADDING,
+                    layout.selectedDetailY() + 18,
+                    10,
+                    selectedFocusMarker.coordinates(),
+                    color(MAP_SUBTEXT),
+                    TextAlignment.LEFT);
+            drawButton(canvas, PADDING, layout.copyY(), contentWidth, BUTTON_HEIGHT, "Copy Selected Coordinates", false);
+        }
+    }
+
+    private void renderIngredientWaypointActions(
+            UiCanvas canvas, IngredientSidebarLayout layout, float contentWidth) {
+        int selectedCount = ingredientMapSelection.size();
+        int waypointCount = IngredientWaypointManager.getInstance().size();
+        drawButton(
+                canvas,
+                PADDING,
+                layout.renderWaypointsY(),
+                contentWidth,
+                BUTTON_HEIGHT,
+                "Render Selected (" + selectedCount + ")",
+                selectedCount > 0);
+        drawButton(
+                canvas,
+                PADDING,
+                layout.clearWaypointsY(),
+                contentWidth,
+                BUTTON_HEIGHT,
+                "Clear Waypoints" + (waypointCount > 0 ? " (" + waypointCount + ")" : ""),
+                waypointCount > 0);
+    }
+
+    private void renderIngredientFarmSpotSidebar(
+            UiCanvas canvas, IngredientSidebarLayout layout, float contentWidth) {
+        drawText(
+                canvas,
+                PADDING,
+                layout.guideY(),
+                13,
+                "All Mob Totem Spots",
+                color(MAP_TITLE),
+                TextAlignment.LEFT);
+        List<IngredientFarmSpot> spots = IngredientFarmSpotCatalog.all();
+        float listY = ingredientFarmSpotListY(layout);
+        float listHeight = ingredientFarmSpotListHeight(layout);
+        float maxScroll = ingredientFarmSpotMaxScroll(layout);
+        ingredientFarmSpotScroll = (float) clamp(ingredientFarmSpotScroll, 0, maxScroll);
+        float rowY = listY - ingredientFarmSpotScroll;
+        if (spots.isEmpty()) {
+            drawFittedText(
+                    canvas,
+                    PADDING,
+                    rowY,
+                    10,
+                    "No farming spots have been added yet.",
+                    color(MAP_SUBTEXT),
+                    contentWidth,
+                    TextAlignment.LEFT);
+            return;
+        }
+
+        canvas.scissor(0, listY, SIDEBAR_WIDTH, listHeight);
+        try {
+            for (IngredientFarmSpot spot : spots) {
+                boolean selected = ingredientMapSelection.isTotemSelected(spot.id());
+                boolean hovered = isHovered(nvgMouseX, nvgMouseY, 0, listY, SIDEBAR_WIDTH, listHeight)
+                        && isHovered(
+                                nvgMouseX,
+                                nvgMouseY,
+                                PADDING,
+                                rowY,
+                                contentWidth,
+                                INGREDIENT_FARM_SPOT_CARD_HEIGHT);
+                canvas.fillRect(
+                        PADDING,
+                        rowY,
+                        contentWidth,
+                        INGREDIENT_FARM_SPOT_CARD_HEIGHT,
+                        selected
+                                ? color(MAP_CONTROL_ACTIVE)
+                                : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
+                drawFittedText(
+                        canvas,
+                        PADDING + INGREDIENT_FARM_SPOT_CARD_PADDING,
+                        rowY + 14,
+                        11,
+                        spot.name(),
+                        color(MAP_TEXT),
+                        contentWidth - INGREDIENT_FARM_SPOT_CARD_PADDING * 2,
+                        TextAlignment.LEFT);
+                drawFittedText(
+                        canvas,
+                        PADDING + INGREDIENT_FARM_SPOT_CARD_PADDING,
+                        rowY + 31,
+                        10,
+                        spot.coordinates(),
+                        color(MAP_SUBTEXT),
+                        contentWidth - INGREDIENT_FARM_SPOT_CARD_PADDING * 2,
+                        TextAlignment.LEFT);
+                renderIngredientFarmSpotTextures(
+                        canvas,
+                        spot,
+                        PADDING + INGREDIENT_FARM_SPOT_CARD_PADDING,
+                        rowY + 37,
+                        contentWidth - INGREDIENT_FARM_SPOT_CARD_PADDING * 2,
+                        listY,
+                        listY + listHeight);
+                rowY += INGREDIENT_FARM_SPOT_ROW_HEIGHT;
+            }
+        } finally {
+            canvas.resetScissor();
+        }
+        renderIngredientFarmSpotScrollbar(canvas, listY, listHeight, maxScroll);
+    }
+
+    private void renderIngredientFarmSpotTextures(
+            UiCanvas canvas,
+            IngredientFarmSpot spot,
+            float x,
+            float y,
+            float width,
+            float viewportTop,
+            float viewportBottom) {
+        refreshIngredientEntryLookup();
+        int visibleIconCount = Math.min(
+                spot.ingredients().size(),
+                Math.max(
+                        0,
+                        (int) ((width + INGREDIENT_FARM_SPOT_ICON_GAP)
+                                / (INGREDIENT_FARM_SPOT_ICON_SIZE + INGREDIENT_FARM_SPOT_ICON_GAP))));
+        for (int index = 0; index < visibleIconCount; index++) {
+            String ingredientName = spot.ingredients().get(index);
+            IngredientGuideEntry ingredient =
+                    cachedIngredientsByName.get(ingredientName.toLowerCase(Locale.ROOT));
+            float iconX = x + index * (INGREDIENT_FARM_SPOT_ICON_SIZE + INGREDIENT_FARM_SPOT_ICON_GAP);
+            if (ingredient == null) {
+                drawText(
+                        canvas,
+                        iconX + INGREDIENT_FARM_SPOT_ICON_SIZE / 2f,
+                        y + INGREDIENT_FARM_SPOT_ICON_SIZE / 2f,
+                        10,
+                        "✦",
+                        color(MAP_SUBTEXT),
+                        TextAlignment.CENTER);
+                continue;
+            }
+            MapIngredientIcon icon = cachedIngredientIcon(ingredient);
+            if (icon.stack().isEmpty()) {
+                drawText(
+                        canvas,
+                        iconX + INGREDIENT_FARM_SPOT_ICON_SIZE / 2f,
+                        y + INGREDIENT_FARM_SPOT_ICON_SIZE / 2f,
+                        10,
+                        "✦",
+                        color(MAP_SUBTEXT),
+                        TextAlignment.CENTER);
+            } else if (y >= viewportTop && y + INGREDIENT_FARM_SPOT_ICON_SIZE <= viewportBottom) {
+                focusIconOverlays.add(new FocusIconOverlay(
+                        iconX,
+                        y,
+                        INGREDIENT_FARM_SPOT_ICON_SIZE,
+                        icon.stack(),
+                        icon.skinLookup()));
+            }
+        }
+    }
+
+    private void refreshIngredientEntryLookup() {
+        IngredientGuideManager.Snapshot snapshot = ingredientGuideManager.snapshot();
+        if (snapshot.version() == cachedIngredientSnapshotVersion) {
+            return;
+        }
+        Map<String, IngredientGuideEntry> ingredientsByName = new HashMap<>();
+        for (IngredientGuideEntry ingredient : snapshot.ingredients()) {
+            ingredientsByName.put(ingredient.displayName().toLowerCase(Locale.ROOT), ingredient);
+            ingredientsByName.put(ingredient.internalName().toLowerCase(Locale.ROOT), ingredient);
+        }
+        cachedIngredientsByName = Map.copyOf(ingredientsByName);
+        cachedIngredientSnapshotVersion = snapshot.version();
+    }
+
+    private MapIngredientIcon cachedIngredientIcon(IngredientGuideEntry ingredient) {
+        return ingredientIconCache.computeIfAbsent(ingredient.icon().cacheKey(), ignored -> {
+            ItemStack stack = IngredientItemIconFactory.create(ingredient.icon());
+            GameProfile skinProfile = IngredientItemIconFactory.skinProfile(ingredient.icon());
+            Supplier<PlayerSkin> skinLookup = skinProfile == null
+                    ? null
+                    : SeqClient.mc.getSkinManager().createLookup(skinProfile, false);
+            return new MapIngredientIcon(stack, skinLookup);
+        });
+    }
+
+    private void renderIngredientFarmSpotScrollbar(
+            UiCanvas canvas, float listY, float listHeight, float maxScroll) {
+        if (maxScroll <= 0 || listHeight <= 0) {
+            return;
+        }
+        float trackX = SIDEBAR_WIDTH - 5;
+        float trackHeight = Math.max(0, listHeight - 4);
+        float contentHeight = ingredientFarmSpotContentHeight();
+        float thumbHeight = Math.min(trackHeight, Math.max(24, trackHeight * listHeight / contentHeight));
+        float thumbY = listY + 2 + (trackHeight - thumbHeight) * (ingredientFarmSpotScroll / maxScroll);
+        canvas.fillRect(trackX, listY + 2, 3, trackHeight, color(MAP_TEXT, 28));
+        canvas.fillRect(trackX, thumbY, 3, thumbHeight, color(MAP_TEXT, 110));
+    }
+
+    private void drawIngredientMapCategoryControl(UiCanvas canvas, float y) {
+        float width = SIDEBAR_WIDTH - PADDING * 2;
+        float segmentWidth = width / IngredientMapCategory.values().length;
+        for (int index = 0; index < IngredientMapCategory.values().length; index++) {
+            IngredientMapCategory category = IngredientMapCategory.values()[index];
+            float x = PADDING + index * segmentWidth;
+            boolean active = ingredientMapCategory == category;
+            boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
+            canvas.fillRect(
+                    x,
+                    y,
+                    segmentWidth,
+                    BUTTON_HEIGHT,
+                    active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
+            canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, color(MAP_BORDER));
+            drawText(
+                    canvas,
+                    x + segmentWidth / 2f,
+                    y + BUTTON_HEIGHT / 2f,
+                    10,
+                    category.label(),
+                    color(MAP_TEXT),
+                    TextAlignment.CENTER);
+        }
+    }
+
     private void renderInsightsSidebar(UiCanvas canvas) {
         float screenWidth = uiScreenWidth();
         float screenHeight = uiScreenHeight();
@@ -1250,10 +1853,97 @@ public class WorldMapScreen extends Screen {
         canvas.scissor(x, SIDEBAR_HEADER_HEIGHT, INSIGHTS_SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_HEADER_HEIGHT));
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             renderWorldEventInsights(canvas, x, layout);
+        } else if (displayMode == MapDisplayMode.INGREDIENTS) {
+            renderIngredientInsights(canvas, x);
         } else {
             renderGatheringInsights(canvas, x, screenHeight, layout);
         }
         canvas.resetScissor();
+    }
+
+    private void renderIngredientInsights(UiCanvas canvas, float x) {
+        float contentX = x + PADDING;
+        float contentWidth = INSIGHTS_SIDEBAR_WIDTH - PADDING * 2;
+        if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
+            drawInsightsSectionTitle(
+                    canvas,
+                    contentX,
+                    60,
+                    "Mob Totem Spots (" + ingredientMapSelection.totemCount() + " selected)");
+            if (selectedIngredientFarmSpot != null) {
+                drawInsightsSectionTitle(canvas, contentX, 92, "Selected Spot");
+                drawFittedText(
+                        canvas,
+                        contentX,
+                        116,
+                        12,
+                        selectedIngredientFarmSpot.name(),
+                        color(MAP_TEXT),
+                        contentWidth,
+                        TextAlignment.LEFT);
+                drawFittedText(
+                        canvas,
+                        contentX,
+                        134,
+                        11,
+                        selectedIngredientFarmSpot.coordinates(),
+                        color(MAP_SUBTEXT),
+                        contentWidth,
+                        TextAlignment.LEFT);
+                drawFittedText(
+                        canvas,
+                        contentX,
+                        152,
+                        10,
+                        String.join(", ", selectedIngredientFarmSpot.ingredients()),
+                        color(MAP_SUBTEXT),
+                        contentWidth,
+                        TextAlignment.LEFT);
+            }
+            return;
+        }
+        drawInsightsSectionTitle(canvas, contentX, 60, "Ingredient");
+        if (!hasMapFocus()) {
+            drawFittedText(
+                    canvas,
+                    contentX,
+                    84,
+                    11,
+                    "No ingredient selected. Open one from the Ingredient Guide.",
+                    color(MAP_SUBTEXT),
+                    contentWidth,
+                    TextAlignment.LEFT);
+            return;
+        }
+        drawFittedText(canvas, contentX, 84, 13, mapFocus.title(), color(MAP_TEXT), contentWidth, TextAlignment.LEFT);
+        drawInsightRow(canvas, contentX, 106, contentWidth, "Spawn locations", String.valueOf(mapFocus.markers().size()));
+        long sourceCount = mapFocus.markers().stream().map(MapFocus.Marker::source).distinct().count();
+        drawInsightRow(canvas, contentX, 122, contentWidth, "Mob sources", String.valueOf(sourceCount));
+        if (selectedFocusMarker != null) {
+            drawInsightsSectionTitle(
+                    canvas,
+                    contentX,
+                    154,
+                    "Selected Spawns (" + ingredientMapSelection.spawnCount() + ")");
+            drawFittedText(
+                    canvas,
+                    contentX,
+                    178,
+                    12,
+                    selectedFocusMarker.source(),
+                    color(MAP_TEXT),
+                    contentWidth,
+                    TextAlignment.LEFT);
+            drawFittedText(
+                    canvas,
+                    contentX,
+                    196,
+                    11,
+                    selectedFocusMarker.coordinates(),
+                    color(MAP_SUBTEXT),
+                    contentWidth,
+                    TextAlignment.LEFT);
+        }
     }
 
     private void renderGatheringInsights(UiCanvas canvas, float x, float screenHeight, InsightsLayout layout) {
@@ -2136,6 +2826,15 @@ public class WorldMapScreen extends Screen {
     }
 
     private boolean copyHoveredCoordinates(float mx, float my, float sidebarMy, float screenWidth, float screenHeight) {
+        MapViewport viewport = mapViewport(screenWidth, screenHeight);
+        if (viewport.isInsideScreen(mx, my) && hoveredIngredientFarmSpot != null) {
+            copyToClipboard(hoveredIngredientFarmSpot.coordinates());
+            return true;
+        }
+        if (viewport.isInsideScreen(mx, my) && hoveredFocusMarker != null) {
+            copyToClipboard(hoveredFocusMarker.coordinates());
+            return true;
+        }
         float insightsX = insightsSidebarX(screenWidth);
         InsightsLayout insights = insightsLayout();
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
@@ -2151,7 +2850,6 @@ public class WorldMapScreen extends Screen {
                 copyToClipboard(worldEventCoordinates(selectedWorldEvent.locations().getFirst()));
                 return true;
             }
-            MapViewport viewport = mapViewport(screenWidth, screenHeight);
             if (viewport.isInsideScreen(mx, my)
                     && hoveredWorldEvent != null
                     && hoveredWorldEventLocationIndex >= 0) {
@@ -2174,7 +2872,6 @@ public class WorldMapScreen extends Screen {
                 copyToClipboard(totemCoords(gatheringTotemPlacement));
                 return true;
             }
-            MapViewport viewport = mapViewport(screenWidth, screenHeight);
             Placement clickedPlacement = viewport.isInsideScreen(mx, my)
                     ? gatheringTotemPlacementAt(visibleGatheringTotemPlacements(), viewport, mx, my)
                     : null;
@@ -2202,7 +2899,6 @@ public class WorldMapScreen extends Screen {
             return true;
         }
 
-        MapViewport viewport = mapViewport(screenWidth, screenHeight);
         if (!viewport.isInsideScreen(mx, my)) {
             return false;
         }
@@ -2888,6 +3584,105 @@ public class WorldMapScreen extends Screen {
         pixelsPerBlock = clamp(Math.min(xScale, zScale) * 0.92, MIN_PIXELS_PER_BLOCK, MAX_PIXELS_PER_BLOCK);
     }
 
+    private boolean hasMapFocus() {
+        return mapFocus != null && !mapFocus.markers().isEmpty();
+    }
+
+    private void fitMapFocus(float mapW, float mapH) {
+        MapBounds bounds = mapFocus.bounds();
+        centerX = (bounds.minX() + bounds.maxX()) / 2.0;
+        centerZ = (bounds.minZ() + bounds.maxZ()) / 2.0;
+        double spanX = Math.max(80, bounds.maxX() - bounds.minX());
+        double spanZ = Math.max(80, bounds.maxZ() - bounds.minZ());
+        double xScale = Math.max(1, mapW - 80) / spanX;
+        double zScale = Math.max(1, mapH - 100) / spanZ;
+        pixelsPerBlock = clamp(
+                Math.min(Math.min(xScale, zScale) * 0.9, CONTEXT_FOCUS_MAX_PIXELS_PER_BLOCK),
+                MIN_PIXELS_PER_BLOCK,
+                MAX_PIXELS_PER_BLOCK);
+    }
+
+    private void selectIngredientFarmSpot(IngredientFarmSpot spot) {
+        if (spot == null) {
+            return;
+        }
+        ingredientMapCategory = IngredientMapCategory.TOTEM_SPOTS;
+        clearIngredientMapSelections();
+        ingredientMapSelection.toggleTotem(spot.id());
+        selectedIngredientFarmSpot = spot;
+        centerOnIngredientFarmSpot(spot);
+    }
+
+    private void toggleIngredientFarmSpotSelection(IngredientFarmSpot spot) {
+        boolean selected = ingredientMapSelection.toggleTotem(spot.id());
+        selectedIngredientFarmSpot = selected
+                ? spot
+                : IngredientFarmSpotCatalog.all().stream()
+                        .filter(candidate -> ingredientMapSelection.isTotemSelected(candidate.id()))
+                        .reduce((first, second) -> second)
+                        .orElse(null);
+    }
+
+    private void toggleFocusMarkerSelection(MapFocus.Marker marker) {
+        boolean selected = ingredientMapSelection.toggleSpawn(marker.id());
+        selectedFocusMarker = selected
+                ? marker
+                : mapFocus.markers().stream()
+                        .filter(candidate -> ingredientMapSelection.isSpawnSelected(candidate.id()))
+                        .reduce((first, second) -> second)
+                        .orElse(null);
+    }
+
+    private void clearIngredientMapSelections() {
+        ingredientMapSelection.clear();
+        selectedFocusMarker = null;
+        selectedIngredientFarmSpot = null;
+    }
+
+    private void renderSelectedIngredientWaypoints() {
+        if (ingredientMapSelection.isEmpty()) {
+            return;
+        }
+        List<Waypoint> waypoints = new ArrayList<>();
+        if (mapFocus != null) {
+            for (MapFocus.Marker marker : mapFocus.markers()) {
+                if (!ingredientMapSelection.isSpawnSelected(marker.id())) {
+                    continue;
+                }
+                waypoints.add(new Waypoint(
+                        "ingredient-spawn:" + mapFocus.title() + ":" + marker.id(),
+                        Kind.INGREDIENT_SPAWN,
+                        marker.label(),
+                        marker.source(),
+                        marker.x(),
+                        marker.y(),
+                        marker.z(),
+                        WaypointIcon.of(mapFocusIcon, mapFocusSkinLookup)));
+            }
+        }
+        for (IngredientFarmSpot spot : IngredientFarmSpotCatalog.all()) {
+            if (!ingredientMapSelection.isTotemSelected(spot.id())) {
+                continue;
+            }
+            waypoints.add(new Waypoint(
+                    "ingredient-totem:" + spot.id(),
+                    Kind.TOTEM_SPOT,
+                    spot.name(),
+                    String.join(", ", spot.ingredients()),
+                    spot.x(),
+                    spot.y(),
+                    spot.z(),
+                    WaypointIcon.of(new ItemStack(Items.TOTEM_OF_UNDYING), null)));
+        }
+        IngredientWaypointManager.getInstance().replaceAll(waypoints);
+    }
+
+    private void centerOnIngredientFarmSpot(IngredientFarmSpot spot) {
+        centerX = spot.x();
+        centerZ = spot.z();
+        pixelsPerBlock = Math.max(pixelsPerBlock, 0.35);
+    }
+
     private boolean centerOnPlayer() {
         if (SeqClient.mc.player == null) {
             return false;
@@ -2920,12 +3715,39 @@ public class WorldMapScreen extends Screen {
         if (click.button() != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             return super.mouseClicked(click, outsideScreen);
         }
+        mapDragMoved = false;
+        clearIngredientSelectionOnRelease = false;
 
         if (mx >= 0 && mx <= SIDEBAR_WIDTH && my < SIDEBAR_HEADER_HEIGHT) {
             return true;
         }
         if (mouseClickedInsights(mx, my, screenWidth, screenHeight)) {
             return true;
+        }
+        MapViewport focusedViewport = mapViewport(screenWidth, screenHeight);
+        if (displayMode == MapDisplayMode.INGREDIENTS
+                && focusedViewport.isInsideScreen(mx, my)
+                && hoveredIngredientFarmSpot != null) {
+            toggleIngredientFarmSpotSelection(hoveredIngredientFarmSpot);
+            draggingMap = true;
+            hoveredIngredientFarmSpot = null;
+            closeSearchDropdowns();
+            return true;
+        }
+        if (displayMode == MapDisplayMode.INGREDIENTS
+                && focusedViewport.isInsideScreen(mx, my)
+                && hoveredFocusMarker != null) {
+            toggleFocusMarkerSelection(hoveredFocusMarker);
+            draggingMap = true;
+            hoveredFocusMarker = null;
+            closeSearchDropdowns();
+            return true;
+        }
+        if (displayMode == MapDisplayMode.INGREDIENTS) {
+            if (mouseClickedIngredients(mx, my, screenWidth, screenHeight)) {
+                return true;
+            }
+            return super.mouseClicked(click, outsideScreen);
         }
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             if (mouseClickedWorldEvents(mx, my, sidebarMy, screenWidth, screenHeight)) {
@@ -3213,6 +4035,81 @@ public class WorldMapScreen extends Screen {
         return super.mouseClicked(click, outsideScreen);
     }
 
+    private boolean mouseClickedIngredients(float mx, float my, float screenWidth, float screenHeight) {
+        IngredientSidebarLayout layout = ingredientSidebarLayout();
+        float buttonWidth = SIDEBAR_WIDTH - PADDING * 2;
+        if (isHovered(mx, my, PADDING, layout.backY(), buttonWidth, BUTTON_HEIGHT)) {
+            SeqClient.mc.setScreen(parent);
+            return true;
+        }
+        if (isHovered(mx, my, PADDING, layout.centerY(), buttonWidth, BUTTON_HEIGHT)) {
+            if (!centerOnPlayer()) {
+                centerPlayerWarningUntilMs = System.currentTimeMillis() + CENTER_PLAYER_WARNING_DURATION_MS;
+            }
+            return true;
+        }
+        if (isHovered(mx, my, PADDING, layout.modeY(), buttonWidth, BUTTON_HEIGHT)) {
+            setDisplayMode(mapModeAt(mx));
+            return true;
+        }
+        if (isHovered(mx, my, PADDING, layout.titleY(), buttonWidth, BUTTON_HEIGHT)) {
+            IngredientMapCategory nextCategory = ingredientMapCategoryAt(mx);
+            if (nextCategory != ingredientMapCategory) {
+                ingredientMapCategory = nextCategory;
+            }
+            hoveredFocusMarker = null;
+            hoveredIngredientFarmSpot = null;
+            return true;
+        }
+        if (isHovered(mx, my, PADDING, layout.renderWaypointsY(), buttonWidth, BUTTON_HEIGHT)) {
+            renderSelectedIngredientWaypoints();
+            return true;
+        }
+        if (isHovered(mx, my, PADDING, layout.clearWaypointsY(), buttonWidth, BUTTON_HEIGHT)) {
+            IngredientWaypointManager.getInstance().clear();
+            return true;
+        }
+        if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
+            float listY = ingredientFarmSpotListY(layout);
+            float listHeight = ingredientFarmSpotListHeight(layout);
+            if (isHovered(mx, my, 0, listY, SIDEBAR_WIDTH, listHeight)) {
+                float rowY = listY - ingredientFarmSpotScroll;
+                for (IngredientFarmSpot spot : IngredientFarmSpotCatalog.all()) {
+                    if (isHovered(
+                            mx,
+                            my,
+                            PADDING,
+                            rowY,
+                            buttonWidth,
+                            INGREDIENT_FARM_SPOT_CARD_HEIGHT)) {
+                        selectIngredientFarmSpot(spot);
+                        return true;
+                    }
+                    rowY += INGREDIENT_FARM_SPOT_ROW_HEIGHT;
+                }
+            }
+        } else if (isHovered(mx, my, PADDING, layout.guideY(), buttonWidth, BUTTON_HEIGHT)) {
+            SeqClient.mc.setScreen(new IngredientGuideScreen(this));
+            return true;
+        }
+        if (ingredientMapCategory == IngredientMapCategory.SPAWNS
+                && selectedFocusMarker != null
+                && isHovered(mx, my, PADDING, layout.copyY(), buttonWidth, BUTTON_HEIGHT)) {
+            copyToClipboard(selectedFocusMarker.coordinates());
+            return true;
+        }
+
+        MapViewport viewport = mapViewport(screenWidth, screenHeight);
+        if (viewport.isInsideScreen(mx, my)) {
+            draggingMap = true;
+            clearIngredientSelectionOnRelease = true;
+            hoveredFocusMarker = null;
+            hoveredIngredientFarmSpot = null;
+            return true;
+        }
+        return mx >= 0 && mx <= SIDEBAR_WIDTH;
+    }
+
     private boolean mouseClickedInsights(float mx, float my, float screenWidth, float screenHeight) {
         if (!insightsSidebarOpen) {
             if (isHovered(
@@ -3257,6 +4154,9 @@ public class WorldMapScreen extends Screen {
                             24)) {
                 toggleTrackedWorldEvent(selectedWorldEvent, false);
             }
+            return true;
+        }
+        if (displayMode == MapDisplayMode.INGREDIENTS) {
             return true;
         }
 
@@ -3390,13 +4290,25 @@ public class WorldMapScreen extends Screen {
 
     @Override
     public boolean mouseReleased(@NotNull MouseButtonEvent click) {
+        boolean clearIngredientSelection = click.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                && draggingMap
+                && clearIngredientSelectionOnRelease
+                && !mapDragMoved;
         draggingMap = false;
+        mapDragMoved = false;
+        clearIngredientSelectionOnRelease = false;
+        if (clearIngredientSelection) {
+            clearIngredientMapSelections();
+            return true;
+        }
         return super.mouseReleased(click);
     }
 
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (draggingMap) {
+            mapDragMoved = true;
+            clearIngredientSelectionOnRelease = false;
             centerX -= MinecraftUiRenderer.mouseDelta(deltaX) / pixelsPerBlock;
             centerZ -= MinecraftUiRenderer.mouseDelta(deltaY) / pixelsPerBlock;
             hoveredNode = null;
@@ -3404,6 +4316,8 @@ public class WorldMapScreen extends Screen {
             hoveredTerritory = null;
             hoveredWorldEvent = null;
             hoveredWorldEventLocationIndex = -1;
+            hoveredFocusMarker = null;
+            hoveredIngredientFarmSpot = null;
             return true;
         }
         return super.mouseDragged(click, deltaX, deltaY);
@@ -3431,6 +4345,18 @@ public class WorldMapScreen extends Screen {
                         WORLD_EVENT_DROPDOWN_VISIBLE_ROWS);
                 return true;
             }
+        }
+        if (displayMode == MapDisplayMode.INGREDIENTS
+                && mx >= 0
+                && mx <= SIDEBAR_WIDTH) {
+            if (ingredientMapCategory == IngredientMapCategory.TOTEM_SPOTS) {
+                IngredientSidebarLayout ingredientLayout = ingredientSidebarLayout();
+                ingredientFarmSpotScroll = (float) clamp(
+                        ingredientFarmSpotScroll - scrollY * SIDEBAR_SCROLL_STEP,
+                        0,
+                        ingredientFarmSpotMaxScroll(ingredientLayout));
+            }
+            return true;
         }
         SidebarLayout layout = sidebarLayout();
         if (territoryDropdownOpen) {
@@ -3837,6 +4763,14 @@ public class WorldMapScreen extends Screen {
         return index >= 0 && index < MapDisplayMode.values().length ? MapDisplayMode.values()[index] : null;
     }
 
+    private IngredientMapCategory ingredientMapCategoryAt(float mouseX) {
+        float segmentWidth = (SIDEBAR_WIDTH - PADDING * 2) / IngredientMapCategory.values().length;
+        int index = (int) ((mouseX - PADDING) / segmentWidth);
+        return index >= 0 && index < IngredientMapCategory.values().length
+                ? IngredientMapCategory.values()[index]
+                : ingredientMapCategory;
+    }
+
     private WorldEventDisplayFilter worldEventFilterAt(float mouseX) {
         float segmentWidth = (SIDEBAR_WIDTH - PADDING * 2) / WorldEventDisplayFilter.values().length;
         int index = (int) ((mouseX - PADDING) / segmentWidth);
@@ -3968,7 +4902,7 @@ public class WorldMapScreen extends Screen {
 
     private InsightsLayout insightsLayout() {
         float overviewY = 60;
-        if (displayMode == MapDisplayMode.WORLD_EVENTS) {
+        if (displayMode == MapDisplayMode.WORLD_EVENTS || displayMode == MapDisplayMode.INGREDIENTS) {
             return new InsightsLayout(overviewY, -1, -1, -1, overviewY + 82);
         }
         float y = overviewY + (showDebugInfo ? 106 : 74);
@@ -3983,6 +4917,53 @@ public class WorldMapScreen extends Screen {
         float entityY = y;
         y += CLUSTER_DETAIL_HEIGHT + 26;
         return new InsightsLayout(overviewY, territoryY, entityY, y, -1);
+    }
+
+    private static float ingredientFarmSpotListY(IngredientSidebarLayout layout) {
+        return layout.guideY() + 22;
+    }
+
+    private float ingredientFarmSpotListHeight(IngredientSidebarLayout layout) {
+        return Math.max(0, uiScreenHeight() - ingredientFarmSpotListY(layout) - PADDING);
+    }
+
+    private static float ingredientFarmSpotContentHeight() {
+        int spotCount = IngredientFarmSpotCatalog.all().size();
+        return spotCount == 0
+                ? 0
+                : (spotCount - 1) * INGREDIENT_FARM_SPOT_ROW_HEIGHT + INGREDIENT_FARM_SPOT_CARD_HEIGHT;
+    }
+
+    private float ingredientFarmSpotMaxScroll(IngredientSidebarLayout layout) {
+        return Math.max(0, ingredientFarmSpotContentHeight() - ingredientFarmSpotListHeight(layout));
+    }
+
+    private IngredientSidebarLayout ingredientSidebarLayout() {
+        float backY = 58;
+        float centerY = backY + BUTTON_HEIGHT + 8;
+        float modeY = centerY + BUTTON_HEIGHT + 18;
+        float titleY = modeY + BUTTON_HEIGHT + 18;
+        float renderWaypointsY = titleY + BUTTON_HEIGHT + 10;
+        float clearWaypointsY = renderWaypointsY + BUTTON_HEIGHT + 6;
+        float guideY = clearWaypointsY + BUTTON_HEIGHT + 18;
+        float ingredientY = guideY + BUTTON_HEIGHT + 20;
+        float summaryY = ingredientY + 20;
+        float selectedTitleY = summaryY + 30;
+        float selectedDetailY = selectedTitleY + 24;
+        float copyY = selectedDetailY + 44;
+        return new IngredientSidebarLayout(
+                backY,
+                centerY,
+                modeY,
+                titleY,
+                renderWaypointsY,
+                clearWaypointsY,
+                guideY,
+                ingredientY,
+                summaryY,
+                selectedTitleY,
+                selectedDetailY,
+                copyY);
     }
 
     private SidebarLayout sidebarLayout() {
@@ -4152,9 +5133,32 @@ public class WorldMapScreen extends Screen {
         return Math.max(min, Math.min(max, value));
     }
 
+    private record FocusIconOverlay(
+            float x,
+            float y,
+            float size,
+            ItemStack stack,
+            Supplier<PlayerSkin> skinLookup) {}
+
+    private record MapIngredientIcon(ItemStack stack, Supplier<PlayerSkin> skinLookup) {}
+
     private record ScreenPoint(float x, float y) {}
 
     private record TerritoryLabelLayout(List<String> lines, float fontSize, float lineHeight) {}
+
+    private record IngredientSidebarLayout(
+            float backY,
+            float centerY,
+            float modeY,
+            float titleY,
+            float renderWaypointsY,
+            float clearWaypointsY,
+            float guideY,
+            float ingredientY,
+            float summaryY,
+            float selectedTitleY,
+            float selectedDetailY,
+            float copyY) {}
 
     private record SidebarLayout(
             float backY,

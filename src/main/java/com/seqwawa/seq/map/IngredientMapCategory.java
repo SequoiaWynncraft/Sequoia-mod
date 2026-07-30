@@ -1,13 +1,12 @@
 package com.seqwawa.seq.map;
 
-public enum MapDisplayMode {
-    GATHERING("Gathering"),
-    WORLD_EVENTS("Events"),
-    INGREDIENTS("Ingredients");
+public enum IngredientMapCategory {
+    SPAWNS("Spawns"),
+    TOTEM_SPOTS("Totem Spots");
 
     private final String label;
 
-    MapDisplayMode(String label) {
+    IngredientMapCategory(String label) {
         this.label = label;
     }
 

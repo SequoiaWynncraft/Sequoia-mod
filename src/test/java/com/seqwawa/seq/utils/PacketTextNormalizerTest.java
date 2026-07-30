@@ -56,4 +56,32 @@ class PacketTextNormalizerTest {
 
         assertEquals("Emanant Force: r u trying to pind kaia", normalized);
     }
+
+    @Test
+    void rejoinsUrlSplitByGuildChatPacketDecoration() {
+        String normalized = PacketTextNormalizer.normalizeForParsing(
+                "Purprated: https://wynnbuilder.github.io/builder/#CW0R3\n"
+                        + "󏿼󐀆 FvSpicp9HS4xaJbHgCI15MFoupRwBzpB+rKNFq0");
+
+        assertEquals(
+                "Purprated: https://wynnbuilder.github.io/builder/#CW0R3"
+                        + "FvSpicp9HS4xaJbHgCI15MFoupRwBzpB+rKNFq0",
+                normalized);
+    }
+
+    @Test
+    void preservesRealSpaceFollowingUrl() {
+        String normalized = PacketTextNormalizer.normalizeForParsing(
+                "Purprated: https://example.com/build check this");
+
+        assertEquals("Purprated: https://example.com/build check this", normalized);
+    }
+
+    @Test
+    void preservesUrlBoundaryAfterUnrecognizedIgnorableCharacter() {
+        String normalized = PacketTextNormalizer.normalizeForParsing(
+                "Purprated: https://example.com/build\n\u200Bcheck this");
+
+        assertEquals("Purprated: https://example.com/build check this", normalized);
+    }
 }

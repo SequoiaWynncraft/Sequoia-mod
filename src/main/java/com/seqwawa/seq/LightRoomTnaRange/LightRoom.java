@@ -5,7 +5,6 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
-import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
@@ -47,11 +46,6 @@ public final class LightRoom {
     private static boolean isEnabled() {
         return WynncraftServerPolicy.isCurrentServerAllowed()
             && (SeqClient.getLightRoomVisualiserSetting() == null || SeqClient.getLightRoomVisualiserSetting().getValue());
-    }
-
-    private static boolean isDebugEnabled() {
-        return SeqClient.getLightRoomDebugSetting() != null
-            && SeqClient.getLightRoomDebugSetting().getValue();
     }
 
     public static void setColorPreviewActive(boolean active) {
@@ -97,11 +91,8 @@ public final class LightRoom {
         }
 
         String scoreboard = readSidebarText(client);
-        boolean previousPrepRoom = prepRoom;
-        boolean previousInRoom = inRoom;
         prepRoom = scoreboard.contains("Gather the Light!");
         inRoom = scoreboard.contains("Find and kill");
-        showDetectedPhase(client, previousPrepRoom, previousInRoom);
 
         if(prepRoom && !wasPrep){
             LightHolder = null;
@@ -131,22 +122,6 @@ public final class LightRoom {
         });
     }
 
-    private static void showDetectedPhase(
-            Minecraft client,
-            boolean previousPrepRoom,
-            boolean previousInRoom) {
-        if (!isDebugEnabled()
-                || (previousPrepRoom == prepRoom && previousInRoom == inRoom)) {
-            return;
-        }
-        String phase = prepRoom
-            ? "Gather the Light"
-            : inRoom ? "Find and kill" : "not detected";
-        client.player.displayClientMessage(
-                Component.literal("[Sequoia] TNA R2 phase: " + phase)
-                    .withStyle(ChatFormatting.GRAY),
-                false);
-    }
     public static void Render(WorldRenderContext context) {
         if(!isEnabled()) return;
         Minecraft client = Minecraft.getInstance();

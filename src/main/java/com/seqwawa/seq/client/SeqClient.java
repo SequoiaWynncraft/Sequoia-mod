@@ -34,6 +34,7 @@ import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
 import com.seqwawa.seq.managers.GuildWarTrackers;
+import com.seqwawa.seq.managers.IngredientGuideManager;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyHealthCache;
 import com.seqwawa.seq.managers.PartyFinderManager;
@@ -43,6 +44,7 @@ import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
 import com.seqwawa.seq.managers.ThemeManager;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.managers.WorldEventManager;
+import com.seqwawa.seq.map.IngredientWaypointRenderer;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
@@ -155,9 +157,6 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.ColorSetting lightRoomRingColorSetting;
 
     @Getter
-    public static Setting.BooleanSetting lightRoomDebugSetting;
-
-    @Getter
     public static Setting.BooleanSetting showRaidBadgesSetting;
 
     @Getter
@@ -192,6 +191,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static WorldEventManager worldEventManager;
+
+    @Getter
+    public static IngredientGuideManager ingredientGuideManager;
 
     private static KeyMapping openScreenKey;
     private static KeyMapping shareBombsKey;
@@ -229,10 +231,12 @@ public class SeqClient implements ClientModInitializer {
         leaderboardBadgeService = LeaderboardBadgeService.getInstance();
         seqBadgeNametagRenderer = SeqBadgeNametagRenderers.createIfAvailable();
         worldEventManager = WorldEventManager.getInstance();
+        ingredientGuideManager = IngredientGuideManager.getInstance();
         authService = MinecraftAuthService.getInstance();
         SeqCommand.register();
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
+        IngredientWaypointRenderer.initialize();
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> MinecraftUiRenderer.shutdown());
         LightRoom.init();
 
@@ -504,8 +508,6 @@ public class SeqClient implements ClientModInitializer {
         lightRoomVisualiserSetting = new Setting.BooleanSetting("enable_light_room_visualiser", "raids", true);
         lightRoomRingColorSetting = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF);
         lightRoomRingColorSetting.setVisibilityCondition(() -> lightRoomVisualiserSetting.getValue());
-        lightRoomDebugSetting = new Setting.BooleanSetting("debug_tna_r2_tracker", "raids", false);
-        lightRoomDebugSetting.setVisibilityCondition(() -> lightRoomVisualiserSetting.getValue());
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
@@ -559,7 +561,6 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(halcyonRingColorSetting);
         getConfigManager().register(lightRoomVisualiserSetting);
         getConfigManager().register(lightRoomRingColorSetting);
-        getConfigManager().register(lightRoomDebugSetting);
         getConfigManager().register(showRaidBadgesSetting);
         getConfigManager().register(showInsigniaBadgesSetting);
         getConfigManager().register(showOwnLeaderboardBadgeSetting);

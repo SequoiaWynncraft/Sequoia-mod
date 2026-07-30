@@ -39,7 +39,11 @@ class ChatRegexFilterManagerTest {
             "󏿼󐀆 Kablob changed 3 bonuses on Citadel's Shadow",
             "󏿼󏿿󏿾 Cal_and_Ben changed the global tax to 70%",
             "󏿼󏿿󏿾 know_your_limits changed the tax of Espren to 69%",
+            "󏿼󐀆 Torment changed the ally tax of Path to the Grootslangs\n󏿼󐀆 to 67%",
             "󏿼󐀆 Torment set Efficient Resources bonus to level 3 on Lake\n󏿼󐀆 Rieke",
+            "󏿼󐀆 Torment set Efficient Resources upgrade to level 3 on Lake\n󏿼󐀆 Rieke",
+            "󏿼󐀆 Torment changed the style of Wood Sprite Hideaway to \n󏿼󐀆 fastest",
+            "󏿼󐀆 Torment changed the style of Wood Sprite Hideaway to \n󏿼󐀆 cheapest",
             "󏿼󏿿󏿾 Territory Citadel's Shadow is using more resources than it\n󏿼󐀆 can store!",
             "󏿼󐀆 Territory Lake Rieke is using more resources than it can\n󏿼󐀆 store!",
             "󏿼󐀆 Torment removed Larger Resource Storage bonus from \n󏿼󐀆 Citadel's Shadow",
@@ -68,6 +72,8 @@ class ChatRegexFilterManagerTest {
 
         assertFalse(manager.shouldFilter("Torment: I changed 2 upgrades on my build"));
         assertFalse(manager.shouldFilter("Cal_and_Ben: I changed the global tax to 70%"));
+        assertFalse(manager.shouldFilter("Torment: I changed the ally tax of our route to 67%"));
+        assertFalse(manager.shouldFilter("Torment: I changed the style of my house to fastest"));
         assertFalse(manager.shouldFilter("Sorrow: I applied the loadout ragebait on Void Valley"));
         assertFalse(manager.shouldFilter("Territory Lake Rieke is under attack!"));
         assertFalse(manager.shouldFilter("Territory Lake Rieke production increased"));
