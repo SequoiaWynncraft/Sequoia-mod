@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class WynnPartyScoreboardReaderTest {
@@ -34,5 +35,22 @@ class WynnPartyScoreboardReaderTest {
 
         assertEquals("PartyMember", parsed.nickname());
         assertFalse(parsed.online());
+    }
+
+    @Test
+    void canonicalRosterDoesNotDependOnScoreboardRowOrder() {
+        List<WynnPartyScoreboardReader.PartyHealth> scoreboardRows = List.of(
+                partyHealth("SecondNick", "SecondPlayer"),
+                partyHealth("FirstNick", "FirstPlayer"));
+
+        assertEquals(
+                List.of("FirstPlayer", "SecondPlayer"),
+                WynnPartyScoreboardReader.matchingWynntilsPartyRoster(
+                        scoreboardRows, List.of("FirstPlayer", "SecondPlayer")));
+    }
+
+    private WynnPartyScoreboardReader.PartyHealth partyHealth(String nickname, String username) {
+        return new WynnPartyScoreboardReader.PartyHealth(
+                nickname, username, 100, 106, true, true, true);
     }
 }

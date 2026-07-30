@@ -13,8 +13,9 @@ import java.util.regex.Pattern;
 /** Maintains a recent canonical party snapshot for raid-completion name resolution. */
 public final class RaidPartySnapshotTracker {
     private static final long SNAPSHOT_INTERVAL_MS = 2_000;
-    private static final long SNAPSHOT_MAX_AGE_MS = 5_000;
-    private static final int MAX_RAID_PARTY_MEMBERS = 4;
+    private static final long SNAPSHOT_MAX_AGE_MS = 15_000;
+    private static final int DEFAULT_MAX_RAID_PARTY_MEMBERS = 4;
+    private static final int ABSOLUTE_MAX_RAID_PARTY_MEMBERS = 10;
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
 
     private static volatile PartySnapshot latestSnapshot = PartySnapshot.empty();
@@ -27,22 +28,50 @@ public final class RaidPartySnapshotTracker {
         if (now - lastPollAtMs < SNAPSHOT_INTERVAL_MS) {
             return;
         }
+        captureSnapshot(now);
+    }
+
+    public static synchronized void refreshNow() {
+        captureSnapshot(System.currentTimeMillis());
+    }
+
+    private static void captureSnapshot(long now) {
         lastPollAtMs = now;
 
         WynnPartyScoreboardReader.PartyObservation partyObservation =
                 WynnPartyScoreboardReader.readPartyObservation();
         PartySnapshot observedSnapshot = collectCurrentPartySnapshot(
-                partyObservation.members(), partyObservation.raidSidebarActive(), now);
+                partyObservation.members(),
+                partyObservation.canonicalRosterUsernames(),
+                partyObservation.raidSidebarActive(),
+                now);
         latestSnapshot = updateSnapshot(latestSnapshot, observedSnapshot, partyObservation.raidSidebarActive(), now);
     }
 
     public static List<String> resolvePartyMembers(List<String> parsedPartyMembers, int displayedPartySize) {
+        return resolvePartyMembers(parsedPartyMembers, displayedPartySize, DEFAULT_MAX_RAID_PARTY_MEMBERS);
+    }
+
+    public static List<String> resolvePartyMembers(
+            List<String> parsedPartyMembers, int displayedPartySize, int maximumPartySize) {
         long now = System.currentTimeMillis();
         PartySnapshot currentSnapshot = latestSnapshot;
-        PartySnapshot snapshot = now - currentSnapshot.capturedAtMs() <= SNAPSHOT_MAX_AGE_MS
-                ? currentSnapshot
-                : PartySnapshot.empty();
-        return choosePartyMembers(parsedPartyMembers, snapshot, displayedPartySize);
+        long snapshotAgeMs = now - currentSnapshot.capturedAtMs();
+        boolean fresh = snapshotAgeMs <= SNAPSHOT_MAX_AGE_MS;
+        PartySnapshot snapshot = fresh ? currentSnapshot : PartySnapshot.empty();
+        List<String> resolved =
+                choosePartyMembers(parsedPartyMembers, snapshot, displayedPartySize, maximumPartySize);
+        SeqClient.LOGGER.info(
+                "[RaidPartySnapshot] resolution={} displayedCount={} maxPartySize={} snapshotAgeMs={} raidContext={} snapshotMembers={} parsedMembers={} resolvedMembers={}",
+                resolutionSource(parsedPartyMembers, resolved, snapshot, fresh, maximumPartySize),
+                displayedPartySize,
+                maximumPartySize,
+                currentSnapshot.capturedAtMs() == 0 ? -1 : snapshotAgeMs,
+                snapshot.raidContext(),
+                snapshot.usernames(),
+                parsedPartyMembers,
+                resolved);
+        return resolved;
     }
 
     static List<String> choosePartyMembers(
@@ -50,17 +79,32 @@ public final class RaidPartySnapshotTracker {
             List<SnapshotMember> snapshotPartyMembers,
             int displayedPartySize) {
         return choosePartyMembers(
-                parsedPartyMembers, PartySnapshot.from(snapshotPartyMembers, true, 0), displayedPartySize);
+                parsedPartyMembers,
+                PartySnapshot.from(snapshotPartyMembers, true, 0),
+                displayedPartySize,
+                DEFAULT_MAX_RAID_PARTY_MEMBERS);
     }
 
     static List<String> choosePartyMembers(
             List<String> parsedPartyMembers, PartySnapshot snapshot, int displayedPartySize) {
+        return choosePartyMembers(
+                parsedPartyMembers, snapshot, displayedPartySize, DEFAULT_MAX_RAID_PARTY_MEMBERS);
+    }
+
+    static List<String> choosePartyMembers(
+            List<String> parsedPartyMembers,
+            PartySnapshot snapshot,
+            int displayedPartySize,
+            int maximumPartySize) {
         List<String> parsed = sanitizeParty(parsedPartyMembers);
+        int safeMaximumPartySize =
+                Math.max(1, Math.min(maximumPartySize, ABSOLUTE_MAX_RAID_PARTY_MEMBERS));
 
         if (displayedPartySize < 1
-                || displayedPartySize > MAX_RAID_PARTY_MEMBERS
+                || displayedPartySize > safeMaximumPartySize
                 || !snapshot.raidContext()
-                || snapshot.usernames().isEmpty()) {
+                || snapshot.usernames().isEmpty()
+                || snapshot.usernames().size() > safeMaximumPartySize) {
             return parsed;
         }
 
@@ -71,7 +115,7 @@ public final class RaidPartySnapshotTracker {
         if (overlapCount(sanitizeParty(resolved), snapshot.usernames()) < 1) {
             return parsed;
         }
-        if (snapshot.usernames().size() == MAX_RAID_PARTY_MEMBERS) {
+        if (snapshot.usernames().size() >= displayedPartySize) {
             return snapshot.usernames();
         }
         return sanitizeParty(resolved);
@@ -88,6 +132,7 @@ public final class RaidPartySnapshotTracker {
 
     private static PartySnapshot collectCurrentPartySnapshot(
             List<WynnPartyScoreboardReader.PartyHealth> partyHealth,
+            List<String> canonicalRosterUsernames,
             boolean raidContext,
             long capturedAtMs) {
         List<SnapshotMember> members = new ArrayList<>();
@@ -95,13 +140,34 @@ public final class RaidPartySnapshotTracker {
             members.add(new SnapshotMember(member.nickname(), member.username()));
         }
 
-        WynnPartySyncManager syncManager = SeqClient.getWynnPartySyncManager();
-        if (syncManager != null) {
-            for (String username : syncManager.getObservedMemberUsernames()) {
-                members.add(new SnapshotMember(username, username));
-            }
+        List<String> supplementalRoster = sanitizeParty(canonicalRosterUsernames);
+        if (supplementalRoster.isEmpty()) {
+            WynnPartySyncManager syncManager = SeqClient.getWynnPartySyncManager();
+            List<String> syncUsernames =
+                    syncManager != null ? syncManager.getObservedMemberUsernames() : List.of();
+            supplementalRoster = compatibleSupplementalRoster(members, partyHealth.size(), syncUsernames);
+        }
+        for (String username : supplementalRoster) {
+            members.add(new SnapshotMember(username, username));
         }
         return PartySnapshot.from(members, raidContext, capturedAtMs);
+    }
+
+    static List<String> compatibleSupplementalRoster(
+            List<SnapshotMember> primaryMembers, int observedRowCount, List<String> supplementalUsernames) {
+        List<String> supplemental = sanitizeParty(supplementalUsernames);
+        if (observedRowCount < 1 || supplemental.size() != observedRowCount) {
+            return List.of();
+        }
+
+        for (SnapshotMember primaryMember : primaryMembers) {
+            String username = sanitizeUsername(primaryMember.username());
+            if (username != null
+                    && supplemental.stream().noneMatch(username::equalsIgnoreCase)) {
+                return List.of();
+            }
+        }
+        return supplemental;
     }
 
     private static List<String> sanitizeParty(List<String> usernames) {
@@ -136,6 +202,29 @@ public final class RaidPartySnapshotTracker {
         return matches;
     }
 
+    private static String resolutionSource(
+            List<String> parsedPartyMembers,
+            List<String> resolvedPartyMembers,
+            PartySnapshot snapshot,
+            boolean fresh,
+            int maximumPartySize) {
+        if (!fresh || snapshot.usernames().isEmpty()) {
+            return "missing_or_stale_snapshot";
+        }
+        if (!snapshot.raidContext()) {
+            return "non_raid_snapshot";
+        }
+        if (snapshot.usernames().size() > maximumPartySize) {
+            return "oversized_snapshot";
+        }
+        if (resolvedPartyMembers.equals(snapshot.usernames())) {
+            return "complete_snapshot";
+        }
+        return resolvedPartyMembers.equals(sanitizeParty(parsedPartyMembers))
+                ? "completion_message"
+                : "snapshot_aliases";
+    }
+
     static PartySnapshot updateSnapshot(
             PartySnapshot current, PartySnapshot observed, boolean raidSidebarActive, long capturedAtMs) {
         if (!raidSidebarActive) {
@@ -150,7 +239,7 @@ public final class RaidPartySnapshotTracker {
             }
             return observed;
         }
-        return current.raidContext() && !current.usernames().isEmpty() ? current.refresh(capturedAtMs) : current;
+        return current;
     }
 
     record SnapshotMember(String displayedName, String username) {}
@@ -220,10 +309,6 @@ public final class RaidPartySnapshotTracker {
                 mergedAliases.putIfAbsent(alias.getKey(), alias.getValue());
             }
             return new PartySnapshot(usernames, mergedAliases, raidContext || other.raidContext, capturedAtMs);
-        }
-
-        private PartySnapshot refresh(long capturedAtMs) {
-            return new PartySnapshot(usernames, aliases, raidContext, capturedAtMs);
         }
 
         private static PartySnapshot empty() {

@@ -52,6 +52,8 @@ public class RaidTracker {
     private static final Pattern PARENTHESIZED_USERNAME_PATTERN = Pattern.compile(".*\\((\\w{3,16})\\)$");
     private static final Pattern COMMA_SPACING_PATTERN = Pattern.compile("\\s*,\\s*");
     private static final String FINISHED_BOUNDARY = " finished ";
+    private static final int DEFAULT_MAX_RAID_PARTY_MEMBERS = 4;
+    private static final int ANNIHILATION_MAX_RAID_PARTY_MEMBERS = 10;
     /**
      * Called from {@link ClientPacketListenerMixin} at the
      * packet level for every non-overlay system chat message.
@@ -91,10 +93,13 @@ public class RaidTracker {
             return;
         }
 
+        RaidPartySnapshotTracker.refreshNow();
         ConnectionManager instance = ConnectionManager.getInstance();
         if (instance != null && !completion.partyMembers().isEmpty()) {
             List<String> partyMembers = RaidPartySnapshotTracker.resolvePartyMembers(
-                    completion.partyMembers(), completion.displayedPartySize());
+                    completion.partyMembers(),
+                    completion.displayedPartySize(),
+                    maximumPartySize(completion.raidName()));
             SeqClient.LOGGER.info(
                     "[RaidTracker] Forwarding raid completion raid='{}' members={} aspects={} emeralds={} guildExp={} seasonalRating={}",
                     completion.raidName(),
@@ -140,10 +145,15 @@ public class RaidTracker {
         if (namesPart.contains(":")) {
             return null;
         }
+        String raidName = matcher.group(2);
+        int maximumPartySize = maximumPartySize(raidName);
         List<String> parsedDisplayedNames = parseDisplayedNames(namesPart);
-        if (parsedDisplayedNames.size() > 4) {
+        if (parsedDisplayedNames.size() > maximumPartySize) {
             SeqClient.LOGGER.warn(
-                    "[RaidTracker] Dropping raid candidate with too many displayed names namesPart='{}'",
+                    "[RaidTracker] Dropping raid candidate with too many displayed names raid='{}' count={} max={} namesPart='{}'",
+                    raidName,
+                    parsedDisplayedNames.size(),
+                    maximumPartySize,
                     namesPart);
             return null;
         }
@@ -159,8 +169,6 @@ public class RaidTracker {
                     .warn("[RaidTracker] Dropping raid announcement: no valid usernames found in completion message");
             return null;
         }
-
-        String raidName = matcher.group(2);
 
         RaidRewardCounts rewardCounts = parseRaidRewardCounts(matcher.group(3));
 
@@ -220,10 +228,15 @@ public class RaidTracker {
     }
 
     private static List<String> parseDisplayedNames(String namesPart) {
-        String canonicalNames = namesPart
-                .replace(", and ", ", ")
-                .replace(" and ", ", ")
-                .trim();
+        String canonicalNames = namesPart.replace(", and ", ", ").trim();
+        if (!canonicalNames.contains(",")) {
+            int finalAnd = canonicalNames.lastIndexOf(" and ");
+            if (finalAnd >= 0) {
+                canonicalNames = canonicalNames.substring(0, finalAnd)
+                        + ", "
+                        + canonicalNames.substring(finalAnd + " and ".length());
+            }
+        }
 
         return COMMA_SPACING_PATTERN.splitAsStream(canonicalNames)
                 .map(String::trim)
@@ -318,9 +331,19 @@ public class RaidTracker {
         String insertionName = validUsername(ChatManager.extractInsertionUsername(style));
 
         boolean previousWasSpace = !target.isEmpty() && target.getLast().value() == ' ';
+        boolean skipLegacyFormattingCode = false;
         for (int index = 0; index < text.length();) {
             int codePoint = text.codePointAt(index);
             index += Character.charCount(codePoint);
+
+            if (skipLegacyFormattingCode) {
+                skipLegacyFormattingCode = false;
+                continue;
+            }
+            if (codePoint == '§') {
+                skipLegacyFormattingCode = true;
+                continue;
+            }
 
             if (Character.isWhitespace(codePoint) || isIgnorableForParsing(codePoint)) {
                 if (!previousWasSpace) {
@@ -358,6 +381,12 @@ public class RaidTracker {
 
     private static String validUsername(String candidate) {
         return candidate != null && USERNAME_PATTERN.matcher(candidate).matches() ? candidate : null;
+    }
+
+    static int maximumPartySize(String raidName) {
+        return raidName != null && raidName.toLowerCase(java.util.Locale.ROOT).contains("annihilation")
+                ? ANNIHILATION_MAX_RAID_PARTY_MEMBERS
+                : DEFAULT_MAX_RAID_PARTY_MEMBERS;
     }
 
     private static String toText(List<MetaChar> characters) {
