@@ -20,6 +20,8 @@ class WorldMapSettingsTest {
         boolean originalNodeReach = settings.showGatheringTotemNodeReach();
         boolean originalCoveredNodes = settings.showGatheringTotemCoveredNodes();
         boolean originalOtherSpots = settings.showOtherOptimalGatheringTotems();
+        boolean originalIngredientRadii = settings.showIngredientWaypointRadii();
+        boolean originalProximityColors = settings.colorIngredientWaypointRadiiByProximity();
         MapDisplayMode originalDisplayMode = settings.displayMode();
         try {
             settings.setInsightsSidebarOpen(false);
@@ -32,6 +34,8 @@ class WorldMapSettingsTest {
             settings.setShowGatheringTotemNodeReach(false);
             settings.setShowGatheringTotemCoveredNodes(false);
             settings.setShowOtherOptimalGatheringTotems(false);
+            settings.setShowIngredientWaypointRadii(true);
+            settings.setColorIngredientWaypointRadiiByProximity(false);
             settings.setDisplayMode(MapDisplayMode.INGREDIENTS);
 
             assertFalse(settings.insightsSidebarOpen());
@@ -44,6 +48,8 @@ class WorldMapSettingsTest {
             assertFalse(settings.showGatheringTotemNodeReach());
             assertFalse(settings.showGatheringTotemCoveredNodes());
             assertFalse(settings.showOtherOptimalGatheringTotems());
+            assertTrue(settings.showIngredientWaypointRadii());
+            assertFalse(settings.colorIngredientWaypointRadiiByProximity());
             assertEquals(MapDisplayMode.INGREDIENTS, settings.displayMode());
 
             settings.setInsightsSidebarOpen(true);
@@ -61,6 +67,8 @@ class WorldMapSettingsTest {
             settings.setShowGatheringTotemNodeReach(originalNodeReach);
             settings.setShowGatheringTotemCoveredNodes(originalCoveredNodes);
             settings.setShowOtherOptimalGatheringTotems(originalOtherSpots);
+            settings.setShowIngredientWaypointRadii(originalIngredientRadii);
+            settings.setColorIngredientWaypointRadiiByProximity(originalProximityColors);
             settings.setDisplayMode(originalDisplayMode);
         }
     }

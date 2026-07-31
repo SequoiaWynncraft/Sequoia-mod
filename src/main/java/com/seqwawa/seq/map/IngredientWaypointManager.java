@@ -60,6 +60,7 @@ public final class IngredientWaypointManager {
             double x,
             double y,
             double z,
+            double radius,
             WaypointIcon icon) {
         public Waypoint(
                 String id,
@@ -69,7 +70,7 @@ public final class IngredientWaypointManager {
                 double x,
                 double y,
                 double z) {
-            this(id, kind, label, detail, x, y, z, WaypointIcon.empty());
+            this(id, kind, label, detail, x, y, z, 0, WaypointIcon.empty());
         }
 
         public Waypoint(
@@ -81,6 +82,19 @@ public final class IngredientWaypointManager {
                 double y,
                 double z,
                 WaypointIcon icon) {
+            this(id, kind, label, detail, x, y, z, 0, icon);
+        }
+
+        public Waypoint(
+                String id,
+                Kind kind,
+                String label,
+                String detail,
+                double x,
+                double y,
+                double z,
+                double radius,
+                WaypointIcon icon) {
             this(
                     id,
                     kind,
@@ -91,7 +105,20 @@ public final class IngredientWaypointManager {
                     x,
                     y,
                     z,
+                    radius,
                     icon);
+        }
+
+        public Waypoint(
+                String id,
+                Kind kind,
+                String label,
+                List<DetailLine> detailLines,
+                double x,
+                double y,
+                double z,
+                WaypointIcon icon) {
+            this(id, kind, label, detailLines, x, y, z, 0, icon);
         }
 
         public Waypoint {
@@ -103,6 +130,7 @@ public final class IngredientWaypointManager {
                     : detailLines.stream()
                             .filter(Objects::nonNull)
                             .toList();
+            radius = Math.max(0, radius);
             icon = icon == null ? WaypointIcon.empty() : icon;
         }
 

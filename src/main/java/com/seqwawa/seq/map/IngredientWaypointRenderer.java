@@ -1,5 +1,9 @@
 package com.seqwawa.seq.map;
 
+import static com.seqwawa.seq.halcyon.HalcyonRingRenderer.renderRingWall;
+
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.seqwawa.seq.map.IngredientWaypointManager.Kind;
 import com.seqwawa.seq.map.IngredientWaypointManager.DetailLine;
 import com.seqwawa.seq.map.IngredientWaypointManager.Waypoint;
@@ -7,11 +11,14 @@ import com.seqwawa.seq.map.IngredientWaypointManager.WaypointIcon;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import java.util.List;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
+import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3fc;
@@ -19,12 +26,15 @@ import org.joml.Vector3fc;
 public final class IngredientWaypointRenderer {
     private static final int SPAWN_COLOR = 0xFF55FFFF;
     private static final int TOTEM_COLOR = 0xFFFFAA33;
+    private static final int INSIDE_RADIUS_COLOR = 0xFF55FF55;
+    private static final int OUTSIDE_RADIUS_COLOR = 0xFFFF5555;
     private static final int SCREEN_MARGIN = 18;
     private static final int ICON_SIZE = 20;
     private static final int ICON_OUTLINE_MARGIN = 2;
     private static final int AIM_RADIUS = ICON_SIZE / 2 + ICON_OUTLINE_MARGIN;
     private static final int MAX_DETAIL_WIDTH = 220;
     private static final int TEXT_LINE_HEIGHT = 10;
+    private static final int RADIUS_ALPHA = 150;
     private static final double MAX_DISTANCE = 8_000;
     private static final double MAX_DISTANCE_SQUARED = MAX_DISTANCE * MAX_DISTANCE;
     private static final double DIRECTION_EPSILON = 1.0e-8;
@@ -35,6 +45,54 @@ public final class IngredientWaypointRenderer {
         HudElementRegistry.addLast(
                 Identifier.fromNamespaceAndPath("seq", "ingredient_waypoints"),
                 (guiGraphics, deltaTracker) -> render(guiGraphics));
+        WorldRenderEvents.BEFORE_DEBUG_RENDER.register(IngredientWaypointRenderer::renderRadii);
+    }
+
+    private static void renderRadii(WorldRenderContext context) {
+        Minecraft client = Minecraft.getInstance();
+        if (!WorldMapSettings.getInstance().showIngredientWaypointRadii()
+                || !WynncraftServerPolicy.isCurrentServerAllowed()
+                || client.player == null
+                || client.level == null) {
+            return;
+        }
+
+        Vec3 camera = client.gameRenderer.getMainCamera().position();
+        Vec3 playerPosition = client.player.position();
+        boolean colorByProximity =
+                WorldMapSettings.getInstance().colorIngredientWaypointRadiiByProximity();
+        PoseStack.Pose pose = context.matrices().last();
+        VertexConsumer vertices = context.consumers().getBuffer(RenderTypes.debugQuads());
+        for (Waypoint waypoint : IngredientWaypointManager.getInstance().waypoints()) {
+            Vec3 center = new Vec3(waypoint.x(), waypoint.y(), waypoint.z());
+            if (!shouldRenderRadius(waypoint.radius(), center.distanceToSqr(camera))) {
+                continue;
+            }
+            double playerDistanceSquared = horizontalDistanceSquared(playerPosition, center);
+            int color = resolveRadiusColor(
+                    waypoint.kind(), colorByProximity, playerDistanceSquared, waypoint.radius());
+            renderRingWall(vertices, pose, center, camera, waypoint.radius(), color, RADIUS_ALPHA);
+        }
+    }
+
+    private static double horizontalDistanceSquared(Vec3 first, Vec3 second) {
+        double dx = first.x - second.x;
+        double dz = first.z - second.z;
+        return dx * dx + dz * dz;
+    }
+
+    static int resolveRadiusColor(
+            Kind kind, boolean colorByProximity, double horizontalDistanceSquared, double radius) {
+        if (colorByProximity) {
+            return horizontalDistanceSquared <= radius * radius
+                    ? INSIDE_RADIUS_COLOR
+                    : OUTSIDE_RADIUS_COLOR;
+        }
+        return kind == Kind.TOTEM_SPOT ? TOTEM_COLOR : SPAWN_COLOR;
+    }
+
+    static boolean shouldRenderRadius(double radius, double distanceSquared) {
+        return radius > 0 && distanceSquared <= MAX_DISTANCE_SQUARED;
     }
 
     static void render(GuiGraphics guiGraphics) {
