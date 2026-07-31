@@ -34,6 +34,8 @@ public final class GuildRewardAutomationManager {
     private static final int EMERALD_CLICK_DELAY_TICKS = 2;
     private static final int TARGET_STABILIZE_TICKS = 8;
     private static final int MAX_CLICKS_PER_RUN = 256;
+    private static final String INSUFFICIENT_EMERALDS_MESSAGE =
+            "your guild does not have enough emeralds to send a reward.";
     private static final Pattern REWARD_ACTION_PATTERN = Pattern.compile(
             "(?i)^press\\s+(\\d+)\\s+to\\s+send\\s+([\\d, ]+|an?|one)\\s+(.+?)$");
 
@@ -126,6 +128,17 @@ public final class GuildRewardAutomationManager {
 
     public boolean isRunning() {
         return activeTask != null;
+    }
+
+    public void onSystemChat(Component message) {
+        if (activeTask != null && isInsufficientEmeraldsMessage(message)) {
+            activeTask.completeEmptyEmeraldStorage();
+        }
+    }
+
+    static boolean isInsufficientEmeraldsMessage(Component message) {
+        String normalized = PacketTextNormalizer.normalizeForParsing(message == null ? null : message.getString());
+        return normalized.toLowerCase(Locale.ROOT).contains(INSUFFICIENT_EMERALDS_MESSAGE);
     }
 
     static List<RewardAction> parseRewardActions(List<String> loreLines) {
@@ -335,6 +348,7 @@ public final class GuildRewardAutomationManager {
         private int pageAdvances;
         private int clickDelay;
         private int clicksSent;
+        private int missingRewardActionTicks;
         private long remainingAmount;
         private boolean done;
 
@@ -491,9 +505,14 @@ public final class GuildRewardAutomationManager {
 
             Optional<RewardAction> action = findRewardAction(targetSlot.getItem(), request.type());
             if (action.isEmpty()) {
-                fail("Could not find the " + request.type().displayName() + " action for " + request.targetUsername() + ".");
+                missingRewardActionTicks++;
+                if (missingRewardActionTicks >= MENU_WAIT_TIMEOUT_TICKS) {
+                    fail("Timed out waiting for the " + request.type().displayName() + " action for "
+                            + request.targetUsername() + ".");
+                }
                 return;
             }
+            missingRewardActionTicks = 0;
 
             long amountToSend = amountToSend(menu, action.get());
             if (amountToSend <= 0) {
@@ -524,6 +543,9 @@ public final class GuildRewardAutomationManager {
 
         private long amountToSend(AbstractContainerMenu menu, RewardAction action) {
             if (request.type() == RewardType.EMERALDS) {
+                if (request.amount() == Long.MAX_VALUE) {
+                    return action.amountPerClick();
+                }
                 OptionalLong currentEmeralds = GuildStorageTracker.extractCurrentEmeralds(menu);
                 if (currentEmeralds.isPresent()) {
                     if (currentEmeralds.getAsLong() <= 0) {
@@ -536,6 +558,14 @@ public final class GuildRewardAutomationManager {
                 return remainingAmount == Long.MAX_VALUE ? action.amountPerClick() : remainingAmount;
             }
             return remainingAmount;
+        }
+
+        private void completeEmptyEmeraldStorage() {
+            if (!done && request.type() == RewardType.EMERALDS && request.amount() == Long.MAX_VALUE) {
+                SeqClient.LOGGER.info(
+                        "[GuildReward] Wynncraft reported empty emerald storage after {} clicks", clicksSent);
+                succeed(successMessage());
+            }
         }
 
         private String successMessage() {

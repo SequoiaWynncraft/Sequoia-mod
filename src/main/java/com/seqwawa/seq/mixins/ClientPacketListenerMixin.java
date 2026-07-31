@@ -39,6 +39,9 @@ public class ClientPacketListenerMixin {
         RaidTracker.onSystemChat(content);
         GuildStorageTracker.getInstance().onSystemChat(content);
         GuildBankTracker.getInstance().onSystemChat(content);
+        if (SeqClient.getGuildRewardAutomationManager() != null) {
+            SeqClient.getGuildRewardAutomationManager().onSystemChat(content);
+        }
         if (SeqClient.getGuildWarTracker() != null) {
             SeqClient.getGuildWarTracker().onSystemChat(content);
         } else {
