@@ -61,6 +61,11 @@ public class ChatManager {
             // Legacy format: "Real Username: <username>"
             "(?:'(?:s)? real name is\\s+|Real Username:\\s*)([a-zA-Z0-9_]{3,16})",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern LEADING_NICKNAME_USERNAME_PATTERN = Pattern.compile(
+            "^(?:<\\d+>\\s*)?([a-zA-Z0-9_][a-zA-Z0-9_ ]*?)\\s*"
+                    + "\\(([a-zA-Z0-9_]{3,16})\\)(?=\\s|:|$)");
+    private static final Pattern DISPLAY_NAME_PATTERN =
+            Pattern.compile("[a-zA-Z0-9_][a-zA-Z0-9_ ]{0,63}");
     private static final Duration OUTGOING_DEDUPE_WINDOW = Duration.ofMillis(750);
     private static volatile String lastOutgoingKey;
     private static volatile Instant lastOutgoingAt = Instant.EPOCH;
@@ -114,7 +119,7 @@ public class ChatManager {
             }
         }
 
-        observeNicknameMapping(message);
+        observeNicknameMappings(message);
 
         // Guild chat uses aqua color (§b / 0x55FFFF) per Wynntils' RecipientType.GUILD.
         // This cleanly rejects DMs, party, shout, territory, and other message types
@@ -155,8 +160,30 @@ public class ChatManager {
                 parsed.itemPreviews());
     }
 
-    private static void observeNicknameMapping(Component message) {
+    static void observeNicknameMappings(Component message) {
         String cleaned = PacketTextNormalizer.normalizeForParsing(message == null ? null : message.getString());
+        Matcher inlineMatcher = LEADING_NICKNAME_USERNAME_PATTERN.matcher(cleaned);
+        if (inlineMatcher.find()) {
+            NicknameResolverCache.remember(inlineMatcher.group(1), inlineMatcher.group(2));
+        }
+
+        if (message != null) {
+            for (Component fragment : message.toFlatList()) {
+                String displayedName = PacketTextNormalizer.normalizeForParsing(fragment.getString()).trim();
+                if (!DISPLAY_NAME_PATTERN.matcher(displayedName).matches()) {
+                    continue;
+                }
+
+                String realUsername = extractHoverRealUsername(fragment.getStyle());
+                if (realUsername == null) {
+                    realUsername = extractInsertionUsername(fragment.getStyle());
+                }
+                if (realUsername != null) {
+                    NicknameResolverCache.remember(displayedName, realUsername);
+                }
+            }
+        }
+
         Matcher matcher = CHAT_PATTERN.matcher(cleaned);
         if (!matcher.find()) {
             return;

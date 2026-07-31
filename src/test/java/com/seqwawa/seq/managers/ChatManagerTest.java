@@ -110,6 +110,25 @@ class ChatManagerTest {
     }
 
     @Test
+    void observesNicknameMappingFromNonChatPacketMetadata() {
+        Component message = Component.empty()
+                .append(Component.literal("DrBavaro").withStyle(Style.EMPTY.withInsertion("xmattypazox")))
+                .append(Component.literal(" has given you 20% resistance."));
+
+        ChatManager.observeNicknameMappings(message);
+
+        assertEquals("xmattypazox", NicknameResolverCache.resolveUsername("DrBavaro"));
+    }
+
+    @Test
+    void observesInlineNicknameMappingFromNonChatMessages() {
+        ChatManager.observeNicknameMappings(
+                Component.literal("DrBavaro(xmattypazox) has given you 20% resistance."));
+
+        assertEquals("xmattypazox", NicknameResolverCache.resolveUsername("DrBavaro"));
+    }
+
+    @Test
     void parseGuildMessageIgnoresGuildSystemMessagesWithoutSpeakerColon() {
         assertNull(ChatManager.parseGuildMessage(Component.literal(
                 "󏿼󏿿󏿾 Territory Gelibord is producing more resources than it\n󏿼󐀆 can store!")));

@@ -163,6 +163,22 @@ class RaidPartySnapshotTrackerTest {
     }
 
     @Test
+    void keepsPacketResolvedNamesWhenOnlyPartOfSnapshotMatches() {
+        List<String> parsed = List.of("xmattypazox", "GuildPlayer", "a3pki", "Robbedoesgek");
+
+        assertEquals(
+                parsed,
+                RaidPartySnapshotTracker.choosePartyMembers(
+                        parsed,
+                        List.of(
+                                member("GuildPlayer", "GuildPlayer"),
+                                member("a3pki", "a3pki"),
+                                member("Robbedoestna", "Robbedoesgek"),
+                                member("DrBavaro", "DrBavaro")),
+                        4));
+    }
+
+    @Test
     void ignoresInvalidAndDuplicateSnapshotNames() {
         List<String> parsed = List.of("LocalPlayer", "Second", "Third", "ParsedFourth");
 

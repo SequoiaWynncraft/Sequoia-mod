@@ -112,7 +112,10 @@ public final class RaidPartySnapshotTracker {
         for (String parsedMember : parsed) {
             resolved.add(snapshot.resolveAlias(parsedMember));
         }
-        if (overlapCount(sanitizeParty(resolved), snapshot.usernames()) < 1) {
+        boolean allParsedMembersCompatible = !resolved.isEmpty()
+                && resolved.stream()
+                        .allMatch(member -> snapshot.usernames().stream().anyMatch(member::equalsIgnoreCase));
+        if (!allParsedMembersCompatible) {
             return parsed;
         }
         if (snapshot.usernames().size() >= displayedPartySize) {
@@ -190,16 +193,6 @@ public final class RaidPartySnapshotTracker {
         }
         String trimmed = username.trim();
         return MC_USERNAME_PATTERN.matcher(trimmed).matches() ? trimmed : null;
-    }
-
-    private static int overlapCount(List<String> left, List<String> right) {
-        int matches = 0;
-        for (String value : left) {
-            if (right.stream().anyMatch(value::equalsIgnoreCase)) {
-                matches++;
-            }
-        }
-        return matches;
     }
 
     private static String resolutionSource(
