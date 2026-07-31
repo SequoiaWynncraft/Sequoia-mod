@@ -1,8 +1,11 @@
 package com.seqwawa.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import net.minecraft.network.chat.Component;
 import org.junit.jupiter.api.Test;
 
 class GuildRewardAutomationManagerTest {
@@ -38,5 +41,17 @@ class GuildRewardAutomationManagerTest {
                 GuildRewardAutomationManager.RewardType.ASPECT, 2, 1), actions.get(0));
         assertEquals(new GuildRewardAutomationManager.RewardAction(
                 GuildRewardAutomationManager.RewardType.TOME, 0, 1), actions.get(1));
+    }
+
+    @Test
+    void recognizesWrappedInsufficientEmeraldsMessage() {
+        assertTrue(GuildRewardAutomationManager.isInsufficientEmeraldsMessage(Component.literal(
+                "Your guild does not have enough\n󏿼󐀆 Emeralds to send a reward.")));
+    }
+
+    @Test
+    void ignoresOtherGuildRewardMessages() {
+        assertFalse(GuildRewardAutomationManager.isInsufficientEmeraldsMessage(
+                Component.literal("You do not have permission to send this reward.")));
     }
 }
