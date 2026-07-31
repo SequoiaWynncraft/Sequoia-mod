@@ -561,7 +561,11 @@ public final class GuildRewardAutomationManager {
         }
 
         private void completeEmptyEmeraldStorage() {
-            if (!done && request.type() == RewardType.EMERALDS && request.amount() == Long.MAX_VALUE) {
+            if (!done
+                    && state == State.CLICK_REWARD
+                    && clicksSent > 0
+                    && request.type() == RewardType.EMERALDS
+                    && request.amount() == Long.MAX_VALUE) {
                 SeqClient.LOGGER.info(
                         "[GuildReward] Wynncraft reported empty emerald storage after {} clicks", clicksSent);
                 succeed(successMessage());
@@ -577,6 +581,9 @@ public final class GuildRewardAutomationManager {
         }
 
         private void transition(State nextState) {
+            if (state == State.CLICK_REWARD && nextState != State.CLICK_REWARD) {
+                missingRewardActionTicks = 0;
+            }
             state = nextState;
             ticksInState = 0;
         }
