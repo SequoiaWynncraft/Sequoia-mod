@@ -4,8 +4,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.network.chat.Component;
-import com.seqwawa.seq.accessors.EventBusAccessor;
-import com.seqwawa.seq.events.GameStartEvent;
+import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.ui.StartupVideoOverlay;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -14,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(TitleScreen.class)
-public class TitleScreenMixin extends Screen implements EventBusAccessor {
+public class TitleScreenMixin extends Screen {
     protected TitleScreenMixin(Component title) {
         super(title);
     }
@@ -25,7 +24,7 @@ public class TitleScreenMixin extends Screen implements EventBusAccessor {
     @Inject(method = "init", at = @At("RETURN"))
     private void seq$titleScreenInit(CallbackInfo ci) {
         if (!seq$opened) {
-            seqdispatch(new GameStartEvent());
+            SeqClient.onGameStart();
             seq$opened = true;
         }
     }

@@ -1,8 +1,5 @@
 package com.seqwawa.seq.client;
 
-import com.collarmc.pounce.EventBus;
-import com.collarmc.pounce.Preference;
-import com.collarmc.pounce.Subscribe;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.logging.LogUtils;
 import java.util.Objects;
@@ -21,8 +18,6 @@ import org.lwjgl.glfw.GLFW;
 import com.seqwawa.seq.command.SeqCommand;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.config.Setting;
-import com.seqwawa.seq.events.GameStartEvent;
-import com.seqwawa.seq.events.MinecraftFinishedLoading;
 import com.seqwawa.seq.halcyon.HalcyonRangeVisualiserClient;
 import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.BombShareManager;
@@ -62,9 +57,6 @@ public class SeqClient implements ClientModInitializer {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public static final Minecraft mc = Minecraft.getInstance();
-
-    @Getter
-    public static EventBus eventBus;
 
     @Getter
     public static FontManager fontManager;
@@ -206,12 +198,6 @@ public class SeqClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        try {
-            eventBus = new EventBus(mc::execute);
-            eventBus.subscribe(this);
-        } catch (Exception e) {
-            LOGGER.warn("Event bus failed to initialize.");
-        }
         fontManager = new FontManager();
         gameManager = new GameManager();
         partyFinderManager = new PartyFinderManager();
@@ -488,8 +474,7 @@ public class SeqClient implements ClientModInitializer {
         return shareBombsKey != null && shareBombsKey.isDown();
     }
 
-    @Subscribe(Preference.CALLER) // to stay in thread
-    public void onMinecraftFinishedLoading(MinecraftFinishedLoading ignored) {
+    public static void onMinecraftFinishedLoading() {
         // after minecraft done loading
         MinecraftUiRenderer.initialize();
         SeqClient.gameManager.loadFont();
@@ -574,8 +559,7 @@ public class SeqClient implements ClientModInitializer {
         }
     }
 
-    @Subscribe(Preference.CALLER)
-    public void onGameStart(GameStartEvent ignored) {
+    public static void onGameStart() {
         if (checkUpdatesSetting == null || checkUpdatesSetting.getValue()) {
             UpdateManager.getInstance().checkForUpdatesOnStartup();
         }

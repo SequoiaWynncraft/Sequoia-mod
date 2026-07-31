@@ -81,9 +81,6 @@ dependencies {
 
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    modImplementation("com.github.collarmc:pounce:${project.pounce_version}")
-    include("com.github.collarmc:pounce:${project.pounce_version}")
-
     modImplementation "maven.modrinth:wynntils:v${project.wynntils_version}-fabric"
     modRuntimeOnly "maven.modrinth:wynntils:v${project.wynntils_version}-fabric"
 

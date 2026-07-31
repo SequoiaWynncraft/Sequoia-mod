@@ -8,7 +8,6 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.events.DiscordChatEvent;
 import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
 import com.seqwawa.seq.integrations.WynntilsItemPreviewAccess;
 import com.seqwawa.seq.model.ChatItemPreview;
@@ -586,10 +585,6 @@ public class ChatManager {
                             .append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
                             .append(Component.literal(msg.message()).withStyle(ChatFormatting.WHITE));
                     mc.player.displayClientMessage(formatted, false);
-                }
-
-                if (SeqClient.getEventBus() != null) {
-                    SeqClient.getEventBus().dispatch(new DiscordChatEvent(msg.username(), msg.message()));
                 }
             });
         });
