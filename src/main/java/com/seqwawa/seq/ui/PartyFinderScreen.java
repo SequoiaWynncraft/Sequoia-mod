@@ -12,6 +12,7 @@ import com.seqwawa.seq.model.Member;
 import com.seqwawa.seq.model.PartyCloseReason;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
@@ -3077,14 +3078,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 }
                 return true;
             }
-            if (inviteUsernameInput.length() >= 16) {
-                return true;
-            }
-            Character typedCharacter = TextInputHelper.getTypedCharacter(keyEvent);
-            if (typedCharacter != null && TextInputFilters.isMinecraftUsernameCharacter(typedCharacter)) {
-                inviteUsernameInput += typedCharacter;
-                return true;
-            }
             return true;
         }
         if (modalOpen) {
@@ -3110,18 +3103,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
                     if (!reservedSlotsInput.isEmpty()) {
                         reservedSlotsInput = reservedSlotsInput.substring(0, reservedSlotsInput.length() - 1);
-                    }
-                    return true;
-                }
-                if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
-                    if (reservedSlotsInput.length() < 2) {
-                        reservedSlotsInput += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
-                    }
-                    return true;
-                }
-                if (keyCode >= GLFW.GLFW_KEY_KP_0 && keyCode <= GLFW.GLFW_KEY_KP_9) {
-                    if (reservedSlotsInput.length() < 2) {
-                        reservedSlotsInput += (char) ('0' + (keyCode - GLFW.GLFW_KEY_KP_0));
                     }
                     return true;
                 }
@@ -3152,15 +3133,45 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 }
                 return true;
             }
-            Character typedCharacter = TextInputHelper.getTypedCharacter(keyEvent);
-            if (typedCharacter != null && TextInputHelper.isPrintableCharacter(typedCharacter)) {
-                searchQuery += typedCharacter;
-                scrollOffset = 0;
-                return true;
-            }
             return true;
         }
         return super.keyPressed(keyEvent);
+    }
+
+    @Override
+    public boolean charTyped(@NotNull CharacterEvent characterEvent) {
+        String typedText = TextInputHelper.getTypedText(characterEvent);
+        if (filterScreenOpen) {
+            return true;
+        }
+        if (inviteModalOpen) {
+            if (typedText != null
+                    && typedText.length() == 1
+                    && TextInputFilters.isMinecraftUsernameCharacter(typedText.charAt(0))
+                    && inviteUsernameInput.length() < 16) {
+                inviteUsernameInput += typedText;
+            }
+            return true;
+        }
+        if (modalOpen) {
+            if (reservedSlotsFocused
+                    && typedText != null
+                    && typedText.length() == 1
+                    && typedText.charAt(0) >= '0'
+                    && typedText.charAt(0) <= '9'
+                    && reservedSlotsInput.length() < 2) {
+                reservedSlotsInput += typedText;
+            }
+            return true;
+        }
+        if (searchFocused) {
+            if (typedText != null) {
+                searchQuery += typedText;
+                scrollOffset = 0;
+            }
+            return true;
+        }
+        return super.charTyped(characterEvent);
     }
 
     @Override

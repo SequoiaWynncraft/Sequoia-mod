@@ -23,6 +23,7 @@ import java.util.function.Supplier;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
@@ -4925,13 +4926,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 worldEventDropdownScroll = 0;
                 return true;
             }
-            Character typedCharacter = searchCharacter(keyEvent);
-            if (typedCharacter != null) {
-                worldEventSearch += typedCharacter;
-                worldEventDropdownOpen = true;
-                worldEventDropdownScroll = 0;
-                return true;
-            }
             return true;
         }
         if (territoryInputFocused) {
@@ -4953,13 +4947,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             }
             if (keyCode == GLFW.GLFW_KEY_DELETE) {
                 territorySearch = "";
-                territoryDropdownOpen = true;
-                territoryDropdownScroll = 0;
-                return true;
-            }
-            Character typedCharacter = searchCharacter(keyEvent);
-            if (typedCharacter != null) {
-                territorySearch += typedCharacter;
                 territoryDropdownOpen = true;
                 territoryDropdownScroll = 0;
                 return true;
@@ -4991,13 +4978,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 resourceDropdownScroll = 0;
                 return true;
             }
-            Character typedCharacter = searchCharacter(keyEvent);
-            if (typedCharacter != null) {
-                resourceSearch += typedCharacter;
-                resourceDropdownOpen = true;
-                resourceDropdownScroll = 0;
-                return true;
-            }
             return true;
         }
         if ((resourceDropdownOpen || territoryDropdownOpen || worldEventDropdownOpen)
@@ -5006,6 +4986,36 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return true;
         }
         return super.keyPressed(keyEvent);
+    }
+
+    @Override
+    public boolean charTyped(@NotNull CharacterEvent characterEvent) {
+        String typedText = searchText(characterEvent);
+        if (worldEventInputFocused) {
+            if (typedText != null) {
+                worldEventSearch += typedText;
+                worldEventDropdownOpen = true;
+                worldEventDropdownScroll = 0;
+            }
+            return true;
+        }
+        if (territoryInputFocused) {
+            if (typedText != null) {
+                territorySearch += typedText;
+                territoryDropdownOpen = true;
+                territoryDropdownScroll = 0;
+            }
+            return true;
+        }
+        if (resourceInputFocused) {
+            if (typedText != null) {
+                resourceSearch += typedText;
+                resourceDropdownOpen = true;
+                resourceDropdownScroll = 0;
+            }
+            return true;
+        }
+        return super.charTyped(characterEvent);
     }
 
     private static void drawCircle(UiCanvas canvas, float x, float y, float radius, Color color) {
@@ -5151,28 +5161,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         return mx >= x && mx <= x + w && my >= y && my <= y + h;
     }
 
-    private static Character searchCharacter(KeyEvent keyEvent) {
-        Character typedCharacter = TextInputHelper.getTypedCharacter(keyEvent);
-        if (typedCharacter != null && TextInputHelper.isPrintableCharacter(typedCharacter)) {
-            return Character.toUpperCase(typedCharacter);
-        }
-
-        int keyCode = keyEvent.key();
-        if (keyCode >= GLFW.GLFW_KEY_A && keyCode <= GLFW.GLFW_KEY_Z) {
-            return (char) ('A' + (keyCode - GLFW.GLFW_KEY_A));
-        }
-        if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
-            return (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
-        }
-        if (keyCode >= GLFW.GLFW_KEY_KP_0 && keyCode <= GLFW.GLFW_KEY_KP_9) {
-            return (char) ('0' + (keyCode - GLFW.GLFW_KEY_KP_0));
-        }
-        return switch (keyCode) {
-            case GLFW.GLFW_KEY_SPACE -> ' ';
-            case GLFW.GLFW_KEY_MINUS, GLFW.GLFW_KEY_KP_SUBTRACT -> '-';
-            case GLFW.GLFW_KEY_APOSTROPHE -> '\'';
-            default -> null;
-        };
+    private static String searchText(CharacterEvent characterEvent) {
+        String typedText = TextInputHelper.getTypedText(characterEvent);
+        return typedText == null ? null : typedText.toUpperCase(Locale.ROOT);
     }
 
     private enum TextAlignment {

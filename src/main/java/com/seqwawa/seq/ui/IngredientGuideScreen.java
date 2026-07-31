@@ -52,6 +52,7 @@ import java.util.function.Supplier;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
@@ -1298,17 +1299,6 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 searchQuerySelected = false;
                 return true;
             }
-            Character character = TextInputHelper.getTypedCharacter(keyEvent);
-            if (character != null && TextInputHelper.isPrintableCharacter(character)) {
-                if (searchQuerySelected) {
-                    searchQuery = "";
-                }
-                if (searchQuery.length() < 80) {
-                    searchQuery += character;
-                }
-                searchQuerySelected = false;
-                return true;
-            }
             return true;
         }
         if (guideCategory == GuideCategory.INGREDIENTS && key == GLFW.GLFW_KEY_SLASH) {
@@ -1317,6 +1307,24 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             return true;
         }
         return super.keyPressed(keyEvent);
+    }
+
+    @Override
+    public boolean charTyped(@NotNull CharacterEvent characterEvent) {
+        if (!searchFocused) {
+            return super.charTyped(characterEvent);
+        }
+        String typedText = TextInputHelper.getTypedText(characterEvent);
+        if (typedText != null) {
+            if (searchQuerySelected) {
+                searchQuery = "";
+            }
+            if (searchQuery.length() + typedText.length() <= 80) {
+                searchQuery += typedText;
+            }
+            searchQuerySelected = false;
+        }
+        return true;
     }
 
     @Override

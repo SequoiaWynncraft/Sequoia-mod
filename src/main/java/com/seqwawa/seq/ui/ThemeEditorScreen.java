@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
@@ -574,11 +575,6 @@ public final class ThemeEditorScreen extends Screen {
                 }
                 return true;
             }
-            Character character = TextInputHelper.getTypedCharacter(keyEvent);
-            if (character != null && isThemeNameCharacter(character) && draftName.length() < 64) {
-                draftName += Character.toLowerCase(character);
-                dirty = true;
-            }
             return true;
         }
 
@@ -611,16 +607,35 @@ public final class ThemeEditorScreen extends Screen {
                 applyValidColorBuffer();
                 return true;
             }
-            Character character = TextInputHelper.getTypedCharacter(keyEvent);
-            if (character != null
-                    && Character.digit(character, 16) >= 0
+            return true;
+        }
+        return super.keyPressed(keyEvent);
+    }
+
+    @Override
+    public boolean charTyped(@NotNull CharacterEvent characterEvent) {
+        String typedText = TextInputHelper.getTypedText(characterEvent);
+        if (nameFocused) {
+            if (typedText != null
+                    && typedText.length() == 1
+                    && isThemeNameCharacter(typedText.charAt(0))
+                    && draftName.length() < 64) {
+                draftName += Character.toLowerCase(typedText.charAt(0));
+                dirty = true;
+            }
+            return true;
+        }
+        if (editingToken != null) {
+            if (typedText != null
+                    && typedText.length() == 1
+                    && Character.digit(typedText.charAt(0), 16) >= 0
                     && colorEditBuffer.length() < 9) {
-                colorEditBuffer += Character.toUpperCase(character);
+                colorEditBuffer += Character.toUpperCase(typedText.charAt(0));
                 applyValidColorBuffer();
             }
             return true;
         }
-        return super.keyPressed(keyEvent);
+        return super.charTyped(characterEvent);
     }
 
     @Override
