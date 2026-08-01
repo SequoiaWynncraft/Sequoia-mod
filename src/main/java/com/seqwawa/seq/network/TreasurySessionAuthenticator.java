@@ -31,17 +31,25 @@ final class TreasurySessionAuthenticator {
     }
 
     boolean handleChallenge(String challengeNonce) {
-        if (!isValidNonce(challengeNonce)) {
-            fail(new IllegalArgumentException("Backend supplied an invalid Treasury authentication nonce."));
-            return false;
-        }
-
+        IllegalArgumentException invalidNonceFailure = null;
         synchronized (this) {
             if (state != State.WAITING_CHALLENGE) {
                 return false;
             }
-            nonce = challengeNonce;
-            state = State.JOINING_SESSION;
+            if (!isValidNonce(challengeNonce)) {
+                state = State.FAILED;
+                nonce = null;
+                invalidNonceFailure = new IllegalArgumentException(
+                        "Backend supplied an invalid Treasury authentication nonce.");
+            } else {
+                nonce = challengeNonce;
+                state = State.JOINING_SESSION;
+            }
+        }
+
+        if (invalidNonceFailure != null) {
+            failureHandler.accept(invalidNonceFailure);
+            return false;
         }
 
         CompletableFuture.runAsync(() -> {
@@ -99,14 +107,6 @@ final class TreasurySessionAuthenticator {
         } else {
             responseSender.accept(completedNonce);
         }
-    }
-
-    private void fail(Throwable failure) {
-        synchronized (this) {
-            state = State.FAILED;
-            nonce = null;
-        }
-        failureHandler.accept(failure);
     }
 
     private static Throwable unwrap(Throwable error) {

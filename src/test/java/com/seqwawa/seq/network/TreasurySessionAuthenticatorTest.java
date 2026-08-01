@@ -52,6 +52,43 @@ class TreasurySessionAuthenticatorTest {
     }
 
     @Test
+    void ignoresMalformedLateChallengeAfterAuthentication() {
+        AtomicInteger failureCalls = new AtomicInteger();
+        TreasurySessionAuthenticator authenticator = new TreasurySessionAuthenticator(
+                ignored -> {}, Runnable::run, ignored -> {}, ignored -> failureCalls.incrementAndGet());
+
+        assertTrue(authenticator.handleChallenge(NONCE));
+        assertTrue(authenticator.confirm(NONCE));
+
+        assertFalse(authenticator.handleChallenge("short"));
+        assertTrue(authenticator.isAuthenticated());
+        assertEquals(TreasurySessionAuthenticator.State.AUTHENTICATED, authenticator.state());
+        assertEquals(0, failureCalls.get());
+    }
+
+    @Test
+    void invalidInitialChallengeInvokesFailureHandlerOutsideMonitor() {
+        AtomicReference<TreasurySessionAuthenticator> authenticatorReference = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        AtomicReference<Boolean> handlerHeldMonitor = new AtomicReference<>();
+        TreasurySessionAuthenticator authenticator = new TreasurySessionAuthenticator(
+                ignored -> {},
+                Runnable::run,
+                ignored -> {},
+                error -> {
+                    failure.set(error);
+                    handlerHeldMonitor.set(Thread.holdsLock(authenticatorReference.get()));
+                });
+        authenticatorReference.set(authenticator);
+
+        assertFalse(authenticator.handleChallenge("short"));
+
+        assertEquals("Backend supplied an invalid Treasury authentication nonce.", failure.get().getMessage());
+        assertFalse(handlerHeldMonitor.get());
+        assertEquals(TreasurySessionAuthenticator.State.FAILED, authenticator.state());
+    }
+
+    @Test
     void joinFailureNeverSendsAuthenticationResponse() {
         AtomicReference<String> response = new AtomicReference<>();
         AtomicReference<Throwable> failure = new AtomicReference<>();
