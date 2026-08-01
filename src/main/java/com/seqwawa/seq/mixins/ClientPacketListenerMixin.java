@@ -3,6 +3,7 @@ package com.seqwawa.seq.mixins;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import com.seqwawa.seq.managers.ChatManager;
 import com.seqwawa.seq.managers.GuildBankTracker;
 import com.seqwawa.seq.managers.GuildStorageTracker;
@@ -54,5 +55,15 @@ public class ClientPacketListenerMixin {
         if (SeqClient.getWynnPartySyncManager() != null) {
             SeqClient.getWynnPartySyncManager().onSystemChat(content);
         }
+    }
+
+    @Inject(
+            method = "setTitleText",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/network/protocol/PacketUtils;ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/network/PacketProcessor;)V",
+                    shift = At.Shift.AFTER))
+    private void seq$onSetTitleText(ClientboundSetTitleTextPacket packet, CallbackInfo ci) {
+        RaidTracker.onTitle(packet.text());
     }
 }

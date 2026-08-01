@@ -200,7 +200,6 @@ public class WynnPartySyncManager {
     }
 
     public void reset() {
-        RaidPartySnapshotTracker.invalidate();
         observedState.reset();
         lastSentSnapshotKey = null;
         lastSentSnapshotAt = Instant.EPOCH;
@@ -213,7 +212,7 @@ public class WynnPartySyncManager {
     }
 
     private void handlePartyCreated() {
-        RaidPartySnapshotTracker.invalidate();
+        RaidPartySnapshotTracker.onPartyChanged();
         observedState.reset();
         observedState.initialized = true;
         observedState.active = true;
@@ -227,7 +226,7 @@ public class WynnPartySyncManager {
     }
 
     private void handleMemberJoined(String username) {
-        RaidPartySnapshotTracker.invalidate();
+        RaidPartySnapshotTracker.onPartyChanged();
         if (!observedState.initialized) {
             SeqClient.LOGGER.debug("[WynnPartySync] Ignoring join event before party creation");
             return;
@@ -242,7 +241,7 @@ public class WynnPartySyncManager {
     }
 
     private void handleMemberLeft(String username) {
-        RaidPartySnapshotTracker.invalidate();
+        RaidPartySnapshotTracker.onPartyChanged();
         if (!observedState.initialized) {
             SeqClient.LOGGER.debug("[WynnPartySync] Ignoring leave event before party creation");
             return;
@@ -263,7 +262,7 @@ public class WynnPartySyncManager {
     }
 
     private void handleMemberKicked(String username) {
-        RaidPartySnapshotTracker.invalidate();
+        RaidPartySnapshotTracker.onPartyChanged();
         if (!observedState.initialized) {
             SeqClient.LOGGER.debug("[WynnPartySync] Ignoring kick event before party creation");
             return;
@@ -284,7 +283,7 @@ public class WynnPartySyncManager {
     }
 
     private void handleLeaderChanged(String username) {
-        RaidPartySnapshotTracker.invalidate();
+        RaidPartySnapshotTracker.onPartyChanged();
         if (!observedState.initialized) {
             SeqClient.LOGGER.debug("[WynnPartySync] Ignoring leader event before party creation");
             return;
@@ -300,7 +299,7 @@ public class WynnPartySyncManager {
     }
 
     private void handleAuthoritativeMembersSnapshot(List<String> usernames) {
-        RaidPartySnapshotTracker.invalidate();
+        RaidPartySnapshotTracker.onPartyChanged();
         observedState.initialized = true;
         observedState.active = true;
 
@@ -312,7 +311,7 @@ public class WynnPartySyncManager {
     }
 
     private void handlePartyDisbanded() {
-        RaidPartySnapshotTracker.invalidate();
+        RaidPartySnapshotTracker.onPartyChanged();
         if (!observedState.initialized) {
             SeqClient.LOGGER.debug("[WynnPartySync] Ignoring disband event before party creation");
             return;

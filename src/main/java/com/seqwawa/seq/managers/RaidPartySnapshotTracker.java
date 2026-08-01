@@ -10,15 +10,17 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** Maintains a recent canonical party snapshot for raid-completion name resolution. */
+/** Maintains one party roster for the complete lifetime of a raid. */
 public final class RaidPartySnapshotTracker {
     private static final long SNAPSHOT_INTERVAL_MS = 2_000;
-    private static final long SNAPSHOT_MAX_AGE_MS = 15_000;
+    static final long HANDOFF_RETENTION_MS = 90_000;
+    static final long RAID_SIDEBAR_MISSING_GRACE_MS = 15_000;
+    static final long RAID_ACQUISITION_WINDOW_MS = 6_000;
     private static final int DEFAULT_MAX_RAID_PARTY_MEMBERS = 4;
     private static final int ABSOLUTE_MAX_RAID_PARTY_MEMBERS = 10;
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
 
-    private static volatile PartySnapshot latestSnapshot = PartySnapshot.empty();
+    private static volatile TrackerState state = TrackerState.empty();
     private static long lastPollAtMs;
 
     private RaidPartySnapshotTracker() {}
@@ -38,14 +40,50 @@ public final class RaidPartySnapshotTracker {
     private static void captureSnapshot(long now) {
         lastPollAtMs = now;
 
-        WynnPartyScoreboardReader.PartyObservation partyObservation =
-                WynnPartyScoreboardReader.readPartyObservation();
+        WynnPartyScoreboardReader.PartyObservation observation = WynnPartyScoreboardReader.readPartyObservation();
         PartySnapshot observedSnapshot = collectCurrentPartySnapshot(
-                partyObservation.members(),
-                partyObservation.canonicalRosterUsernames(),
-                partyObservation.raidSidebarActive(),
+                observation.members(),
+                observation.canonicalRosterUsernames(),
+                observation.raidSidebarActive(),
                 now);
-        latestSnapshot = updateSnapshot(latestSnapshot, observedSnapshot, partyObservation.raidSidebarActive(), now);
+        TrackerState previous = state;
+        state = state.observe(
+                observedSnapshot,
+                observation.partySidebarActive(),
+                observation.raidSidebarActive(),
+                now);
+        if (previous.phase() != state.phase()) {
+            SeqClient.LOGGER.debug(
+                    "[RaidPartySnapshot] phase={} -> {} candidateMembers={} activeMembers={}",
+                    previous.phase(),
+                    state.phase(),
+                    state.candidateParty().usernames().size(),
+                    state.activeRaidParty().usernames().size());
+        }
+    }
+
+    /** Preserve raid handoff state during short Wynncraft world/server transfers. */
+    public static synchronized void onServerUnavailable() {
+        state = state.serverUnavailable(System.currentTimeMillis());
+    }
+
+    static synchronized void onServerUnavailable(long now) {
+        state = state.serverUnavailable(now);
+    }
+
+    /** Party chat events invalidate only the mutable pre-raid candidate. */
+    public static synchronized void onPartyChanged() {
+        state = state.clearCandidate();
+    }
+
+    /** Called after the completion announcement has consumed the locked roster. */
+    public static synchronized void onRaidCompleted() {
+        state = state.finishRaid();
+    }
+
+    /** Called from the vanilla raid-failure title packet. */
+    public static synchronized void onRaidFailed() {
+        state = state.finishRaid();
     }
 
     public static List<String> resolvePartyMembers(List<String> parsedPartyMembers, int displayedPartySize) {
@@ -54,20 +92,17 @@ public final class RaidPartySnapshotTracker {
 
     public static List<String> resolvePartyMembers(
             List<String> parsedPartyMembers, int displayedPartySize, int maximumPartySize) {
-        long now = System.currentTimeMillis();
-        PartySnapshot currentSnapshot = latestSnapshot;
-        long snapshotAgeMs = now - currentSnapshot.capturedAtMs();
-        boolean fresh = snapshotAgeMs <= SNAPSHOT_MAX_AGE_MS;
-        PartySnapshot snapshot = fresh ? currentSnapshot : PartySnapshot.empty();
+        TrackerState currentState = state;
+        PartySnapshot snapshot = currentState.activeRaidParty();
         List<String> resolved =
                 choosePartyMembers(parsedPartyMembers, snapshot, displayedPartySize, maximumPartySize);
         SeqClient.LOGGER.info(
-                "[RaidPartySnapshot] resolution={} displayedCount={} maxPartySize={} snapshotAgeMs={} raidContext={} snapshotMembers={} parsedMembers={} resolvedMembers={}",
-                resolutionSource(parsedPartyMembers, resolved, snapshot, fresh, maximumPartySize),
+                "[RaidPartySnapshot] resolution={} phase={} displayedCount={} maxPartySize={} activeDurationMs={} snapshotMembers={} parsedMembers={} resolvedMembers={}",
+                resolutionSource(parsedPartyMembers, resolved, snapshot, maximumPartySize),
+                currentState.phase(),
                 displayedPartySize,
                 maximumPartySize,
-                currentSnapshot.capturedAtMs() == 0 ? -1 : snapshotAgeMs,
-                snapshot.raidContext(),
+                snapshot.capturedAtMs() == 0 ? -1 : System.currentTimeMillis() - snapshot.capturedAtMs(),
                 snapshot.usernames(),
                 parsedPartyMembers,
                 resolved);
@@ -124,13 +159,23 @@ public final class RaidPartySnapshotTracker {
         return sanitizeParty(resolved);
     }
 
-    public static void reset() {
-        invalidate();
+    public static synchronized void reset() {
+        state = TrackerState.empty();
+        lastPollAtMs = 0;
     }
 
-    public static synchronized void invalidate() {
-        latestSnapshot = PartySnapshot.empty();
+    /** Compatibility alias for callers that mean a complete lifecycle reset. */
+    public static void invalidate() {
+        reset();
+    }
+
+    static synchronized void setStateForTest(TrackerState testState) {
+        state = testState;
         lastPollAtMs = 0;
+    }
+
+    static TrackerState stateForTest() {
+        return state;
     }
 
     private static PartySnapshot collectCurrentPartySnapshot(
@@ -199,10 +244,9 @@ public final class RaidPartySnapshotTracker {
             List<String> parsedPartyMembers,
             List<String> resolvedPartyMembers,
             PartySnapshot snapshot,
-            boolean fresh,
             int maximumPartySize) {
-        if (!fresh || snapshot.usernames().isEmpty()) {
-            return "missing_or_stale_snapshot";
+        if (snapshot.usernames().isEmpty()) {
+            return "missing_snapshot";
         }
         if (!snapshot.raidContext()) {
             return "non_raid_snapshot";
@@ -218,24 +262,193 @@ public final class RaidPartySnapshotTracker {
                 : "snapshot_aliases";
     }
 
-    static PartySnapshot updateSnapshot(
-            PartySnapshot current, PartySnapshot observed, boolean raidSidebarActive, long capturedAtMs) {
-        if (!raidSidebarActive) {
-            return current;
+    private static PartySnapshot updateCandidate(
+            PartySnapshot current, PartySnapshot observed, boolean partySidebarActive, long now) {
+        if (!partySidebarActive || observed.usernames().isEmpty()) {
+            return current.usernames().isEmpty() || now - current.capturedAtMs() <= HANDOFF_RETENTION_MS
+                    ? current
+                    : PartySnapshot.empty();
         }
-        if (capturedAtMs - current.capturedAtMs() > SNAPSHOT_MAX_AGE_MS) {
-            current = PartySnapshot.empty();
+        PartySnapshot normalObservation = observed.withRaidContext(false, now);
+        if (current.usernames().isEmpty() || now - current.capturedAtMs() > HANDOFF_RETENTION_MS) {
+            return normalObservation;
         }
-        if (!observed.usernames().isEmpty()) {
-            if (current.hasSameMembers(observed)) {
-                return current.mergeAliases(observed, capturedAtMs);
+        if (current.hasSameMembers(normalObservation)) {
+            return current.mergeKnownAliases(normalObservation, now);
+        }
+        if (current.containsAllMembers(normalObservation)) {
+            return current.mergeKnownAliases(normalObservation, now);
+        }
+        if (normalObservation.containsAllMembers(current)) {
+            return normalObservation.mergeKnownAliases(current, now);
+        }
+        return normalObservation;
+    }
+
+    enum Phase {
+        NORMAL,
+        ACQUIRING,
+        ACTIVE,
+        FINISHED_WAITING_FOR_EXIT
+    }
+
+    record TrackerState(
+            PartySnapshot candidateParty,
+            PartySnapshot activeRaidParty,
+            Phase phase,
+            long acquisitionStartedAtMs,
+            int stableRaidObservations,
+            long raidSidebarMissingSinceMs,
+            long serverUnavailableSinceMs) {
+
+        static TrackerState empty() {
+            return new TrackerState(
+                    PartySnapshot.empty(), PartySnapshot.empty(), Phase.NORMAL, 0, 0, 0, 0);
+        }
+
+        TrackerState observe(
+                PartySnapshot observed,
+                boolean partySidebarActive,
+                boolean raidSidebarActive,
+                long now) {
+            if (phase == Phase.FINISHED_WAITING_FOR_EXIT) {
+                if (raidSidebarActive) {
+                    return new TrackerState(
+                            candidateParty,
+                            activeRaidParty,
+                            phase,
+                            acquisitionStartedAtMs,
+                            stableRaidObservations,
+                            0,
+                            0);
+                }
+                return empty().observe(observed, partySidebarActive, false, now);
             }
-            if (current.containsAllMembers(observed)) {
-                return current.mergeAliases(observed, current.capturedAtMs());
+
+            if (phase == Phase.NORMAL) {
+                if (raidSidebarActive) {
+                    return startRaid(observed, now);
+                }
+                return new TrackerState(
+                        updateCandidate(candidateParty, observed, partySidebarActive, now),
+                        PartySnapshot.empty(),
+                        Phase.NORMAL,
+                        0,
+                        0,
+                        0,
+                        0);
             }
-            return observed;
+
+            if (!raidSidebarActive) {
+                long missingSince = raidSidebarMissingSinceMs == 0 ? now : raidSidebarMissingSinceMs;
+                if (now - missingSince >= RAID_SIDEBAR_MISSING_GRACE_MS) {
+                    return empty().observe(observed, partySidebarActive, false, now);
+                }
+                return new TrackerState(
+                        candidateParty,
+                        activeRaidParty,
+                        phase,
+                        acquisitionStartedAtMs,
+                        stableRaidObservations,
+                        missingSince,
+                        0);
+            }
+
+            if (phase == Phase.ACTIVE) {
+                return new TrackerState(
+                        candidateParty,
+                        activeRaidParty.mergeKnownAliases(observed, activeRaidParty.capturedAtMs()),
+                        Phase.ACTIVE,
+                        acquisitionStartedAtMs,
+                        stableRaidObservations,
+                        0,
+                        0);
+            }
+
+            PartySnapshot nextActive = activeRaidParty;
+            int nextStableCount = stableRaidObservations;
+            if (!observed.usernames().isEmpty()) {
+                boolean sameMembers = activeRaidParty.hasSameMembers(observed);
+                nextActive = activeRaidParty.usernames().isEmpty()
+                        ? observed.withRaidContext(true, now)
+                        : activeRaidParty.unionMembers(observed, activeRaidParty.capturedAtMs());
+                nextStableCount = sameMembers ? stableRaidObservations + 1 : 1;
+            }
+            boolean acquisitionExpired = !nextActive.usernames().isEmpty()
+                    && now - acquisitionStartedAtMs >= RAID_ACQUISITION_WINDOW_MS;
+            boolean locked = acquisitionExpired;
+            return new TrackerState(
+                    candidateParty,
+                    nextActive,
+                    locked ? Phase.ACTIVE : Phase.ACQUIRING,
+                    acquisitionStartedAtMs,
+                    nextStableCount,
+                    0,
+                    0);
         }
-        return current;
+
+        private TrackerState startRaid(PartySnapshot observed, long now) {
+            boolean candidateIsRecent = !candidateParty.usernames().isEmpty()
+                    && now - candidateParty.capturedAtMs() <= HANDOFF_RETENTION_MS;
+            if (candidateIsRecent) {
+                return new TrackerState(
+                        candidateParty,
+                        candidateParty.withRaidContext(true, now),
+                        Phase.ACTIVE,
+                        now,
+                        0,
+                        0,
+                        0);
+            }
+            PartySnapshot initial = observed.usernames().isEmpty()
+                    ? PartySnapshot.empty()
+                    : observed.withRaidContext(true, now);
+            return new TrackerState(
+                    PartySnapshot.empty(),
+                    initial,
+                    Phase.ACQUIRING,
+                    now,
+                    initial.usernames().isEmpty() ? 0 : 1,
+                    0,
+                    0);
+        }
+
+        TrackerState clearCandidate() {
+            return new TrackerState(
+                    PartySnapshot.empty(),
+                    activeRaidParty,
+                    phase,
+                    acquisitionStartedAtMs,
+                    stableRaidObservations,
+                    raidSidebarMissingSinceMs,
+                    serverUnavailableSinceMs);
+        }
+
+        TrackerState finishRaid() {
+            return new TrackerState(
+                    PartySnapshot.empty(),
+                    PartySnapshot.empty(),
+                    Phase.FINISHED_WAITING_FOR_EXIT,
+                    0,
+                    0,
+                    0,
+                    serverUnavailableSinceMs);
+        }
+
+        TrackerState serverUnavailable(long now) {
+            long unavailableSince = serverUnavailableSinceMs == 0 ? now : serverUnavailableSinceMs;
+            if (now - unavailableSince >= HANDOFF_RETENTION_MS) {
+                return empty();
+            }
+            return new TrackerState(
+                    candidateParty,
+                    activeRaidParty,
+                    phase,
+                    acquisitionStartedAtMs,
+                    stableRaidObservations,
+                    raidSidebarMissingSinceMs,
+                    unavailableSince);
+        }
     }
 
     record SnapshotMember(String displayedName, String username) {}
@@ -305,12 +518,44 @@ public final class RaidPartySnapshotTracker {
                             .allMatch(username -> usernames.stream().anyMatch(username::equalsIgnoreCase));
         }
 
-        private PartySnapshot mergeAliases(PartySnapshot other, long capturedAtMs) {
+        private boolean containsUsername(String username) {
+            return usernames.stream().anyMatch(username::equalsIgnoreCase);
+        }
+
+        private PartySnapshot withRaidContext(boolean nextRaidContext, long nextCapturedAtMs) {
+            return new PartySnapshot(usernames, aliases, nextRaidContext, nextCapturedAtMs);
+        }
+
+        private PartySnapshot mergeKnownAliases(PartySnapshot other, long nextCapturedAtMs) {
             Map<String, String> mergedAliases = new LinkedHashMap<>(aliases);
             for (Map.Entry<String, String> alias : other.aliases.entrySet()) {
-                mergedAliases.putIfAbsent(alias.getKey(), alias.getValue());
+                if (!containsUsername(alias.getValue())) {
+                    continue;
+                }
+                String existing = mergedAliases.get(alias.getKey());
+                if (existing == null) {
+                    mergedAliases.put(alias.getKey(), alias.getValue());
+                } else if (!existing.equalsIgnoreCase(alias.getValue())) {
+                    mergedAliases.remove(alias.getKey());
+                }
             }
-            return new PartySnapshot(usernames, mergedAliases, raidContext || other.raidContext, capturedAtMs);
+            return new PartySnapshot(usernames, mergedAliases, raidContext, nextCapturedAtMs);
+        }
+
+        private PartySnapshot unionMembers(PartySnapshot other, long nextCapturedAtMs) {
+            Map<String, String> mergedMembers = new LinkedHashMap<>();
+            for (String username : usernames) {
+                mergedMembers.put(username.toLowerCase(Locale.ROOT), username);
+            }
+            for (String username : other.usernames) {
+                if (mergedMembers.size() >= ABSOLUTE_MAX_RAID_PARTY_MEMBERS) {
+                    break;
+                }
+                mergedMembers.putIfAbsent(username.toLowerCase(Locale.ROOT), username);
+            }
+            PartySnapshot withMembers = new PartySnapshot(
+                    List.copyOf(mergedMembers.values()), aliases, true, nextCapturedAtMs);
+            return withMembers.mergeKnownAliases(other, nextCapturedAtMs);
         }
 
         private static PartySnapshot empty() {
