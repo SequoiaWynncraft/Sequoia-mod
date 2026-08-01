@@ -173,7 +173,7 @@ public final class GuildStorageTracker implements NotificationAccessor {
         applyStorageDelta(rewardGrant.emeraldDelta(), rewardGrant.aspectDelta());
         recordRewardGrant(rewardGrant);
         StorageSnapshot after = currentSnapshot;
-        SeqClient.LOGGER.info(
+        SeqClient.LOGGER.debug(
                 "[GuildStorage] Reward grant parsed fingerprint={} occurrenceCount={} deltaSinceLastMs={} sender='{}' recipient='{}' resource='{}' amount={} seeded={} normalized='{}' before={} after={} burstCount={}",
                 observation != null ? observation.fingerprint() : "unknown",
                 observation != null ? observation.occurrenceCount() : 0,
@@ -529,7 +529,7 @@ public final class GuildStorageTracker implements NotificationAccessor {
             SeqClient.LOGGER.warn(logMessage);
             return;
         }
-        SeqClient.LOGGER.info(logMessage);
+        SeqClient.LOGGER.debug(logMessage);
     }
 
     private int currentBurstCount(RewardGrant rewardGrant) {

@@ -425,7 +425,7 @@ public final class GuildRewardAutomationManager {
             }
 
             clickSlot(menu, guildSlot, 0, ClickType.PICKUP);
-            SeqClient.LOGGER.info("[GuildReward] Selected Sequoia guild entry at slot {}", guildSlot.index);
+            SeqClient.LOGGER.debug("[GuildReward] Selected Sequoia guild entry at slot {}", guildSlot.index);
             transition(State.WAIT_AFTER_GUILD_SELECT);
         }
 
@@ -460,7 +460,7 @@ public final class GuildRewardAutomationManager {
 
             clickSlot(menu, nextPageSlot, 0, ClickType.PICKUP);
             pageAdvances++;
-            SeqClient.LOGGER.info("[GuildReward] Advanced to next page while searching for {}", request.targetUsername());
+            SeqClient.LOGGER.debug("[GuildReward] Advanced to next page while searching for {}", request.targetUsername());
             transition(State.WAIT_AFTER_PAGE);
         }
 
@@ -553,7 +553,7 @@ public final class GuildRewardAutomationManager {
             clickSlot(menu, targetSlot, action.get().hotbarButton(), ClickType.SWAP);
             clicksSent++;
             rewardClickController.recordClick(action.get().amountPerClick());
-            SeqClient.LOGGER.info(
+            SeqClient.LOGGER.debug(
                     "[GuildReward] Sent click {} type={} target={} hotbarButton={} amountPerClick={}",
                     clicksSent,
                     request.type(),
@@ -579,7 +579,7 @@ public final class GuildRewardAutomationManager {
             if (progress == null) {
                 return;
             }
-            SeqClient.LOGGER.info(
+            SeqClient.LOGGER.debug(
                     "[GuildReward] Aspect confirmation target={} amount={} confirmed={}/{}",
                     request.targetUsername(),
                     rewardGrant.amount(),
@@ -591,7 +591,7 @@ public final class GuildRewardAutomationManager {
             if (!done
                     && state == State.CLICK_REWARD
                     && rewardClickController.recordInsufficientEmeralds()) {
-                SeqClient.LOGGER.info(
+                SeqClient.LOGGER.debug(
                         "[GuildReward] Wynncraft reported empty emerald storage after {} clicks", clicksSent);
                 succeed(successMessage());
             }
@@ -618,6 +618,11 @@ public final class GuildRewardAutomationManager {
             done = true;
             notifyPlayer(message);
             future.complete(AutomationResult.success(message));
+            SeqClient.LOGGER.info(
+                    "[GuildReward] Completed automation type={} target={} clicks={}",
+                    request.type(),
+                    request.targetUsername(),
+                    clicksSent);
         }
 
         private void fail(String message) {
