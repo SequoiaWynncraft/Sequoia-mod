@@ -52,8 +52,7 @@ public final class TreasuryOutManager {
 
     public boolean submit(
             String activeMinecraftUsername,
-            String authenticatedMinecraftUsername,
-            boolean connectedAndAuthenticated,
+            boolean websocketConnected,
             String amount,
             String payouter,
             String reason,
@@ -63,12 +62,8 @@ public final class TreasuryOutManager {
             safeFeedback.accept("Treasury OUT can only be used while playing as cinfrascitizen.");
             return false;
         }
-        if (!connectedAndAuthenticated) {
-            safeFeedback.accept("Treasury OUT requires an authenticated Sequoia connection. Run /seq connect first.");
-            return false;
-        }
-        if (authenticatedMinecraftUsername == null || authenticatedMinecraftUsername.isBlank()) {
-            safeFeedback.accept("Treasury OUT requires an identified operator session. Authenticate and reconnect first.");
+        if (!websocketConnected) {
+            safeFeedback.accept("Treasury OUT requires a connected Sequoia WebSocket. Run /seq connect first.");
             return false;
         }
 
@@ -97,7 +92,7 @@ public final class TreasuryOutManager {
         }
         if (!sent) {
             pendingRequests.remove(requestId, pending);
-            safeFeedback.accept("Treasury OUT was not sent. Authenticate and reconnect, then try again.");
+            safeFeedback.accept("Treasury OUT was not sent. Reconnect, then try again.");
             return false;
         }
 
@@ -146,15 +141,14 @@ public final class TreasuryOutManager {
         return pendingRequests.size();
     }
 
-    static boolean isTreasuryMinecraftAccount(String username) {
+    public static boolean isTreasuryMinecraftAccount(String username) {
         return username != null && TREASURY_MINECRAFT_ACCOUNT.equalsIgnoreCase(username.trim());
     }
 
     static String readableError(String code, String backendMessage) {
         return switch (code) {
-            case "token_invalid" -> "Treasury OUT failed: authenticate and reconnect first.";
-            case "treasury_forbidden" ->
-                "Treasury OUT failed: the authenticated operator needs the Treasury Discord role.";
+            case "token_invalid" -> "Treasury OUT failed: reconnect first.";
+            case "treasury_forbidden" -> "Treasury OUT failed: this client is not allowed to update the treasury.";
             case "invalid_request" -> "Treasury OUT rejected: "
                     + display(backendMessage, "the backend rejected the submitted values.");
             case "treasury_unavailable" ->

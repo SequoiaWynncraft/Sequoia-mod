@@ -26,7 +26,7 @@ class TreasuryOutManagerTest {
         TestContext context = contextWithIds("unused");
 
         boolean submitted = context.manager.submit(
-                "SomeoneElse", "SomeoneElse", true, "2stx", "Solo", "season payout", context.feedback::add);
+                "SomeoneElse", true, "2stx", "Solo", "season payout", context.feedback::add);
 
         assertFalse(submitted);
         assertEquals(0, context.sent.size());
@@ -35,24 +35,24 @@ class TreasuryOutManagerTest {
     }
 
     @Test
-    void rejectsDisconnectedOrUnauthenticatedSession() {
+    void rejectsDisconnectedWebsocket() {
         TestContext context = contextWithIds("unused");
 
         boolean submitted = context.manager.submit(
-                "cinfrascitizen", "cinfrascitizen", false, "2stx", "Solo", "season payout", context.feedback::add);
+                "cinfrascitizen", false, "2stx", "Solo", "season payout", context.feedback::add);
 
         assertFalse(submitted);
         assertEquals(0, context.sent.size());
         assertEquals(0, context.idCalls.get());
-        assertTrue(context.feedback.getLast().contains("authenticated Sequoia connection"));
+        assertTrue(context.feedback.getLast().contains("connected Sequoia WebSocket"));
     }
 
     @Test
-    void allowsPersonalOperatorSessionWhilePlayingAsCinfrascitizen() {
+    void allowsConnectedSocketWithoutAnAuthenticatedOperatorSession() {
         TestContext context = contextWithIds("request-1");
 
         boolean submitted = context.manager.submit(
-                "cinfrascitizen", "AuthorizedOperator", true, "2stx", "Solo", "season payout", context.feedback::add);
+                "cinfrascitizen", true, "2stx", "Solo", "season payout", context.feedback::add);
 
         assertTrue(submitted);
         assertEquals(1, context.sent.size());
@@ -60,23 +60,11 @@ class TreasuryOutManagerTest {
     }
 
     @Test
-    void rejectsUnidentifiedOperatorSession() {
-        TestContext context = contextWithIds("unused");
-
-        boolean submitted = context.manager.submit(
-                "cinfrascitizen", null, true, "2stx", "Solo", "season payout", context.feedback::add);
-
-        assertFalse(submitted);
-        assertEquals(0, context.sent.size());
-        assertTrue(context.feedback.getLast().contains("identified operator session"));
-    }
-
-    @Test
     void rejectsBlankFieldsBeforeGeneratingARequestId() {
         TestContext context = contextWithIds("unused");
 
         boolean submitted = context.manager.submit(
-                "cinfrascitizen", "cinfrascitizen", true, "2stx", "Solo", "  ", context.feedback::add);
+                "cinfrascitizen", true, "2stx", "Solo", "  ", context.feedback::add);
 
         assertFalse(submitted);
         assertEquals(0, context.idCalls.get());
@@ -98,7 +86,6 @@ class TreasuryOutManagerTest {
                 scheduler);
 
         assertTrue(manager.submit(
-                "cinfrascitizen",
                 "cinfrascitizen",
                 true,
                 "32le",
@@ -168,7 +155,6 @@ class TreasuryOutManagerTest {
 
         assertFalse(manager.submit(
                 "cinfrascitizen",
-                "cinfrascitizen",
                 true,
                 "2stx",
                 "Solo",
@@ -180,8 +166,8 @@ class TreasuryOutManagerTest {
 
     private static Stream<Arguments> backendErrors() {
         return Stream.of(
-                Arguments.of("token_invalid", "expired", "authenticate and reconnect first"),
-                Arguments.of("treasury_forbidden", "forbidden", "Treasury Discord role"),
+                Arguments.of("token_invalid", "expired", "reconnect first"),
+                Arguments.of("treasury_forbidden", "forbidden", "not allowed to update the treasury"),
                 Arguments.of("invalid_request", "amount must use a supported denomination", "supported denomination"),
                 Arguments.of("treasury_unavailable", "sheet update failed", "Google Sheet could not be updated"),
                 Arguments.of("mod_version_unsupported", "old client", "update SeqMod"));
@@ -189,7 +175,7 @@ class TreasuryOutManagerTest {
 
     private static boolean submit(TestContext context, String reason) {
         return context.manager.submit(
-                "cinfrascitizen", "cinfrascitizen", true, "2stx", "Solo", reason, context.feedback::add);
+                "cinfrascitizen", true, "2stx", "Solo", reason, context.feedback::add);
     }
 
     private static TestContext contextWithIds(String... ids) {

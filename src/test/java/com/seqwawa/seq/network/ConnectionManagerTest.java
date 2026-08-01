@@ -31,6 +31,14 @@ class ConnectionManagerTest {
     }
 
     @Test
+    void treasuryOnlyConnectionIsSelectedOnlyForCinfrascitizen() {
+        assertTrue(ConnectionManager.shouldUseTreasuryOnlyConnection("cinfrascitizen"));
+        assertTrue(ConnectionManager.shouldUseTreasuryOnlyConnection("CinfrasCitizen"));
+        assertFalse(ConnectionManager.shouldUseTreasuryOnlyConnection("reyzhia"));
+        assertFalse(ConnectionManager.shouldUseTreasuryOnlyConnection(null));
+    }
+
+    @Test
     void guildWarSubmissionPayloadUsesExpectedNestedShape() {
         GuildWarSubmission submission = new GuildWarSubmission(
                 "Detlas Suburbs",
@@ -193,9 +201,9 @@ class ConnectionManagerTest {
     }
 
     @Test
-    void treasuryOutIsAuthenticatedScopedAndThrottleLimited() {
+    void treasuryOutIsServerScopedUnauthenticatedAndThrottleLimited() {
         assertTrue(ConnectionManager.isServerScopedType("treasury_out"));
-        assertTrue(ConnectionManager.isAuthenticatedOutboundType("treasury_out"));
+        assertFalse(ConnectionManager.isAuthenticatedOutboundType("treasury_out"));
         assertTrue(ConnectionManager.isThrottleLimitedType("treasury_out"));
         assertFalse(ConnectionManager.isSequoiaMemberOnlyType("treasury_out"));
     }

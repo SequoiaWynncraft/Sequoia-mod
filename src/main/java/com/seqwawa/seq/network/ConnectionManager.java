@@ -33,6 +33,7 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.model.ChatItemPreview;
 import com.seqwawa.seq.managers.GuildStorageTracker;
+import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.model.BombShareType;
 import com.seqwawa.seq.model.GuildWarSubmission;
 import com.seqwawa.seq.model.WynnClassType;
@@ -90,6 +91,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private volatile long nextPrivilegedSendAtMs;
     private volatile boolean connectInProgress;
     private volatile boolean userInitiatedConnectFlow;
+    private volatile boolean treasuryOnlyConnection;
     private final Deque<GuildWarSubmission> pendingGuildWarSubmissions = new ConcurrentLinkedDeque<>();
 
     // Reconnect state
@@ -202,7 +204,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
 
         notifyConnectionStatus("Connecting to " + BuildConfig.ENVIRONMENT + "...");
-        prepareAuthenticatedConnection(forceTokenRefresh);
+        if (shouldUseTreasuryOnlyConnection(currentMinecraftUsername())) {
+            prepareTreasuryOnlyConnection();
+        } else {
+            prepareAuthenticatedConnection(forceTokenRefresh);
+        }
     }
 
     public void disconnect() {
@@ -286,11 +292,17 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         authAttempt = 0;
         nextAllowedAuthAttemptAtMs = 0;
 
-        String username = SeqClient.getConfigManager().getMinecraftUsername();
-        notifyConnectionStatus(
-                username != null && !username.isBlank()
-                        ? "Connected websocket for " + username + ". Waiting for backend authentication..."
-                        : "Connected websocket to " + BuildConfig.ENVIRONMENT + ". Waiting for backend authentication...");
+        if (treasuryOnlyConnection) {
+            connectedSince = Instant.now();
+            notifyConnectionStatus("Connected for Treasury OUT as cinfrascitizen.");
+        } else {
+            String username = SeqClient.getConfigManager().getMinecraftUsername();
+            notifyConnectionStatus(
+                    username != null && !username.isBlank()
+                            ? "Connected websocket for " + username + ". Waiting for backend authentication..."
+                            : "Connected websocket to " + BuildConfig.ENVIRONMENT
+                                    + ". Waiting for backend authentication...");
+        }
         finishConnectFlow();
     }
 
@@ -525,6 +537,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private void prepareAuthenticatedConnection(boolean forceTokenRefresh) {
+        treasuryOnlyConnection = false;
         WynncraftServerPolicy.Scope initialScope = WynncraftServerPolicy.currentScope();
         if (initialScope != WynncraftServerPolicy.Scope.MAIN) {
             connectInProgress = false;
@@ -589,6 +602,36 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         scheduleReconnect();
                     }
                 }));
+    }
+
+    private void prepareTreasuryOnlyConnection() {
+        WynncraftServerPolicy.Scope scope = WynncraftServerPolicy.currentScope();
+        if (scope != WynncraftServerPolicy.Scope.MAIN) {
+            connectInProgress = false;
+            finishConnectFlow();
+            if (scope == WynncraftServerPolicy.Scope.BLOCKED) {
+                autoReconnect = false;
+                cancelReconnect();
+                notifyConnectionFailure(WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE, false);
+            } else if (autoReconnect) {
+                scheduleReconnect();
+            }
+            return;
+        }
+
+        connectInProgress = true;
+        treasuryOnlyConnection = true;
+        try {
+            configureHandshakeAuthorization(null);
+            super.connect();
+        } catch (Exception exception) {
+            connectInProgress = false;
+            SeqClient.LOGGER.error("Failed to connect Treasury OUT websocket", exception);
+            notifyConnectionFailure("Failed to connect: " + exception.getMessage(), false);
+            instance = null;
+            finishConnectFlow();
+            scheduleReconnect();
+        }
     }
 
     private void configureHandshakeAuthorization(String token) {
@@ -778,6 +821,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     public boolean sendTreasuryOut(TreasuryOutRequest request) {
+        if (!TreasuryOutManager.isTreasuryMinecraftAccount(currentMinecraftUsername())) {
+            SeqClient.LOGGER.warn("[WebSocket] sendTreasuryOut dropped because active account is not authorized");
+            return false;
+        }
         if (request == null
                 || request.requestId() == null
                 || request.requestId().isBlank()
@@ -790,6 +837,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             SeqClient.LOGGER.warn(
                     "[WebSocket] sendTreasuryOut dropped invalid payload requestId={}",
                     request == null ? null : request.requestId());
+            return false;
+        }
+        if (!isOpen()) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendTreasuryOut dropped because websocket is not open requestId={}",
+                    request.requestId());
             return false;
         }
         return send(TreasuryOutRequest.TYPE, serializeTreasuryOutRequest(request));
@@ -1840,6 +1893,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return instance != null && instance.isOpen() && instance.authenticated;
     }
 
+    public static boolean isTreasuryOutConnected() {
+        return instance != null && instance.isOpen();
+    }
+
     public boolean isDiscordLinked() {
         return hasDiscordUsername(getLinkedDiscordUsername());
     }
@@ -1913,7 +1970,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     static boolean isAuthenticatedOutboundType(String type) {
-        return isServerScopedType(type);
+        return isServerScopedType(type) && !TreasuryOutRequest.TYPE.equals(type);
+    }
+
+    static boolean shouldUseTreasuryOnlyConnection(String activeMinecraftUsername) {
+        return TreasuryOutManager.isTreasuryMinecraftAccount(activeMinecraftUsername);
+    }
+
+    private static String currentMinecraftUsername() {
+        Minecraft minecraft = Minecraft.getInstance();
+        return minecraft.getUser() == null ? null : minecraft.getUser().getName();
     }
 
     static boolean isSequoiaMemberOnlyType(String type) {

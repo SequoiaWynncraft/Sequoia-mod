@@ -284,9 +284,6 @@ public class SeqCommand {
                 String activeUsername = SeqClient.mc == null || SeqClient.mc.getUser() == null
                                 ? null
                                 : SeqClient.mc.getUser().getName();
-                String authenticatedUsername = SeqClient.getConfigManager() == null
-                                ? null
-                                : SeqClient.getConfigManager().getMinecraftUsername();
                 TreasuryOutManager manager = SeqClient.getTreasuryOutManager();
                 if (manager == null) {
                         sendFeedback(ctx.getSource(), "Treasury OUT is unavailable until SeqMod finishes loading.");
@@ -294,8 +291,7 @@ public class SeqCommand {
                 }
                 boolean submitted = manager.submit(
                                 activeUsername,
-                                authenticatedUsername,
-                                ConnectionManager.isConnected(),
+                                ConnectionManager.isTreasuryOutConnected(),
                                 arguments.amount(),
                                 arguments.payouter(),
                                 arguments.reason(),

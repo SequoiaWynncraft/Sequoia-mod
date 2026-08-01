@@ -375,9 +375,7 @@ public class SeqClient implements ClientModInitializer {
         String currentUsername = currentMinecraftUsername();
         StoredAuthSession storedSession = configManager == null ? null : configManager.getStoredAuthSession();
         boolean preserveOperatorSession = shouldPreserveOperatorSession(
-                currentUsername,
-                currentProfileId,
-                storedSession == null ? null : storedSession.minecraftUuid());
+                currentProfileId, storedSession == null ? null : storedSession.minecraftUuid());
         LOGGER.info(
                 "[Seq] Active Minecraft account changed {} -> {} username={} preserveOperatorSession={}",
                 lastSeenMinecraftProfileId,
@@ -420,14 +418,9 @@ public class SeqClient implements ClientModInitializer {
         return mc.getUser().getName();
     }
 
-    static boolean shouldPreserveOperatorSession(
-            String activeMinecraftUsername, UUID activeMinecraftProfileId, String authenticatedMinecraftUuid) {
+    static boolean shouldPreserveOperatorSession(UUID activeMinecraftProfileId, String authenticatedMinecraftUuid) {
         if (authenticatedMinecraftUuid == null || authenticatedMinecraftUuid.isBlank()) {
             return false;
-        }
-        if (TreasuryOutManager.TREASURY_MINECRAFT_ACCOUNT.equalsIgnoreCase(
-                activeMinecraftUsername == null ? "" : activeMinecraftUsername.trim())) {
-            return true;
         }
         if (activeMinecraftProfileId == null) {
             return false;

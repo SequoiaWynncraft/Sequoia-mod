@@ -14,22 +14,19 @@ class SeqClientTest {
     private static final UUID SHARED_ACCOUNT_UUID = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
 
     @Test
-    void switchingToSharedTreasuryAccountPreservesOperatorSession() {
-        assertTrue(SeqClient.shouldPreserveOperatorSession(
-                "cinfrascitizen", SHARED_ACCOUNT_UUID, OPERATOR_UUID.toString()));
+    void switchingToSharedTreasuryAccountDoesNotPreserveAnotherAccountsSession() {
+        assertFalse(SeqClient.shouldPreserveOperatorSession(SHARED_ACCOUNT_UUID, OPERATOR_UUID.toString()));
     }
 
     @Test
     void switchingBackToAuthenticatedOperatorPreservesSession() {
-        assertTrue(SeqClient.shouldPreserveOperatorSession(
-                "AuthorizedOperator", OPERATOR_UUID, OPERATOR_UUID.toString()));
+        assertTrue(SeqClient.shouldPreserveOperatorSession(OPERATOR_UUID, OPERATOR_UUID.toString()));
     }
 
     @Test
     void unrelatedAccountStillDropsMismatchedOperatorSession() {
-        assertFalse(SeqClient.shouldPreserveOperatorSession(
-                "SomeoneElse", SHARED_ACCOUNT_UUID, OPERATOR_UUID.toString()));
-        assertFalse(SeqClient.shouldPreserveOperatorSession("cinfrascitizen", SHARED_ACCOUNT_UUID, null));
+        assertFalse(SeqClient.shouldPreserveOperatorSession(SHARED_ACCOUNT_UUID, OPERATOR_UUID.toString()));
+        assertFalse(SeqClient.shouldPreserveOperatorSession(SHARED_ACCOUNT_UUID, null));
     }
 
     @Test
