@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
@@ -29,6 +30,7 @@ import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.PartyListing;
+import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.map.GatheringClusterCache;
 import com.seqwawa.seq.map.GatheringMapImageService;
 import com.seqwawa.seq.map.WorldMapSettings;
@@ -109,6 +111,7 @@ public class SeqCommand {
                                 .then(buildAspectRewardCommand())
                                 .then(buildTomeRewardCommand())
                                 .then(buildBombCommand())
+                                .then(buildTreasuryCommand(SeqCommand::runTreasuryOut))
                                 .then(buildBadgeCommand("badges"))
                                 .then(buildBadgeCommand("badge"))
                                 .then(buildMapCommand())
@@ -255,6 +258,49 @@ public class SeqCommand {
                                                                 .requestBombShare(StringArgumentType.getString(
                                                                                 ctx,
                                                                                 "selectors"))));
+        }
+
+        static <S> LiteralArgumentBuilder<S> buildTreasuryCommand(TreasuryCommandExecutor<S> executor) {
+                RequiredArgumentBuilder<S, String> reasonArgument = RequiredArgumentBuilder
+                                .<S, String>argument("reason", StringArgumentType.greedyString())
+                                .executes(ctx -> executor.execute(
+                                                ctx,
+                                                new TreasuryCommandArguments(
+                                                                StringArgumentType.getString(ctx, "amount"),
+                                                                StringArgumentType.getString(ctx, "payouter"),
+                                                                StringArgumentType.getString(ctx, "reason"))));
+                RequiredArgumentBuilder<S, String> payouterArgument = RequiredArgumentBuilder
+                                .<S, String>argument("payouter", StringArgumentType.word())
+                                .then(reasonArgument);
+                RequiredArgumentBuilder<S, String> amountArgument = RequiredArgumentBuilder
+                                .<S, String>argument("amount", StringArgumentType.word())
+                                .then(payouterArgument);
+                return LiteralArgumentBuilder.<S>literal("treasury")
+                                .then(LiteralArgumentBuilder.<S>literal("out").then(amountArgument));
+        }
+
+        private static int runTreasuryOut(
+                        CommandContext<FabricClientCommandSource> ctx, TreasuryCommandArguments arguments) {
+                String activeUsername = SeqClient.mc == null || SeqClient.mc.getUser() == null
+                                ? null
+                                : SeqClient.mc.getUser().getName();
+                String authenticatedUsername = SeqClient.getConfigManager() == null
+                                ? null
+                                : SeqClient.getConfigManager().getMinecraftUsername();
+                TreasuryOutManager manager = SeqClient.getTreasuryOutManager();
+                if (manager == null) {
+                        sendFeedback(ctx.getSource(), "Treasury OUT is unavailable until SeqMod finishes loading.");
+                        return 0;
+                }
+                boolean submitted = manager.submit(
+                                activeUsername,
+                                authenticatedUsername,
+                                ConnectionManager.isConnected(),
+                                arguments.amount(),
+                                arguments.payouter(),
+                                arguments.reason(),
+                                message -> sendFeedback(ctx.getSource(), message));
+                return submitted ? 1 : 0;
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildRequestCommand() {
@@ -1062,6 +1108,13 @@ public class SeqCommand {
 
         private static void sendFeedback(FabricClientCommandSource source, String message) {
                 SeqClient.mc.execute(() -> source.sendFeedback(NotificationAccessor.prefixed(message)));
+        }
+
+        record TreasuryCommandArguments(String amount, String payouter, String reason) {}
+
+        @FunctionalInterface
+        interface TreasuryCommandExecutor<S> {
+                int execute(CommandContext<S> context, TreasuryCommandArguments arguments);
         }
 
 }

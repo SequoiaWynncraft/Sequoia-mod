@@ -20,6 +20,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 import com.seqwawa.seq.model.GuildWarQueueSubmission;
@@ -54,6 +55,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static final Map<String, Integer> VERSION_REMINDER_INTERVALS = Map.of(
             "bomb_share_request", 5,
             "bomb_share_submit", 5,
+            "treasury_out", 1,
             "guild_chat", 20,
             "guild_raid_announcement", 5,
             "guild_bank_event", 10,
@@ -103,6 +105,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static Consumer<PartyFinderStaleWarningMessage> partyFinderStaleWarningHandler;
     private static Consumer<BombSharePromptMessage> bombSharePromptHandler;
     private static Consumer<BombShareResultMessage> bombShareResultHandler;
+    private static Consumer<TreasuryOutRecordedMessage> treasuryOutRecordedHandler;
+    private static Predicate<TreasuryOutErrorMessage> treasuryOutErrorHandler;
     private static final Map<String, Integer> versionRejectionCounts = new ConcurrentHashMap<>();
     private final Map<String, BombSharePromptMessage> pendingBombSharePrompts = new ConcurrentHashMap<>();
 
@@ -511,7 +515,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private void sendPrepared(String type, JsonObject payload) {
         if (payload == null) payload = new JsonObject();
         payload.addProperty("type", type);
-        SeqClient.LOGGER.debug("[WebSocket] send type={} payload={}", type, truncate(payload.toString(), 512));
+        if (TreasuryOutRequest.TYPE.equals(type)) {
+            SeqClient.LOGGER.debug(
+                    "[WebSocket] send type={} requestId={}", type, extractPrimitiveString(payload, "request_id"));
+        } else {
+            SeqClient.LOGGER.debug("[WebSocket] send type={} payload={}", type, truncate(payload.toString(), 512));
+        }
         send(GSON.toJson(payload));
     }
 
@@ -671,6 +680,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return payload;
     }
 
+    static JsonObject serializeTreasuryOutRequest(TreasuryOutRequest request) {
+        return GSON.toJsonTree(request).getAsJsonObject();
+    }
+
     private AuthException unwrapAuthException(Throwable throwable) {
         Throwable cause = throwable;
         while (cause instanceof java.util.concurrent.CompletionException && cause.getCause() != null) {
@@ -762,6 +775,24 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
         send("bomb_share_submit", buildBombShareSubmitPayload(requestId, worlds));
         return true;
+    }
+
+    public boolean sendTreasuryOut(TreasuryOutRequest request) {
+        if (request == null
+                || request.requestId() == null
+                || request.requestId().isBlank()
+                || request.amount() == null
+                || request.amount().isBlank()
+                || request.payouter() == null
+                || request.payouter().isBlank()
+                || request.reason() == null
+                || request.reason().isBlank()) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendTreasuryOut dropped invalid payload requestId={}",
+                    request == null ? null : request.requestId());
+            return false;
+        }
+        return send(TreasuryOutRequest.TYPE, serializeTreasuryOutRequest(request));
     }
 
     public void sendGuildChat(String username, String nickname, String message, String avatarUrl) {
@@ -1426,7 +1457,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 return;
             }
             String type = json.get("type").getAsString();
-            SeqClient.LOGGER.info("[WebSocket] Received message type={} payload={}", type, truncate(message, 512));
+            if ("treasury_out_recorded".equals(type)) {
+                SeqClient.LOGGER.debug(
+                        "[WebSocket] Received message type={} requestId={}",
+                        type,
+                        extractPrimitiveString(json, "request_id"));
+            } else {
+                SeqClient.LOGGER.info("[WebSocket] Received message type={} payload={}", type, truncate(message, 512));
+            }
 
             switch (type) {
                 case "authenticated" -> {
@@ -1507,6 +1545,15 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         bombShareResultHandler.accept(result);
                     } else {
                         SeqClient.LOGGER.warn("[WebSocket] Received bomb_share_result but handler is not registered");
+                    }
+                }
+                case "treasury_out_recorded" -> {
+                    TreasuryOutRecordedMessage recorded = GSON.fromJson(json, TreasuryOutRecordedMessage.class);
+                    if (treasuryOutRecordedHandler != null) {
+                        treasuryOutRecordedHandler.accept(recorded);
+                    } else {
+                        SeqClient.LOGGER.warn(
+                                "[WebSocket] Received treasury_out_recorded but handler is not registered");
                     }
                 }
                 case "guild_storage_snapshot" -> {
@@ -1606,10 +1653,29 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 case "error" -> {
                     String error = extractBackendErrorMessage(json);
                     String backendCode = extractBackendErrorCode(json);
+                    String requestId = extractPrimitiveString(json, "request_id");
                     String minimumSafeVersion = extractMinimumSafeVersion(json);
                     String capability = extractCapability(json);
                     int status = extractStatusCode(json);
                     String normalized = error.toLowerCase(Locale.ROOT);
+
+                    if (requestId != null
+                            && treasuryOutErrorHandler != null
+                            && treasuryOutErrorHandler.test(
+                                    new TreasuryOutErrorMessage(requestId, backendCode, error))) {
+                        if ("token_invalid".equalsIgnoreCase(backendCode)) {
+                            authFailed = true;
+                            authenticated = false;
+                            registerAuthFailure();
+                            SeqClient.getAuthService()
+                                    .invalidateSession(
+                                            AuthErrorCode.TOKEN_INVALID,
+                                            "Backend rejected the stored token. Re-authentication required.");
+                        } else if ("mod_version_unsupported".equalsIgnoreCase(backendCode)) {
+                            autoReconnect = false;
+                        }
+                        return;
+                    }
 
                     if (isSilentGuildChatMembershipReject(backendCode, capability, normalized)) {
                         SeqClient.LOGGER.info("[WebSocket] Guild chat relay rejected because sender is not in guild");
@@ -1728,6 +1794,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     public static void onBombShareResult(Consumer<BombShareResultMessage> handler) {
         SeqClient.LOGGER.info("[WebSocket] Registering bomb_share_result handler present={}", handler != null);
         bombShareResultHandler = handler;
+    }
+
+    public static void onTreasuryOutRecorded(Consumer<TreasuryOutRecordedMessage> handler) {
+        SeqClient.LOGGER.info("[WebSocket] Registering treasury_out_recorded handler present={}", handler != null);
+        treasuryOutRecordedHandler = handler;
+    }
+
+    public static void onTreasuryOutError(Predicate<TreasuryOutErrorMessage> handler) {
+        SeqClient.LOGGER.info("[WebSocket] Registering treasury error handler present={}", handler != null);
+        treasuryOutErrorHandler = handler;
     }
 
     public Optional<BombSharePromptMessage> getPendingBombSharePrompt(String requestId) {
@@ -1859,6 +1935,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     static boolean isServerScopedType(String type) {
         return "bomb_share_request".equals(type)
                 || "bomb_share_submit".equals(type)
+                || "treasury_out".equals(type)
                 || "guild_chat".equals(type)
                 || "guild_alliance_update".equals(type)
                 || "guild_alliance_snapshot".equals(type)
@@ -1876,6 +1953,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     static boolean isThrottleLimitedType(String type) {
         return "bomb_share_request".equals(type)
                 || "bomb_share_submit".equals(type)
+                || "treasury_out".equals(type)
                 || "guild_chat".equals(type)
                 || "guild_alliance_update".equals(type)
                 || "guild_raid_announcement".equals(type)

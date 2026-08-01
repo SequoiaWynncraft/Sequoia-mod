@@ -42,6 +42,7 @@ import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
 import com.seqwawa.seq.managers.ThemeManager;
+import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.managers.WorldEventManager;
 import com.seqwawa.seq.map.IngredientWaypointRenderer;
@@ -49,6 +50,7 @@ import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
+import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
 import com.seqwawa.seq.ui.SequoiaScreen;
 import com.seqwawa.seq.update.UpdateManager;
@@ -88,6 +90,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static BombShareManager bombShareManager;
+
+    @Getter
+    public static TreasuryOutManager treasuryOutManager;
 
     // ── Network config settings ──
     @Getter
@@ -221,6 +226,9 @@ public class SeqClient implements ClientModInitializer {
         guildRewardAutomationManager = new GuildRewardAutomationManager();
         chatManager = new ChatManager();
         bombShareManager = new BombShareManager();
+        treasuryOutManager = new TreasuryOutManager();
+        ConnectionManager.onTreasuryOutRecorded(treasuryOutManager::handleRecorded);
+        ConnectionManager.onTreasuryOutError(treasuryOutManager::handleError);
         configManager = new ConfigManager();
         chatRegexFilterManager = new ChatRegexFilterManager();
         chatRegexFilterManager.settings().forEach(configManager::register);
@@ -364,14 +372,24 @@ public class SeqClient implements ClientModInitializer {
             return false;
         }
 
-        LOGGER.warn(
-                "[Seq] Active Minecraft account changed {} -> {}; clearing connection state",
+        String currentUsername = currentMinecraftUsername();
+        StoredAuthSession storedSession = configManager == null ? null : configManager.getStoredAuthSession();
+        boolean preserveOperatorSession = shouldPreserveOperatorSession(
+                currentUsername,
+                currentProfileId,
+                storedSession == null ? null : storedSession.minecraftUuid());
+        LOGGER.info(
+                "[Seq] Active Minecraft account changed {} -> {} username={} preserveOperatorSession={}",
                 lastSeenMinecraftProfileId,
-                currentProfileId);
+                currentProfileId,
+                currentUsername,
+                preserveOperatorSession);
         lastSeenMinecraftProfileId = currentProfileId;
-        ConnectionManager.resetForAccountChange();
-        if (authService != null) {
-            authService.clearSessionIfNotActiveProfile(currentProfileId);
+        if (!preserveOperatorSession) {
+            ConnectionManager.resetForAccountChange();
+            if (authService != null) {
+                authService.clearSessionIfNotActiveProfile(currentProfileId);
+            }
         }
         wasInPartyFinder = false;
         lastBroadcastPartyClass = null;
@@ -393,6 +411,32 @@ public class SeqClient implements ClientModInitializer {
             return null;
         }
         return mc.getUser().getProfileId();
+    }
+
+    private static String currentMinecraftUsername() {
+        if (mc == null || mc.getUser() == null) {
+            return null;
+        }
+        return mc.getUser().getName();
+    }
+
+    static boolean shouldPreserveOperatorSession(
+            String activeMinecraftUsername, UUID activeMinecraftProfileId, String authenticatedMinecraftUuid) {
+        if (authenticatedMinecraftUuid == null || authenticatedMinecraftUuid.isBlank()) {
+            return false;
+        }
+        if (TreasuryOutManager.TREASURY_MINECRAFT_ACCOUNT.equalsIgnoreCase(
+                activeMinecraftUsername == null ? "" : activeMinecraftUsername.trim())) {
+            return true;
+        }
+        if (activeMinecraftProfileId == null) {
+            return false;
+        }
+        try {
+            return activeMinecraftProfileId.equals(UUID.fromString(authenticatedMinecraftUuid));
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
     }
 
     private static void logServerScopeChange(WynncraftServerPolicy.Scope serverScope, String currentHost) {
