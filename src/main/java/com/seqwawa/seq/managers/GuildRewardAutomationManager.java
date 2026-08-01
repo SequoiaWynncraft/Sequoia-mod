@@ -30,8 +30,7 @@ public final class GuildRewardAutomationManager {
     private static final int MENU_WAIT_TIMEOUT_TICKS = 80;
     private static final int PAGE_WAIT_TIMEOUT_TICKS = 40;
     private static final int MAX_PAGE_ADVANCES = 12;
-    private static final int CLICK_DELAY_TICKS = 8;
-    private static final int EMERALD_CLICK_DELAY_TICKS = 2;
+    private static final int MENU_NAVIGATION_DELAY_TICKS = 8;
     private static final int TARGET_STABILIZE_TICKS = 8;
     private static final int MAX_CLICKS_PER_RUN = 256;
     private static final String INSUFFICIENT_EMERALDS_MESSAGE =
@@ -100,6 +99,7 @@ public final class GuildRewardAutomationManager {
                 future,
                 currentMenu == null ? -1 : currentMenu.containerId,
                 currentMenuLooksUsable,
+                minecraft.getUser().getName(),
                 openGuildManage ? State.WAIT_FOR_MENU : State.FIND_TARGET);
         if (openGuildManage) {
             minecraft.player.connection.sendCommand(GUILD_MANAGE_COMMAND);
@@ -131,8 +131,16 @@ public final class GuildRewardAutomationManager {
     }
 
     public void onSystemChat(Component message) {
-        if (activeTask != null && isInsufficientEmeraldsMessage(message)) {
-            activeTask.completeEmptyEmeraldStorage();
+        if (activeTask == null) {
+            return;
+        }
+        if (isInsufficientEmeraldsMessage(message)) {
+            activeTask.recordInsufficientEmeralds();
+        }
+
+        GuildStorageTracker.RewardGrant rewardGrant = GuildStorageTracker.parseRewardGrant(message);
+        if (rewardGrant != null) {
+            activeTask.recordRewardGrant(rewardGrant);
         }
     }
 
@@ -334,8 +342,14 @@ public final class GuildRewardAutomationManager {
 
     record RewardAction(RewardType type, int hotbarButton, long amountPerClick) {}
 
-    static int rewardClickDelayTicks(RewardType type) {
-        return type == RewardType.EMERALDS ? EMERALD_CLICK_DELAY_TICKS : CLICK_DELAY_TICKS;
+    private static RewardClickController createRewardClickController(
+            RewardRequest request, String localUsername) {
+        return switch (request.type()) {
+            case EMERALDS -> PacedRewardClickController.emeralds(request.amount());
+            case ASPECT -> new AspectAwardWaveController(
+                    request.amount(), localUsername, request.targetUsername());
+            case TOME -> PacedRewardClickController.tomes(request.amount());
+        };
     }
 
     private final class ActiveTask {
@@ -343,13 +357,12 @@ public final class GuildRewardAutomationManager {
         private final CompletableFuture<AutomationResult> future;
         private final int initialContainerId;
         private final boolean initialMenuAllowed;
+        private final RewardClickController rewardClickController;
         private State state = State.WAIT_FOR_MENU;
         private int ticksInState;
         private int pageAdvances;
-        private int clickDelay;
         private int clicksSent;
         private int missingRewardActionTicks;
-        private long remainingAmount;
         private boolean done;
 
         private ActiveTask(
@@ -357,13 +370,14 @@ public final class GuildRewardAutomationManager {
                 CompletableFuture<AutomationResult> future,
                 int initialContainerId,
                 boolean initialMenuAllowed,
+                String localUsername,
                 State initialState) {
             this.request = request;
             this.future = future;
             this.initialContainerId = initialContainerId;
             this.initialMenuAllowed = initialMenuAllowed;
             this.state = initialState;
-            this.remainingAmount = request.amount();
+            this.rewardClickController = createRewardClickController(request, localUsername);
         }
 
         private void tick() {
@@ -416,7 +430,7 @@ public final class GuildRewardAutomationManager {
         }
 
         private void tickWaitAfterGuildSelect() {
-            if (ticksInState >= CLICK_DELAY_TICKS) {
+            if (ticksInState >= MENU_NAVIGATION_DELAY_TICKS) {
                 transition(State.FIND_TARGET);
             }
         }
@@ -476,7 +490,7 @@ public final class GuildRewardAutomationManager {
         }
 
         private void tickWaitAfterPage() {
-            if (ticksInState >= CLICK_DELAY_TICKS) {
+            if (ticksInState >= MENU_NAVIGATION_DELAY_TICKS) {
                 transition(State.FIND_TARGET);
                 return;
             }
@@ -486,9 +500,22 @@ public final class GuildRewardAutomationManager {
         }
 
         private void tickClickReward() {
-            if (clickDelay > 0) {
-                clickDelay--;
-                return;
+            RewardClickController.NextAction nextAction = rewardClickController.tick();
+            switch (nextAction) {
+                case WAIT -> {
+                    return;
+                }
+                case COMPLETE -> {
+                    succeed(successMessage());
+                    return;
+                }
+                case STALLED -> {
+                    fail(rewardClickController.stalledMessage());
+                    return;
+                }
+                case CLICK -> {
+                    // Continue below once the target slot and action are available.
+                }
             }
 
             AbstractContainerMenu menu = currentMenu();
@@ -514,8 +541,7 @@ public final class GuildRewardAutomationManager {
             }
             missingRewardActionTicks = 0;
 
-            long amountToSend = amountToSend(menu, action.get());
-            if (amountToSend <= 0) {
+            if (finiteEmeraldStorageIsEmpty(menu)) {
                 succeed(successMessage());
                 return;
             }
@@ -526,12 +552,7 @@ public final class GuildRewardAutomationManager {
 
             clickSlot(menu, targetSlot, action.get().hotbarButton(), ClickType.SWAP);
             clicksSent++;
-            if (request.type() == RewardType.EMERALDS && remainingAmount != Long.MAX_VALUE) {
-                remainingAmount = Math.max(0, remainingAmount - action.get().amountPerClick());
-            } else if (request.type() != RewardType.EMERALDS) {
-                remainingAmount = Math.max(0, remainingAmount - action.get().amountPerClick());
-            }
-            clickDelay = rewardClickDelayTicks(request.type());
+            rewardClickController.recordClick(action.get().amountPerClick());
             SeqClient.LOGGER.info(
                     "[GuildReward] Sent click {} type={} target={} hotbarButton={} amountPerClick={}",
                     clicksSent,
@@ -541,31 +562,35 @@ public final class GuildRewardAutomationManager {
                     action.get().amountPerClick());
         }
 
-        private long amountToSend(AbstractContainerMenu menu, RewardAction action) {
-            if (request.type() == RewardType.EMERALDS) {
-                if (request.amount() == Long.MAX_VALUE) {
-                    return action.amountPerClick();
-                }
-                OptionalLong currentEmeralds = GuildStorageTracker.extractCurrentEmeralds(menu);
-                if (currentEmeralds.isPresent()) {
-                    if (currentEmeralds.getAsLong() <= 0) {
-                        return 0;
-                    }
-                    if (remainingAmount == Long.MAX_VALUE) {
-                        remainingAmount = currentEmeralds.getAsLong();
-                    }
-                }
-                return remainingAmount == Long.MAX_VALUE ? action.amountPerClick() : remainingAmount;
+        private boolean finiteEmeraldStorageIsEmpty(AbstractContainerMenu menu) {
+            if (request.type() != RewardType.EMERALDS || request.amount() == Long.MAX_VALUE) {
+                return false;
             }
-            return remainingAmount;
+            OptionalLong currentEmeralds = GuildStorageTracker.extractCurrentEmeralds(menu);
+            return currentEmeralds.isPresent() && currentEmeralds.getAsLong() <= 0;
         }
 
-        private void completeEmptyEmeraldStorage() {
+        private void recordRewardGrant(GuildStorageTracker.RewardGrant rewardGrant) {
+            if (done) {
+                return;
+            }
+
+            RewardClickController.ConfirmationProgress progress = rewardClickController.recordRewardGrant(rewardGrant);
+            if (progress == null) {
+                return;
+            }
+            SeqClient.LOGGER.info(
+                    "[GuildReward] Aspect confirmation target={} amount={} confirmed={}/{}",
+                    request.targetUsername(),
+                    rewardGrant.amount(),
+                    progress.confirmedAmount(),
+                    progress.targetAmount());
+        }
+
+        private void recordInsufficientEmeralds() {
             if (!done
                     && state == State.CLICK_REWARD
-                    && clicksSent > 0
-                    && request.type() == RewardType.EMERALDS
-                    && request.amount() == Long.MAX_VALUE) {
+                    && rewardClickController.recordInsufficientEmeralds()) {
                 SeqClient.LOGGER.info(
                         "[GuildReward] Wynncraft reported empty emerald storage after {} clicks", clicksSent);
                 succeed(successMessage());
@@ -575,7 +600,8 @@ public final class GuildRewardAutomationManager {
         private String successMessage() {
             return switch (request.type()) {
                 case EMERALDS -> "Finished sending emeralds to " + request.targetUsername() + ".";
-                case ASPECT -> "Finished sending " + request.amount() + " aspect(s) to " + request.targetUsername() + ".";
+                case ASPECT -> "Confirmed at least " + request.amount() + " aspect(s) awarded to "
+                        + request.targetUsername() + ".";
                 case TOME -> "Finished sending 1 guild tome to " + request.targetUsername() + ".";
             };
         }
