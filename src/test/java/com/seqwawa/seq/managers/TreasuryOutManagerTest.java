@@ -97,13 +97,29 @@ class TreasuryOutManagerTest {
     }
 
     @Test
+    void preservesAmountExpressionForBackendNormalization() {
+        TestContext context = contextWithIds("request-1");
+
+        assertTrue(context.manager.submit(
+                "cinfrascitizen",
+                true,
+                " 2stx5le+1stx5le+4stx4le ",
+                "Solo",
+                "season payout",
+                context.feedback::add));
+
+        assertEquals("2stx5le+1stx5le+4stx4le", context.sent.getFirst().amount());
+        assertEquals(1, context.sent.size());
+    }
+
+    @Test
     void correlatesRecordedResponseByRequestId() {
         TestContext context = contextWithIds("request-1", "request-2");
         assertTrue(submit(context, "first reason"));
         assertTrue(submit(context, "second reason"));
 
         assertFalse(context.manager.handleRecorded(new TreasuryOutRecordedMessage(
-                "treasury_out_recorded", "unknown", "Season 32", 7, "2STX", "Solo", "ignored", "2026-08-01")));
+                "treasury_out_recorded", "unknown", "Season 32", 7, "462LE", "Solo", "ignored", "2026-08-01")));
         assertEquals(2, context.manager.pendingCount());
 
         assertTrue(context.manager.handleRecorded(new TreasuryOutRecordedMessage(
@@ -111,13 +127,13 @@ class TreasuryOutManagerTest {
                 "request-2",
                 "Season 32",
                 7,
-                "2STX",
+                "462LE",
                 "Solo",
                 "second reason",
                 "2026-08-01")));
         assertTrue(context.manager.isPending("request-1"));
         assertFalse(context.manager.isPending("request-2"));
-        assertEquals("Treasury OUT recorded: 2STX — Season 32, row 7 (2026-08-01)", context.feedback.getLast());
+        assertEquals("Treasury OUT recorded: 462LE — Season 32, row 7 (2026-08-01)", context.feedback.getLast());
     }
 
     @ParameterizedTest

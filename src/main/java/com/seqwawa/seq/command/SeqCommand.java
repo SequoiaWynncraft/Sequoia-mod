@@ -49,6 +49,12 @@ import com.seqwawa.seq.utils.PlayerNameCache;
 public class SeqCommand {
 
         private static final List<String> ROLE_SUGGESTIONS = List.of("dps", "healer", "tank");
+        private static final List<String> TREASURY_AMOUNT_SUGGESTIONS = List.of(
+                        "50",
+                        "50le",
+                        "50s",
+                        "2stx5le",
+                        "2stx5le+1stx5le+4stx4le");
 
         public static void register() {
                 ClientCommandRegistrationCallback.EVENT.register(SeqCommand::registerCommands);
@@ -274,6 +280,7 @@ public class SeqCommand {
                                 .then(reasonArgument);
                 RequiredArgumentBuilder<S, String> amountArgument = RequiredArgumentBuilder
                                 .<S, String>argument("amount", StringArgumentType.word())
+                                .suggests(SeqCommand::suggestTreasuryAmounts)
                                 .then(payouterArgument);
                 return LiteralArgumentBuilder.<S>literal("treasury")
                                 .then(LiteralArgumentBuilder.<S>literal("out").then(amountArgument));
@@ -969,6 +976,12 @@ public class SeqCommand {
                         CommandContext<FabricClientCommandSource> ctx,
                         SuggestionsBuilder builder) {
                 return SharedSuggestionProvider.suggest(ROLE_SUGGESTIONS, builder);
+        }
+
+        private static <S> CompletableFuture<Suggestions> suggestTreasuryAmounts(
+                        CommandContext<S> ctx,
+                        SuggestionsBuilder builder) {
+                return SharedSuggestionProvider.suggest(TREASURY_AMOUNT_SUGGESTIONS, builder);
         }
 
         private static CompletableFuture<Suggestions> suggestActivities(

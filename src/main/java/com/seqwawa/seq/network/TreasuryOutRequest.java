@@ -2,7 +2,7 @@ package com.seqwawa.seq.network;
 
 import com.google.gson.annotations.SerializedName;
 
-/** Authenticated request to append an OUT entry to the Sequoia treasury sheet. */
+/** Request to append an OUT entry; the backend parses and normalizes {@code amount}. */
 public record TreasuryOutRequest(
         String type,
         @SerializedName("request_id") String requestId,

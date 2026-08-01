@@ -185,13 +185,16 @@ class ConnectionManagerTest {
     @Test
     void treasuryOutUsesTypedGsonSerializationWithoutClaimedIdentity() {
         TreasuryOutRequest request = new TreasuryOutRequest(
-                "550e8400-e29b-41d4-a716-446655440000", "32le", "cinfrascitizen", "guild event prizes");
+                "550e8400-e29b-41d4-a716-446655440000",
+                "2stx5le+1stx5le+4stx4le",
+                "cinfrascitizen",
+                "guild event prizes");
 
         var json = ConnectionManager.serializeTreasuryOutRequest(request);
 
         assertEquals("treasury_out", json.get("type").getAsString());
         assertEquals("550e8400-e29b-41d4-a716-446655440000", json.get("request_id").getAsString());
-        assertEquals("32le", json.get("amount").getAsString());
+        assertEquals("2stx5le+1stx5le+4stx4le", json.get("amount").getAsString());
         assertEquals("cinfrascitizen", json.get("payouter").getAsString());
         assertEquals("guild event prizes", json.get("reason").getAsString());
         assertFalse(json.has("username"));
