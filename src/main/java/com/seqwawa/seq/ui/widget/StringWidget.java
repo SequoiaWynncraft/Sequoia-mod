@@ -4,6 +4,7 @@ import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import java.awt.Color;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import org.lwjgl.glfw.GLFW;
 import com.seqwawa.seq.client.SeqClient;
@@ -116,12 +117,18 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
             }
             return true;
         }
-        Character typedCharacter = TextInputHelper.getTypedCharacter(keyEvent);
-        if (typedCharacter != null && TextInputHelper.isPrintableCharacter(typedCharacter)) {
-            editBuffer += typedCharacter;
-            return true;
-        }
+        return true;
+    }
 
+    @Override
+    public boolean charTyped(CharacterEvent characterEvent) {
+        if (!editing) {
+            return false;
+        }
+        String typedText = TextInputHelper.getTypedText(characterEvent);
+        if (typedText != null) {
+            editBuffer += typedText;
+        }
         return true;
     }
 

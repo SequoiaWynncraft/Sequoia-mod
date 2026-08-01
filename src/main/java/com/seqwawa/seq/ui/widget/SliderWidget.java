@@ -3,12 +3,14 @@ package com.seqwawa.seq.ui.widget;
 import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
-import java.awt.Color;
-import net.minecraft.client.input.KeyEvent;
-import org.lwjgl.glfw.GLFW;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
+import com.seqwawa.seq.utils.TextInputHelper;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
+import java.awt.Color;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import org.lwjgl.glfw.GLFW;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 
 
@@ -265,24 +267,22 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
             editBuffer = editBuffer.substring(0, editBuffer.length() - 1);
             return true;
         }
-        if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
-            editBuffer += (char) ('0' + (keyCode - GLFW.GLFW_KEY_0));
-            return true;
-        }
+        return true;
+    }
 
-        if (keyCode >= GLFW.GLFW_KEY_KP_0 && keyCode <= GLFW.GLFW_KEY_KP_9) {
-            editBuffer += (char) ('0' + (keyCode - GLFW.GLFW_KEY_KP_0));
-            return true;
+    @Override
+    public boolean charTyped(CharacterEvent characterEvent) {
+        if (!editing) {
+            return false;
         }
-
-        if (keyCode == GLFW.GLFW_KEY_PERIOD || keyCode == GLFW.GLFW_KEY_KP_DECIMAL) {
-            editBuffer += '.';
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_MINUS || keyCode == GLFW.GLFW_KEY_KP_SUBTRACT) {
-            editBuffer += '-';
-            return true;
+        String typedText = TextInputHelper.getTypedText(characterEvent);
+        if (typedText != null && typedText.length() == 1) {
+            char character = typedText.charAt(0);
+            if (character >= '0' && character <= '9' || character == '.' || character == ',') {
+                editBuffer += character == ',' ? '.' : character;
+            } else if (character == '-' && editBuffer.isEmpty()) {
+                editBuffer += character;
+            }
         }
         return true;
     }

@@ -1,11 +1,44 @@
 package com.seqwawa.seq.map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.map.IngredientWaypointManager.Kind;
 import org.junit.jupiter.api.Test;
 
 class IngredientWaypointRendererTest {
+    @Test
+    void rendersOnlyPositiveRadiiWithinWaypointRange() {
+        assertTrue(IngredientWaypointRenderer.shouldRenderRadius(12, 100));
+        assertFalse(IngredientWaypointRenderer.shouldRenderRadius(0, 100));
+        assertFalse(IngredientWaypointRenderer.shouldRenderRadius(-1, 100));
+        assertFalse(IngredientWaypointRenderer.shouldRenderRadius(12, 8_001.0 * 8_001.0));
+    }
+
+    @Test
+    void colorsRadiusGreenInsideAndRedOutsideWhenProximityColorsAreEnabled() {
+        assertEquals(
+                0xFF55FF55,
+                IngredientWaypointRenderer.resolveRadiusColor(Kind.INGREDIENT_SPAWN, true, 99, 10));
+        assertEquals(
+                0xFF55FF55,
+                IngredientWaypointRenderer.resolveRadiusColor(Kind.TOTEM_SPOT, true, 100, 10));
+        assertEquals(
+                0xFFFF5555,
+                IngredientWaypointRenderer.resolveRadiusColor(Kind.INGREDIENT_SPAWN, true, 101, 10));
+    }
+
+    @Test
+    void keepsWaypointTypeColorsWhenProximityColorsAreDisabled() {
+        assertEquals(
+                0xFF55FFFF,
+                IngredientWaypointRenderer.resolveRadiusColor(Kind.INGREDIENT_SPAWN, false, 101, 10));
+        assertEquals(
+                0xFFFFAA33,
+                IngredientWaypointRenderer.resolveRadiusColor(Kind.TOTEM_SPOT, false, 0, 10));
+    }
+
     @Test
     void displaysWaypointWithinDistanceAndFrontHorizontalHalfPlane() {
         assertTrue(IngredientWaypointRenderer.shouldDisplay(100, 20, 100, 0, 1));

@@ -19,6 +19,8 @@ public final class WorldMapSettings {
     private boolean showGatheringTotemNodeReach = true;
     private boolean showGatheringTotemCoveredNodes = true;
     private boolean showOtherOptimalGatheringTotems = true;
+    private boolean showIngredientWaypointRadii;
+    private boolean colorIngredientWaypointRadiiByProximity = true;
     private boolean showTerritories;
     private boolean showTerritoryNames;
     private boolean showDebugInfo;
@@ -139,6 +141,23 @@ public final class WorldMapSettings {
 
     public synchronized void setShowOtherOptimalGatheringTotems(boolean showOtherOptimalGatheringTotems) {
         this.showOtherOptimalGatheringTotems = showOtherOptimalGatheringTotems;
+    }
+
+    public synchronized boolean showIngredientWaypointRadii() {
+        return showIngredientWaypointRadii;
+    }
+
+    public synchronized void setShowIngredientWaypointRadii(boolean showIngredientWaypointRadii) {
+        this.showIngredientWaypointRadii = showIngredientWaypointRadii;
+    }
+
+    public synchronized boolean colorIngredientWaypointRadiiByProximity() {
+        return colorIngredientWaypointRadiiByProximity;
+    }
+
+    public synchronized void setColorIngredientWaypointRadiiByProximity(
+            boolean colorIngredientWaypointRadiiByProximity) {
+        this.colorIngredientWaypointRadiiByProximity = colorIngredientWaypointRadiiByProximity;
     }
 
     public synchronized boolean showTerritories() {

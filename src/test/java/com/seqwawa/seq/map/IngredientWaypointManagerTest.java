@@ -61,6 +61,17 @@ class IngredientWaypointManagerTest {
         assertEquals("Tier zero\nTier three", waypoint.detail());
     }
 
+    @Test
+    void preservesPositiveRadiusAndClampsNegativeRadius() {
+        Waypoint positive = new Waypoint(
+                "spawn", Kind.INGREDIENT_SPAWN, "Ingredient", List.of(), 1, 2, 3, 24, null);
+        Waypoint negative = new Waypoint(
+                "totem", Kind.TOTEM_SPOT, "Totem", List.of(), 1, 2, 3, -5, null);
+
+        assertEquals(24, positive.radius());
+        assertEquals(0, negative.radius());
+    }
+
     private static Waypoint waypoint(String id, String label) {
         return new Waypoint(id, Kind.INGREDIENT_SPAWN, label, "Mob", 1, 2, 3);
     }

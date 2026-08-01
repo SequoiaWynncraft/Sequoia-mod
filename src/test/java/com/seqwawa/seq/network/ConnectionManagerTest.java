@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.seqwawa.seq.model.GuildWarSubmission;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class ConnectionManagerTest {
@@ -27,6 +28,14 @@ class ConnectionManagerTest {
 
         assertEquals(1, headers.size());
         assertEquals("0.1.3", headers.get(ClientVersion.MOD_VERSION_HEADER));
+    }
+
+    @Test
+    void treasuryOnlyConnectionIsSelectedOnlyForCinfrascitizen() {
+        assertTrue(ConnectionManager.shouldUseTreasuryOnlyConnection("cinfrascitizen"));
+        assertTrue(ConnectionManager.shouldUseTreasuryOnlyConnection("CinfrasCitizen"));
+        assertFalse(ConnectionManager.shouldUseTreasuryOnlyConnection("reyzhia"));
+        assertFalse(ConnectionManager.shouldUseTreasuryOnlyConnection(null));
     }
 
     @Test
@@ -171,6 +180,89 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_request"));
         assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_submit"));
         assertFalse(ConnectionManager.isThrottleLimitedType("guild_alliance_snapshot"));
+    }
+
+    @Test
+    void treasuryOutUsesTypedGsonSerializationWithoutClaimedIdentity() {
+        TreasuryOutRequest request = new TreasuryOutRequest(
+                "550e8400-e29b-41d4-a716-446655440000",
+                "2stx5le+1stx5le+4stx4le",
+                "cinfrascitizen",
+                "guild event prizes");
+
+        var json = ConnectionManager.serializeTreasuryOutRequest(request);
+
+        assertEquals("treasury_out", json.get("type").getAsString());
+        assertEquals("550e8400-e29b-41d4-a716-446655440000", json.get("request_id").getAsString());
+        assertEquals("2stx5le+1stx5le+4stx4le", json.get("amount").getAsString());
+        assertEquals("cinfrascitizen", json.get("payouter").getAsString());
+        assertEquals("guild event prizes", json.get("reason").getAsString());
+        assertFalse(json.has("username"));
+        assertFalse(json.has("minecraft_username"));
+        assertFalse(json.has("uuid"));
+        assertFalse(json.has("minecraft_uuid"));
+    }
+
+    @Test
+    void treasuryOutIsServerScopedUnauthenticatedAndThrottleLimited() {
+        assertTrue(ConnectionManager.isServerScopedType("treasury_out"));
+        assertFalse(ConnectionManager.isAuthenticatedOutboundType("treasury_out"));
+        assertTrue(ConnectionManager.isThrottleLimitedType("treasury_out"));
+        assertFalse(ConnectionManager.isSequoiaMemberOnlyType("treasury_out"));
+    }
+
+    @Test
+    void dispatchesTreasuryOutRecordedWithItsRequestId() {
+        AtomicReference<TreasuryOutRecordedMessage> dispatched = new AtomicReference<>();
+        ConnectionManager.onTreasuryOutRecorded(dispatched::set);
+        try {
+            ConnectionManager.getInstance().onMessage("""
+                    {
+                      "type": "treasury_out_recorded",
+                      "request_id": "550e8400-e29b-41d4-a716-446655440000",
+                      "sheet_name": "Season 32",
+                      "row": 7,
+                      "amount": "2STX",
+                      "payouter": "Solo",
+                      "reason": "season payout",
+                      "date": "2026-08-01"
+                    }
+                    """);
+
+            assertEquals("550e8400-e29b-41d4-a716-446655440000", dispatched.get().requestId());
+            assertEquals("Season 32", dispatched.get().sheetName());
+            assertEquals(7, dispatched.get().row());
+        } finally {
+            ConnectionManager.onTreasuryOutRecorded(null);
+            ConnectionManager.resetForTest();
+        }
+    }
+
+    @Test
+    void dispatchesCorrelatedTreasuryErrorBeforeGenericStatusHandling() {
+        AtomicReference<TreasuryOutErrorMessage> dispatched = new AtomicReference<>();
+        ConnectionManager.onTreasuryOutError(error -> {
+            dispatched.set(error);
+            return true;
+        });
+        try {
+            ConnectionManager.getInstance().onMessage("""
+                    {
+                      "type": "error",
+                      "request_id": "550e8400-e29b-41d4-a716-446655440000",
+                      "status": 400,
+                      "code": "invalid_request",
+                      "message": "amount must use a supported denomination"
+                    }
+                    """);
+
+            assertEquals("550e8400-e29b-41d4-a716-446655440000", dispatched.get().requestId());
+            assertEquals("invalid_request", dispatched.get().code());
+            assertEquals("amount must use a supported denomination", dispatched.get().message());
+        } finally {
+            ConnectionManager.onTreasuryOutError(null);
+            ConnectionManager.resetForTest();
+        }
     }
 
     @Test

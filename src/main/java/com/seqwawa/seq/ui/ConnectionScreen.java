@@ -11,6 +11,7 @@ import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
@@ -104,7 +105,11 @@ public class ConnectionScreen extends Screen {
 
     private void renderStatusPanel(UiCanvas canvas, String fontName, float panelX, float panelWidth, float screenHeight) {
         ConnectionManager connectionManager = ConnectionManager.getInstance();
-        boolean connected = ConnectionManager.isConnected();
+        boolean treasuryAccount = SeqClient.mc.getUser() != null
+                && TreasuryOutManager.isTreasuryMinecraftAccount(SeqClient.mc.getUser().getName());
+        boolean connected = treasuryAccount
+                ? ConnectionManager.isTreasuryOutConnected()
+                : ConnectionManager.isConnected();
         boolean authenticated = SeqClient.getConfigManager().getToken() != null
                 && !SeqClient.getConfigManager().getToken().isBlank();
         String minecraftUsername = SeqClient.getConfigManager().getMinecraftUsername();
@@ -146,19 +151,21 @@ public class ConnectionScreen extends Screen {
                 baseX,
                 authLineY,
                 "Backend session:",
-                authenticated ? "Ready" : "Not ready",
-                authenticated ? color(CONTROL_SUCCESS) : color(CONTROL_DANGER));
+                treasuryAccount ? "Not required" : authenticated ? "Ready" : "Not ready",
+                treasuryAccount || authenticated ? color(CONTROL_SUCCESS) : color(CONTROL_DANGER));
         drawMetaLine(
                 canvas,
                 fontName,
                 baseX,
                 authMetaY,
-                authenticated
+                treasuryAccount
+                        ? "Treasury mode uses the active cinfrascitizen Minecraft account."
+                        : authenticated
                         ? "Minecraft account: " + (minecraftUsername != null && !minecraftUsername.isBlank()
                                 ? minecraftUsername
                                 : "Unknown")
                         : "Use Connect to start a backend session when needed.");
-        if (authenticated) {
+        if (authenticated && !treasuryAccount) {
             ButtonBounds authButton = new ButtonBounds(baseX, authButtonY, AUTH_BUTTON_WIDTH, BUTTON_HEIGHT);
             drawActionButton(
                     canvas,
@@ -175,7 +182,9 @@ public class ConnectionScreen extends Screen {
                 fontName,
                 baseX,
                 dividerY + NOTE_OFFSET,
-                "Connect verifies your Minecraft session and checks your Discord link automatically.");
+                treasuryAccount
+                        ? "Only Treasury OUT is available in this tokenless connection mode."
+                        : "Connect verifies your Minecraft session and checks your Discord link automatically.");
     }
 
     private void drawStatusLine(
@@ -247,7 +256,7 @@ public class ConnectionScreen extends Screen {
         ConnectionManager connectionManager = ConnectionManager.getInstance();
         ButtonBounds connectionButton = getConnectionButtonBounds();
         if (isHovered(mx, my, connectionButton.x(), connectionButton.y(), connectionButton.w(), connectionButton.h())) {
-            if (ConnectionManager.isConnected()) {
+            if (ConnectionManager.isTreasuryOutConnected()) {
                 connectionManager.disconnectManually();
             } else {
                 connectionManager.connectManually();

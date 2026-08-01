@@ -1,6 +1,7 @@
 package com.seqwawa.seq.ui.widget;
 
 import lombok.Getter;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
@@ -79,6 +80,10 @@ public abstract class SettingWidget<T extends Setting<?>> {
     }
 
     public boolean keyPressed(KeyEvent keyEvent) {
+        return false;
+    }
+
+    public boolean charTyped(CharacterEvent characterEvent) {
         return false;
     }
 

@@ -16,6 +16,7 @@ import com.seqwawa.seq.ui.widget.SliderWidget;
 import com.seqwawa.seq.ui.widget.StringWidget;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
@@ -595,12 +596,6 @@ public class SettingsScreen extends Screen {
                 }
                 return true;
             }
-            Character typedCharacter = TextInputHelper.getTypedCharacter(keyEvent);
-            if (typedCharacter != null && TextInputHelper.isPrintableCharacter(typedCharacter)) {
-                searchQuery += typedCharacter;
-                scrollOffset = 0;
-                return true;
-            }
             return true;
         }
 
@@ -611,6 +606,27 @@ public class SettingsScreen extends Screen {
             }
         }
         return super.keyPressed(keyEvent);
+    }
+
+    @Override
+    public boolean charTyped(@NotNull CharacterEvent characterEvent) {
+        if (searchFocused) {
+            String typedText = TextInputHelper.getTypedText(characterEvent);
+            if (typedText != null) {
+                searchQuery += typedText;
+                scrollOffset = 0;
+            }
+            return true;
+        }
+
+        for (List<SettingWidget<?>> widgets : categories.values()) {
+            for (SettingWidget<?> widget : widgets) {
+                if (widget.charTyped(characterEvent)) {
+                    return true;
+                }
+            }
+        }
+        return super.charTyped(characterEvent);
     }
 
     private boolean isHovered(float mx, float my, float bx, float by, float bw, float bh) {

@@ -11,6 +11,7 @@ import com.seqwawa.seq.utils.rendering.UiRenderer;
 import java.awt.Color;
 import java.util.Locale;
 import java.util.function.Consumer;
+import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import org.lwjgl.glfw.GLFW;
 
@@ -372,13 +373,21 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
             return true;
         }
 
-        Character typedCharacter = TextInputHelper.getTypedCharacter(keyEvent);
-        if (typedCharacter != null
-                && Character.digit(typedCharacter, 16) >= 0
+        return true;
+    }
+
+    @Override
+    public boolean charTyped(CharacterEvent characterEvent) {
+        if (!editing) {
+            return false;
+        }
+        String typedText = TextInputHelper.getTypedText(characterEvent);
+        if (typedText != null
+                && typedText.length() == 1
+                && Character.digit(typedText.charAt(0), 16) >= 0
                 && editBuffer.length() < 6) {
-            editBuffer += Character.toUpperCase(typedCharacter);
+            editBuffer += Character.toUpperCase(typedText.charAt(0));
             applyValidEditBuffer();
-            return true;
         }
         return true;
     }
