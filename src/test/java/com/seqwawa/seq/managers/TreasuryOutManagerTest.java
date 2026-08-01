@@ -44,7 +44,7 @@ class TreasuryOutManagerTest {
         assertFalse(submitted);
         assertEquals(0, context.sent.size());
         assertEquals(0, context.idCalls.get());
-        assertTrue(context.feedback.getLast().contains("connected Sequoia WebSocket"));
+        assertTrue(context.feedback.getLast().contains("verified cinfrascitizen Minecraft session"));
     }
 
     @Test
