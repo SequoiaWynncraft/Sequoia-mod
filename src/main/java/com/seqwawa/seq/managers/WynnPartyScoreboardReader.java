@@ -32,7 +32,10 @@ public final class WynnPartyScoreboardReader {
             boolean fullHealthBar) {}
 
     record PartyObservation(
-            List<PartyHealth> members, List<String> canonicalRosterUsernames, boolean raidSidebarActive) {
+            List<PartyHealth> members,
+            List<String> canonicalRosterUsernames,
+            boolean partySidebarActive,
+            boolean raidSidebarActive) {
         PartyObservation {
             members = List.copyOf(members);
             canonicalRosterUsernames = List.copyOf(canonicalRosterUsernames);
@@ -73,6 +76,10 @@ public final class WynnPartyScoreboardReader {
     static PartyObservation readPartyObservation() {
         List<SidebarLine> sidebarLines = readSidebarLineComponents();
         List<String> wynntilsPartyMembers = wynntilsPartyMembers();
+        boolean partySidebarActive = sidebarLines.stream()
+                .map(SidebarLine::text)
+                .map(String::trim)
+                .anyMatch(WynnPartyScoreboardReader::isPartyHeaderLine);
         boolean raidSidebarActive = sidebarLines.stream()
                 .map(SidebarLine::text)
                 .map(String::trim)
@@ -82,6 +89,7 @@ public final class WynnPartyScoreboardReader {
         return new PartyObservation(
                 partyHealth,
                 matchingWynntilsPartyRoster(partyHealth, wynntilsPartyMembers),
+                partySidebarActive,
                 raidSidebarActive);
     }
 

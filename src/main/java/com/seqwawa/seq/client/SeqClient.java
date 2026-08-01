@@ -286,7 +286,7 @@ public class SeqClient implements ClientModInitializer {
                 if (wynnPartySyncManager != null) {
                     wynnPartySyncManager.reset();
                 }
-                RaidPartySnapshotTracker.reset();
+                RaidPartySnapshotTracker.onServerUnavailable();
                 if (guildWarTracker != null) {
                     guildWarTracker.reset();
                 }
@@ -297,6 +297,7 @@ public class SeqClient implements ClientModInitializer {
             }
             if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
                 RadianceCheckerClient.reset();
+                RaidPartySnapshotTracker.onServerUnavailable();
                 ConnectionManager.flushPendingOutbound();
                 return;
             }

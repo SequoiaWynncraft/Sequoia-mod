@@ -1,8 +1,10 @@
 package com.seqwawa.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import net.minecraft.network.chat.Component;
@@ -294,5 +296,17 @@ class RaidTrackerTest {
         assertNull(RaidTracker.parseRaidCompletion(Component.literal(
                 "󏿼󏿿󏿾 Orihme: Tannslee, melodzozina, wisedrag, and D4MIT finished The Wartorn Palace "
                         + "and claimed 2x Aspects, 2048x Emeralds, +10367m Guild Experience, and +440 Seasonal Rating")));
+    }
+
+    @Test
+    void recognizesVanillaRaidFailureTitleWithoutWynntils() {
+        assertTrue(RaidTracker.isRaidFailedTitle(Component.literal("Raid Failed!")));
+        assertTrue(RaidTracker.isRaidFailedTitle(Component.literal("§4Raid §cFailed!")));
+    }
+
+    @Test
+    void ignoresUnrelatedTitles() {
+        assertFalse(RaidTracker.isRaidFailedTitle(Component.literal("Challenge Failed!")));
+        assertFalse(RaidTracker.isRaidFailedTitle(null));
     }
 }

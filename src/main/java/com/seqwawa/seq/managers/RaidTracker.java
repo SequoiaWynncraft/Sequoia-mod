@@ -54,6 +54,7 @@ public class RaidTracker {
     private static final String FINISHED_BOUNDARY = " finished ";
     private static final int DEFAULT_MAX_RAID_PARTY_MEMBERS = 4;
     private static final int ANNIHILATION_MAX_RAID_PARTY_MEMBERS = 10;
+    private static final String RAID_FAILED_TEXT = "raid failed";
     /**
      * Called from {@link ClientPacketListenerMixin} at the
      * packet level for every non-overlay system chat message.
@@ -93,7 +94,6 @@ public class RaidTracker {
             return;
         }
 
-        RaidPartySnapshotTracker.refreshNow();
         ConnectionManager instance = ConnectionManager.getInstance();
         if (instance != null && !completion.partyMembers().isEmpty()) {
             List<String> partyMembers = RaidPartySnapshotTracker.resolvePartyMembers(
@@ -108,14 +108,34 @@ public class RaidTracker {
                     completion.emeralds(),
                     completion.guildExp(),
                     completion.seasonalRating());
-            instance.sendRaidAnnouncement(
-                    partyMembers,
-                    completion.raidName(),
-                    completion.aspects(),
-                    completion.emeralds(),
-                    completion.guildExp(),
-                    completion.seasonalRating());
+            try {
+                instance.sendRaidAnnouncement(
+                        partyMembers,
+                        completion.raidName(),
+                        completion.aspects(),
+                        completion.emeralds(),
+                        completion.guildExp(),
+                        completion.seasonalRating());
+            } finally {
+                RaidPartySnapshotTracker.onRaidCompleted();
+            }
         }
+    }
+
+    /** Called from the raw vanilla title packet path, independently of Wynntils. */
+    public static void onTitle(Component title) {
+        if (isRaidFailedTitle(title)) {
+            SeqClient.LOGGER.debug("[RaidTracker] Raid failure title detected");
+            RaidPartySnapshotTracker.onRaidFailed();
+        }
+    }
+
+    static boolean isRaidFailedTitle(Component title) {
+        if (title == null) {
+            return false;
+        }
+        String normalized = PacketTextNormalizer.normalizeForParsing(title.getString());
+        return normalized.toLowerCase(java.util.Locale.ROOT).contains(RAID_FAILED_TEXT);
     }
 
     static ParsedRaidCompletion parseRaidCompletion(Component message) {
