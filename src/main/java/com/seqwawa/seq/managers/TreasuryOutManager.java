@@ -63,7 +63,8 @@ public final class TreasuryOutManager {
             return false;
         }
         if (!websocketConnected) {
-            safeFeedback.accept("Treasury OUT requires a connected Sequoia WebSocket. Run /seq connect first.");
+            safeFeedback.accept(
+                    "Treasury OUT requires a verified cinfrascitizen Minecraft session. Run /seq connect first.");
             return false;
         }
 

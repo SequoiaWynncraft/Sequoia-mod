@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -26,6 +27,7 @@ import java.util.regex.Pattern;
 import com.seqwawa.seq.model.GuildWarQueueSubmission;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.User;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 import com.seqwawa.seq.accessors.NotificationAccessor;
@@ -70,6 +72,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         t.setDaemon(true);
         return t;
     });
+    private static final ExecutorService treasuryAuthExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "seq-treasury-auth");
+        t.setDaemon(true);
+        return t;
+    });
 
     @Getter
     private boolean authenticated = false;
@@ -92,6 +99,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private volatile boolean connectInProgress;
     private volatile boolean userInitiatedConnectFlow;
     private volatile boolean treasuryOnlyConnection;
+    private final TreasurySessionAuthenticator treasurySessionAuthenticator;
     private final Deque<GuildWarSubmission> pendingGuildWarSubmissions = new ConcurrentLinkedDeque<>();
 
     // Reconnect state
@@ -121,6 +129,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     private ConnectionManager() {
         super(URI.create(BuildConfig.WS_URL));
+        treasurySessionAuthenticator = new TreasurySessionAuthenticator(
+                ConnectionManager::joinActiveMinecraftSession,
+                treasuryAuthExecutor,
+                this::sendTreasuryAuthResponse,
+                this::handleTreasuryAuthFailure);
     }
 
     public static void disconnectForBlockedServer() {
@@ -228,6 +241,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         boolean hadAutoReconnect = autoReconnect;
         if (!hadConnectionState && !hadAutoReconnect) {
             connectInProgress = false;
+            treasurySessionAuthenticator.reset();
             connectedSince = null;
             instance = null;
             if (userInitiated) {
@@ -251,6 +265,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             notInGuild = false;
             membershipProbePending = false;
             memberFeaturesDisabled = false;
+            treasurySessionAuthenticator.reset();
             connectedSince = null;
             instance = null;
             if (userInitiated) {
@@ -264,6 +279,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         notInGuild = false;
         membershipProbePending = false;
         memberFeaturesDisabled = false;
+        treasurySessionAuthenticator.reset();
         connectedSince = null;
         if (userInitiated) {
             notify("Disconnected");
@@ -287,14 +303,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         notInGuild = false;
         membershipProbePending = false;
         memberFeaturesDisabled = false;
+        treasurySessionAuthenticator.reset();
         connectedSince = null;
         autoReconnect = true;
         authAttempt = 0;
         nextAllowedAuthAttemptAtMs = 0;
 
         if (treasuryOnlyConnection) {
-            connectedSince = Instant.now();
-            notifyConnectionStatus("Connected for Treasury OUT as cinfrascitizen.");
+            notifyConnectionStatus("Connected for Treasury OUT. Verifying the cinfrascitizen Minecraft session...");
         } else {
             String username = SeqClient.getConfigManager().getMinecraftUsername();
             notifyConnectionStatus(
@@ -303,7 +319,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                             : "Connected websocket to " + BuildConfig.ENVIRONMENT
                                     + ". Waiting for backend authentication...");
         }
-        finishConnectFlow();
+        if (!treasuryOnlyConnection) {
+            finishConnectFlow();
+        }
     }
 
     @Override
@@ -326,6 +344,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         notInGuild = false;
         membershipProbePending = false;
         memberFeaturesDisabled = false;
+        treasurySessionAuthenticator.reset();
         connectedSince = null;
         instance = null;
         handleWebSocketAuthRejection(code, reason);
@@ -355,6 +374,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 ex);
         connectInProgress = false;
         authenticated = false;
+        treasurySessionAuthenticator.reset();
         connectedSince = null;
         notifyConnectionFailure("Connection error: " + (ex != null ? ex.getMessage() : "unknown"), false);
         finishConnectFlow();
@@ -538,6 +558,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     private void prepareAuthenticatedConnection(boolean forceTokenRefresh) {
         treasuryOnlyConnection = false;
+        treasurySessionAuthenticator.reset();
         WynncraftServerPolicy.Scope initialScope = WynncraftServerPolicy.currentScope();
         if (initialScope != WynncraftServerPolicy.Scope.MAIN) {
             connectInProgress = false;
@@ -621,6 +642,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
         connectInProgress = true;
         treasuryOnlyConnection = true;
+        treasurySessionAuthenticator.reset();
         try {
             configureHandshakeAuthorization(null);
             super.connect();
@@ -725,6 +747,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     static JsonObject serializeTreasuryOutRequest(TreasuryOutRequest request) {
         return GSON.toJsonTree(request).getAsJsonObject();
+    }
+
+    static JsonObject serializeTreasuryAuthResponse(TreasuryAuthResponse response) {
+        return GSON.toJsonTree(response).getAsJsonObject();
     }
 
     private AuthException unwrapAuthException(Throwable throwable) {
@@ -839,9 +865,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     request == null ? null : request.requestId());
             return false;
         }
-        if (!isOpen()) {
+        if (!isOpen() || !treasurySessionAuthenticator.isAuthenticated()) {
             SeqClient.LOGGER.warn(
-                    "[WebSocket] sendTreasuryOut dropped because websocket is not open requestId={}",
+                    "[WebSocket] sendTreasuryOut dropped because Treasury session is not verified requestId={}",
                     request.requestId());
             return false;
         }
@@ -1510,7 +1536,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 return;
             }
             String type = json.get("type").getAsString();
-            if ("treasury_out_recorded".equals(type)) {
+            if ("treasury_out_recorded".equals(type)
+                    || TreasuryAuthResponse.CHALLENGE_TYPE.equals(type)
+                    || TreasuryAuthResponse.AUTHENTICATED_TYPE.equals(type)) {
                 SeqClient.LOGGER.debug(
                         "[WebSocket] Received message type={} requestId={}",
                         type,
@@ -1520,7 +1548,35 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             }
 
             switch (type) {
+                case TreasuryAuthResponse.CHALLENGE_TYPE -> {
+                    if (!treasuryOnlyConnection) {
+                        SeqClient.LOGGER.warn("[TreasuryAuth] Ignoring challenge on an authenticated WebSocket");
+                        return;
+                    }
+                    String nonce = extractPrimitiveString(json, "nonce");
+                    if (!treasurySessionAuthenticator.handleChallenge(nonce)) {
+                        SeqClient.LOGGER.warn("[TreasuryAuth] Ignoring invalid or unexpected challenge");
+                    }
+                }
+                case TreasuryAuthResponse.AUTHENTICATED_TYPE -> {
+                    String nonce = extractPrimitiveString(json, "nonce");
+                    if (!treasuryOnlyConnection || !treasurySessionAuthenticator.confirm(nonce)) {
+                        SeqClient.LOGGER.warn("[TreasuryAuth] Ignoring uncorrelated authentication confirmation");
+                        return;
+                    }
+                    authFailed = false;
+                    connectedSince = Instant.now();
+                    autoReconnect = true;
+                    notifyConnectionStatus("Treasury OUT identity verified as cinfrascitizen.");
+                    finishConnectFlow();
+                    SeqClient.LOGGER.info("[TreasuryAuth] Minecraft session proof accepted by backend");
+                }
                 case "authenticated" -> {
+                    if (treasuryOnlyConnection) {
+                        SeqClient.LOGGER.warn(
+                                "[TreasuryAuth] Ignoring bearer-authenticated response on Treasury-only WebSocket");
+                        return;
+                    }
                     authenticated = true;
                     authFailed = false;
                     notInGuild = false;
@@ -1712,6 +1768,20 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     int status = extractStatusCode(json);
                     String normalized = error.toLowerCase(Locale.ROOT);
 
+                    if (treasuryOnlyConnection
+                            && requestId == null
+                            && isTreasuryAuthenticationError(backendCode)) {
+                        treasurySessionAuthenticator.reset();
+                        authFailed = true;
+                        autoReconnect = false;
+                        notifyConnectionFailure(
+                                "Treasury identity verification failed: " + error,
+                                true);
+                        finishConnectFlow();
+                        closeTreasuryAuthFailure();
+                        return;
+                    }
+
                     if (requestId != null
                             && treasuryOutErrorHandler != null
                             && treasuryOutErrorHandler.test(
@@ -1894,7 +1964,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     public static boolean isTreasuryOutConnected() {
-        return instance != null && instance.isOpen();
+        ConnectionManager current = instance;
+        return current != null
+                && treasuryConnectionReady(
+                        current.isOpen(),
+                        current.treasuryOnlyConnection,
+                        current.treasurySessionAuthenticator.isAuthenticated());
+    }
+
+    static boolean treasuryConnectionReady(boolean open, boolean treasuryOnly, boolean sessionAuthenticated) {
+        return open && treasuryOnly && sessionAuthenticated;
     }
 
     public boolean isDiscordLinked() {
@@ -1975,6 +2054,53 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     static boolean shouldUseTreasuryOnlyConnection(String activeMinecraftUsername) {
         return TreasuryOutManager.isTreasuryMinecraftAccount(activeMinecraftUsername);
+    }
+
+    private static boolean isTreasuryAuthenticationError(String code) {
+        return "treasury_auth_failed".equalsIgnoreCase(code)
+                || "treasury_auth_timeout".equalsIgnoreCase(code);
+    }
+
+    private static void joinActiveMinecraftSession(String nonce) throws Exception {
+        Minecraft minecraft = Minecraft.getInstance();
+        User user = minecraft.getUser();
+        if (user == null
+                || !TreasuryOutManager.isTreasuryMinecraftAccount(user.getName())
+                || user.getProfileId() == null
+                || user.getAccessToken() == null
+                || user.getAccessToken().isBlank()) {
+            throw new IllegalStateException("The active Minecraft session is not eligible for Treasury OUT.");
+        }
+        minecraft.services()
+                .sessionService()
+                .joinServer(user.getProfileId(), user.getAccessToken(), nonce);
+    }
+
+    private void sendTreasuryAuthResponse(String nonce) {
+        if (instance != this || !treasuryOnlyConnection || !isOpen()) {
+            treasurySessionAuthenticator.reset();
+            return;
+        }
+        sendPrepared(TreasuryAuthResponse.TYPE, serializeTreasuryAuthResponse(new TreasuryAuthResponse(nonce)));
+        SeqClient.LOGGER.debug("[TreasuryAuth] Minecraft session joined; response sent to backend");
+    }
+
+    private void handleTreasuryAuthFailure(Throwable failure) {
+        authFailed = true;
+        autoReconnect = false;
+        String message = failure == null || failure.getMessage() == null || failure.getMessage().isBlank()
+                ? "Minecraft session verification failed."
+                : failure.getMessage();
+        SeqClient.LOGGER.warn("[TreasuryAuth] Minecraft session proof failed: {}", message);
+        notifyConnectionFailure("Treasury identity verification failed. Restart Minecraft and try again.", true);
+        finishConnectFlow();
+        closeTreasuryAuthFailure();
+    }
+
+    private void closeTreasuryAuthFailure() {
+        if (isOpen()) {
+            close(1008, "Treasury authentication failed");
+        }
     }
 
     private static String currentMinecraftUsername() {

@@ -39,6 +39,14 @@ class ConnectionManagerTest {
     }
 
     @Test
+    void treasuryConnectionIsReadyOnlyAfterMinecraftSessionProof() {
+        assertFalse(ConnectionManager.treasuryConnectionReady(true, true, false));
+        assertFalse(ConnectionManager.treasuryConnectionReady(true, false, true));
+        assertFalse(ConnectionManager.treasuryConnectionReady(false, true, true));
+        assertTrue(ConnectionManager.treasuryConnectionReady(true, true, true));
+    }
+
+    @Test
     void guildWarSubmissionPayloadUsesExpectedNestedShape() {
         GuildWarSubmission submission = new GuildWarSubmission(
                 "Detlas Suburbs",
@@ -204,7 +212,20 @@ class ConnectionManagerTest {
     }
 
     @Test
-    void treasuryOutIsServerScopedUnauthenticatedAndThrottleLimited() {
+    void treasuryAuthResponseContainsOnlyTypeAndBackendNonce() {
+        var json = ConnectionManager.serializeTreasuryAuthResponse(
+                new TreasuryAuthResponse("7505801b-9e89-4ef8-a32e-8d55e2f4d011"));
+
+        assertEquals("treasury_auth_response", json.get("type").getAsString());
+        assertEquals("7505801b-9e89-4ef8-a32e-8d55e2f4d011", json.get("nonce").getAsString());
+        assertEquals(2, json.size());
+        assertFalse(json.has("access_token"));
+        assertFalse(json.has("minecraft_uuid"));
+        assertFalse(json.has("username"));
+    }
+
+    @Test
+    void treasuryOutUsesSessionProofInsteadOfBearerAuthAndRemainsThrottleLimited() {
         assertTrue(ConnectionManager.isServerScopedType("treasury_out"));
         assertFalse(ConnectionManager.isAuthenticatedOutboundType("treasury_out"));
         assertTrue(ConnectionManager.isThrottleLimitedType("treasury_out"));
