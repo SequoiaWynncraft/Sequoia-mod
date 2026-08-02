@@ -30,6 +30,7 @@ import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiImage;
 import com.seqwawa.seq.utils.rendering.UiRenderMetrics;
 import java.awt.Color;
+import java.util.ArrayList;
 import java.util.List;
 import org.lwjgl.nanovg.NVGColor;
 import org.lwjgl.nanovg.NVGPaint;
@@ -96,6 +97,18 @@ final class NanoVgCanvas implements UiCanvas {
         if (circles.isEmpty()) {
             return;
         }
+        List<Circle> batch = new ArrayList<>(circles.size());
+        for (Circle circle : circles) {
+            if (overlapsAnyCircle(circle, batch)) {
+                fillCircleBatch(batch, color);
+                batch.clear();
+            }
+            batch.add(circle);
+        }
+        fillCircleBatch(batch, color);
+    }
+
+    private void fillCircleBatch(List<Circle> circles, Color color) {
         nvgBeginPath(context);
         for (Circle circle : circles) {
             org.lwjgl.nanovg.NanoVG.nvgCircle(context, circle.centerX(), circle.centerY(), circle.radius());
@@ -156,11 +169,30 @@ final class NanoVgCanvas implements UiCanvas {
         if (polygons.isEmpty()) {
             return;
         }
-        nvgBeginPath(context);
+        float strokePadding = stroke != null && strokeWidth > 0f ? strokeWidth / 2f : 0f;
+        List<BoundedPolygon> batch = new ArrayList<>(polygons.size());
         for (Polygon polygon : polygons) {
             if (polygon.points().isEmpty()) {
                 continue;
             }
+            BoundedPolygon boundedPolygon = new BoundedPolygon(polygon, bounds(polygon, strokePadding));
+            if (overlapsAnyPolygon(boundedPolygon, batch)) {
+                fillAndStrokePolygonBatch(batch, fill, stroke, strokeWidth);
+                batch.clear();
+            }
+            batch.add(boundedPolygon);
+        }
+        fillAndStrokePolygonBatch(batch, fill, stroke, strokeWidth);
+    }
+
+    private void fillAndStrokePolygonBatch(
+            List<BoundedPolygon> polygons, Color fill, Color stroke, float strokeWidth) {
+        if (polygons.isEmpty()) {
+            return;
+        }
+        nvgBeginPath(context);
+        for (BoundedPolygon boundedPolygon : polygons) {
+            Polygon polygon = boundedPolygon.polygon();
             Point first = polygon.points().getFirst();
             org.lwjgl.nanovg.NanoVG.nvgMoveTo(
                     context, first.x() + polygon.offsetX(), first.y() + polygon.offsetY());
@@ -185,6 +217,51 @@ final class NanoVgCanvas implements UiCanvas {
             org.lwjgl.nanovg.NanoVG.nvgStrokeColor(context, strokeColor);
             org.lwjgl.nanovg.NanoVG.nvgStroke(context);
             strokeColor.free();
+        }
+    }
+
+    private static boolean overlapsAnyCircle(Circle candidate, List<Circle> circles) {
+        for (Circle circle : circles) {
+            double dx = candidate.centerX() - circle.centerX();
+            double dy = candidate.centerY() - circle.centerY();
+            double combinedRadius = Math.max(0, candidate.radius()) + Math.max(0, circle.radius());
+            if (dx * dx + dy * dy <= combinedRadius * combinedRadius) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean overlapsAnyPolygon(BoundedPolygon candidate, List<BoundedPolygon> polygons) {
+        for (BoundedPolygon polygon : polygons) {
+            if (candidate.bounds().overlaps(polygon.bounds())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Bounds bounds(Polygon polygon, float padding) {
+        float minX = Float.POSITIVE_INFINITY;
+        float minY = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY;
+        float maxY = Float.NEGATIVE_INFINITY;
+        for (Point point : polygon.points()) {
+            float x = point.x() + polygon.offsetX();
+            float y = point.y() + polygon.offsetY();
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+        }
+        return new Bounds(minX - padding, minY - padding, maxX + padding, maxY + padding);
+    }
+
+    private record BoundedPolygon(Polygon polygon, Bounds bounds) {}
+
+    private record Bounds(float minX, float minY, float maxX, float maxY) {
+        private boolean overlaps(Bounds other) {
+            return minX <= other.maxX && maxX >= other.minX && minY <= other.maxY && maxY >= other.minY;
         }
     }
 
