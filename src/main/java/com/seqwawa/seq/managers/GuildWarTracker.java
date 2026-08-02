@@ -122,7 +122,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         }
 
         attemptTerritoryCapture(cleaned);
-        attemptQueueStart(cleaned);
+        //attemptQueueStart(cleaned);
     }
 
     private void attemptTerritoryCapture(String cleaned) {
@@ -247,12 +247,14 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             return;
         }
 
-        queueAttempt = new QueueAttemptInfo(territoryName, defense, timer);
+        submitQueue(queueAttempt);
+
+        /*queueAttempt = new QueueAttemptInfo(territoryName, defense, timer);
         queueAttemptTime = clock.getAsLong();
 
         SeqClient.LOGGER.info(
                 "[GuildWarTracker] Queue attempt stored territory='{}' defense='{}' timer={}m",
-                territoryName, defense, timer);
+                territoryName, defense, timer);*/
     }
 
     private void trackWarState() {
