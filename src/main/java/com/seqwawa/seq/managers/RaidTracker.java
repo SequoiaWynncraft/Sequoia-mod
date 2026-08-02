@@ -96,30 +96,62 @@ public class RaidTracker {
 
         ConnectionManager instance = ConnectionManager.getInstance();
         if (instance != null && !completion.partyMembers().isEmpty()) {
-            List<String> partyMembers = RaidPartySnapshotTracker.resolvePartyMembers(
-                    completion.partyMembers(),
-                    completion.displayedPartySize(),
-                    maximumPartySize(completion.raidName()));
+            ResolvedRaidCompletion resolved = resolveForClient(completion, localMinecraftUsername());
             SeqClient.LOGGER.info(
                     "[RaidTracker] Forwarding raid completion raid='{}' members={} aspects={} emeralds={} guildExp={} seasonalRating={}",
                     completion.raidName(),
-                    partyMembers,
+                    resolved.partyMembers(),
                     completion.aspects(),
                     completion.emeralds(),
                     completion.guildExp(),
                     completion.seasonalRating());
             try {
                 instance.sendRaidAnnouncement(
-                        partyMembers,
+                        resolved.partyMembers(),
                         completion.raidName(),
                         completion.aspects(),
                         completion.emeralds(),
                         completion.guildExp(),
                         completion.seasonalRating());
             } finally {
-                RaidPartySnapshotTracker.onRaidCompleted();
+                finishLocalCompletion(resolved);
             }
         }
+    }
+
+    static ResolvedRaidCompletion resolveForClient(
+            ParsedRaidCompletion completion, String localMinecraftUsername) {
+        boolean localCompletion = isLocalCompletion(completion.partyMembers(), localMinecraftUsername);
+        List<String> partyMembers = localCompletion
+                ? RaidPartySnapshotTracker.resolvePartyMembers(
+                        completion.partyMembers(),
+                        completion.displayedPartySize(),
+                        maximumPartySize(completion.raidName()))
+                : completion.partyMembers();
+        return new ResolvedRaidCompletion(partyMembers, localCompletion);
+    }
+
+    static void finishLocalCompletion(ResolvedRaidCompletion completion) {
+        if (completion.localCompletion()) {
+            RaidPartySnapshotTracker.onRaidCompleted();
+        }
+    }
+
+    static boolean isLocalCompletion(List<String> partyMembers, String localMinecraftUsername) {
+        if (localMinecraftUsername == null || localMinecraftUsername.isBlank()) {
+            return false;
+        }
+        return partyMembers.stream().anyMatch(localMinecraftUsername::equalsIgnoreCase);
+    }
+
+    private static String localMinecraftUsername() {
+        if (SeqClient.mc == null) {
+            return null;
+        }
+        if (SeqClient.mc.getUser() != null) {
+            return SeqClient.mc.getUser().getName();
+        }
+        return SeqClient.mc.player != null ? SeqClient.mc.player.getName().getString() : null;
     }
 
     /** Called from the raw vanilla title packet path, independently of Wynntils. */
@@ -469,6 +501,12 @@ public class RaidTracker {
             int emeralds,
             double guildExp,
             int seasonalRating) {
+    }
+
+    record ResolvedRaidCompletion(List<String> partyMembers, boolean localCompletion) {
+        ResolvedRaidCompletion {
+            partyMembers = List.copyOf(partyMembers);
+        }
     }
 
     private record RaidRewardCounts(int aspects, int emeralds) {

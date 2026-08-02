@@ -10,9 +10,15 @@ import java.util.List;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class RaidTrackerTest {
+
+    @AfterEach
+    void resetRaidSnapshot() {
+        RaidPartySnapshotTracker.reset();
+    }
 
     @Test
     void parseRaidCompletionHandlesSplitNamesAndRewards() {
@@ -299,6 +305,45 @@ class RaidTrackerTest {
     }
 
     @Test
+    void unrelatedGuildCompletionDoesNotConsumeActiveLocalRaidSnapshot() {
+        RaidPartySnapshotTracker.setStateForTest(activeRaidState());
+        RaidTracker.ParsedRaidCompletion remoteCompletion = completion(
+                List.of("MrHmar", "Teslanator", "LoubiOP"), 3);
+
+        RaidTracker.ResolvedRaidCompletion resolved =
+                RaidTracker.resolveForClient(remoteCompletion, "LocalPlayer");
+        RaidTracker.finishLocalCompletion(resolved);
+
+        assertFalse(resolved.localCompletion());
+        assertEquals(List.of("MrHmar", "Teslanator", "LoubiOP"), resolved.partyMembers());
+        assertEquals(RaidPartySnapshotTracker.Phase.ACTIVE,
+                RaidPartySnapshotTracker.stateForTest().phase());
+        assertEquals(
+                List.of("ActualOne", "ActualTwo", "ActualThree", "LocalPlayer"),
+                RaidPartySnapshotTracker.stateForTest().activeRaidParty().usernames());
+    }
+
+    @Test
+    void localGuildOnlyCompletionUsesAndConsumesCompleteRaidSnapshot() {
+        RaidPartySnapshotTracker.setStateForTest(activeRaidState());
+        RaidTracker.ParsedRaidCompletion localCompletion = completion(List.of("LocalPlayer"), 1);
+
+        RaidTracker.ResolvedRaidCompletion resolved =
+                RaidTracker.resolveForClient(localCompletion, "localplayer");
+
+        assertTrue(resolved.localCompletion());
+        assertEquals(
+                List.of("ActualOne", "ActualTwo", "ActualThree", "LocalPlayer"),
+                resolved.partyMembers());
+
+        RaidTracker.finishLocalCompletion(resolved);
+
+        assertEquals(RaidPartySnapshotTracker.Phase.FINISHED_WAITING_FOR_EXIT,
+                RaidPartySnapshotTracker.stateForTest().phase());
+        assertTrue(RaidPartySnapshotTracker.stateForTest().activeRaidParty().usernames().isEmpty());
+    }
+
+    @Test
     void recognizesVanillaRaidFailureTitleWithoutWynntils() {
         assertTrue(RaidTracker.isRaidFailedTitle(Component.literal("Raid Failed!")));
         assertTrue(RaidTracker.isRaidFailedTitle(Component.literal("§4Raid §cFailed!")));
@@ -308,5 +353,37 @@ class RaidTrackerTest {
     void ignoresUnrelatedTitles() {
         assertFalse(RaidTracker.isRaidFailedTitle(Component.literal("Challenge Failed!")));
         assertFalse(RaidTracker.isRaidFailedTitle(null));
+    }
+
+    private RaidPartySnapshotTracker.TrackerState activeRaidState() {
+        RaidPartySnapshotTracker.PartySnapshot party = RaidPartySnapshotTracker.PartySnapshot.from(
+                List.of(
+                        new RaidPartySnapshotTracker.SnapshotMember("FirstNick", "ActualOne"),
+                        new RaidPartySnapshotTracker.SnapshotMember("SecondNick", "ActualTwo"),
+                        new RaidPartySnapshotTracker.SnapshotMember("ThirdNick", "ActualThree"),
+                        new RaidPartySnapshotTracker.SnapshotMember("LocalNick", "LocalPlayer")),
+                false,
+                1_000);
+        RaidPartySnapshotTracker.TrackerState state = RaidPartySnapshotTracker.TrackerState.empty()
+                .observe(party, true, false, 1_000);
+        return state.observe(
+                RaidPartySnapshotTracker.PartySnapshot.from(
+                        List.of(new RaidPartySnapshotTracker.SnapshotMember("LocalNick", "LocalPlayer")),
+                        true,
+                        1_001),
+                false,
+                true,
+                1_001);
+    }
+
+    private RaidTracker.ParsedRaidCompletion completion(List<String> partyMembers, int displayedPartySize) {
+        return new RaidTracker.ParsedRaidCompletion(
+                partyMembers,
+                displayedPartySize,
+                "The Canyon Colossus",
+                2,
+                2048,
+                2.591,
+                110);
     }
 }
