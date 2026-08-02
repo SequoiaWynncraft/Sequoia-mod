@@ -38,6 +38,7 @@ public final class HalcyonRangeVisualiserClient {
 
 	private static void reset() {
 		HalcyonTextureDetector.reset();
+		HalcyonHeldItem.reset();
 	}
 
 	private static void tick(Minecraft client) {
@@ -46,6 +47,7 @@ public final class HalcyonRangeVisualiserClient {
 			return;
 		}
 
+		HalcyonHeldItem.tick(client);
 		HalcyonTextureDetector.tick(client);
 	}
 

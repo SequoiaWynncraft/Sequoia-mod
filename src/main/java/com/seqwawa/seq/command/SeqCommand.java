@@ -60,7 +60,7 @@ public class SeqCommand {
                 ClientCommandRegistrationCallback.EVENT.register(SeqCommand::registerCommands);
         }
 
-        private static void registerCommands(
+        static void registerCommands(
                         CommandDispatcher<FabricClientCommandSource> dispatcher,
                         CommandBuildContext registryAccess) {
                 var root = ClientCommandManager.literal("seq")
@@ -129,6 +129,7 @@ public class SeqCommand {
                                 .then(buildPartyCommand("p"));
 
                 dispatcher.register(root);
+                dispatcher.register(buildEmeraldRewardCommand("e"));
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildPartyCommand(String literalName) {

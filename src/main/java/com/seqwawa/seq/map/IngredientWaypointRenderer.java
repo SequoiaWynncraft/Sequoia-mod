@@ -34,9 +34,14 @@ public final class IngredientWaypointRenderer {
     private static final int AIM_RADIUS = ICON_SIZE / 2 + ICON_OUTLINE_MARGIN;
     private static final int MAX_DETAIL_WIDTH = 220;
     private static final int TEXT_LINE_HEIGHT = 10;
-    private static final int RADIUS_ALPHA = 150;
-    private static final double MAX_DISTANCE = 8_000;
-    private static final double MAX_DISTANCE_SQUARED = MAX_DISTANCE * MAX_DISTANCE;
+    static final int RADIUS_ALPHA = 179;
+    static final List<Double> RADIUS_RING_VERTICAL_OFFSETS = List.of(0.0, 4.0, 8.0);
+    private static final double MAX_WAYPOINT_DISTANCE = 8_000;
+    private static final double MAX_WAYPOINT_DISTANCE_SQUARED =
+            MAX_WAYPOINT_DISTANCE * MAX_WAYPOINT_DISTANCE;
+    private static final double MAX_RADIUS_RENDER_DISTANCE = 8 * 16;
+    private static final double MAX_RADIUS_RENDER_DISTANCE_SQUARED =
+            MAX_RADIUS_RENDER_DISTANCE * MAX_RADIUS_RENDER_DISTANCE;
     private static final double DIRECTION_EPSILON = 1.0e-8;
 
     private IngredientWaypointRenderer() {}
@@ -65,13 +70,16 @@ public final class IngredientWaypointRenderer {
         VertexConsumer vertices = context.consumers().getBuffer(RenderTypes.debugQuads());
         for (Waypoint waypoint : IngredientWaypointManager.getInstance().waypoints()) {
             Vec3 center = new Vec3(waypoint.x(), waypoint.y(), waypoint.z());
-            if (!shouldRenderRadius(waypoint.radius(), center.distanceToSqr(camera))) {
+            if (!shouldRenderRadius(waypoint.radius(), horizontalDistanceSquared(center, camera))) {
                 continue;
             }
             double playerDistanceSquared = horizontalDistanceSquared(playerPosition, center);
             int color = resolveRadiusColor(
                     waypoint.kind(), colorByProximity, playerDistanceSquared, waypoint.radius());
-            renderRingWall(vertices, pose, center, camera, waypoint.radius(), color, RADIUS_ALPHA);
+            for (double verticalOffset : RADIUS_RING_VERTICAL_OFFSETS) {
+                Vec3 ringCenter = verticalOffset == 0.0 ? center : center.add(0, verticalOffset, 0);
+                renderRingWall(vertices, pose, ringCenter, camera, waypoint.radius(), color, RADIUS_ALPHA);
+            }
         }
     }
 
@@ -92,7 +100,7 @@ public final class IngredientWaypointRenderer {
     }
 
     static boolean shouldRenderRadius(double radius, double distanceSquared) {
-        return radius > 0 && distanceSquared <= MAX_DISTANCE_SQUARED;
+        return radius > 0 && distanceSquared <= MAX_RADIUS_RENDER_DISTANCE_SQUARED;
     }
 
     static void render(GuiGraphics guiGraphics) {
@@ -185,7 +193,7 @@ public final class IngredientWaypointRenderer {
             double forwardZ) {
         double distanceSquared =
                 relativeX * relativeX + relativeY * relativeY + relativeZ * relativeZ;
-        if (distanceSquared > MAX_DISTANCE_SQUARED) {
+        if (distanceSquared > MAX_WAYPOINT_DISTANCE_SQUARED) {
             return false;
         }
 

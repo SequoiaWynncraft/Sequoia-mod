@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -1101,13 +1102,15 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private void renderClusterHulls(UiCanvas canvas, MapViewport viewport, boolean allowHover) {
         hoveredCluster = null;
         float bestHoverDistance = 18f;
+        Map<ClusterOutlineStyle, List<UiCanvas.Polygon>> batches = new LinkedHashMap<>();
+        List<ClusterOutlineRender> highlightedOutlines = new ArrayList<>();
         canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         for (int index = cachedClusters.size() - 1; index >= 0; index--) {
             GatheringNodeCluster cluster = cachedClusters.get(index);
             float x = viewport.worldToScreenX(cluster.centerX());
             float y = viewport.worldToScreenZ(cluster.centerZ());
             ClusterOutlineShape outline = clusterOutlineShape(cluster, viewport.pixelsPerBlock());
-            if (!outline.isVisible(viewport, x, y)) {
+            if (outline.points().isEmpty() || !outline.isVisible(viewport, x, y)) {
                 continue;
             }
             float radius = clusterRadius(cluster);
@@ -1120,7 +1123,22 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 hoveredCluster = cluster;
             }
             boolean selected = cluster == selectedCluster;
-            renderClusterOutline(canvas, viewport, cluster, outline, x, y, selected, selected || hovered);
+            boolean highlighted = selected || hovered;
+            ClusterOutlineRender render = clusterOutlineRender(
+                    viewport, cluster, outline, x, y, selected, highlighted);
+            if (highlighted) {
+                highlightedOutlines.add(render);
+            } else {
+                batches.computeIfAbsent(render.style(), ignored -> new ArrayList<>()).add(render.polygon());
+            }
+        }
+        for (Map.Entry<ClusterOutlineStyle, List<UiCanvas.Polygon>> batch : batches.entrySet()) {
+            ClusterOutlineStyle style = batch.getKey();
+            canvas.fillAndStrokePolygons(batch.getValue(), style.fill(), style.stroke(), style.strokeWidth());
+        }
+        for (ClusterOutlineRender render : highlightedOutlines) {
+            ClusterOutlineStyle style = render.style();
+            canvas.fillAndStrokePolygons(List.of(render.polygon()), style.fill(), style.stroke(), style.strokeWidth());
         }
         canvas.resetScissor();
     }
@@ -1128,6 +1146,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private void renderClusterBadges(UiCanvas canvas, MapViewport viewport, boolean overviewMode) {
         canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         MapBounds visibleBounds = viewport.visibleBounds();
+        List<ClusterMarker> markers = new ArrayList<>();
         GatheringNodeCluster hoveredBadge = null;
         GatheringNodeCluster selectedBadge = null;
         for (int index = cachedClusters.size() - 1; index >= 0; index--) {
@@ -1150,8 +1169,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 selectedBadge = cluster;
                 continue;
             }
-            drawClusterMarker(canvas, x, y, clusterRadius(cluster), cluster, false, false);
+            markers.add(new ClusterMarker(x, y, clusterRadius(cluster), cluster));
         }
+        drawClusterMarkers(canvas, markers);
         if (selectedBadge != null) {
             float x = viewport.worldToScreenX(selectedBadge.centerX());
             float y = viewport.worldToScreenZ(selectedBadge.centerZ());
@@ -1166,8 +1186,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         canvas.resetScissor();
     }
 
-    private void renderClusterOutline(
-            UiCanvas canvas,
+    private ClusterOutlineRender clusterOutlineRender(
             MapViewport viewport,
             GatheringNodeCluster cluster,
             ClusterOutlineShape outline,
@@ -1175,23 +1194,42 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float centerScreenY,
             boolean selected,
             boolean highlighted) {
-        if (outline.points().isEmpty()) {
-            return;
-        }
         Color color = selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color();
         Color fill = withAlpha(color, highlighted ? 48 : 18);
         Color stroke = withAlpha(color, highlighted ? 220 : 105);
+        boolean closed = outline.points().size() > 2;
+        return new ClusterOutlineRender(
+                new UiCanvas.Polygon(outline.points(), centerScreenX, centerScreenY, closed),
+                new ClusterOutlineStyle(
+                        closed ? fill : null,
+                        stroke,
+                        hullStrokeWidthForZoom(viewport.pixelsPerBlock(), highlighted)));
+    }
 
-        List<UiCanvas.Point> points = outline.points().stream()
-                .map(point -> new UiCanvas.Point(centerScreenX + point.x(), centerScreenY + point.y()))
-                .toList();
-        boolean closed = points.size() > 2;
-        canvas.fillAndStrokePolygon(
-                points,
-                closed ? fill : null,
-                stroke,
-                hullStrokeWidthForZoom(viewport.pixelsPerBlock(), highlighted),
-                closed);
+    private void drawClusterMarkers(UiCanvas canvas, List<ClusterMarker> markers) {
+        if (markers.isEmpty()) {
+            return;
+        }
+        List<UiCanvas.Circle> backgrounds = new ArrayList<>(markers.size());
+        Map<Color, List<UiCanvas.Circle>> fills = new LinkedHashMap<>();
+        for (ClusterMarker marker : markers) {
+            backgrounds.add(new UiCanvas.Circle(marker.x(), marker.y(), marker.radius() + 3));
+            Color fill = withAlpha(marker.cluster().profession().color(), 220);
+            fills.computeIfAbsent(fill, ignored -> new ArrayList<>())
+                    .add(new UiCanvas.Circle(marker.x(), marker.y(), marker.radius()));
+        }
+        canvas.fillCircles(backgrounds, color(BACKGROUND_MODAL_OVERLAY, 150));
+        fills.forEach((fill, circles) -> canvas.fillCircles(circles, fill));
+        for (ClusterMarker marker : markers) {
+            drawText(
+                    canvas,
+                    marker.x(),
+                    marker.y() + 1,
+                    clusterCountTextSize(marker.cluster()),
+                    String.valueOf(marker.cluster().nodeCount()),
+                    color(MAP_TEXT),
+                    TextAlignment.CENTER);
+        }
     }
 
     private void drawClusterMarker(UiCanvas canvas, float x, float y, float radius, GatheringNodeCluster cluster, boolean selected, boolean highlighted) {
@@ -3930,8 +3968,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private static ClusterOutlineShape buildClusterOutlineShape(GatheringNodeCluster cluster, double scale) {
-        List<ScreenPoint> points = cluster.outline().stream()
-                .map(point -> new ScreenPoint(
+        List<UiCanvas.Point> points = cluster.outline().stream()
+                .map(point -> new UiCanvas.Point(
                         (float) ((point.x() - cluster.centerX()) * scale),
                         (float) ((point.z() - cluster.centerZ()) * scale)))
                 .toList();
@@ -3939,7 +3977,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return ClusterOutlineShape.from(points);
         }
 
-        List<ScreenPoint> displayPoints = expandFromCentroid(points, hullPaddingForZoom(scale));
+        List<UiCanvas.Point> displayPoints = expandFromCentroid(points, hullPaddingForZoom(scale));
         for (int pass = 0; pass < HULL_SMOOTHING_PASSES; pass++) {
             displayPoints = chaikinClosedPass(displayPoints);
         }
@@ -3957,10 +3995,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         return highlighted ? baseWidth + 0.9f : baseWidth;
     }
 
-    private static List<ScreenPoint> expandFromCentroid(List<ScreenPoint> points, float padding) {
+    private static List<UiCanvas.Point> expandFromCentroid(List<UiCanvas.Point> points, float padding) {
         float centerX = 0;
         float centerY = 0;
-        for (ScreenPoint point : points) {
+        for (UiCanvas.Point point : points) {
             centerX += point.x();
             centerY += point.y();
         }
@@ -3978,18 +4016,22 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                         return point;
                     }
                     float scale = (length + padding) / length;
-                    return new ScreenPoint(finalCenterX + dx * scale, finalCenterY + dy * scale);
+                    return new UiCanvas.Point(finalCenterX + dx * scale, finalCenterY + dy * scale);
                 })
                 .toList();
     }
 
-    private static List<ScreenPoint> chaikinClosedPass(List<ScreenPoint> points) {
-        java.util.ArrayList<ScreenPoint> smoothed = new java.util.ArrayList<>(points.size() * 2);
+    private static List<UiCanvas.Point> chaikinClosedPass(List<UiCanvas.Point> points) {
+        java.util.ArrayList<UiCanvas.Point> smoothed = new java.util.ArrayList<>(points.size() * 2);
         for (int index = 0; index < points.size(); index++) {
-            ScreenPoint point = points.get(index);
-            ScreenPoint next = points.get((index + 1) % points.size());
-            smoothed.add(new ScreenPoint(point.x() * 0.75f + next.x() * 0.25f, point.y() * 0.75f + next.y() * 0.25f));
-            smoothed.add(new ScreenPoint(point.x() * 0.25f + next.x() * 0.75f, point.y() * 0.25f + next.y() * 0.75f));
+            UiCanvas.Point point = points.get(index);
+            UiCanvas.Point next = points.get((index + 1) % points.size());
+            smoothed.add(new UiCanvas.Point(
+                    point.x() * 0.75f + next.x() * 0.25f,
+                    point.y() * 0.75f + next.y() * 0.25f));
+            smoothed.add(new UiCanvas.Point(
+                    point.x() * 0.25f + next.x() * 0.75f,
+                    point.y() * 0.25f + next.y() * 0.75f));
         }
         return smoothed;
     }
@@ -5666,7 +5708,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private record MapIngredientIcon(ItemStack stack, Supplier<PlayerSkin> skinLookup) {}
 
-    private record ScreenPoint(float x, float y) {}
+    private record ClusterMarker(float x, float y, float radius, GatheringNodeCluster cluster) {}
+
+    private record ClusterOutlineStyle(Color fill, Color stroke, float strokeWidth) {}
+
+    private record ClusterOutlineRender(UiCanvas.Polygon polygon, ClusterOutlineStyle style) {}
 
     private record TerritoryLabelLayout(List<String> lines, float fontSize, float lineHeight) {}
 
@@ -5739,12 +5785,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float eventDetailY) {}
 
     private record ClusterOutlineShape(
-            List<ScreenPoint> points,
+            List<UiCanvas.Point> points,
             float minX,
             float maxX,
             float minY,
             float maxY) {
-        private static ClusterOutlineShape from(List<ScreenPoint> points) {
+        private static ClusterOutlineShape from(List<UiCanvas.Point> points) {
             if (points.isEmpty()) {
                 return new ClusterOutlineShape(List.of(), 0, 0, 0, 0);
             }
@@ -5752,7 +5798,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float maxX = Float.NEGATIVE_INFINITY;
             float minY = Float.POSITIVE_INFINITY;
             float maxY = Float.NEGATIVE_INFINITY;
-            for (ScreenPoint point : points) {
+            for (UiCanvas.Point point : points) {
                 minX = Math.min(minX, point.x());
                 maxX = Math.max(maxX, point.x());
                 minY = Math.min(minY, point.y());
