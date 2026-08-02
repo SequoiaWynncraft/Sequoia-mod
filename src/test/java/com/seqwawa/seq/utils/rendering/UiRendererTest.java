@@ -91,6 +91,29 @@ class UiRendererTest {
         assertThrows(IllegalStateException.class, UiRenderer::currentCanvas);
     }
 
+    @Test
+    void canvasBatchFallbacksPreserveEveryShape() {
+        FakeBackend backend = new FakeBackend();
+        UiRenderer.initialize(backend);
+        UiRenderer.renderHud(canvas -> {
+            canvas.fillCircles(
+                    List.of(new UiCanvas.Circle(1, 2, 3), new UiCanvas.Circle(4, 5, 6)), Color.WHITE);
+            canvas.fillAndStrokePolygons(
+                    List.of(
+                            new UiCanvas.Polygon(List.of(new UiCanvas.Point(1, 2)), 10, 20, false),
+                            new UiCanvas.Polygon(List.of(new UiCanvas.Point(3, 4)), 30, 40, false)),
+                    null,
+                    Color.WHITE,
+                    1);
+        });
+
+        UiRenderer.flush(null, METRICS);
+
+        assertEquals(2, backend.canvas.circleCount);
+        assertEquals(2, backend.canvas.polygonCount);
+        assertEquals(List.of(new UiCanvas.Point(11, 22), new UiCanvas.Point(33, 44)), backend.canvas.firstPolygonPoints);
+    }
+
     private static final class FakeBackend implements UiRenderBackend {
         private final FakeCanvas canvas = new FakeCanvas();
         private final List<Integer> commandCounts = new ArrayList<>();
@@ -155,6 +178,10 @@ class UiRendererTest {
     }
 
     private static final class FakeCanvas implements UiCanvas {
+        private int circleCount;
+        private int polygonCount;
+        private final List<Point> firstPolygonPoints = new ArrayList<>();
+
         @Override
         public UiRenderMetrics metrics() {
             return METRICS;
@@ -178,6 +205,7 @@ class UiRendererTest {
 
         @Override
         public void fillCircle(float centerX, float centerY, float radius, Color color) {
+            circleCount++;
         }
 
         @Override
@@ -187,6 +215,8 @@ class UiRendererTest {
         @Override
         public void fillAndStrokePolygon(
                 List<Point> points, Color fill, Color stroke, float strokeWidth, boolean closed) {
+            polygonCount++;
+            firstPolygonPoints.add(points.getFirst());
         }
 
         @Override

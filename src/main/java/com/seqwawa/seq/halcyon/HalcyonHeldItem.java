@@ -10,17 +10,42 @@ import java.util.Locale;
 
 public final class HalcyonHeldItem {
 	private static final String HALCYON_NAME = "halcyon";
+	private static ItemStack cachedMainHand = ItemStack.EMPTY;
+	private static ItemStack cachedOffhand = ItemStack.EMPTY;
+	private static boolean holdingHalcyon;
 
 	private HalcyonHeldItem() {
 	}
 
-	public static boolean isHoldingHalcyon(Minecraft client) {
-		if (client.player == null) return false;
-
-		return isHalcyon(client.player.getMainHandItem()) || isHalcyon(client.player.getOffhandItem());
+	public static void tick(Minecraft client) {
+		if (client.player == null) {
+			reset();
+			return;
+		}
+		updateHeldItems(client.player.getMainHandItem(), client.player.getOffhandItem());
 	}
 
-	private static boolean isHalcyon(ItemStack stack) {
+	public static boolean isHoldingHalcyon() {
+		return holdingHalcyon;
+	}
+
+	public static void reset() {
+		cachedMainHand = ItemStack.EMPTY;
+		cachedOffhand = ItemStack.EMPTY;
+		holdingHalcyon = false;
+	}
+
+	static void updateHeldItems(ItemStack mainHand, ItemStack offhand) {
+		if (ItemStack.isSameItemSameComponents(mainHand, cachedMainHand)
+				&& ItemStack.isSameItemSameComponents(offhand, cachedOffhand)) {
+			return;
+		}
+		cachedMainHand = mainHand.copy();
+		cachedOffhand = offhand.copy();
+		holdingHalcyon = isHalcyon(mainHand) || isHalcyon(offhand);
+	}
+
+	static boolean isHalcyon(ItemStack stack) {
 		if (stack.isEmpty()) return false;
 
 		if (containsHalcyon(stack.getHoverName())) return true;

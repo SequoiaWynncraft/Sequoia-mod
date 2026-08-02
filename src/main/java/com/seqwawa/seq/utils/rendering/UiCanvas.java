@@ -17,9 +17,24 @@ public interface UiCanvas {
 
     void fillCircle(float centerX, float centerY, float radius, Color color);
 
+    default void fillCircles(List<Circle> circles, Color color) {
+        for (Circle circle : circles) {
+            fillCircle(circle.centerX(), circle.centerY(), circle.radius(), color);
+        }
+    }
+
     void strokeCircle(float centerX, float centerY, float radius, float thickness, Color color);
 
     void fillAndStrokePolygon(List<Point> points, Color fill, Color stroke, float strokeWidth, boolean closed);
+
+    default void fillAndStrokePolygons(List<Polygon> polygons, Color fill, Color stroke, float strokeWidth) {
+        for (Polygon polygon : polygons) {
+            List<Point> translated = polygon.points().stream()
+                    .map(point -> new Point(point.x() + polygon.offsetX(), point.y() + polygon.offsetY()))
+                    .toList();
+            fillAndStrokePolygon(translated, fill, stroke, strokeWidth, polygon.closed());
+        }
+    }
 
     void fillHorizontalGradient(
             float x, float y, float width, float height, Color startColor, Color endColor);
@@ -101,5 +116,14 @@ public interface UiCanvas {
     }
 
     record Point(float x, float y) {
+    }
+
+    record Circle(float centerX, float centerY, float radius) {
+    }
+
+    record Polygon(List<Point> points, float offsetX, float offsetY, boolean closed) {
+        public Polygon {
+            points = List.copyOf(points);
+        }
     }
 }

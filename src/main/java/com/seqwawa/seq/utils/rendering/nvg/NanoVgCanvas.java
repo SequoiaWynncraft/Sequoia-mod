@@ -30,6 +30,7 @@ import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiImage;
 import com.seqwawa.seq.utils.rendering.UiRenderMetrics;
 import java.awt.Color;
+import java.util.List;
 import org.lwjgl.nanovg.NVGColor;
 import org.lwjgl.nanovg.NVGPaint;
 
@@ -91,6 +92,22 @@ final class NanoVgCanvas implements UiCanvas {
     }
 
     @Override
+    public void fillCircles(List<Circle> circles, Color color) {
+        if (circles.isEmpty()) {
+            return;
+        }
+        nvgBeginPath(context);
+        for (Circle circle : circles) {
+            org.lwjgl.nanovg.NanoVG.nvgCircle(context, circle.centerX(), circle.centerY(), circle.radius());
+            nvgClosePath(context);
+        }
+        NVGColor fillColor = NVGWrapper.nvgColor(color);
+        nvgFillColor(context, fillColor);
+        nvgFill(context);
+        fillColor.free();
+    }
+
+    @Override
     public void strokeCircle(float centerX, float centerY, float radius, float thickness, Color color) {
         nvgBeginPath(context);
         org.lwjgl.nanovg.NanoVG.nvgCircle(context, centerX, centerY, radius);
@@ -117,6 +134,44 @@ final class NanoVgCanvas implements UiCanvas {
         }
         if (closed) {
             nvgClosePath(context);
+        }
+        if (fill != null) {
+            NVGColor fillColor = NVGWrapper.nvgColor(fill);
+            nvgFillColor(context, fillColor);
+            nvgFill(context);
+            fillColor.free();
+        }
+        if (stroke != null && strokeWidth > 0f) {
+            NVGColor strokeColor = NVGWrapper.nvgColor(stroke);
+            org.lwjgl.nanovg.NanoVG.nvgStrokeWidth(context, strokeWidth);
+            org.lwjgl.nanovg.NanoVG.nvgStrokeColor(context, strokeColor);
+            org.lwjgl.nanovg.NanoVG.nvgStroke(context);
+            strokeColor.free();
+        }
+    }
+
+    @Override
+    public void fillAndStrokePolygons(
+            List<Polygon> polygons, Color fill, Color stroke, float strokeWidth) {
+        if (polygons.isEmpty()) {
+            return;
+        }
+        nvgBeginPath(context);
+        for (Polygon polygon : polygons) {
+            if (polygon.points().isEmpty()) {
+                continue;
+            }
+            Point first = polygon.points().getFirst();
+            org.lwjgl.nanovg.NanoVG.nvgMoveTo(
+                    context, first.x() + polygon.offsetX(), first.y() + polygon.offsetY());
+            for (int index = 1; index < polygon.points().size(); index++) {
+                Point point = polygon.points().get(index);
+                org.lwjgl.nanovg.NanoVG.nvgLineTo(
+                        context, point.x() + polygon.offsetX(), point.y() + polygon.offsetY());
+            }
+            if (polygon.closed()) {
+                nvgClosePath(context);
+            }
         }
         if (fill != null) {
             NVGColor fillColor = NVGWrapper.nvgColor(fill);

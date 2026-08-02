@@ -9,11 +9,12 @@ import org.junit.jupiter.api.Test;
 
 class IngredientWaypointRendererTest {
     @Test
-    void rendersOnlyPositiveRadiiWithinWaypointRange() {
+    void rendersOnlyPositiveRadiiWithinEightChunks() {
         assertTrue(IngredientWaypointRenderer.shouldRenderRadius(12, 100));
+        assertTrue(IngredientWaypointRenderer.shouldRenderRadius(12, 128.0 * 128.0));
         assertFalse(IngredientWaypointRenderer.shouldRenderRadius(0, 100));
         assertFalse(IngredientWaypointRenderer.shouldRenderRadius(-1, 100));
-        assertFalse(IngredientWaypointRenderer.shouldRenderRadius(12, 8_001.0 * 8_001.0));
+        assertFalse(IngredientWaypointRenderer.shouldRenderRadius(12, 129.0 * 129.0));
     }
 
     @Test

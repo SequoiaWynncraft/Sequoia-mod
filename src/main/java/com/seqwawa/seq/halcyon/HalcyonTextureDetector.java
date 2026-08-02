@@ -73,7 +73,7 @@ public final class HalcyonTextureDetector {
 			ResourcePackModelScanner.scan(client);
 		}
 
-		if (!HalcyonHeldItem.isHoldingHalcyon(client)) {
+		if (!HalcyonHeldItem.isHoldingHalcyon()) {
 			pendingGroups.clear();
 			return;
 		}

@@ -9,7 +9,7 @@ import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.world.phys.Vec3;
 
 public final class HalcyonRingRenderer {
-	private static final int SEGMENTS = 192;
+	static final int SEGMENTS = 96;
 	private static final double TWO_PI = Math.PI * 2.0;
 	private static final int COLOR_RED = 0;
 	private static final int COLOR_GREEN = 255;
@@ -50,7 +50,7 @@ public final class HalcyonRingRenderer {
 				? HalcyonTextureDetector.getCurrentRange()
 				: PREVIEW_RADIUS;
 		} else {
-			if (!HalcyonHeldItem.isHoldingHalcyon(client)) return;
+			if (!HalcyonHeldItem.isHoldingHalcyon()) return;
 			if (!HalcyonTextureDetector.hasKnownRange()) return;
 			radius = HalcyonTextureDetector.getCurrentRange();
 		}
