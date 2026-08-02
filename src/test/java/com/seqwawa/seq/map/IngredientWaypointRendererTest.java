@@ -5,9 +5,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.map.IngredientWaypointManager.Kind;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class IngredientWaypointRendererTest {
+    @Test
+    void stacksThreeRadiusRingsFourBlocksApartAtSeventyPercentOpacity() {
+        assertEquals(List.of(0.0, 4.0, 8.0), IngredientWaypointRenderer.RADIUS_RING_VERTICAL_OFFSETS);
+        assertEquals(0.7, IngredientWaypointRenderer.RADIUS_ALPHA / 255.0, 0.01);
+    }
+
     @Test
     void rendersOnlyPositiveRadiiWithinEightChunks() {
         assertTrue(IngredientWaypointRenderer.shouldRenderRadius(12, 100));
