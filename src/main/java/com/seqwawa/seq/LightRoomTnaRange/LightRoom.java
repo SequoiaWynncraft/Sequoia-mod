@@ -79,7 +79,7 @@ public final class LightRoom {
 
         String scoreboard = readSidebarText(client);
         prepRoom = scoreboard.contains("Gather the Light!");
-        inRoom = scoreboard.contains("Find and kill");
+        inRoom = scoreboard.contains("Find and kill") || scoreboard.contains("The creature in the");
 
         if(prepRoom && !wasPrep){
             LightHolder = null;
