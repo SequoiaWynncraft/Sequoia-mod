@@ -1,13 +1,25 @@
 package com.seqwawa.seq.command;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import java.util.concurrent.atomic.AtomicReference;
+import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import org.junit.jupiter.api.Test;
 
 class SeqCommandTest {
+
+    @Test
+    void registersStandaloneEmeraldAlias() {
+        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+
+        SeqCommand.registerCommands(dispatcher, null);
+
+        assertNotNull(dispatcher.getRoot().getChild("e"));
+        assertNotNull(dispatcher.getRoot().getChild("seq").getChild("e"));
+    }
 
     @Test
     void treasuryOutParsesMultiWordReasonGreedily() throws Exception {
