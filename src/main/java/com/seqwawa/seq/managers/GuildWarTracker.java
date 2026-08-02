@@ -247,10 +247,10 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             return;
         }
 
+        queueAttempt = new QueueAttemptInfo(territoryName, defense, timer);
         submitQueue(queueAttempt);
-
-        /*queueAttempt = new QueueAttemptInfo(territoryName, defense, timer);
-        queueAttemptTime = clock.getAsLong();
+        
+        /*queueAttemptTime = clock.getAsLong();
 
         SeqClient.LOGGER.info(
                 "[GuildWarTracker] Queue attempt stored territory='{}' defense='{}' timer={}m",
