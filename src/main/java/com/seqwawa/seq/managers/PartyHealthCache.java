@@ -14,7 +14,7 @@ import net.minecraft.network.chat.Component;
 
 public final class PartyHealthCache {
     private static final long FULL_BAR_MAX_PROMOTION_DELAY_MS = 2_000;
-    private static final long REFRESH_INTERVAL_MS = 250;
+    static final long REFRESH_INTERVAL_MS = 200;
 
     private static final Map<UUID, CachedPartyHealth> healthByUuid = new ConcurrentHashMap<>();
     private static final Map<UUID, HealthMaxState> maxHealthByUuid = new ConcurrentHashMap<>();
@@ -33,8 +33,12 @@ public final class PartyHealthCache {
 
     public record HealthBarState(float percent, boolean overMax) {}
 
-    public static void tick() {
-        lastRefreshMs = System.currentTimeMillis();
+    public static synchronized void tick() {
+        long now = System.currentTimeMillis();
+        if (!isRefreshDue(now, lastRefreshMs)) {
+            return;
+        }
+        lastRefreshMs = now;
 
         List<WynnPartyScoreboardReader.PartyHealth> scoreboardHealth = WynnPartyScoreboardReader.readPartyHealth();
         Map<String, UUID> visiblePlayerUuids = visiblePlayerUuidsByUsername();
@@ -87,9 +91,13 @@ public final class PartyHealthCache {
 
     private static void refreshIfStale() {
         long now = System.currentTimeMillis();
-        if (now - lastRefreshMs >= REFRESH_INTERVAL_MS) {
+        if (isRefreshDue(now, lastRefreshMs)) {
             tick();
         }
+    }
+
+    static boolean isRefreshDue(long nowMs, long lastRefreshMs) {
+        return lastRefreshMs == 0 || nowMs - lastRefreshMs >= REFRESH_INTERVAL_MS;
     }
 
     private static HealthMaxResult maxHealth(UUID uuid, int currentHp, boolean fullHealthBar) {

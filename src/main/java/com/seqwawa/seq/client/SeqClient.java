@@ -314,7 +314,9 @@ public class SeqClient implements ClientModInitializer {
             if (wynnPartySyncManager != null) {
                 wynnPartySyncManager.tick();
             }
-            PartyHealthCache.tick();
+            if (showPartyHealthBarsSetting == null || showPartyHealthBarsSetting.getValue()) {
+                PartyHealthCache.tick();
+            }
             RaidPartySnapshotTracker.tick();
             if (guildWarTracker != null) {
                 guildWarTracker.tick();
