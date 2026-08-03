@@ -26,6 +26,8 @@ import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.managers.BombShareManager;
+import com.seqwawa.seq.managers.DiscordRankChatDecorator;
+import com.seqwawa.seq.managers.DiscordRankService;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyFinderManager;
@@ -120,6 +122,8 @@ public class SeqCommand {
                                 .then(buildTreasuryCommand(SeqCommand::runTreasuryOut))
                                 .then(buildBadgeCommand("badges"))
                                 .then(buildBadgeCommand("badge"))
+                                .then(buildRankCommand("ranks"))
+                                .then(buildRankCommand("rank"))
                                 .then(buildMapCommand())
                                 .then(ClientCommandManager.literal("ingredients")
                                                 .executes(SeqCommand::openIngredientGuideScreen))
@@ -363,6 +367,17 @@ public class SeqCommand {
                                                 .executes(SeqCommand::runBadgeRefresh));
         }
 
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildRankCommand(String literalName) {
+                return ClientCommandManager.literal(literalName)
+                                .executes(SeqCommand::runDiscordRankStatus)
+                                .then(ClientCommandManager.literal("status")
+                                                .executes(SeqCommand::runDiscordRankStatus))
+                                .then(ClientCommandManager.literal("refresh")
+                                                .executes(SeqCommand::runDiscordRankRefresh))
+                                .then(ClientCommandManager.literal("debug")
+                                                .executes(SeqCommand::runDiscordRankDebug));
+        }
+
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildMapCommand() {
                 return ClientCommandManager.literal("map")
                                 .executes(SeqCommand::openWorldMapScreen)
@@ -500,6 +515,35 @@ public class SeqCommand {
                                 .refreshAsync()
                                 .thenAccept(message -> sendFeedback(ctx.getSource(), message));
                 sendFeedback(ctx.getSource(), "Refreshing leaderboard badges...");
+                return 1;
+        }
+
+        private static int runDiscordRankStatus(CommandContext<FabricClientCommandSource> ctx) {
+                boolean enabled = SeqClient.getShowDiscordRanksSetting() != null
+                                && SeqClient.getShowDiscordRanksSetting().getValue();
+                sendFeedback(
+                                ctx.getSource(),
+                                DiscordRankService.getInstance().status()
+                                                + " | chat decoration=" + (enabled ? "on" : "off"));
+                return 1;
+        }
+
+        private static int runDiscordRankRefresh(CommandContext<FabricClientCommandSource> ctx) {
+                DiscordRankService.getInstance()
+                                .refreshAsync()
+                                .thenAccept(message -> sendFeedback(ctx.getSource(), message));
+                sendFeedback(ctx.getSource(), "Refreshing Discord ranks...");
+                return 1;
+        }
+
+        private static int runDiscordRankDebug(CommandContext<FabricClientCommandSource> ctx) {
+                boolean enabled = !DiscordRankChatDecorator.isDebug();
+                DiscordRankChatDecorator.setDebug(enabled);
+                sendFeedback(
+                                ctx.getSource(),
+                                enabled
+                                                ? "Discord rank debug on: undecorated guild lines are dumped to the game log."
+                                                : "Discord rank debug off.");
                 return 1;
         }
 

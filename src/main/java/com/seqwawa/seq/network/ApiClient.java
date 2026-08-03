@@ -255,6 +255,15 @@ public class ApiClient {
         return get(authBaseUrl, "/v1/rank-profiles?scope=recognized", RankProfilesResponse.class, false);
     }
 
+    /**
+     * Profiles of members who linked both their Discord and Minecraft accounts.
+     * Unlike {@code scope=recognized}, every profile is guaranteed to carry both
+     * identities, which is what the chat rank decoration needs to match on.
+     */
+    public CompletableFuture<RankProfilesResponse> getLinkedRankProfiles() {
+        return get(authBaseUrl, "/v1/rank-profiles?scope=linked", RankProfilesResponse.class, false);
+    }
+
     public CompletableFuture<Listing> reassignRole(long listingId, UUID targetUUID, PartyRole role) {
         JsonObject body = new JsonObject();
         body.addProperty("role", role.name());

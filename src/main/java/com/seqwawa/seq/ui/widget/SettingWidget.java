@@ -17,6 +17,9 @@ public abstract class SettingWidget<T extends Setting<?>> {
     static {
         DISPLAY_NAME_OVERRIDES.put("auto_connect", "Auto connect to Sequoia backend");
         DISPLAY_NAME_OVERRIDES.put("show_discord_bridge", "Show Discord chat");
+        DISPLAY_NAME_OVERRIDES.put("show_discord_ranks", "Show Discord ranks in guild chat");
+        DISPLAY_NAME_OVERRIDES.put("chat_line_spacing", "Chat line spacing");
+        DISPLAY_NAME_OVERRIDES.put("profile_on_shift_click", "Open Sequoia profile on shift-click");
         DISPLAY_NAME_OVERRIDES.put("auto_announce", "Auto announce raids");
         DISPLAY_NAME_OVERRIDES.put("track_guild_wars", "Track guild wars");
         DISPLAY_NAME_OVERRIDES.put("guild_wars", "Wars");

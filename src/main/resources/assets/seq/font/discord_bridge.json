@@ -1,0 +1,30 @@
+{
+  "providers": [
+    {
+      "type": "bitmap",
+      "file": "seq:font/discord_bridge.png",
+      "ascent": 8,
+      "height": 9,
+      "chars": [
+        "\uF8F0\uF8F1"
+      ]
+    },
+    {
+      "comment": "Same metrics as Wynncraft's chat icons, which stand slightly taller than a chat line. White on purpose: Minecraft multiplies a glyph by the text colour, so the mod tints it to blurple at render time.",
+      "type": "bitmap",
+      "file": "seq:font/discord_mark.png",
+      "ascent": 8,
+      "height": 9,
+      "chars": [
+        "\uF8F2"
+      ]
+    },
+    {
+      "comment": "One pixel of advance, repeated by the mod to pad the shorter of the two prefixes so both put their text on the same column.",
+      "type": "space",
+      "advances": {
+        "\uF8FD": 1
+      }
+    }
+  ]
+}

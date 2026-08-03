@@ -6,7 +6,11 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.TextColor;
 import org.jetbrains.annotations.NotNull;
+
+import com.seqwawa.seq.utils.WynnPillGlyphs;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -36,13 +40,26 @@ public interface NotificationAccessor {
             ChatFormatting backgroundColor,
             ChatFormatting foregroundColor,
             ClickEvent clickEvent) {
+        return wynnPill(
+                label,
+                TextColor.fromLegacyFormat(backgroundColor),
+                TextColor.fromLegacyFormat(foregroundColor),
+                clickEvent);
+    }
+
+    /** Pill variant accepting arbitrary colours, for palettes outside the 16 legacy ones. */
+    static @NotNull MutableComponent wynnPill(
+            String label,
+            TextColor backgroundColor,
+            TextColor foregroundColor,
+            ClickEvent clickEvent) {
         MutableComponent pill = Component.empty();
         pill.append(styledPillPart(PILL_CORNER_LEFT, backgroundColor, clickEvent));
 
         for (int i = 0; i < label.length(); i++) {
             String glyph = toWynncraftGlyph(label.charAt(i));
             pill.append(styledPillPart(PILL_BG_BACK, backgroundColor, clickEvent));
-            pill.append(styledPillPart(PILL_BG_FRONT + glyph, foregroundColor, clickEvent));
+            pill.append(labelPillPart(PILL_BG_FRONT + glyph, foregroundColor, clickEvent));
         }
 
         pill.append(styledPillPart(PILL_CORNER_RIGHT, backgroundColor, clickEvent));
@@ -86,9 +103,22 @@ public interface NotificationAccessor {
         return prefixComponent().append(Component.literal(String.valueOf(message)).withStyle(ChatFormatting.GRAY));
     }
 
+    /**
+     * The label sits on top of the background block, so it must not cast a shadow:
+     * the offset copy would smear across the block underneath. That is most visible
+     * with dark labels on pale backgrounds, where the shadow reads as a blur rather
+     * than an outline.
+     */
+    private static MutableComponent labelPillPart(
+            String text,
+            TextColor color,
+            ClickEvent clickEvent) {
+        return styledPillPart(text, color, clickEvent).withStyle(Style::withoutShadow);
+    }
+
     private static MutableComponent styledPillPart(
             String text,
-            ChatFormatting color,
+            TextColor color,
             ClickEvent clickEvent) {
         return Component.literal(text).withStyle(style -> {
             style = style.withColor(color);
@@ -100,46 +130,6 @@ public interface NotificationAccessor {
     }
 
     private static String toWynncraftGlyph(char rawChar) {
-        char ch = Character.toLowerCase(rawChar);
-        return switch (ch) {
-            case 'a' -> "";
-            case 'b' -> "";
-            case 'c' -> "";
-            case 'd' -> "";
-            case 'e' -> "";
-            case 'f' -> "";
-            case 'g' -> "";
-            case 'h' -> "";
-            case 'i' -> "";
-            case 'j' -> "";
-            case 'k' -> "";
-            case 'l' -> "";
-            case 'm' -> "";
-            case 'n' -> "";
-            case 'o' -> "";
-            case 'p' -> "";
-            case 'q' -> "";
-            case 'r' -> "";
-            case 's' -> "";
-            case 't' -> "";
-            case 'u' -> "";
-            case 'v' -> "";
-            case 'w' -> "";
-            case 'x' -> "";
-            case 'y' -> "";
-            case 'z' -> "";
-            case '0' -> "";
-            case '1' -> "";
-            case '2' -> "";
-            case '3' -> "";
-            case '4' -> "";
-            case '5' -> "";
-            case '6' -> "";
-            case '7' -> "";
-            case '8' -> "";
-            case '9' -> "";
-            case ' ' -> " ";
-            default -> String.valueOf(rawChar);
-        };
+        return WynnPillGlyphs.encodeGlyph(rawChar);
     }
 }

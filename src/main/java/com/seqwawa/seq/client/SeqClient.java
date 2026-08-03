@@ -34,6 +34,7 @@ import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
 import com.seqwawa.seq.managers.GuildWarTrackers;
+import com.seqwawa.seq.managers.DiscordRankService;
 import com.seqwawa.seq.managers.IngredientGuideManager;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyHealthCache;
@@ -100,6 +101,15 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static Setting.BooleanSetting showDiscordChatSetting;
+
+    @Getter
+    public static Setting.BooleanSetting showDiscordRanksSetting;
+
+    @Getter
+    public static Setting.IntSetting chatLineSpacingSetting;
+
+    @Getter
+    public static Setting.BooleanSetting profileOnShiftClickSetting;
 
     @Getter
     public static Setting.BooleanSetting raidAutoAnnounceSetting;
@@ -192,6 +202,9 @@ public class SeqClient implements ClientModInitializer {
     public static LeaderboardBadgeService leaderboardBadgeService;
 
     @Getter
+    public static DiscordRankService discordRankService;
+
+    @Getter
     public static SeqBadgeNametagRendererHandle seqBadgeNametagRenderer;
 
     @Getter
@@ -237,6 +250,7 @@ public class SeqClient implements ClientModInitializer {
         configManager.migrateToken();
         ThemeManager.initialize();
         leaderboardBadgeService = LeaderboardBadgeService.getInstance();
+        discordRankService = DiscordRankService.getInstance();
         seqBadgeNametagRenderer = SeqBadgeNametagRenderers.createIfAvailable();
         worldEventManager = WorldEventManager.getInstance();
         ingredientGuideManager = IngredientGuideManager.getInstance();
@@ -329,6 +343,9 @@ public class SeqClient implements ClientModInitializer {
             }
             if (leaderboardBadgeService != null) {
                 leaderboardBadgeService.tick();
+            }
+            if (discordRankService != null) {
+                discordRankService.tick();
             }
             if (seqBadgeNametagRenderer != null) {
                 seqBadgeNametagRenderer.tick();
@@ -538,6 +555,9 @@ public class SeqClient implements ClientModInitializer {
         // Network settings
         autoConnectSetting = new Setting.BooleanSetting("auto_connect", "network", true);
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
+        showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", true);
+        chatLineSpacingSetting = new Setting.IntSetting("chat_line_spacing", "chat", 4, 0, 10);
+        profileOnShiftClickSetting = new Setting.BooleanSetting("profile_on_shift_click", "chat", true);
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
         radianceCheckerSetting = new Setting.BooleanSetting("enable_radiance_visualiser", "raids", true);
         radianceMarkerColorSetting = new Setting.ColorSetting("radiance_marker_color", "raids", 0xFF0000);
@@ -581,6 +601,9 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.BooleanSetting("notify_tracked_world_events", "world_events", false);
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
+        getConfigManager().register(showDiscordRanksSetting);
+        getConfigManager().register(chatLineSpacingSetting);
+        getConfigManager().register(profileOnShiftClickSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
         getConfigManager().register(trackGuildWarsSetting);
         getConfigManager().register(checkUpdatesSetting);
