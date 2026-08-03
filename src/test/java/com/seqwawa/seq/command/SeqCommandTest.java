@@ -1,9 +1,12 @@
 package com.seqwawa.seq.command;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.ParseResults;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.tree.ArgumentCommandNode;
@@ -40,6 +43,30 @@ class SeqCommandTest {
 
         assertNotNull(dispatcher.getRoot().getChild("e"));
         assertNotNull(dispatcher.getRoot().getChild("seq").getChild("e"));
+    }
+
+    @Test
+    void parsesRepresentativeCommandsFromEveryRegistrar() {
+        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+        SeqCommand.registerCommands(dispatcher, null);
+
+        assertValidCommand(dispatcher, "seq status");
+        assertValidCommand(dispatcher, "seq party join 42 healer token invite-code");
+        assertValidCommand(dispatcher, "seq map eps 50");
+        assertValidCommand(dispatcher, "seq aspects 2 ValidPlayer");
+        assertValidCommand(dispatcher, "seq treasury out 50 Solo season payout");
+    }
+
+    @Test
+    void rejectsRepresentativeInvalidCommandsFromEveryRegistrar() {
+        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+        SeqCommand.registerCommands(dispatcher, null);
+
+        assertInvalidCommand(dispatcher, "seq status extra");
+        assertInvalidCommand(dispatcher, "seq party join 0");
+        assertInvalidCommand(dispatcher, "seq map eps 0");
+        assertInvalidCommand(dispatcher, "seq aspects 0");
+        assertInvalidCommand(dispatcher, "seq treasury out 50 Solo");
     }
 
     @Test
@@ -80,6 +107,24 @@ class SeqCommandTest {
         StringBuilder snapshot = new StringBuilder();
         appendChildren(snapshot, root, "");
         return snapshot.toString();
+    }
+
+    private static void assertValidCommand(
+            CommandDispatcher<FabricClientCommandSource> dispatcher, String command) {
+        ParseResults<FabricClientCommandSource> result = dispatcher.parse(command, null);
+        assertFalse(result.getReader().canRead(), command);
+        assertTrue(result.getExceptions().isEmpty(), command);
+        assertNotNull(result.getContext().getCommand(), command);
+    }
+
+    private static void assertInvalidCommand(
+            CommandDispatcher<FabricClientCommandSource> dispatcher, String command) {
+        ParseResults<FabricClientCommandSource> result = dispatcher.parse(command, null);
+        assertTrue(
+                result.getReader().canRead()
+                        || !result.getExceptions().isEmpty()
+                        || result.getContext().getCommand() == null,
+                command);
     }
 
     private static <S> void appendChildren(StringBuilder snapshot, CommandNode<S> parent, String parentPath) {

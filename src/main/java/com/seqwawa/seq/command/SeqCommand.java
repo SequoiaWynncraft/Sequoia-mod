@@ -5,7 +5,6 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
@@ -68,227 +67,24 @@ public class SeqCommand {
                                 .executes(ctx -> {
                                         SeqClient.openMainScreen();
                                         return 1;
-                                })
-                                .then(ClientCommandManager.literal("connect")
-                                                .executes(ctx -> {
-                                                        ConnectionManager.getInstance().connectManually();
-                                                        return 1;
-                                                }))
-                                .then(ClientCommandManager.literal("disconnect")
-                                                .executes(ctx -> {
-                                                        ConnectionManager.getInstance().disconnectManually();
-                                                        return 1;
-                                                }))
-                                .then(ClientCommandManager.literal("connected")
-                                                .executes(ctx -> {
-                                                        if (!ConnectionManager.isConnected()) {
-                                                                sendFeedback(
-                                                                                ctx.getSource(),
-                                                                                "Not connected. Use /seq connect first.");
-                                                                return 0;
-                                                        }
-                                                        ConnectionManager.getInstance().requestConnectedUsers(users -> {
-                                                                if (users.isEmpty()) {
-                                                                        sendFeedback(ctx.getSource(), "No users connected.");
-                                                                        return;
-                                                                }
+                                });
 
-                                                                sendFeedback(
-                                                                                ctx.getSource(),
-                                                                                "Connected users (" + users.size() + "):");
-                                                                for (String user : users) {
-                                                                        sendFeedback(ctx.getSource(), "• " + user);
-                                                                }
-                                                        });
-                                                        return 1;
-                                                }))
-                                .then(ClientCommandManager.literal("status").executes(SeqCommand::runStatus))
-                                .then(ClientCommandManager.literal("logout")
-                                                .executes(ctx -> {
-                                                        ConnectionManager.getInstance().disconnect();
-                                                        SeqClient.getConfigManager().clearToken();
-                                                        sendFeedback(ctx.getSource(), "Logged out and token cleared.");
-                                                        return 1;
-                                                }))
-                                .then(buildIgnoreCommand())
-                                .then(buildUnignoreCommand())
-                                .then(buildRequestCommand())
-                                .then(buildEmeraldRewardCommand("e"))
-                                .then(buildEmeraldRewardCommand("emeralds"))
-                                .then(buildAspectRewardCommand())
-                                .then(buildTomeRewardCommand())
-                                .then(buildBombCommand())
-                                .then(buildTreasuryCommand(SeqCommand::runTreasuryOut))
-                                .then(buildBadgeCommand("badges"))
-                                .then(buildBadgeCommand("badge"))
-                                .then(buildMapCommand())
-                                .then(ClientCommandManager.literal("ingredients")
-                                                .executes(SeqCommand::openIngredientGuideScreen))
-                                .then(ClientCommandManager.literal("ingredient")
-                                                .executes(SeqCommand::openIngredientGuideScreen))
-                                .then(buildPartyCommand("party"))
-                                .then(buildPartyCommand("p"));
+                ConnectionCommandRegistrar.register(root);
+                RewardCommandRegistrar.registerRewards(root);
+                TreasuryCommandRegistrar.register(root);
+                RewardCommandRegistrar.registerBadges(root);
+                MapCommandRegistrar.register(root);
+                PartyCommandRegistrar.register(root);
 
                 dispatcher.register(root);
-                dispatcher.register(buildEmeraldRewardCommand("e"));
-        }
-
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildPartyCommand(String literalName) {
-                return ClientCommandManager.literal(literalName)
-                                .executes(ctx -> openPartyScreen())
-                                .then(ClientCommandManager.literal("create-ui")
-                                                .executes(ctx -> openPartyCreateScreen()))
-                                .then(ClientCommandManager.literal("list")
-                                                .executes(SeqCommand::runPartyList))
-                                .then(ClientCommandManager.literal("status")
-                                                .executes(SeqCommand::runPartyStatus))
-                                .then(ClientCommandManager.literal("create")
-                                                .then(ClientCommandManager.argument(
-                                                                "activities",
-                                                                StringArgumentType.greedyString())
-                                                                .suggests(SeqCommand::suggestActivities)
-                                                                .executes(SeqCommand::runPartyCreate)))
-                                .then(ClientCommandManager.literal("update")
-                                                .then(ClientCommandManager.argument(
-                                                                "activities",
-                                                                StringArgumentType.greedyString())
-                                                                .suggests(SeqCommand::suggestActivities)
-                                                                .executes(SeqCommand::runPartyUpdate)))
-                                .then(buildPartyJoinCommand())
-                                .then(ClientCommandManager.literal("deny")
-                                                .then(ClientCommandManager.argument(
-                                                                "listingId",
-                                                                LongArgumentType.longArg(1))
-                                                                .executes(SeqCommand::runPartyDeny)))
-                                .then(ClientCommandManager.literal("leave")
-                                                .executes(ctx -> relayCommandResult(
-                                                                ctx,
-                                                                SeqClient.getPartyFinderManager()
-                                                                                .leavePartyFromCommand())))
-                                .then(ClientCommandManager.literal("invite")
-                                                .then(ClientCommandManager.argument(
-                                                                "username",
-                                                                StringArgumentType.word())
-                                                                .executes(SeqCommand::runPartyInvite)))
-                                .then(ClientCommandManager.literal("reserve")
-                                                .then(ClientCommandManager.argument(
-                                                                "count",
-                                                                IntegerArgumentType.integer(0))
-                                                                .executes(SeqCommand::runPartyReserve)))
-                                .then(ClientCommandManager.literal("open")
-                                                .executes(ctx -> relayCommandResult(
-                                                                ctx,
-                                                                SeqClient.getPartyFinderManager()
-                                                                                .reopenPartyFromCommand())))
-                                .then(ClientCommandManager.literal("close")
-                                                .executes(ctx -> relayCommandResult(
-                                                                ctx,
-                                                                SeqClient.getPartyFinderManager()
-                                                                                .closePartyFromCommand())))
-                                .then(ClientCommandManager.literal("extend")
-                                        .executes(ctx -> relayCommandResult(
-                                                ctx,
-                                                SeqClient.getPartyFinderManager()
-                                                                                .extendPartyFromCommand()))
-                                                .then(ClientCommandManager.argument(
-                                                                "listingId",
-                                                                LongArgumentType.longArg(1))
-                                                        .executes(ctx -> relayCommandResult(
-                                                                ctx,
-                                                                SeqClient.getPartyFinderManager()
-                                                                        .extendPartyFromCommand(LongArgumentType.getLong(
-                                                                                ctx, "listingId"))))))
-                                .then(ClientCommandManager.literal("disband")
-                                                .executes(ctx -> relayCommandResult(
-                                                                ctx,
-                                                                SeqClient.getPartyFinderManager()
-                                                                                .disbandPartyFromCommand())))
-                                .then(ClientCommandManager.literal("role")
-                                                .then(ClientCommandManager.argument(
-                                                                "role",
-                                                                StringArgumentType.word())
-                                                                .suggests(SeqCommand::suggestRoles)
-                                                                .executes(SeqCommand::runPartyRole)))
-                                .then(ClientCommandManager.literal("kick")
-                                                .then(ClientCommandManager.argument(
-                                                                "username",
-                                                                StringArgumentType.word())
-                                                                .executes(SeqCommand::runPartyKick)))
-                                .then(ClientCommandManager.literal("promote")
-                                                .then(ClientCommandManager.argument(
-                                                                "username",
-                                                                StringArgumentType.word())
-                                                                .executes(SeqCommand::runPartyPromote)))
-                                .then(ClientCommandManager.literal("invite-all")
-                                                .executes(ctx -> relayCommandResult(
-                                                                ctx,
-                                                                SeqClient.getPartyFinderManager()
-                                                                                .inviteAllCurrentMembersFromCommand())));
-        }
-
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildIgnoreCommand() {
-                return ClientCommandManager.literal("ignore")
-                                .executes(SeqCommand::runIgnoredBridgeUsersList)
-                                .then(ClientCommandManager.argument(
-                                                "username",
-                                                StringArgumentType.word())
-                                                .executes(SeqCommand::runIgnoreBridgeUser));
-        }
-
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildUnignoreCommand() {
-                return ClientCommandManager.literal("unignore")
-                                .executes(SeqCommand::runIgnoredBridgeUsersList)
-                                .then(ClientCommandManager.argument(
-                                                "username",
-                                                StringArgumentType.word())
-                                                .suggests(SeqCommand::suggestIgnoredBridgeUsers)
-                                                .executes(SeqCommand::runUnignoreBridgeUser));
-        }
-
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildBombCommand() {
-                return ClientCommandManager.literal("bomb")
-                                .then(ClientCommandManager.literal("_share")
-                                                .then(ClientCommandManager.argument(
-                                                                "requestId",
-                                                                StringArgumentType.word())
-                                                                .executes(ctx -> SeqClient.getBombShareManager()
-                                                                                .sharePrompt(StringArgumentType
-                                                                                                .getString(
-                                                                                                                ctx,
-                                                                                                                "requestId")))))
-                                .then(ClientCommandManager.literal("_mute-requests")
-                                                .executes(ctx -> SeqClient.getBombShareManager().muteRequests()))
-                                .then(ClientCommandManager.argument(
-                                                "selectors",
-                                                StringArgumentType.greedyString())
-                                                .suggests(SeqCommand::suggestBombSelectors)
-                                                .executes(ctx -> SeqClient.getBombShareManager()
-                                                                .requestBombShare(StringArgumentType.getString(
-                                                                                ctx,
-                                                                                "selectors"))));
+                RewardCommandRegistrar.registerStandaloneAliases(dispatcher);
         }
 
         static <S> LiteralArgumentBuilder<S> buildTreasuryCommand(TreasuryCommandExecutor<S> executor) {
-                RequiredArgumentBuilder<S, String> reasonArgument = RequiredArgumentBuilder
-                                .<S, String>argument("reason", StringArgumentType.greedyString())
-                                .executes(ctx -> executor.execute(
-                                                ctx,
-                                                new TreasuryCommandArguments(
-                                                                StringArgumentType.getString(ctx, "amount"),
-                                                                StringArgumentType.getString(ctx, "payouter"),
-                                                                StringArgumentType.getString(ctx, "reason"))));
-                RequiredArgumentBuilder<S, String> payouterArgument = RequiredArgumentBuilder
-                                .<S, String>argument("payouter", StringArgumentType.word())
-                                .then(reasonArgument);
-                RequiredArgumentBuilder<S, String> amountArgument = RequiredArgumentBuilder
-                                .<S, String>argument("amount", StringArgumentType.word())
-                                .suggests(SeqCommand::suggestTreasuryAmounts)
-                                .then(payouterArgument);
-                return LiteralArgumentBuilder.<S>literal("treasury")
-                                .then(LiteralArgumentBuilder.<S>literal("out").then(amountArgument));
+                return TreasuryCommandRegistrar.buildCommand(executor);
         }
 
-        private static int runTreasuryOut(
+        static int runTreasuryOut(
                         CommandContext<FabricClientCommandSource> ctx, TreasuryCommandArguments arguments) {
                 String activeUsername = SeqClient.mc == null || SeqClient.mc.getUser() == null
                                 ? null
@@ -308,143 +104,22 @@ public class SeqCommand {
                 return submitted ? 1 : 0;
         }
 
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildRequestCommand() {
-                return ClientCommandManager.literal("request")
-                                .then(ClientCommandManager.literal("aspects")
-                                                .executes(ctx -> runRewardQueueRequest(ctx, "aspect", null)))
-                                .then(ClientCommandManager.literal("tome")
-                                                .then(ClientCommandManager.argument(
-                                                                "reason",
-                                                                StringArgumentType.greedyString())
-                                                                .executes(ctx -> runRewardQueueRequest(
-                                                                                ctx,
-                                                                                "tome",
-                                                                                StringArgumentType.getString(
-                                                                                                ctx,
-                                                                                                "reason")))));
-        }
-
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildEmeraldRewardCommand(String literalName) {
-                return ClientCommandManager.literal(literalName)
-                                .executes(ctx -> {
-                                        SeqClient.getGuildRewardAutomationManager().sendAllEmeraldsToCinfrascitizen();
-                                        return 1;
-                                });
-        }
-
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildTomeRewardCommand() {
-                return ClientCommandManager.literal("tome")
-                                .executes(ctx -> runQueuedGuildReward(ctx, GuildRewardAutomationManager.RewardType.TOME, 1))
-                                .then(ClientCommandManager.argument(
-                                                "username",
-                                                StringArgumentType.word())
-                                                .executes(ctx -> runDirectTomeReward(
-                                                                ctx,
-                                                                StringArgumentType.getString(ctx, "username"))));
-        }
-
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildAspectRewardCommand() {
-                return ClientCommandManager.literal("aspects")
-                                .then(ClientCommandManager.argument(
-                                                "amount",
-                                                LongArgumentType.longArg(1))
-                                                .executes(SeqCommand::runQueuedAspectReward)
-                                                .then(ClientCommandManager.argument(
-                                                                "username",
-                                                                StringArgumentType.word())
-                                                                .executes(SeqCommand::runDirectAspectReward)));
-        }
-
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildBadgeCommand(String literalName) {
-                return ClientCommandManager.literal(literalName)
-                                .executes(SeqCommand::runBadgeStatus)
-                                .then(ClientCommandManager.literal("status")
-                                                .executes(SeqCommand::runBadgeStatus))
-                                .then(ClientCommandManager.literal("refresh")
-                                                .executes(SeqCommand::runBadgeRefresh));
-        }
-
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildMapCommand() {
-                return ClientCommandManager.literal("map")
-                                .executes(SeqCommand::openWorldMapScreen)
-                                .then(ClientCommandManager.literal("params")
-                                                .executes(SeqCommand::runMapParams))
-                                .then(ClientCommandManager.literal("eps")
-                                                .then(ClientCommandManager.argument(
-                                                                "blocks",
-                                                                IntegerArgumentType.integer(1, 500))
-                                                                .executes(SeqCommand::runMapClusterEps)))
-                                .then(buildMapMinSamplesCommand("minSamples"))
-                                .then(ClientCommandManager.literal("reset")
-                                                .executes(SeqCommand::runMapClusterReset))
-                                .then(ClientCommandManager.literal("debug")
-                                                .executes(SeqCommand::runMapDebugToggle))
-                                .then(ClientCommandManager.literal("cache")
-                                                .executes(SeqCommand::runMapClusterCacheStatus)
-                                                .then(ClientCommandManager.literal("status")
-                                                                .executes(SeqCommand::runMapClusterCacheStatus))
-                                                .then(ClientCommandManager.literal("cluster")
-                                                                .executes(SeqCommand::runMapClusterCacheStatus)
-                                                                .then(ClientCommandManager.literal("status")
-                                                                                .executes(SeqCommand::runMapClusterCacheStatus))
-                                                                .then(ClientCommandManager.literal("clear")
-                                                                                .executes(SeqCommand::runMapClusterCacheClear)))
-                                                .then(ClientCommandManager.literal("map")
-                                                                .executes(SeqCommand::runMapImageCacheStatus)
-                                                                .then(ClientCommandManager.literal("status")
-                                                                                .executes(SeqCommand::runMapImageCacheStatus))
-                                                                .then(ClientCommandManager.literal("clear")
-                                                                                .executes(SeqCommand::runMapImageCacheClear))));
-        }
-
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildMapMinSamplesCommand(String literalName) {
-                return ClientCommandManager.literal(literalName)
-                                .then(ClientCommandManager.argument(
-                                                "count",
-                                                IntegerArgumentType.integer(1, 100))
-                                                .executes(SeqCommand::runMapClusterMinSamples));
-        }
-
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildPartyJoinCommand() {
-                return ClientCommandManager.literal("join")
-                                .then(ClientCommandManager.argument(
-                                                "listingId",
-                                                LongArgumentType.longArg(1))
-                                                .executes(ctx -> runPartyJoin(ctx, PartyRole.DPS, null))
-                                                .then(ClientCommandManager.literal("token")
-                                                                .then(ClientCommandManager.argument(
-                                                                                "inviteToken",
-                                                                                StringArgumentType.string())
-                                                                                .executes(SeqCommand::runPartyJoinWithToken)))
-                                                .then(ClientCommandManager.argument(
-                                                                "role",
-                                                                StringArgumentType.word())
-                                                                .suggests(SeqCommand::suggestRoles)
-                                                                .executes(SeqCommand::runPartyJoinWithRole)
-                                                                .then(ClientCommandManager.literal("token")
-                                                                                .then(ClientCommandManager.argument(
-                                                                                                "inviteToken",
-                                                                                                StringArgumentType
-                                                                                                                .string())
-                                                                                                .executes(SeqCommand::runPartyJoinWithRoleAndToken)))));
-        }
-
-        private static int openPartyScreen() {
+        static int openPartyScreen() {
                 SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new PartyFinderScreen(SeqClient.mc.screen)));
                 return 1;
         }
 
-        private static int openWorldMapScreen(CommandContext<FabricClientCommandSource> ctx) {
+        static int openWorldMapScreen(CommandContext<FabricClientCommandSource> ctx) {
                 SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new WorldMapScreen(SeqClient.mc.screen)));
                 return 1;
         }
 
-        private static int openIngredientGuideScreen(CommandContext<FabricClientCommandSource> ctx) {
+        static int openIngredientGuideScreen(CommandContext<FabricClientCommandSource> ctx) {
                 SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new IngredientGuideScreen(SeqClient.mc.screen)));
                 return 1;
         }
 
-        private static int runStatus(CommandContext<FabricClientCommandSource> ctx) {
+        static int runStatus(CommandContext<FabricClientCommandSource> ctx) {
                 boolean connected = ConnectionManager.isConnected();
                 String token = SeqClient.getConfigManager().getToken();
                 boolean hasToken = token != null && !token.isBlank();
@@ -486,7 +161,7 @@ public class SeqCommand {
                 };
         }
 
-        private static int runBadgeStatus(CommandContext<FabricClientCommandSource> ctx) {
+        static int runBadgeStatus(CommandContext<FabricClientCommandSource> ctx) {
                 String rendererStatus = SeqClient.getSeqBadgeNametagRenderer() == null
                                 ? "disabled"
                                 : SeqClient.getSeqBadgeNametagRenderer().status();
@@ -496,7 +171,7 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runBadgeRefresh(CommandContext<FabricClientCommandSource> ctx) {
+        static int runBadgeRefresh(CommandContext<FabricClientCommandSource> ctx) {
                 LeaderboardBadgeService.getInstance()
                                 .refreshAsync()
                                 .thenAccept(message -> sendFeedback(ctx.getSource(), message));
@@ -504,7 +179,7 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runMapParams(CommandContext<FabricClientCommandSource> ctx) {
+        static int runMapParams(CommandContext<FabricClientCommandSource> ctx) {
                 WorldMapSettings settings = WorldMapSettings.getInstance();
                 sendFeedback(
                                 ctx.getSource(),
@@ -514,7 +189,7 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runMapClusterEps(CommandContext<FabricClientCommandSource> ctx) {
+        static int runMapClusterEps(CommandContext<FabricClientCommandSource> ctx) {
                 int epsBlocks = IntegerArgumentType.getInteger(ctx, "blocks");
                 WorldMapSettings.getInstance().setClusterEps(epsBlocks);
                 GatheringClusterCache.getInstance().clear();
@@ -524,7 +199,7 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runMapClusterMinSamples(CommandContext<FabricClientCommandSource> ctx) {
+        static int runMapClusterMinSamples(CommandContext<FabricClientCommandSource> ctx) {
                 int minSamples = IntegerArgumentType.getInteger(ctx, "count");
                 WorldMapSettings.getInstance().setClusterMinSamples(minSamples);
                 GatheringClusterCache.getInstance().clear();
@@ -534,7 +209,7 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runMapClusterReset(CommandContext<FabricClientCommandSource> ctx) {
+        static int runMapClusterReset(CommandContext<FabricClientCommandSource> ctx) {
                 WorldMapSettings.getInstance().resetClusterParams();
                 GatheringClusterCache.getInstance().clear();
                 sendFeedback(
@@ -544,7 +219,7 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runMapDebugToggle(CommandContext<FabricClientCommandSource> ctx) {
+        static int runMapDebugToggle(CommandContext<FabricClientCommandSource> ctx) {
                 boolean enabled = WorldMapSettings.getInstance().toggleDebugInfo();
                 GatheringMapImageService imageService = GatheringMapImageService.getInstance();
                 sendFeedback(
@@ -559,30 +234,30 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runMapClusterCacheStatus(CommandContext<FabricClientCommandSource> ctx) {
+        static int runMapClusterCacheStatus(CommandContext<FabricClientCommandSource> ctx) {
                 sendFeedback(
                                 ctx.getSource(),
                                 "Map cluster cache entries: " + GatheringClusterCache.getInstance().size());
                 return 1;
         }
 
-        private static int runMapClusterCacheClear(CommandContext<FabricClientCommandSource> ctx) {
+        static int runMapClusterCacheClear(CommandContext<FabricClientCommandSource> ctx) {
                 GatheringClusterCache.getInstance().clear();
                 sendFeedback(ctx.getSource(), "Map cluster cache cleared.");
                 return 1;
         }
 
-        private static int runMapImageCacheStatus(CommandContext<FabricClientCommandSource> ctx) {
+        static int runMapImageCacheStatus(CommandContext<FabricClientCommandSource> ctx) {
                 sendFeedback(ctx.getSource(), GatheringMapImageService.getInstance().cacheStatus());
                 return 1;
         }
 
-        private static int runMapImageCacheClear(CommandContext<FabricClientCommandSource> ctx) {
+        static int runMapImageCacheClear(CommandContext<FabricClientCommandSource> ctx) {
                 sendFeedback(ctx.getSource(), GatheringMapImageService.getInstance().clearCache());
                 return 1;
         }
 
-        private static CompletableFuture<Suggestions> suggestBombSelectors(
+        static CompletableFuture<Suggestions> suggestBombSelectors(
                         CommandContext<FabricClientCommandSource> ctx,
                         SuggestionsBuilder builder) {
                 for (String suggestion : BombShareManager.suggestionsFor(builder.getRemaining())) {
@@ -591,12 +266,12 @@ public class SeqCommand {
                 return builder.buildFuture();
         }
 
-        private static int openPartyCreateScreen() {
+        static int openPartyCreateScreen() {
                 SeqClient.mc.execute(() -> SeqClient.mc.setScreen(new PartyFinderScreen(SeqClient.mc.screen, true)));
                 return 1;
         }
 
-        private static int runPartyList(CommandContext<FabricClientCommandSource> ctx) {
+        static int runPartyList(CommandContext<FabricClientCommandSource> ctx) {
                 FabricClientCommandSource source = ctx.getSource();
                 PartyFinderManager manager = SeqClient.getPartyFinderManager();
                 manager.refreshListingsForCommand().whenComplete((result, error) -> {
@@ -625,12 +300,12 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runQueuedAspectReward(CommandContext<FabricClientCommandSource> ctx) {
+        static int runQueuedAspectReward(CommandContext<FabricClientCommandSource> ctx) {
                 long amount = LongArgumentType.getLong(ctx, "amount");
                 return runQueuedGuildReward(ctx, GuildRewardAutomationManager.RewardType.ASPECT, amount);
         }
 
-        private static int runDirectAspectReward(CommandContext<FabricClientCommandSource> ctx) {
+        static int runDirectAspectReward(CommandContext<FabricClientCommandSource> ctx) {
                 long amount = LongArgumentType.getLong(ctx, "amount");
                 String username = StringArgumentType.getString(ctx, "username");
                 if (!isValidMinecraftUsername(username)) {
@@ -641,7 +316,7 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runDirectTomeReward(CommandContext<FabricClientCommandSource> ctx, String username) {
+        static int runDirectTomeReward(CommandContext<FabricClientCommandSource> ctx, String username) {
                 if (!isValidMinecraftUsername(username)) {
                         sendFeedback(ctx.getSource(), "IGN must be a Minecraft username: 3-16 letters, numbers, or underscores.");
                         return 0;
@@ -650,7 +325,7 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runRewardQueueRequest(
+        static int runRewardQueueRequest(
                         CommandContext<FabricClientCommandSource> ctx,
                         String type,
                         String reason) {
@@ -721,7 +396,7 @@ public class SeqCommand {
                 return null;
         }
 
-        private static int runQueuedGuildReward(
+        static int runQueuedGuildReward(
                         CommandContext<FabricClientCommandSource> ctx,
                         GuildRewardAutomationManager.RewardType rewardType,
                         long amount) {
@@ -774,7 +449,7 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runPartyStatus(CommandContext<FabricClientCommandSource> ctx) {
+        static int runPartyStatus(CommandContext<FabricClientCommandSource> ctx) {
                 FabricClientCommandSource source = ctx.getSource();
                 PartyFinderManager manager = SeqClient.getPartyFinderManager();
                 manager.refreshListingsForCommand().whenComplete((result, error) -> {
@@ -803,7 +478,7 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runPartyCreate(CommandContext<FabricClientCommandSource> ctx) {
+        static int runPartyCreate(CommandContext<FabricClientCommandSource> ctx) {
                 List<String> activities = parseActivitiesInput(
                                 StringArgumentType.getString(ctx, "activities"));
                 if (activities.isEmpty()) {
@@ -815,7 +490,7 @@ public class SeqCommand {
                                 SeqClient.getPartyFinderManager().createPartyFromCommand(activities));
         }
 
-        private static int runPartyUpdate(CommandContext<FabricClientCommandSource> ctx) {
+        static int runPartyUpdate(CommandContext<FabricClientCommandSource> ctx) {
                 List<String> activities = parseActivitiesInput(
                                 StringArgumentType.getString(ctx, "activities"));
                 if (activities.isEmpty()) {
@@ -827,7 +502,7 @@ public class SeqCommand {
                                 SeqClient.getPartyFinderManager().updatePartyFromCommand(activities));
         }
 
-        private static int runPartyJoin(
+        static int runPartyJoin(
                         CommandContext<FabricClientCommandSource> ctx,
                         PartyRole role,
                         String inviteToken) {
@@ -837,7 +512,7 @@ public class SeqCommand {
                                 SeqClient.getPartyFinderManager().joinPartyFromCommand(listingId, role, inviteToken));
         }
 
-        private static int runPartyJoinWithRole(CommandContext<FabricClientCommandSource> ctx) {
+        static int runPartyJoinWithRole(CommandContext<FabricClientCommandSource> ctx) {
                 PartyRole role = parseRole(StringArgumentType.getString(ctx, "role"));
                 if (role == null) {
                         sendFeedback(ctx.getSource(), "Role must be one of: DPS, Healer, Tank.");
@@ -846,14 +521,14 @@ public class SeqCommand {
                 return runPartyJoin(ctx, role, null);
         }
 
-        private static int runPartyJoinWithToken(CommandContext<FabricClientCommandSource> ctx) {
+        static int runPartyJoinWithToken(CommandContext<FabricClientCommandSource> ctx) {
                 return runPartyJoin(
                                 ctx,
                                 PartyRole.DPS,
                                 StringArgumentType.getString(ctx, "inviteToken"));
         }
 
-        private static int runPartyJoinWithRoleAndToken(CommandContext<FabricClientCommandSource> ctx) {
+        static int runPartyJoinWithRoleAndToken(CommandContext<FabricClientCommandSource> ctx) {
                 PartyRole role = parseRole(StringArgumentType.getString(ctx, "role"));
                 if (role == null) {
                         sendFeedback(ctx.getSource(), "Role must be one of: DPS, Healer, Tank.");
@@ -862,13 +537,13 @@ public class SeqCommand {
                 return runPartyJoin(ctx, role, StringArgumentType.getString(ctx, "inviteToken"));
         }
 
-        private static int runPartyDeny(CommandContext<FabricClientCommandSource> ctx) {
+        static int runPartyDeny(CommandContext<FabricClientCommandSource> ctx) {
                 long listingId = LongArgumentType.getLong(ctx, "listingId");
                 sendFeedback(ctx.getSource(), "Dismissed party invite for #" + listingId + ".");
                 return 1;
         }
 
-        private static int runIgnoreBridgeUser(CommandContext<FabricClientCommandSource> ctx) {
+        static int runIgnoreBridgeUser(CommandContext<FabricClientCommandSource> ctx) {
                 String username = StringArgumentType.getString(ctx, "username");
                 if (!ConfigManager.isValidBridgeUsername(username)) {
                         sendFeedback(
@@ -887,7 +562,7 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runUnignoreBridgeUser(CommandContext<FabricClientCommandSource> ctx) {
+        static int runUnignoreBridgeUser(CommandContext<FabricClientCommandSource> ctx) {
                 String username = StringArgumentType.getString(ctx, "username");
                 if (!ConfigManager.isValidBridgeUsername(username)) {
                         sendFeedback(
@@ -908,7 +583,7 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runIgnoredBridgeUsersList(CommandContext<FabricClientCommandSource> ctx) {
+        static int runIgnoredBridgeUsersList(CommandContext<FabricClientCommandSource> ctx) {
                 List<String> ignoredUsers = SeqClient.getConfigManager().ignoredBridgeUsers();
                 if (ignoredUsers.isEmpty()) {
                         sendFeedback(ctx.getSource(), "No Discord bridge users are ignored.");
@@ -919,21 +594,21 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static int runPartyInvite(CommandContext<FabricClientCommandSource> ctx) {
+        static int runPartyInvite(CommandContext<FabricClientCommandSource> ctx) {
                 String username = StringArgumentType.getString(ctx, "username");
                 return relayCommandResult(
                                 ctx,
                                 SeqClient.getPartyFinderManager().createInviteFromCommand(username));
         }
 
-        private static int runPartyReserve(CommandContext<FabricClientCommandSource> ctx) {
+        static int runPartyReserve(CommandContext<FabricClientCommandSource> ctx) {
                 int count = IntegerArgumentType.getInteger(ctx, "count");
                 return relayCommandResult(
                                 ctx,
                                 SeqClient.getPartyFinderManager().setReservedSlotTargetFromCommand(count));
         }
 
-        private static int runPartyRole(CommandContext<FabricClientCommandSource> ctx) {
+        static int runPartyRole(CommandContext<FabricClientCommandSource> ctx) {
                 PartyRole role = parseRole(StringArgumentType.getString(ctx, "role"));
                 if (role == null) {
                         sendFeedback(ctx.getSource(), "Role must be one of: DPS, Healer, Tank.");
@@ -944,21 +619,21 @@ public class SeqCommand {
                                 SeqClient.getPartyFinderManager().changeRoleFromCommand(role));
         }
 
-        private static int runPartyKick(CommandContext<FabricClientCommandSource> ctx) {
+        static int runPartyKick(CommandContext<FabricClientCommandSource> ctx) {
                 String username = StringArgumentType.getString(ctx, "username");
                 return relayCommandResult(
                                 ctx,
                                 SeqClient.getPartyFinderManager().kickMemberFromCommand(username));
         }
 
-        private static int runPartyPromote(CommandContext<FabricClientCommandSource> ctx) {
+        static int runPartyPromote(CommandContext<FabricClientCommandSource> ctx) {
                 String username = StringArgumentType.getString(ctx, "username");
                 return relayCommandResult(
                                 ctx,
                                 SeqClient.getPartyFinderManager().promoteMemberFromCommand(username));
         }
 
-        private static <T> int relayCommandResult(
+        static <T> int relayCommandResult(
                         CommandContext<FabricClientCommandSource> ctx,
                         CompletableFuture<PartyFinderManager.CommandResult<T>> future) {
                 FabricClientCommandSource source = ctx.getSource();
@@ -974,19 +649,19 @@ public class SeqCommand {
                 return 1;
         }
 
-        private static CompletableFuture<Suggestions> suggestRoles(
+        static CompletableFuture<Suggestions> suggestRoles(
                         CommandContext<FabricClientCommandSource> ctx,
                         SuggestionsBuilder builder) {
                 return SharedSuggestionProvider.suggest(ROLE_SUGGESTIONS, builder);
         }
 
-        private static <S> CompletableFuture<Suggestions> suggestTreasuryAmounts(
+        static <S> CompletableFuture<Suggestions> suggestTreasuryAmounts(
                         CommandContext<S> ctx,
                         SuggestionsBuilder builder) {
                 return SharedSuggestionProvider.suggest(TREASURY_AMOUNT_SUGGESTIONS, builder);
         }
 
-        private static CompletableFuture<Suggestions> suggestActivities(
+        static CompletableFuture<Suggestions> suggestActivities(
                         CommandContext<FabricClientCommandSource> ctx,
                         SuggestionsBuilder builder) {
                 String remaining = builder.getRemaining();
@@ -1010,7 +685,7 @@ public class SeqCommand {
                 return SharedSuggestionProvider.suggest(matches, segmentBuilder);
         }
 
-        private static CompletableFuture<Suggestions> suggestIgnoredBridgeUsers(
+        static CompletableFuture<Suggestions> suggestIgnoredBridgeUsers(
                         CommandContext<FabricClientCommandSource> ctx,
                         SuggestionsBuilder builder) {
                 return SharedSuggestionProvider.suggest(SeqClient.getConfigManager().ignoredBridgeUsers(), builder);
@@ -1117,7 +792,7 @@ public class SeqCommand {
                 };
         }
 
-        private static void sendFeedback(FabricClientCommandSource source, String message) {
+        static void sendFeedback(FabricClientCommandSource source, String message) {
                 SeqClient.mc.execute(() -> source.sendFeedback(NotificationAccessor.prefixed(message)));
         }
 
