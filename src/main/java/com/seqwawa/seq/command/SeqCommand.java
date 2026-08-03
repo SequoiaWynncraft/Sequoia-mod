@@ -32,6 +32,7 @@ import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.PartyListing;
+import com.seqwawa.seq.managers.RankProfileRoster;
 import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.map.GatheringClusterCache;
 import com.seqwawa.seq.map.GatheringMapImageService;
@@ -511,10 +512,18 @@ public class SeqCommand {
         }
 
         private static int runBadgeRefresh(CommandContext<FabricClientCommandSource> ctx) {
-                LeaderboardBadgeService.getInstance()
+                return refreshRoster(ctx, "Refreshing leaderboard badges...");
+        }
+
+        /**
+         * Badges and ranks come from one roster, so either refresh command reloads
+         * both.
+         */
+        private static int refreshRoster(CommandContext<FabricClientCommandSource> ctx, String acknowledgement) {
+                RankProfileRoster.getInstance()
                                 .refreshAsync()
                                 .thenAccept(message -> sendFeedback(ctx.getSource(), message));
-                sendFeedback(ctx.getSource(), "Refreshing leaderboard badges...");
+                sendFeedback(ctx.getSource(), acknowledgement);
                 return 1;
         }
 
@@ -529,11 +538,7 @@ public class SeqCommand {
         }
 
         private static int runDiscordRankRefresh(CommandContext<FabricClientCommandSource> ctx) {
-                DiscordRankService.getInstance()
-                                .refreshAsync()
-                                .thenAccept(message -> sendFeedback(ctx.getSource(), message));
-                sendFeedback(ctx.getSource(), "Refreshing Discord ranks...");
-                return 1;
+                return refreshRoster(ctx, "Refreshing Discord ranks...");
         }
 
         private static int runDiscordRankDebug(CommandContext<FabricClientCommandSource> ctx) {
