@@ -327,17 +327,56 @@ class RaidPartySnapshotTrackerTest {
     }
 
     @Test
-    void briefRaidSidebarLossDoesNotEndTheRaid() {
-        RaidPartySnapshotTracker.TrackerState state = activeState(1_000);
+    void activeRaidSurvivesExtendedSidebarLossUntilExplicitCompletion() {
+        RaidPartySnapshotTracker.TrackerState state = activeStateWithAlliedRaider(1_000);
+        RaidPartySnapshotTracker.PartySnapshot lockedParty = state.activeRaidParty();
+
         state = state.observe(empty(false, 10_000), false, false, 10_000);
-        state = state.observe(empty(false, 24_999), false, false, 24_999);
+        state = state.observe(empty(false, 70_000), false, false, 70_000);
 
         assertEquals(RaidPartySnapshotTracker.Phase.ACTIVE, state.phase());
-        assertFalse(state.activeRaidParty().usernames().isEmpty());
+        assertEquals(lockedParty, state.activeRaidParty());
+        assertTrue(state.activeRaidParty().usernames().contains("AlliedRaider"));
+        assertEquals(0, state.raidSidebarMissingSinceMs());
 
-        state = state.observe(empty(false, 25_000), false, false, 25_000);
+        state = state.finishRaid();
+
+        assertEquals(RaidPartySnapshotTracker.Phase.FINISHED_WAITING_FOR_EXIT, state.phase());
+        assertTrue(state.activeRaidParty().usernames().isEmpty());
+    }
+
+    @Test
+    void acquisitionExpiresAfterRaidSidebarMissingGracePeriod() {
+        RaidPartySnapshotTracker.TrackerState state = RaidPartySnapshotTracker.TrackerState.empty()
+                .observe(
+                        snapshot(true, 1_000, member("LocalPlayer", "LocalPlayer")),
+                        false,
+                        true,
+                        1_000);
+        assertEquals(RaidPartySnapshotTracker.Phase.ACQUIRING, state.phase());
+
+        state = state.observe(empty(false, 2_000), false, false, 2_000);
+        state = state.observe(
+                empty(false, 2_001 + RaidPartySnapshotTracker.ACQUISITION_SIDEBAR_MISSING_GRACE_MS),
+                false,
+                false,
+                2_001 + RaidPartySnapshotTracker.ACQUISITION_SIDEBAR_MISSING_GRACE_MS);
+
         assertEquals(RaidPartySnapshotTracker.Phase.NORMAL, state.phase());
         assertTrue(state.activeRaidParty().usernames().isEmpty());
+    }
+
+    @Test
+    void resolvesFullLockedRosterAfterSidebarDisappearsBeforeCompletion() {
+        RaidPartySnapshotTracker.TrackerState state = activeStateWithAlliedRaider(1_000);
+        state = state.observe(empty(false, 5_000), false, false, 5_000);
+        state = state.observe(empty(false, 25_000), false, false, 25_000);
+        RaidPartySnapshotTracker.setStateForTest(state);
+
+        assertEquals(
+                List.of("GuildLeader", "LocalPlayer", "GuildMate", "AlliedRaider"),
+                RaidPartySnapshotTracker.resolvePartyMembers(
+                        List.of("GuildLeader", "LocalPlayer", "GuildMate"), 3));
     }
 
     @Test
@@ -394,6 +433,23 @@ class RaidPartySnapshotTrackerTest {
                 true,
                 false,
                 now);
+        return state.observe(
+                snapshot(true, now + 1, member("LocalPlayer", "LocalPlayer")),
+                false,
+                true,
+                now + 1);
+    }
+
+    private RaidPartySnapshotTracker.TrackerState activeStateWithAlliedRaider(long now) {
+        RaidPartySnapshotTracker.PartySnapshot party = snapshot(
+                false,
+                now,
+                member("GuildLeader", "GuildLeader"),
+                member("LocalPlayer", "LocalPlayer"),
+                member("GuildMate", "GuildMate"),
+                member("AlliedRaider", "AlliedRaider"));
+        RaidPartySnapshotTracker.TrackerState state = RaidPartySnapshotTracker.TrackerState.empty()
+                .observe(party, true, false, now);
         return state.observe(
                 snapshot(true, now + 1, member("LocalPlayer", "LocalPlayer")),
                 false,
