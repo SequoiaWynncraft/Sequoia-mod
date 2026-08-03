@@ -19,6 +19,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Automatic backend authentication
 - Automatic connection to Sequoia services
 - In-game Discord chat bridge
+- Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
 - Raid tracking and announcements
 - Interactive world map with gathering nodes analysis and active world events

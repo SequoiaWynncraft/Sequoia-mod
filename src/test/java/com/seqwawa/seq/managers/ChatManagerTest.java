@@ -181,6 +181,62 @@ class ChatManagerTest {
     }
 
     @Test
+    void parsesActorFirstGuildInvite() {
+        ChatManager.ParsedGuildMembershipEvent parsed = ChatManager.parseGuildMembershipEvent(
+                Component.literal("󏿼󐀆 GaztheCat invited NewMember to the guild."), "Observer");
+
+        assertNotNull(parsed);
+        assertEquals("invited", parsed.action());
+        assertEquals("GaztheCat", parsed.actor());
+        assertEquals("NewMember", parsed.target());
+    }
+
+    @Test
+    void parsesTargetFirstGuildRemoval() {
+        ChatManager.ParsedGuildMembershipEvent parsed = ChatManager.parseGuildMembershipEvent(
+                Component.literal("NewMember has been kicked from the guild by GaztheCat."), "Observer");
+
+        assertNotNull(parsed);
+        assertEquals("removed", parsed.action());
+        assertEquals("GaztheCat", parsed.actor());
+        assertEquals("NewMember", parsed.target());
+    }
+
+    @Test
+    void resolvesGuildMembershipNicknameFromPacketMetadata() {
+        Component message = Component.empty()
+                .append(Component.literal("Commander Lilacs").withStyle(Style.EMPTY.withInsertion("RealLilacs")))
+                .append(Component.literal(" invited NewMember to your guild!"));
+
+        ChatManager.ParsedGuildMembershipEvent parsed =
+                ChatManager.parseGuildMembershipEvent(message, "Observer");
+
+        assertNotNull(parsed);
+        assertEquals("RealLilacs", parsed.actor());
+        assertEquals("NewMember", parsed.target());
+    }
+
+    @Test
+    void resolvesYouInGuildCommandConfirmationToLocalPlayer() {
+        ChatManager.ParsedGuildMembershipEvent parsed = ChatManager.parseGuildMembershipEvent(
+                Component.literal("[Guild] You have successfully uninvited NewMember from the guild"),
+                "GaztheCat");
+
+        assertNotNull(parsed);
+        assertEquals("removed", parsed.action());
+        assertEquals("GaztheCat", parsed.actor());
+        assertEquals("NewMember", parsed.target());
+    }
+
+    @Test
+    void guildMembershipParserRejectsPlayerAuthoredChatAndMissingLocalActor() {
+        assertNull(ChatManager.parseGuildMembershipEvent(
+                Component.literal("Frieren: GaztheCat invited NewMember to the guild"), "Observer"));
+        assertNull(ChatManager.parseGuildMembershipEvent(
+                Component.literal("You invited NewMember to the guild"), null));
+    }
+
+    @Test
     void detectsUpdatedWynncraftWelcomeBanner() {
         Component message = Component.literal(
                 "\n󐁙Welcome to Wynncraft!\n󐀻play.wynncraft.com -/- wynncraft.com\n\n󐁄WYNNCRAFT: FRUMA EXPANSION\n󐂁OUT NOW!\n󐂚\n󐀲Discover Fruma: wynncraft.com/fruma");
