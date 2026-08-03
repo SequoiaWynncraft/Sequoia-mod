@@ -13,7 +13,7 @@ import com.seqwawa.seq.events.DiscordChatEvent;
 import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
 import com.seqwawa.seq.integrations.WynntilsItemPreviewAccess;
 import com.seqwawa.seq.model.ChatItemPreview;
-import com.seqwawa.seq.model.DiscordRank;
+import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 
@@ -587,7 +587,7 @@ public class ChatManager {
                     // in their rank colour, then the message in Wynncraft's guild aqua.
                     // Consecutive bridge lines share a vertical rail instead of
                     // repeating the Discord marker.
-                    DiscordRank rank = DiscordRankChatDecorator.bridgeRank(msg.username());
+                    RankPresentation rank = DiscordRankChatDecorator.bridgeRank(msg.username(), msg.discordId());
                     TextColor guildColor = DiscordRankChatDecorator.guildChatColor();
                     TextColor nameColor = rank == null ? guildColor : DiscordRankChatDecorator.colorFor(rank);
 
@@ -600,7 +600,8 @@ public class ChatManager {
                     // bridged sender links to their profile just like a guild one.
                     formatted.append(Component.literal(msg.username())
                             .withStyle(style -> style.withColor(nameColor).withInsertion(msg.username())));
-                    MutableComponent insignia = DiscordRankChatDecorator.bridgeInsignia(msg.username());
+                    MutableComponent insignia =
+                            DiscordRankChatDecorator.bridgeInsignia(msg.username(), msg.discordId());
                     if (insignia != null) {
                         formatted.append(insignia);
                     }

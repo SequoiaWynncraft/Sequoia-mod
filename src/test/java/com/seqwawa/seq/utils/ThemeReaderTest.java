@@ -126,13 +126,22 @@ class ThemeReaderTest {
         }
     }
 
+    /**
+     * The bundled theme with its line endings normalised to {@code \n}.
+     * <p>
+     * These tests build their fixtures by splicing the real theme text, and every
+     * such edit is newline-sensitive. Git checks the resource out with CRLF wherever
+     * {@code core.autocrlf} is on, which silently turns each splice into a no-op and
+     * leaves the YAML valid — so the tests that expect a rejection stop testing
+     * anything. Normalising here keeps them honest on every platform.
+     */
     private static String bundledDefaultYaml() throws IOException {
         try (InputStream input = ThemeReaderTest.class.getResourceAsStream(
                 "/assets/seq/themes/default.theme.yml")) {
             if (input == null) {
                 throw new IOException("Missing bundled default theme");
             }
-            return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+            return new String(input.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
         }
     }
 

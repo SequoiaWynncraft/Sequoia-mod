@@ -36,10 +36,12 @@ public final class GuildChatMarkers {
 
     private GuildChatMarkers() {}
 
+    /** The captured guild arrow, or {@code null} until a guild line has been seen. */
     public static Marker arrow() {
         return arrow;
     }
 
+    /** The captured continuation bar, or {@code null} until one has been seen. */
     public static Marker bar() {
         return bar;
     }

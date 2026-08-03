@@ -27,7 +27,10 @@ public record RankProfilesResponse(
         }
     }
 
-    /** Discord role colours as {@code #RRGGBB}; {@code secondary} is set for gradient roles. */
+    /**
+     * Display colours as {@code #RRGGBB}. A role with only {@code primary} is solid;
+     * {@code secondary} and {@code tertiary} add the stops of a gradient role.
+     */
     public record RoleColors(String primary, String secondary, String tertiary) {}
 
     public record AwardDefinition(
@@ -48,10 +51,20 @@ public record RankProfilesResponse(
             MinecraftIdentity minecraft,
             @SerializedName("role_keys") List<String> roleKeys,
             @SerializedName("award_keys") List<String> awardKeys,
-            Summary summary) {
+            Summary summary,
+            RoleColors colors) {
 
         public Profile(MinecraftIdentity minecraft, List<String> roleKeys, List<String> awardKeys) {
-            this(null, minecraft, roleKeys, awardKeys, null);
+            this(null, minecraft, roleKeys, awardKeys, null, null);
+        }
+
+        public Profile(
+                DiscordIdentity discord,
+                MinecraftIdentity minecraft,
+                List<String> roleKeys,
+                List<String> awardKeys,
+                Summary summary) {
+            this(discord, minecraft, roleKeys, awardKeys, summary, null);
         }
     }
 

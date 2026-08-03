@@ -1689,8 +1689,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                             SeqClient.LOGGER.debug("[WebSocket] Ignoring discord_chat from {}", username);
                             return;
                         }
-                        SeqClient.LOGGER.info("[WebSocket] Dispatching discord_chat from {}", username);
-                        discordChatHandler.accept(new DiscordChatMessage(username, msg));
+                        // The Discord user id is the only stable handle on a bridge
+                        // sender: display names change and collide. It is optional
+                        // because older backends do not send it, in which case
+                        // matching falls back to the name.
+                        String discordId = extractPrimitiveString(json, "discord_id");
+                        SeqClient.LOGGER.info(
+                                "[WebSocket] Dispatching discord_chat from {} discordId={}",
+                                username,
+                                discordId != null);
+                        discordChatHandler.accept(new DiscordChatMessage(username, msg, discordId));
                     } else {
                         SeqClient.LOGGER.warn("[WebSocket] Received discord_chat but handler is not registered");
                     }
@@ -2429,7 +2437,20 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     // ── Message records ──
 
-    public record DiscordChatMessage(String username, String message) {}
+    /**
+     * A message relayed from the Discord guild bridge.
+     *
+     * @param discordId the sender's Discord user id, or {@code null} when the backend
+     *                  does not supply one. Prefer it over {@code username} for any
+     *                  identity matching: it is stable, whereas a display name can be
+     *                  changed or shared.
+     */
+    public record DiscordChatMessage(String username, String message, String discordId) {
+
+        public DiscordChatMessage(String username, String message) {
+            this(username, message, null);
+        }
+    }
 
     public record PartyFinderUpdateMessage(String action, JsonObject listingJson) {}
 

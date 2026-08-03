@@ -8,13 +8,21 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.model.DiscordRank;
+import com.seqwawa.seq.model.SeqBadgeTier;
+import com.seqwawa.seq.model.RankPresentation;
+import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
@@ -30,8 +38,8 @@ class DiscordRankChatDecoratorTest {
         GuildChatMarkers.reset();
     }
 
-    private static final DiscordRank SAPLING = new DiscordRank("rank.sapling", "Sapling", 88, 0x4CB4FA);
-    private static final Map<String, DiscordRank> RANKS = Map.of("arcleretour", SAPLING);
+    private static final RankPresentation SAPLING = presentation("rank.sapling", "Sapling", 88, 0x4CB4FA);
+    private static final Map<String, RankPresentation> RANKS = Map.of("arcleretour", SAPLING);
     /** Wynncraft's guild chat aqua. */
     private static final int GUILD_AQUA = 0x55FFFF;
     private static final int DARK_AQUA = 0x00AAAA;
@@ -392,15 +400,17 @@ class DiscordRankChatDecoratorTest {
         assertEquals(0x4CB4FA, DiscordRankChatDecorator.colorFor(SAPLING).getValue());
         assertEquals(
                 0x1B9056,
-                DiscordRankChatDecorator.colorFor(new DiscordRank("rank.treant", "Treant", 104, 0x1B9056))
+                DiscordRankChatDecorator.colorFor(presentation("rank.treant", "Treant", 104, 0x1B9056))
                         .getValue());
     }
 
     @Test
     void fallsBackToANeutralColourForUncolouredRanks() {
-        DiscordRank uncoloured = new DiscordRank("rank.upper_strategist", "Upper Strategist", 96, null);
+        RankPresentation uncoloured =
+                new RankPresentation(new DiscordRank("rank.upper_strategist", "Upper Strategist", 96), ColorRamp.empty());
 
         assertNotNull(DiscordRankChatDecorator.colorFor(uncoloured));
+        assertFalse(DiscordRankChatDecorator.rampFor(uncoloured).isEmpty(), "the pill still needs a colour");
     }
 
     @Test
@@ -445,6 +455,85 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void paintsAGradientRoleAcrossThePillInsteadOfFlatteningItToTheFirstStop() {
+        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x000000, 0xFFFFFF);
+
+        List<Integer> backgrounds = pillBackgroundColors(DiscordRankChatDecorator.rankPill(gradient, null));
+
+        assertEquals(3, backgrounds.size(), "one background block per glyph");
+        assertEquals(0x000000, backgrounds.getFirst());
+        assertEquals(0xFFFFFF, backgrounds.getLast());
+        assertTrue(
+                backgrounds.get(1) > backgrounds.getFirst() && backgrounds.get(1) < backgrounds.getLast(),
+                "the middle glyph must sit between the two stops, was " + backgrounds.get(1));
+    }
+
+    @Test
+    void keepsASolidRoleFlatSoNothingChangesForNonGradientRanks() {
+        List<Integer> backgrounds = pillBackgroundColors(DiscordRankChatDecorator.rankPill(SAPLING, null));
+
+        assertEquals(List.of(0x4CB4FA, 0x4CB4FA, 0x4CB4FA), backgrounds.subList(0, 3));
+    }
+
+    @Test
+    void relabelsEachGlyphForTheBackgroundUnderIt() {
+        // Black to white: the label has to flip from light to dark partway along, or
+        // one end of the pill becomes unreadable.
+        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x000000, 0xFFFFFF);
+
+        List<Integer> labels = pillLabelColors(DiscordRankChatDecorator.rankPill(gradient, null));
+
+        assertTrue(
+                DiscordRankChatDecorator.luminanceOf(labels.getFirst()) > 0.55d,
+                "a dark start needs a light label");
+        assertTrue(
+                DiscordRankChatDecorator.luminanceOf(labels.getLast()) < 0.35d,
+                "a light end needs a dark label");
+    }
+
+    @Test
+    void speakerNameTakesThePrimaryStopOfAGradientRole() {
+        // A name is one component, so it cannot carry the gradient itself.
+        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x123456, 0xFFFFFF);
+
+        assertEquals(0x123456, DiscordRankChatDecorator.colorFor(gradient).getValue());
+    }
+
+    @Test
+    void bridgeInsigniaIsSuppressedWhileTheSettingIsOff() {
+        // The bridge builds its own line, so unlike guild chat it never passes through
+        // decorateGuildChat's early return and has to check the setting itself.
+        withDiscordRanks(false, () -> {
+            AtomicBoolean consulted = new AtomicBoolean();
+
+            MutableComponent insignia = DiscordRankChatDecorator.bridgeInsignia("dix", name -> {
+                consulted.set(true);
+                return SeqBadgeTier.DIAMOND;
+            });
+
+            assertNull(insignia, "no insignia may be drawn with ranks turned off");
+            assertFalse(consulted.get(), "and the roster must not even be consulted");
+        });
+    }
+
+    @Test
+    void bridgeInsigniaIsDrawnWhileTheSettingIsOn() {
+        withDiscordRanks(
+                true,
+                () -> assertNotNull(DiscordRankChatDecorator.bridgeInsignia("dix", name -> SeqBadgeTier.DIAMOND)));
+    }
+
+    private static void withDiscordRanks(boolean enabled, Runnable body) {
+        Setting.BooleanSetting previous = SeqClient.showDiscordRanksSetting;
+        try {
+            SeqClient.showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", enabled);
+            body.run();
+        } finally {
+            SeqClient.showDiscordRanksSetting = previous;
+        }
+    }
+
+    @Test
     void pillLabelIsUppercasedForTheWynncraftFont() {
         assertEquals("SAPLING", SAPLING.pillLabel());
     }
@@ -474,8 +563,15 @@ class DiscordRankChatDecoratorTest {
                 DiscordRankChatDecorator.bridgePrefix().getString());
     }
 
+    /** A rank with the colours already resolved for the member, as the service returns it. */
+    private static RankPresentation presentation(String key, String label, int position, int... colors) {
+        return new RankPresentation(
+                new DiscordRank(key, label, position),
+                ColorRamp.of(Arrays.stream(colors).boxed().toList()));
+    }
+
     /** Mirrors {@code DiscordRankService}, which indexes members under lowercase names. */
-    private static DiscordRank lookup(String username) {
+    private static RankPresentation lookup(String username) {
         return RANKS.get(username.toLowerCase(Locale.ROOT));
     }
 
@@ -516,6 +612,25 @@ class DiscordRankChatDecoratorTest {
                 .style()
                 .getColor()
                 .getValue();
+    }
+
+    /**
+     * Colours of the pill's background blocks, one per glyph, in order. The corners
+     * are excluded: they carry the end stops and would mask a flat middle.
+     */
+    private static List<Integer> pillBackgroundColors(Component pill) {
+        return ComponentTextEditor.flatten(pill).stream()
+                .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
+                .map(fragment -> fragment.style().getColor().getValue())
+                .toList();
+    }
+
+    /** Colours of the pill's letter glyphs, one per glyph, in order. */
+    private static List<Integer> pillLabelColors(Component pill) {
+        return ComponentTextEditor.flatten(pill).stream()
+                .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.TEXT_OFFSET) >= 0)
+                .map(fragment -> fragment.style().getColor().getValue())
+                .toList();
     }
 
     private static List<String> pillLabels(Component component) {

@@ -2,8 +2,9 @@ package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.model.DiscordRank;
+import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.model.SeqBadgeTier;
+import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
@@ -143,7 +144,7 @@ public final class DiscordRankChatDecorator {
         }
 
         try {
-            Component decorated = decorateGuildChat(message, service::rankForMinecraftUsername);
+            Component decorated = decorateGuildChat(message, service::presentationForMinecraftUsername);
             logInspection(message, decorated == message ? "no guild rank badge or unlinked speaker" : "rewritten");
             return decorated;
         } catch (RuntimeException exception) {
@@ -153,7 +154,7 @@ public final class DiscordRankChatDecorator {
     }
 
     /** Decoration core, parameterised on the rank lookup so it stays unit-testable. */
-    static Component decorateGuildChat(Component message, Function<String, DiscordRank> rankLookup) {
+    static Component decorateGuildChat(Component message, Function<String, RankPresentation> rankLookup) {
         List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(message);
         String text = ComponentTextEditor.textOf(fragments);
 
@@ -182,7 +183,7 @@ public final class DiscordRankChatDecorator {
     private static Component decorateByPosition(
             List<ComponentTextEditor.Fragment> fragments,
             String text,
-            Function<String, DiscordRank> rankLookup,
+            Function<String, RankPresentation> rankLookup,
             Component original) {
         if (!hasGuildChatColor(fragments)) {
             return original;
@@ -202,7 +203,7 @@ public final class DiscordRankChatDecorator {
             List<ComponentTextEditor.Fragment> fragments,
             String text,
             WynnPillGlyphs.Pill badge,
-            Function<String, DiscordRank> rankLookup,
+            Function<String, RankPresentation> rankLookup,
             String replacedGuildRank) {
         int colonIndex = text.indexOf(':', badge.endExclusive());
         if (colonIndex < 0) {
@@ -212,7 +213,7 @@ public final class DiscordRankChatDecorator {
         if (speaker == null) {
             return null;
         }
-        DiscordRank rank = speaker.rank();
+        RankPresentation rank = speaker.rank();
 
         int start = decorationStart(fragments, text, badge.start());
         GuildChatMarkers.observe(fragments, start);
@@ -436,7 +437,7 @@ public final class DiscordRankChatDecorator {
      * never mistaken for the sender.
      */
     private static Speaker resolveSpeaker(
-            Function<String, DiscordRank> rankLookup,
+            Function<String, RankPresentation> rankLookup,
             List<ComponentTextEditor.Fragment> fragments,
             String text,
             int pillEnd) {
@@ -446,7 +447,7 @@ public final class DiscordRankChatDecorator {
         }
 
         for (String candidate : speakerCandidates(fragments, text, pillEnd, colonIndex)) {
-            DiscordRank rank = rankLookup.apply(candidate);
+            RankPresentation rank = rankLookup.apply(candidate);
             if (rank != null) {
                 return new Speaker(candidate, rank);
             }
@@ -455,7 +456,7 @@ public final class DiscordRankChatDecorator {
     }
 
     /** The player a guild chat line belongs to, and the rank that was matched for them. */
-    private record Speaker(String username, DiscordRank rank) {}
+    private record Speaker(String username, RankPresentation rank) {}
 
     private static Set<String> speakerCandidates(
             List<ComponentTextEditor.Fragment> fragments, String text, int regionStart, int regionEnd) {
@@ -495,8 +496,10 @@ public final class DiscordRankChatDecorator {
      * Rank of a bridge message sender, or {@code null} when they have none. Callers
      * use it for both the badge and the sender name colour.
      */
-    public static DiscordRank bridgeRank(String senderName) {
-        return isEnabled() ? DiscordRankService.getInstance().rankForBridgeSender(senderName) : null;
+    public static RankPresentation bridgeRank(String senderName, String discordId) {
+        return isEnabled()
+                ? DiscordRankService.getInstance().presentationForBridgeSender(senderName, discordId)
+                : null;
     }
 
     /** The aqua Wynncraft paints guild chat with, so bridged lines read the same. */
@@ -591,14 +594,29 @@ public final class DiscordRankChatDecorator {
                 .withStyle(style -> style.withFont(INSIGNIA_FONT).withHoverEvent(new HoverEvent.ShowText(tooltip)));
     }
 
-    /** Insignia of a bridge sender, or {@code null} when they hold none. */
-    public static MutableComponent bridgeInsignia(String senderName) {
+    /**
+     * Insignia of a bridge sender, or {@code null} when they hold none or the setting
+     * is off. Guild chat gets the same check from {@link #decorateGuildChat(Component)},
+     * which returns early; the bridge builds its line itself and so must check here.
+     */
+    public static MutableComponent bridgeInsignia(String senderName, String discordId) {
         try {
-            SeqBadgeTier tier = DiscordRankService.getInstance().insigniaForBridgeSender(senderName);
-            return tier == null ? null : insigniaBadge(tier);
+            // The lookup is a lambda so the roster is not even touched when the
+            // setting is off; the gate lives in the overload below.
+            return bridgeInsignia(
+                    senderName, name -> DiscordRankService.getInstance().insigniaForBridgeSender(name, discordId));
         } catch (RuntimeException | LinkageError ignored) {
             return null;
         }
+    }
+
+    /** Insignia core, parameterised on the lookup so the setting gate stays testable. */
+    static MutableComponent bridgeInsignia(String senderName, Function<String, SeqBadgeTier> insigniaLookup) {
+        if (!isEnabled()) {
+            return null;
+        }
+        SeqBadgeTier tier = insigniaLookup.apply(senderName);
+        return tier == null ? null : insigniaBadge(tier);
     }
 
     /** Title case, so the tooltip reads "Diamond" rather than the enum name. */
@@ -664,13 +682,16 @@ public final class DiscordRankChatDecorator {
     // ── Shared ──
 
     /** Builds the glyph pill for {@code rank}, tooltipped with the rank it replaces. */
-    static MutableComponent rankPill(DiscordRank rank, String replacedWynncraftRank) {
-        TextColor background = colorFor(rank);
-        MutableComponent pill =
-                NotificationAccessor.wynnPill(rank.pillLabel(), background, labelColorOn(background), null);
+    static MutableComponent rankPill(RankPresentation rank, String replacedWynncraftRank) {
+        MutableComponent pill = NotificationAccessor.wynnPill(
+                rank.pillLabel(), rampFor(rank), DiscordRankChatDecorator::labelColorOn, null);
+
+        // The tooltip is one component, so it cannot carry the gradient; it takes the
+        // primary stop, which is the colour Discord itself shows the role under.
+        TextColor primary = colorFor(rank);
         MutableComponent tooltip = Component.literal("Sequoia rank: ")
                 .withStyle(ChatFormatting.GRAY)
-                .append(Component.literal(rank.label()).withStyle(style -> style.withColor(background)));
+                .append(Component.literal(rank.label()).withStyle(style -> style.withColor(primary)));
         if (replacedWynncraftRank != null && !replacedWynncraftRank.isBlank()) {
             tooltip.append(Component.literal("\nGuild rank: " + capitalize(replacedWynncraftRank))
                     .withStyle(ChatFormatting.DARK_GRAY));
@@ -678,9 +699,21 @@ public final class DiscordRankChatDecorator {
         return pill.withStyle(style -> style.withHoverEvent(new HoverEvent.ShowText(tooltip)));
     }
 
-    /** The rank's Discord role colour, or a neutral fallback when it has none. */
-    static TextColor colorFor(DiscordRank rank) {
-        return rank.color() == null ? FALLBACK_RANK_COLOR : TextColor.fromRgb(rank.color());
+    /**
+     * The member's colour stops, falling back to a neutral single colour when neither
+     * they nor their role publishes any, so an uncoloured rank still renders a
+     * readable pill.
+     */
+    static ColorRamp rampFor(RankPresentation rank) {
+        return rank.colors().isEmpty() ? ColorRamp.of(FALLBACK_RANK_COLOR.getValue()) : rank.colors();
+    }
+
+    /**
+     * A single colour for the rank, used where a gradient cannot be drawn: the
+     * speaker's name, the bridge sender, and tooltips are each one component.
+     */
+    static TextColor colorFor(RankPresentation rank) {
+        return TextColor.fromRgb(rampFor(rank).first());
     }
 
     /**
@@ -695,14 +728,7 @@ public final class DiscordRankChatDecorator {
 
     /** Mixes {@code target} over {@code base}, {@code weight} being the share of target. */
     static int blend(int base, int target, double weight) {
-        return channel(base, target, weight, 16) << 16
-                | channel(base, target, weight, 8) << 8
-                | channel(base, target, weight, 0);
-    }
-
-    private static int channel(int base, int target, double weight, int shift) {
-        double mixed = ((base >> shift) & 0xFF) * (1 - weight) + ((target >> shift) & 0xFF) * weight;
-        return Math.clamp(Math.round(mixed), 0, 255);
+        return ColorRamp.blend(base, target, weight);
     }
 
     /** Rec. 709 relative luminance in {@code [0, 1]}. */
@@ -730,6 +756,7 @@ public final class DiscordRankChatDecorator {
         debug = enabled;
     }
 
+    /** Whether undecorated guild lines are being dumped to the log. */
     public static boolean isDebug() {
         return debug;
     }

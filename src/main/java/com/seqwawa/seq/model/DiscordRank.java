@@ -5,14 +5,16 @@ import java.util.Locale;
 /**
  * A Sequoia Discord progression rank (Leafkin → Yggdrasil) as published by the
  * backend rank-profile catalog.
+ * <p>
+ * This is the rank's identity only. Colour is deliberately not part of it: a
+ * member may be given an individual colour that overrides their role's, so the
+ * two are resolved separately and paired in a {@link RankPresentation}.
  *
  * @param key      catalog role key, e.g. {@code rank.sapling}
  * @param label    human readable name, e.g. {@code Sapling}
  * @param position Discord role position; higher means a more senior rank
- * @param color    the Discord role colour as {@code 0xRRGGBB}, or {@code null}
- *                 when the role is uncoloured
  */
-public record DiscordRank(String key, String label, int position, Integer color) {
+public record DiscordRank(String key, String label, int position) {
 
     /** Catalog category that holds the Sequoia progression ranks. */
     public static final String PROGRESSION_CATEGORY = "progression_rank";

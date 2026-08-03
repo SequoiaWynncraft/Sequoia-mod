@@ -1,53 +1,51 @@
 package com.seqwawa.seq.managers;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.DiscordRank;
+import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.model.RankProfilesResponse;
 import com.seqwawa.seq.model.SeqBadgeTier;
-import com.seqwawa.seq.network.ApiClient;
+import com.seqwawa.seq.model.SeqBadgeType;
+import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.PlayerNameCache;
-import java.io.IOException;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import net.fabricmc.loader.api.FabricLoader;
 
 /**
- * Keeps a local index of the Sequoia Discord progression rank of every member
- * who linked their Discord and Minecraft accounts.
+ * Indexes the Sequoia Discord progression rank of every member, keyed by every
+ * identity the client may realistically observe: the Minecraft UUID and username
+ * for in-game guild chat, and the Discord id, username and display name for
+ * messages arriving over the guild bridge.
  * <p>
- * Backed by {@code /v1/rank-profiles?scope=linked}. The index is keyed by every
- * identity the client may realistically observe: the Minecraft UUID and
- * username for in-game guild chat, and the Discord id, username and display
- * name for messages arriving over the guild bridge.
+ * A read-only view over {@link RankProfileRoster}, which owns the single fetch
+ * and cache. Members with no linked Minecraft account are indexed too: they can
+ * never match a guild chat line, which is resolved by game name, but they do
+ * speak over the bridge and their rank is just as real.
  */
 public final class DiscordRankService {
-    private static final long REFRESH_INTERVAL_MS = 5 * 60 * 1000L;
-
     private static DiscordRankService instance;
 
-    private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
     private volatile Index index = Index.empty();
-    private volatile boolean cacheLoaded;
-    private volatile boolean refreshInFlight;
-    private volatile long lastRefreshAttemptMs;
-    private volatile Instant lastSuccessfulRefresh;
-    private volatile String status = "not loaded";
+    private volatile boolean loaded;
 
     private DiscordRankService() {
-        loadCache();
+        RankProfileRoster.getInstance().subscribe(this::accept);
     }
 
+    private DiscordRankService(Index index) {
+        this.index = index;
+        this.loaded = true;
+    }
+
+    /** A service over a fixed index, so lookups can be tested without a game directory. */
+    static DiscordRankService withIndex(Index index) {
+        return new DiscordRankService(index);
+    }
+
+    /** The shared index; created on first use, which loads the on-disk cache. */
     public static synchronized DiscordRankService getInstance() {
         if (instance == null) {
             instance = new DiscordRankService();
@@ -60,6 +58,7 @@ public final class DiscordRankService {
         return !index.byMinecraftUuid().isEmpty() || !index.byDiscordIdentity().isEmpty();
     }
 
+    /** Looks up a rank by Minecraft UUID. */
     public DiscordRank rankForUuid(UUID uuid) {
         if (uuid == null) {
             return null;
@@ -69,7 +68,7 @@ public final class DiscordRankService {
 
     /** Looks up a rank by Minecraft username (case-insensitive). */
     public DiscordRank rankForMinecraftUsername(String username) {
-        return index.byMinecraftUsername().get(normalizeKey(username));
+        return lookup(index.byMinecraftUsername(), username);
     }
 
     /**
@@ -79,7 +78,7 @@ public final class DiscordRankService {
      * {@code dix} coming from {@code Sapling dix}.
      */
     public DiscordRank rankForDiscordIdentity(String identity) {
-        return index.byDiscordIdentity().get(normalizeKey(identity));
+        return lookup(index.byDiscordIdentity(), identity);
     }
 
     /** Resolves a bridge sender name against Discord identities, then Minecraft names. */
@@ -88,41 +87,71 @@ public final class DiscordRankService {
         return rank != null ? rank : rankForMinecraftUsername(senderName);
     }
 
-    public void tick() {
-        long now = System.currentTimeMillis();
-        if (!cacheLoaded || now - lastRefreshAttemptMs >= REFRESH_INTERVAL_MS) {
-            refreshAsync();
-        }
+    /**
+     * Resolves a bridge sender, preferring their Discord id when the bridge supplies
+     * one. The id is unique and stable; the display name is neither, so matching on it
+     * can attach the wrong member's rank to a message.
+     */
+    public DiscordRank rankForBridgeSender(String senderName, String discordId) {
+        DiscordRank byId = rankForDiscordIdentity(discordId);
+        return byId != null ? byId : rankForBridgeSender(senderName);
     }
 
-    public CompletableFuture<String> refreshAsync() {
-        if (refreshInFlight) {
-            return CompletableFuture.completedFuture("Discord rank refresh already running.");
-        }
-        refreshInFlight = true;
-        lastRefreshAttemptMs = System.currentTimeMillis();
-        status = "refreshing";
-
-        return ApiClient.getInstance()
-                .getLinkedRankProfiles()
-                .thenApply(response -> {
-                    Index parsed = parseProfiles(response);
-                    index = parsed;
-                    writeCache(response);
-                    lastSuccessfulRefresh = Instant.now();
-                    status = "loaded " + parsed.rankedProfiles() + " ranked profiles";
-                    return "Discord ranks refreshed: " + parsed.rankedProfiles() + " ranked members.";
-                })
-                .exceptionally(throwable -> {
-                    status = "refresh failed";
-                    SeqClient.LOGGER.debug("[DiscordRanks] Failed to refresh linked profiles: {}", rootMessage(throwable));
-                    return "Discord rank refresh failed; using cached ranks. Cause: " + rootMessage(throwable);
-                })
-                .whenComplete((ignored, throwable) -> refreshInFlight = false);
+    /** Rank and colours of a member, matched on Minecraft username. */
+    public RankPresentation presentationForMinecraftUsername(String username) {
+        return present(rankForMinecraftUsername(username), username);
     }
 
+    /** Rank and colours of a bridge sender, matched on Discord identity then game name. */
+    public RankPresentation presentationForBridgeSender(String senderName) {
+        return present(rankForBridgeSender(senderName), senderName);
+    }
+
+    /**
+     * Rank and colours of a bridge sender, keyed on their Discord id when the bridge
+     * supplies one. Colours resolve against the same identity that matched the rank,
+     * so an individual palette is found by id too.
+     */
+    public RankPresentation presentationForBridgeSender(String senderName, String discordId) {
+        DiscordRank rank = rankForBridgeSender(senderName, discordId);
+        if (rank == null) {
+            return null;
+        }
+        return new RankPresentation(rank, colorsForBridgeSender(senderName, discordId, rank));
+    }
+
+    private ColorRamp colorsForBridgeSender(String senderName, String discordId, DiscordRank rank) {
+        ColorRamp byId = lookup(index.colorsByIdentity(), discordId);
+        return byId != null && !byId.isEmpty() ? byId : colorsFor(senderName, rank);
+    }
+
+    private RankPresentation present(DiscordRank rank, String identity) {
+        return rank == null ? null : new RankPresentation(rank, colorsFor(identity, rank));
+    }
+
+    /**
+     * Colours to draw {@code rank} in for {@code identity}: the member's own palette
+     * when the backend publishes one, otherwise their role's.
+     * <p>
+     * Resolving these separately from the rank is what lets two members of the same
+     * rank render differently, which is the point of individual colouring.
+     */
+    ColorRamp colorsFor(String identity, DiscordRank rank) {
+        ColorRamp member = lookup(index.colorsByIdentity(), identity);
+        if (member != null && !member.isEmpty()) {
+            return member;
+        }
+        return rank == null ? ColorRamp.empty() : index.colorsByRoleKey().getOrDefault(rank.key(), ColorRamp.empty());
+    }
+
+    /** Rebuilds the index from a roster snapshot. */
+    private void accept(RankProfilesResponse response) {
+        index = parseProfiles(response);
+        loaded = true;
+    }
+
+    /** One-line diagnostic for {@code /seq rank status}. */
     public String status() {
-        String refreshed = lastSuccessfulRefresh == null ? "never" : lastSuccessfulRefresh.toString();
         return "Discord ranks: "
                 + index.rankedProfiles()
                 + " ranked members ("
@@ -130,27 +159,9 @@ public final class DiscordRankService {
                 + " game names, "
                 + index.byDiscordIdentity().size()
                 + " discord aliases)"
-                + " | status="
-                + status
-                + " | last refresh="
-                + refreshed;
-    }
-
-    private void loadCache() {
-        cacheLoaded = true;
-        Path cachePath = cachePath();
-        if (!Files.isRegularFile(cachePath)) {
-            status = "no cache";
-            return;
-        }
-        try {
-            RankProfilesResponse response = gson.fromJson(Files.readString(cachePath), RankProfilesResponse.class);
-            index = parseProfiles(response);
-            status = "loaded " + index.rankedProfiles() + " cached ranked profiles";
-        } catch (IOException | RuntimeException exception) {
-            status = "cache load failed";
-            SeqClient.LOGGER.warn("[DiscordRanks] Failed to load cached linked profiles.", exception);
-        }
+                + (loaded ? "" : " | awaiting first roster snapshot")
+                + " | "
+                + RankProfileRoster.getInstance().status();
     }
 
     // ── Parsing ──
@@ -167,19 +178,17 @@ public final class DiscordRankService {
         Map<String, DiscordRank> byUuid = new HashMap<>();
         Map<String, DiscordRank> byMinecraftUsername = new HashMap<>();
         Map<String, DiscordRank> byDiscordIdentity = new HashMap<>();
-        Map<String, SeqBadgeTier> insignia = new HashMap<>();
-        Map<String, SeqBadgeTier> insigniaByDiscord = new HashMap<>();
-        Map<String, SeqBadgeTier> insigniaTiers = insigniaTiers(response.catalog());
+        Map<String, ColorRamp> colorsByIdentity = new HashMap<>();
+        Map<String, String> minecraftUsernameByDiscordIdentity = new HashMap<>();
         int rankedProfiles = 0;
 
         for (RankProfilesResponse.Profile profile : response.profiles()) {
-            recordInsignia(insignia, insigniaByDiscord, insigniaTiers, profile);
-
             DiscordRank rank = resolveRank(profile, ranksByKey);
             if (rank == null) {
                 continue;
             }
             rankedProfiles++;
+            ColorRamp individual = ColorRamp.of(colorRamp(profile.colors()));
 
             RankProfilesResponse.MinecraftIdentity minecraft = profile.minecraft();
             if (minecraft != null) {
@@ -188,6 +197,7 @@ public final class DiscordRankService {
                     byUuid.put(uuid, rank);
                 }
                 putIdentity(byMinecraftUsername, minecraft.username(), rank);
+                putColors(colorsByIdentity, minecraft.username(), individual);
             }
 
             RankProfilesResponse.DiscordIdentity discord = profile.discord();
@@ -196,6 +206,21 @@ public final class DiscordRankService {
                 putIdentity(byDiscordIdentity, discord.username(), rank);
                 putIdentity(byDiscordIdentity, discord.displayName(), rank);
                 putIdentity(byDiscordIdentity, stripRankPrefix(discord.displayName(), ranksByKey), rank);
+                putColors(colorsByIdentity, discord.id(), individual);
+                putColors(colorsByIdentity, discord.username(), individual);
+                putColors(colorsByIdentity, discord.displayName(), individual);
+                putColors(colorsByIdentity, stripRankPrefix(discord.displayName(), ranksByKey), individual);
+
+                // Badges are held against the game account, so a bridge sender has to
+                // be mapped back to their Minecraft name before one can be looked up.
+                String gameName = minecraft == null ? null : minecraft.username();
+                putLink(minecraftUsernameByDiscordIdentity, discord.id(), gameName);
+                putLink(minecraftUsernameByDiscordIdentity, discord.username(), gameName);
+                putLink(minecraftUsernameByDiscordIdentity, discord.displayName(), gameName);
+                putLink(
+                        minecraftUsernameByDiscordIdentity,
+                        stripRankPrefix(discord.displayName(), ranksByKey),
+                        gameName);
             }
         }
 
@@ -203,9 +228,35 @@ public final class DiscordRankService {
                 Map.copyOf(byUuid),
                 Map.copyOf(byMinecraftUsername),
                 Map.copyOf(byDiscordIdentity),
-                Map.copyOf(insignia),
-                Map.copyOf(insigniaByDiscord),
+                roleColors(response.catalog()),
+                Map.copyOf(colorsByIdentity),
+                Map.copyOf(minecraftUsernameByDiscordIdentity),
                 rankedProfiles);
+    }
+
+    /** Builds {@code roleKey -> colours} for every progression rank in the catalog. */
+    static Map<String, ColorRamp> roleColors(RankProfilesResponse.Catalog catalog) {
+        Map<String, ColorRamp> colors = new HashMap<>();
+        if (catalog.roles() == null) {
+            return Map.of();
+        }
+        for (RankProfilesResponse.RoleDefinition role : catalog.roles()) {
+            if (role == null || role.key() == null || role.key().isBlank()) {
+                continue;
+            }
+            List<Integer> ramp = colorRamp(role.colors());
+            if (!ramp.isEmpty()) {
+                colors.put(role.key(), ColorRamp.of(ramp));
+            }
+        }
+        return Map.copyOf(colors);
+    }
+
+    private static void putColors(Map<String, ColorRamp> target, String identity, ColorRamp colors) {
+        String key = normalizeKey(identity);
+        if (key != null && !colors.isEmpty()) {
+            target.put(key, colors);
+        }
     }
 
     /** Builds {@code roleKey -> rank} for every progression rank in the catalog. */
@@ -223,85 +274,71 @@ public final class DiscordRankService {
                     || role.label().isBlank()) {
                 continue;
             }
-            ranks.put(
-                    role.key(),
-                    new DiscordRank(role.key(), role.label().trim(), role.position(), primaryColor(role.colors())));
+            ranks.put(role.key(), new DiscordRank(role.key(), role.label().trim(), role.position()));
         }
         return ranks;
     }
 
-    /** Insignia tier of a member, or {@code null} when they hold none. */
+    /**
+     * Insignia tier of a member, or {@code null} when they hold none.
+     * <p>
+     * Delegated to {@link LeaderboardBadgeService}, which already derives every badge
+     * from the same catalog; deriving insignia a second time here would let the two
+     * rosters disagree about the same member.
+     */
     public SeqBadgeTier insigniaForMinecraftUsername(String username) {
-        return index.insigniaByMinecraftUsername().get(normalizeKey(username));
-    }
-
-    /** Insignia of a bridge sender, matched on Discord identity then Minecraft name. */
-    public SeqBadgeTier insigniaForBridgeSender(String senderName) {
-        SeqBadgeTier tier = index.insigniaByDiscordIdentity().get(normalizeKey(senderName));
-        return tier != null ? tier : insigniaForMinecraftUsername(senderName);
-    }
-
-    /** Builds {@code roleKey -> tier} for the catalog's insignia roles. */
-    static Map<String, SeqBadgeTier> insigniaTiers(RankProfilesResponse.Catalog catalog) {
-        Map<String, SeqBadgeTier> tiers = new HashMap<>();
-        if (catalog.roles() == null) {
-            return tiers;
-        }
-        for (RankProfilesResponse.RoleDefinition role : catalog.roles()) {
-            if (role == null || !"insignia".equalsIgnoreCase(role.category()) || role.key() == null) {
-                continue;
-            }
-            SeqBadgeTier tier = SeqBadgeTier.parse(role.tier());
-            if (tier != null) {
-                tiers.put(role.key(), tier);
-            }
-        }
-        return tiers;
+        return LeaderboardBadgeService.getInstance().badgeForUsername(username, SeqBadgeType.INSIGNIA);
     }
 
     /**
-     * Records a member's insignia, preferring the backend-resolved summary and
-     * falling back to the highest tier among their roles.
+     * Insignia of a bridge sender. Their Discord identity is resolved to the Minecraft
+     * username it is linked to, because badges are held against the game account.
      */
-    private static void recordInsignia(
-            Map<String, SeqBadgeTier> byMinecraft,
-            Map<String, SeqBadgeTier> byDiscord,
-            Map<String, SeqBadgeTier> tiers,
-            RankProfilesResponse.Profile profile) {
-        if (profile == null) {
-            return;
-        }
-        SeqBadgeTier tier = profile.summary() == null ? null : tiers.get(profile.summary().insignia());
-        if (tier == null && profile.roleKeys() != null) {
-            for (String roleKey : profile.roleKeys()) {
-                SeqBadgeTier candidate = tiers.get(roleKey);
-                if (candidate != null) {
-                    tier = tier == null ? candidate : SeqBadgeTier.highest(tier, candidate);
-                }
-            }
-        }
-        if (tier == null) {
-            return;
-        }
-        if (profile.minecraft() != null) {
-            putIdentity(byMinecraft, profile.minecraft().username(), tier);
-        }
-        RankProfilesResponse.DiscordIdentity discord = profile.discord();
-        if (discord != null) {
-            putIdentity(byDiscord, discord.id(), tier);
-            putIdentity(byDiscord, discord.username(), tier);
-            putIdentity(byDiscord, discord.displayName(), tier);
-            putIdentity(byDiscord, stripRankPrefix(discord.displayName(), Map.of()), tier);
-        }
+    public SeqBadgeTier insigniaForBridgeSender(String senderName) {
+        return insigniaForMinecraftUsername(minecraftUsernameFor(senderName));
     }
 
-    /** Parses the role's {@code #RRGGBB} colour, or {@code null} when it has none. */
-    static Integer primaryColor(RankProfilesResponse.RoleColors colors) {
-        String primary = colors == null ? null : colors.primary();
-        if (primary == null) {
+    /** Insignia of a bridge sender, preferring their Discord id when one is supplied. */
+    public SeqBadgeTier insigniaForBridgeSender(String senderName, String discordId) {
+        String linked = minecraftUsernameFor(discordId);
+        return insigniaForMinecraftUsername(linked != null ? linked : minecraftUsernameFor(senderName));
+    }
+
+    /**
+     * The Minecraft username linked to a Discord identity, or {@code identity} itself
+     * when it is already a game name.
+     */
+    private String minecraftUsernameFor(String identity) {
+        String linked = lookup(index.minecraftUsernameByDiscordIdentity(), identity);
+        return linked != null ? linked : identity;
+    }
+
+
+    /**
+     * The role's gradient stops in Discord's order, dropping any the backend leaves
+     * unset or malformed. A solid role yields one stop and an uncoloured one none.
+     */
+    static List<Integer> colorRamp(RankProfilesResponse.RoleColors colors) {
+        if (colors == null) {
+            return List.of();
+        }
+        List<Integer> ramp = new ArrayList<>(3);
+        for (String stop : List.of(
+                nullToEmpty(colors.primary()), nullToEmpty(colors.secondary()), nullToEmpty(colors.tertiary()))) {
+            Integer parsed = parseHexColor(stop);
+            if (parsed != null) {
+                ramp.add(parsed);
+            }
+        }
+        return List.copyOf(ramp);
+    }
+
+    /** Parses a {@code #RRGGBB} colour, or {@code null} when it is absent or malformed. */
+    static Integer parseHexColor(String value) {
+        if (value == null) {
             return null;
         }
-        String hex = primary.trim();
+        String hex = value.trim();
         if (hex.startsWith("#")) {
             hex = hex.substring(1);
         }
@@ -309,6 +346,10 @@ public final class DiscordRankService {
             return null;
         }
         return Integer.parseInt(hex, 16);
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     /**
@@ -360,11 +401,28 @@ public final class DiscordRankService {
         return null;
     }
 
+    /** Links a Discord identity to a game account, ignoring blanks on either side. */
+    private static void putLink(Map<String, String> target, String identity, String minecraftUsername) {
+        String key = normalizeKey(identity);
+        if (key != null && minecraftUsername != null && !minecraftUsername.isBlank()) {
+            target.put(key, minecraftUsername);
+        }
+    }
+
     private static <T> void putIdentity(Map<String, T> target, String identity, T value) {
         String key = normalizeKey(identity);
         if (key != null) {
             target.put(key, value);
         }
+    }
+
+    /**
+     * Null-safe index lookup. The maps are immutable, and those throw on a null key
+     * rather than returning null, so an unidentified sender would crash the line.
+     */
+    private static <T> T lookup(Map<String, T> index, String identity) {
+        String key = normalizeKey(identity);
+        return key == null ? null : index.get(key);
     }
 
     private static String normalizeKey(String identity) {
@@ -375,55 +433,23 @@ public final class DiscordRankService {
         return normalized.isEmpty() ? null : normalized.toLowerCase(Locale.ROOT);
     }
 
-    // ── Cache ──
-
-    private void writeCache(RankProfilesResponse response) {
-        try {
-            Path cachePath = cachePath();
-            Files.createDirectories(cachePath.getParent());
-            Path temp = cachePath.resolveSibling(cachePath.getFileName() + ".tmp");
-            Files.writeString(temp, gson.toJson(response));
-            try {
-                Files.move(temp, cachePath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-            } catch (AtomicMoveNotSupportedException ignored) {
-                Files.move(temp, cachePath, StandardCopyOption.REPLACE_EXISTING);
-            }
-        } catch (IOException exception) {
-            SeqClient.LOGGER.warn("[DiscordRanks] Failed to write linked profile cache.", exception);
-        }
-    }
-
-    private static Path cachePath() {
-        return FabricLoader.getInstance()
-                .getGameDir()
-                .resolve("config")
-                .resolve("sequoia")
-                .resolve("cache")
-                .resolve("rank-profile-linked.json");
-    }
-
-    private static String rootMessage(Throwable throwable) {
-        Throwable current = throwable;
-        while (current != null && current.getCause() != null) {
-            current = current.getCause();
-        }
-        String message = current == null ? null : current.getMessage();
-        if (message == null || message.isBlank()) {
-            return current == null ? "unknown" : current.getClass().getSimpleName();
-        }
-        return message.replace('\n', ' ').replace('\r', ' ').toLowerCase(Locale.ROOT);
-    }
-
+    /**
+     * @param colorsByRoleKey  the colours every holder of a role gets by default
+     * @param colorsByIdentity colours granted to an individual member, which win over
+     *                         their role's
+     */
     record Index(
             Map<String, DiscordRank> byMinecraftUuid,
             Map<String, DiscordRank> byMinecraftUsername,
             Map<String, DiscordRank> byDiscordIdentity,
-            Map<String, SeqBadgeTier> insigniaByMinecraftUsername,
-            Map<String, SeqBadgeTier> insigniaByDiscordIdentity,
+            Map<String, ColorRamp> colorsByRoleKey,
+            Map<String, ColorRamp> colorsByIdentity,
+            Map<String, String> minecraftUsernameByDiscordIdentity,
             int rankedProfiles) {
 
+        /** An index that knows nobody, used before the first load. */
         static Index empty() {
-            return new Index(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), 0);
+            return new Index(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), 0);
         }
     }
 }
