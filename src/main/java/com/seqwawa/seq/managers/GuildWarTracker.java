@@ -183,7 +183,6 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         activeContext = null;
         lastProcessedBattleId = null;
         lastProcessedStateHash = 0;
-        queueAttempt = null;
     }
 
     @Override
