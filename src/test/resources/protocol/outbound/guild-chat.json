@@ -1,0 +1,30 @@
+{
+  "username": "SequoiaUser",
+  "nickname": "Seq User",
+  "message": "Selling this item",
+  "avatar_url": "https://example.test/avatar.png",
+  "item_previews": [
+    {
+      "name": "Weathered",
+      "subtitle": "Mythic Dagger",
+      "color": 16711680,
+      "attributes": ["Combat Lv. Min: 96"],
+      "stat_lines": ["Very Fast Attack Speed"],
+      "stat_rolls": [
+        {
+          "api_name": "rawStrength",
+          "key": "strength",
+          "display_name": "Strength",
+          "value": 12,
+          "percentage": 80.0
+        }
+      ],
+      "shiny_stat": {
+        "key": "mobsKilled",
+        "display_name": "Mobs Killed",
+        "value": 12345,
+        "rerolls": 2
+      }
+    }
+  ]
+}

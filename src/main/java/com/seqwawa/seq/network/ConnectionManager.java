@@ -1,7 +1,6 @@
 package com.seqwawa.seq.network;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.net.URI;
 import java.time.Instant;
@@ -683,75 +682,23 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     static JsonObject buildGuildWarSubmissionPayload(GuildWarSubmission submission) {
-        JsonObject payload = new JsonObject();
-        payload.addProperty("territory", submission.territory());
-        payload.addProperty("submitted_by", submission.submittedBy());
-        payload.addProperty("submitted_at", submission.submittedAt());
-        payload.addProperty("start_time", submission.startTime());
-
-        JsonArray warrers = new JsonArray();
-        for (String warrer : submission.warrers()) {
-            warrers.add(warrer);
-        }
-        payload.add("warrers", warrers);
-
-        JsonObject damage = new JsonObject();
-        damage.addProperty("low", submission.stats().damageLow());
-        damage.addProperty("high", submission.stats().damageHigh());
-
-        JsonObject stats = new JsonObject();
-        stats.add("damage", damage);
-        stats.addProperty("attack", submission.stats().attackSpeed());
-        stats.addProperty("health", submission.stats().health());
-        stats.addProperty("defence", submission.stats().defence());
-
-        JsonObject results = new JsonObject();
-        results.add("stats", stats);
-        payload.add("results", results);
-
-        payload.addProperty("sr", submission.seasonRating());
-        if (submission.completedAt() != null && !submission.completedAt().isBlank()) {
-            payload.addProperty("completed_at", submission.completedAt());
-        }
-        return payload;
+        return OutboundPayloadFactory.guildWarSubmission(submission);
     }
 
     static JsonObject buildBombShareRequestPayload(String canonicalKey, List<BombShareType> requestedTypes) {
-        JsonObject payload = new JsonObject();
-        payload.addProperty("canonical_key", canonicalKey);
-        JsonArray types = new JsonArray();
-        if (requestedTypes != null) {
-            for (BombShareType requestedType : requestedTypes) {
-                if (requestedType != null) {
-                    types.add(requestedType.name());
-                }
-            }
-        }
-        payload.add("requested_types", types);
-        return payload;
+        return OutboundPayloadFactory.bombShareRequest(canonicalKey, requestedTypes);
     }
 
     static JsonObject buildBombShareSubmitPayload(String requestId, List<String> worlds) {
-        JsonObject payload = new JsonObject();
-        payload.addProperty("request_id", requestId);
-        JsonArray worldArray = new JsonArray();
-        if (worlds != null) {
-            for (String world : worlds) {
-                if (world != null && !world.isBlank()) {
-                    worldArray.add(world.trim());
-                }
-            }
-        }
-        payload.add("worlds", worldArray);
-        return payload;
+        return OutboundPayloadFactory.bombShareSubmit(requestId, worlds);
     }
 
     static JsonObject serializeTreasuryOutRequest(TreasuryOutRequest request) {
-        return GSON.toJsonTree(request).getAsJsonObject();
+        return OutboundPayloadFactory.treasuryOut(request);
     }
 
     static JsonObject serializeTreasuryAuthResponse(TreasuryAuthResponse response) {
-        return GSON.toJsonTree(response).getAsJsonObject();
+        return OutboundPayloadFactory.treasuryAuth(response);
     }
 
     private AuthException unwrapAuthException(Throwable throwable) {
@@ -918,20 +865,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 safeReportedUsername,
                 safeNickname,
                 cleanedMessage);
-        JsonObject msg = new JsonObject();
-        if (safeReportedUsername != null) {
-            msg.addProperty("username", safeReportedUsername);
-        }
-        if (safeNickname != null) {
-            msg.addProperty("nickname", safeNickname);
-        }
-        msg.addProperty("message", cleanedMessage);
-        if (safeAvatarUrl != null) msg.addProperty("avatar_url", safeAvatarUrl);
-        JsonArray itemPreviewArray = itemPreviewArray(itemPreviews);
-        if (itemPreviewArray.size() > 0) {
-            msg.add("item_previews", itemPreviewArray);
-        }
-        send("guild_chat", msg);
+        send("guild_chat", OutboundPayloadFactory.guildChat(
+                safeReportedUsername, safeNickname, cleanedMessage, safeAvatarUrl, itemPreviews));
     }
 
     public boolean sendGuildAllianceUpdate(String action, String guildName) {
@@ -946,10 +881,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return false;
         }
 
-        JsonObject msg = new JsonObject();
-        msg.addProperty("action", safeAction);
-        msg.addProperty("guild_name", safeGuildName);
-        send("guild_alliance_update", msg);
+        send("guild_alliance_update", OutboundPayloadFactory.guildAllianceUpdate(safeAction, safeGuildName));
         return true;
     }
 
@@ -964,14 +896,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     static JsonObject buildGuildAllianceSnapshotPayload(List<String> guildNames) {
-        JsonArray names = new JsonArray();
-        for (String guildName : guildNames) {
-            names.add(guildName);
-        }
-
-        JsonObject payload = new JsonObject();
-        payload.add("guild_names", names);
-        return payload;
+        return OutboundPayloadFactory.guildAllianceSnapshot(guildNames);
     }
 
     static List<String> normalizeGuildAllianceNames(Collection<String> guildNames) {
@@ -994,95 +919,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return null;
         }
         return List.copyOf(uniqueNames.values());
-    }
-
-    private static JsonArray itemPreviewArray(List<ChatItemPreview> itemPreviews) {
-        JsonArray previews = new JsonArray();
-        if (itemPreviews == null || itemPreviews.isEmpty()) {
-            return previews;
-        }
-        for (ChatItemPreview preview : itemPreviews) {
-            if (preview == null || preview.name() == null || preview.name().isBlank()) {
-                continue;
-            }
-            JsonObject json = new JsonObject();
-            json.addProperty("name", preview.name());
-            if (preview.subtitle() != null && !preview.subtitle().isBlank()) {
-                json.addProperty("subtitle", preview.subtitle());
-            }
-            if (preview.color() != null) {
-                json.addProperty("color", preview.color());
-            }
-            JsonArray attributes = stringArray(preview.attributes());
-            if (attributes.size() > 0) {
-                json.add("attributes", attributes);
-            }
-            JsonArray statLines = stringArray(preview.statLines());
-            if (statLines.size() > 0) {
-                json.add("stat_lines", statLines);
-            }
-            JsonArray statRolls = statRollArray(preview.statRolls());
-            if (statRolls.size() > 0) {
-                json.add("stat_rolls", statRolls);
-            }
-            if (preview.shinyStat() != null) {
-                json.add("shiny_stat", shinyStatJson(preview.shinyStat()));
-            }
-            previews.add(json);
-        }
-        return previews;
-    }
-
-    private static JsonObject shinyStatJson(ChatItemPreview.ShinyStat shinyStat) {
-        JsonObject json = new JsonObject();
-        if (shinyStat.key() != null && !shinyStat.key().isBlank()) {
-            json.addProperty("key", shinyStat.key());
-        }
-        if (shinyStat.displayName() != null && !shinyStat.displayName().isBlank()) {
-            json.addProperty("display_name", shinyStat.displayName());
-        }
-        json.addProperty("value", shinyStat.value());
-        json.addProperty("rerolls", shinyStat.rerolls());
-        return json;
-    }
-
-    private static JsonArray statRollArray(List<ChatItemPreview.StatRoll> statRolls) {
-        JsonArray array = new JsonArray();
-        if (statRolls == null || statRolls.isEmpty()) {
-            return array;
-        }
-        for (ChatItemPreview.StatRoll statRoll : statRolls) {
-            if (statRoll == null || statRoll.percentage() == null) {
-                continue;
-            }
-            JsonObject json = new JsonObject();
-            if (statRoll.apiName() != null && !statRoll.apiName().isBlank()) {
-                json.addProperty("api_name", statRoll.apiName());
-            }
-            if (statRoll.key() != null && !statRoll.key().isBlank()) {
-                json.addProperty("key", statRoll.key());
-            }
-            if (statRoll.displayName() != null && !statRoll.displayName().isBlank()) {
-                json.addProperty("display_name", statRoll.displayName());
-            }
-            json.addProperty("value", statRoll.value());
-            json.addProperty("percentage", statRoll.percentage());
-            array.add(json);
-        }
-        return array;
-    }
-
-    private static JsonArray stringArray(List<String> values) {
-        JsonArray array = new JsonArray();
-        if (values == null) {
-            return array;
-        }
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                array.add(value);
-            }
-        }
-        return array;
     }
 
     public void sendRaidAnnouncement(
@@ -1118,16 +954,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 raidType,
                 usernames.size(),
                 usernames);
-        JsonObject msg = new JsonObject();
-        JsonArray names = new JsonArray();
-        usernames.forEach(names::add);
-        msg.add("usernames", names);
-        msg.addProperty("raid_type", raidType);
-        msg.addProperty("aspect_count", aspectCount);
-        msg.addProperty("emerald_count", emeraldCount);
-        msg.addProperty("experience_count", experienceCount);
-        msg.addProperty("sr_count", srCount);
-        send("guild_raid_announcement", msg);
+        send("guild_raid_announcement", OutboundPayloadFactory.raidAnnouncement(
+                usernames, raidType, aspectCount, emeraldCount, experienceCount, srCount));
     }
 
     public void sendGuildBankEvent(
@@ -1154,24 +982,13 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return;
         }
 
-        JsonObject msg = new JsonObject();
-        msg.addProperty("action", action);
-        msg.addProperty("player", player.trim());
-        if (quantity != null) {
-            msg.addProperty("quantity", quantity);
-        }
-        msg.addProperty("item_name", itemName.trim());
-        if (charges != null && !charges.isBlank()) {
-            msg.addProperty("charges", charges.trim());
-        }
-        msg.addProperty("access_tier", accessTier.trim());
-        msg.addProperty("raw_message", rawMessage.trim());
         SeqClient.LOGGER.info(
                 "[WebSocket] Sending guild_bank_event action={} player='{}' item='{}'",
                 action,
                 player,
                 itemName);
-        send("guild_bank_event", msg);
+        send("guild_bank_event", OutboundPayloadFactory.guildBankEvent(
+                action, player, quantity, itemName, charges, accessTier, rawMessage));
     }
 
     public void sendGuildStorageSnapshot(long emeraldCurrent, long emeraldMax, long aspectCurrent, long aspectMax) {
@@ -1195,18 +1012,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return;
         }
 
-        JsonObject msg = new JsonObject();
-        msg.addProperty("emerald_current", emeraldCurrent);
-        msg.addProperty("emerald_max", emeraldMax);
-        msg.addProperty("aspect_current", aspectCurrent);
-        msg.addProperty("aspect_max", aspectMax);
         SeqClient.LOGGER.info(
                 "[WebSocket] Sending guild_storage_snapshot emerald={}/{} aspect={}/{}",
                 emeraldCurrent,
                 emeraldMax,
                 aspectCurrent,
                 aspectMax);
-        send("guild_storage_snapshot", msg);
+        send("guild_storage_snapshot", OutboundPayloadFactory.guildStorageSnapshot(
+                emeraldCurrent, emeraldMax, aspectCurrent, aspectMax));
     }
 
     public void sendGuildStorageReward(
@@ -1247,13 +1060,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return;
         }
 
-        JsonObject msg = new JsonObject();
-        msg.addProperty("sender_username", safeSender);
-        msg.addProperty("recipient_username", safeRecipient);
-        msg.addProperty("resource_type", normalizedResourceType);
-        msg.addProperty("amount", amount);
-        msg.addProperty("count", count);
-        msg.addProperty("window_started_at", windowStartedAt.toString());
         SeqClient.LOGGER.info(
                 "[WebSocket] Sending guild_storage_reward sender='{}' recipient='{}' resource='{}' amount={} count={} windowStartedAt={}",
                 safeSender,
@@ -1262,7 +1068,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 amount,
                 count,
                 windowStartedAt);
-        send("guild_storage_reward", msg);
+        send("guild_storage_reward", OutboundPayloadFactory.guildStorageReward(
+                safeSender, safeRecipient, normalizedResourceType, amount, count, windowStartedAt));
     }
 
     public boolean sendGuildWarSubmission(GuildWarSubmission submission) {
@@ -1363,14 +1170,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return false;
         }
 
-        JsonObject msg = new JsonObject();
-        msg.addProperty("territory", submission.territory());
-        msg.addProperty("submitted_by", submission.submittedBy());
-        msg.addProperty("submitted_at", submission.submittedAt());
-        msg.addProperty("defense_rating", submission.defenseRating());
-        msg.addProperty("queue_minutes", submission.queueMinutes());
-
-        send("guild_war_queue", msg);
+        send("guild_war_queue", OutboundPayloadFactory.guildWarQueue(submission));
 
         return true;
     }
@@ -1448,9 +1248,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return;
         }
         SeqClient.LOGGER.info("[WebSocket] Sending party_class_update classType={}", classType);
-        JsonObject msg = new JsonObject();
-        msg.addProperty("class_type", classType.name());
-        send("party_class_update", msg);
+        send("party_class_update", OutboundPayloadFactory.partyClassUpdate(classType));
     }
 
     public boolean sendPartySyncSnapshot(boolean active, String leaderUsername, List<String> memberUsernames) {
@@ -1469,27 +1267,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return false;
         }
 
-        JsonObject msg = new JsonObject();
-        msg.addProperty("active", active);
-        if (leaderUsername != null && !leaderUsername.isBlank()) {
-            msg.addProperty("leader_username", leaderUsername);
-        }
-        JsonArray usernames = new JsonArray();
-        if (memberUsernames != null) {
-            for (String memberUsername : memberUsernames) {
-                if (memberUsername != null && !memberUsername.isBlank()) {
-                    usernames.add(memberUsername);
-                }
-            }
-        }
-        msg.add("member_usernames", usernames);
+        JsonObject payload = OutboundPayloadFactory.partySyncSnapshot(active, leaderUsername, memberUsernames);
         SeqClient.LOGGER.info(
                 "[WebSocket] Sending party_sync_snapshot active={} leader={} members={} usernames={}",
                 active,
                 leaderUsername,
-                usernames.size(),
+                payload.getAsJsonArray("member_usernames").size(),
                 memberUsernames);
-        return send("party_sync_snapshot", msg);
+        return send("party_sync_snapshot", payload);
     }
 
     public boolean sendPartySyncMemberRemoved(String username, String reason) {
@@ -1512,11 +1297,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return false;
         }
 
-        JsonObject msg = new JsonObject();
-        msg.addProperty("username", username);
-        msg.addProperty("reason", reason);
         SeqClient.LOGGER.info("[WebSocket] Sending party_sync_member_removed username={} reason={}", username, reason);
-        return send("party_sync_member_removed", msg);
+        return send("party_sync_member_removed", OutboundPayloadFactory.partySyncMemberRemoved(username, reason));
     }
 
     public void sendLocalPartyClassUpdate() {
