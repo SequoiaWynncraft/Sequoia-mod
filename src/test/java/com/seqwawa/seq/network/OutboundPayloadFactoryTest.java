@@ -49,6 +49,15 @@ class OutboundPayloadFactoryTest {
     }
 
     @Test
+    void guildMembershipEventUsesStableWireFields() {
+        var payload = OutboundPayloadFactory.guildMembershipEvent("invited", "GaztheCat", "NewMember");
+
+        assertEquals("invited", payload.get("action").getAsString());
+        assertEquals("GaztheCat", payload.get("actor").getAsString());
+        assertEquals("NewMember", payload.get("target").getAsString());
+    }
+
+    @Test
     void partySyncSnapshotMatchesProtocolFixtureAndRetainsFiltering() {
         assertEquals(
                 protocolFixture("party-sync-snapshot.json"),

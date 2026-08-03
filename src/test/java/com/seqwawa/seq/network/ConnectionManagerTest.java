@@ -141,10 +141,12 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isServerScopedType("guild_storage_reward"));
         assertTrue(ConnectionManager.isServerScopedType("guild_alliance_update"));
         assertTrue(ConnectionManager.isServerScopedType("guild_alliance_snapshot"));
+        assertTrue(ConnectionManager.isServerScopedType("guild_membership_event"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_storage_snapshot"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_storage_reward"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_alliance_update"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_alliance_snapshot"));
+        assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_membership_event"));
     }
 
     @Test

@@ -119,6 +119,14 @@ final class OutboundPayloadFactory {
         return payload;
     }
 
+    static JsonObject guildMembershipEvent(String action, String actor, String target) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("action", action);
+        payload.addProperty("actor", actor);
+        payload.addProperty("target", target);
+        return payload;
+    }
+
     static JsonObject guildAllianceSnapshot(List<String> guildNames) {
         JsonArray names = new JsonArray();
         for (String guildName : guildNames) {
