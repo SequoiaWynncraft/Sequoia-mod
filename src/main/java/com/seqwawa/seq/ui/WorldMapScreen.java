@@ -1029,13 +1029,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private static double imageToWorldX(double imageX, int imageWidth) {
-        return MapCalibration.MIN_WORLD_X
-                + (imageX / imageWidth) * (MapCalibration.MAX_WORLD_X - MapCalibration.MIN_WORLD_X);
+        return WorldMapGeometry.imageToWorldX(imageX, imageWidth);
     }
 
     private static double imageToWorldZ(double imageY, int imageHeight) {
-        return MapCalibration.MIN_WORLD_Z
-                + (imageY / imageHeight) * (MapCalibration.MAX_WORLD_Z - MapCalibration.MIN_WORLD_Z);
+        return WorldMapGeometry.imageToWorldZ(imageY, imageHeight);
     }
 
     private static double clampImageX(double value, TileSet tileSet) {
@@ -1047,7 +1045,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private static int clampTile(int value, int count) {
-        return Math.max(0, Math.min(count - 1, value));
+        return WorldMapGeometry.clampIndex(value, count);
     }
 
     private void clearTileImages() {
@@ -3463,16 +3461,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             double startY,
             double endX,
             double endY) {
-        double dx = endX - startX;
-        double dy = endY - startY;
-        if (dx == 0 && dy == 0) {
-            return Math.hypot(pointX - startX, pointY - startY);
-        }
-        double t = clamp(
-                ((pointX - startX) * dx + (pointY - startY) * dy) / (dx * dx + dy * dy),
-                0,
-                1);
-        return Math.hypot(pointX - (startX + t * dx), pointY - (startY + t * dy));
+        return WorldMapGeometry.distanceToSegment(pointX, pointY, startX, startY, endX, endY);
     }
 
     private void renderNodeTooltip(UiCanvas canvas, GatheringNode node) {
@@ -5091,7 +5080,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             Color color,
             float maxWidth,
             TextAlignment align) {
-        String fitted = fitText(canvas, text, maxWidth, size);
+        String fitted = fitText(text, maxWidth, size);
         drawText(canvas, x, y, size, fitted, color, align);
     }
 
@@ -5116,51 +5105,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private static List<String> wrapText(String text, float maxWidth, float size) {
-        if (text == null || text.isBlank() || maxWidth <= 0) {
-            return List.of();
-        }
-        List<String> lines = new ArrayList<>();
-        for (String paragraph : text.strip().split("\\R")) {
-            String currentLine = "";
-            for (String word : paragraph.trim().split("\\s+")) {
-                String candidate = currentLine.isEmpty() ? word : currentLine + " " + word;
-                if (currentLine.isEmpty() || textWidth(candidate, size) <= maxWidth) {
-                    currentLine = candidate;
-                } else {
-                    lines.add(currentLine);
-                    currentLine = word;
-                }
-            }
-            if (!currentLine.isEmpty()) {
-                lines.add(currentLine);
-            }
-        }
-        return List.copyOf(lines);
+        return WorldMapGeometry.wrapText(text, maxWidth, value -> textWidth(value, size));
     }
 
-    private static String fitText(UiCanvas canvas, String text, float maxWidth, float size) {
-        if (text == null || text.isEmpty() || maxWidth <= 0) {
-            return "";
-        }
-        if (textWidth(text, size) <= maxWidth) {
-            return text;
-        }
-        String ellipsis = "...";
-        if (textWidth(ellipsis, size) > maxWidth) {
-            return "";
-        }
-        int low = 0;
-        int high = text.length();
-        while (low < high) {
-            int mid = (low + high + 1) / 2;
-            String candidate = text.substring(0, mid).stripTrailing() + ellipsis;
-            if (textWidth(candidate, size) <= maxWidth) {
-                low = mid;
-            } else {
-                high = mid - 1;
-            }
-        }
-        return text.substring(0, low).stripTrailing() + ellipsis;
+    private static String fitText(String text, float maxWidth, float size) {
+        return WorldMapGeometry.fitText(text, maxWidth, value -> textWidth(value, size));
     }
 
     private static float textWidth(String text, float size) {
@@ -5200,7 +5149,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private static boolean isHovered(float mx, float my, float x, float y, float w, float h) {
-        return mx >= x && mx <= x + w && my >= y && my <= y + h;
+        return WorldMapGeometry.contains(mx, my, x, y, w, h);
     }
 
     private static String searchText(CharacterEvent characterEvent) {
@@ -5421,7 +5370,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private static int clampDropdownScroll(int scroll, int optionCount, int visibleRows) {
-        return Math.max(0, Math.min(scroll, Math.max(0, optionCount - visibleRows)));
+        return WorldMapGeometry.clampScroll(scroll, optionCount, visibleRows);
     }
 
     private float clampSidebarScroll(float scroll, float screenHeight) {
@@ -5696,7 +5645,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private static double clamp(double value, double min, double max) {
-        return Math.max(min, Math.min(max, value));
+        return WorldMapGeometry.clamp(value, min, max);
     }
 
     private record FocusIconOverlay(
