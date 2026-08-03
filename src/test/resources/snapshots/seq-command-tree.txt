@@ -1,0 +1,124 @@
+e | executes=true | redirects=false
+seq | executes=true | redirects=false
+seq aspects | executes=false | redirects=false
+seq aspects <amount:longArg(1)> | executes=true | redirects=false
+seq aspects <amount:longArg(1)> <username:word> | executes=true | redirects=false
+seq badge | executes=true | redirects=false
+seq badge refresh | executes=true | redirects=false
+seq badge status | executes=true | redirects=false
+seq badges | executes=true | redirects=false
+seq badges refresh | executes=true | redirects=false
+seq badges status | executes=true | redirects=false
+seq bomb | executes=false | redirects=false
+seq bomb _mute-requests | executes=true | redirects=false
+seq bomb _share | executes=false | redirects=false
+seq bomb _share <requestId:word> | executes=true | redirects=false
+seq bomb <selectors:greedyString> | executes=true | redirects=false
+seq connect | executes=true | redirects=false
+seq connected | executes=true | redirects=false
+seq disconnect | executes=true | redirects=false
+seq e | executes=true | redirects=false
+seq emeralds | executes=true | redirects=false
+seq ignore | executes=true | redirects=false
+seq ignore <username:word> | executes=true | redirects=false
+seq ingredient | executes=true | redirects=false
+seq ingredients | executes=true | redirects=false
+seq logout | executes=true | redirects=false
+seq map | executes=true | redirects=false
+seq map cache | executes=true | redirects=false
+seq map cache cluster | executes=true | redirects=false
+seq map cache cluster clear | executes=true | redirects=false
+seq map cache cluster status | executes=true | redirects=false
+seq map cache map | executes=true | redirects=false
+seq map cache map clear | executes=true | redirects=false
+seq map cache map status | executes=true | redirects=false
+seq map cache status | executes=true | redirects=false
+seq map debug | executes=true | redirects=false
+seq map eps | executes=false | redirects=false
+seq map eps <blocks:integer(1, 500)> | executes=true | redirects=false
+seq map minSamples | executes=false | redirects=false
+seq map minSamples <count:integer(1, 100)> | executes=true | redirects=false
+seq map params | executes=true | redirects=false
+seq map reset | executes=true | redirects=false
+seq p | executes=true | redirects=false
+seq p close | executes=true | redirects=false
+seq p create | executes=false | redirects=false
+seq p create <activities:greedyString> | executes=true | redirects=false
+seq p create-ui | executes=true | redirects=false
+seq p deny | executes=false | redirects=false
+seq p deny <listingId:longArg(1)> | executes=true | redirects=false
+seq p disband | executes=true | redirects=false
+seq p extend | executes=true | redirects=false
+seq p extend <listingId:longArg(1)> | executes=true | redirects=false
+seq p invite | executes=false | redirects=false
+seq p invite <username:word> | executes=true | redirects=false
+seq p invite-all | executes=true | redirects=false
+seq p join | executes=false | redirects=false
+seq p join <listingId:longArg(1)> | executes=true | redirects=false
+seq p join <listingId:longArg(1)> <role:word> | executes=true | redirects=false
+seq p join <listingId:longArg(1)> <role:word> token | executes=false | redirects=false
+seq p join <listingId:longArg(1)> <role:word> token <inviteToken:string> | executes=true | redirects=false
+seq p join <listingId:longArg(1)> token | executes=false | redirects=false
+seq p join <listingId:longArg(1)> token <inviteToken:string> | executes=true | redirects=false
+seq p kick | executes=false | redirects=false
+seq p kick <username:word> | executes=true | redirects=false
+seq p leave | executes=true | redirects=false
+seq p list | executes=true | redirects=false
+seq p open | executes=true | redirects=false
+seq p promote | executes=false | redirects=false
+seq p promote <username:word> | executes=true | redirects=false
+seq p reserve | executes=false | redirects=false
+seq p reserve <count:integer(0)> | executes=true | redirects=false
+seq p role | executes=false | redirects=false
+seq p role <role:word> | executes=true | redirects=false
+seq p status | executes=true | redirects=false
+seq p update | executes=false | redirects=false
+seq p update <activities:greedyString> | executes=true | redirects=false
+seq party | executes=true | redirects=false
+seq party close | executes=true | redirects=false
+seq party create | executes=false | redirects=false
+seq party create <activities:greedyString> | executes=true | redirects=false
+seq party create-ui | executes=true | redirects=false
+seq party deny | executes=false | redirects=false
+seq party deny <listingId:longArg(1)> | executes=true | redirects=false
+seq party disband | executes=true | redirects=false
+seq party extend | executes=true | redirects=false
+seq party extend <listingId:longArg(1)> | executes=true | redirects=false
+seq party invite | executes=false | redirects=false
+seq party invite <username:word> | executes=true | redirects=false
+seq party invite-all | executes=true | redirects=false
+seq party join | executes=false | redirects=false
+seq party join <listingId:longArg(1)> | executes=true | redirects=false
+seq party join <listingId:longArg(1)> <role:word> | executes=true | redirects=false
+seq party join <listingId:longArg(1)> <role:word> token | executes=false | redirects=false
+seq party join <listingId:longArg(1)> <role:word> token <inviteToken:string> | executes=true | redirects=false
+seq party join <listingId:longArg(1)> token | executes=false | redirects=false
+seq party join <listingId:longArg(1)> token <inviteToken:string> | executes=true | redirects=false
+seq party kick | executes=false | redirects=false
+seq party kick <username:word> | executes=true | redirects=false
+seq party leave | executes=true | redirects=false
+seq party list | executes=true | redirects=false
+seq party open | executes=true | redirects=false
+seq party promote | executes=false | redirects=false
+seq party promote <username:word> | executes=true | redirects=false
+seq party reserve | executes=false | redirects=false
+seq party reserve <count:integer(0)> | executes=true | redirects=false
+seq party role | executes=false | redirects=false
+seq party role <role:word> | executes=true | redirects=false
+seq party status | executes=true | redirects=false
+seq party update | executes=false | redirects=false
+seq party update <activities:greedyString> | executes=true | redirects=false
+seq request | executes=false | redirects=false
+seq request aspects | executes=true | redirects=false
+seq request tome | executes=false | redirects=false
+seq request tome <reason:greedyString> | executes=true | redirects=false
+seq status | executes=true | redirects=false
+seq tome | executes=true | redirects=false
+seq tome <username:word> | executes=true | redirects=false
+seq treasury | executes=false | redirects=false
+seq treasury out | executes=false | redirects=false
+seq treasury out <amount:word> | executes=false | redirects=false
+seq treasury out <amount:word> <payouter:word> | executes=false | redirects=false
+seq treasury out <amount:word> <payouter:word> <reason:greedyString> | executes=true | redirects=false
+seq unignore | executes=true | redirects=false
+seq unignore <username:word> | executes=true | redirects=false

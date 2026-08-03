@@ -5,7 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 import com.seqwawa.seq.model.GuildWarSubmission;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -200,6 +205,7 @@ class ConnectionManagerTest {
 
         var json = ConnectionManager.serializeTreasuryOutRequest(request);
 
+        assertEquals(protocolFixture("outbound/treasury-out.json"), json);
         assertEquals("treasury_out", json.get("type").getAsString());
         assertEquals("550e8400-e29b-41d4-a716-446655440000", json.get("request_id").getAsString());
         assertEquals("2stx5le+1stx5le+4stx4le", json.get("amount").getAsString());
@@ -237,18 +243,7 @@ class ConnectionManagerTest {
         AtomicReference<TreasuryOutRecordedMessage> dispatched = new AtomicReference<>();
         ConnectionManager.onTreasuryOutRecorded(dispatched::set);
         try {
-            ConnectionManager.getInstance().onMessage("""
-                    {
-                      "type": "treasury_out_recorded",
-                      "request_id": "550e8400-e29b-41d4-a716-446655440000",
-                      "sheet_name": "Season 32",
-                      "row": 7,
-                      "amount": "2STX",
-                      "payouter": "Solo",
-                      "reason": "season payout",
-                      "date": "2026-08-01"
-                    }
-                    """);
+            ConnectionManager.getInstance().onMessage(protocolFixtureText("inbound/treasury-out-recorded.json"));
 
             assertEquals("550e8400-e29b-41d4-a716-446655440000", dispatched.get().requestId());
             assertEquals("Season 32", dispatched.get().sheetName());
@@ -267,15 +262,7 @@ class ConnectionManagerTest {
             return true;
         });
         try {
-            ConnectionManager.getInstance().onMessage("""
-                    {
-                      "type": "error",
-                      "request_id": "550e8400-e29b-41d4-a716-446655440000",
-                      "status": 400,
-                      "code": "invalid_request",
-                      "message": "amount must use a supported denomination"
-                    }
-                    """);
+            ConnectionManager.getInstance().onMessage(protocolFixtureText("inbound/treasury-out-error.json"));
 
             assertEquals("550e8400-e29b-41d4-a716-446655440000", dispatched.get().requestId());
             assertEquals("invalid_request", dispatched.get().code());
@@ -294,6 +281,7 @@ class ConnectionManagerTest {
         assertEquals(List.of("Avicia", "Nefarious Ravens"), guildNames);
 
         var payload = ConnectionManager.buildGuildAllianceSnapshotPayload(guildNames);
+        assertEquals(protocolFixture("outbound/guild-alliance-snapshot.json"), payload);
         assertEquals(1, payload.size());
         assertEquals("Avicia", payload.getAsJsonArray("guild_names").get(0).getAsString());
         assertEquals("Nefarious Ravens", payload.getAsJsonArray("guild_names").get(1).getAsString());
@@ -314,6 +302,22 @@ class ConnectionManagerTest {
                 java.util.stream.IntStream.range(0, 17)
                         .mapToObj(index -> "Guild " + index)
                         .toList()));
+    }
+
+    private static JsonElement protocolFixture(String name) {
+        return JsonParser.parseString(protocolFixtureText(name));
+    }
+
+    private static String protocolFixtureText(String name) {
+        String path = "/protocol/" + name;
+        try (InputStream stream = ConnectionManagerTest.class.getResourceAsStream(path)) {
+            if (stream == null) {
+                throw new AssertionError("Missing protocol fixture " + path);
+            }
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new AssertionError("Failed to read protocol fixture " + path, exception);
+        }
     }
 
 }

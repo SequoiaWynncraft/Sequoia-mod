@@ -1,0 +1,10 @@
+{
+  "type": "treasury_out_recorded",
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
+  "sheet_name": "Season 32",
+  "row": 7,
+  "amount": "2STX",
+  "payouter": "Solo",
+  "reason": "season payout",
+  "date": "2026-08-01"
+}
