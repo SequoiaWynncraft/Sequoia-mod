@@ -309,6 +309,42 @@ class ConnectionManagerTest {
     }
 
     @Test
+    void routesPartyFinderUpdateThroughExistingCallbackApi() {
+        AtomicReference<ConnectionManager.PartyFinderUpdateMessage> dispatched = new AtomicReference<>();
+        ConnectionManager.onPartyFinderUpdate(dispatched::set);
+        try {
+            ConnectionManager.getInstance().onMessage(protocolFixtureText("inbound/party-finder-update.json"));
+
+            assertEquals("updated", dispatched.get().action());
+            assertEquals(42, dispatched.get().listingJson().get("id").getAsInt());
+            assertEquals("TNA full run", dispatched.get().listingJson().get("title").getAsString());
+        } finally {
+            ConnectionManager.onPartyFinderUpdate(null);
+            ConnectionManager.resetForTest();
+        }
+    }
+
+    @Test
+    void routesBombShareResultAndClearsPendingPrompt() {
+        AtomicReference<ConnectionManager.BombShareResultMessage> dispatched = new AtomicReference<>();
+        ConnectionManager.onBombShareResult(dispatched::set);
+        try {
+            ConnectionManager manager = ConnectionManager.getInstance();
+            manager.onMessage(protocolFixtureText("inbound/bomb-share-prompt.json"));
+            assertTrue(manager.hasPendingBombSharePrompt("04677645-a0d0-4b5f-bd5d-590b3f7f2f5d"));
+
+            manager.onMessage(protocolFixtureText("inbound/bomb-share-result.json"));
+
+            assertEquals(List.of("WC1", "WC2"), dispatched.get().worlds());
+            assertEquals(2, dispatched.get().shareCount());
+            assertFalse(manager.hasPendingBombSharePrompt("04677645-a0d0-4b5f-bd5d-590b3f7f2f5d"));
+        } finally {
+            ConnectionManager.onBombShareResult(null);
+            ConnectionManager.resetForTest();
+        }
+    }
+
+    @Test
     void guildAllianceSnapshotPayloadNormalizesNamesAndUsesExpectedShape() {
         List<String> guildNames = ConnectionManager.normalizeGuildAllianceNames(
                 List.of(" Avicia ", "avicia", "Nefarious Ravens"));

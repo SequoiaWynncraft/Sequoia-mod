@@ -1,0 +1,8 @@
+{
+  "type": "party_finder_update",
+  "action": "updated",
+  "listing": {
+    "id": 42,
+    "title": "TNA full run"
+  }
+}

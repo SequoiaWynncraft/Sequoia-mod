@@ -1,0 +1,8 @@
+{
+  "type": "bomb_share_result",
+  "request_id": "04677645-a0d0-4b5f-bd5d-590b3f7f2f5d",
+  "canonical_key": "loot-and-combat",
+  "requested_types": ["LOOT", "COMBAT_XP"],
+  "worlds": ["WC1", "WC2"],
+  "share_count": 2
+}

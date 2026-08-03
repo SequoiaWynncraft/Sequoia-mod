@@ -98,6 +98,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private volatile boolean userInitiatedConnectFlow;
     private volatile boolean treasuryOnlyConnection;
     private final TreasurySessionAuthenticator treasurySessionAuthenticator;
+    private final IncomingMessageRouter incomingMessageRouter;
     private final Deque<GuildWarSubmission> pendingGuildWarSubmissions = new ConcurrentLinkedDeque<>();
 
     // Reconnect state
@@ -132,6 +133,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 treasuryAuthExecutor,
                 this::sendTreasuryAuthResponse,
                 this::handleTreasuryAuthFailure);
+        incomingMessageRouter = new IncomingMessageRouter(this);
     }
 
     public static void disconnectForBlockedServer() {
@@ -1331,308 +1333,299 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 SeqClient.LOGGER.info("[WebSocket] Received message type={} payload={}", type, truncate(message, 512));
             }
 
-            switch (type) {
-                case TreasuryAuthResponse.CHALLENGE_TYPE -> {
-                    if (!treasuryOnlyConnection) {
-                        SeqClient.LOGGER.warn("[TreasuryAuth] Ignoring challenge on an authenticated WebSocket");
-                        return;
-                    }
-                    String nonce = IncomingMessageParser.primitiveString(json, "nonce");
-                    if (!treasurySessionAuthenticator.handleChallenge(nonce)) {
-                        SeqClient.LOGGER.warn("[TreasuryAuth] Ignoring invalid or unexpected challenge");
-                    }
-                }
-                case TreasuryAuthResponse.AUTHENTICATED_TYPE -> {
-                    String nonce = IncomingMessageParser.primitiveString(json, "nonce");
-                    if (!treasuryOnlyConnection || !treasurySessionAuthenticator.confirm(nonce)) {
-                        SeqClient.LOGGER.warn("[TreasuryAuth] Ignoring uncorrelated authentication confirmation");
-                        return;
-                    }
-                    authFailed = false;
-                    connectedSince = Instant.now();
-                    autoReconnect = true;
-                    notifyConnectionStatus("Treasury OUT identity verified as cinfrascitizen.");
-                    finishConnectFlow();
-                    SeqClient.LOGGER.info("[TreasuryAuth] Minecraft session proof accepted by backend");
-                }
-                case "authenticated" -> {
-                    if (treasuryOnlyConnection) {
-                        SeqClient.LOGGER.warn(
-                                "[TreasuryAuth] Ignoring bearer-authenticated response on Treasury-only WebSocket");
-                        return;
-                    }
-                    authenticated = true;
-                    authFailed = false;
-                    notInGuild = false;
-                    memberFeaturesDisabled = false;
-                    membershipProbePending = true;
-                    authAttempt = 0;
-                    nextAllowedAuthAttemptAtMs = 0;
-                    connectedSince = Instant.now();
-                    autoReconnect = true;
-                    String discordUser = IncomingMessageParser.authenticatedDiscordUsername(json);
-                    if (discordUser != null) {
-                        storeDiscordUsername(discordUser);
-                        notifyConnectionStatus("Connected as " + discordUser);
-                    } else {
-                        clearDiscordUsername();
-                    }
-                    sendPrepared("get_connected", null);
-                    flushPendingGuildWarSubmissions();
-                    sendLocalPartyClassUpdate();
-                }
-                case "connected_users" -> {
-                    boolean wasMembershipProbe = membershipProbePending;
-                    membershipProbePending = false;
-                    memberFeaturesDisabled = false;
-                    List<String> users = IncomingMessageParser.connectedUsers(json);
-                    SeqClient.LOGGER.info(
-                            "[WebSocket] connected_users received count={} callbackPresent={}",
-                            users.size(),
-                            connectedUsersCallback != null);
-                    if (connectedUsersCallback != null) {
-                        connectedUsersCallback.accept(users);
-                        connectedUsersCallback = null;
-                    } else if (!wasMembershipProbe) {
-                        SeqClient.LOGGER.warn("[WebSocket] connected_users had no callback listener");
-                    }
-                }
-                case "bomb_share_prompt" -> {
-                    BombSharePromptMessage prompt = IncomingMessageParser.bombSharePrompt(json);
-                    if (prompt.requestId() != null) {
-                        pendingBombSharePrompts.put(prompt.requestId(), prompt);
-                    }
-                    if (bombSharePromptHandler != null) {
-                        bombSharePromptHandler.accept(prompt);
-                    } else {
-                        SeqClient.LOGGER.warn("[WebSocket] Received bomb_share_prompt but handler is not registered");
-                    }
-                }
-                case "bomb_share_result" -> {
-                    BombShareResultMessage result = IncomingMessageParser.bombShareResult(json);
-                    if (result.requestId() != null) {
-                        pendingBombSharePrompts.remove(result.requestId());
-                    }
-                    if (bombShareResultHandler != null) {
-                        bombShareResultHandler.accept(result);
-                    } else {
-                        SeqClient.LOGGER.warn("[WebSocket] Received bomb_share_result but handler is not registered");
-                    }
-                }
-                case "treasury_out_recorded" -> {
-                    TreasuryOutRecordedMessage recorded = IncomingMessageParser.treasuryOutRecorded(json);
-                    if (treasuryOutRecordedHandler != null) {
-                        treasuryOutRecordedHandler.accept(recorded);
-                    } else {
-                        SeqClient.LOGGER.warn(
-                                "[WebSocket] Received treasury_out_recorded but handler is not registered");
-                    }
-                }
-                case "guild_storage_snapshot" -> {
-                    IncomingMessageParser.GuildStorageSnapshot snapshot =
-                            IncomingMessageParser.guildStorageSnapshot(json);
-                    SeqClient.LOGGER.info(
-                            "[WebSocket] Applying guild_storage_snapshot emerald={}/{} aspect={}/{}",
-                            snapshot.emeraldCurrent(),
-                            snapshot.emeraldMax(),
-                            snapshot.aspectCurrent(),
-                            snapshot.aspectMax());
-                    Minecraft.getInstance().execute(() -> GuildStorageTracker.getInstance().applyRemoteSnapshot(
-                            snapshot.emeraldCurrent(),
-                            snapshot.emeraldMax(),
-                            snapshot.aspectCurrent(),
-                            snapshot.aspectMax()));
-                }
-                case "discord_chat" -> {
-                    if (discordChatHandler != null) {
-                        DiscordChatMessage discordChat = IncomingMessageParser.discordChat(json);
-                        String username = discordChat.username();
-                        ConfigManager configManager = SeqClient.getConfigManager();
-                        if (configManager != null
-                                && shouldIgnoreDiscordChatSender(username, configManager.ignoredBridgeUsers())) {
-                            SeqClient.LOGGER.debug("[WebSocket] Ignoring discord_chat from {}", username);
-                            return;
-                        }
-                        SeqClient.LOGGER.info("[WebSocket] Dispatching discord_chat from {}", username);
-                        discordChatHandler.accept(discordChat);
-                    } else {
-                        SeqClient.LOGGER.warn("[WebSocket] Received discord_chat but handler is not registered");
-                    }
-                }
-                case "party_finder_update" -> {
-                    String action = IncomingMessageParser.partyFinderAction(json);
-                    if (partyFinderUpdateHandler != null) {
-                        PartyFinderUpdateMessage update = IncomingMessageParser.partyFinderUpdate(json, action);
-                        SeqClient.LOGGER.info(
-                                "[WebSocket] Dispatching party_finder_update action={} hasListing={}",
-                                action,
-                                update.listingJson() != null);
-                        partyFinderUpdateHandler.accept(update);
-                    } else {
-                        SeqClient.LOGGER.warn("[WebSocket] Received party_finder_update but handler is not registered");
-                    }
-                }
-                case "party_finder_invite" -> {
-                    if (partyFinderInviteHandler != null) {
-                        PartyFinderInviteMessage invite = IncomingMessageParser.partyFinderInvite(json);
-
-                        SeqClient.LOGGER.info(
-                                "[WebSocket] Dispatching party_finder_invite listingId={} inviterUUID={} tokenPresent={} hasListing={}",
-                                invite.listingId(),
-                                invite.inviterUUID(),
-                                invite.inviteToken() != null && !invite.inviteToken().isBlank(),
-                                invite.listingJson() != null);
-
-                        partyFinderInviteHandler.accept(invite);
-                    } else {
-                        SeqClient.LOGGER.warn("[WebSocket] Received party_finder_invite but handler is not registered");
-                    }
-                }
-                case "party_finder_stale_warning" -> {
-                    if (partyFinderStaleWarningHandler != null) {
-                        PartyFinderStaleWarningMessage warning =
-                                IncomingMessageParser.partyFinderStaleWarning(json);
-
-                        SeqClient.LOGGER.info(
-                                "[WebSocket] Dispatching party_finder_stale_warning reason={} listingId={} disbandAt={} minutesRemaining={}",
-                                warning.reason(),
-                                warning.listingId(),
-                                warning.disbandAt(),
-                                warning.minutesRemaining());
-
-                        partyFinderStaleWarningHandler.accept(warning);
-                    } else {
-                        SeqClient.LOGGER.warn(
-                                "[WebSocket] Received party_finder_stale_warning but handler is not registered");
-                    }
-                }
-                case "error" -> {
-                    IncomingMessageParser.BackendError backendError = IncomingMessageParser.backendError(json);
-                    String error = backendError.message();
-                    String backendCode = backendError.code();
-                    String requestId = backendError.requestId();
-                    String minimumSafeVersion = backendError.minimumSafeVersion();
-                    String capability = backendError.capability();
-                    int status = backendError.status();
-                    String normalized = error.toLowerCase(Locale.ROOT);
-
-                    if (treasuryOnlyConnection
-                            && requestId == null
-                            && isTreasuryAuthenticationError(backendCode)) {
-                        treasurySessionAuthenticator.reset();
-                        authFailed = true;
-                        autoReconnect = false;
-                        notifyConnectionFailure(
-                                "Treasury identity verification failed: " + error,
-                                true);
-                        finishConnectFlow();
-                        closeTreasuryAuthFailure();
-                        return;
-                    }
-
-                    if (requestId != null
-                            && treasuryOutErrorHandler != null
-                            && treasuryOutErrorHandler.test(
-                                    new TreasuryOutErrorMessage(requestId, backendCode, error))) {
-                        if ("token_invalid".equalsIgnoreCase(backendCode)) {
-                            authFailed = true;
-                            authenticated = false;
-                            registerAuthFailure();
-                            SeqClient.getAuthService()
-                                    .invalidateSession(
-                                            AuthErrorCode.TOKEN_INVALID,
-                                            "Backend rejected the stored token. Re-authentication required.");
-                        } else if ("mod_version_unsupported".equalsIgnoreCase(backendCode)) {
-                            autoReconnect = false;
-                        }
-                        return;
-                    }
-
-                    if (isSilentGuildChatMembershipReject(backendCode, capability, normalized)) {
-                        SeqClient.LOGGER.info("[WebSocket] Guild chat relay rejected because sender is not in guild");
-                        return;
-                    }
-
-                    if (isSessionMembershipReject(backendCode, capability, normalized)) {
-                        disableMemberFeaturesForSession();
-                        return;
-                    }
-
-                    SeqClient.LOGGER.warn(
-                            "[WebSocket] Backend error status={} code={} message={}", status, backendCode, error);
-
-                    if ("mod_version_unsupported".equalsIgnoreCase(backendCode) || status == 426) {
-                        autoReconnect = false;
-                        maybeNotifyVersionRejection(capability, minimumSafeVersion, error);
-                        return;
-                    }
-
-                    if (status == 400 || normalized.contains("invalid auth request")) {
-                        authFailed = true;
-                        authenticated = false;
-                        registerAuthFailure();
-                        notify("Invalid auth request. Run /seq connect to start a fresh backend session.");
-                        return;
-                    }
-
-                    if (status == 401 || normalized.contains("invalid token") || normalized.contains("expired")) {
-                        authFailed = true;
-                        authenticated = false;
-                        registerAuthFailure();
-                        SeqClient.getAuthService()
-                                .invalidateSession(
-                                        normalized.contains("expired")
-                                                ? AuthErrorCode.TOKEN_EXPIRED
-                                                : AuthErrorCode.TOKEN_INVALID,
-                                        normalized.contains("expired")
-                                                ? "Backend token expired. Re-authentication required."
-                                                : "Backend rejected the stored token. Re-authentication required.");
-                        notify(SeqClient.getAuthService().getLastError().getMessage());
-                        return;
-                    }
-
-                    if (isPartyFinderError(backendError, normalized)) {
-                        SeqClient.getPartyFinderManager().pushUiError(error);
-                        return;
-                    }
-
-                    if (isCapabilityAuthorizationReject(status, capability)) {
-                        SeqClient.LOGGER.info(
-                                "[WebSocket] Capability authorization rejected capability={} message={}",
-                                capability,
-                                error);
-                        notify(formatCapabilityAccessDenied(capability, error));
-                        return;
-                    }
-
-                    if (status == 403 || normalized.contains("not in guild") || normalized.contains("guild")) {
-                        notInGuild = true;
-                        authFailed = true;
-                        authenticated = false;
-                        notify("Access denied by backend authorization.");
-                        SeqClient.LOGGER.warn(
-                                "[WebSocket] Guild error detected; disabling auto-reconnect and closing socket");
-                        autoReconnect = false;
-                        close();
-                        return;
-                    }
-
-                    if (normalized.contains("validation")) {
-                        if ("Unknown backend error".equals(error)) {
-                            notify("Request rejected by backend validation. Please check your input.");
-                        } else {
-                            notify(error);
-                        }
-                        return;
-                    }
-
-                    notify("Error: " + error);
-                }
-                default -> SeqClient.LOGGER.warn("[WebSocket] Unhandled incoming message type={}", type);
-            }
+            incomingMessageRouter.route(incoming);
         } catch (Exception e) {
             SeqClient.LOGGER.error("[WebSocket] Failed to handle message payload={}", truncate(message, 512), e);
         }
+    }
+
+    void handleTreasuryAuthChallenge(JsonObject payload) {
+        if (!treasuryOnlyConnection) {
+            SeqClient.LOGGER.warn("[TreasuryAuth] Ignoring challenge on an authenticated WebSocket");
+            return;
+        }
+        String nonce = IncomingMessageParser.primitiveString(payload, "nonce");
+        if (!treasurySessionAuthenticator.handleChallenge(nonce)) {
+            SeqClient.LOGGER.warn("[TreasuryAuth] Ignoring invalid or unexpected challenge");
+        }
+    }
+
+    void handleTreasuryAuthenticated(JsonObject payload) {
+        String nonce = IncomingMessageParser.primitiveString(payload, "nonce");
+        if (!treasuryOnlyConnection || !treasurySessionAuthenticator.confirm(nonce)) {
+            SeqClient.LOGGER.warn("[TreasuryAuth] Ignoring uncorrelated authentication confirmation");
+            return;
+        }
+        authFailed = false;
+        connectedSince = Instant.now();
+        autoReconnect = true;
+        notifyConnectionStatus("Treasury OUT identity verified as cinfrascitizen.");
+        finishConnectFlow();
+        SeqClient.LOGGER.info("[TreasuryAuth] Minecraft session proof accepted by backend");
+    }
+
+    void handleAuthenticated(JsonObject payload) {
+        if (treasuryOnlyConnection) {
+            SeqClient.LOGGER.warn("[TreasuryAuth] Ignoring bearer-authenticated response on Treasury-only WebSocket");
+            return;
+        }
+        authenticated = true;
+        authFailed = false;
+        notInGuild = false;
+        memberFeaturesDisabled = false;
+        membershipProbePending = true;
+        authAttempt = 0;
+        nextAllowedAuthAttemptAtMs = 0;
+        connectedSince = Instant.now();
+        autoReconnect = true;
+        String discordUser = IncomingMessageParser.authenticatedDiscordUsername(payload);
+        if (discordUser != null) {
+            storeDiscordUsername(discordUser);
+            notifyConnectionStatus("Connected as " + discordUser);
+        } else {
+            clearDiscordUsername();
+        }
+        sendPrepared("get_connected", null);
+        flushPendingGuildWarSubmissions();
+        sendLocalPartyClassUpdate();
+    }
+
+    void handleConnectedUsers(JsonObject payload) {
+        boolean wasMembershipProbe = membershipProbePending;
+        membershipProbePending = false;
+        memberFeaturesDisabled = false;
+        List<String> users = IncomingMessageParser.connectedUsers(payload);
+        SeqClient.LOGGER.info(
+                "[WebSocket] connected_users received count={} callbackPresent={}",
+                users.size(),
+                connectedUsersCallback != null);
+        if (connectedUsersCallback != null) {
+            connectedUsersCallback.accept(users);
+            connectedUsersCallback = null;
+        } else if (!wasMembershipProbe) {
+            SeqClient.LOGGER.warn("[WebSocket] connected_users had no callback listener");
+        }
+    }
+
+    void handleBombSharePrompt(JsonObject payload) {
+        BombSharePromptMessage prompt = IncomingMessageParser.bombSharePrompt(payload);
+        if (prompt.requestId() != null) {
+            pendingBombSharePrompts.put(prompt.requestId(), prompt);
+        }
+        if (bombSharePromptHandler != null) {
+            bombSharePromptHandler.accept(prompt);
+        } else {
+            SeqClient.LOGGER.warn("[WebSocket] Received bomb_share_prompt but handler is not registered");
+        }
+    }
+
+    void handleBombShareResult(JsonObject payload) {
+        BombShareResultMessage result = IncomingMessageParser.bombShareResult(payload);
+        if (result.requestId() != null) {
+            pendingBombSharePrompts.remove(result.requestId());
+        }
+        if (bombShareResultHandler != null) {
+            bombShareResultHandler.accept(result);
+        } else {
+            SeqClient.LOGGER.warn("[WebSocket] Received bomb_share_result but handler is not registered");
+        }
+    }
+
+    void handleTreasuryOutRecorded(JsonObject payload) {
+        TreasuryOutRecordedMessage recorded = IncomingMessageParser.treasuryOutRecorded(payload);
+        if (treasuryOutRecordedHandler != null) {
+            treasuryOutRecordedHandler.accept(recorded);
+        } else {
+            SeqClient.LOGGER.warn("[WebSocket] Received treasury_out_recorded but handler is not registered");
+        }
+    }
+
+    void handleGuildStorageSnapshot(JsonObject payload) {
+        IncomingMessageParser.GuildStorageSnapshot snapshot = IncomingMessageParser.guildStorageSnapshot(payload);
+        SeqClient.LOGGER.info(
+                "[WebSocket] Applying guild_storage_snapshot emerald={}/{} aspect={}/{}",
+                snapshot.emeraldCurrent(),
+                snapshot.emeraldMax(),
+                snapshot.aspectCurrent(),
+                snapshot.aspectMax());
+        Minecraft.getInstance().execute(() -> GuildStorageTracker.getInstance().applyRemoteSnapshot(
+                snapshot.emeraldCurrent(), snapshot.emeraldMax(), snapshot.aspectCurrent(), snapshot.aspectMax()));
+    }
+
+    void handleDiscordChat(JsonObject payload) {
+        if (discordChatHandler == null) {
+            SeqClient.LOGGER.warn("[WebSocket] Received discord_chat but handler is not registered");
+            return;
+        }
+        DiscordChatMessage discordChat = IncomingMessageParser.discordChat(payload);
+        String username = discordChat.username();
+        ConfigManager configManager = SeqClient.getConfigManager();
+        if (configManager != null && shouldIgnoreDiscordChatSender(username, configManager.ignoredBridgeUsers())) {
+            SeqClient.LOGGER.debug("[WebSocket] Ignoring discord_chat from {}", username);
+            return;
+        }
+        SeqClient.LOGGER.info("[WebSocket] Dispatching discord_chat from {}", username);
+        discordChatHandler.accept(discordChat);
+    }
+
+    void handlePartyFinderUpdate(JsonObject payload) {
+        String action = IncomingMessageParser.partyFinderAction(payload);
+        if (partyFinderUpdateHandler == null) {
+            SeqClient.LOGGER.warn("[WebSocket] Received party_finder_update but handler is not registered");
+            return;
+        }
+        PartyFinderUpdateMessage update = IncomingMessageParser.partyFinderUpdate(payload, action);
+        SeqClient.LOGGER.info(
+                "[WebSocket] Dispatching party_finder_update action={} hasListing={}",
+                action,
+                update.listingJson() != null);
+        partyFinderUpdateHandler.accept(update);
+    }
+
+    void handlePartyFinderInvite(JsonObject payload) {
+        if (partyFinderInviteHandler == null) {
+            SeqClient.LOGGER.warn("[WebSocket] Received party_finder_invite but handler is not registered");
+            return;
+        }
+        PartyFinderInviteMessage invite = IncomingMessageParser.partyFinderInvite(payload);
+        SeqClient.LOGGER.info(
+                "[WebSocket] Dispatching party_finder_invite listingId={} inviterUUID={} tokenPresent={} hasListing={}",
+                invite.listingId(),
+                invite.inviterUUID(),
+                invite.inviteToken() != null && !invite.inviteToken().isBlank(),
+                invite.listingJson() != null);
+        partyFinderInviteHandler.accept(invite);
+    }
+
+    void handlePartyFinderStaleWarning(JsonObject payload) {
+        if (partyFinderStaleWarningHandler == null) {
+            SeqClient.LOGGER.warn("[WebSocket] Received party_finder_stale_warning but handler is not registered");
+            return;
+        }
+        PartyFinderStaleWarningMessage warning = IncomingMessageParser.partyFinderStaleWarning(payload);
+        SeqClient.LOGGER.info(
+                "[WebSocket] Dispatching party_finder_stale_warning reason={} listingId={} disbandAt={} minutesRemaining={}",
+                warning.reason(),
+                warning.listingId(),
+                warning.disbandAt(),
+                warning.minutesRemaining());
+        partyFinderStaleWarningHandler.accept(warning);
+    }
+
+    void handleBackendError(JsonObject payload) {
+        IncomingMessageParser.BackendError backendError = IncomingMessageParser.backendError(payload);
+        String error = backendError.message();
+        String backendCode = backendError.code();
+        String requestId = backendError.requestId();
+        String minimumSafeVersion = backendError.minimumSafeVersion();
+        String capability = backendError.capability();
+        int status = backendError.status();
+        String normalized = error.toLowerCase(Locale.ROOT);
+
+        if (treasuryOnlyConnection && requestId == null && isTreasuryAuthenticationError(backendCode)) {
+            treasurySessionAuthenticator.reset();
+            authFailed = true;
+            autoReconnect = false;
+            notifyConnectionFailure("Treasury identity verification failed: " + error, true);
+            finishConnectFlow();
+            closeTreasuryAuthFailure();
+            return;
+        }
+
+        if (requestId != null
+                && treasuryOutErrorHandler != null
+                && treasuryOutErrorHandler.test(new TreasuryOutErrorMessage(requestId, backendCode, error))) {
+            if ("token_invalid".equalsIgnoreCase(backendCode)) {
+                authFailed = true;
+                authenticated = false;
+                registerAuthFailure();
+                SeqClient.getAuthService()
+                        .invalidateSession(
+                                AuthErrorCode.TOKEN_INVALID,
+                                "Backend rejected the stored token. Re-authentication required.");
+            } else if ("mod_version_unsupported".equalsIgnoreCase(backendCode)) {
+                autoReconnect = false;
+            }
+            return;
+        }
+
+        if (isSilentGuildChatMembershipReject(backendCode, capability, normalized)) {
+            SeqClient.LOGGER.info("[WebSocket] Guild chat relay rejected because sender is not in guild");
+            return;
+        }
+
+        if (isSessionMembershipReject(backendCode, capability, normalized)) {
+            disableMemberFeaturesForSession();
+            return;
+        }
+
+        SeqClient.LOGGER.warn("[WebSocket] Backend error status={} code={} message={}", status, backendCode, error);
+
+        if ("mod_version_unsupported".equalsIgnoreCase(backendCode) || status == 426) {
+            autoReconnect = false;
+            maybeNotifyVersionRejection(capability, minimumSafeVersion, error);
+            return;
+        }
+
+        if (status == 400 || normalized.contains("invalid auth request")) {
+            authFailed = true;
+            authenticated = false;
+            registerAuthFailure();
+            notify("Invalid auth request. Run /seq connect to start a fresh backend session.");
+            return;
+        }
+
+        if (status == 401 || normalized.contains("invalid token") || normalized.contains("expired")) {
+            authFailed = true;
+            authenticated = false;
+            registerAuthFailure();
+            SeqClient.getAuthService()
+                    .invalidateSession(
+                            normalized.contains("expired") ? AuthErrorCode.TOKEN_EXPIRED : AuthErrorCode.TOKEN_INVALID,
+                            normalized.contains("expired")
+                                    ? "Backend token expired. Re-authentication required."
+                                    : "Backend rejected the stored token. Re-authentication required.");
+            notify(SeqClient.getAuthService().getLastError().getMessage());
+            return;
+        }
+
+        if (isPartyFinderError(backendError, normalized)) {
+            SeqClient.getPartyFinderManager().pushUiError(error);
+            return;
+        }
+
+        if (isCapabilityAuthorizationReject(status, capability)) {
+            SeqClient.LOGGER.info(
+                    "[WebSocket] Capability authorization rejected capability={} message={}", capability, error);
+            notify(formatCapabilityAccessDenied(capability, error));
+            return;
+        }
+
+        if (status == 403 || normalized.contains("not in guild") || normalized.contains("guild")) {
+            notInGuild = true;
+            authFailed = true;
+            authenticated = false;
+            notify("Access denied by backend authorization.");
+            SeqClient.LOGGER.warn("[WebSocket] Guild error detected; disabling auto-reconnect and closing socket");
+            autoReconnect = false;
+            close();
+            return;
+        }
+
+        if (normalized.contains("validation")) {
+            if ("Unknown backend error".equals(error)) {
+                notify("Request rejected by backend validation. Please check your input.");
+            } else {
+                notify(error);
+            }
+            return;
+        }
+
+        notify("Error: " + error);
+    }
+
+    void handleUnhandledIncomingMessage(String type) {
+        SeqClient.LOGGER.warn("[WebSocket] Unhandled incoming message type={}", type);
     }
 
     // ── Handler registration ──
