@@ -1,9 +1,9 @@
 package com.seqwawa.seq.managers;
 
+import com.seqwawa.seq.utils.MinecraftUsername;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.regex.Pattern;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
@@ -14,8 +14,6 @@ import net.minecraft.network.chat.contents.PlainTextContents;
  * preserving hover/insertion metadata after Wynncraft formatting cleanup.
  */
 final class PacketNameResolver {
-    private static final Pattern USERNAME_PATTERN = Pattern.compile("[A-Za-z0-9_]{3,16}");
-
     private final String text;
     private final List<MetaChar> characters;
 
@@ -180,7 +178,7 @@ final class PacketNameResolver {
     }
 
     private static String validUsername(String candidate) {
-        return candidate != null && USERNAME_PATTERN.matcher(candidate).matches() ? candidate : null;
+        return MinecraftUsername.isValid(candidate) ? candidate : null;
     }
 
     private static String toText(List<MetaChar> characters) {

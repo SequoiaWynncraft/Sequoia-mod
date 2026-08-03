@@ -1,6 +1,7 @@
 package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.utils.MinecraftUsername;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -18,7 +19,6 @@ import net.minecraft.world.scores.Scoreboard;
 public final class WynnPartyScoreboardReader {
     private static final Pattern FIRST_NUMBER = Pattern.compile("(\\d+)");
     private static final Pattern BRACKETED_NUMBER = Pattern.compile("\\[(\\d+)]");
-    private static final Pattern USERNAME_PATTERN = Pattern.compile("[A-Za-z0-9_]{3,16}");
 
     private WynnPartyScoreboardReader() {}
 
@@ -585,11 +585,7 @@ public final class WynnPartyScoreboardReader {
     }
 
     private static String validUsername(String username) {
-        if (username == null) {
-            return null;
-        }
-        String trimmed = username.trim();
-        return USERNAME_PATTERN.matcher(trimmed).matches() ? trimmed : null;
+        return MinecraftUsername.normalize(username);
     }
 
     private static String localUsername() {

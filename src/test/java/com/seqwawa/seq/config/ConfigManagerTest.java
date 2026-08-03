@@ -23,6 +23,14 @@ class ConfigManagerTest {
     Path tempDir;
 
     @Test
+    void normalizesBridgeUsernamesForCaseInsensitiveStorage() {
+        assertTrue(ConfigManager.isValidBridgeUsername("  Player_Name  "));
+        assertEquals("player_name", ConfigManager.normalizeBridgeUsername("  Player_Name  "));
+        assertNull(ConfigManager.normalizeBridgeUsername("ab"));
+        assertNull(ConfigManager.normalizeBridgeUsername("Player-Name"));
+    }
+
+    @Test
     void doesNotPersistAuthSessionInConfig() throws Exception {
         Path configPath = tempDir.resolve("config").resolve("sequoia.json");
         ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);

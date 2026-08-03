@@ -1,14 +1,13 @@
 package com.seqwawa.seq.managers;
 
+import com.seqwawa.seq.utils.MinecraftUsername;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Pattern;
 
 public final class NicknameResolverCache {
-    private static final Pattern USERNAME_PATTERN = Pattern.compile("[A-Za-z0-9_]{3,16}");
     private static final Duration ENTRY_TTL = Duration.ofMinutes(10);
     private static final Map<String, Entry> usernameByNickname = new ConcurrentHashMap<>();
 
@@ -78,11 +77,7 @@ public final class NicknameResolverCache {
     }
 
     private static String normalizeUsername(String username) {
-        if (username == null) {
-            return null;
-        }
-        String normalized = username.trim();
-        return USERNAME_PATTERN.matcher(normalized).matches() ? normalized : null;
+        return MinecraftUsername.normalize(username);
     }
 
     private record Entry(String username, Instant lastSeen) {}

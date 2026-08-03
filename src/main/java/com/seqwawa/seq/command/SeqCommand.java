@@ -44,6 +44,7 @@ import com.seqwawa.seq.network.auth.AuthException;
 import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.WorldMapScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
+import com.seqwawa.seq.utils.MinecraftUsername;
 import com.seqwawa.seq.utils.PlayerNameCache;
 
 public class SeqCommand {
@@ -1068,7 +1069,7 @@ public class SeqCommand {
         }
 
         private static boolean isValidMinecraftUsername(String username) {
-                return ConfigManager.isValidBridgeUsername(username);
+                return MinecraftUsername.normalize(username) != null;
         }
 
         private static String formatListingSummary(Listing listing, boolean isCurrent) {

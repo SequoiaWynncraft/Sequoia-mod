@@ -41,6 +41,7 @@ import com.seqwawa.seq.model.GuildWarSubmission;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.AuthException;
+import com.seqwawa.seq.utils.MinecraftUsername;
 import com.seqwawa.seq.utils.WynnClassCache;
 
 public class ConnectionManager extends WebSocketClient implements NotificationAccessor {
@@ -53,7 +54,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static final long AUTH_BACKOFF_BASE_MS = 2_000;
     private static final long AUTH_BACKOFF_CAP_MS = 60_000;
     private static final long PRIVILEGED_SEND_THROTTLE_MS = 50;
-    private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Pattern URL_PATTERN = Pattern.compile("^(https?://).+", Pattern.CASE_INSENSITIVE);
     private static final Map<String, Integer> VERSION_REMINDER_INTERVALS = Map.of(
             "bomb_share_request", 5,
@@ -1282,7 +1282,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
 
         for (String warrer : submission.warrers()) {
-            if (warrer == null || !MC_USERNAME_PATTERN.matcher(warrer).matches()) {
+            if (!MinecraftUsername.isValid(warrer)) {
                 SeqClient.LOGGER.warn("[WebSocket] sendGuildWarSubmission dropped invalid warrer={}", warrer);
                 return false;
             }
@@ -2181,14 +2181,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     private static String sanitizeMinecraftUsername(String username) {
-        if (username == null || username.isBlank()) {
-            return null;
-        }
-        String trimmed = username.trim();
-        if (!MC_USERNAME_PATTERN.matcher(trimmed).matches()) {
-            return null;
-        }
-        return trimmed;
+        return MinecraftUsername.normalize(username);
     }
 
     private static String sanitizeNickname(String nickname) {

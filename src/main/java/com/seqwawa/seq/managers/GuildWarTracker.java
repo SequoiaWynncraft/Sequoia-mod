@@ -31,6 +31,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.GuildWarSubmission;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.utils.MinecraftUsername;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 
 /**
@@ -39,7 +40,6 @@ import com.seqwawa.seq.utils.PacketTextNormalizer;
  */
 public final class GuildWarTracker implements GuildWarTrackerHandle {
     private static final double TRACKING_RADIUS_SQ = 120 * 120;
-    private static final Pattern VALID_USERNAME = Pattern.compile("^[a-zA-Z0-9_]{3,16}$");
     private static final Pattern TERRITORY_CAPTURED = Pattern.compile("(?i)Territory\\s+Captured");
     private static final Pattern CAPTURED_TERRITORY = Pattern.compile("(?i)Captured\\s+\"([^\"]+)\"");
     private static final Pattern QUEUE_START = Pattern.compile("(?i)The\\s+war\\s+for\\s+([\\w' \\-]+)\\s+will");
@@ -314,8 +314,8 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             warrers = sanitizeWarrers(collectCurrentWarrers());
         }
 
-        String localUsername = trimToNull(playerContext.localUsername());
-        if (warrers.isEmpty() && isValidUsername(localUsername)) {
+        String localUsername = MinecraftUsername.normalize(playerContext.localUsername());
+        if (warrers.isEmpty() && localUsername != null) {
             warrers = List.of(localUsername);
         }
         if (warrers.isEmpty()) {
@@ -436,14 +436,15 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     private List<String> collectCurrentWarrers() {
         LinkedHashSet<String> uniqueNames = new LinkedHashSet<>();
 
-        String localUsername = trimToNull(playerContext.localUsername());
-        if (isValidUsername(localUsername)) {
+        String localUsername = MinecraftUsername.normalize(playerContext.localUsername());
+        if (localUsername != null) {
             uniqueNames.add(localUsername);
         }
 
         for (String name : playerContext.nearbyPlayerNames(TRACKING_RADIUS_SQ)) {
-            if (isValidUsername(name)) {
-                uniqueNames.add(name.trim());
+            String username = MinecraftUsername.normalize(name);
+            if (username != null) {
+                uniqueNames.add(username);
             }
         }
 
@@ -456,8 +457,9 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         }
         LinkedHashSet<String> unique = new LinkedHashSet<>();
         for (String warrer : warrers) {
-            if (isValidUsername(warrer)) {
-                unique.add(warrer.trim());
+            String username = MinecraftUsername.normalize(warrer);
+            if (username != null) {
+                unique.add(username);
             }
         }
         return List.copyOf(unique);
@@ -487,10 +489,6 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             return state.timestamp();
         }
         return clock.getAsLong();
-    }
-
-    private boolean isValidUsername(String name) {
-        return trimToNull(name) != null && VALID_USERNAME.matcher(name.trim()).matches();
     }
 
     private static Integer parseSeasonRating(String cleaned) {

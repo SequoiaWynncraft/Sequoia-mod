@@ -13,6 +13,7 @@ import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
 import com.seqwawa.seq.integrations.WynntilsItemPreviewAccess;
 import com.seqwawa.seq.model.ChatItemPreview;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.utils.MinecraftUsername;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 
 import java.net.URLEncoder;
@@ -191,7 +192,7 @@ public class ChatManager {
 
         String displayedName = matcher.group(1).trim();
         String realUsername = findRealUsername(message, displayedName);
-        if (realUsername == null || !realUsername.matches("[a-zA-Z0-9_]{3,16}")) {
+        if (!MinecraftUsername.isValid(realUsername)) {
             SeqClient.LOGGER.debug(
                     "[NicknameResolver] Chat observe no real username displayed='{}' real='{}' cleaned='{}'",
                     displayedName,
@@ -382,15 +383,15 @@ public class ChatManager {
     }
 
     private static String resolveAvatarUsername(String displayedName, String realUsername) {
-        if (realUsername != null && realUsername.matches("[a-zA-Z0-9_]{3,16}")) {
+        if (MinecraftUsername.isValid(realUsername)) {
             return realUsername;
         }
-        if (displayedName != null && displayedName.matches("[a-zA-Z0-9_]{3,16}")) {
+        if (MinecraftUsername.isValid(displayedName)) {
             return displayedName;
         }
 
         String normalized = displayedName == null ? "" : displayedName.replaceAll("[^a-zA-Z0-9_]", "");
-        if (normalized.matches("[a-zA-Z0-9_]{3,16}")) {
+        if (MinecraftUsername.isValid(normalized)) {
             return normalized;
         }
 
@@ -470,10 +471,10 @@ public class ChatManager {
 
     static String resolvePacketUsername(Component component, String displayedName) {
         String realUsername = findRealUsername(component, displayedName);
-        if (realUsername != null && realUsername.matches("[a-zA-Z0-9_]{3,16}")) {
+        if (MinecraftUsername.isValid(realUsername)) {
             return realUsername;
         }
-        if (displayedName != null && displayedName.matches("[a-zA-Z0-9_]{3,16}")) {
+        if (MinecraftUsername.isValid(displayedName)) {
             return displayedName;
         }
         return null;
@@ -566,7 +567,7 @@ public class ChatManager {
         }
 
         String insertion = style.getInsertion();
-        if (insertion == null || !insertion.matches("[a-zA-Z0-9_]{3,16}")) {
+        if (!MinecraftUsername.isValid(insertion)) {
             return null;
         }
         return insertion;

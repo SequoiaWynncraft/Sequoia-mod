@@ -28,6 +28,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.SeqBadge;
 import com.seqwawa.seq.render.SeqAvatarRenderStateExtension;
+import com.seqwawa.seq.utils.MinecraftUsername;
 
 public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRendererHandle {
     private static final Pattern USERNAME_TOKEN = Pattern.compile("[A-Za-z0-9_]{3,16}");
@@ -393,11 +394,8 @@ public final class WynntilsSeqBadgeNametagRenderer implements SeqBadgeNametagRen
         if (username == null) {
             return null;
         }
-        String trimmed = stripFormatting(username).trim();
-        if (!trimmed.matches("[A-Za-z0-9_]{3,16}")) {
-            return null;
-        }
-        return trimmed.toLowerCase(Locale.ROOT);
+        String normalized = MinecraftUsername.normalize(stripFormatting(username));
+        return normalized == null ? null : normalized.toLowerCase(Locale.ROOT);
     }
 
     private static String stripFormatting(String value) {

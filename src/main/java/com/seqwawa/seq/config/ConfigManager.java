@@ -4,6 +4,7 @@ import com.google.gson.*;
 import lombok.Getter;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
+import com.seqwawa.seq.utils.MinecraftUsername;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -15,7 +16,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 @Getter
 public class ConfigManager {
@@ -33,7 +33,6 @@ public class ConfigManager {
     private static final String STARTUP_VIDEO_WIDTH_KEY = "_startup_video_width";
     private static final String STARTUP_VIDEO_HEIGHT_KEY = "_startup_video_height";
     private static final String TRACKED_WORLD_EVENTS_KEY = "_tracked_world_events";
-    private static final Pattern MINECRAFT_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private final Path configPath;
     private final Path legacyTokenFile;
@@ -143,14 +142,8 @@ public class ConfigManager {
     }
 
     public static String normalizeBridgeUsername(String username) {
-        if (username == null) {
-            return null;
-        }
-        String trimmed = username.trim();
-        if (!MINECRAFT_USERNAME_PATTERN.matcher(trimmed).matches()) {
-            return null;
-        }
-        return trimmed.toLowerCase(Locale.ROOT);
+        String normalized = MinecraftUsername.normalize(username);
+        return normalized == null ? null : normalized.toLowerCase(Locale.ROOT);
     }
 
     public boolean addIgnoredBridgeUser(String username) {
