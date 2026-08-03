@@ -97,3 +97,18 @@ rendering, commands, configuration, or lifecycle code:
 When a graphical environment or Wynncraft session is unavailable, record the
 unexecuted steps in the pass validation report; automated tests and build
 success do not replace this runtime check.
+
+## Changed-source hygiene
+
+`./gradlew check` applies whitespace and newline checks plus focused Checkstyle
+analysis to changed sources. Local runs compare tracked Java files with `HEAD`
+and include untracked Java files. Pull-request CI derives the comparison from
+`GITHUB_BASE_REF`. To reproduce that comparison locally, run:
+
+```bash
+./gradlew check -PsourceHygieneBaseRef=origin/main
+```
+
+The initial rules deliberately avoid a repository-wide formatter rewrite.
+Broader formatting or analysis rules should be introduced in separate tooling
+commits after the existing source tree has been normalized.

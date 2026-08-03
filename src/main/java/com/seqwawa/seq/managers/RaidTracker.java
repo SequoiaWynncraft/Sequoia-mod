@@ -8,7 +8,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import com.seqwawa.seq.mixins.ClientPacketListenerMixin;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.contents.PlainTextContents;
@@ -24,7 +23,7 @@ import com.seqwawa.seq.utils.PacketTextNormalizer;
  * packet level, before Wynntils or Fabric's message API can cancel/reformat
  * the message. Wynncraft sends raid completions as multiline system chat with
  * Unicode private-use prefix characters on each line, e.g.:
- * 
+ *
  * <pre>
  * \uDBFF\uDFFC\uDBFF\uDFFF\uDBFF\uDFFE Player1, Player2, and Player3
  * \uDBFF\uDFFC\uDC00\uDC06  finished The Nameless Anomaly and claimed 2x Aspects,

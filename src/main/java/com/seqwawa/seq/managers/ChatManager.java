@@ -1,6 +1,5 @@
 package com.seqwawa.seq.managers;
 
-import com.seqwawa.seq.mixins.ClientPacketListenerMixin;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
@@ -248,7 +247,7 @@ public class ChatManager {
 
     /**
      * Extracts real username and message content from Wynncraft guild chat.
-     * 
+     *
      * <p>
      * Wynncraft sends nicknames as the visible text, but puts the real username
      * in the Style's insertion field (used for shift-click @mentions). We look for

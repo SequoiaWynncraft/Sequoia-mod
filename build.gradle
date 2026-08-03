@@ -2,6 +2,8 @@ plugins {
     id 'fabric-loom' version '1.15-SNAPSHOT'
     id 'maven-publish'
     id 'io.freefair.lombok' version '8.11'
+    id 'checkstyle'
+    id 'com.diffplug.spotless' version '8.3.0'
 }
 
 apply from: "gradle/native-classifier.gradle"
@@ -137,6 +139,69 @@ dependencies {
 tasks.withType(Test).configureEach {
     useJUnitPlatform()
 }
+
+def sourceHygieneBaseRef = providers.gradleProperty("sourceHygieneBaseRef")
+        .orElse(providers.environmentVariable("GITHUB_BASE_REF").map { "origin/${it}" })
+        .orElse("HEAD")
+
+spotless {
+    ratchetFrom(sourceHygieneBaseRef.get())
+
+    java {
+        target("src/main/java/**/*.java", "src/test/java/**/*.java")
+        trimTrailingWhitespace()
+        leadingTabsToSpaces(4)
+        endWithNewline()
+    }
+
+    groovyGradle {
+        target("*.gradle", "gradle/*.gradle")
+        trimTrailingWhitespace()
+        leadingTabsToSpaces(4)
+        endWithNewline()
+    }
+
+    format("misc") {
+        target("*.md", "docs/**/*.md", "*.properties", "src/main/resources/**/*.json")
+        trimTrailingWhitespace()
+        leadingTabsToSpaces(4)
+        endWithNewline()
+    }
+}
+
+checkstyle {
+    toolVersion = "10.21.4"
+    configFile = file("config/checkstyle/checkstyle.xml")
+}
+
+def changedJavaSources = providers.provider {
+    String baseRef = sourceHygieneBaseRef.get()
+    LinkedHashSet<String> paths = new LinkedHashSet<>()
+    if (baseRef != "HEAD") {
+        paths.addAll(providers.exec {
+            commandLine("git", "diff", "--name-only", "--diff-filter=ACMR", "${baseRef}...HEAD", "--", "*.java")
+        }.standardOutput.asText.get().readLines())
+    }
+    paths.addAll(providers.exec {
+        commandLine("git", "diff", "--name-only", "--diff-filter=ACMR", "HEAD", "--", "*.java")
+    }.standardOutput.asText.get().readLines())
+    paths.addAll(providers.exec {
+        commandLine("git", "ls-files", "--others", "--exclude-standard", "--", "*.java")
+    }.standardOutput.asText.get().readLines())
+    paths.findAll { !it.isBlank() && file(it).isFile() }.collect { file(it) }
+}
+
+tasks.named("checkstyleMain").configure { enabled = false }
+tasks.named("checkstyleTest").configure { enabled = false }
+
+def checkChangedJava = tasks.register("checkChangedJava", Checkstyle) {
+    group = "verification"
+    description = "Runs focused static analysis on Java files changed from the configured base ref."
+    source = files(changedJavaSources)
+    classpath = files()
+}
+
+tasks.named("check").configure { dependsOn(checkChangedJava) }
 
 processResources {
     inputs.property "version", project.version

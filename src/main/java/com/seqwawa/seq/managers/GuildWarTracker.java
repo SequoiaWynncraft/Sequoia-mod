@@ -8,7 +8,6 @@ import com.wynntils.models.war.type.WarBattleInfo;
 import com.wynntils.models.war.type.WarTowerState;
 import com.wynntils.utils.type.RangedValue;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
