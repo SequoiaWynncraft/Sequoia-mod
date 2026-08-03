@@ -28,6 +28,8 @@ import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyStatus;
+import com.seqwawa.seq.ui.PartyFinderViewLayout.Bounds;
+import com.seqwawa.seq.ui.PartyFinderViewLayout.HeaderControls;
 import com.seqwawa.seq.utils.TextInputFilters;
 import com.seqwawa.seq.utils.TextInputHelper;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
@@ -58,16 +60,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float HEADER_HEIGHT = 30;
     private static final float PADDING = 8;
     private static final float SEARCH_BAR_HEIGHT = 18;
-    private static final float SEARCH_BAR_WIDTH = 140;
     private static final float SEARCH_BAR_MARGIN = 8;
-    private static final float HEADER_BUTTON_SPACING = 6;
-    private static final float HEADER_MANAGE_BUTTON_W = 88;
-    private static final float HEADER_INVITE_BUTTON_W = 56;
-    private static final float HEADER_OPEN_CLOSE_BUTTON_W = 84;
-    private static final float HEADER_DELIST_BUTTON_W = 72;
-    private static final float HEADER_INVITE_ALL_BUTTON_W = 68;
-    private static final float HEADER_NEW_PARTY_BUTTON_W = 80;
-    private static final float HEADER_ROLE_DROPDOWN_W = 80;
     private static final float SCROLL_SPEED = 12;
     private static final long LOADING_NAME_REFRESH_MS = 1500L;
 
@@ -231,18 +224,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             return mx >= x && mx <= x + w && my >= y && my <= y + h;
         }
     }
-
-    private record HeaderButtonBounds(float x, float y, float w, float h) {}
-
-    private record HeaderControlsLayout(
-            HeaderButtonBounds searchBar,
-            HeaderButtonBounds manageButton,
-            HeaderButtonBounds inviteButton,
-            HeaderButtonBounds openCloseButton,
-            HeaderButtonBounds delistButton,
-            HeaderButtonBounds inviteAllButton,
-            HeaderButtonBounds newPartyButton,
-            HeaderButtonBounds roleDropdown) {}
 
     public PartyFinderScreen(Screen parent) {
         this(parent, false);
@@ -528,8 +509,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     private void renderHeaderControls(UiCanvas canvas, String fontName, float panelX, float panelWidth) {
         searchCursorBlink++;
-        HeaderControlsLayout layout = computeHeaderControlsLayout(panelX);
-        HeaderButtonBounds searchBar = layout.searchBar();
+        HeaderControls layout = computeHeaderControlsLayout(panelX);
+        Bounds searchBar = layout.searchBar();
         float searchX = searchBar.x();
         float searchY = searchBar.y();
 
@@ -616,7 +597,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     }
 
     private void drawHeaderButton(
-            UiCanvas canvas, String fontName, HeaderButtonBounds bounds, String label, Color bg, Color hoverBg) {
+            UiCanvas canvas, String fontName, Bounds bounds, String label, Color bg, Color hoverBg) {
         if (bounds == null) {
             return;
         }
@@ -626,7 +607,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private void drawStatusBadge(
             UiCanvas canvas,
             String fontName,
-            HeaderButtonBounds bounds,
+            Bounds bounds,
             PartyStatus status,
             PartyCloseReason closeReason,
             PartyJoinPolicy joinPolicy) {
@@ -701,57 +682,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         };
     }
 
-    private HeaderControlsLayout computeHeaderControlsLayout(float panelX) {
-        float searchX = panelX + SEARCH_BAR_MARGIN;
-        float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
-        HeaderButtonBounds searchBar = new HeaderButtonBounds(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT);
-
-        float nextButtonX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
-        HeaderButtonBounds manageButton = null;
-        HeaderButtonBounds inviteButton = null;
-        HeaderButtonBounds openCloseButton = null;
-        HeaderButtonBounds delistButton = null;
-        HeaderButtonBounds inviteAllButton = null;
-        HeaderButtonBounds newPartyButton = null;
-
-        if (party().isPartyLeader()) {
-            manageButton = new HeaderButtonBounds(nextButtonX, searchY, HEADER_MANAGE_BUTTON_W, SEARCH_BAR_HEIGHT);
-            nextButtonX += HEADER_MANAGE_BUTTON_W + HEADER_BUTTON_SPACING;
-
-            inviteButton = new HeaderButtonBounds(nextButtonX, searchY, HEADER_INVITE_BUTTON_W, SEARCH_BAR_HEIGHT);
-            nextButtonX += HEADER_INVITE_BUTTON_W + HEADER_BUTTON_SPACING;
-
-            openCloseButton =
-                    new HeaderButtonBounds(nextButtonX, searchY, HEADER_OPEN_CLOSE_BUTTON_W, SEARCH_BAR_HEIGHT);
-            nextButtonX += HEADER_OPEN_CLOSE_BUTTON_W + HEADER_BUTTON_SPACING;
-
-            delistButton = new HeaderButtonBounds(nextButtonX, searchY, HEADER_DELIST_BUTTON_W, SEARCH_BAR_HEIGHT);
-            nextButtonX += HEADER_DELIST_BUTTON_W + HEADER_BUTTON_SPACING;
-
-            inviteAllButton =
-                    new HeaderButtonBounds(nextButtonX, searchY, HEADER_INVITE_ALL_BUTTON_W, SEARCH_BAR_HEIGHT);
-            nextButtonX += HEADER_INVITE_ALL_BUTTON_W + HEADER_BUTTON_SPACING;
-        } else {
-            newPartyButton = new HeaderButtonBounds(nextButtonX, searchY, HEADER_NEW_PARTY_BUTTON_W, SEARCH_BAR_HEIGHT);
-            nextButtonX += HEADER_NEW_PARTY_BUTTON_W + HEADER_BUTTON_SPACING;
-        }
-
-        HeaderButtonBounds roleDropdown =
-                new HeaderButtonBounds(nextButtonX, searchY, HEADER_ROLE_DROPDOWN_W, SEARCH_BAR_HEIGHT);
-        return new HeaderControlsLayout(
-                searchBar,
-                manageButton,
-                inviteButton,
-                openCloseButton,
-                delistButton,
-                inviteAllButton,
-                newPartyButton,
-                roleDropdown);
+    private HeaderControls computeHeaderControlsLayout(float panelX) {
+        return PartyFinderViewLayout.headerControls(panelX, party().isPartyLeader());
     }
 
     // ── Role dropdown ──
 
-    private void renderRoleDropdownButton(UiCanvas canvas, String fontName, HeaderButtonBounds bounds) {
+    private void renderRoleDropdownButton(UiCanvas canvas, String fontName, Bounds bounds) {
         float x = bounds.x();
         float y = bounds.y();
         float w = bounds.w();
@@ -1042,29 +979,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     }
 
     private String fitTextToWidth(String text, String fontName, float fontSize, float maxWidth) {
-        if (text == null || text.isEmpty() || maxWidth <= 0) {
-            return "";
-        }
-
-        float fullWidth = textWidth(text, fontName, fontSize);
-        if (fullWidth <= maxWidth) {
-            return text;
-        }
-
-        String ellipsis = "...";
-        float ellipsisWidth = textWidth(ellipsis, fontName, fontSize);
-        if (ellipsisWidth > maxWidth) {
-            return "";
-        }
-
-        for (int end = text.length() - 1; end > 0; end--) {
-            String candidate = text.substring(0, end) + ellipsis;
-            if (textWidth(candidate, fontName, fontSize) <= maxWidth) {
-                return candidate;
-            }
-        }
-
-        return ellipsis;
+        return PartyFinderViewLayout.fitText(text, maxWidth, value -> textWidth(value, fontName, fontSize));
     }
 
     private void renderMemberRow(
@@ -2135,8 +2050,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         return mx >= bx && mx <= bx + bw && my >= by && my <= by + bh;
     }
 
-    private boolean isHovered(float mx, float my, HeaderButtonBounds bounds) {
-        return bounds != null && isHovered(mx, my, bounds.x(), bounds.y(), bounds.w(), bounds.h());
+    private boolean isHovered(float mx, float my, Bounds bounds) {
+        return bounds != null && bounds.contains(mx, my);
     }
 
     private static void drawText(
@@ -2301,7 +2216,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         // ── Header ──
         float panelX = SIDEBAR_WIDTH;
         float panelWidth = screenWidth - SIDEBAR_WIDTH;
-        HeaderControlsLayout headerLayout = computeHeaderControlsLayout(panelX);
+        HeaderControls headerLayout = computeHeaderControlsLayout(panelX);
 
         if (isHovered(mx, my, headerLayout.searchBar())) {
             searchFocused = true;

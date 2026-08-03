@@ -1,6 +1,11 @@
 package com.seqwawa.seq.ui;
 
 import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.IngredientGuideViewLayout.clamp;
+import static com.seqwawa.seq.ui.IngredientGuideViewLayout.contains;
+import static com.seqwawa.seq.ui.IngredientGuideViewLayout.ingredientListLayout;
+import static com.seqwawa.seq.ui.IngredientGuideViewLayout.scrollbarGeometry;
+import static com.seqwawa.seq.ui.IngredientGuideViewLayout.scrollbarThumbHeight;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_DIVIDER;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY_HOVER;
@@ -37,6 +42,8 @@ import com.seqwawa.seq.model.IngredientGuideEntry.Effect;
 import com.seqwawa.seq.model.IngredientGuideEntry.Modifier;
 import com.seqwawa.seq.model.IngredientGuideEntry.SpawnLocation;
 import com.seqwawa.seq.render.MinecraftGuiOverlay;
+import com.seqwawa.seq.ui.IngredientGuideViewLayout.IngredientListLayout;
+import com.seqwawa.seq.ui.IngredientGuideViewLayout.ScrollbarGeometry;
 import com.seqwawa.seq.utils.TextInputHelper;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
@@ -66,7 +73,6 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static final float HEADER_HEIGHT = 42;
     private static final float SEARCH_HEIGHT = 28;
     private static final float SORT_ROW_HEIGHT = 22;
-    private static final float SORT_ROW_GAP = 4;
     private static final float SORT_DIRECTION_WIDTH = 76;
     private static final float SEARCH_SCOPE_WIDTH = SORT_DIRECTION_WIDTH;
     private static final float SORT_OPTION_HEIGHT = 22;
@@ -78,8 +84,6 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static final long FARM_SPOT_PREVIEW_ROTATION_MS = 2_500;
     private static final float SCROLL_STEP = 34;
     private static final float SCROLLBAR_WIDTH = 3;
-    private static final float SCROLLBAR_HIT_WIDTH = 9;
-    private static final float MIN_SCROLLBAR_THUMB_HEIGHT = 20;
     private static final float PANEL_RADIUS = 7;
     private static final Color[] TIER_COLORS = {
         new Color(153, 153, 153),
@@ -1572,14 +1576,6 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         listScroll = 0;
     }
 
-    private static IngredientListLayout ingredientListLayout(float panelY, boolean showSecondarySort) {
-        float primarySortY = panelY + 9 + SEARCH_HEIGHT + 8;
-        float secondarySortY = primarySortY + SORT_ROW_HEIGHT + SORT_ROW_GAP;
-        float finalSortY = showSecondarySort ? secondarySortY : primarySortY;
-        float summaryY = finalSortY + SORT_ROW_HEIGHT + 11;
-        return new IngredientListLayout(primarySortY, secondarySortY, summaryY, summaryY + 12);
-    }
-
     private void drawScrollbar(
             UiCanvas canvas,
             float x,
@@ -1626,28 +1622,6 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         return true;
     }
 
-    private static ScrollbarGeometry scrollbarGeometry(
-            float x, float y, float height, float scroll, float maxScroll) {
-        if (maxScroll <= 0 || height <= 0) {
-            return null;
-        }
-        float thumbHeight = scrollbarThumbHeight(height, maxScroll);
-        float thumbY = y + (height - thumbHeight) * (clamp(scroll, 0, maxScroll) / maxScroll);
-        return new ScrollbarGeometry(x, y, height, thumbY, thumbHeight);
-    }
-
-    private static float scrollbarThumbHeight(float trackHeight, float maxScroll) {
-        if (trackHeight <= 0) {
-            return 0;
-        }
-        if (maxScroll <= 0) {
-            return trackHeight;
-        }
-        return Math.min(
-                trackHeight,
-                Math.max(MIN_SCROLLBAR_THUMB_HEIGHT, trackHeight * trackHeight / (trackHeight + maxScroll)));
-    }
-
     private static void drawText(
             UiCanvas canvas,
             String text,
@@ -1666,26 +1640,9 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     }
 
     private static String ellipsize(String text, float maxWidth, float fontSize) {
-        if (text == null || text.isEmpty() || maxWidth <= 0) {
-            return "";
-        }
         String font = SeqClient.getFontManager().getSelectedFont();
-        if (UiRenderer.measureText(text, font, fontSize).width() <= maxWidth) {
-            return text;
-        }
-        String suffix = "…";
-        int low = 0;
-        int high = text.length();
-        while (low < high) {
-            int mid = (low + high + 1) / 2;
-            String candidate = text.substring(0, mid) + suffix;
-            if (UiRenderer.measureText(candidate, font, fontSize).width() <= maxWidth) {
-                low = mid;
-            } else {
-                high = mid - 1;
-            }
-        }
-        return text.substring(0, low) + suffix;
+        return IngredientGuideViewLayout.ellipsize(
+                text, maxWidth, value -> UiRenderer.measureText(value, font, fontSize).width());
     }
 
     private static Color tierColor(int tier) {
@@ -1712,14 +1669,6 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         return Character.toUpperCase(normalized.charAt(0)) + normalized.substring(1);
     }
 
-    private static boolean contains(float px, float py, float x, float y, float width, float height) {
-        return px >= x && px <= x + width && py >= y && py <= y + height;
-    }
-
-    private static float clamp(float value, float min, float max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
     private record CachedIngredientIcon(ItemStack stack, Supplier<PlayerSkin> skinLookup) {}
 
     private record IngredientIconOverlay(
@@ -1736,22 +1685,19 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             String markerId,
             SpawnLocation location) {
         private boolean containsMap(float px, float py) {
-            return IngredientGuideScreen.contains(px, py, mapX, y, actionWidth, height);
+            return IngredientGuideViewLayout.contains(px, py, mapX, y, actionWidth, height);
         }
 
         private boolean containsCopy(float px, float py) {
-            return IngredientGuideScreen.contains(px, py, copyX, y, actionWidth, height);
+            return IngredientGuideViewLayout.contains(px, py, copyX, y, actionWidth, height);
         }
     }
 
     private record ActionHitbox(float x, float y, float width, float height) {
         private boolean contains(float px, float py) {
-            return IngredientGuideScreen.contains(px, py, x, y, width, height);
+            return IngredientGuideViewLayout.contains(px, py, x, y, width, height);
         }
     }
-
-    private record IngredientListLayout(
-            float primarySortY, float secondarySortY, float summaryY, float rowsTop) {}
 
     private enum GuideCategory {
         INGREDIENTS("Ingredients"),
@@ -1778,16 +1724,4 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         SECONDARY
     }
 
-    private record ScrollbarGeometry(float x, float y, float height, float thumbY, float thumbHeight) {
-        private boolean containsTrack(float mouseX, float mouseY) {
-            float hitX = x - (SCROLLBAR_HIT_WIDTH - SCROLLBAR_WIDTH) / 2f;
-            return IngredientGuideScreen.contains(
-                    mouseX,
-                    mouseY,
-                    hitX,
-                    y,
-                    SCROLLBAR_HIT_WIDTH,
-                    height);
-        }
-    }
 }
