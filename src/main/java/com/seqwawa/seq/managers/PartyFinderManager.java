@@ -870,17 +870,11 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     static String staleWarningMessage(long minutesRemaining) {
-        long safeMinutesRemaining = Math.max(0, minutesRemaining);
-        String unit = safeMinutesRemaining == 1 ? "minute" : "minutes";
-        return "Your Party Finder listing looks inactive and will be removed in "
-                + safeMinutesRemaining
-                + " "
-                + unit
-                + " unless activity resumes.";
+        return PartyFinderNotificationFormatter.staleWarningMessage(minutesRemaining);
     }
 
     static String staleWarningExtendCommand(long listingId) {
-        return "/seq p extend " + listingId;
+        return PartyFinderNotificationFormatter.staleWarningExtendCommand(listingId);
     }
 
     private void notifyStaleWarningWithExtendAction(String message, long listingId) {
@@ -1288,48 +1282,15 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     private static String quoteForCommand(String value) {
-        if (value == null) {
-            return "\"\"";
-        }
-        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        return PartyFinderNotificationFormatter.quoteForCommand(value);
     }
 
     private static String formatInviterName(String inviterName) {
-        if (inviterName == null
-                || inviterName.isBlank()
-                || "Loading...".equalsIgnoreCase(inviterName)
-                || "Unknown".equalsIgnoreCase(inviterName)) {
-            return "a player";
-        }
-        return inviterName;
+        return PartyFinderNotificationFormatter.inviterName(inviterName);
     }
 
     private static String formatActivitySummary(Listing listing) {
-        if (listing == null) {
-            return "";
-        }
-
-        return listing.resolvedActivities().stream()
-                .map(Activity::name)
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(name -> !name.isBlank())
-                .map(PartyFinderManager::abbreviateActivityName)
-                .distinct()
-                .collect(Collectors.joining("/"));
-    }
-
-    private static String abbreviateActivityName(String activityName) {
-        String normalizedName = PartyListing.backendNameToDisplayName(activityName);
-        return switch (normalizedName) {
-            case "Nest of the Grootslangs" -> "NOG";
-            case "The Nameless Anomaly" -> "TNA";
-            case "The Canyon Colossus" -> "TCC";
-            case "Nexus of Light" -> "NOL";
-            case "The Wartorn Palace" -> "TWP";
-            case "Prelude to Annihilation" -> "ANNI";
-            default -> normalizedName;
-        };
+        return PartyFinderNotificationFormatter.activitySummary(listing);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -2065,33 +2026,10 @@ public class PartyFinderManager implements NotificationAccessor {
 
     static OpenPartyAnnouncementSummary buildOpenPartyAnnouncementSummary(
             List<Listing> candidates, Function<String, String> leaderNameResolver) {
-        if (candidates == null || candidates.isEmpty()) {
-            return new OpenPartyAnnouncementSummary(List.of());
-        }
-
         Function<String, String> resolver = leaderNameResolver != null
                 ? leaderNameResolver
                 : PartyFinderManager::resolveReminderLeaderName;
-
-        List<OpenPartyAnnouncementEntry> entries = candidates.stream()
-                .filter(Objects::nonNull)
-                .map(listing -> new OpenPartyAnnouncementEntry(
-                        listing.id(),
-                        defaultReminderActivitySummary(formatActivitySummary(listing)),
-                        listing.occupiedSlotCount(),
-                        listing.maxPartySize(),
-                        resolver.apply(listing.leaderUUID()),
-                        "/seq p join " + listing.id()))
-                .toList();
-
-        return new OpenPartyAnnouncementSummary(entries);
-    }
-
-    private static String defaultReminderActivitySummary(String summary) {
-        if (summary == null || summary.isBlank()) {
-            return "Party";
-        }
-        return summary;
+        return PartyFinderNotificationFormatter.openPartySummary(candidates, resolver);
     }
 
     private static String resolveReminderLeaderName(String leaderUUID) {
@@ -2277,18 +2215,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     private static String formatInviteAllMessage(int sentCount, int skippedCount) {
-        if (sentCount <= 0) {
-            if (skippedCount > 0) {
-                return "no valid party members to invite. Skipped " + skippedCount + ".";
-            }
-            return "no valid party members to invite.";
-        }
-
-        String inviteWord = sentCount == 1 ? "party invite" : "party invites";
-        if (skippedCount > 0) {
-            return "sent " + sentCount + " " + inviteWord + ". Skipped " + skippedCount + ".";
-        }
-        return "sent " + sentCount + " " + inviteWord + ".";
+        return PartyFinderNotificationFormatter.inviteAllMessage(sentCount, skippedCount);
     }
 
     private <T> CompletableFuture<CommandResult<T>> completedCommandFailure(String message) {
