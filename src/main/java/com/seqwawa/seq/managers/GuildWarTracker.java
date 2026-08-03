@@ -61,9 +61,6 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     private int lastProcessedStateHash;
     private boolean wynnDeathListenerRegistered;
 
-    private QueueAttemptInfo queueAttempt;
-    private long queueAttemptTime;
-
     public GuildWarTracker() {
         this(
                 () -> Models.GuildWarTower.getWarBattleInfo().orElse(null),
@@ -122,7 +119,6 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         }
 
         attemptTerritoryCapture(cleaned);
-        attemptQueueStart(cleaned);
     }
 
     private void attemptTerritoryCapture(String cleaned) {
@@ -171,25 +167,6 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         }
     }
 
-    private void attemptQueueStart(String cleaned) {
-        if (queueAttempt == null || queueAttemptTime + QUEUE_ATTEMPT_TIMEOUT_MS < clock.getAsLong()) {
-            return;
-        }
-        Matcher matcher = QUEUE_START.matcher(cleaned);
-        if (!matcher.find()) {
-            return;
-        }
-        String territory = matcher.group(1).trim().toLowerCase();
-        if (!territory.equals(queueAttempt.territory().toLowerCase())) {
-            SeqClient.LOGGER.info(
-                    "[GuildWarTracker] Queued territory name did not match stored='{}' queued='{}'",
-                    queueAttempt.territory(), territory);
-            return;
-        }
-        submitQueue(queueAttempt);
-        queueAttempt = null;
-    }
-
     @SubscribeEvent
     public void onCharacterDeathEvent(CharacterDeathEvent event) {
         onCharacterDeath();
@@ -206,7 +183,6 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         activeContext = null;
         lastProcessedBattleId = null;
         lastProcessedStateHash = 0;
-        queueAttempt = null;
     }
 
     @Override
@@ -247,12 +223,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             return;
         }
 
-        queueAttempt = new QueueAttemptInfo(territoryName, defense, timer);
-        queueAttemptTime = clock.getAsLong();
-
-        SeqClient.LOGGER.info(
-                "[GuildWarTracker] Queue attempt stored territory='{}' defense='{}' timer={}m",
-                territoryName, defense, timer);
+        submitQueue(new QueueAttemptInfo(territoryName, defense, timer));
     }
 
     private void trackWarState() {
