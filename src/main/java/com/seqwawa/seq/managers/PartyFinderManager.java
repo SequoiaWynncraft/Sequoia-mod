@@ -56,10 +56,10 @@ public class PartyFinderManager implements NotificationAccessor {
     @Getter
     private final List<Activity> activities = new CopyOnWriteArrayList<>();
 
-    @Getter
-    private final List<Listing> listings = new CopyOnWriteArrayList<>();
+    private final PartyListingStore listingStore = new PartyListingStore();
 
-    private final Object listingsLock = new Object();
+    @Getter
+    private final List<Listing> listings = listingStore.listings();
 
     /** The listing the local player is currently a member of, or null. */
     @Getter
@@ -73,7 +73,6 @@ public class PartyFinderManager implements NotificationAccessor {
     /** Cached adapter list (avoids recreating wrappers every frame). */
     private List<PartyListing> cachedParties;
 
-    private volatile int listingsVersion = 0;
     private int cachedVersion = -1;
     private volatile String latestPartyError;
     private volatile long nextOpenPartyAnnouncementAtMs;
@@ -175,13 +174,8 @@ public class PartyFinderManager implements NotificationAccessor {
         return ApiClient.getInstance()
                 .getListings(activityId, region)
                 .thenApply(result -> {
-                    List<Listing> deduped = deduplicateById(result);
-                    synchronized (listingsLock) {
-                        listings.clear();
-                        listings.addAll(deduped);
-                    }
+                    List<Listing> deduped = listingStore.replaceAll(result);
                     refreshCurrentListing();
-                    listingsVersion++;
                     return deduped;
                 })
                 .exceptionally(e -> {
@@ -212,13 +206,8 @@ public class PartyFinderManager implements NotificationAccessor {
         return ApiClient.getInstance()
                 .getListings(null, null)
                 .thenApply(result -> {
-                    List<Listing> deduped = deduplicateById(result);
-                    synchronized (listingsLock) {
-                        listings.clear();
-                        listings.addAll(deduped);
-                    }
+                    List<Listing> deduped = listingStore.replaceAll(result);
                     refreshCurrentListing();
-                    listingsVersion++;
                     return CommandResult.success("Loaded " + deduped.size() + " listings.", List.copyOf(deduped));
                 })
                 .exceptionally(e -> commandFailure(e, "Failed to load listings", "Failed to load listings"));
@@ -550,7 +539,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     // ══════════════════════════════════════════════════════════════
-    // Party actions (existing — with listingsVersion increments)
+    // Party actions
     // ══════════════════════════════════════════════════════════════
 
     public CompletableFuture<Listing> createParty(
@@ -675,11 +664,10 @@ public class PartyFinderManager implements NotificationAccessor {
         return ApiClient.getInstance()
                 .disbandListing(listingId)
                 .thenApply(listing -> {
-                    listings.removeIf(l -> l.id() == listingId);
+                    listingStore.remove(listingId);
                     if (currentListing != null && currentListing.id() == listingId) {
                         currentListing = null;
                     }
-                    listingsVersion++;
                     return listing;
                 })
                 .exceptionally(e -> {
@@ -696,7 +684,6 @@ public class PartyFinderManager implements NotificationAccessor {
                     if (currentListing != null && currentListing.id() == listingId) {
                         currentListing = listing;
                     }
-                    listingsVersion++;
                     return listing;
                 })
                 .exceptionally(e -> {
@@ -828,20 +815,15 @@ public class PartyFinderManager implements NotificationAccessor {
         switch (action) {
             case "CREATED" -> {
                 upsertListing(listing, true);
-                listingsVersion++;
             }
             case "UPDATED" -> {
                 upsertListing(listing, false);
-                listingsVersion++;
             }
             case "DISBANDED" -> {
-                synchronized (listingsLock) {
-                    listings.removeIf(l -> l.id() == listing.id());
-                }
+                listingStore.remove(listing.id());
                 if (currentListing != null && currentListing.id() == listing.id()) {
                     currentListing = null;
                 }
-                listingsVersion++;
             }
         }
         refreshCurrentListing();
@@ -863,7 +845,6 @@ public class PartyFinderManager implements NotificationAccessor {
         if (listing != null) {
             SeqClient.LOGGER.info("[PartyFinderWS] Upserting invite listing {} from websocket payload", listing.id());
             upsertListing(listing, true);
-            listingsVersion++;
             refreshCurrentListing();
         }
 
@@ -1378,6 +1359,7 @@ public class PartyFinderManager implements NotificationAccessor {
      * Preserves expanded state across reloads. Called every frame by the screen.
      */
     public List<PartyListing> getParties() {
+        int listingsVersion = listingStore.version();
         if (cachedParties == null || cachedVersion != listingsVersion) {
             // Sync expanded state FROM old cache before rebuilding
             if (cachedParties != null) {
@@ -2051,48 +2033,11 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     private void replaceListing(Listing updated) {
-        upsertListing(updated, false);
+        listingStore.upsert(updated, false);
     }
 
     private void upsertListing(Listing updated, boolean moveToTop) {
-        synchronized (listingsLock) {
-            int firstMatchIndex = -1;
-            for (int i = 0; i < listings.size(); i++) {
-                if (listings.get(i).id() != updated.id()) {
-                    continue;
-                }
-
-                if (firstMatchIndex < 0) {
-                    firstMatchIndex = i;
-                } else {
-                    listings.remove(i);
-                    i--;
-                }
-            }
-
-            if (firstMatchIndex < 0) {
-                if (moveToTop) {
-                    listings.add(0, updated);
-                } else {
-                    listings.add(updated);
-                }
-                return;
-            }
-
-            listings.set(firstMatchIndex, updated);
-            if (moveToTop && firstMatchIndex > 0) {
-                listings.remove(firstMatchIndex);
-                listings.add(0, updated);
-            }
-        }
-    }
-
-    private static List<Listing> deduplicateById(List<Listing> source) {
-        LinkedHashMap<Long, Listing> unique = new LinkedHashMap<>();
-        for (Listing listing : source) {
-            unique.putIfAbsent(listing.id(), listing);
-        }
-        return new ArrayList<>(unique.values());
+        listingStore.upsert(updated, moveToTop);
     }
 
     private CompletableFuture<List<Listing>> refreshListingsSnapshot(
@@ -2100,13 +2045,8 @@ public class PartyFinderManager implements NotificationAccessor {
         return ApiClient.getInstance()
                 .getListings(activityId, region)
                 .thenApply(result -> {
-                    List<Listing> deduped = deduplicateById(result);
-                    synchronized (listingsLock) {
-                        listings.clear();
-                        listings.addAll(deduped);
-                    }
+                    List<Listing> deduped = listingStore.replaceAll(result);
                     refreshCurrentListing();
-                    listingsVersion++;
                     return List.copyOf(deduped);
                 })
                 .exceptionally(e -> {
@@ -2664,7 +2604,6 @@ public class PartyFinderManager implements NotificationAccessor {
             currentListing = listing;
             shouldPublishClassUpdate = true;
         }
-        listingsVersion++;
         if (shouldPublishClassUpdate) {
             publishLocalClassUpdate();
         }
@@ -2677,7 +2616,6 @@ public class PartyFinderManager implements NotificationAccessor {
             currentListing = listing;
             shouldPublishClassUpdate = true;
         }
-        listingsVersion++;
         if (shouldPublishClassUpdate) {
             publishLocalClassUpdate();
         }
@@ -2688,7 +2626,6 @@ public class PartyFinderManager implements NotificationAccessor {
         if (currentListing != null && currentListing.id() == listing.id()) {
             currentListing = listing;
         }
-        listingsVersion++;
     }
 
     private void applyLeftListingState(Listing listing) {
@@ -2696,15 +2633,13 @@ public class PartyFinderManager implements NotificationAccessor {
         if (currentListing != null && currentListing.id() == listing.id()) {
             currentListing = null;
         }
-        listingsVersion++;
     }
 
     private void applyDisbandedListingState(long listingId) {
-        listings.removeIf(l -> l.id() == listingId);
+        listingStore.remove(listingId);
         if (currentListing != null && currentListing.id() == listingId) {
             currentListing = null;
         }
-        listingsVersion++;
     }
 
     private void sendGameDirectMessage(UUID targetUUID, String message) {
@@ -2804,14 +2739,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     private Listing findListingById(long listingId) {
-        synchronized (listingsLock) {
-            for (Listing existing : listings) {
-                if (existing != null && existing.id() == listingId) {
-                    return existing;
-                }
-            }
-        }
-        return null;
+        return listingStore.find(listingId);
     }
 
     private Listing findActiveLedListingForCommand() {
@@ -2820,17 +2748,15 @@ public class PartyFinderManager implements NotificationAccessor {
             return null;
         }
 
-        synchronized (listingsLock) {
-            for (Listing listing : listings) {
-                if (listing == null) {
-                    continue;
-                }
-                if (listing.status() == PartyStatus.DISBANDED) {
-                    continue;
-                }
-                if (uuidEquals(myUUID, listing.leaderUUID())) {
-                    return listing;
-                }
+        for (Listing listing : listingStore.snapshot()) {
+            if (listing == null) {
+                continue;
+            }
+            if (listing.status() == PartyStatus.DISBANDED) {
+                continue;
+            }
+            if (uuidEquals(myUUID, listing.leaderUUID())) {
+                return listing;
             }
         }
         return null;
