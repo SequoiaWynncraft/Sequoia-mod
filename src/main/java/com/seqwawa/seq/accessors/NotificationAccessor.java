@@ -10,10 +10,13 @@ import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
 import org.jetbrains.annotations.NotNull;
 
+import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.function.IntFunction;
+import java.util.function.UnaryOperator;
 
 public interface NotificationAccessor {
 
@@ -53,16 +56,49 @@ public interface NotificationAccessor {
             TextColor backgroundColor,
             TextColor foregroundColor,
             ClickEvent clickEvent) {
+        return wynnPill(label, index -> backgroundColor, index -> foregroundColor, clickEvent);
+    }
+
+    /**
+     * Pill whose background runs through {@code ramp} across its glyphs, so a Discord
+     * gradient role reads as a gradient rather than as its primary colour alone.
+     * {@code labelColor} maps each glyph's background to the colour its letter is
+     * drawn in, because legibility depends on the background under that glyph.
+     */
+    static @NotNull MutableComponent wynnPill(
+            String label,
+            ColorRamp ramp,
+            UnaryOperator<TextColor> labelColor,
+            ClickEvent clickEvent) {
+        IntFunction<TextColor> backgroundAt =
+                index -> TextColor.fromRgb(ramp.sample(gradientPosition(index, label.length())));
+        return wynnPill(label, backgroundAt, index -> labelColor.apply(backgroundAt.apply(index)), clickEvent);
+    }
+
+    /**
+     * Where glyph {@code index} sits in {@code [0, 1]} along the pill. A single-glyph
+     * label has no span to run a gradient over, so it takes the first stop.
+     */
+    private static double gradientPosition(int index, int length) {
+        return length <= 1 ? 0d : (double) index / (length - 1);
+    }
+
+    private static @NotNull MutableComponent wynnPill(
+            String label,
+            IntFunction<TextColor> backgroundAt,
+            IntFunction<TextColor> labelAt,
+            ClickEvent clickEvent) {
+        int lastIndex = Math.max(0, label.length() - 1);
         MutableComponent pill = Component.empty();
-        pill.append(styledPillPart(PILL_CORNER_LEFT, backgroundColor, clickEvent));
+        pill.append(styledPillPart(PILL_CORNER_LEFT, backgroundAt.apply(0), clickEvent));
 
         for (int i = 0; i < label.length(); i++) {
             String glyph = toWynncraftGlyph(label.charAt(i));
-            pill.append(styledPillPart(PILL_BG_BACK, backgroundColor, clickEvent));
-            pill.append(labelPillPart(PILL_BG_FRONT + glyph, foregroundColor, clickEvent));
+            pill.append(styledPillPart(PILL_BG_BACK, backgroundAt.apply(i), clickEvent));
+            pill.append(labelPillPart(PILL_BG_FRONT + glyph, labelAt.apply(i), clickEvent));
         }
 
-        pill.append(styledPillPart(PILL_CORNER_RIGHT, backgroundColor, clickEvent));
+        pill.append(styledPillPart(PILL_CORNER_RIGHT, backgroundAt.apply(lastIndex), clickEvent));
         return pill;
     }
 
