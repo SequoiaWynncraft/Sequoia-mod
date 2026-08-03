@@ -2,18 +2,14 @@ package com.seqwawa.seq.managers;
 
 import lombok.Getter;
 import lombok.Setter;
-import net.minecraft.client.gui.GuiGraphics;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
-import com.seqwawa.seq.utils.rendering.nvg.string.coloredstring.ColoredString;
 
 import java.awt.*;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-
-import static com.seqwawa.seq.client.SeqClient.mc;
 
 @Getter
 public class FontManager {
@@ -67,58 +63,6 @@ public class FontManager {
         }
     }
 
-    public void renderTextMultiColorCenteredString(int x, int y, boolean shadow, ColoredString... strings) {
-        renderTextMultiColorCustom((int) (x - (getStringsWidth(strings) / 2)), y, shadow, strings);
-    }
-
-    public void renderTextMultiColorLeftString(int x, int y, boolean shadow, ColoredString... strings) {
-        renderTextMultiColorCustom((int) (x - getStringsWidth(strings)), y, shadow, strings);
-    }
-
-    public void renderTextMultiColor(int x, int y, boolean shadow, ColoredString... strings) {
-        renderTextMultiColorCustom(x, y, shadow, strings);
-    }
-
-    public void renderTextMultiColorMc(GuiGraphics context, int x, int y, ColoredString... strings) {
-        String message = "";
-
-        float xOffset = 0;
-
-        for (ColoredString data : strings) {
-
-            context.drawCenteredString(mc.font, data.getText(), (int) (x + xOffset), y, data.getColor().getRGB());
-            xOffset += mc.font.width(data.getText());
-        }
-
-        context.drawCenteredString(mc.font, message, x, y, Color.WHITE.getRGB());
-
-    }
-
-    public void renderTextMultiColorCustom(int x, int y, boolean shadow, ColoredString... strings) {
-        float xOffset = 0;
-
-
-        for (int i = 0; i < strings.length; i++) {
-            ColoredString data = strings[i];
-            float baseX = snapCoord(x + xOffset);
-            float baseY = snapCoord(y);
-
-            //shadows
-            if (shadow && shadowsEnabled && shadowOffset > 0.0f) {
-                drawCanvasText(selectedFont, data.getText(), baseX + shadowOffset, baseY + shadowOffset, Color.BLACK);
-
-            }
-
-            //useful stuff
-            drawCanvasText(selectedFont, data.getText(), baseX, baseY, data.getColor());
-
-            String s = data.getText().endsWith(" ") ? " " : "";
-            xOffset += getStringWidth(data.getText() + s, selectedFont);
-
-
-        }
-    }
-
     public void drawLeftStringFont(String font, String text, int x, int y, Color color, boolean shadow) {
         renderTextWithFont(font, text, (int) (x - SeqClient.getFontManager().getStringWidth(text, font)), y, color, shadow);
     }
@@ -136,17 +80,6 @@ public class FontManager {
         if (loadedFontNames.contains(s)) {
             this.selectedFont = s;
         }
-    }
-
-    public float getStringsWidth(ColoredString... strings) {
-        float size = 0;
-        for (ColoredString s : strings) {
-            int startIndex = s.getText().length() - 1;
-            String val = s.getText().substring(Math.max(startIndex, 0)).equalsIgnoreCase(" ") ? " " : "";
-            size += UiRenderer.measureText(s.getText() + val, selectedFont, fontSize).width();
-        }
-
-        return size;
     }
 
     public float getStringWidth(String s, String selectedFont) {

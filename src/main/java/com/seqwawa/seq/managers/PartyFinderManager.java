@@ -1407,19 +1407,9 @@ public class PartyFinderManager implements NotificationAccessor {
         return -1;
     }
 
-    /** Alias for getJoinedPartyIndex(). */
-    public int getMyPartyIndex() {
-        return getJoinedPartyIndex();
-    }
-
     /** Whether the local player has created (and is leader of) a listed party. */
     public boolean hasListedParty() {
         return isPartyLeader();
-    }
-
-    /** No-op — state is derived from backend. Kept for screen compatibility. */
-    public void setHasListedParty(boolean managing) {
-        // intentionally empty — state is derived from isPartyLeader()
     }
 
     /** Disbands the local player's current listing. */

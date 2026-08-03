@@ -164,11 +164,6 @@ public final class RaidPartySnapshotTracker {
         lastPollAtMs = 0;
     }
 
-    /** Compatibility alias for callers that mean a complete lifecycle reset. */
-    public static void invalidate() {
-        reset();
-    }
-
     static synchronized void setStateForTest(TrackerState testState) {
         state = testState;
         lastPollAtMs = 0;

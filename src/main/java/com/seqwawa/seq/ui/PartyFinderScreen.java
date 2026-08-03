@@ -872,7 +872,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 UiCanvas.HorizontalAlign.RIGHT);
 
         // Members
-        boolean isMyParty = partyIndex == party().getMyPartyIndex() && party().isPartyLeader();
+        boolean isMyParty = partyIndex == party().getJoinedPartyIndex() && party().isPartyLeader();
         boolean amLeaderOfThisParty = isMyParty && party().isPartyLeader();
         float memberY = y + CARD_HEADER_HEIGHT;
         for (int mi = 0; mi < party.members.size(); mi++) {
@@ -2410,7 +2410,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             if (party.expanded) {
                 cardH = CARD_HEADER_HEIGHT + party.members.size() * MEMBER_ROW_HEIGHT + CARD_PADDING;
 
-                boolean isMyParty = i == party().getMyPartyIndex() && party().isPartyLeader();
+                boolean isMyParty = i == party().getJoinedPartyIndex() && party().isPartyLeader();
 
                 float joinBtnX = cardX + cardW - CARD_PADDING - JOIN_BUTTON_WIDTH;
                 float joinBtnY = cursorY
@@ -2448,7 +2448,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         inviteModalOpen = false;
         editTagsScreenOpen = false;
         reservedSlotsFocused = false;
-        party().setHasListedParty(managing);
         if (!managing) {
             applyDefaultModalSelections();
             modalReservedSlots = 0;
@@ -2839,7 +2838,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float createBtnX = mX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
         float createBtnY = mY + PARTY_MODAL_HEIGHT - MODAL_BUTTON_H - 14;
         if (isHovered(mx, my, createBtnX, createBtnY, MODAL_BUTTON_W, MODAL_BUTTON_H)) {
-            boolean updatingParty = party().getMyPartyIndex() >= 0;
+            boolean updatingParty = party().getJoinedPartyIndex() >= 0;
 
             Set<String> selectedRaids = new LinkedHashSet<>(modalSelectedRaids);
             if (updatingParty && selectedRaids.isEmpty()) {
