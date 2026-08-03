@@ -1,0 +1,22 @@
+ext.resolveNativeClassifier = { String osName, String osArch ->
+    String normalizedOsName = (osName ?: "").toLowerCase(java.util.Locale.ROOT)
+    String architecture = osArch ?: ""
+
+    if (normalizedOsName.contains("linux")) {
+        if (architecture.startsWith("arm") || architecture.startsWith("aarch64")) {
+            boolean is64Bit = architecture.contains("64") || architecture.startsWith("armv8")
+            return "natives-linux-${is64Bit ? "arm64" : "arm32"}"
+        }
+        return "natives-linux"
+    }
+    if (normalizedOsName.contains("mac") || normalizedOsName.contains("darwin")) {
+        return architecture.startsWith("aarch64") ? "natives-macos-arm64" : "natives-macos"
+    }
+    if (normalizedOsName.contains("windows")) {
+        if (!architecture.contains("64")) {
+            return "natives-windows-x86"
+        }
+        return architecture.startsWith("aarch64") ? "natives-windows-arm64" : "natives-windows"
+    }
+    return ""
+}

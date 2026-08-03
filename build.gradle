@@ -4,6 +4,8 @@ plugins {
     id 'io.freefair.lombok' version '8.11'
 }
 
+apply from: "gradle/native-classifier.gradle"
+
 version = project.mod_version
 group = project.maven_group
 
@@ -33,25 +35,27 @@ loom {
     }
 }
 
-var natives = ""
+def natives = resolveNativeClassifier(System.getProperty("os.name"), System.getProperty("os.arch"))
 
-switch (org.gradle.internal.os.OperatingSystem.current()) {
-    case org.gradle.internal.os.OperatingSystem.LINUX:
-        def osArch = System.getProperty("os.arch")
-        natives = osArch.startsWith("arm") || osArch.startsWith("aarch64")
-                ? "natives-linux-${osArch.contains("64") || osArch.startsWith("armv8") ? "arm64" : "arm32"}"
-                : "natives-linux"
-        break
-    case org.gradle.internal.os.OperatingSystem.MAC_OS:
-        natives = System.getProperty("os.arch").startsWith("aarch64") ? "natives-macos-arm64" : "natives-macos"
-        break
-    case org.gradle.internal.os.OperatingSystem.WINDOWS:
-        def osArch = System.getProperty("os.arch")
-        natives = osArch.contains("64")
-                ? "natives-windows${osArch.startsWith("aarch64") ? "-arm64" : ""}"
-                : "natives-windows-x86"
-        break
+def testNativeClassifier = tasks.register("testNativeClassifier") {
+    group = "verification"
+    description = "Verifies the supported LWJGL native classifier mappings."
+
+    doLast {
+        assert resolveNativeClassifier("Linux", "amd64") == "natives-linux"
+        assert resolveNativeClassifier("Linux", "aarch64") == "natives-linux-arm64"
+        assert resolveNativeClassifier("Linux", "armv8") == "natives-linux-arm64"
+        assert resolveNativeClassifier("Linux", "arm") == "natives-linux-arm32"
+        assert resolveNativeClassifier("Mac OS X", "x86_64") == "natives-macos"
+        assert resolveNativeClassifier("Mac OS X", "aarch64") == "natives-macos-arm64"
+        assert resolveNativeClassifier("Windows 11", "amd64") == "natives-windows"
+        assert resolveNativeClassifier("Windows 11", "aarch64") == "natives-windows-arm64"
+        assert resolveNativeClassifier("Windows 10", "x86") == "natives-windows-x86"
+        assert resolveNativeClassifier("FreeBSD", "amd64") == ""
+    }
 }
+
+tasks.named("check").configure { dependsOn(testNativeClassifier) }
 
 fabricApi {
     configureDataGeneration {
