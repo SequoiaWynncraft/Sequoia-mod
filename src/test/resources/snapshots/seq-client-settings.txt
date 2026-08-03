@@ -1,0 +1,27 @@
+network.auto_connect | type=boolean | default=true
+chat.show_discord_bridge | type=boolean | default=true
+raids.auto_announce | type=boolean | default=true
+guild_wars.track_guild_wars | type=boolean | default=true
+updates.check_updates | type=boolean | default=true
+guild_storage.track_guild_storage | type=boolean | default=true
+guild_storage.guild_storage_emerald_threshold_percent | type=int | default=100 | min=0 | max=100 | increment=1
+guild_storage.guild_storage_aspect_threshold_percent | type=int | default=100 | min=0 | max=100 | increment=1
+ui.enable_easter_eggs | type=boolean | default=true
+ui.startup_video | type=boolean | default=false
+ui.ui_size_percent | type=int | default=100 | min=75 | max=150 | increment=5
+ui.theme | type=choice | default=default
+party_finder.announce_open_parties | type=boolean | default=true
+party_finder.announce_open_parties_interval_minutes | type=int | default=5 | min=1 | max=60 | increment=1
+party_finder.sync_with_wynn_party | type=boolean | default=true
+network.receive_bomb_share_requests | type=boolean | default=true
+raids.enable_radiance_visualiser | type=boolean | default=true
+raids.radiance_marker_color | type=color | default=#FF0000
+raids.enable_halcyon_range_visualiser | type=boolean | default=true
+raids.halcyon_ring_color | type=color | default=#00FFFF
+raids.enable_light_room_visualiser | type=boolean | default=true
+raids.light_room_ring_color | type=color | default=#00FFFF
+leaderboard_badges.show_raid_badges | type=boolean | default=true
+leaderboard_badges.show_insignia_badges | type=boolean | default=true
+leaderboard_badges.show_own_leaderboard_badge | type=boolean | default=true
+raids.show_party_healthbars | type=boolean | default=true
+world_events.notify_tracked_world_events | type=boolean | default=false

@@ -3,27 +3,19 @@ package com.seqwawa.seq.client;
 import com.collarmc.pounce.EventBus;
 import com.collarmc.pounce.Preference;
 import com.collarmc.pounce.Subscribe;
-import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.logging.LogUtils;
 import java.util.Objects;
 import java.util.UUID;
 
-import com.seqwawa.seq.LightRoomTnaRange.LightRoom;
 import lombok.Getter;
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
-import org.lwjgl.glfw.GLFW;
-import com.seqwawa.seq.command.SeqCommand;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.events.GameStartEvent;
 import com.seqwawa.seq.events.MinecraftFinishedLoading;
-import com.seqwawa.seq.halcyon.HalcyonRangeVisualiserClient;
 import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.BombShareManager;
 import com.seqwawa.seq.managers.ChatManager;
@@ -41,11 +33,9 @@ import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
-import com.seqwawa.seq.managers.ThemeManager;
 import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.managers.WorldEventManager;
-import com.seqwawa.seq.map.IngredientWaypointRenderer;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
@@ -55,7 +45,6 @@ import com.seqwawa.seq.radiance.RadianceCheckerClient;
 import com.seqwawa.seq.ui.SequoiaScreen;
 import com.seqwawa.seq.update.UpdateManager;
 import com.seqwawa.seq.utils.WynnClassCache;
-import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import org.slf4j.Logger;
 
 public class SeqClient implements ClientModInitializer {
@@ -200,8 +189,8 @@ public class SeqClient implements ClientModInitializer {
     @Getter
     public static IngredientGuideManager ingredientGuideManager;
 
-    private static KeyMapping openScreenKey;
-    private static KeyMapping shareBombsKey;
+    static KeyMapping openScreenKey;
+    static KeyMapping shareBombsKey;
     private static WynnClassType lastBroadcastPartyClass;
     private static boolean wasInPartyFinder;
     private static WynncraftServerPolicy.Scope lastServerScope = WynncraftServerPolicy.Scope.BLOCKED;
@@ -211,155 +200,112 @@ public class SeqClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        try {
-            eventBus = new EventBus(mc::execute);
-            eventBus.subscribe(this);
-        } catch (Exception e) {
-            LOGGER.warn("Event bus failed to initialize.");
+        SeqClientBootstrap.initialize(this);
+    }
+
+    static void onEndClientTick(Minecraft client) {
+        while (openScreenKey.consumeClick()) {
+            if (client.screen == null) {
+                openMainScreen();
+            }
         }
-        fontManager = new FontManager();
-        gameManager = new GameManager();
-        partyFinderManager = new PartyFinderManager();
-        wynnPartySyncManager = new WynnPartySyncManager();
-        guildWarTracker = GuildWarTrackers.createIfAvailable();
-        guildStorageTracker = GuildStorageTracker.getInstance();
-        guildRewardAutomationManager = new GuildRewardAutomationManager();
-        chatManager = new ChatManager();
-        bombShareManager = new BombShareManager();
-        treasuryOutManager = new TreasuryOutManager();
-        ConnectionManager.onTreasuryOutRecorded(treasuryOutManager::handleRecorded);
-        ConnectionManager.onTreasuryOutError(treasuryOutManager::handleError);
-        configManager = new ConfigManager();
-        chatRegexFilterManager = new ChatRegexFilterManager();
-        chatRegexFilterManager.settings().forEach(configManager::register);
-        chatRegexFilterManager.registerIncomingHooks();
-        configManager.load();
-        configManager.migrateToken();
-        ThemeManager.initialize();
-        leaderboardBadgeService = LeaderboardBadgeService.getInstance();
-        seqBadgeNametagRenderer = SeqBadgeNametagRenderers.createIfAvailable();
-        worldEventManager = WorldEventManager.getInstance();
-        ingredientGuideManager = IngredientGuideManager.getInstance();
-        authService = MinecraftAuthService.getInstance();
-        SeqCommand.register();
-        RadianceCheckerClient.initialize();
-        HalcyonRangeVisualiserClient.initialize();
-        IngredientWaypointRenderer.initialize();
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> MinecraftUiRenderer.shutdown());
-        LightRoom.init();
-
-        KeyMapping.Category category =
-                KeyMapping.Category.register(Identifier.fromNamespaceAndPath("sequoia-mod", "controls"));
-
-        openScreenKey = KeyBindingHelper.registerKeyBinding(
-                new KeyMapping("key.sequoia-mod.open_settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O, category));
-        shareBombsKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
-                "key.sequoia-mod.share_bombs", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
-
-        ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            while (openScreenKey.consumeClick()) {
-                if (client.screen == null) {
-                    openMainScreen();
-                }
+        while (shareBombsKey.consumeClick()) {
+            if (bombShareManager != null) {
+                bombShareManager.tryHotkeyShareLatestPendingPrompt();
             }
-            while (shareBombsKey.consumeClick()) {
-                if (bombShareManager != null) {
-                    bombShareManager.tryHotkeyShareLatestPendingPrompt();
-                }
-            }
+        }
 
-            WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
-            String currentHost = WynncraftServerPolicy.currentNormalizedHost();
-            WynncraftServerPolicy.Scope previousServerScope = lastServerScope;
-            logServerScopeChange(serverScope, currentHost);
-            if (worldEventManager != null) {
-                worldEventManager.tick(
-                        client,
-                        serverScope,
-                        notifyTrackedWorldEventsSetting != null && notifyTrackedWorldEventsSetting.getValue());
-            }
-            if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
-                RadianceCheckerClient.reset();
-                ConnectionManager.disconnectForBlockedServer();
-                wasInPartyFinder = false;
-                lastBroadcastPartyClass = null;
-                if (wynnPartySyncManager != null) {
-                    wynnPartySyncManager.reset();
-                }
-                RaidPartySnapshotTracker.onServerUnavailable();
-                if (guildWarTracker != null) {
-                    guildWarTracker.reset();
-                }
-                if (guildStorageTracker != null) {
-                    guildStorageTracker.reset();
-                }
-                return;
-            }
-            if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
-                RadianceCheckerClient.reset();
-                RaidPartySnapshotTracker.onServerUnavailable();
-                ConnectionManager.flushPendingOutbound();
-                return;
-            }
-
-            if (handleMinecraftAccountChange()) {
-                return;
-            }
-
-            maybeRecoverProductionConnection(serverScope, previousServerScope, currentHost);
-
-            if (partyFinderManager != null) {
-                partyFinderManager.tickOpenPartyAnnouncements();
-            }
+        WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+        String currentHost = WynncraftServerPolicy.currentNormalizedHost();
+        WynncraftServerPolicy.Scope previousServerScope = lastServerScope;
+        logServerScopeChange(serverScope, currentHost);
+        if (worldEventManager != null) {
+            worldEventManager.tick(
+                    client,
+                    serverScope,
+                    notifyTrackedWorldEventsSetting != null && notifyTrackedWorldEventsSetting.getValue());
+        }
+        if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
+            RadianceCheckerClient.reset();
+            ConnectionManager.disconnectForBlockedServer();
+            wasInPartyFinder = false;
+            lastBroadcastPartyClass = null;
             if (wynnPartySyncManager != null) {
-                wynnPartySyncManager.tick();
+                wynnPartySyncManager.reset();
             }
-            if (showPartyHealthBarsSetting == null || showPartyHealthBarsSetting.getValue()) {
-                PartyHealthCache.tick();
-            }
-            RaidPartySnapshotTracker.tick();
+            RaidPartySnapshotTracker.onServerUnavailable();
             if (guildWarTracker != null) {
-                guildWarTracker.tick();
+                guildWarTracker.reset();
             }
             if (guildStorageTracker != null) {
-                guildStorageTracker.tick();
+                guildStorageTracker.reset();
             }
-            if (guildRewardAutomationManager != null) {
-                guildRewardAutomationManager.tick();
-            }
-            if (leaderboardBadgeService != null) {
-                leaderboardBadgeService.tick();
-            }
-            if (seqBadgeNametagRenderer != null) {
-                seqBadgeNametagRenderer.tick();
-            }
-            RadianceCheckerClient.tick(client);
+            return;
+        }
+        if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
+            RadianceCheckerClient.reset();
+            RaidPartySnapshotTracker.onServerUnavailable();
             ConnectionManager.flushPendingOutbound();
+            return;
+        }
 
-            boolean inPartyFinder = partyFinderManager != null && partyFinderManager.isInParty();
-            if (!inPartyFinder) {
-                wasInPartyFinder = false;
-                lastBroadcastPartyClass = null;
-                return;
-            }
+        if (handleMinecraftAccountChange()) {
+            return;
+        }
 
-            if (!ConnectionManager.isConnected()) {
-                wasInPartyFinder = true;
-                return;
-            }
+        maybeRecoverProductionConnection(serverScope, previousServerScope, currentHost);
 
-            WynnClassType currentClass = WynnClassCache.resolveLocalClassType();
-            if (currentClass == null) {
-                wasInPartyFinder = true;
-                return;
-            }
+        if (partyFinderManager != null) {
+            partyFinderManager.tickOpenPartyAnnouncements();
+        }
+        if (wynnPartySyncManager != null) {
+            wynnPartySyncManager.tick();
+        }
+        if (showPartyHealthBarsSetting == null || showPartyHealthBarsSetting.getValue()) {
+            PartyHealthCache.tick();
+        }
+        RaidPartySnapshotTracker.tick();
+        if (guildWarTracker != null) {
+            guildWarTracker.tick();
+        }
+        if (guildStorageTracker != null) {
+            guildStorageTracker.tick();
+        }
+        if (guildRewardAutomationManager != null) {
+            guildRewardAutomationManager.tick();
+        }
+        if (leaderboardBadgeService != null) {
+            leaderboardBadgeService.tick();
+        }
+        if (seqBadgeNametagRenderer != null) {
+            seqBadgeNametagRenderer.tick();
+        }
+        RadianceCheckerClient.tick(client);
+        ConnectionManager.flushPendingOutbound();
 
-            if (!wasInPartyFinder || currentClass != lastBroadcastPartyClass) {
-                ConnectionManager.getInstance().sendPartyClassUpdate(currentClass);
-                lastBroadcastPartyClass = currentClass;
-            }
+        boolean inPartyFinder = partyFinderManager != null && partyFinderManager.isInParty();
+        if (!inPartyFinder) {
+            wasInPartyFinder = false;
+            lastBroadcastPartyClass = null;
+            return;
+        }
+
+        if (!ConnectionManager.isConnected()) {
             wasInPartyFinder = true;
-        });
+            return;
+        }
+
+        WynnClassType currentClass = WynnClassCache.resolveLocalClassType();
+        if (currentClass == null) {
+            wasInPartyFinder = true;
+            return;
+        }
+
+        if (!wasInPartyFinder || currentClass != lastBroadcastPartyClass) {
+            ConnectionManager.getInstance().sendPartyClassUpdate(currentClass);
+            lastBroadcastPartyClass = currentClass;
+        }
+        wasInPartyFinder = true;
     }
 
     private static boolean handleMinecraftAccountChange() {
@@ -530,88 +476,7 @@ public class SeqClient implements ClientModInitializer {
 
     @Subscribe(Preference.CALLER) // to stay in thread
     public void onMinecraftFinishedLoading(MinecraftFinishedLoading ignored) {
-        // after minecraft done loading
-        MinecraftUiRenderer.initialize();
-        SeqClient.gameManager.loadFont();
-        SeqClient.assetManager = new AssetManager();
-
-        // Network settings
-        autoConnectSetting = new Setting.BooleanSetting("auto_connect", "network", true);
-        showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
-        raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
-        radianceCheckerSetting = new Setting.BooleanSetting("enable_radiance_visualiser", "raids", true);
-        radianceMarkerColorSetting = new Setting.ColorSetting("radiance_marker_color", "raids", 0xFF0000);
-        radianceMarkerColorSetting.setVisibilityCondition(() -> radianceCheckerSetting.getValue());
-        halcyonRangeVisualiserSetting = new Setting.BooleanSetting("enable_halcyon_range_visualiser", "raids", true);
-        halcyonRingColorSetting = new Setting.ColorSetting("halcyon_ring_color", "raids", 0x00FFFF);
-        halcyonRingColorSetting.setVisibilityCondition(() -> halcyonRangeVisualiserSetting.getValue());
-        lightRoomVisualiserSetting = new Setting.BooleanSetting("enable_light_room_visualiser", "raids", true);
-        lightRoomRingColorSetting = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF);
-        lightRoomRingColorSetting.setVisibilityCondition(() -> lightRoomVisualiserSetting.getValue());
-        trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
-        checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
-        trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
-        guildStorageEmeraldNotifyValueSetting =
-                new Setting.IntSetting("guild_storage_emerald_threshold_percent", "guild_storage", 100, 0, 100);
-        guildStorageAspectNotifyValueSetting =
-                new Setting.IntSetting("guild_storage_aspect_threshold_percent", "guild_storage", 100, 0, 100);
-        easterEggsSetting = new Setting.BooleanSetting("enable_easter_eggs", "ui", true);
-        startupVideoSetting = new Setting.BooleanSetting("startup_video", "ui", false);
-        uiSizePercentSetting = new Setting.IntSetting("ui_size_percent", "ui", 100, 75, 150, 5)
-                .allowOutOfRangeManualInput();
-        themeSetting = new Setting.ChoiceSetting(
-                "theme",
-                "ui",
-                ThemeManager.currentTheme().name(),
-                ThemeManager.loadedThemeNames(),
-                ThemeManager::setCurrentTheme);
-        announceOpenPartiesSetting = new Setting.BooleanSetting("announce_open_parties", "party_finder", true);
-        announceOpenPartiesIntervalMinutesSetting =
-                new Setting.IntSetting("announce_open_parties_interval_minutes", "party_finder", 5, 1, 60);
-        syncWynnPartySetting = new Setting.BooleanSetting("sync_with_wynn_party", "party_finder", true);
-        receiveBombShareRequestsSetting = new Setting.BooleanSetting("receive_bomb_share_requests", "network", true);
-        showRaidBadgesSetting =
-                new Setting.BooleanSetting("show_raid_badges", "leaderboard_badges", true);
-        showInsigniaBadgesSetting =
-                new Setting.BooleanSetting("show_insignia_badges", "leaderboard_badges", true);
-        showOwnLeaderboardBadgeSetting =
-                new Setting.BooleanSetting("show_own_leaderboard_badge", "leaderboard_badges", true);
-        showPartyHealthBarsSetting = new Setting.BooleanSetting("show_party_healthbars", "raids", true);
-        notifyTrackedWorldEventsSetting =
-                new Setting.BooleanSetting("notify_tracked_world_events", "world_events", false);
-        getConfigManager().register(autoConnectSetting);
-        getConfigManager().register(showDiscordChatSetting);
-        getConfigManager().register(raidAutoAnnounceSetting);
-        getConfigManager().register(trackGuildWarsSetting);
-        getConfigManager().register(checkUpdatesSetting);
-        getConfigManager().register(trackGuildStorageSetting);
-        getConfigManager().register(guildStorageEmeraldNotifyValueSetting);
-        getConfigManager().register(guildStorageAspectNotifyValueSetting);
-        getConfigManager().register(easterEggsSetting);
-        getConfigManager().register(startupVideoSetting);
-        getConfigManager().register(uiSizePercentSetting);
-        getConfigManager().register(themeSetting);
-        getConfigManager().register(announceOpenPartiesSetting);
-        getConfigManager().register(announceOpenPartiesIntervalMinutesSetting);
-        getConfigManager().register(syncWynnPartySetting);
-        getConfigManager().register(receiveBombShareRequestsSetting);
-        getConfigManager().register(radianceCheckerSetting);
-        getConfigManager().register(radianceMarkerColorSetting);
-        getConfigManager().register(halcyonRangeVisualiserSetting);
-        getConfigManager().register(halcyonRingColorSetting);
-        getConfigManager().register(lightRoomVisualiserSetting);
-        getConfigManager().register(lightRoomRingColorSetting);
-        getConfigManager().register(showRaidBadgesSetting);
-        getConfigManager().register(showInsigniaBadgesSetting);
-        getConfigManager().register(showOwnLeaderboardBadgeSetting);
-        getConfigManager().register(showPartyHealthBarsSetting);
-        getConfigManager().register(notifyTrackedWorldEventsSetting);
-        getConfigManager().load(); // reload to pick up saved values for new settings
-
-        // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.
-        if (autoConnectSetting.getValue() && WynncraftServerPolicy.currentScope() == WynncraftServerPolicy.Scope.MAIN) {
-            ConnectionManager.getInstance().connect();
-        }
+        SeqClientBootstrap.finishLoading();
     }
 
     @Subscribe(Preference.CALLER)
