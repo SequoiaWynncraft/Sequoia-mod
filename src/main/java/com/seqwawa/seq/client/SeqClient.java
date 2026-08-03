@@ -13,6 +13,7 @@ import lombok.Getter;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -36,6 +37,8 @@ import com.seqwawa.seq.managers.GuildWarTrackerHandle;
 import com.seqwawa.seq.managers.GuildWarTrackers;
 import com.seqwawa.seq.managers.DiscordRankService;
 import com.seqwawa.seq.managers.IngredientGuideManager;
+import com.seqwawa.seq.managers.ItemScaleService;
+import com.seqwawa.seq.managers.ItemScaleTooltip;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyHealthCache;
 import com.seqwawa.seq.managers.PartyFinderManager;
@@ -187,6 +190,15 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting notifyTrackedWorldEventsSetting;
 
     @Getter
+    public static Setting.BooleanSetting showItemTooltipSetting;
+
+    @Getter
+    public static Setting.BooleanSetting showItemScaleSetting;
+
+    @Getter
+    public static Setting.BooleanSetting showItemScaleStatWeightsSetting;
+
+    @Getter
     public static WynnPartySyncManager wynnPartySyncManager;
 
     @Getter
@@ -203,6 +215,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static DiscordRankService discordRankService;
+
+    @Getter
+    public static ItemScaleService itemScaleService;
 
     @Getter
     public static SeqBadgeNametagRendererHandle seqBadgeNametagRenderer;
@@ -251,6 +266,7 @@ public class SeqClient implements ClientModInitializer {
         ThemeManager.initialize();
         leaderboardBadgeService = LeaderboardBadgeService.getInstance();
         discordRankService = DiscordRankService.getInstance();
+        itemScaleService = ItemScaleService.getInstance();
         seqBadgeNametagRenderer = SeqBadgeNametagRenderers.createIfAvailable();
         worldEventManager = WorldEventManager.getInstance();
         ingredientGuideManager = IngredientGuideManager.getInstance();
@@ -259,6 +275,7 @@ public class SeqClient implements ClientModInitializer {
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
         IngredientWaypointRenderer.initialize();
+        ItemTooltipCallback.EVENT.register((stack, context, type, lines) -> ItemScaleTooltip.decorate(stack, lines));
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> MinecraftUiRenderer.shutdown());
         LightRoom.init();
 
@@ -346,6 +363,9 @@ public class SeqClient implements ClientModInitializer {
             }
             if (discordRankService != null) {
                 discordRankService.tick();
+            }
+            if (itemScaleService != null && ItemScaleTooltip.showItemScale()) {
+                itemScaleService.tick();
             }
             if (seqBadgeNametagRenderer != null) {
                 seqBadgeNametagRenderer.tick();
@@ -599,6 +619,11 @@ public class SeqClient implements ClientModInitializer {
         showPartyHealthBarsSetting = new Setting.BooleanSetting("show_party_healthbars", "raids", true);
         notifyTrackedWorldEventsSetting =
                 new Setting.BooleanSetting("notify_tracked_world_events", "world_events", false);
+        showItemTooltipSetting = new Setting.BooleanSetting("show_item_tooltip", "items", false);
+        showItemScaleSetting = new Setting.BooleanSetting("show_item_scale", "items", false);
+        showItemScaleStatWeightsSetting = new Setting.BooleanSetting("show_stat_weights", "items", true);
+        showItemScaleStatWeightsSetting.setVisibilityCondition(
+                () -> showItemScaleSetting.getValue() && showItemTooltipSetting.getValue());
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(showDiscordRanksSetting);
@@ -629,6 +654,9 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(showOwnLeaderboardBadgeSetting);
         getConfigManager().register(showPartyHealthBarsSetting);
         getConfigManager().register(notifyTrackedWorldEventsSetting);
+        getConfigManager().register(showItemTooltipSetting);
+        getConfigManager().register(showItemScaleSetting);
+        getConfigManager().register(showItemScaleStatWeightsSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.

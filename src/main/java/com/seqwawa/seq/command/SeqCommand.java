@@ -29,6 +29,7 @@ import com.seqwawa.seq.managers.BombShareManager;
 import com.seqwawa.seq.managers.DiscordRankChatDecorator;
 import com.seqwawa.seq.managers.DiscordRankService;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
+import com.seqwawa.seq.managers.ItemScaleService;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.PartyListing;
@@ -124,6 +125,8 @@ public class SeqCommand {
                                 .then(buildBadgeCommand("badge"))
                                 .then(buildRankCommand("ranks"))
                                 .then(buildRankCommand("rank"))
+                                .then(buildItemScaleCommand("scales"))
+                                .then(buildItemScaleCommand("scale"))
                                 .then(buildMapCommand())
                                 .then(ClientCommandManager.literal("ingredients")
                                                 .executes(SeqCommand::openIngredientGuideScreen))
@@ -378,6 +381,15 @@ public class SeqCommand {
                                                 .executes(SeqCommand::runDiscordRankDebug));
         }
 
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildItemScaleCommand(String literalName) {
+                return ClientCommandManager.literal(literalName)
+                                .executes(SeqCommand::runItemScaleStatus)
+                                .then(ClientCommandManager.literal("status")
+                                                .executes(SeqCommand::runItemScaleStatus))
+                                .then(ClientCommandManager.literal("refresh")
+                                                .executes(SeqCommand::runItemScaleRefresh));
+        }
+
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildMapCommand() {
                 return ClientCommandManager.literal("map")
                                 .executes(SeqCommand::openWorldMapScreen)
@@ -544,6 +556,24 @@ public class SeqCommand {
                                 enabled
                                                 ? "Discord rank debug on: undecorated guild lines are dumped to the game log."
                                                 : "Discord rank debug off.");
+                return 1;
+        }
+
+        private static int runItemScaleStatus(CommandContext<FabricClientCommandSource> ctx) {
+                boolean enabled = SeqClient.getShowItemScaleSetting() != null
+                                && SeqClient.getShowItemScaleSetting().getValue();
+                sendFeedback(
+                                ctx.getSource(),
+                                ItemScaleService.getInstance().status()
+                                                + " | tooltip scale=" + (enabled ? "on" : "off"));
+                return 1;
+        }
+
+        private static int runItemScaleRefresh(CommandContext<FabricClientCommandSource> ctx) {
+                ItemScaleService.getInstance()
+                                .refreshAsync()
+                                .thenAccept(message -> sendFeedback(ctx.getSource(), message));
+                sendFeedback(ctx.getSource(), "Refreshing item scales...");
                 return 1;
         }
 
