@@ -14,7 +14,7 @@ import java.util.regex.Pattern;
 public final class RaidPartySnapshotTracker {
     private static final long SNAPSHOT_INTERVAL_MS = 2_000;
     static final long HANDOFF_RETENTION_MS = 90_000;
-    static final long RAID_SIDEBAR_MISSING_GRACE_MS = 15_000;
+    static final long ACQUISITION_SIDEBAR_MISSING_GRACE_MS = 15_000;
     static final long RAID_ACQUISITION_WINDOW_MS = 6_000;
     private static final int DEFAULT_MAX_RAID_PARTY_MEMBERS = 4;
     private static final int ABSOLUTE_MAX_RAID_PARTY_MEMBERS = 10;
@@ -339,9 +339,30 @@ public final class RaidPartySnapshotTracker {
                         0);
             }
 
-            if (!raidSidebarActive) {
+            if (phase == Phase.ACTIVE) {
+                if (!raidSidebarActive) {
+                    return new TrackerState(
+                            candidateParty,
+                            activeRaidParty,
+                            Phase.ACTIVE,
+                            acquisitionStartedAtMs,
+                            stableRaidObservations,
+                            0,
+                            0);
+                }
+                return new TrackerState(
+                        candidateParty,
+                        activeRaidParty.mergeKnownAliases(observed, activeRaidParty.capturedAtMs()),
+                        Phase.ACTIVE,
+                        acquisitionStartedAtMs,
+                        stableRaidObservations,
+                        0,
+                        0);
+            }
+
+            if (phase == Phase.ACQUIRING && !raidSidebarActive) {
                 long missingSince = raidSidebarMissingSinceMs == 0 ? now : raidSidebarMissingSinceMs;
-                if (now - missingSince >= RAID_SIDEBAR_MISSING_GRACE_MS) {
+                if (now - missingSince >= ACQUISITION_SIDEBAR_MISSING_GRACE_MS) {
                     return empty().observe(observed, partySidebarActive, false, now);
                 }
                 return new TrackerState(
@@ -351,17 +372,6 @@ public final class RaidPartySnapshotTracker {
                         acquisitionStartedAtMs,
                         stableRaidObservations,
                         missingSince,
-                        0);
-            }
-
-            if (phase == Phase.ACTIVE) {
-                return new TrackerState(
-                        candidateParty,
-                        activeRaidParty.mergeKnownAliases(observed, activeRaidParty.capturedAtMs()),
-                        Phase.ACTIVE,
-                        acquisitionStartedAtMs,
-                        stableRaidObservations,
-                        0,
                         0);
             }
 
