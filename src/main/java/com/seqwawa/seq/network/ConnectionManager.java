@@ -5,7 +5,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.net.URI;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.LinkedHashMap;
@@ -549,7 +548,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         payload.addProperty("type", type);
         if (TreasuryOutRequest.TYPE.equals(type)) {
             SeqClient.LOGGER.debug(
-                    "[WebSocket] send type={} requestId={}", type, extractPrimitiveString(payload, "request_id"));
+                    "[WebSocket] send type={} requestId={}",
+                    type,
+                    IncomingMessageParser.primitiveString(payload, "request_id"));
         } else {
             SeqClient.LOGGER.debug("[WebSocket] send type={} payload={}", type, truncate(payload.toString(), 512));
         }
@@ -1530,19 +1531,20 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     private void handleMessage(String message) {
         try {
-            JsonObject json = GSON.fromJson(message, JsonObject.class);
-            if (json == null || !json.has("type")) {
+            IncomingMessageParser.IncomingMessage incoming = IncomingMessageParser.parse(message);
+            if (incoming == null) {
                 SeqClient.LOGGER.warn("[WebSocket] Dropping message without type: {}", truncate(message, 512));
                 return;
             }
-            String type = json.get("type").getAsString();
+            String type = incoming.type();
+            JsonObject json = incoming.payload();
             if ("treasury_out_recorded".equals(type)
                     || TreasuryAuthResponse.CHALLENGE_TYPE.equals(type)
                     || TreasuryAuthResponse.AUTHENTICATED_TYPE.equals(type)) {
                 SeqClient.LOGGER.debug(
                         "[WebSocket] Received message type={} requestId={}",
                         type,
-                        extractPrimitiveString(json, "request_id"));
+                        IncomingMessageParser.primitiveString(json, "request_id"));
             } else {
                 SeqClient.LOGGER.info("[WebSocket] Received message type={} payload={}", type, truncate(message, 512));
             }
@@ -1553,13 +1555,13 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         SeqClient.LOGGER.warn("[TreasuryAuth] Ignoring challenge on an authenticated WebSocket");
                         return;
                     }
-                    String nonce = extractPrimitiveString(json, "nonce");
+                    String nonce = IncomingMessageParser.primitiveString(json, "nonce");
                     if (!treasurySessionAuthenticator.handleChallenge(nonce)) {
                         SeqClient.LOGGER.warn("[TreasuryAuth] Ignoring invalid or unexpected challenge");
                     }
                 }
                 case TreasuryAuthResponse.AUTHENTICATED_TYPE -> {
-                    String nonce = extractPrimitiveString(json, "nonce");
+                    String nonce = IncomingMessageParser.primitiveString(json, "nonce");
                     if (!treasuryOnlyConnection || !treasurySessionAuthenticator.confirm(nonce)) {
                         SeqClient.LOGGER.warn("[TreasuryAuth] Ignoring uncorrelated authentication confirmation");
                         return;
@@ -1586,9 +1588,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     nextAllowedAuthAttemptAtMs = 0;
                     connectedSince = Instant.now();
                     autoReconnect = true;
-                    if (json.has("discord_username")
-                            && json.get("discord_username").isJsonPrimitive()) {
-                        String discordUser = json.get("discord_username").getAsString();
+                    String discordUser = IncomingMessageParser.authenticatedDiscordUsername(json);
+                    if (discordUser != null) {
                         storeDiscordUsername(discordUser);
                         notifyConnectionStatus("Connected as " + discordUser);
                     } else {
@@ -1602,8 +1603,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     boolean wasMembershipProbe = membershipProbePending;
                     membershipProbePending = false;
                     memberFeaturesDisabled = false;
-                    List<String> users = new ArrayList<>();
-                    json.getAsJsonArray("users").forEach(el -> users.add(el.getAsString()));
+                    List<String> users = IncomingMessageParser.connectedUsers(json);
                     SeqClient.LOGGER.info(
                             "[WebSocket] connected_users received count={} callbackPresent={}",
                             users.size(),
@@ -1616,19 +1616,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     }
                 }
                 case "bomb_share_prompt" -> {
-                    List<BombShareType> requestedTypes =
-                            parseBombShareTypes(json.has("requested_types") ? json.getAsJsonArray("requested_types") : null);
-                    BombSharePromptMessage prompt = new BombSharePromptMessage(
-                            extractPrimitiveString(json, "request_id"),
-                            extractPrimitiveString(json, "requester_username"),
-                            extractPrimitiveString(json, "canonical_key"),
-                            requestedTypes,
-                            json.has("expires_at") && !json.get("expires_at").isJsonNull()
-                                    ? Instant.parse(json.get("expires_at").getAsString())
-                                    : null,
-                            json.has("first_prompt")
-                                    && json.get("first_prompt").isJsonPrimitive()
-                                    && json.get("first_prompt").getAsBoolean());
+                    BombSharePromptMessage prompt = IncomingMessageParser.bombSharePrompt(json);
                     if (prompt.requestId() != null) {
                         pendingBombSharePrompts.put(prompt.requestId(), prompt);
                     }
@@ -1639,14 +1627,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     }
                 }
                 case "bomb_share_result" -> {
-                    BombShareResultMessage result = new BombShareResultMessage(
-                            extractPrimitiveString(json, "request_id"),
-                            extractPrimitiveString(json, "canonical_key"),
-                            parseBombShareTypes(json.has("requested_types") ? json.getAsJsonArray("requested_types") : null),
-                            parsePrimitiveStringArray(json.has("worlds") ? json.getAsJsonArray("worlds") : null),
-                            json.has("share_count") && json.get("share_count").isJsonPrimitive()
-                                    ? json.get("share_count").getAsInt()
-                                    : 0);
+                    BombShareResultMessage result = IncomingMessageParser.bombShareResult(json);
                     if (result.requestId() != null) {
                         pendingBombSharePrompts.remove(result.requestId());
                     }
@@ -1657,7 +1638,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     }
                 }
                 case "treasury_out_recorded" -> {
-                    TreasuryOutRecordedMessage recorded = GSON.fromJson(json, TreasuryOutRecordedMessage.class);
+                    TreasuryOutRecordedMessage recorded = IncomingMessageParser.treasuryOutRecorded(json);
                     if (treasuryOutRecordedHandler != null) {
                         treasuryOutRecordedHandler.accept(recorded);
                     } else {
@@ -1666,23 +1647,24 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     }
                 }
                 case "guild_storage_snapshot" -> {
-                    long emeraldCurrent = json.get("emerald_current").getAsLong();
-                    long emeraldMax = json.get("emerald_max").getAsLong();
-                    long aspectCurrent = json.get("aspect_current").getAsLong();
-                    long aspectMax = json.get("aspect_max").getAsLong();
+                    IncomingMessageParser.GuildStorageSnapshot snapshot =
+                            IncomingMessageParser.guildStorageSnapshot(json);
                     SeqClient.LOGGER.info(
                             "[WebSocket] Applying guild_storage_snapshot emerald={}/{} aspect={}/{}",
-                            emeraldCurrent,
-                            emeraldMax,
-                            aspectCurrent,
-                            aspectMax);
+                            snapshot.emeraldCurrent(),
+                            snapshot.emeraldMax(),
+                            snapshot.aspectCurrent(),
+                            snapshot.aspectMax());
                     Minecraft.getInstance().execute(() -> GuildStorageTracker.getInstance().applyRemoteSnapshot(
-                            emeraldCurrent, emeraldMax, aspectCurrent, aspectMax));
+                            snapshot.emeraldCurrent(),
+                            snapshot.emeraldMax(),
+                            snapshot.aspectCurrent(),
+                            snapshot.aspectMax()));
                 }
                 case "discord_chat" -> {
                     if (discordChatHandler != null) {
-                        String username = json.get("username").getAsString();
-                        String msg = json.get("message").getAsString();
+                        DiscordChatMessage discordChat = IncomingMessageParser.discordChat(json);
+                        String username = discordChat.username();
                         ConfigManager configManager = SeqClient.getConfigManager();
                         if (configManager != null
                                 && shouldIgnoreDiscordChatSender(username, configManager.ignoredBridgeUsers())) {
@@ -1690,82 +1672,66 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                             return;
                         }
                         SeqClient.LOGGER.info("[WebSocket] Dispatching discord_chat from {}", username);
-                        discordChatHandler.accept(new DiscordChatMessage(username, msg));
+                        discordChatHandler.accept(discordChat);
                     } else {
                         SeqClient.LOGGER.warn("[WebSocket] Received discord_chat but handler is not registered");
                     }
                 }
                 case "party_finder_update" -> {
-                    String action = json.has("action") && !json.get("action").isJsonNull()
-                            ? json.get("action").getAsString()
-                            : "unknown";
+                    String action = IncomingMessageParser.partyFinderAction(json);
                     if (partyFinderUpdateHandler != null) {
-                        JsonObject listingJson = json.getAsJsonObject("listing");
+                        PartyFinderUpdateMessage update = IncomingMessageParser.partyFinderUpdate(json, action);
                         SeqClient.LOGGER.info(
                                 "[WebSocket] Dispatching party_finder_update action={} hasListing={}",
                                 action,
-                                listingJson != null);
-                        partyFinderUpdateHandler.accept(new PartyFinderUpdateMessage(action, listingJson));
+                                update.listingJson() != null);
+                        partyFinderUpdateHandler.accept(update);
                     } else {
                         SeqClient.LOGGER.warn("[WebSocket] Received party_finder_update but handler is not registered");
                     }
                 }
                 case "party_finder_invite" -> {
                     if (partyFinderInviteHandler != null) {
-                        long listingId = json.get("listing_id").getAsLong();
-                        String inviterUUID = json.get("inviter_uuid").getAsString();
-                        String inviteToken = json.get("invite_token").getAsString();
-
-                        JsonObject listingJson = null;
-                        if (json.has("listing") && json.get("listing").isJsonObject()) {
-                            listingJson = json.getAsJsonObject("listing");
-                        }
+                        PartyFinderInviteMessage invite = IncomingMessageParser.partyFinderInvite(json);
 
                         SeqClient.LOGGER.info(
                                 "[WebSocket] Dispatching party_finder_invite listingId={} inviterUUID={} tokenPresent={} hasListing={}",
-                                listingId,
-                                inviterUUID,
-                                inviteToken != null && !inviteToken.isBlank(),
-                                listingJson != null);
+                                invite.listingId(),
+                                invite.inviterUUID(),
+                                invite.inviteToken() != null && !invite.inviteToken().isBlank(),
+                                invite.listingJson() != null);
 
-                        partyFinderInviteHandler.accept(
-                                new PartyFinderInviteMessage(listingId, inviterUUID, inviteToken, listingJson));
+                        partyFinderInviteHandler.accept(invite);
                     } else {
                         SeqClient.LOGGER.warn("[WebSocket] Received party_finder_invite but handler is not registered");
                     }
                 }
                 case "party_finder_stale_warning" -> {
                     if (partyFinderStaleWarningHandler != null) {
-                        String reason = extractPrimitiveString(json, "reason");
-                        long listingId = json.get("listing_id").getAsLong();
-                        Instant disbandAt = json.has("disband_at") && !json.get("disband_at").isJsonNull()
-                                ? Instant.parse(json.get("disband_at").getAsString())
-                                : null;
-                        long minutesRemaining = json.has("minutes_remaining")
-                                ? json.get("minutes_remaining").getAsLong()
-                                : 0L;
+                        PartyFinderStaleWarningMessage warning =
+                                IncomingMessageParser.partyFinderStaleWarning(json);
 
                         SeqClient.LOGGER.info(
                                 "[WebSocket] Dispatching party_finder_stale_warning reason={} listingId={} disbandAt={} minutesRemaining={}",
-                                reason,
-                                listingId,
-                                disbandAt,
-                                minutesRemaining);
+                                warning.reason(),
+                                warning.listingId(),
+                                warning.disbandAt(),
+                                warning.minutesRemaining());
 
-                        partyFinderStaleWarningHandler.accept(
-                                new PartyFinderStaleWarningMessage(reason, listingId, disbandAt, minutesRemaining));
+                        partyFinderStaleWarningHandler.accept(warning);
                     } else {
                         SeqClient.LOGGER.warn(
                                 "[WebSocket] Received party_finder_stale_warning but handler is not registered");
                     }
                 }
                 case "error" -> {
-                    String error = extractBackendErrorMessage(json);
-                    String backendCode = extractBackendErrorCode(json);
-                    String requestId = extractPrimitiveString(json, "request_id");
-                    String minimumSafeVersion = extractMinimumSafeVersion(json);
-                    String capability = extractCapability(json);
-                    int status = extractStatusCode(json);
+                    IncomingMessageParser.BackendError backendError = IncomingMessageParser.backendError(json);
+                    String error = backendError.message();
+                    String backendCode = backendError.code();
+                    String requestId = backendError.requestId();
+                    String minimumSafeVersion = backendError.minimumSafeVersion();
+                    String capability = backendError.capability();
+                    int status = backendError.status();
                     String normalized = error.toLowerCase(Locale.ROOT);
 
                     if (treasuryOnlyConnection
@@ -1843,7 +1809,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         return;
                     }
 
-                    if (isPartyFinderError(json, normalized)) {
+                    if (isPartyFinderError(backendError, normalized)) {
                         SeqClient.getPartyFinderManager().pushUiError(error);
                         return;
                     }
@@ -2195,56 +2161,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return trimmed;
     }
 
-    private static int extractStatusCode(JsonObject json) {
-        if (json == null) {
-            return -1;
-        }
-        if (json.has("status") && json.get("status").isJsonPrimitive()) {
-            try {
-                return json.get("status").getAsInt();
-            } catch (Exception ignored) {
-            }
-        }
-        if (json.has("code") && json.get("code").isJsonPrimitive()) {
-            try {
-                return json.get("code").getAsInt();
-            } catch (Exception ignored) {
-            }
-        }
-        return -1;
-    }
-
-    private static String extractBackendErrorCode(JsonObject json) {
-        return extractPrimitiveString(json, "code");
-    }
-
-    private static String extractBackendErrorMessage(JsonObject json) {
-        if (json == null) {
-            return "Unknown backend error";
-        }
-        String message = extractPrimitiveString(json, "message");
-        if (message != null) {
-            return message;
-        }
-        message = extractPrimitiveString(json, "error");
-        if (message != null) {
-            return message;
-        }
-        message = extractPrimitiveString(json, "detail");
-        if (message != null) {
-            return message;
-        }
-        return "Unknown backend error";
-    }
-
-    private static String extractMinimumSafeVersion(JsonObject json) {
-        return extractPrimitiveString(json, "minimum_safe_version");
-    }
-
-    private static String extractCapability(JsonObject json) {
-        return extractPrimitiveString(json, "capability");
-    }
-
     static boolean isSilentGuildChatMembershipReject(String backendCode, String capability, String normalizedMessage) {
         return "not_in_guild".equalsIgnoreCase(backendCode)
                 && "guild_chat".equalsIgnoreCase(capability)
@@ -2306,53 +2222,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         notify("Sequoia is outdated. Some " + feature + " may not work until you update to " + targetVersion + ".");
     }
 
-    private static String extractPrimitiveString(JsonObject json, String key) {
-        if (!json.has(key) || !json.get(key).isJsonPrimitive()) {
-            return null;
-        }
-        try {
-            String value = json.get(key).getAsString();
-            if (value == null || value.isBlank()) {
-                return null;
-            }
-            return value;
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
-    private static List<BombShareType> parseBombShareTypes(JsonArray requestedTypesJson) {
-        if (requestedTypesJson == null) {
-            return List.of();
-        }
-
-        List<BombShareType> requestedTypes = new ArrayList<>();
-        requestedTypesJson.forEach(element -> BombShareType.fromWireValue(element.getAsString()).ifPresent(type -> {
-            if (!requestedTypes.contains(type)) {
-                requestedTypes.add(type);
-            }
-        }));
-        return List.copyOf(requestedTypes);
-    }
-
-    private static List<String> parsePrimitiveStringArray(JsonArray jsonArray) {
-        if (jsonArray == null) {
-            return List.of();
-        }
-
-        List<String> values = new ArrayList<>();
-        jsonArray.forEach(element -> {
-            if (element != null && element.isJsonPrimitive()) {
-                String value = element.getAsString();
-                if (value != null && !value.isBlank()) {
-                    values.add(value.trim());
-                }
-            }
-        });
-        return List.copyOf(values);
-    }
-
-    private static boolean isPartyFinderError(JsonObject json, String normalizedMessage) {
+    private static boolean isPartyFinderError(
+            IncomingMessageParser.BackendError backendError, String normalizedMessage) {
         if (normalizedMessage != null
                 && (normalizedMessage.contains("party finder")
                         || normalizedMessage.contains("party_finder")
@@ -2360,17 +2231,17 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         || normalizedMessage.contains("invite"))) {
             return true;
         }
-        if (json == null) {
+        if (backendError == null) {
             return false;
         }
-        if (json.has("context") && json.get("context").isJsonPrimitive()) {
-            String context = json.get("context").getAsString().toLowerCase(Locale.ROOT);
+        if (backendError.context() != null) {
+            String context = backendError.context().toLowerCase(Locale.ROOT);
             if (context.contains("party_finder") || context.contains("party finder")) {
                 return true;
             }
         }
-        if (json.has("request_type") && json.get("request_type").isJsonPrimitive()) {
-            String requestType = json.get("request_type").getAsString().toLowerCase(Locale.ROOT);
+        if (backendError.requestType() != null) {
+            String requestType = backendError.requestType().toLowerCase(Locale.ROOT);
             return requestType.startsWith("party_")
                     || requestType.contains("listing")
                     || requestType.contains("invite");

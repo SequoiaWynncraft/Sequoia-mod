@@ -1,5 +1,6 @@
 package com.seqwawa.seq.network;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -7,10 +8,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
+import com.seqwawa.seq.model.BombShareType;
 import com.seqwawa.seq.model.GuildWarSubmission;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -269,6 +272,38 @@ class ConnectionManagerTest {
             assertEquals("amount must use a supported denomination", dispatched.get().message());
         } finally {
             ConnectionManager.onTreasuryOutError(null);
+            ConnectionManager.resetForTest();
+        }
+    }
+
+    @Test
+    void parsedBombSharePromptKeepsExistingCallbackAndPendingStateBehavior() {
+        AtomicReference<ConnectionManager.BombSharePromptMessage> dispatched = new AtomicReference<>();
+        ConnectionManager.onBombSharePrompt(dispatched::set);
+        try {
+            ConnectionManager manager = ConnectionManager.getInstance();
+            manager.onMessage(protocolFixtureText("inbound/bomb-share-prompt.json"));
+
+            ConnectionManager.BombSharePromptMessage expected = new ConnectionManager.BombSharePromptMessage(
+                    "04677645-a0d0-4b5f-bd5d-590b3f7f2f5d",
+                    "CinfrasCitizen",
+                    "loot-and-combat",
+                    List.of(BombShareType.LOOT, BombShareType.COMBAT_XP),
+                    Instant.parse("2026-08-03T12:45:30Z"),
+                    true);
+            assertEquals(expected, dispatched.get());
+            assertEquals(expected, manager.getPendingBombSharePrompt(expected.requestId()).orElseThrow());
+        } finally {
+            ConnectionManager.onBombSharePrompt(null);
+            ConnectionManager.resetForTest();
+        }
+    }
+
+    @Test
+    void malformedIncomingPayloadRemainsContainedByConnectionManager() {
+        try {
+            assertDoesNotThrow(() -> ConnectionManager.getInstance().onMessage("{"));
+        } finally {
             ConnectionManager.resetForTest();
         }
     }

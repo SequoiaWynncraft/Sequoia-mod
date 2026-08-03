@@ -1,0 +1,10 @@
+{
+  "type": "error",
+  "status": 426,
+  "code": "mod_version_unsupported",
+  "detail": "Update Sequoia before using raid relays.",
+  "minimum_safe_version": "0.2.0",
+  "capability": "guild_raid_announcement",
+  "context": "raid completion",
+  "request_type": "guild_raid_announcement"
+}

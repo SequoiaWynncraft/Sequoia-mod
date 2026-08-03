@@ -1,0 +1,9 @@
+{
+  "type": "bomb_share_prompt",
+  "request_id": "04677645-a0d0-4b5f-bd5d-590b3f7f2f5d",
+  "requester_username": "CinfrasCitizen",
+  "canonical_key": "loot-and-combat",
+  "requested_types": ["LOOT", "COMBAT_XP", "LOOT", "UNKNOWN"],
+  "expires_at": "2026-08-03T12:45:30Z",
+  "first_prompt": true
+}
