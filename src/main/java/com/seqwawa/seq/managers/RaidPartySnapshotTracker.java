@@ -1,6 +1,7 @@
 package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.utils.MinecraftUsername;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -8,7 +9,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /** Maintains one party roster for the complete lifetime of a raid. */
 public final class RaidPartySnapshotTracker {
@@ -18,8 +18,6 @@ public final class RaidPartySnapshotTracker {
     static final long RAID_ACQUISITION_WINDOW_MS = 6_000;
     private static final int DEFAULT_MAX_RAID_PARTY_MEMBERS = 4;
     private static final int ABSOLUTE_MAX_RAID_PARTY_MEMBERS = 10;
-    private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
-
     private static volatile TrackerState state = TrackerState.empty();
     private static long lastPollAtMs;
 
@@ -228,11 +226,7 @@ public final class RaidPartySnapshotTracker {
     }
 
     private static String sanitizeUsername(String username) {
-        if (username == null || username.isBlank()) {
-            return null;
-        }
-        String trimmed = username.trim();
-        return MC_USERNAME_PATTERN.matcher(trimmed).matches() ? trimmed : null;
+        return MinecraftUsername.normalize(username);
     }
 
     private static String resolutionSource(

@@ -35,6 +35,7 @@ import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
+import com.seqwawa.seq.utils.MinecraftUsername;
 import com.seqwawa.seq.utils.PlayerNameCache;
 
 public class PartyFinderManager implements NotificationAccessor {
@@ -1516,7 +1517,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 "[PartyFinderWS] createInvite requested listingId={} username='{}'",
                 requestedListingId,
                 normalizedUsername);
-        if (!normalizedUsername.matches("[A-Za-z0-9_]{3,16}")) {
+        if (!MinecraftUsername.isValid(normalizedUsername)) {
             pushUiError("Enter a valid Minecraft username.");
             return;
         }
@@ -1688,7 +1689,7 @@ public class PartyFinderManager implements NotificationAccessor {
                                 || username.isBlank()
                                 || "Loading...".equalsIgnoreCase(username)
                                 || "Unknown".equalsIgnoreCase(username)
-                                || !username.matches("[A-Za-z0-9_]{3,16}")) {
+                                || !MinecraftUsername.isValid(username)) {
                             resolvedSkippedCount++;
                             continue;
                         }
@@ -2599,7 +2600,7 @@ public class PartyFinderManager implements NotificationAccessor {
                             || resolvedName.isBlank()
                             || "Loading...".equalsIgnoreCase(resolvedName)
                             || "Unknown".equalsIgnoreCase(resolvedName)
-                            || !resolvedName.matches("[A-Za-z0-9_]{3,16}")) {
+                            || !MinecraftUsername.isValid(resolvedName)) {
                         SeqClient.LOGGER.warn(
                                 "Skipping party command '{}' for unresolved UUID {}", commandPrefix, targetUUID);
                         return;
@@ -2621,7 +2622,7 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         String normalizedUsername = username.trim();
-        if (!normalizedUsername.matches("[A-Za-z0-9_]{3,16}")) {
+        if (!MinecraftUsername.isValid(normalizedUsername)) {
             return "Enter a valid Minecraft username.";
         }
 
@@ -2712,7 +2713,7 @@ public class PartyFinderManager implements NotificationAccessor {
         }
 
         String targetName = PlayerNameCache.resolve(targetUUID.toString());
-        if (targetName == null || !targetName.matches("[A-Za-z0-9_]{3,16}")) {
+        if (!MinecraftUsername.isValid(targetName)) {
             SeqClient.LOGGER.warn("Skipping DM for unresolved target UUID {}", targetUUID);
             return;
         }

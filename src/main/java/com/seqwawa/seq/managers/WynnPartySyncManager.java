@@ -19,6 +19,7 @@ import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.utils.MinecraftUsername;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 
 public class WynnPartySyncManager {
@@ -39,7 +40,6 @@ public class WynnPartySyncManager {
             Pattern.compile("^Your party has been disbanded\\.?$", Pattern.CASE_INSENSITIVE);
     private static final Pattern PARTY_MEMBERS_PATTERN =
             Pattern.compile("^Party members:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
-    private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Duration DUPLICATE_WINDOW = Duration.ofMillis(750);
     private static final Duration HEARTBEAT_RESEND_INTERVAL = Duration.ofSeconds(60);
     private static final String OPEN_CREATE_UI_COMMAND = "/seq party create-ui";
@@ -387,12 +387,12 @@ public class WynnPartySyncManager {
         }
 
         String resolved = ChatManager.resolvePacketUsername(message, trimmed);
-        if (resolved != null && MC_USERNAME_PATTERN.matcher(resolved).matches()) {
+        if (MinecraftUsername.isValid(resolved)) {
             NicknameResolverCache.remember(trimmed, resolved);
             return resolved;
         }
 
-        if (MC_USERNAME_PATTERN.matcher(trimmed).matches()) {
+        if (MinecraftUsername.isValid(trimmed)) {
             NicknameResolverCache.remember(trimmed, trimmed);
             return trimmed;
         }
@@ -421,7 +421,7 @@ public class WynnPartySyncManager {
         List<String> usernames = new ArrayList<>();
         for (String token : tokens) {
             String username = token == null ? "" : token.trim();
-            if (MC_USERNAME_PATTERN.matcher(username).matches()) {
+            if (MinecraftUsername.isValid(username)) {
                 usernames.add(username);
             }
         }
@@ -450,7 +450,7 @@ public class WynnPartySyncManager {
                     ? SeqClient.getConfigManager().getMinecraftUsername()
                     : null;
         }
-        if (localUsername == null || !MC_USERNAME_PATTERN.matcher(localUsername).matches()) {
+        if (!MinecraftUsername.isValid(localUsername)) {
             return null;
         }
         return localUsername;

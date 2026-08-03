@@ -14,6 +14,7 @@ import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.contents.PlainTextContents;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.utils.MinecraftUsername;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 
 /**
@@ -48,8 +49,7 @@ public class RaidTracker {
             + "\\+(\\d+)m Guild Experience(?:, and \\+(\\d+) Seasonal Rating)?$");
     private static final Pattern RAID_REWARD_PATTERN =
             Pattern.compile("(?i)(?:(\\d+)x|no) (Emeralds?|Aspects?)");
-    private static final Pattern USERNAME_PATTERN = Pattern.compile("\\w{3,16}");
-    private static final Pattern PARENTHESIZED_USERNAME_PATTERN = Pattern.compile(".*\\((\\w{3,16})\\)$");
+    private static final Pattern PARENTHESIZED_USERNAME_PATTERN = Pattern.compile(".*\\(([^()]*)\\)$");
     private static final Pattern COMMA_SPACING_PATTERN = Pattern.compile("\\s*,\\s*");
     private static final String FINISHED_BOUNDARY = " finished ";
     private static final int DEFAULT_MAX_RAID_PARTY_MEMBERS = 4;
@@ -299,7 +299,7 @@ public class RaidTracker {
     private static List<String> resolvePartyMembers(List<String> parsedDisplayedNames, Component message) {
         PrefixMetadata prefixMetadata = buildPrefixMetadata(message);
         boolean hasInvalidDisplayedNames = parsedDisplayedNames.stream()
-                .anyMatch(name -> !USERNAME_PATTERN.matcher(name).matches());
+                .anyMatch(name -> !MinecraftUsername.isValid(name));
 
         Set<String> resolved = new LinkedHashSet<>();
         int searchFrom = 0;
@@ -338,7 +338,7 @@ public class RaidTracker {
             return parenthesizedRealName;
         }
 
-        boolean displayedLooksLikeUsername = USERNAME_PATTERN.matcher(displayedName).matches();
+        boolean displayedLooksLikeUsername = MinecraftUsername.isValid(displayedName);
         if (displayedLooksLikeUsername && !hasInvalidDisplayedNames) {
             return displayedName;
         }
@@ -353,7 +353,7 @@ public class RaidTracker {
 
     private static String parenthesizedUsername(String displayedName) {
         Matcher matcher = PARENTHESIZED_USERNAME_PATTERN.matcher(displayedName);
-        return matcher.matches() ? matcher.group(1) : null;
+        return matcher.matches() ? validUsername(matcher.group(1)) : null;
     }
 
     private static PrefixMetadata buildPrefixMetadata(Component message) {
@@ -432,7 +432,7 @@ public class RaidTracker {
     }
 
     private static String validUsername(String candidate) {
-        return candidate != null && USERNAME_PATTERN.matcher(candidate).matches() ? candidate : null;
+        return MinecraftUsername.isValid(candidate) ? candidate : null;
     }
 
     static int maximumPartySize(String raidName) {
