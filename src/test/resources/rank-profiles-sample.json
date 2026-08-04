@@ -272,6 +272,11 @@
         "war_honour": null,
         "war_honours": [],
         "branches": []
+      },
+      "display_colors": {
+        "primary": "#112233",
+        "secondary": "#445566",
+        "tertiary": "#778899"
       }
     },
     {

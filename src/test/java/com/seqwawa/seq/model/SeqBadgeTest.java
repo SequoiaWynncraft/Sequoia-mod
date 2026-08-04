@@ -2,7 +2,9 @@ package com.seqwawa.seq.model;
 
 import com.google.gson.Gson;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -67,6 +69,35 @@ class SeqBadgeTest {
         assertEquals(1, response.schemaVersion());
         assertEquals(List.of("role-key"), response.profiles().getFirst().roleKeys());
         assertEquals(List.of("award-key"), response.profiles().getFirst().awardKeys());
+    }
+
+    @Test
+    void profileDisplayColorsUseTheCanonicalWireKeyAndReadTheLegacyAlias() {
+        String canonicalJson = """
+                {
+                  "display_colors": {
+                    "primary": "#112233",
+                    "secondary": "#445566",
+                    "tertiary": "#778899"
+                  }
+                }
+                """;
+        RankProfilesResponse.Profile canonical = GSON.fromJson(canonicalJson, RankProfilesResponse.Profile.class);
+
+        assertEquals(
+                new RankProfilesResponse.RoleColors("#112233", "#445566", "#778899"),
+                canonical.displayColors());
+
+        RankProfilesResponse.Profile legacy = GSON.fromJson(
+                """
+                {"colors": {"primary": "#AABBCC", "secondary": null, "tertiary": null}}
+                """,
+                RankProfilesResponse.Profile.class);
+        assertEquals("#AABBCC", legacy.displayColors().primary());
+
+        var serialized = GSON.toJsonTree(legacy).getAsJsonObject();
+        assertTrue(serialized.has("display_colors"), "new payloads must use the backend contract name");
+        assertFalse(serialized.has("colors"), "the legacy alias is read-only compatibility");
     }
 
 }

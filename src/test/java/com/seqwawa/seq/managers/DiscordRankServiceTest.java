@@ -33,7 +33,8 @@ class DiscordRankServiceTest {
                         new RankProfilesResponse.MinecraftIdentity(PLAYER_UUID, "dix"),
                         List.of("rank.sapling", "in_game.recruiter"),
                         List.of(),
-                        summary("rank.sapling"))));
+                        summary("rank.sapling"),
+                        new RankProfilesResponse.RoleColors("#112233", "#445566", "#778899"))));
 
         DiscordRankService.Index index = DiscordRankService.parseProfiles(response);
 
@@ -45,6 +46,13 @@ class DiscordRankServiceTest {
         assertEquals("Sapling", index.byDiscordIdentity().get("sapling dix").label());
         // The bridge forwards the nickname without its rank prefix.
         assertEquals("Sapling", index.byDiscordIdentity().get("dix").label());
+        for (String identity : List.of(
+                PLAYER_UUID, "dix", "719729926802112553", "breadmusic", "sapling dix")) {
+            assertEquals(
+                    List.of(0x112233, 0x445566, 0x778899),
+                    index.colorsByIdentity().get(identity).stops(),
+                    identity);
+        }
     }
 
     @Test
@@ -172,13 +180,51 @@ class DiscordRankServiceTest {
                                 List.of("rank.sapling"),
                                 List.of(),
                                 summary("rank.sapling"),
-                                new RankProfilesResponse.RoleColors("#FF00FF", "#00FFFF", null))));
+                                new RankProfilesResponse.RoleColors("#FF00FF", "#00FFFF", "#FFFF00"))));
 
         DiscordRankService.Index index = DiscordRankService.parseProfiles(response);
+        DiscordRankService service = DiscordRankService.withIndex(index);
 
-        assertEquals(List.of(0xFF00FF, 0x00FFFF), index.colorsByIdentity().get("special").stops());
+        assertEquals(List.of(0xFF00FF, 0x00FFFF, 0xFFFF00), index.colorsByIdentity().get("special").stops());
         assertNull(index.colorsByIdentity().get("plain"), "an ordinary member falls back to their role");
         assertEquals(List.of(0x4CB4FA), index.colorsByRoleKey().get("rank.sapling").stops());
+        assertEquals(List.of(0x4CB4FA), service.presentationForMinecraftUsername("Plain").colors().stops());
+        assertEquals(
+                List.of(0xFF00FF, 0x00FFFF, 0xFFFF00),
+                service.presentationForMinecraftUsername("Special").colors().stops());
+    }
+
+    @Test
+    void emptyOrMalformedProfileDisplayColorsDoNotEraseTheCatalogFallback() {
+        RankProfilesResponse response = new RankProfilesResponse(
+                1,
+                colouredCatalog(),
+                List.of(
+                        new RankProfilesResponse.Profile(
+                                null,
+                                new RankProfilesResponse.MinecraftIdentity(PLAYER_UUID, "Empty"),
+                                List.of("rank.sapling"),
+                                List.of(),
+                                summary("rank.sapling"),
+                                new RankProfilesResponse.RoleColors(null, null, null)),
+                        new RankProfilesResponse.Profile(
+                                null,
+                                new RankProfilesResponse.MinecraftIdentity(PLAYER_UUID, "Malformed"),
+                                List.of("rank.sapling"),
+                                List.of(),
+                                summary("rank.sapling"),
+                                new RankProfilesResponse.RoleColors("#FF00FF", "not-a-colour", null))));
+
+        DiscordRankService service = serviceWith(response);
+
+        for (String identity : List.of("Empty", "Malformed")) {
+            assertNull(DiscordRankService.parseProfiles(response)
+                    .colorsByIdentity()
+                    .get(identity.toLowerCase()));
+            assertEquals(
+                    List.of(0x4CB4FA),
+                    service.presentationForMinecraftUsername(identity).colors().stops());
+        }
     }
 
     @Test

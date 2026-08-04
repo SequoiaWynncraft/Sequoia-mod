@@ -188,13 +188,14 @@ public final class DiscordRankService {
                 continue;
             }
             rankedProfiles++;
-            ColorRamp individual = ColorRamp.of(colorRamp(profile.colors()));
+            ColorRamp individual = profileDisplayColors(profile.displayColors());
 
             RankProfilesResponse.MinecraftIdentity minecraft = profile.minecraft();
             if (minecraft != null) {
                 String uuid = PlayerNameCache.formatUUID(minecraft.uuid());
                 if (uuid != null) {
                     byUuid.put(uuid, rank);
+                    putColors(colorsByIdentity, uuid, individual);
                 }
                 putIdentity(byMinecraftUsername, minecraft.username(), rank);
                 putColors(colorsByIdentity, minecraft.username(), individual);
@@ -331,6 +332,37 @@ public final class DiscordRankService {
             }
         }
         return List.copyOf(ramp);
+    }
+
+    /**
+     * Validates a profile-level palette as one indivisible backend override. An
+     * absent, empty, or malformed palette must not mask the catalog colour of the
+     * member's progression rank.
+     */
+    private static ColorRamp profileDisplayColors(RankProfilesResponse.RoleColors colors) {
+        if (colors == null || !isContractColor(colors.primary())) {
+            return ColorRamp.empty();
+        }
+
+        List<Integer> ramp = new ArrayList<>(3);
+        ramp.add(Integer.parseInt(colors.primary().substring(1), 16));
+        if (colors.secondary() != null) {
+            if (!isContractColor(colors.secondary())) {
+                return ColorRamp.empty();
+            }
+            ramp.add(Integer.parseInt(colors.secondary().substring(1), 16));
+        }
+        if (colors.tertiary() != null) {
+            if (colors.secondary() == null || !isContractColor(colors.tertiary())) {
+                return ColorRamp.empty();
+            }
+            ramp.add(Integer.parseInt(colors.tertiary().substring(1), 16));
+        }
+        return ColorRamp.of(ramp);
+    }
+
+    private static boolean isContractColor(String value) {
+        return value != null && value.matches("#[0-9A-F]{6}");
     }
 
     /** Parses a {@code #RRGGBB} colour, or {@code null} when it is absent or malformed. */
