@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -43,6 +44,11 @@ public class ApiClient {
                     + WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE
                     + "\"}";
     private static final String DEFAULT_ASPECT_REQUEST_REASON = "No reason provided.";
+
+    static final String ITEM_SCALES_PATH = "/assets/items/stat-weights.json";
+
+    private static final java.lang.reflect.Type ITEM_SCALES_TYPE =
+            new TypeToken<Map<String, Map<String, Double>>>() {}.getType();
 
     private static ApiClient instance;
 
@@ -253,6 +259,20 @@ public class ApiClient {
 
     public CompletableFuture<RankProfilesResponse> getRecognizedRankProfiles() {
         return get(authBaseUrl, "/v1/rank-profiles?scope=recognized", RankProfilesResponse.class, false);
+    }
+
+    /**
+     * Profiles of members who linked both their Discord and Minecraft accounts.
+     * Unlike {@code scope=recognized}, every profile is guaranteed to carry both
+     * identities, which is what the chat rank decoration needs to match on.
+     */
+    public CompletableFuture<RankProfilesResponse> getLinkedRankProfiles() {
+        return get(authBaseUrl, "/v1/rank-profiles?scope=linked", RankProfilesResponse.class, false);
+    }
+
+    /** Stat weights keyed by the item name shown in game, then by Wynncraft stat api name. */
+    public CompletableFuture<Map<String, Map<String, Double>>> getItemScales() {
+        return get(authBaseUrl, ITEM_SCALES_PATH, ITEM_SCALES_TYPE, false);
     }
 
     public CompletableFuture<Listing> reassignRole(long listingId, UUID targetUUID, PartyRole role) {
