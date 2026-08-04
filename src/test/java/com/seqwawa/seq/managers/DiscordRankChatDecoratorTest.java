@@ -20,6 +20,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -132,6 +133,45 @@ class DiscordRankChatDecoratorTest {
 
         assertEquals(List.of("sapling"), pillLabels(decorated));
         assertTrue(decorated.getString().contains("ArcLeRetour: t"));
+    }
+
+    @Test
+    void leavesOurOwnBridgeLineAloneWhenItComesBackForDecoration() {
+        // Only the most recent bridged line is remembered by identity, so an earlier one
+        // can reach the decorator. Our marker sits in the same private-use block as
+        // Wynncraft's badges and the line carries guild aqua, which is exactly what the
+        // position fallback looks for: it would replace our own marker with a pill.
+        Component bridged = Component.empty()
+                .append(Component.literal(DiscordRankChatDecorator.BRIDGE_ICON_GLYPH + " ")
+                        .withStyle(Style.EMPTY.withColor(GUILD_AQUA)))
+                .append(Component.literal("ArcLeRetour")
+                        .withStyle(Style.EMPTY.withColor(GUILD_AQUA).withInsertion("ArcLeRetour")))
+                .append(Component.literal(": hi").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+
+        assertSame(
+                bridged, DiscordRankChatDecorator.decorateGuildChat(bridged, DiscordRankChatDecoratorTest::lookup));
+    }
+
+    @Test
+    void keepsAnInsigniaItAlreadyInsertedInsteadOfEatingIt() {
+        // A decorated line carries our insignia just before the ':'. Re-decorating must
+        // not treat that glyph as part of a Wynncraft badge.
+        Component decorated = Component.empty()
+                .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
+                .append(Component.literal("ArcLeRetour")
+                        .withStyle(Style.EMPTY.withColor(GUILD_AQUA).withInsertion("ArcLeRetour")))
+                .append(Component.literal(""))
+                .append(Component.literal(": hi").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+
+        String result = DiscordRankChatDecorator.decorateGuildChat(
+                        decorated, DiscordRankChatDecoratorTest::lookup)
+                .getString();
+
+        assertTrue(result.contains(""), "the insignia must survive: " + describe(result));
+    }
+
+    private static String describe(String text) {
+        return DiscordRankChatDecorator.describeCodepoints(text);
     }
 
     @Test
@@ -302,6 +342,40 @@ class DiscordRankChatDecoratorTest {
                         .style()
                         .getColor()
                         .getValue());
+    }
+
+    @Test
+    void resolvesSpeakersShownAsUsernameSlashNickname() {
+        Component message = guildLine("RECRUITER", "ArcLeRetour/EightySix", null, "hi");
+
+        Component decorated =
+                DiscordRankChatDecorator.decorateGuildChat(message, DiscordRankChatDecoratorTest::lookup);
+
+        assertEquals(List.of("sapling"), pillLabels(decorated));
+        assertTrue(decorated.getString().contains("ArcLeRetour/EightySix: hi"));
+    }
+
+    @Test
+    void resolvesSpeakersWhenTheNicknameComesFirst() {
+        // Which half is the account name depends on the add-on, so both are offered and
+        // the roster picks.
+        Component message = guildLine("RECRUITER", "EightySix/ArcLeRetour", null, "hi");
+
+        assertEquals(
+                List.of("sapling"),
+                pillLabels(DiscordRankChatDecorator.decorateGuildChat(
+                        message, DiscordRankChatDecoratorTest::lookup)));
+    }
+
+    @Test
+    void recolorsOnlyTheFirstHalfOfASlashSeparatedName() {
+        String text = "  ArcLeRetour/EightySix: hi";
+        int colon = text.indexOf(':');
+
+        assertEquals(
+                text.indexOf('/'),
+                DiscordRankChatDecorator.speakerNameEnd(
+                        ComponentTextEditor.flatten(Component.literal(text)), text, 2, colon, "ArcLeRetour"));
     }
 
     @Test
@@ -476,19 +550,26 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void relabelsEachGlyphForTheBackgroundUnderIt() {
-        // Black to white: the label has to flip from light to dark partway along, or
-        // one end of the pill becomes unreadable.
-        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x000000, 0xFFFFFF);
+    void keepsOneLabelColourAcrossAGradient() {
+        // Only the background is graded. Letters that shifted hue from one to the next
+        // read as a rendering fault rather than as a gradient.
+        RankPresentation gradient = presentation("rank.treant", "Treant", 104, 0x1B9056, 0x50C9A6);
 
         List<Integer> labels = pillLabelColors(DiscordRankChatDecorator.rankPill(gradient, null));
 
+        assertEquals(1, Set.copyOf(labels).size(), "every letter shares one colour, was " + labels);
+    }
+
+    @Test
+    void picksTheLabelColourFromTheMiddleOfTheGradient() {
+        // Sampling an end instead would leave the other end of a wide ramp unreadable.
+        RankPresentation darkToLight = presentation("rank.yggdrasil", "Ygg", 120, 0x101010, 0x303030);
+
+        int label = pillLabelColors(DiscordRankChatDecorator.rankPill(darkToLight, null)).getFirst();
+
         assertTrue(
-                DiscordRankChatDecorator.luminanceOf(labels.getFirst()) > 0.55d,
-                "a dark start needs a light label");
-        assertTrue(
-                DiscordRankChatDecorator.luminanceOf(labels.getLast()) < 0.35d,
-                "a light end needs a dark label");
+                DiscordRankChatDecorator.luminanceOf(label) > 0.55d,
+                "a dark pill needs a light label throughout, was " + Integer.toHexString(label));
     }
 
     @Test

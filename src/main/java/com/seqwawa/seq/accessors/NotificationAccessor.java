@@ -62,8 +62,10 @@ public interface NotificationAccessor {
     /**
      * Pill whose background runs through {@code ramp} across its glyphs, so a Discord
      * gradient role reads as a gradient rather than as its primary colour alone.
-     * {@code labelColor} maps each glyph's background to the colour its letter is
-     * drawn in, because legibility depends on the background under that glyph.
+     * <p>
+     * Only the background is graded. The label keeps one colour for the whole pill,
+     * derived from the middle of the ramp by {@code labelColor}: letters that shifted
+     * hue from one to the next read as a rendering fault rather than as a gradient.
      */
     static @NotNull MutableComponent wynnPill(
             String label,
@@ -72,7 +74,8 @@ public interface NotificationAccessor {
             ClickEvent clickEvent) {
         IntFunction<TextColor> backgroundAt =
                 index -> TextColor.fromRgb(ramp.sample(gradientPosition(index, label.length())));
-        return wynnPill(label, backgroundAt, index -> labelColor.apply(backgroundAt.apply(index)), clickEvent);
+        TextColor labelAcrossPill = labelColor.apply(TextColor.fromRgb(ramp.sample(0.5d)));
+        return wynnPill(label, backgroundAt, index -> labelAcrossPill, clickEvent);
     }
 
     /**
@@ -93,9 +96,16 @@ public interface NotificationAccessor {
         pill.append(styledPillPart(PILL_CORNER_LEFT, backgroundAt.apply(0), clickEvent));
 
         for (int i = 0; i < label.length(); i++) {
-            String glyph = toWynncraftGlyph(label.charAt(i));
+            char rawChar = label.charAt(i);
             pill.append(styledPillPart(PILL_BG_BACK, backgroundAt.apply(i), clickEvent));
-            pill.append(labelPillPart(PILL_BG_FRONT + glyph, labelAt.apply(i), clickEvent));
+            // A character with no glyph, such as the space in "Upper Strategist", gets
+            // the background block on its own. Drawing a plain character on top instead
+            // would advance by a different amount than the block it sits on and push the
+            // rest of the label off its background; a bare block reads as a gap, which
+            // is what a space in a pill should look like anyway.
+            if (WynnPillGlyphs.hasGlyph(rawChar)) {
+                pill.append(labelPillPart(PILL_BG_FRONT + toWynncraftGlyph(rawChar), labelAt.apply(i), clickEvent));
+            }
         }
 
         pill.append(styledPillPart(PILL_CORNER_RIGHT, backgroundAt.apply(lastIndex), clickEvent));

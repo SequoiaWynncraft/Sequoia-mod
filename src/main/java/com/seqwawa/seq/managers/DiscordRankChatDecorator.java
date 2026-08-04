@@ -104,6 +104,9 @@ public final class DiscordRankChatDecorator {
     /** Wynntils renders nicked players as {@code Nickname(RealUsername)}. */
     private static final Pattern NICKNAME_WITH_USERNAME_PATTERN =
             Pattern.compile("\\(([a-zA-Z0-9_]{3,16})\\)\\s*$");
+    /** The bracket-free variant, {@code username/nickname}. */
+    private static final Pattern SLASH_SEPARATED_NAMES_PATTERN =
+            Pattern.compile("([a-zA-Z0-9_]{3,16})\\s*/\\s*([a-zA-Z0-9_]{3,16})");
 
     private static volatile boolean debug;
     private static boolean suppressed;
@@ -274,6 +277,13 @@ public final class DiscordRankChatDecorator {
             return nameStart + legacyCode;
         }
 
+        // In the "username/nickname" form the separator is the only boundary there is:
+        // both halves are plain names, so nothing else says where one ends.
+        int slash = region.indexOf('/');
+        if (slash >= 0) {
+            return nameStart + slash;
+        }
+
         int cursor = 0;
         for (ComponentTextEditor.Fragment fragment : fragments) {
             int fragmentStart = cursor;
@@ -381,8 +391,14 @@ public final class DiscordRankChatDecorator {
      * {@link PacketTextNormalizer}: the badge and icon glyphs are spread across
      * private-use <em>and</em> unassigned codepoints, and missing the unassigned ones
      * cuts the walk short, leaving the old pill showing behind the new one.
+     * <p>
+     * Glyphs this mod draws are excluded. They are private use too, so counting them
+     * would let the walk swallow a marker or an insignia this very class had put there.
      */
     private static boolean isDecoration(int codePoint) {
+        if (codePoint <= Character.MAX_VALUE && WynnPillGlyphs.isModGlyph((char) codePoint)) {
+            return false;
+        }
         return switch (Character.getType(codePoint)) {
             case Character.CONTROL,
                     Character.FORMAT,
@@ -469,6 +485,7 @@ public final class DiscordRankChatDecorator {
         if (nicknameMatcher.find()) {
             candidates.add(nicknameMatcher.group(1));
         }
+        addSlashSeparatedCandidates(candidates, displayedName);
         addUsernameCandidate(candidates, displayedName);
         addUsernameCandidate(candidates, NicknameResolverCache.resolveUsername(displayedName));
 
@@ -484,6 +501,23 @@ public final class DiscordRankChatDecorator {
         }
 
         return candidates;
+    }
+
+    /**
+     * Offers both halves of a {@code username/nickname} name, the format add-ons use to
+     * show a nicked player without brackets.
+     * <p>
+     * Both sides are offered rather than picking one, because which half is the account
+     * name depends on the add-on and its settings. The roster decides: whichever half
+     * resolves to a member is the speaker, and a nickname that matches nobody costs
+     * only a failed lookup.
+     */
+    private static void addSlashSeparatedCandidates(Set<String> candidates, String displayedName) {
+        Matcher matcher = SLASH_SEPARATED_NAMES_PATTERN.matcher(displayedName);
+        if (matcher.find()) {
+            addUsernameCandidate(candidates, matcher.group(1));
+            addUsernameCandidate(candidates, matcher.group(2));
+        }
     }
 
     private static void addUsernameCandidate(Set<String> candidates, String candidate) {
@@ -514,25 +548,41 @@ public final class DiscordRankChatDecorator {
      * block, then an aligned vertical bar while bridge messages remain consecutive.
      */
     public static MutableComponent bridgePrefix() {
-        return padToCommonWidth(bridgeSequenceOpen ? continuationBar() : discordMark());
+        return alignToGuildColumn(bridgeSequenceOpen ? continuationBar() : discordMark());
     }
 
     /**
-     * Pads the prefix out to whichever of the two forms is wider, so the message text
-     * starts on the same column whether the line opens a bridge block or continues
-     * one. The logo and the bar are unrelated glyphs and have no reason to advance by
-     * the same amount; measuring both and topping up the shorter keeps them aligned
-     * without either being redrawn to a particular width.
+     * Brings a bridge prefix to the column Wynncraft starts its guild badges on, so
+     * bridged lines, their continuations and real guild lines all line up.
+     * <p>
+     * There is deliberately one target rather than two. Sizing the logo against the
+     * guild marker and then sizing the two bridge forms against each other gives two
+     * answers that disagree, and which of them wins depends on whether a bar has been
+     * captured yet — which is what made the alignment come and go.
      */
-    private static MutableComponent padToCommonWidth(MutableComponent prefix) {
+    private static MutableComponent alignToGuildColumn(MutableComponent prefix) {
         try {
             Font font = Minecraft.getInstance().font;
-            int target = Math.max(font.width(discordMark()), font.width(continuationBar()));
-            return appendAdvance(prefix, target - font.width(prefix));
+            int target = guildColumnWidth(font);
+            return target < 0 ? prefix : appendAdvance(prefix, target - font.width(prefix));
         } catch (RuntimeException | LinkageError ignored) {
             // No client available (unit tests); the prefix keeps its natural width.
             return prefix;
         }
+    }
+
+    /**
+     * Width of everything Wynncraft draws before a guild badge: its marker plus the
+     * space after it. Negative until a guild line has been seen, since the marker is
+     * captured from real chat rather than redrawn.
+     */
+    private static int guildColumnWidth(Font font) {
+        GuildChatMarkers.Marker marker = GuildChatMarkers.arrow();
+        if (marker == null) {
+            return -1;
+        }
+        return font.width(Component.literal(marker.glyphs()).withStyle(marker.style()))
+                + font.width(Component.literal(" "));
     }
 
     /**
@@ -575,32 +625,9 @@ public final class DiscordRankChatDecorator {
             mark.append(Component.literal(new String(codePoints, 0, 1))
                     .withStyle(marker.style().withColor(DISCORD_ACCENT).withoutShadow()));
         }
-        mark.append(Component.literal(BRIDGE_ICON_GLYPH).withStyle(bridgeMarkStyle()));
-        return withSeparator(matchGuildMarkerWidth(mark, marker));
-    }
-
-    /**
-     * Makes the Discord mark advance exactly as far as the guild marker it stands in
-     * for, so a bridged line and an in-game guild line put their rank pill on the same
-     * column.
-     * <p>
-     * Dropping most of Wynncraft's arrow and substituting a logo of a different width
-     * is what pushes the two apart, and by an amount only the loaded resource pack
-     * knows. Measuring both and closing the gap is therefore the only way to align
-     * them; redrawing the logo to a guessed width is not.
-     */
-    private static MutableComponent matchGuildMarkerWidth(MutableComponent mark, GuildChatMarkers.Marker marker) {
-        if (marker == null) {
-            return mark;
-        }
-        try {
-            Font font = Minecraft.getInstance().font;
-            int guildMarker = font.width(Component.literal(marker.glyphs()).withStyle(marker.style()));
-            return appendAdvance(mark, guildMarker - font.width(mark));
-        } catch (RuntimeException | LinkageError ignored) {
-            // No client available (unit tests); the mark keeps its natural width.
-            return mark;
-        }
+        // Width is not corrected here: bridgePrefix aligns the finished prefix to the
+        // guild column, which is the single target both bridge forms answer to.
+        return withSeparator(mark.append(Component.literal(BRIDGE_ICON_GLYPH).withStyle(bridgeMarkStyle())));
     }
 
     /**

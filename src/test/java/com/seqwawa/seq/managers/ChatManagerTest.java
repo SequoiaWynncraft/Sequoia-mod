@@ -10,6 +10,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
 
@@ -296,5 +297,25 @@ class ChatManagerTest {
                 .append(Component.literal("The Nameless Anomaly").withStyle(ChatFormatting.AQUA));
 
         assertFalse(ChatManager.hasLeadingGuildChatColor(message));
+    }
+
+    @Test
+    void splitsABridgedMessageIntoOneLinePerNewline() {
+        // Minecraft draws an embedded break flush against the left margin, which loses
+        // the marker column, so each line is displayed on its own instead.
+        assertEquals(
+                List.of("multi", "line", "message?"),
+                ChatManager.splitMessageLines("multi\nline\nmessage?"));
+        assertEquals(List.of("a", "b"), ChatManager.splitMessageLines("a\r\nb"));
+    }
+
+    @Test
+    void dropsTrailingBlankLinesButKeepsInnerOnes() {
+        // A rail drawn under nothing looks like a rendering fault; a deliberate blank
+        // line inside a message does not.
+        assertEquals(List.of("only"), ChatManager.splitMessageLines("only\n\n"));
+        assertEquals(List.of("top", "", "bottom"), ChatManager.splitMessageLines("top\n\nbottom"));
+        assertEquals(List.of(""), ChatManager.splitMessageLines(""));
+        assertEquals(List.of(""), ChatManager.splitMessageLines(null));
     }
 }
