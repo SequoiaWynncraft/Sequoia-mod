@@ -81,6 +81,65 @@ class WynnPillGlyphsTest {
     }
 
     @Test
+    void ignoresTheGlyphsThisModDrawsItself() {
+        // The Discord marker, the continuation bar and the insignia all live in the
+        // same private-use block as Wynncraft's pills. Treating them as a badge lets
+        // the decorator overwrite its own output.
+        String ours = "";
+
+        assertFalse(WynnPillGlyphs.containsPill(ours), "the mod's own glyphs are not a pill");
+        assertTrue(WynnPillGlyphs.findGlyphRuns(ours).isEmpty(), "and form no glyph run");
+    }
+
+    @Test
+    void stillReadsAWynncraftPillSittingNextToTheModsGlyphs() {
+        String text = " " + WynnPillGlyphs.encodePlainPill("recruiter") + " Player: hi";
+
+        List<WynnPillGlyphs.Pill> pills = WynnPillGlyphs.findPills(text);
+
+        assertEquals(1, pills.size());
+        assertEquals("recruiter", pills.get(0).label());
+        assertEquals(text.indexOf(WynnPillGlyphs.CORNER_LEFT), pills.get(0).start());
+    }
+
+    @Test
+    void aMultiWordLabelKeepsOneBackgroundBlockPerCharacter() {
+        // "Upper Strategist" is a real rank. Its space has no glyph, so it must get a
+        // background block on its own: a plain space advances differently from the block
+        // it would sit on, which slides the rest of the label off its background.
+        String pill = WynnPillGlyphs.encodePlainPill("UPPER STRATEGIST");
+
+        assertEquals(
+                "UPPER STRATEGIST".length(),
+                pill.chars().filter(c -> c == WynnPillGlyphs.BACKGROUND).count(),
+                "one block per character, space included");
+        assertEquals(
+                "UPPERSTRATEGIST".length(),
+                pill.chars().filter(c -> c == WynnPillGlyphs.TEXT_OFFSET).count(),
+                "but no text offset for the space");
+        assertFalse(pill.contains(" "), "and no raw space inside the pill");
+    }
+
+    @Test
+    void aSpaceDoesNotSplitAMultiWordPillInTwo() {
+        List<WynnPillGlyphs.Pill> pills =
+                WynnPillGlyphs.findPills(WynnPillGlyphs.encodePlainPill("UPPER STRATEGIST") + " Player: hi");
+
+        assertEquals(1, pills.size(), "the run must stay whole");
+        assertEquals("upperstrategist", pills.get(0).label());
+    }
+
+    @Test
+    void knowsWhichCharactersTheFontCanDraw() {
+        assertTrue(WynnPillGlyphs.hasGlyph('a'));
+        assertTrue(WynnPillGlyphs.hasGlyph('Z'));
+        assertTrue(WynnPillGlyphs.hasGlyph('7'));
+        assertFalse(WynnPillGlyphs.hasGlyph(' '));
+        assertFalse(WynnPillGlyphs.hasGlyph('-'));
+        assertFalse(WynnPillGlyphs.hasGlyph('é'));
+    }
+
+    @Test
     void roundTripsDigitsAndLetters() {
         assertEquals("sapling2", WynnPillGlyphs.findPills(WynnPillGlyphs.encodePlainPill("Sapling2"))
                 .get(0)
