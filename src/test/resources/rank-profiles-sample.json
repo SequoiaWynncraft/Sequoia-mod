@@ -1,0 +1,405 @@
+{
+  "schema_version": 1,
+  "catalog": {
+    "roles": [
+      {
+        "key": "rank.sapling",
+        "label": "Sapling",
+        "category": "progression_rank",
+        "source_guild": "main",
+        "source_guild_id": "900000000000000001",
+        "source_role_ids": [
+          "900000000000000088"
+        ],
+        "legacy": false,
+        "position": 88,
+        "colors": {
+          "primary": "#4CB4FA",
+          "secondary": null,
+          "tertiary": null
+        }
+      },
+      {
+        "key": "rank.dryad",
+        "label": "Dryad",
+        "category": "progression_rank",
+        "source_guild": "main",
+        "source_guild_id": "900000000000000001",
+        "source_role_ids": [
+          "900000000000000094"
+        ],
+        "legacy": false,
+        "position": 94,
+        "colors": {
+          "primary": "#CDECE4",
+          "secondary": "#8FD3C4",
+          "tertiary": null
+        }
+      },
+      {
+        "key": "rank.upper_strategist",
+        "label": "Upper Strategist",
+        "category": "progression_rank",
+        "source_guild": "main",
+        "source_guild_id": "900000000000000001",
+        "source_role_ids": [
+          "900000000000000096"
+        ],
+        "legacy": false,
+        "position": 96,
+        "colors": {
+          "primary": null,
+          "secondary": null,
+          "tertiary": null
+        }
+      },
+      {
+        "key": "rank.treant",
+        "label": "Treant",
+        "category": "progression_rank",
+        "source_guild": "main",
+        "source_guild_id": "900000000000000001",
+        "source_role_ids": [
+          "900000000000000104"
+        ],
+        "legacy": false,
+        "position": 104,
+        "colors": {
+          "primary": "#1B9056",
+          "secondary": "#50C9A6",
+          "tertiary": null
+        }
+      },
+      {
+        "key": "rank.yggdrasil",
+        "label": "Yggdrasil",
+        "category": "progression_rank",
+        "source_guild": "main",
+        "source_guild_id": "900000000000000001",
+        "source_role_ids": [
+          "900000000000000146"
+        ],
+        "legacy": false,
+        "position": 146,
+        "colors": {
+          "primary": "#7506D6",
+          "secondary": "#F1D63D",
+          "tertiary": null
+        }
+      },
+      {
+        "key": "in_game.recruiter",
+        "label": "Recruiter",
+        "category": "in_game_rank",
+        "source_guild": "main",
+        "source_guild_id": "900000000000000001",
+        "source_role_ids": [
+          "900000000000000040"
+        ],
+        "legacy": false,
+        "position": 40,
+        "colors": {
+          "primary": "#AAAAAA",
+          "secondary": null,
+          "tertiary": null
+        }
+      },
+      {
+        "key": "insignia.bronze",
+        "label": "Bronze",
+        "category": "insignia",
+        "source_guild": "main",
+        "source_guild_id": "900000000000000001",
+        "source_role_ids": [
+          "900000000000000020"
+        ],
+        "legacy": false,
+        "position": 20,
+        "colors": {
+          "primary": null,
+          "secondary": null,
+          "tertiary": null
+        },
+        "tier": "BRONZE",
+        "asset_key": "asset.insignia.bronze"
+      },
+      {
+        "key": "insignia.silver",
+        "label": "Silver",
+        "category": "insignia",
+        "source_guild": "main",
+        "source_guild_id": "900000000000000001",
+        "source_role_ids": [
+          "900000000000000021"
+        ],
+        "legacy": false,
+        "position": 21,
+        "colors": {
+          "primary": null,
+          "secondary": null,
+          "tertiary": null
+        },
+        "tier": "SILVER",
+        "asset_key": "asset.insignia.silver"
+      },
+      {
+        "key": "insignia.gold",
+        "label": "Gold",
+        "category": "insignia",
+        "source_guild": "main",
+        "source_guild_id": "900000000000000001",
+        "source_role_ids": [
+          "900000000000000022"
+        ],
+        "legacy": false,
+        "position": 22,
+        "colors": {
+          "primary": null,
+          "secondary": null,
+          "tertiary": null
+        },
+        "tier": "GOLD",
+        "asset_key": "asset.insignia.gold"
+      },
+      {
+        "key": "insignia.diamond",
+        "label": "Diamond",
+        "category": "insignia",
+        "source_guild": "main",
+        "source_guild_id": "900000000000000001",
+        "source_role_ids": [
+          "900000000000000023"
+        ],
+        "legacy": false,
+        "position": 23,
+        "colors": {
+          "primary": null,
+          "secondary": null,
+          "tertiary": null
+        },
+        "tier": "DIAMOND",
+        "asset_key": "asset.insignia.diamond"
+      }
+    ],
+    "awards": [
+      {
+        "key": "award.wtp_bronze",
+        "category": "raid_badge",
+        "series": "WTP",
+        "tier": "BRONZE",
+        "asset_key": "asset.wtp_bronze",
+        "title": "WTP Bronze",
+        "subtitle": "Sample award",
+        "display_order": 0
+      },
+      {
+        "key": "award.wtp_gold",
+        "category": "raid_badge",
+        "series": "WTP",
+        "tier": "GOLD",
+        "asset_key": "asset.wtp_gold",
+        "title": "WTP Gold",
+        "subtitle": "Sample award",
+        "display_order": 1
+      }
+    ],
+    "assets": [
+      {
+        "key": "asset.insignia.bronze",
+        "url": "https://example.invalid/badges/asset.insignia.bronze.png",
+        "content_type": "image/png",
+        "sha256": "33b9e34b03ab66b94897aee737d94d7a4c66ebf29cb916a2d852164cb51f5708"
+      },
+      {
+        "key": "asset.insignia.silver",
+        "url": "https://example.invalid/badges/asset.insignia.silver.png",
+        "content_type": "image/png",
+        "sha256": "ed3ea7780c7853f02fae78060eb71516d0ca985fac70955fe0c45731fc6f0443"
+      },
+      {
+        "key": "asset.insignia.gold",
+        "url": "https://example.invalid/badges/asset.insignia.gold.png",
+        "content_type": "image/png",
+        "sha256": "64577cb6e4d1f8d842f9adf1d1afcce7ee79563cbd1d5d3c377d607e164467bd"
+      },
+      {
+        "key": "asset.insignia.diamond",
+        "url": "https://example.invalid/badges/asset.insignia.diamond.png",
+        "content_type": "image/png",
+        "sha256": "e8bb86c1dac5079f71c7819eef555b531891b5f96e1bbd5513e52f9171b8701e"
+      },
+      {
+        "key": "asset.wtp_bronze",
+        "url": "https://example.invalid/badges/asset.wtp_bronze.png",
+        "content_type": "image/png",
+        "sha256": "79bd6450100442a6abbf1bdfdd7ff86be699f92cc50266bf53c5b20b918c3568"
+      },
+      {
+        "key": "asset.wtp_gold",
+        "url": "https://example.invalid/badges/asset.wtp_gold.png",
+        "content_type": "image/png",
+        "sha256": "ae324538097041f5be114489e48d1b92fc487facf3e958f507299b5da2754944"
+      }
+    ]
+  },
+  "profiles": [
+    {
+      "discord": {
+        "id": "900000000000000101",
+        "username": "alphaplayer",
+        "display_name": "Yggdrasil AlphaPlayer",
+        "avatar_url": null
+      },
+      "minecraft": {
+        "uuid": "336de99f-2ee1-c996-9656-d265a1812516",
+        "username": "AlphaPlayer"
+      },
+      "role_keys": [
+        "rank.yggdrasil",
+        "insignia.diamond"
+      ],
+      "award_keys": [
+        "award.wtp_gold"
+      ],
+      "summary": {
+        "progression_rank": "rank.yggdrasil",
+        "in_game_rank": "in_game.recruiter",
+        "leadership": null,
+        "insignia": "insignia.diamond",
+        "insignias": [
+          "insignia.diamond"
+        ],
+        "war_honour": null,
+        "war_honours": [],
+        "branches": []
+      }
+    },
+    {
+      "discord": {
+        "id": "900000000000000102",
+        "username": "betaplayer",
+        "display_name": "Sapling BetaPlayer",
+        "avatar_url": null
+      },
+      "minecraft": {
+        "uuid": "e06f559a-025a-76d6-1738-3f04c9988574",
+        "username": "BetaPlayer"
+      },
+      "role_keys": [
+        "rank.sapling"
+      ],
+      "award_keys": [],
+      "summary": {
+        "progression_rank": "rank.sapling",
+        "in_game_rank": "in_game.recruiter",
+        "leadership": null,
+        "insignia": null,
+        "insignias": [],
+        "war_honour": null,
+        "war_honours": [],
+        "branches": []
+      }
+    },
+    {
+      "discord": {
+        "id": "900000000000000103",
+        "username": "gammaplayer",
+        "display_name": "Upper_Strategist GammaPlayer",
+        "avatar_url": null
+      },
+      "minecraft": {
+        "uuid": "ff3f26a8-5e67-8542-8716-0687db795b52",
+        "username": "GammaPlayer"
+      },
+      "role_keys": [
+        "rank.upper_strategist",
+        "insignia.bronze"
+      ],
+      "award_keys": [],
+      "summary": {
+        "progression_rank": "rank.upper_strategist",
+        "in_game_rank": "in_game.recruiter",
+        "leadership": null,
+        "insignia": "insignia.bronze",
+        "insignias": [
+          "insignia.bronze"
+        ],
+        "war_honour": null,
+        "war_honours": [],
+        "branches": []
+      }
+    },
+    {
+      "discord": {
+        "id": "900000000000000104",
+        "username": "deltamember",
+        "display_name": "Treant DeltaMember",
+        "avatar_url": null
+      },
+      "minecraft": null,
+      "role_keys": [
+        "rank.treant"
+      ],
+      "award_keys": [],
+      "summary": {
+        "progression_rank": "rank.treant",
+        "in_game_rank": "in_game.recruiter",
+        "leadership": null,
+        "insignia": null,
+        "insignias": [],
+        "war_honour": null,
+        "war_honours": [],
+        "branches": []
+      }
+    },
+    {
+      "discord": null,
+      "minecraft": {
+        "uuid": "2ada9376-5f90-f9c0-0a87-4acdd7567425",
+        "username": "EpsilonPlayer"
+      },
+      "role_keys": [
+        "insignia.silver"
+      ],
+      "award_keys": [
+        "award.wtp_bronze"
+      ],
+      "summary": {
+        "progression_rank": null,
+        "in_game_rank": "in_game.recruiter",
+        "leadership": null,
+        "insignia": "insignia.silver",
+        "insignias": [
+          "insignia.silver"
+        ],
+        "war_honour": null,
+        "war_honours": [],
+        "branches": []
+      }
+    },
+    {
+      "discord": {
+        "id": "900000000000000106",
+        "username": "zetaplayer",
+        "display_name": "ZetaPlayer",
+        "avatar_url": null
+      },
+      "minecraft": {
+        "uuid": "a4b5b5b8-0bd6-8b68-904d-c47045a2821f",
+        "username": "ZetaPlayer"
+      },
+      "role_keys": [],
+      "award_keys": [],
+      "summary": {
+        "progression_rank": null,
+        "in_game_rank": "in_game.recruiter",
+        "leadership": null,
+        "insignia": null,
+        "insignias": [],
+        "war_honour": null,
+        "war_honours": [],
+        "branches": []
+      }
+    }
+  ]
+}

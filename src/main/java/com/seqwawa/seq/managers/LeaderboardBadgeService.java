@@ -1,13 +1,5 @@
 package com.seqwawa.seq.managers;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import java.io.IOException;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.time.Instant;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -15,31 +7,39 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import net.fabricmc.loader.api.FabricLoader;
+import java.util.function.Function;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.RankProfilesResponse;
 import com.seqwawa.seq.model.SeqBadge;
 import com.seqwawa.seq.model.SeqBadgeType;
 import com.seqwawa.seq.model.SeqBadgeTier;
-import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.utils.PlayerNameCache;
 
+/**
+ * Indexes the leaderboard badges every member holds, by Minecraft UUID for
+ * nametag rendering and by username for chat.
+ * <p>
+ * A read-only view over {@link RankProfileRoster}, which owns the single fetch
+ * and cache.
+ */
 public final class LeaderboardBadgeService {
-    private static final long REFRESH_INTERVAL_MS = 5 * 60 * 1000L;
 
     private static LeaderboardBadgeService instance;
 
-    private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
     private volatile Map<String, Map<SeqBadgeType, SeqBadgeTier>> cachedBadges = Map.of();
-    private volatile boolean cacheLoaded;
-    private volatile boolean refreshInFlight;
-    private volatile long lastRefreshAttemptMs;
-    private volatile Instant lastSuccessfulRefresh;
-    private volatile String status = "not loaded";
+    private volatile Map<String, Map<SeqBadgeType, SeqBadgeTier>> badgesByUsername = Map.of();
+    private volatile boolean loaded;
 
     private LeaderboardBadgeService() {
-        loadCache();
+        RankProfileRoster.getInstance().subscribe(this::accept);
+    }
+
+    /** Rebuilds both indexes, and the badge art cache, from a roster snapshot. */
+    private void accept(RankProfilesResponse response) {
+        cachedBadges = parseProfiles(response);
+        badgesByUsername = parseProfilesByUsername(response);
+        RankProfileBadgeAssetCache.refresh(response.catalog());
+        loaded = true;
     }
 
     public static synchronized LeaderboardBadgeService getInstance() {
@@ -61,71 +61,61 @@ public final class LeaderboardBadgeService {
                 .toList());
     }
 
-    public void tick() {
-        long now = System.currentTimeMillis();
-        if (!cacheLoaded || now - lastRefreshAttemptMs >= REFRESH_INTERVAL_MS) {
-            refreshAsync();
+    /**
+     * A player's badge of {@code type}, looked up by Minecraft username.
+     * <p>
+     * Nametag rendering has a UUID to hand, but chat does not: a guild line and a
+     * bridged message both carry only a name. Indexing names here is what lets those
+     * callers share this roster instead of parsing the same catalog again.
+     */
+    public SeqBadgeTier badgeForUsername(String username, SeqBadgeType type) {
+        String key = normalizeUsername(username);
+        if (key == null || type == null) {
+            return null;
         }
+        // The map is immutable, and those throw on a null key rather than returning
+        // null, so an unresolved name must never reach the lookup.
+        Map<SeqBadgeType, SeqBadgeTier> badges = badgesByUsername.get(key);
+        return badges == null ? null : badges.get(type);
     }
 
-    public CompletableFuture<String> refreshAsync() {
-        if (refreshInFlight) {
-            return CompletableFuture.completedFuture("Leaderboard badge refresh already running.");
+    private static String normalizeUsername(String username) {
+        if (username == null) {
+            return null;
         }
-        refreshInFlight = true;
-        lastRefreshAttemptMs = System.currentTimeMillis();
-        status = "refreshing";
-
-        return ApiClient.getInstance().getRecognizedRankProfiles().thenApply(response -> {
-            Map<String, Map<SeqBadgeType, SeqBadgeTier>> parsed = parseProfiles(response);
-            cachedBadges = parsed;
-            RankProfileBadgeAssetCache.refresh(response.catalog());
-            writeCache(response);
-            lastSuccessfulRefresh = Instant.now();
-            int badgeCount = badgeCount(parsed);
-            status = "loaded " + badgeCount + " backend badges for " + parsed.size() + " players";
-            return "Leaderboard badges refreshed: " + badgeCount + " badges for " + parsed.size() + " players.";
-        }).exceptionally(throwable -> {
-            status = "refresh failed";
-            SeqClient.LOGGER.debug("[LeaderboardBadges] Failed to refresh badge assignments: {}", rootMessage(throwable));
-            return "Leaderboard badge refresh failed; using cached badges. Cause: " + rootMessage(throwable);
-        }).whenComplete((ignored, throwable) -> {
-            refreshInFlight = false;
-        });
+        String normalized = username.trim();
+        return normalized.isEmpty() ? null : normalized.toLowerCase(Locale.ROOT);
     }
 
+    /** One-line diagnostic for {@code /seq badges status}. */
     public String status() {
-        String refreshed = lastSuccessfulRefresh == null ? "never" : lastSuccessfulRefresh.toString();
         return "Leaderboard badges: backend="
                 + badgeCount(cachedBadges)
                 + " badges for "
                 + cachedBadges.size()
                 + " players"
-                + " | status="
-                + status
-                + " | last refresh="
-                + refreshed;
+                + (loaded ? "" : " | awaiting first roster snapshot")
+                + " | "
+                + RankProfileRoster.getInstance().status();
     }
 
-    private void loadCache() {
-        cacheLoaded = true;
-        Path cachePath = cachePath();
-        if (!Files.isRegularFile(cachePath)) {
-            status = "no cache";
-            return;
-        }
-        try {
-            RankProfilesResponse response = gson.fromJson(Files.readString(cachePath), RankProfilesResponse.class);
-            cachedBadges = parseProfiles(response);
-            RankProfileBadgeAssetCache.refresh(response.catalog());
-            status = "loaded " + badgeCount(cachedBadges) + " cached badges";
-        } catch (IOException | RuntimeException exception) {
-            status = "cache load failed";
-            SeqClient.LOGGER.warn("[LeaderboardBadges] Failed to load cached badges.", exception);
-        }
-    }
 
     static Map<String, Map<SeqBadgeType, SeqBadgeTier>> parseProfiles(RankProfilesResponse response) {
+        return parseProfiles(response, profile -> PlayerNameCache.formatUUID(profile.minecraft().uuid()));
+    }
+
+    /** The same badges keyed by Minecraft username, for callers that have no UUID. */
+    static Map<String, Map<SeqBadgeType, SeqBadgeTier>> parseProfilesByUsername(RankProfilesResponse response) {
+        return parseProfiles(response, profile -> normalizeUsername(profile.minecraft().username()));
+    }
+
+    /**
+     * Parses badge assignments into a map keyed by whatever identity {@code keyOf}
+     * extracts. Profiles whose key cannot be resolved, or that hold no badge, are
+     * skipped.
+     */
+    private static Map<String, Map<SeqBadgeType, SeqBadgeTier>> parseProfiles(
+            RankProfilesResponse response, Function<RankProfilesResponse.Profile, String> keyOf) {
         Map<String, EnumMap<SeqBadgeType, SeqBadgeTier>> parsed = new HashMap<>();
         if (response == null || response.schemaVersion() != 1 || response.catalog() == null) {
             throw new IllegalArgumentException("Unsupported or incomplete rank-profile response");
@@ -139,20 +129,20 @@ public final class LeaderboardBadgeService {
             if (profile == null || profile.minecraft() == null) {
                 continue;
             }
-            String uuid = PlayerNameCache.formatUUID(profile.minecraft().uuid());
-            if (uuid == null) {
+            String key = keyOf.apply(profile);
+            if (key == null) {
                 continue;
             }
             EnumMap<SeqBadgeType, SeqBadgeTier> profileBadges = new EnumMap<>(SeqBadgeType.class);
             mergeDefinitionKeys(profileBadges, definitions, profile.roleKeys());
             mergeDefinitionKeys(profileBadges, definitions, profile.awardKeys());
             if (!profileBadges.isEmpty()) {
-                parsed.put(uuid, profileBadges);
+                parsed.put(key, profileBadges);
             }
         }
 
         Map<String, Map<SeqBadgeType, SeqBadgeTier>> immutable = new HashMap<>();
-        parsed.forEach((uuid, badges) -> immutable.put(uuid, Map.copyOf(badges)));
+        parsed.forEach((key, badges) -> immutable.put(key, Map.copyOf(badges)));
         return Map.copyOf(immutable);
     }
 
@@ -216,31 +206,6 @@ public final class LeaderboardBadgeService {
         }
     }
 
-    private void writeCache(RankProfilesResponse response) {
-        try {
-            Path cachePath = cachePath();
-            Files.createDirectories(cachePath.getParent());
-            Path temp = cachePath.resolveSibling(cachePath.getFileName() + ".tmp");
-            Files.writeString(temp, gson.toJson(response));
-            try {
-                Files.move(temp, cachePath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-            } catch (AtomicMoveNotSupportedException ignored) {
-                Files.move(temp, cachePath, StandardCopyOption.REPLACE_EXISTING);
-            }
-        } catch (IOException exception) {
-            SeqClient.LOGGER.warn("[LeaderboardBadges] Failed to write badge cache.", exception);
-        }
-    }
-
-    private static Path cachePath() {
-        return FabricLoader.getInstance()
-                .getGameDir()
-                .resolve("config")
-                .resolve("sequoia")
-                .resolve("cache")
-                .resolve("rank-profile-badges.json");
-    }
-
     private static void mergeBadges(
             EnumMap<SeqBadgeType, SeqBadgeTier> target,
             Map<SeqBadgeType, SeqBadgeTier> source) {
@@ -251,17 +216,5 @@ public final class LeaderboardBadgeService {
 
     private static int badgeCount(Map<String, Map<SeqBadgeType, SeqBadgeTier>> badges) {
         return badges.values().stream().mapToInt(Map::size).sum();
-    }
-
-    private static String rootMessage(Throwable throwable) {
-        Throwable current = throwable;
-        while (current != null && current.getCause() != null) {
-            current = current.getCause();
-        }
-        String message = current == null ? null : current.getMessage();
-        if (message == null || message.isBlank()) {
-            return current == null ? "unknown" : current.getClass().getSimpleName();
-        }
-        return message.replace('\n', ' ').replace('\r', ' ').toLowerCase(Locale.ROOT);
     }
 }

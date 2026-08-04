@@ -1,0 +1,48 @@
+package com.seqwawa.seq.mixins;
+
+import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.config.Setting;
+import com.seqwawa.seq.managers.DiscordRankChatDecorator;
+import net.minecraft.client.gui.components.ChatComponent;
+import net.minecraft.network.chat.Component;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+/**
+ * Rewrites the Wynncraft guild rank badge into the sender's Sequoia Discord rank
+ * just before the line is queued for display.
+ * <p>
+ * This is the last hop every chat line takes, since {@code addMessage(Component)}
+ * delegates here, so it also covers messages Wynntils has already reformatted
+ * (timestamps, nickname rendering), unlike the packet-level hook used by
+ * {@link com.seqwawa.seq.managers.ChatManager}.
+ */
+@Mixin(ChatComponent.class)
+public class ChatComponentMixin {
+
+    @ModifyVariable(
+            method =
+                    "addMessage(Lnet/minecraft/network/chat/Component;Lnet/minecraft/network/chat/MessageSignature;Lnet/minecraft/client/GuiMessageTag;)V",
+            at = @At("HEAD"),
+            argsOnly = true,
+            index = 1)
+    private Component seq$applyDiscordRank(Component message) {
+        return DiscordRankChatDecorator.decorateGuildChat(message);
+    }
+
+    /**
+     * Adds a little room between chat lines. Wynncraft's guild markers and rank
+     * badges are drawn taller than a chat line is high, so on consecutive messages
+     * they touch; vanilla leaves no gap to absorb that.
+     */
+    @Inject(method = "getLineHeight", at = @At("RETURN"), cancellable = true)
+    private void seq$padLineHeight(CallbackInfoReturnable<Integer> callback) {
+        Setting.IntSetting spacing = SeqClient.getChatLineSpacingSetting();
+        if (spacing != null && spacing.getValue() > 0) {
+            callback.setReturnValue(callback.getReturnValue() + spacing.getValue());
+        }
+    }
+}

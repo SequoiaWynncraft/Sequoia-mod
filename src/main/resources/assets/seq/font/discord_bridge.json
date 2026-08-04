@@ -1,0 +1,31 @@
+{
+  "providers": [
+    {
+      "type": "bitmap",
+      "file": "seq:font/discord_bridge.png",
+      "ascent": 8,
+      "height": 9,
+      "chars": [
+        "\uF8F0\uF8F1"
+      ]
+    },
+    {
+      "comment": "Same metrics as Wynncraft's chat icons, which stand slightly taller than a chat line. White on purpose: Minecraft multiplies a glyph by the text colour, so the mod tints it to blurple at render time.",
+      "type": "bitmap",
+      "file": "seq:font/discord_mark.png",
+      "ascent": 8,
+      "height": 9,
+      "chars": [
+        "\uF8F2"
+      ]
+    },
+    {
+      "comment": "One pixel of advance each way, repeated by the mod so the Discord mark takes exactly the room of the guild marker it replaces, and so both bridge prefixes put their text on the same column.",
+      "type": "space",
+      "advances": {
+        "\uF8FD": 1,
+        "\uF8FE": -1
+      }
+    }
+  ]
+}
