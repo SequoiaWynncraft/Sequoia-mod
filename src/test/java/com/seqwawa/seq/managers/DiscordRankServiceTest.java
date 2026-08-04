@@ -1,10 +1,12 @@
 package com.seqwawa.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.model.DiscordRank;
+import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.model.RankProfilesResponse;
 import com.seqwawa.seq.utils.ColorRamp;
 import java.util.List;
@@ -19,6 +21,14 @@ class DiscordRankServiceTest {
                     role("rank.dryad", "Dryad", "progression_rank", 94),
                     role("rank.treant", "Treant", "progression_rank", 104),
                     role("in_game.recruiter", "Recruiter", "in_game_rank", 40)),
+            List.of(),
+            List.of());
+
+    private static final RankProfilesResponse.Catalog NICKNAME_CATALOG = new RankProfilesResponse.Catalog(
+            List.of(
+                    role("rank.sapling", "Sapling", "progression_rank", 88, "#4CB4FA"),
+                    role("rank.spriggan", "Spriggan", "progression_rank", 96),
+                    role("rank.treant", "Treant", "progression_rank", 104, "#1B9056")),
             List.of(),
             List.of());
 
@@ -246,9 +256,145 @@ class DiscordRankServiceTest {
         assertEquals(List.of(0x4CB4FA), index.colorsByRoleKey().get(sapling.key()).stops());
     }
 
+    @Test
+    void rankedDiscordNicknameProvidesAnUnverifiedInGamePresentation() {
+        RankProfilesResponse response = new RankProfilesResponse(
+                1,
+                NICKNAME_CATALOG,
+                List.of(discordOnlyProfile(
+                        "215820027700576258",
+                        "afekvaknin",
+                        "Spriggan MrHmar",
+                        "rank.treant",
+                        new RankProfilesResponse.RoleColors("#112233", "#445566", "#778899"))));
+        DiscordRankService service = serviceWith(response);
+
+        RankPresentation presentation = service.presentationForMinecraftUsername("mrhMAR");
+
+        assertNotNull(presentation);
+        assertEquals("Treant", presentation.label(), "the backend summary wins over the stale Spriggan prefix");
+        assertEquals(List.of(0x112233, 0x445566, 0x778899), presentation.colors().stops());
+        assertNull(
+                service.rankForMinecraftUsername("MrHmar"),
+                "the compatibility alias must not become a verified account link");
+
+        RankPresentation bridge = service.presentationForBridgeSender("MrHmar", "215820027700576258");
+        assertNotNull(bridge);
+        assertEquals("Treant", bridge.label());
+        assertEquals(List.of(0x112233, 0x445566, 0x778899), bridge.colors().stops());
+    }
+
+    @Test
+    void verifiedMinecraftIdentityWinsOverAConflictingDiscordNickname() {
+        RankProfilesResponse response = new RankProfilesResponse(
+                1,
+                NICKNAME_CATALOG,
+                List.of(
+                        new RankProfilesResponse.Profile(
+                                null,
+                                new RankProfilesResponse.MinecraftIdentity(PLAYER_UUID, "ClaimedName"),
+                                List.of("rank.sapling"),
+                                List.of(),
+                                summary("rank.sapling"),
+                                new RankProfilesResponse.RoleColors("#010203", null, null)),
+                        discordOnlyProfile(
+                                "222",
+                                "discordclaimant",
+                                "Spriggan ClaimedName",
+                                "rank.treant",
+                                new RankProfilesResponse.RoleColors("#AABBCC", null, null))));
+        DiscordRankService service = serviceWith(response);
+
+        RankPresentation presentation = service.presentationForMinecraftUsername("claimedname");
+
+        assertNotNull(presentation);
+        assertEquals("Sapling", presentation.label());
+        assertEquals(
+                List.of(0x010203),
+                presentation.colors().stops(),
+                "the Discord alias must not replace the verified profile palette");
+    }
+
+    @Test
+    void duplicateNicknameAliasesAreAmbiguousRegardlessOfCase() {
+        RankProfilesResponse.Profile first =
+                discordOnlyProfile("301", "first", "Spriggan SharedName", "rank.treant", null);
+        RankProfilesResponse.Profile second =
+                discordOnlyProfile("302", "second", "Sapling sharedname", "rank.sapling", null);
+
+        for (List<RankProfilesResponse.Profile> profiles : List.of(List.of(first, second), List.of(second, first))) {
+            DiscordRankService service = serviceWith(new RankProfilesResponse(1, NICKNAME_CATALOG, profiles));
+            assertNull(service.presentationForMinecraftUsername("SharedName"));
+            assertNull(service.presentationForMinecraftUsername("sharedname"));
+        }
+    }
+
+    @Test
+    void invalidNicknameCandidatesAreIgnored() {
+        RankProfilesResponse response = new RankProfilesResponse(
+                1,
+                NICKNAME_CATALOG,
+                List.of(
+                        discordOnlyProfile("401", "too-short", "Spriggan ab", "rank.treant", null),
+                        discordOnlyProfile("402", "punctuated", "Spriggan bad-name", "rank.treant", null),
+                        discordOnlyProfile(
+                                "403", "too-long", "Spriggan ThisNameIsFarTooLong", "rank.treant", null),
+                        discordOnlyProfile("404", "spaced", "Spriggan Two Names", "rank.treant", null)));
+        DiscordRankService service = serviceWith(response);
+
+        for (String candidate : List.of("ab", "bad-name", "ThisNameIsFarTooLong", "Two Names")) {
+            assertNull(service.presentationForMinecraftUsername(candidate), candidate);
+        }
+    }
+
+    @Test
+    void unprefixedDisplayNamesAndRawDiscordUsernamesDoNotBecomeGameAliases() {
+        RankProfilesResponse response = new RankProfilesResponse(
+                1,
+                NICKNAME_CATALOG,
+                List.of(discordOnlyProfile(
+                        "501", "RawMatch", "UnprefixedName", "rank.treant", null)));
+        DiscordRankService service = serviceWith(response);
+
+        assertNull(service.presentationForMinecraftUsername("RawMatch"));
+        assertNull(service.presentationForMinecraftUsername("UnprefixedName"));
+        assertEquals("Treant", service.presentationForBridgeSender("RawMatch").label());
+        assertEquals("Treant", service.presentationForBridgeSender("UnprefixedName").label());
+    }
+
+    @Test
+    void nicknameAliasWithoutAProfilePaletteUsesTheCatalogColour() {
+        DiscordRankService service = serviceWith(new RankProfilesResponse(
+                1,
+                NICKNAME_CATALOG,
+                List.of(discordOnlyProfile(
+                        "601", "catalogue", "Spriggan CatalogName", "rank.treant", null))));
+
+        RankPresentation presentation = service.presentationForMinecraftUsername("CatalogName");
+
+        assertNotNull(presentation);
+        assertEquals("Treant", presentation.label());
+        assertEquals(List.of(0x1B9056), presentation.colors().stops());
+    }
+
     private static RankProfilesResponse.Catalog colouredCatalog() {
         return new RankProfilesResponse.Catalog(
                 List.of(role("rank.sapling", "Sapling", "progression_rank", 88, "#4CB4FA")), List.of(), List.of());
+    }
+
+    private static RankProfilesResponse.Profile discordOnlyProfile(
+            String id,
+            String username,
+            String displayName,
+            String progressionRank,
+            RankProfilesResponse.RoleColors displayColors) {
+        return new RankProfilesResponse.Profile(
+                new RankProfilesResponse.DiscordIdentity(id, username, displayName, null),
+                null,
+                List.of(progressionRank),
+                List.of(),
+                summary(progressionRank),
+                displayColors);
     }
 
     @Test
@@ -313,10 +459,9 @@ class DiscordRankServiceTest {
     }
 
     @Test
-    void indexesMembersWhoNeverLinkedAGameAccount() {
-        // The roster is scope=recognized, which also carries Discord-only members. They
-        // can never match a guild chat line, which is resolved by game name, but they
-        // do speak over the bridge and their rank is just as real.
+    void keepsDiscordOnlyMembersOutOfTheVerifiedMinecraftIndex() {
+        // A ranked nickname can provide a display-only fallback, but must never enter
+        // the verified game-name index used as an account association.
         RankProfilesResponse response = new RankProfilesResponse(
                 1,
                 CATALOG,
@@ -331,7 +476,10 @@ class DiscordRankServiceTest {
 
         assertEquals("Sapling", index.byDiscordIdentity().get("discordonly").label());
         assertEquals(1, index.rankedProfiles());
-        assertNull(index.byMinecraftUsername().get("ghost"), "and stays out of the guild chat index");
+        assertNull(index.byMinecraftUsername().get("ghost"), "the nickname is not a verified game identity");
+        assertEquals("Sapling", DiscordRankService.withIndex(index)
+                .presentationForMinecraftUsername("ghost")
+                .label());
     }
 
     @Test
