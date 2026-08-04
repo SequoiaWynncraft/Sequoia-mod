@@ -255,6 +255,7 @@ public class ApiClient {
         return get(authBaseUrl, "/v1/rank-profiles?scope=recognized", RankProfilesResponse.class, false);
     }
 
+
     public CompletableFuture<Listing> reassignRole(long listingId, UUID targetUUID, PartyRole role) {
         JsonObject body = new JsonObject();
         body.addProperty("role", role.name());

@@ -6,12 +6,14 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.TextColor;
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.events.DiscordChatEvent;
 import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
 import com.seqwawa.seq.integrations.WynntilsItemPreviewAccess;
 import com.seqwawa.seq.model.ChatItemPreview;
+import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.utils.ChatIdentityResolver;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
@@ -699,11 +701,34 @@ public class ChatManager {
 
             mc.execute(() -> {
                 if (mc.player != null) {
-                    MutableComponent formatted = NotificationAccessor.prefixComponent()
-                            .append(Component.literal(msg.username()).withStyle(ChatFormatting.WHITE))
-                            .append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-                            .append(Component.literal(msg.message()).withStyle(ChatFormatting.WHITE));
-                    mc.player.displayClientMessage(formatted, false);
+                    // Mirrors in-game guild chat: a channel marker, rank badge, sender
+                    // in their rank colour, then the message in Wynncraft's guild aqua.
+                    // Consecutive bridge lines share a vertical rail instead of
+                    // repeating the Discord marker.
+                    RankPresentation rank = DiscordRankChatDecorator.bridgeRank(msg.username(), msg.discordId());
+                    TextColor guildColor = DiscordRankChatDecorator.guildChatColor();
+                    TextColor nameColor = rank == null ? guildColor : DiscordRankChatDecorator.colorFor(rank);
+
+                    MutableComponent formatted = Component.empty().append(DiscordRankChatDecorator.bridgePrefix());
+                    if (rank != null) {
+                        formatted.append(DiscordRankChatDecorator.rankPill(rank, null))
+                                .append(Component.literal(" "));
+                    }
+                    // Same shift-click insertion Wynncraft puts on in-game names, so a
+                    // bridged sender links to their profile just like a guild one.
+                    formatted.append(Component.literal(msg.username())
+                            .withStyle(style -> style.withColor(nameColor).withInsertion(msg.username())));
+                    MutableComponent insignia =
+                            DiscordRankChatDecorator.bridgeInsignia(msg.username(), msg.discordId());
+                    if (insignia != null) {
+                        formatted.append(insignia);
+                    }
+                    formatted.append(Component.literal(": ").withStyle(style -> style.withColor(guildColor)))
+                            .append(Component.literal(msg.message()).withStyle(style -> style.withColor(guildColor)));
+
+                    MutableComponent line = formatted;
+                    DiscordRankChatDecorator.displayUndecorated(
+                            line, () -> mc.player.displayClientMessage(line, false));
                 }
 
                 if (SeqClient.getEventBus() != null) {

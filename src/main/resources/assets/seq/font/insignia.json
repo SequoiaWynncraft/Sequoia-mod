@@ -1,0 +1,41 @@
+{
+  "comment": "Kept to the height of a chat line, so the insignia sits discreetly behind the name instead of standing out the way the guild icon does.",
+  "providers": [
+    {
+      "type": "bitmap",
+      "file": "seq:badges/insignia_bronze.png",
+      "ascent": 8,
+      "height": 9,
+      "chars": [
+        "\uF8E0"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "seq:badges/insignia_silver.png",
+      "ascent": 8,
+      "height": 9,
+      "chars": [
+        "\uF8E1"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "seq:badges/insignia_gold.png",
+      "ascent": 8,
+      "height": 9,
+      "chars": [
+        "\uF8E2"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "seq:badges/insignia_diamond.png",
+      "ascent": 8,
+      "height": 9,
+      "chars": [
+        "\uF8E3"
+      ]
+    }
+  ]
+}
