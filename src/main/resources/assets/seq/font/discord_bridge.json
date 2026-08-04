@@ -20,10 +20,11 @@
       ]
     },
     {
-      "comment": "One pixel of advance, repeated by the mod to pad the shorter of the two prefixes so both put their text on the same column.",
+      "comment": "One pixel of advance each way, repeated by the mod so the Discord mark takes exactly the room of the guild marker it replaces, and so both bridge prefixes put their text on the same column.",
       "type": "space",
       "advances": {
-        "\uF8FD": 1
+        "\uF8FD": 1,
+        "\uF8FE": -1
       }
     }
   ]

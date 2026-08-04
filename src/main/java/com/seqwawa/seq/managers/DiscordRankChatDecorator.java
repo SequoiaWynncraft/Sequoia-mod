@@ -73,8 +73,10 @@ public final class DiscordRankChatDecorator {
     static final String BRIDGE_CONTINUATION_GLYPH = "\uF8F1";
     /** Discord mark dropped into the middle of Wynncraft's arrow. */
     static final String BRIDGE_ICON_GLYPH = "\uF8F2";
-    /** One pixel of positive advance, repeated to line the two prefixes up. */
+    /** One pixel of positive advance, repeated to widen a prefix. */
     private static final char BRIDGE_ADVANCE_PAD = '\uF8FD';
+    /** One pixel of negative advance, repeated to narrow one. */
+    private static final char BRIDGE_ADVANCE_TRIM = '\uF8FE';
     /** Discord blurple, so a bridged line reads as Discord at a glance. */
     private static final TextColor DISCORD_ACCENT = TextColor.fromRgb(0x5865F2);
     private static final FontDescription BRIDGE_PREFIX_FONT = new FontDescription.Resource(
@@ -526,15 +528,24 @@ public final class DiscordRankChatDecorator {
         try {
             Font font = Minecraft.getInstance().font;
             int target = Math.max(font.width(discordMark()), font.width(continuationBar()));
-            int missing = target - font.width(prefix);
-            if (missing > 0) {
-                prefix.append(Component.literal(String.valueOf(BRIDGE_ADVANCE_PAD).repeat(missing))
-                        .withStyle(style -> style.withFont(BRIDGE_PREFIX_FONT)));
-            }
+            return appendAdvance(prefix, target - font.width(prefix));
         } catch (RuntimeException | LinkageError ignored) {
             // No client available (unit tests); the prefix keeps its natural width.
+            return prefix;
         }
-        return prefix;
+    }
+
+    /**
+     * Appends {@code pixels} of pure advance, positive or negative, so a prefix can be
+     * widened or narrowed without drawing anything.
+     */
+    private static MutableComponent appendAdvance(MutableComponent target, int pixels) {
+        if (pixels == 0) {
+            return target;
+        }
+        char glyph = pixels < 0 ? BRIDGE_ADVANCE_TRIM : BRIDGE_ADVANCE_PAD;
+        return target.append(Component.literal(String.valueOf(glyph).repeat(Math.abs(pixels)))
+                .withStyle(style -> style.withFont(BRIDGE_PREFIX_FONT)));
     }
 
     /**
@@ -564,7 +575,32 @@ public final class DiscordRankChatDecorator {
             mark.append(Component.literal(new String(codePoints, 0, 1))
                     .withStyle(marker.style().withColor(DISCORD_ACCENT).withoutShadow()));
         }
-        return withSeparator(mark.append(Component.literal(BRIDGE_ICON_GLYPH).withStyle(bridgeMarkStyle())));
+        mark.append(Component.literal(BRIDGE_ICON_GLYPH).withStyle(bridgeMarkStyle()));
+        return withSeparator(matchGuildMarkerWidth(mark, marker));
+    }
+
+    /**
+     * Makes the Discord mark advance exactly as far as the guild marker it stands in
+     * for, so a bridged line and an in-game guild line put their rank pill on the same
+     * column.
+     * <p>
+     * Dropping most of Wynncraft's arrow and substituting a logo of a different width
+     * is what pushes the two apart, and by an amount only the loaded resource pack
+     * knows. Measuring both and closing the gap is therefore the only way to align
+     * them; redrawing the logo to a guessed width is not.
+     */
+    private static MutableComponent matchGuildMarkerWidth(MutableComponent mark, GuildChatMarkers.Marker marker) {
+        if (marker == null) {
+            return mark;
+        }
+        try {
+            Font font = Minecraft.getInstance().font;
+            int guildMarker = font.width(Component.literal(marker.glyphs()).withStyle(marker.style()));
+            return appendAdvance(mark, guildMarker - font.width(mark));
+        } catch (RuntimeException | LinkageError ignored) {
+            // No client available (unit tests); the mark keeps its natural width.
+            return mark;
+        }
     }
 
     /**
