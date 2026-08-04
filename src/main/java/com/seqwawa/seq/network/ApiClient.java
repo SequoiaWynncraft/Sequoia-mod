@@ -14,13 +14,13 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.Activity;
-import com.seqwawa.seq.model.ItemScalesResponse;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyJoinPolicy;
@@ -45,8 +45,10 @@ public class ApiClient {
                     + "\"}";
     private static final String DEFAULT_ASPECT_REQUEST_REASON = "No reason provided.";
 
-    /** Single place to repoint the client once the item scale endpoint is deployed. */
-    static final String ITEM_SCALES_PATH = "/v1/item-scales";
+    static final String ITEM_SCALES_PATH = "/assets/items/stat-weights.json";
+
+    private static final java.lang.reflect.Type ITEM_SCALES_TYPE =
+            new TypeToken<Map<String, Map<String, Double>>>() {}.getType();
 
     private static ApiClient instance;
 
@@ -268,9 +270,9 @@ public class ApiClient {
         return get(authBaseUrl, "/v1/rank-profiles?scope=linked", RankProfilesResponse.class, false);
     }
 
-    /** Stat weights used to score item rolls, keyed by the item name shown in game. */
-    public CompletableFuture<ItemScalesResponse> getItemScales() {
-        return get(authBaseUrl, ITEM_SCALES_PATH, ItemScalesResponse.class, false);
+    /** Stat weights keyed by the item name shown in game, then by Wynncraft stat api name. */
+    public CompletableFuture<Map<String, Map<String, Double>>> getItemScales() {
+        return get(authBaseUrl, ITEM_SCALES_PATH, ITEM_SCALES_TYPE, false);
     }
 
     public CompletableFuture<Listing> reassignRole(long listingId, UUID targetUUID, PartyRole role) {

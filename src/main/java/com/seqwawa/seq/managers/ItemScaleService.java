@@ -2,11 +2,12 @@ package com.seqwawa.seq.managers;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.ItemScale;
-import com.seqwawa.seq.model.ItemScalesResponse;
 import com.seqwawa.seq.network.ApiClient;
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,13 +20,16 @@ import java.util.concurrent.CompletableFuture;
 import net.fabricmc.loader.api.FabricLoader;
 
 /**
- * Holds the community stat weights used to score item rolls, indexed by item name.
+ * Holds the Sequoia stat weights used to score item rolls, indexed by item name.
  * <p>
- * Backed by {@code /v1/item-scales} and cached on disk, so tooltips keep working
- * offline and before the first refresh of a session lands.
+ * Backed by {@code /assets/items/stat-weights.json} and cached on disk, so tooltips keep
+ * working offline and before the first refresh of a session lands. Only items listed there
+ * get a scale, so the index doubles as the whitelist of items the tooltip may touch.
  */
 public final class ItemScaleService {
     private static final long REFRESH_INTERVAL_MS = 30 * 60 * 1000L;
+
+    private static final Type CACHE_TYPE = new TypeToken<Map<String, Map<String, Double>>>() {}.getType();
 
     private static ItemScaleService instance;
 
@@ -79,10 +83,10 @@ public final class ItemScaleService {
 
         return ApiClient.getInstance()
                 .getItemScales()
-                .thenApply(response -> {
-                    Map<String, ItemScale> parsed = parseScales(response);
+                .thenApply(payload -> {
+                    Map<String, ItemScale> parsed = parseScales(payload);
                     scales = parsed;
-                    writeCache(response);
+                    writeCache(payload);
                     lastSuccessfulRefresh = Instant.now();
                     status = "loaded " + parsed.size() + " weighted items";
                     return "Item scales refreshed: " + parsed.size() + " weighted items.";
@@ -108,8 +112,8 @@ public final class ItemScaleService {
             return;
         }
         try {
-            ItemScalesResponse response = gson.fromJson(Files.readString(cachePath), ItemScalesResponse.class);
-            scales = parseScales(response);
+            Map<String, Map<String, Double>> payload = gson.fromJson(Files.readString(cachePath), CACHE_TYPE);
+            scales = parseScales(payload);
             status = "loaded " + scales.size() + " cached weighted items";
         } catch (IOException | RuntimeException exception) {
             status = "cache load failed";
@@ -121,28 +125,22 @@ public final class ItemScaleService {
 
     /**
      * Items whose weights are all zero are dropped: they carry no ranking signal, and
-     * keeping them would show an empty scale block on a tooltip for no reason.
+     * keeping them would put an empty scale block on a tooltip for no reason.
      */
-    static Map<String, ItemScale> parseScales(ItemScalesResponse response) {
-        if (response == null || response.schemaVersion() != 1) {
-            throw new IllegalArgumentException("Unsupported or incomplete item scale response");
-        }
-        if (response.scales() == null) {
-            return Map.of();
+    static Map<String, ItemScale> parseScales(Map<String, Map<String, Double>> payload) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Empty item scale payload");
         }
 
         Map<String, ItemScale> parsed = new HashMap<>();
-        for (ItemScalesResponse.ScaleDefinition definition : response.scales()) {
-            if (definition == null) {
-                continue;
-            }
-            String key = normalizeKey(definition.itemName());
+        for (Map.Entry<String, Map<String, Double>> entry : payload.entrySet()) {
+            String key = normalizeKey(entry.getKey());
             if (key == null) {
                 continue;
             }
-            Map<String, Double> weights = nonZeroWeights(definition.weights());
+            Map<String, Double> weights = nonZeroWeights(entry.getValue());
             if (!weights.isEmpty()) {
-                parsed.put(key, new ItemScale(definition.itemName().trim(), weights));
+                parsed.put(key, new ItemScale(entry.getKey().trim(), weights));
             }
         }
         return Map.copyOf(parsed);
@@ -173,12 +171,12 @@ public final class ItemScaleService {
 
     // ── Cache ──
 
-    private void writeCache(ItemScalesResponse response) {
+    private void writeCache(Map<String, Map<String, Double>> payload) {
         try {
             Path cachePath = cachePath();
             Files.createDirectories(cachePath.getParent());
             Path temp = cachePath.resolveSibling(cachePath.getFileName() + ".tmp");
-            Files.writeString(temp, gson.toJson(response));
+            Files.writeString(temp, gson.toJson(payload));
             try {
                 Files.move(temp, cachePath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } catch (AtomicMoveNotSupportedException ignored) {

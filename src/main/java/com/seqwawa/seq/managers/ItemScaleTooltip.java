@@ -23,7 +23,7 @@ public final class ItemScaleTooltip {
         if (stack == null || lines == null || lines.isEmpty() || UNAVAILABLE.get() || DECORATING.get()) {
             return;
         }
-        if (!showItemTooltip() || !isWynntilsLoaded()) {
+        if (!showItemScale() || !isWynntilsLoaded()) {
             return;
         }
 
@@ -37,10 +37,6 @@ public final class ItemScaleTooltip {
         } finally {
             DECORATING.set(false);
         }
-    }
-
-    public static boolean showItemTooltip() {
-        return isEnabled(SeqClient.getShowItemTooltipSetting());
     }
 
     public static boolean showItemScale() {

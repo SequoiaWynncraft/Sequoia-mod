@@ -190,9 +190,6 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting notifyTrackedWorldEventsSetting;
 
     @Getter
-    public static Setting.BooleanSetting showItemTooltipSetting;
-
-    @Getter
     public static Setting.BooleanSetting showItemScaleSetting;
 
     @Getter
@@ -619,11 +616,9 @@ public class SeqClient implements ClientModInitializer {
         showPartyHealthBarsSetting = new Setting.BooleanSetting("show_party_healthbars", "raids", true);
         notifyTrackedWorldEventsSetting =
                 new Setting.BooleanSetting("notify_tracked_world_events", "world_events", false);
-        showItemTooltipSetting = new Setting.BooleanSetting("show_item_tooltip", "items", false);
         showItemScaleSetting = new Setting.BooleanSetting("show_item_scale", "items", false);
         showItemScaleStatWeightsSetting = new Setting.BooleanSetting("show_stat_weights", "items", true);
-        showItemScaleStatWeightsSetting.setVisibilityCondition(
-                () -> showItemScaleSetting.getValue() && showItemTooltipSetting.getValue());
+        showItemScaleStatWeightsSetting.setVisibilityCondition(() -> showItemScaleSetting.getValue());
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(showDiscordRanksSetting);
@@ -654,7 +649,6 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(showOwnLeaderboardBadgeSetting);
         getConfigManager().register(showPartyHealthBarsSetting);
         getConfigManager().register(notifyTrackedWorldEventsSetting);
-        getConfigManager().register(showItemTooltipSetting);
         getConfigManager().register(showItemScaleSetting);
         getConfigManager().register(showItemScaleStatWeightsSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings

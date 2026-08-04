@@ -40,10 +40,14 @@ public final class WynntilsItemScaleAccess {
 
     private static final FontDescription DEFAULT_FONT =
             new FontDescription.Resource(Identifier.withDefaultNamespace("default"));
-    private static final int TITLE_SEARCH_DEPTH = 8;
+    private static final int HEADER_SEARCH_DEPTH = 8;
 
     private WynntilsItemScaleAccess() {}
 
+    /**
+     * Only items carrying a scale are touched at all; everything else keeps the tooltip
+     * Wynntils already built for it.
+     */
     public static void decorate(ItemStack stack, List<Component> lines) {
         Optional<IdentifiableItemProperty> identifiable =
                 Models.Item.asWynnItemProperty(stack, IdentifiableItemProperty.class);
@@ -56,25 +60,23 @@ public final class WynntilsItemScaleAccess {
             return;
         }
 
-        ItemScale scale = ItemScaleTooltip.showItemScale()
-                ? ItemScaleService.getInstance().scaleFor(item.getName())
-                : null;
+        ItemScale scale = ItemScaleService.getInstance().scaleFor(item.getName());
+        if (scale == null) {
+            return;
+        }
+
+        Float value = scale.score(rolls(item));
+        if (value == null) {
+            return;
+        }
 
         List<Component> rebuilt = buildTooltip(stack, item, scale);
         if (rebuilt == null || rebuilt.isEmpty()) {
             return;
         }
 
-        Map<String, Float> rolls = rolls(item);
         List<Component> expanded = expandWeightLines(rebuilt);
-        appendOverallPercentage(expanded, item, rolls);
-
-        if (scale != null) {
-            Float value = scale.score(rolls);
-            if (value != null) {
-                insertScaleBlock(expanded, value);
-            }
-        }
+        insertScaleBlock(expanded, value);
 
         lines.clear();
         lines.addAll(expanded);
@@ -99,9 +101,9 @@ public final class WynntilsItemScaleAccess {
             }
 
             MutableComponent suffix = Component.literal(" ").append(percentageComponent(percentage));
-            Double weight = scale == null || !ItemScaleTooltip.showStatWeights()
-                    ? null
-                    : scale.weights().get(actualValue.statType().getApiName());
+            Double weight = ItemScaleTooltip.showStatWeights()
+                    ? scale.weights().get(actualValue.statType().getApiName())
+                    : null;
             if (weight != null) {
                 suffix.setStyle(suffix.getStyle()
                         .withInsertion(WEIGHT_MARKER + String.format(Locale.ROOT, "%.1f", weight)));
@@ -138,42 +140,6 @@ public final class WynntilsItemScaleAccess {
         return null;
     }
 
-    private static void appendOverallPercentage(
-            List<Component> lines, IdentifiableItemProperty<?, ?> item, Map<String, Float> rolls) {
-        float overall = overallPercentage(item, rolls);
-        if (!Float.isFinite(overall)) {
-            return;
-        }
-
-        int index = titleIndex(lines, item.getName());
-        if (index < 0) {
-            return;
-        }
-
-        MutableComponent suffix = Component.literal(" ")
-                .append(percentageComponent(overall))
-                .withStyle(defaultFont(Style.EMPTY));
-        lines.set(index, Component.empty().append(lines.get(index)).append(suffix));
-    }
-
-    private static float overallPercentage(IdentifiableItemProperty<?, ?> item, Map<String, Float> rolls) {
-        if (item.hasOverallValue()) {
-            float overall = item.getOverallPercentage();
-            if (Float.isFinite(overall)) {
-                return overall;
-            }
-        }
-        if (rolls.isEmpty()) {
-            return Float.NaN;
-        }
-
-        float total = 0.0f;
-        for (float roll : rolls.values()) {
-            total += roll;
-        }
-        return total / rolls.size();
-    }
-
     private static void insertScaleBlock(List<Component> lines, float value) {
         List<Component> block = List.of(
                 Component.empty(),
@@ -185,33 +151,14 @@ public final class WynntilsItemScaleAccess {
         lines.addAll(blockIndex(lines), block);
     }
 
+    /** Slots the block just under the item header, at the first blank line following it. */
     private static int blockIndex(List<Component> lines) {
-        for (int i = 1; i < Math.min(lines.size(), TITLE_SEARCH_DEPTH); i++) {
+        for (int i = 1; i < Math.min(lines.size(), HEADER_SEARCH_DEPTH); i++) {
             if (lines.get(i).getString().isBlank()) {
                 return i;
             }
         }
         return Math.min(1, lines.size());
-    }
-
-    private static int titleIndex(List<Component> lines, String itemName) {
-        int match = -1;
-        int limit = Math.min(lines.size(), TITLE_SEARCH_DEPTH);
-        for (int i = 0; i < limit; i++) {
-            if (itemName != null && lines.get(i).getString().contains(itemName)) {
-                match = i;
-            }
-        }
-        if (match >= 0) {
-            return match;
-        }
-
-        for (int i = 0; i < lines.size(); i++) {
-            if (!lines.get(i).getString().isBlank()) {
-                return i;
-            }
-        }
-        return -1;
     }
 
     private static Map<String, Float> rolls(IdentifiableItemProperty<?, ?> item) {
