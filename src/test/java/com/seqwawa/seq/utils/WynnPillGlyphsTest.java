@@ -140,6 +140,7 @@ class WynnPillGlyphsTest {
     }
 
     @Test
+
     void roundTripsDigitsAndLetters() {
         assertEquals("sapling2", WynnPillGlyphs.findPills(WynnPillGlyphs.encodePlainPill("Sapling2"))
                 .get(0)

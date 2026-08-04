@@ -60,6 +60,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             "bomb_share_submit", 5,
             "treasury_out", 1,
             "guild_chat", 20,
+            "guild_membership_event", 5,
             "guild_raid_announcement", 5,
             "guild_bank_event", 10,
             "guild_storage_snapshot", 10,
@@ -950,6 +951,32 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         msg.addProperty("guild_name", safeGuildName);
         send("guild_alliance_update", msg);
         return true;
+    }
+
+    public boolean sendGuildMembershipEvent(String action, String actor, String target) {
+        String safeAction = action == null ? "" : action.trim().toLowerCase(Locale.ROOT);
+        String safeActor = sanitizeMinecraftUsername(actor);
+        String safeTarget = sanitizeMinecraftUsername(target);
+        if ((!"invited".equals(safeAction) && !"removed".equals(safeAction))
+                || safeActor == null
+                || safeTarget == null) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildMembershipEvent dropped invalid action='{}' actor='{}' target='{}'",
+                    action,
+                    actor,
+                    target);
+            return false;
+        }
+
+        return send("guild_membership_event", buildGuildMembershipEventPayload(safeAction, safeActor, safeTarget));
+    }
+
+    static JsonObject buildGuildMembershipEventPayload(String action, String actor, String target) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("action", action);
+        payload.addProperty("actor", actor);
+        payload.addProperty("target", target);
+        return payload;
     }
 
     public boolean sendGuildAllianceSnapshot(Collection<String> guildNames) {
@@ -2120,6 +2147,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return "bomb_share_request".equals(type)
                 || "bomb_share_submit".equals(type)
                 || "guild_chat".equals(type)
+                || "guild_membership_event".equals(type)
                 || "guild_alliance_update".equals(type)
                 || "guild_alliance_snapshot".equals(type)
                 || "guild_raid_announcement".equals(type)
@@ -2137,6 +2165,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "bomb_share_submit".equals(type)
                 || "treasury_out".equals(type)
                 || "guild_chat".equals(type)
+                || "guild_membership_event".equals(type)
                 || "guild_alliance_update".equals(type)
                 || "guild_alliance_snapshot".equals(type)
                 || "guild_raid_announcement".equals(type)
@@ -2155,6 +2184,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "bomb_share_submit".equals(type)
                 || "treasury_out".equals(type)
                 || "guild_chat".equals(type)
+                || "guild_membership_event".equals(type)
                 || "guild_alliance_update".equals(type)
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)

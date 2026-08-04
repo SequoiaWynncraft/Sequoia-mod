@@ -15,6 +15,7 @@ import com.seqwawa.seq.integrations.WynntilsItemPreviewAccess;
 import com.seqwawa.seq.model.ChatItemPreview;
 import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.utils.ChatIdentityResolver;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 
 import java.net.URLEncoder;
@@ -83,6 +84,22 @@ public class ChatManager {
     private static final Duration ALLIANCE_DEDUPE_WINDOW = Duration.ofSeconds(5);
     private static volatile String lastAllianceKey;
     private static volatile Instant lastAllianceAt = Instant.EPOCH;
+    private static final Pattern GUILD_MEMBERSHIP_ACTOR_FIRST_PATTERN = Pattern.compile(
+            "^(?<actor>you|[a-zA-Z0-9_][a-zA-Z0-9_ ]{2,63}?)\\s+"
+                    + "(?:have\\s+|has\\s+)?(?:successfully\\s+)?"
+                    + "(?<verb>invited|uninvited|kicked|removed)\\s+"
+                    + "(?<target>[a-zA-Z0-9_][a-zA-Z0-9_ ]{2,63}?)\\s+"
+                    + "(?:(?:to\\s+(?:join\\s+)?|from\\s+)(?:(?:the|your)\\s+)?guild)[.!]?$",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern GUILD_MEMBERSHIP_TARGET_FIRST_PATTERN = Pattern.compile(
+            "^(?<target>[a-zA-Z0-9_][a-zA-Z0-9_ ]{2,63}?)\\s+(?:was|has\\s+been)\\s+"
+                    + "(?<verb>invited|uninvited|kicked|removed)\\s+"
+                    + "(?:(?:to\\s+(?:join\\s+)?|from\\s+)(?:(?:the|your)\\s+)?guild)\\s+by\\s+"
+                    + "(?<actor>[a-zA-Z0-9_][a-zA-Z0-9_ ]{2,63}?)[.!]?$",
+            Pattern.CASE_INSENSITIVE);
+    private static final Duration GUILD_MEMBERSHIP_DEDUPE_WINDOW = Duration.ofSeconds(5);
+    private static volatile String lastGuildMembershipKey;
+    private static volatile Instant lastGuildMembershipAt = Instant.EPOCH;
 
     private static boolean firstConnect = true;
 
@@ -119,6 +136,25 @@ public class ChatManager {
                         allianceUpdate.guildName());
                 ConnectionManager.getInstance().sendGuildAllianceUpdate(
                         allianceUpdate.action(), allianceUpdate.guildName());
+            }
+        }
+
+        ParsedGuildMembershipEvent membershipEvent = parseGuildMembershipEvent(message, currentMinecraftUsername());
+        if (membershipEvent != null && ConnectionManager.isConnected() && shouldRelayForLocalGuild()) {
+            if (isDuplicateGuildMembershipEvent(membershipEvent)) {
+                SeqClient.LOGGER.debug(
+                        "[GuildMembership] Duplicate event ignored action='{}' actor='{}' target='{}'",
+                        membershipEvent.action(),
+                        membershipEvent.actor(),
+                        membershipEvent.target());
+            } else {
+                SeqClient.LOGGER.info(
+                        "[GuildMembership] Forwarding event action='{}' actor='{}' target='{}'",
+                        membershipEvent.action(),
+                        membershipEvent.actor(),
+                        membershipEvent.target());
+                ConnectionManager.getInstance().sendGuildMembershipEvent(
+                        membershipEvent.action(), membershipEvent.actor(), membershipEvent.target());
             }
         }
 
@@ -222,6 +258,10 @@ public class ChatManager {
                     BACKEND_GUILD_NAME);
         }
         return shouldRelay;
+    }
+
+    private static String currentMinecraftUsername() {
+        return mc.getUser() == null ? null : mc.getUser().getName();
     }
 
     static boolean shouldRelayForGuild(WynntilsGuildRankAccess.GuildMembership membership) {
@@ -347,6 +387,68 @@ public class ChatManager {
         return new ParsedAllianceUpdate(action, guildName);
     }
 
+    static ParsedGuildMembershipEvent parseGuildMembershipEvent(Component message, String localUsername) {
+        String normalized = PacketTextNormalizer.normalizeForParsing(message == null ? null : message.getString());
+        if (normalized.isEmpty() || parseGuildMessage(message) != null) {
+            return null;
+        }
+
+        String systemMessage = normalized.replaceFirst("(?i)^\\[guild]\\s*", "");
+        Matcher actorFirst = GUILD_MEMBERSHIP_ACTOR_FIRST_PATTERN.matcher(systemMessage);
+        if (actorFirst.matches()) {
+            String actor = actorFirst.group("actor");
+            if ("you".equalsIgnoreCase(actor)) {
+                actor = localUsername;
+            }
+            return guildMembershipEvent(
+                    actorFirst.group("verb"),
+                    resolveGuildMembershipUsername(message, actor),
+                    resolveGuildMembershipUsername(message, actorFirst.group("target")));
+        }
+
+        Matcher targetFirst = GUILD_MEMBERSHIP_TARGET_FIRST_PATTERN.matcher(systemMessage);
+        if (targetFirst.matches()) {
+            return guildMembershipEvent(
+                    targetFirst.group("verb"),
+                    resolveGuildMembershipUsername(message, targetFirst.group("actor")),
+                    resolveGuildMembershipUsername(message, targetFirst.group("target")));
+        }
+        return null;
+    }
+
+    private static String resolveGuildMembershipUsername(Component message, String displayedName) {
+        if (displayedName == null) {
+            return null;
+        }
+        String normalizedDisplayName = displayedName.trim();
+        if (message != null) {
+            for (Component fragment : message.toFlatList()) {
+                String fragmentText = PacketTextNormalizer.normalizeForParsing(fragment.getString()).trim();
+                if (!normalizedDisplayName.equalsIgnoreCase(fragmentText)) {
+                    continue;
+                }
+                String username = extractHoverRealUsername(fragment.getStyle());
+                if (username == null) {
+                    username = extractInsertionUsername(fragment.getStyle());
+                }
+                if (ChatIdentityResolver.isValidUsername(username)) {
+                    return username;
+                }
+            }
+        }
+
+        String cachedUsername = NicknameResolverCache.resolveUsername(normalizedDisplayName);
+        return ChatIdentityResolver.isValidUsername(cachedUsername) ? cachedUsername : normalizedDisplayName;
+    }
+
+    private static ParsedGuildMembershipEvent guildMembershipEvent(String verb, String actor, String target) {
+        if (!ChatIdentityResolver.isValidUsername(actor) || !ChatIdentityResolver.isValidUsername(target)) {
+            return null;
+        }
+        String action = "invited".equalsIgnoreCase(verb) ? "invited" : "removed";
+        return new ParsedGuildMembershipEvent(action, actor, target);
+    }
+
     private static String alliancePartner(String action, String subject, String object) {
         String subjectGuild = cleanAllianceGuildName(subject);
         String objectGuild = cleanAllianceGuildName(object);
@@ -426,6 +528,22 @@ public class ChatManager {
             }
             lastAllianceKey = key;
             lastAllianceAt = now;
+            return false;
+        }
+    }
+
+    private static boolean isDuplicateGuildMembershipEvent(ParsedGuildMembershipEvent event) {
+        String key = event.action() + "\u0000" + event.actor().toLowerCase(java.util.Locale.ROOT) + "\u0000"
+                + event.target().toLowerCase(java.util.Locale.ROOT);
+        Instant now = Instant.now();
+
+        synchronized (ChatManager.class) {
+            if (key.equals(lastGuildMembershipKey)
+                    && Duration.between(lastGuildMembershipAt, now).compareTo(GUILD_MEMBERSHIP_DEDUPE_WINDOW) < 0) {
+                return true;
+            }
+            lastGuildMembershipKey = key;
+            lastGuildMembershipAt = now;
             return false;
         }
     }
@@ -585,6 +703,7 @@ public class ChatManager {
             mc.execute(() -> {
                 if (mc.player != null) {
                     displayBridgeMessage(msg);
+
                 }
 
                 if (SeqClient.getEventBus() != null) {
@@ -662,5 +781,8 @@ public class ChatManager {
     }
 
     record ParsedAllianceUpdate(String action, String guildName) {
+    }
+
+    record ParsedGuildMembershipEvent(String action, String actor, String target) {
     }
 }

@@ -52,6 +52,7 @@ public final class WynnPillGlyphs {
     public static final char MOD_GLYPH_FIRST = '\uF8E0';
     public static final char MOD_GLYPH_LAST = '\uF8FE';
 
+
     /** Shortest label worth treating as a badge, to skip decorative glyph runs. */
     private static final int MIN_LABEL_LENGTH = 2;
 
@@ -141,6 +142,7 @@ public final class WynnPillGlyphs {
     }
 
     /**
+
      * Maps a plain character to its pill glyph, or leaves it as-is when Wynncraft's
      * font has no glyph for it.
      */
@@ -168,6 +170,7 @@ public final class WynnPillGlyphs {
             if (hasGlyph(rawChar)) {
                 pill.append(TEXT_OFFSET).append(encodeGlyph(rawChar));
             }
+
         }
         return pill.append(CORNER_RIGHT).append(SEPARATOR).toString();
     }
@@ -194,6 +197,7 @@ public final class WynnPillGlyphs {
     /** True for a glyph this mod draws itself, which is never part of a server badge. */
     public static boolean isModGlyph(char glyph) {
         return glyph >= MOD_GLYPH_FIRST && glyph <= MOD_GLYPH_LAST;
+
     }
 
     private static boolean isPadding(char glyph) {

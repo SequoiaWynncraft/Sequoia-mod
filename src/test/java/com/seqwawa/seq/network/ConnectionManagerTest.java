@@ -14,6 +14,15 @@ import org.junit.jupiter.api.Test;
 class ConnectionManagerTest {
 
     @Test
+    void guildMembershipEventPayloadIdentifiesActionActorAndTarget() {
+        var payload = ConnectionManager.buildGuildMembershipEventPayload("invited", "GaztheCat", "NewMember");
+
+        assertEquals("invited", payload.get("action").getAsString());
+        assertEquals("GaztheCat", payload.get("actor").getAsString());
+        assertEquals("NewMember", payload.get("target").getAsString());
+    }
+
+    @Test
     void websocketHandshakeUsesBearerTokenHeader() {
         Map<String, String> headers = ConnectionManager.buildHandshakeHeaders("abc123", "0.1.3");
 
@@ -133,10 +142,12 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isServerScopedType("guild_storage_reward"));
         assertTrue(ConnectionManager.isServerScopedType("guild_alliance_update"));
         assertTrue(ConnectionManager.isServerScopedType("guild_alliance_snapshot"));
+        assertTrue(ConnectionManager.isServerScopedType("guild_membership_event"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_storage_snapshot"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_storage_reward"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_alliance_update"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_alliance_snapshot"));
+        assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_membership_event"));
     }
 
     @Test

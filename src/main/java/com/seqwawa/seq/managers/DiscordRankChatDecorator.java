@@ -108,6 +108,7 @@ public final class DiscordRankChatDecorator {
     private static final Pattern SLASH_SEPARATED_NAMES_PATTERN =
             Pattern.compile("([a-zA-Z0-9_]{3,16})\\s*/\\s*([a-zA-Z0-9_]{3,16})");
 
+
     private static volatile boolean debug;
     private static boolean suppressed;
     private static boolean bridgeSequenceOpen;
@@ -284,6 +285,7 @@ public final class DiscordRankChatDecorator {
             return nameStart + slash;
         }
 
+
         int cursor = 0;
         for (ComponentTextEditor.Fragment fragment : fragments) {
             int fragmentStart = cursor;
@@ -399,6 +401,7 @@ public final class DiscordRankChatDecorator {
         if (codePoint <= Character.MAX_VALUE && WynnPillGlyphs.isModGlyph((char) codePoint)) {
             return false;
         }
+
         return switch (Character.getType(codePoint)) {
             case Character.CONTROL,
                     Character.FORMAT,
@@ -486,6 +489,7 @@ public final class DiscordRankChatDecorator {
             candidates.add(nicknameMatcher.group(1));
         }
         addSlashSeparatedCandidates(candidates, displayedName);
+
         addUsernameCandidate(candidates, displayedName);
         addUsernameCandidate(candidates, NicknameResolverCache.resolveUsername(displayedName));
 
@@ -519,6 +523,7 @@ public final class DiscordRankChatDecorator {
             addUsernameCandidate(candidates, matcher.group(2));
         }
     }
+
 
     private static void addUsernameCandidate(Set<String> candidates, String candidate) {
         if (candidate != null && USERNAME_PATTERN.matcher(candidate.trim()).matches()) {
@@ -565,6 +570,7 @@ public final class DiscordRankChatDecorator {
             Font font = Minecraft.getInstance().font;
             int target = guildColumnWidth(font);
             return target < 0 ? prefix : appendAdvance(prefix, target - font.width(prefix));
+
         } catch (RuntimeException | LinkageError ignored) {
             // No client available (unit tests); the prefix keeps its natural width.
             return prefix;
@@ -586,6 +592,7 @@ public final class DiscordRankChatDecorator {
     }
 
     /**
+
      * Appends {@code pixels} of pure advance, positive or negative, so a prefix can be
      * widened or narrowed without drawing anything.
      */
@@ -628,6 +635,7 @@ public final class DiscordRankChatDecorator {
         // Width is not corrected here: bridgePrefix aligns the finished prefix to the
         // guild column, which is the single target both bridge forms answer to.
         return withSeparator(mark.append(Component.literal(BRIDGE_ICON_GLYPH).withStyle(bridgeMarkStyle())));
+
     }
 
     /**

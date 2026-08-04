@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -175,6 +176,7 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+
     void positionFallbackStaysOffChatThatIsNotGuildChat() {
         // Same shape without the guild aqua: a global-chat account badge must survive.
         Component message = Component.empty()
@@ -379,6 +381,7 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+
     void leavesTheNickRevealInItsOwnColour() {
         Component message = Component.empty()
                 .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
@@ -570,6 +573,7 @@ class DiscordRankChatDecoratorTest {
         assertTrue(
                 DiscordRankChatDecorator.luminanceOf(label) > 0.55d,
                 "a dark pill needs a light label throughout, was " + Integer.toHexString(label));
+
     }
 
     @Test

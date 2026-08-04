@@ -66,6 +66,7 @@ public interface NotificationAccessor {
      * Only the background is graded. The label keeps one colour for the whole pill,
      * derived from the middle of the ramp by {@code labelColor}: letters that shifted
      * hue from one to the next read as a rendering fault rather than as a gradient.
+
      */
     static @NotNull MutableComponent wynnPill(
             String label,
@@ -76,6 +77,7 @@ public interface NotificationAccessor {
                 index -> TextColor.fromRgb(ramp.sample(gradientPosition(index, label.length())));
         TextColor labelAcrossPill = labelColor.apply(TextColor.fromRgb(ramp.sample(0.5d)));
         return wynnPill(label, backgroundAt, index -> labelAcrossPill, clickEvent);
+
     }
 
     /**
@@ -106,6 +108,7 @@ public interface NotificationAccessor {
             if (WynnPillGlyphs.hasGlyph(rawChar)) {
                 pill.append(labelPillPart(PILL_BG_FRONT + toWynncraftGlyph(rawChar), labelAt.apply(i), clickEvent));
             }
+
         }
 
         pill.append(styledPillPart(PILL_CORNER_RIGHT, backgroundAt.apply(lastIndex), clickEvent));
