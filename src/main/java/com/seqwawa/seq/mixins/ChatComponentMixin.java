@@ -3,12 +3,18 @@ package com.seqwawa.seq.mixins;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.managers.DiscordRankChatDecorator;
+import com.seqwawa.seq.utils.ChatBridgeLineWrapping;
+import java.util.List;
+import net.minecraft.client.GuiMessage;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
@@ -31,6 +37,28 @@ public class ChatComponentMixin {
             index = 1)
     private Component seq$applyDiscordRank(Component message) {
         return DiscordRankChatDecorator.decorateGuildChat(message);
+    }
+
+    /**
+     * Minecraft creates visual chat lines only after the component enters its display
+     * queue. Reserve room for the bridge rail at that point, then put the rail on every
+     * automatically wrapped line after the sender line.
+     */
+    @Redirect(
+            method = "addMessageToDisplayQueue",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/GuiMessage;splitLines(Lnet/minecraft/client/gui/Font;I)Ljava/util/List;"))
+    private List<FormattedCharSequence> seq$wrapBridgeContinuations(
+            GuiMessage message, Font font, int maxWidth) {
+        List<FormattedCharSequence> initialLines = message.splitLines(font, maxWidth);
+        Component continuationPrefix = DiscordRankChatDecorator.bridgeContinuationPrefixFor(message.content());
+        if (continuationPrefix == null) {
+            return initialLines;
+        }
+
+        return ChatBridgeLineWrapping.wrapColoredBridgeMessage(
+                initialLines, message, font, maxWidth, continuationPrefix);
     }
 
     /**

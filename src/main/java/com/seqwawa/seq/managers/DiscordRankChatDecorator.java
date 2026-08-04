@@ -8,6 +8,7 @@ import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
+import java.util.ArrayDeque;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -113,6 +114,11 @@ public final class DiscordRankChatDecorator {
     private static boolean bridgeSequenceOpen;
     /** The last line this mod displayed itself, kept so it can be recognised by identity. */
     private static Component lastBridgeLine;
+    /** Bridge components and their exact styled rail while Minecraft may still rewrap them. */
+    private static final ArrayDeque<ColoredBridgeLine> RECENT_COLORED_BRIDGE_LINES = new ArrayDeque<>();
+    private static final int MAX_REMEMBERED_BRIDGE_LINES = 128;
+
+    private record ColoredBridgeLine(Component message, Component continuationPrefix) {}
 
     private DiscordRankChatDecorator() {}
 
@@ -558,6 +564,31 @@ public final class DiscordRankChatDecorator {
         return alignToGuildColumn(bridgeSequenceOpen ? continuationBar() : discordMark());
     }
 
+    /** Pure continuation form used for visual lines created by Minecraft's wrapping. */
+    private static MutableComponent bridgeContinuationPrefix() {
+        return alignToGuildColumn(continuationBar());
+    }
+
+    /** Exact styled rail retained for {@code message}, or {@code null} for ordinary chat. */
+    public static Component bridgeContinuationPrefixFor(Component message) {
+        if (message == null) {
+            return null;
+        }
+        for (ColoredBridgeLine bridgeLine : RECENT_COLORED_BRIDGE_LINES) {
+            if (bridgeLine.message() == message) {
+                return bridgeLine.continuationPrefix();
+            }
+        }
+        // Structural fallback for another mod that copied the component before it
+        // reached ChatComponent. The identity registry also covers captured Wynncraft
+        // continuation bars, which intentionally use Wynncraft's own font and glyphs.
+        boolean hasBridgeMarker = ComponentTextEditor.flatten(message).stream()
+                .anyMatch(fragment -> BRIDGE_PREFIX_FONT.equals(fragment.style().getFont())
+                        && (fragment.text().contains(BRIDGE_ICON_GLYPH)
+                                || fragment.text().contains(BRIDGE_CONTINUATION_GLYPH)));
+        return hasBridgeMarker ? bridgeContinuationPrefix() : null;
+    }
+
     /**
      * Brings a bridge prefix to the column Wynncraft starts its guild badges on, so
      * bridged lines, their continuations and real guild lines all line up.
@@ -749,6 +780,9 @@ public final class DiscordRankChatDecorator {
      * must not open the Discord marker/continuation sequence.
      */
     static void displayUndecorated(Component line, Runnable display, boolean opensBridgeSequence) {
+        if (opensBridgeSequence) {
+            rememberColoredBridgeLine(line, bridgeContinuationPrefix());
+        }
         lastBridgeLine = line;
         suppressed = true;
         try {
@@ -756,6 +790,13 @@ public final class DiscordRankChatDecorator {
             bridgeSequenceOpen = opensBridgeSequence;
         } finally {
             suppressed = false;
+        }
+    }
+
+    private static void rememberColoredBridgeLine(Component line, Component continuationPrefix) {
+        RECENT_COLORED_BRIDGE_LINES.addLast(new ColoredBridgeLine(line, continuationPrefix));
+        while (RECENT_COLORED_BRIDGE_LINES.size() > MAX_REMEMBERED_BRIDGE_LINES) {
+            RECENT_COLORED_BRIDGE_LINES.removeFirst();
         }
     }
 

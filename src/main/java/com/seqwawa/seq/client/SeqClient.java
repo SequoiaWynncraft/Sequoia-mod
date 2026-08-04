@@ -561,7 +561,7 @@ public class SeqClient implements ClientModInitializer {
         showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", true);
         showChatInsigniasSetting = new Setting.BooleanSetting("show_chat_insignias", "chat", false);
         showChatInsigniasSetting.setVisibilityCondition(showDiscordRanksSetting::getValue);
-        colorDiscordBridgeSetting = new Setting.BooleanSetting("color_discord_bridge", "chat", false);
+        colorDiscordBridgeSetting = new Setting.BooleanSetting("color_discord_bridge", "chat", true);
         colorDiscordBridgeSetting.setVisibilityCondition(showDiscordRanksSetting::getValue);
         chatLineSpacingSetting = new Setting.IntSetting("chat_line_spacing", "chat", 4, 0, 10);
         // Off by default: shift-click is vanilla's "insert this name into the chat box"
