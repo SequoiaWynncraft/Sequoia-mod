@@ -3,6 +3,7 @@ package com.seqwawa.seq.managers;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.Gson;
@@ -16,12 +17,15 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
- * Parses a slice of a real {@code scope=recognized} response, so the assumptions
- * the single-roster merge rests on break loudly if the payload ever changes.
+ * Parses a roster fixture shaped like a {@code scope=recognized} response, so the
+ * assumptions the single-roster design rests on break loudly if either the
+ * payload shape or our parsing changes.
  * <p>
- * The fixture keeps the catalog whole and samples profiles of each shape the
- * roster returns: members with both identities, members with only a Discord
- * account, and members holding raid awards.
+ * The fixture is written by hand and contains no real members: invented names,
+ * UUIDs and Discord ids, and {@code example.invalid} asset URLs. It covers one
+ * profile of each shape the endpoint returns — both identities, Discord only,
+ * Minecraft only, and no progression rank — plus solid, gradient and uncoloured
+ * roles.
  */
 class RankProfileRosterContractTest {
 
@@ -29,7 +33,8 @@ class RankProfileRosterContractTest {
         try (InputStream stream =
                 RankProfileRosterContractTest.class.getResourceAsStream("/rank-profiles-sample.json")) {
             assertNotNull(stream, "the sample roster fixture must be on the test classpath");
-            return new Gson().fromJson(new InputStreamReader(stream, StandardCharsets.UTF_8), RankProfilesResponse.class);
+            return new Gson()
+                    .fromJson(new InputStreamReader(stream, StandardCharsets.UTF_8), RankProfilesResponse.class);
         } catch (Exception exception) {
             throw new AssertionError("could not read the sample roster", exception);
         }
@@ -46,25 +51,28 @@ class RankProfileRosterContractTest {
     }
 
     @Test
-    void progressionRolesCarryLabelPositionAndColours() {
-        var ranks = DiscordRankService.progressionRanks(roster().catalog());
-        var colors = DiscordRankService.roleColors(roster().catalog());
-
-        ranks.values().forEach(rank -> {
+    void progressionRolesCarryLabelAndPosition() {
+        DiscordRankService.progressionRanks(roster().catalog()).values().forEach(rank -> {
             assertFalse(rank.label().isBlank(), rank.key() + " needs a label");
             assertTrue(rank.position() > 0, rank.key() + " needs a position");
         });
-        assertFalse(colors.isEmpty(), "at least one progression role must publish a colour");
     }
 
     @Test
-    void gradientRolesArePublishedToday() {
-        // The reviewer expected gradients to be future work; the backend already sends
-        // a secondary stop, so the gradient pill renders as soon as this ships.
-        boolean anyGradient = DiscordRankService.roleColors(roster().catalog()).values().stream()
-                .anyMatch(ramp -> ramp.isGradient());
+    void readsSolidGradientAndUncolouredRolesFromOneCatalog() {
+        var colors = DiscordRankService.roleColors(roster().catalog());
 
-        assertTrue(anyGradient, "no role in the sample carries a secondary colour");
+        assertFalse(colors.get("rank.sapling").isGradient(), "a solid role stays solid");
+        assertTrue(colors.get("rank.yggdrasil").isGradient(), "a two-stop role reads as a gradient");
+        assertNull(colors.get("rank.upper_strategist"), "an uncoloured role gets no ramp");
+    }
+
+    @Test
+    void onlyProgressionRolesReachTheRankCatalog() {
+        var ranks = DiscordRankService.progressionRanks(roster().catalog());
+
+        assertTrue(ranks.containsKey("rank.sapling"));
+        assertNull(ranks.get("in_game.recruiter"), "in-game ranks are a different category");
     }
 
     @Test
@@ -82,13 +90,19 @@ class RankProfileRosterContractTest {
     }
 
     @Test
-    void discordOnlyMembersDoNotReachTheGuildChatIndex() {
+    void discordOnlyMembersAreReachableFromTheBridgeButNotFromGuildChat() {
         // Guild chat resolves speakers by game name, so a member without one must never
-        // be matchable there even though the roster carries them.
+        // be matchable there, even though the roster carries them.
         DiscordRankService.Index index = DiscordRankService.parseProfiles(roster());
 
-        assertTrue(
-                index.byMinecraftUsername().size() <= index.byDiscordIdentity().size(),
-                "game-name index must not exceed the discord index");
+        assertNotNull(index.byDiscordIdentity().get("deltamember"), "reachable over the bridge");
+        assertNull(index.byMinecraftUsername().get("deltamember"), "and never in guild chat");
+    }
+
+    @Test
+    void membersWithoutAProgressionRankAreLeftAlone() {
+        DiscordRankService.Index index = DiscordRankService.parseProfiles(roster());
+
+        assertNull(index.byMinecraftUsername().get("zetaplayer"));
     }
 }

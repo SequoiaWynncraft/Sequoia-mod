@@ -523,13 +523,50 @@ class DiscordRankChatDecoratorTest {
                 () -> assertNotNull(DiscordRankChatDecorator.bridgeInsignia("dix", name -> SeqBadgeTier.DIAMOND)));
     }
 
+    @Test
+    void insigniaObeyTheBadgeSettingEvenWhileRanksStayOn() {
+        // Someone who turned insignia off on nametags does not expect them back next to
+        // their name in chat, so the two answer to the same setting.
+        withSettings(true, false, () -> {
+            AtomicBoolean consulted = new AtomicBoolean();
+
+            MutableComponent insignia = DiscordRankChatDecorator.bridgeInsignia("dix", name -> {
+                consulted.set(true);
+                return SeqBadgeTier.DIAMOND;
+            });
+
+            assertNull(insignia, "no insignia with the badge setting off");
+            assertFalse(consulted.get(), "and the roster must not even be consulted");
+        });
+    }
+
+    @Test
+    void guildChatDropsTheInsigniaWhenTheBadgeSettingIsOff() {
+        List<ComponentTextEditor.Fragment> fragments =
+                ComponentTextEditor.flatten(Component.literal("Name: hi"));
+        int colon = "Name".length();
+
+        withSettings(true, false, () -> assertSame(
+                fragments,
+                DiscordRankChatDecorator.insertInsignia(fragments, colon, "ArcLeRetour"),
+                "the line must come back untouched"));
+    }
+
     private static void withDiscordRanks(boolean enabled, Runnable body) {
-        Setting.BooleanSetting previous = SeqClient.showDiscordRanksSetting;
+        withSettings(enabled, true, body);
+    }
+
+    private static void withSettings(boolean ranks, boolean insignia, Runnable body) {
+        Setting.BooleanSetting previousRanks = SeqClient.showDiscordRanksSetting;
+        Setting.BooleanSetting previousInsignia = SeqClient.showInsigniaBadgesSetting;
         try {
-            SeqClient.showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", enabled);
+            SeqClient.showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", ranks);
+            SeqClient.showInsigniaBadgesSetting =
+                    new Setting.BooleanSetting("show_insignia_badges", "leaderboard_badges", insignia);
             body.run();
         } finally {
-            SeqClient.showDiscordRanksSetting = previous;
+            SeqClient.showDiscordRanksSetting = previousRanks;
+            SeqClient.showInsigniaBadgesSetting = previousInsignia;
         }
     }
 

@@ -612,9 +612,11 @@ public final class DiscordRankChatDecorator {
      */
     static List<ComponentTextEditor.Fragment> insertInsignia(
             List<ComponentTextEditor.Fragment> fragments, int colonIndex, String username) {
+        if (!insigniaEnabled() || colonIndex < 0) {
+            return fragments;
+        }
         SeqBadgeTier tier = insigniaOf(username);
-        String glyph = tier == null ? null : INSIGNIA_GLYPHS.get(tier);
-        if (glyph == null || colonIndex < 0) {
+        if (tier == null || !INSIGNIA_GLYPHS.containsKey(tier)) {
             return fragments;
         }
 
@@ -648,7 +650,7 @@ public final class DiscordRankChatDecorator {
 
     /** Insignia core, parameterised on the lookup so the setting gate stays testable. */
     static MutableComponent bridgeInsignia(String senderName, Function<String, SeqBadgeTier> insigniaLookup) {
-        if (!isEnabled()) {
+        if (!insigniaEnabled()) {
             return null;
         }
         SeqBadgeTier tier = insigniaLookup.apply(senderName);
@@ -778,6 +780,15 @@ public final class DiscordRankChatDecorator {
     private static boolean isEnabled() {
         return SeqClient.getShowDiscordRanksSetting() != null
                 && SeqClient.getShowDiscordRanksSetting().getValue();
+    }
+
+    /**
+     * Insignia in chat answer to the same setting as insignia on nametags, on top of
+     * the rank decoration being on at all. Someone who turned the badge off does not
+     * expect it to reappear next to their name in chat.
+     */
+    private static boolean insigniaEnabled() {
+        return isEnabled() && SeqBadgeNametagRenderSupport.showInsigniaBadges();
     }
 
     // ── Diagnostics ──

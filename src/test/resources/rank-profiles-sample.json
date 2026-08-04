@@ -3,167 +3,13 @@
   "catalog": {
     "roles": [
       {
-        "key": "rank.yggdrasil",
-        "label": "Yggdrasil",
-        "category": "progression_rank",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1030189333543661609"
-        ],
-        "legacy": false,
-        "position": 146,
-        "colors": {
-          "primary": "#7506D6",
-          "secondary": "#F1D63D",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "rank.treant",
-        "label": "Treant",
-        "category": "progression_rank",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1030188327304958022"
-        ],
-        "legacy": false,
-        "position": 104,
-        "colors": {
-          "primary": "#1B9056",
-          "secondary": "#50C9A6",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "rank.spriggan",
-        "label": "Spriggan",
-        "category": "progression_rank",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1285683102215176314"
-        ],
-        "legacy": true,
-        "position": 103,
-        "colors": {
-          "primary": "#D4843D",
-          "secondary": "#FFDE90",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "rank.upper_strategist",
-        "label": "Upper Strategist",
-        "category": "progression_rank",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1384053756060106813"
-        ],
-        "legacy": false,
-        "position": 96,
-        "colors": {
-          "primary": null,
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "rank.druid",
-        "label": "Druid",
-        "category": "progression_rank",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1030189409313763328"
-        ],
-        "legacy": false,
-        "position": 100,
-        "colors": {
-          "primary": "#D7BCEA",
-          "secondary": "#A52DC6",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "rank.alseid",
-        "label": "Alseid",
-        "category": "progression_rank",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1285683099300134944"
-        ],
-        "legacy": true,
-        "position": 99,
-        "colors": {
-          "primary": "#FFD073",
-          "secondary": "#FFF8A5",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "rank.verdant",
-        "label": "Verdant",
-        "category": "progression_rank",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1500975549508751401"
-        ],
-        "legacy": true,
-        "position": 95,
-        "colors": {
-          "primary": "#2A6334",
-          "secondary": "#9BD19B",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "rank.dryad",
-        "label": "Dryad",
-        "category": "progression_rank",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1518554045462216715",
-          "1138117297681223822"
-        ],
-        "legacy": false,
-        "position": 94,
-        "colors": {
-          "primary": "#CDECE4",
-          "secondary": "#80CEBB",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "rank.sprite",
-        "label": "Sprite",
-        "category": "progression_rank",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1030189484844798083"
-        ],
-        "legacy": false,
-        "position": 90,
-        "colors": {
-          "primary": "#9FCBFD",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
         "key": "rank.sapling",
         "label": "Sapling",
         "category": "progression_rank",
         "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
+        "source_guild_id": "900000000000000001",
         "source_role_ids": [
-          "1030189556164722739"
+          "900000000000000088"
         ],
         "legacy": false,
         "position": 88,
@@ -174,33 +20,33 @@
         }
       },
       {
-        "key": "rank.leafkin",
-        "label": "Leafkin",
+        "key": "rank.dryad",
+        "label": "Dryad",
         "category": "progression_rank",
         "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
+        "source_guild_id": "900000000000000001",
         "source_role_ids": [
-          "1030189608069247066"
+          "900000000000000094"
         ],
         "legacy": false,
-        "position": 86,
+        "position": 94,
         "colors": {
-          "primary": "#5285FF",
-          "secondary": null,
+          "primary": "#CDECE4",
+          "secondary": "#8FD3C4",
           "tertiary": null
         }
       },
       {
-        "key": "in_game.owner",
-        "label": "Owner",
-        "category": "in_game_rank",
+        "key": "rank.upper_strategist",
+        "label": "Upper Strategist",
+        "category": "progression_rank",
         "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
+        "source_guild_id": "900000000000000001",
         "source_role_ids": [
-          "1137802056577601627"
+          "900000000000000096"
         ],
         "legacy": false,
-        "position": 144,
+        "position": 96,
         "colors": {
           "primary": null,
           "secondary": null,
@@ -208,53 +54,36 @@
         }
       },
       {
-        "key": "in_game.chief",
-        "label": "Chief",
-        "category": "in_game_rank",
+        "key": "rank.treant",
+        "label": "Treant",
+        "category": "progression_rank",
         "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
+        "source_guild_id": "900000000000000001",
         "source_role_ids": [
-          "1137801951833235596"
+          "900000000000000104"
         ],
         "legacy": false,
-        "position": 101,
+        "position": 104,
         "colors": {
-          "primary": null,
-          "secondary": null,
+          "primary": "#1B9056",
+          "secondary": "#50C9A6",
           "tertiary": null
         }
       },
       {
-        "key": "in_game.strategist",
-        "label": "Strategist",
-        "category": "in_game_rank",
+        "key": "rank.yggdrasil",
+        "label": "Yggdrasil",
+        "category": "progression_rank",
         "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
+        "source_guild_id": "900000000000000001",
         "source_role_ids": [
-          "1137801946544222229"
+          "900000000000000146"
         ],
         "legacy": false,
-        "position": 92,
+        "position": 146,
         "colors": {
-          "primary": null,
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "in_game.captain",
-        "label": "Captain",
-        "category": "in_game_rank",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1137801943843082293"
-        ],
-        "legacy": false,
-        "position": 89,
-        "colors": {
-          "primary": null,
-          "secondary": null,
+          "primary": "#7506D6",
+          "secondary": "#F1D63D",
           "tertiary": null
         }
       },
@@ -263,1403 +92,311 @@
         "label": "Recruiter",
         "category": "in_game_rank",
         "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
+        "source_guild_id": "900000000000000001",
         "source_role_ids": [
-          "1137801941024522352"
+          "900000000000000040"
         ],
         "legacy": false,
-        "position": 87,
+        "position": 40,
         "colors": {
-          "primary": null,
+          "primary": "#AAAAAA",
           "secondary": null,
           "tertiary": null
         }
       },
       {
-        "key": "in_game.recruit",
-        "label": "Recruit",
-        "category": "in_game_rank",
+        "key": "insignia.bronze",
+        "label": "Bronze",
+        "category": "insignia",
         "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
+        "source_guild_id": "900000000000000001",
         "source_role_ids": [
-          "1137801899412820088"
+          "900000000000000020"
         ],
         "legacy": false,
-        "position": 85,
+        "position": 20,
         "colors": {
           "primary": null,
           "secondary": null,
           "tertiary": null
-        }
+        },
+        "tier": "BRONZE",
+        "asset_key": "asset.insignia.bronze"
       },
       {
-        "key": "leadership.root",
-        "label": "The Root",
-        "category": "leadership",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
+        "key": "insignia.silver",
+        "label": "Silver",
+        "category": "insignia",
+        "source_guild": "main",
+        "source_guild_id": "900000000000000001",
         "source_role_ids": [
-          "1152596813644300398"
-        ],
-        "legacy": false,
-        "position": 49,
-        "colors": {
-          "primary": null,
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "leadership.yggdrasil",
-        "label": "Yggdrasil",
-        "category": "leadership",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1123541164969177190"
-        ],
-        "legacy": false,
-        "position": 33,
-        "colors": {
-          "primary": "#73061C",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "leadership.elder_yggdrasil",
-        "label": "Elder Yggdrasil",
-        "category": "leadership",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1270863507063046197"
-        ],
-        "legacy": false,
-        "position": 32,
-        "colors": {
-          "primary": "#D90606",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "leadership.branchmaster",
-        "label": "Branchmaster",
-        "category": "leadership",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1123588954772480000"
-        ],
-        "legacy": false,
-        "position": 22,
-        "colors": {
-          "primary": "#DBD1C7",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "leadership.branch_novice",
-        "label": "Branch Novice",
-        "category": "leadership",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1132298517445099520"
+          "900000000000000021"
         ],
         "legacy": false,
         "position": 21,
         "colors": {
-          "primary": "#5E68DB",
+          "primary": null,
           "secondary": null,
           "tertiary": null
-        }
+        },
+        "tier": "SILVER",
+        "asset_key": "asset.insignia.silver"
       },
       {
-        "key": "leadership.elder",
-        "label": "Elder",
-        "category": "leadership",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
+        "key": "insignia.gold",
+        "label": "Gold",
+        "category": "insignia",
+        "source_guild": "main",
+        "source_guild_id": "900000000000000001",
         "source_role_ids": [
-          "1190280365349294151"
+          "900000000000000022"
+        ],
+        "legacy": false,
+        "position": 22,
+        "colors": {
+          "primary": null,
+          "secondary": null,
+          "tertiary": null
+        },
+        "tier": "GOLD",
+        "asset_key": "asset.insignia.gold"
+      },
+      {
+        "key": "insignia.diamond",
+        "label": "Diamond",
+        "category": "insignia",
+        "source_guild": "main",
+        "source_guild_id": "900000000000000001",
+        "source_role_ids": [
+          "900000000000000023"
         ],
         "legacy": false,
         "position": 23,
         "colors": {
-          "primary": "#D99E40",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "branch.community",
-        "label": "Community Branch",
-        "category": "branch",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1104452584602878044"
-        ],
-        "legacy": false,
-        "branch": "community",
-        "position": 16,
-        "colors": {
-          "primary": "#FFDD00",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "branch.development",
-        "label": "Development Branch",
-        "category": "branch",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1127681900664856737"
-        ],
-        "legacy": false,
-        "branch": "development",
-        "position": 24,
-        "colors": {
           "primary": null,
           "secondary": null,
           "tertiary": null
-        }
-      },
-      {
-        "key": "branch.military",
-        "label": "Military Branch",
-        "category": "branch",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1123540729180979250"
-        ],
-        "legacy": false,
-        "branch": "military",
-        "position": 19,
-        "colors": {
-          "primary": "#08691A",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "branch.end_game",
-        "label": "End-Game Branch",
-        "category": "branch",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1265004033400242216"
-        ],
-        "legacy": false,
-        "branch": "end_game",
-        "position": 15,
-        "colors": {
-          "primary": "#D10D55",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "branch.events",
-        "label": "Events Branch",
-        "category": "branch",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1104452504701378560"
-        ],
-        "legacy": false,
-        "branch": "events",
-        "position": 17,
-        "colors": {
-          "primary": "#D61492",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "branch.creative",
-        "label": "Creative Branch",
-        "category": "branch",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1104452322924449854"
-        ],
-        "legacy": false,
-        "branch": "creative",
-        "position": 18,
-        "colors": {
-          "primary": "#2ECC71",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "branch.moderation",
-        "label": "Moderation Twig",
-        "category": "branch",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1515007433217413120"
-        ],
-        "legacy": false,
-        "branch": "moderation",
-        "position": 31,
-        "colors": {
-          "primary": null,
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "branch.treasury",
-        "label": "Treasury Branch",
-        "category": "branch",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1161770432240824370"
-        ],
-        "legacy": false,
-        "branch": "treasury",
-        "position": 14,
-        "colors": {
-          "primary": "#FF7F00",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "branch_trainee.development",
-        "label": "Development Branch Trainee",
-        "category": "branch_trainee",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1503848511907827742"
-        ],
-        "legacy": false,
-        "branch": "development",
-        "position": 12,
-        "colors": {
-          "primary": null,
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "branch_responsibility.trainer",
-        "label": "Trainer",
-        "category": "branch_responsibility",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1383853362059022416"
-        ],
-        "legacy": false,
-        "position": 6,
-        "colors": {
-          "primary": "#206694",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "branch_responsibility.application_manager",
-        "label": "Application Manager",
-        "category": "branch_responsibility",
-        "source_guild": "branchmasters",
-        "source_guild_id": "1104432054717927544",
-        "source_role_ids": [
-          "1352791194224296037"
-        ],
-        "legacy": false,
-        "position": 7,
-        "colors": {
-          "primary": "#3498DB",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "insignia.diamond",
-        "label": "Diamond Insignia",
-        "category": "insignia",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1141395245679005818"
-        ],
-        "legacy": false,
-        "tier": "diamond",
-        "asset_key": "insignia.diamond",
-        "position": 141,
-        "colors": {
-          "primary": null,
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "insignia.gold",
-        "label": "Gold Insignia",
-        "category": "insignia",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1141395234232750100"
-        ],
-        "legacy": false,
-        "tier": "gold",
-        "asset_key": "insignia.gold",
-        "position": 102,
-        "colors": {
-          "primary": null,
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "insignia.silver",
-        "label": "Silver Insignia",
-        "category": "insignia",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1141395230155882577"
-        ],
-        "legacy": false,
-        "tier": "silver",
-        "asset_key": "insignia.silver",
-        "position": 98,
-        "colors": {
-          "primary": null,
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "insignia.bronze",
-        "label": "Bronze Insignia",
-        "category": "insignia",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1141395189580181590"
-        ],
-        "legacy": false,
-        "tier": "bronze",
-        "asset_key": "insignia.bronze",
-        "position": 97,
-        "colors": {
-          "primary": null,
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "military.member",
-        "label": "Military",
-        "category": "military",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1030198476853739551"
-        ],
-        "legacy": false,
-        "position": 61,
-        "colors": {
-          "primary": "#33A052",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "military.hq_team",
-        "label": "HQ Team",
-        "category": "military",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1171154854975111239"
-        ],
-        "legacy": false,
-        "position": 60,
-        "colors": {
-          "primary": "#33A052",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "military.hq_training",
-        "label": "HQ Training",
-        "category": "military",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1228096219767767132"
-        ],
-        "legacy": false,
-        "position": 53,
-        "colors": {
-          "primary": "#85D5E5",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "military.build.dps",
-        "label": "War DPS",
-        "category": "military_specialty",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1030198724636459038"
-        ],
-        "legacy": false,
-        "position": 56,
-        "colors": {
-          "primary": "#9B59B6",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "military.build.healer",
-        "label": "War Healer",
-        "category": "military_specialty",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1030198741925384214"
-        ],
-        "legacy": false,
-        "position": 55,
-        "colors": {
-          "primary": "#9B59B6",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "military.build.tank",
-        "label": "War Tank",
-        "category": "military_specialty",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1030198776989757510"
-        ],
-        "legacy": false,
-        "position": 54,
-        "colors": {
-          "primary": "#9B59B6",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "notification.defender",
-        "label": "Defender",
-        "category": "notification",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1099360257098129449"
-        ],
-        "legacy": false,
-        "position": 59,
-        "colors": {
-          "primary": "#E67E22",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "notification.light_raid",
-        "label": "Light Raid",
-        "category": "notification",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1444830181230641363"
-        ],
-        "legacy": false,
-        "position": 58,
-        "colors": {
-          "primary": "#E67E22",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "notification.general",
-        "label": "Notifier",
-        "category": "notification",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1148250605442314261"
-        ],
-        "legacy": false,
-        "position": 57,
-        "colors": {
-          "primary": "#E67E22",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "notification.offseason_practice",
-        "label": "Offseason Practice",
-        "category": "notification",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1416402732641943592"
-        ],
-        "legacy": false,
-        "position": 48,
-        "colors": {
-          "primary": "#1ABC9C",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "war_honour.diamond",
-        "label": "Diamond Honours",
-        "category": "war_honour",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1418911528505049169"
-        ],
-        "legacy": false,
-        "tier": "diamond",
-        "position": 52,
-        "colors": {
-          "primary": "#6BE4FF",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "war_honour.gold",
-        "label": "Gold Honours",
-        "category": "war_honour",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1379580586099740692"
-        ],
-        "legacy": false,
-        "tier": "gold",
-        "position": 51,
-        "colors": {
-          "primary": "#E3EF03",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "war_honour.silver",
-        "label": "Silver Honours",
-        "category": "war_honour",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1379580876379394138"
-        ],
-        "legacy": false,
-        "tier": "silver",
-        "position": 50,
-        "colors": {
-          "primary": "#DEDCDC",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "war_honour.bronze",
-        "label": "Bronze Honours",
-        "category": "war_honour",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1379581004406198292"
-        ],
-        "legacy": false,
-        "tier": "bronze",
-        "position": 49,
-        "colors": {
-          "primary": "#923500",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "status.sequoia",
-        "label": "Sequoia",
-        "category": "membership_status",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1030198924323078194"
-        ],
-        "legacy": false,
-        "position": 81,
-        "colors": {
-          "primary": "#71368A",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "status.honoured_veteran",
-        "label": "Honoured Veteran",
-        "category": "membership_status",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1124805330220621915"
-        ],
-        "legacy": false,
-        "position": 83,
-        "colors": {
-          "primary": "#AA3B3B",
-          "secondary": "#FF4848",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "status.veteran",
-        "label": "Veteran",
-        "category": "membership_status",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1070440223646953635"
-        ],
-        "legacy": false,
-        "position": 82,
-        "colors": {
-          "primary": "#E74C3C",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "status.temporary_member",
-        "label": "Temporary Member",
-        "category": "membership_status",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1433596984886956175"
-        ],
-        "legacy": false,
-        "position": 80,
-        "colors": {
-          "primary": "#9B59B6",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "status.duo_citizen",
-        "label": "Duo-Citizen",
-        "category": "membership_status",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1399893347459534939"
-        ],
-        "legacy": false,
-        "position": 79,
-        "colors": {
-          "primary": "#9B59B6",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "status.gnome",
-        "label": "Gnome",
-        "category": "membership_status",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1097618729849848010"
-        ],
-        "legacy": false,
-        "position": 78,
-        "colors": {
-          "primary": "#AD1457",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "status.linked",
-        "label": "Linked",
-        "category": "membership_status",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1399766306697384016"
-        ],
-        "legacy": false,
-        "position": 76,
-        "colors": {
-          "primary": "#A9C9FF",
-          "secondary": "#FFBBEC",
-          "tertiary": "#FFC3A0"
-        }
-      },
-      {
-        "key": "reward.first.wtp",
-        "label": "#1 WTP",
-        "category": "reward",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1496399105713504386"
-        ],
-        "legacy": false,
-        "position": 130,
-        "colors": {
-          "primary": "#2AFEDC",
-          "secondary": "#FFFFFF",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "reward.first.tna",
-        "label": "#1 TNA",
-        "category": "reward",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1280462951475576952"
-        ],
-        "legacy": false,
-        "position": 129,
-        "colors": {
-          "primary": "#0F9FC0",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "reward.first.notg",
-        "label": "#1 NotG",
-        "category": "reward",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1280463928043900938"
-        ],
-        "legacy": false,
-        "position": 128,
-        "colors": {
-          "primary": "#FF007B",
-          "secondary": "#C54FA3",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "reward.first.tcc",
-        "label": "#1 TCC",
-        "category": "reward",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1280463904467718154"
-        ],
-        "legacy": false,
-        "position": 127,
-        "colors": {
-          "primary": "#9932CC",
-          "secondary": null,
-          "tertiary": null
-        }
-      },
-      {
-        "key": "reward.first.nol",
-        "label": "#1 NoL",
-        "category": "reward",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1280463921622552597"
-        ],
-        "legacy": false,
-        "position": 126,
-        "colors": {
-          "primary": "#FFB347",
-          "secondary": "#F28500",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "reward.weekly.warrer",
-        "label": "Weekly Warrer",
-        "category": "reward",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1457109842937380946"
-        ],
-        "legacy": false,
-        "position": 124,
-        "colors": {
-          "primary": "#CDECE4",
-          "secondary": "#B7BCC5",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "reward.weekly.raider",
-        "label": "Raider of the Week",
-        "category": "reward",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1287016744434532402"
-        ],
-        "legacy": false,
-        "position": 123,
-        "colors": {
-          "primary": "#B42585",
-          "secondary": "#6D36C1",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "reward.weekly.notg",
-        "label": "Weekly NOTG",
-        "category": "reward",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1353722648626073721"
-        ],
-        "legacy": false,
-        "position": 122,
-        "colors": {
-          "primary": "#6100B6",
-          "secondary": "#660406",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "reward.weekly.wtp",
-        "label": "Weekly WTP",
-        "category": "reward",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1491567498267590789"
-        ],
-        "legacy": false,
-        "position": 121,
-        "colors": {
-          "primary": "#2AFEDC",
-          "secondary": "#FFFFFF",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "reward.weekly.nol",
-        "label": "Weekly NOL",
-        "category": "reward",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1353722763184967753"
-        ],
-        "legacy": false,
-        "position": 120,
-        "colors": {
-          "primary": "#D91D1D",
-          "secondary": "#F3E24C",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "reward.weekly.tcc",
-        "label": "Weekly TCC",
-        "category": "reward",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1353722823570624563"
-        ],
-        "legacy": false,
-        "position": 119,
-        "colors": {
-          "primary": "#FAA6BE",
-          "secondary": "#FEE0CA",
-          "tertiary": null
-        }
-      },
-      {
-        "key": "reward.weekly.tna",
-        "label": "Weekly TNA",
-        "category": "reward",
-        "source_guild": "main",
-        "source_guild_id": "1030187086722109570",
-        "source_role_ids": [
-          "1353722882626162698"
-        ],
-        "legacy": false,
-        "position": 118,
-        "colors": {
-          "primary": "#FF00FA",
-          "secondary": "#5E02FF",
-          "tertiary": null
-        }
+        },
+        "tier": "DIAMOND",
+        "asset_key": "asset.insignia.diamond"
       }
     ],
     "awards": [
       {
-        "key": "raid.wtp.diamond",
-        "category": "raid_badge",
-        "series": "WTP",
-        "tier": "DIAMOND",
-        "title": "Wartorn Palace Diamond",
-        "subtitle": "WTP",
-        "asset_key": "badge.wtp.diamond",
-        "display_order": 700
-      },
-      {
-        "key": "raid.wtp.gold",
-        "category": "raid_badge",
-        "series": "WTP",
-        "tier": "GOLD",
-        "title": "Wartorn Palace Gold",
-        "subtitle": "WTP",
-        "asset_key": "badge.wtp.gold",
-        "display_order": 600
-      },
-      {
-        "key": "raid.wtp.silver",
-        "category": "raid_badge",
-        "series": "WTP",
-        "tier": "SILVER",
-        "title": "Wartorn Palace Silver",
-        "subtitle": "WTP",
-        "asset_key": "badge.wtp.silver",
-        "display_order": 500
-      },
-      {
-        "key": "raid.wtp.bronze",
+        "key": "award.wtp_bronze",
         "category": "raid_badge",
         "series": "WTP",
         "tier": "BRONZE",
-        "title": "Wartorn Palace Bronze",
-        "subtitle": "WTP",
-        "asset_key": "badge.wtp.bronze",
-        "display_order": 400
+        "asset_key": "asset.wtp_bronze",
+        "title": "WTP Bronze",
+        "subtitle": "Sample award",
+        "display_order": 0
       },
       {
-        "key": "raid.nol.gold",
+        "key": "award.wtp_gold",
         "category": "raid_badge",
-        "series": "NOL",
+        "series": "WTP",
         "tier": "GOLD",
-        "title": "Nexus of Light Gold",
-        "subtitle": "NoL",
-        "asset_key": "badge.nol.gold",
-        "display_order": 300
-      },
-      {
-        "key": "raid.nol.silver",
-        "category": "raid_badge",
-        "series": "NOL",
-        "tier": "SILVER",
-        "title": "Nexus of Light Silver",
-        "subtitle": "NoL",
-        "asset_key": "badge.nol.silver",
-        "display_order": 200
-      },
-      {
-        "key": "raid.nol.bronze",
-        "category": "raid_badge",
-        "series": "NOL",
-        "tier": "BRONZE",
-        "title": "Nexus of Light Bronze",
-        "subtitle": "NoL",
-        "asset_key": "badge.nol.bronze",
-        "display_order": 100
+        "asset_key": "asset.wtp_gold",
+        "title": "WTP Gold",
+        "subtitle": "Sample award",
+        "display_order": 1
       }
     ],
     "assets": [
       {
-        "key": "badge.nol.bronze",
-        "url": "https://assets.seqwawa.com/v1/4a6aa0066365c9e8768543aa014116566f3f84a9fdd09a61b8948512ad35d63c/nol_bronze.png",
+        "key": "asset.insignia.bronze",
+        "url": "https://example.invalid/badges/asset.insignia.bronze.png",
         "content_type": "image/png",
-        "sha256": "4a6aa0066365c9e8768543aa014116566f3f84a9fdd09a61b8948512ad35d63c"
+        "sha256": "33b9e34b03ab66b94897aee737d94d7a4c66ebf29cb916a2d852164cb51f5708"
       },
       {
-        "key": "badge.nol.gold",
-        "url": "https://assets.seqwawa.com/v1/98f672f860810b0fc12f2682ba2412cb9a47febd91debe2e8a0ea3d5140877f6/nol_gold.png",
+        "key": "asset.insignia.silver",
+        "url": "https://example.invalid/badges/asset.insignia.silver.png",
         "content_type": "image/png",
-        "sha256": "98f672f860810b0fc12f2682ba2412cb9a47febd91debe2e8a0ea3d5140877f6"
+        "sha256": "ed3ea7780c7853f02fae78060eb71516d0ca985fac70955fe0c45731fc6f0443"
       },
       {
-        "key": "badge.nol.silver",
-        "url": "https://assets.seqwawa.com/v1/421b05feb33743247ad11d6051587d9048a2a6bb1bf5a15d4ace10309b27d0ba/nol_silver.png",
+        "key": "asset.insignia.gold",
+        "url": "https://example.invalid/badges/asset.insignia.gold.png",
         "content_type": "image/png",
-        "sha256": "421b05feb33743247ad11d6051587d9048a2a6bb1bf5a15d4ace10309b27d0ba"
+        "sha256": "64577cb6e4d1f8d842f9adf1d1afcce7ee79563cbd1d5d3c377d607e164467bd"
       },
       {
-        "key": "badge.wtp.bronze",
-        "url": "https://assets.seqwawa.com/v1/540344065785b5b478441d15b0cc871b7df97619155b8a8b07466019e7c3e10b/wtp_bronze.png",
+        "key": "asset.insignia.diamond",
+        "url": "https://example.invalid/badges/asset.insignia.diamond.png",
         "content_type": "image/png",
-        "sha256": "540344065785b5b478441d15b0cc871b7df97619155b8a8b07466019e7c3e10b"
+        "sha256": "e8bb86c1dac5079f71c7819eef555b531891b5f96e1bbd5513e52f9171b8701e"
       },
       {
-        "key": "badge.wtp.diamond",
-        "url": "https://assets.seqwawa.com/v1/ba2d9b54c8fb17d73f9e5f9d45e6090ce8f7ec306dd2896b08e726be8828bb29/wtp_diamond.png",
+        "key": "asset.wtp_bronze",
+        "url": "https://example.invalid/badges/asset.wtp_bronze.png",
         "content_type": "image/png",
-        "sha256": "ba2d9b54c8fb17d73f9e5f9d45e6090ce8f7ec306dd2896b08e726be8828bb29"
+        "sha256": "79bd6450100442a6abbf1bdfdd7ff86be699f92cc50266bf53c5b20b918c3568"
       },
       {
-        "key": "badge.wtp.gold",
-        "url": "https://assets.seqwawa.com/v1/d58995d8c9be831228cb2be3d4adacd791be0a4dd81814b04e125c564bdf7001/wtp_gold.png",
+        "key": "asset.wtp_gold",
+        "url": "https://example.invalid/badges/asset.wtp_gold.png",
         "content_type": "image/png",
-        "sha256": "d58995d8c9be831228cb2be3d4adacd791be0a4dd81814b04e125c564bdf7001"
-      },
-      {
-        "key": "badge.wtp.silver",
-        "url": "https://assets.seqwawa.com/v1/7df14c64564a8ee3e68338e09cfa44f02fd67825e6e00845c9e27135c1b425b8/wtp_silver.png",
-        "content_type": "image/png",
-        "sha256": "7df14c64564a8ee3e68338e09cfa44f02fd67825e6e00845c9e27135c1b425b8"
-      },
-      {
-        "key": "insignia.bronze",
-        "url": "https://assets.seqwawa.com/v1/cd230af1ff7f121060f55327b4f4031e03651764414d6d529abbc66a1e79f4b7/bronze_insignia_icon.png",
-        "content_type": "image/png",
-        "sha256": "cd230af1ff7f121060f55327b4f4031e03651764414d6d529abbc66a1e79f4b7"
-      },
-      {
-        "key": "insignia.diamond",
-        "url": "https://assets.seqwawa.com/v1/ac3911a88fed61b14eae5bce4dfa3a8410aaa16002d8e893c3875651da65b67a/diamond_insignia_icon.png",
-        "content_type": "image/png",
-        "sha256": "ac3911a88fed61b14eae5bce4dfa3a8410aaa16002d8e893c3875651da65b67a"
-      },
-      {
-        "key": "insignia.gold",
-        "url": "https://assets.seqwawa.com/v1/adfa6a77915392d5fea947d3a9c53e4d1b241fd6220ceb39098c067c6252bcfd/gold_insignia_icon.png",
-        "content_type": "image/png",
-        "sha256": "adfa6a77915392d5fea947d3a9c53e4d1b241fd6220ceb39098c067c6252bcfd"
-      },
-      {
-        "key": "insignia.silver",
-        "url": "https://assets.seqwawa.com/v1/95df2f404aaf9d4dc84076143dbc1ed68396db6754a22ef677e9d1761635dfd5/silver_insignia_icon.png",
-        "content_type": "image/png",
-        "sha256": "95df2f404aaf9d4dc84076143dbc1ed68396db6754a22ef677e9d1761635dfd5"
-      },
-      {
-        "key": "misc.emerald",
-        "url": "https://assets.seqwawa.com/v1/2cf1339840fa4bd7042a53490a4fc1a5b46487fc8b14f89fedb9c2c97795eada/emerald.webp",
-        "content_type": "image/webp",
-        "sha256": "2cf1339840fa4bd7042a53490a4fc1a5b46487fc8b14f89fedb9c2c97795eada"
-      },
-      {
-        "key": "misc.emerald_block",
-        "url": "https://assets.seqwawa.com/v1/c73f3f7f6203f840138c72b1f63e1c5a47d69169dc49626b727aa2facc8ee638/emerald_block.webp",
-        "content_type": "image/webp",
-        "sha256": "c73f3f7f6203f840138c72b1f63e1c5a47d69169dc49626b727aa2facc8ee638"
-      },
-      {
-        "key": "misc.experience_bottle",
-        "url": "https://assets.seqwawa.com/v1/7668d3f1ed1604f0b1c8924d90d4249b845abd3147965ce01b318d0d93b7e999/experience_bottle.webp",
-        "content_type": "image/webp",
-        "sha256": "7668d3f1ed1604f0b1c8924d90d4249b845abd3147965ce01b318d0d93b7e999"
+        "sha256": "ae324538097041f5be114489e48d1b92fc487facf3e958f507299b5da2754944"
       }
     ]
   },
   "profiles": [
     {
       "discord": {
-        "id": "719729926802112553",
-        "username": "icedotjpeg",
-        "display_name": "Sprite 0_Nickname_0",
-        "avatar_url": "https://cdn.discordapp.com/avatars/719729926802112553/0918408beaa582d16beb5829588fd72c.png?size=128"
+        "id": "900000000000000101",
+        "username": "alphaplayer",
+        "display_name": "Yggdrasil AlphaPlayer",
+        "avatar_url": null
       },
       "minecraft": {
-        "uuid": "95f1b342-d7f5-466e-b1c8-32f0b42214db",
-        "username": "0_Nickname_0"
+        "uuid": "336de99f-2ee1-c996-9656-d265a1812516",
+        "username": "AlphaPlayer"
       },
       "role_keys": [
-        "rank.sprite",
-        "in_game.captain",
-        "military.member",
-        "military.hq_training",
-        "notification.defender",
-        "notification.light_raid",
-        "notification.general",
-        "war_honour.gold",
-        "status.sequoia",
-        "status.linked"
-      ],
-      "award_keys": [],
-      "summary": {
-        "progression_rank": "rank.sprite",
-        "in_game_rank": "in_game.captain",
-        "leadership": null,
-        "insignia": null,
-        "war_honour": "war_honour.gold",
-        "insignias": [],
-        "war_honours": [
-          "war_honour.gold"
-        ],
-        "branches": []
-      }
-    },
-    {
-      "discord": {
-        "id": "1016443003012907008",
-        "username": "1c3_sp1k3s",
-        "display_name": "Leafkin 1c3_Sp1k3s",
-        "avatar_url": "https://cdn.discordapp.com/avatars/1016443003012907008/8ac98d590bde1ece79e1a4f9895ac3b4.png?size=128"
-      },
-      "minecraft": {
-        "uuid": "36d64818-0428-4f23-a955-5a4e9f782513",
-        "username": "1c3_Sp1k3s"
-      },
-      "role_keys": [
-        "rank.leafkin",
-        "in_game.recruit",
-        "status.sequoia",
-        "status.linked"
-      ],
-      "award_keys": [],
-      "summary": {
-        "progression_rank": "rank.leafkin",
-        "in_game_rank": "in_game.recruit",
-        "leadership": null,
-        "insignia": null,
-        "war_honour": null,
-        "insignias": [],
-        "war_honours": [],
-        "branches": []
-      }
-    },
-    {
-      "discord": {
-        "id": "718631728020979732",
-        "username": "1wolvesgaming",
-        "display_name": "Sprite 1wolvesgaming",
-        "avatar_url": "https://cdn.discordapp.com/avatars/718631728020979732/428db3319223d6db86a794a9678a2b55.png?size=128"
-      },
-      "minecraft": {
-        "uuid": "00104f77-0854-4301-8d4e-886a477346b8",
-        "username": "1wolvesgaming"
-      },
-      "role_keys": [
-        "rank.sprite",
-        "in_game.captain",
-        "status.sequoia",
-        "status.linked"
+        "rank.yggdrasil",
+        "insignia.diamond"
       ],
       "award_keys": [
-        "raid.wtp.bronze"
+        "award.wtp_gold"
       ],
       "summary": {
-        "progression_rank": "rank.sprite",
-        "in_game_rank": "in_game.captain",
+        "progression_rank": "rank.yggdrasil",
+        "in_game_rank": "in_game.recruiter",
         "leadership": null,
-        "insignia": null,
-        "war_honour": null,
-        "insignias": [],
-        "war_honours": [],
-        "branches": []
-      }
-    },
-    {
-      "discord": {
-        "id": "732337953111539752",
-        "username": "artisaan_",
-        "display_name": "Alseid LesArtisans",
-        "avatar_url": "https://cdn.discordapp.com/avatars/732337953111539752/bf5fc48e19f6647915e14c54413e98d9.png?size=128"
-      },
-      "minecraft": null,
-      "role_keys": [
-        "rank.druid",
-        "rank.upper_strategist",
-        "leadership.branchmaster",
-        "branch.end_game",
-        "branch.treasury",
-        "branch_responsibility.application_manager",
-        "insignia.diamond",
-        "military.member",
-        "military.hq_team",
-        "military.build.dps",
-        "military.build.healer",
-        "military.build.tank",
-        "war_honour.silver",
-        "status.sequoia",
-        "status.linked"
-      ],
-      "award_keys": [],
-      "summary": {
-        "progression_rank": "rank.druid",
-        "in_game_rank": null,
-        "leadership": "leadership.branchmaster",
         "insignia": "insignia.diamond",
-        "war_honour": "war_honour.silver",
         "insignias": [
           "insignia.diamond"
         ],
-        "war_honours": [
-          "war_honour.silver"
-        ],
-        "branches": [
-          {
-            "key": "branch.end_game",
-            "branch": "end_game",
-            "level": "member"
-          },
-          {
-            "key": "branch.treasury",
-            "branch": "treasury",
-            "level": "member"
-          }
-        ]
+        "war_honour": null,
+        "war_honours": [],
+        "branches": []
       }
     },
     {
       "discord": {
-        "id": "626453834931240962",
-        "username": "daydreamwokeup",
-        "display_name": "Deliverer Fire_Burns_Cold",
-        "avatar_url": "https://cdn.discordapp.com/avatars/626453834931240962/d814706104779f724b45e5a0310c20b6.png?size=128"
+        "id": "900000000000000102",
+        "username": "betaplayer",
+        "display_name": "Sapling BetaPlayer",
+        "avatar_url": null
+      },
+      "minecraft": {
+        "uuid": "e06f559a-025a-76d6-1738-3f04c9988574",
+        "username": "BetaPlayer"
+      },
+      "role_keys": [
+        "rank.sapling"
+      ],
+      "award_keys": [],
+      "summary": {
+        "progression_rank": "rank.sapling",
+        "in_game_rank": "in_game.recruiter",
+        "leadership": null,
+        "insignia": null,
+        "insignias": [],
+        "war_honour": null,
+        "war_honours": [],
+        "branches": []
+      }
+    },
+    {
+      "discord": {
+        "id": "900000000000000103",
+        "username": "gammaplayer",
+        "display_name": "Upper_Strategist GammaPlayer",
+        "avatar_url": null
+      },
+      "minecraft": {
+        "uuid": "ff3f26a8-5e67-8542-8716-0687db795b52",
+        "username": "GammaPlayer"
+      },
+      "role_keys": [
+        "rank.upper_strategist",
+        "insignia.bronze"
+      ],
+      "award_keys": [],
+      "summary": {
+        "progression_rank": "rank.upper_strategist",
+        "in_game_rank": "in_game.recruiter",
+        "leadership": null,
+        "insignia": "insignia.bronze",
+        "insignias": [
+          "insignia.bronze"
+        ],
+        "war_honour": null,
+        "war_honours": [],
+        "branches": []
+      }
+    },
+    {
+      "discord": {
+        "id": "900000000000000104",
+        "username": "deltamember",
+        "display_name": "Treant DeltaMember",
+        "avatar_url": null
       },
       "minecraft": null,
       "role_keys": [
-        "rank.treant",
-        "in_game.chief",
-        "leadership.root",
-        "leadership.branchmaster",
-        "branch.moderation",
-        "branch.military",
-        "branch.creative",
-        "branch.events",
-        "branch.community",
-        "branch.treasury",
-        "branch_responsibility.application_manager",
-        "branch_responsibility.trainer",
-        "insignia.diamond",
-        "military.member",
-        "military.build.tank",
-        "status.sequoia"
+        "rank.treant"
       ],
       "award_keys": [],
       "summary": {
         "progression_rank": "rank.treant",
-        "in_game_rank": "in_game.chief",
-        "leadership": "leadership.root",
-        "insignia": "insignia.diamond",
+        "in_game_rank": "in_game.recruiter",
+        "leadership": null,
+        "insignia": null,
+        "insignias": [],
         "war_honour": null,
-        "insignias": [
-          "insignia.diamond"
-        ],
         "war_honours": [],
-        "branches": [
-          {
-            "key": "branch.community",
-            "branch": "community",
-            "level": "member"
-          },
-          {
-            "key": "branch.creative",
-            "branch": "creative",
-            "level": "member"
-          },
-          {
-            "key": "branch.events",
-            "branch": "events",
-            "level": "member"
-          },
-          {
-            "key": "branch.military",
-            "branch": "military",
-            "level": "member"
-          },
-          {
-            "key": "branch.moderation",
-            "branch": "moderation",
-            "level": "member"
-          },
-          {
-            "key": "branch.treasury",
-            "branch": "treasury",
-            "level": "member"
-          }
-        ]
+        "branches": []
       }
     },
     {
       "discord": null,
       "minecraft": {
-        "uuid": "5e22209b-e586-4a08-8761-aa6bde56a090",
-        "username": "15h"
+        "uuid": "2ada9376-5f90-f9c0-0a87-4acdd7567425",
+        "username": "EpsilonPlayer"
       },
-      "role_keys": [],
+      "role_keys": [
+        "insignia.silver"
+      ],
       "award_keys": [
-        "raid.wtp.diamond"
+        "award.wtp_bronze"
       ],
       "summary": {
         "progression_rank": null,
-        "in_game_rank": null,
+        "in_game_rank": "in_game.recruiter",
         "leadership": null,
-        "insignia": null,
+        "insignia": "insignia.silver",
+        "insignias": [
+          "insignia.silver"
+        ],
         "war_honour": null,
-        "insignias": [],
         "war_honours": [],
         "branches": []
       }
     },
     {
       "discord": {
-        "id": "718631728020979732",
-        "username": "1wolvesgaming",
-        "display_name": "Sprite 1wolvesgaming",
-        "avatar_url": "https://cdn.discordapp.com/avatars/718631728020979732/428db3319223d6db86a794a9678a2b55.png?size=128"
+        "id": "900000000000000106",
+        "username": "zetaplayer",
+        "display_name": "ZetaPlayer",
+        "avatar_url": null
       },
       "minecraft": {
-        "uuid": "00104f77-0854-4301-8d4e-886a477346b8",
-        "username": "1wolvesgaming"
+        "uuid": "a4b5b5b8-0bd6-8b68-904d-c47045a2821f",
+        "username": "ZetaPlayer"
       },
-      "role_keys": [
-        "rank.sprite",
-        "in_game.captain",
-        "status.sequoia",
-        "status.linked"
-      ],
-      "award_keys": [
-        "raid.wtp.bronze"
-      ],
+      "role_keys": [],
+      "award_keys": [],
       "summary": {
-        "progression_rank": "rank.sprite",
-        "in_game_rank": "in_game.captain",
+        "progression_rank": null,
+        "in_game_rank": "in_game.recruiter",
         "leadership": null,
         "insignia": null,
-        "war_honour": null,
         "insignias": [],
+        "war_honour": null,
         "war_honours": [],
         "branches": []
       }
