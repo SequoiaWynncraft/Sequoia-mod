@@ -533,9 +533,16 @@ public final class DiscordRankChatDecorator {
      * use it for both the badge and the sender name colour.
      */
     public static RankPresentation bridgeRank(String senderName, String discordId) {
-        return isEnabled()
+        return bridgeColoringEnabled()
                 ? DiscordRankService.getInstance().presentationForBridgeSender(senderName, discordId)
                 : null;
+    }
+
+    /** Bridge colours are a child of in-game Discord rank decoration. */
+    static boolean bridgeColoringEnabled() {
+        return isEnabled()
+                && SeqClient.getColorDiscordBridgeSetting() != null
+                && SeqClient.getColorDiscordBridgeSetting().getValue();
     }
 
     /** The aqua Wynncraft paints guild chat with, so bridged lines read the same. */
@@ -734,11 +741,19 @@ public final class DiscordRankChatDecorator {
      * synchronously, so a plain flag is enough.
      */
     public static void displayUndecorated(Component line, Runnable display) {
+        displayUndecorated(line, display, true);
+    }
+
+    /**
+     * Variant for neutral bridge lines, which are suppressed from rank decoration but
+     * must not open the Discord marker/continuation sequence.
+     */
+    static void displayUndecorated(Component line, Runnable display, boolean opensBridgeSequence) {
         lastBridgeLine = line;
         suppressed = true;
         try {
             display.run();
-            bridgeSequenceOpen = true;
+            bridgeSequenceOpen = opensBridgeSequence;
         } finally {
             suppressed = false;
         }
@@ -809,13 +824,11 @@ public final class DiscordRankChatDecorator {
                 && SeqClient.getShowDiscordRanksSetting().getValue();
     }
 
-    /**
-     * Insignia in chat answer to the same setting as insignia on nametags, on top of
-     * the rank decoration being on at all. Someone who turned the badge off does not
-     * expect it to reappear next to their name in chat.
-     */
+    /** Chat insignias are independently optional beneath Discord rank decoration. */
     private static boolean insigniaEnabled() {
-        return isEnabled() && SeqBadgeNametagRenderSupport.showInsigniaBadges();
+        return isEnabled()
+                && (SeqClient.getShowChatInsigniasSetting() == null
+                        || SeqClient.getShowChatInsigniasSetting().getValue());
     }
 
     // ── Diagnostics ──

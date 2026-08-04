@@ -6,9 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.utils.ComponentTextEditor;
+import com.seqwawa.seq.utils.WynnPillGlyphs;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -317,5 +321,36 @@ class ChatManagerTest {
         assertEquals(List.of("top", "", "bottom"), ChatManager.splitMessageLines("top\n\nbottom"));
         assertEquals(List.of(""), ChatManager.splitMessageLines(""));
         assertEquals(List.of(""), ChatManager.splitMessageLines(null));
+    }
+
+    @Test
+    void uncolouredBridgeMessageUsesLegacySequoiaPillAndWhiteText() {
+        MutableComponent line = ChatManager.bridgeSenderLine(
+                new ConnectionManager.DiscordChatMessage("MrHmar", "hello", "215820027700576258"),
+                "hello",
+                null);
+
+        assertEquals("sequoia", WynnPillGlyphs.findPills(line.getString()).getFirst().label());
+        assertFragmentColor(line, "MrHmar", ChatFormatting.WHITE);
+        assertFragmentColor(line, ": ", ChatFormatting.GRAY);
+        assertFragmentColor(line, "hello", ChatFormatting.WHITE);
+    }
+
+    @Test
+    void uncolouredBridgeContinuationKeepsLegacyPillAndWhiteText() {
+        MutableComponent line = ChatManager.bridgeContinuationLine("continued", false);
+
+        assertEquals("sequoia", WynnPillGlyphs.findPills(line.getString()).getFirst().label());
+        assertFragmentColor(line, "continued", ChatFormatting.WHITE);
+    }
+
+    private static void assertFragmentColor(Component component, String text, ChatFormatting expected) {
+        Style style = ComponentTextEditor.flatten(component).stream()
+                .filter(fragment -> fragment.text().equals(text))
+                .findFirst()
+                .orElseThrow()
+                .style();
+        assertNotNull(style.getColor());
+        assertEquals(expected.getColor(), style.getColor().getValue());
     }
 }

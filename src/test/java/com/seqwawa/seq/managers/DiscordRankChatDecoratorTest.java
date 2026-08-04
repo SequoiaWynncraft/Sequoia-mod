@@ -605,9 +605,7 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void insigniaObeyTheBadgeSettingEvenWhileRanksStayOn() {
-        // Someone who turned insignia off on nametags does not expect them back next to
-        // their name in chat, so the two answer to the same setting.
+    void insigniaObeyTheChatSettingEvenWhileRanksStayOn() {
         withSettings(true, false, () -> {
             AtomicBoolean consulted = new AtomicBoolean();
 
@@ -616,13 +614,13 @@ class DiscordRankChatDecoratorTest {
                 return SeqBadgeTier.DIAMOND;
             });
 
-            assertNull(insignia, "no insignia with the badge setting off");
+            assertNull(insignia, "no insignia with the chat setting off");
             assertFalse(consulted.get(), "and the roster must not even be consulted");
         });
     }
 
     @Test
-    void guildChatDropsTheInsigniaWhenTheBadgeSettingIsOff() {
+    void guildChatDropsTheInsigniaWhenTheChatSettingIsOff() {
         List<ComponentTextEditor.Fragment> fragments =
                 ComponentTextEditor.flatten(Component.literal("Name: hi"));
         int colon = "Name".length();
@@ -639,15 +637,52 @@ class DiscordRankChatDecoratorTest {
 
     private static void withSettings(boolean ranks, boolean insignia, Runnable body) {
         Setting.BooleanSetting previousRanks = SeqClient.showDiscordRanksSetting;
-        Setting.BooleanSetting previousInsignia = SeqClient.showInsigniaBadgesSetting;
+        Setting.BooleanSetting previousInsignia = SeqClient.showChatInsigniasSetting;
         try {
             SeqClient.showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", ranks);
-            SeqClient.showInsigniaBadgesSetting =
-                    new Setting.BooleanSetting("show_insignia_badges", "leaderboard_badges", insignia);
+            SeqClient.showChatInsigniasSetting =
+                    new Setting.BooleanSetting("show_chat_insignias", "chat", insignia);
             body.run();
         } finally {
             SeqClient.showDiscordRanksSetting = previousRanks;
-            SeqClient.showInsigniaBadgesSetting = previousInsignia;
+            SeqClient.showChatInsigniasSetting = previousInsignia;
+        }
+    }
+
+    @Test
+    void nametagInsigniaSettingDoesNotControlChatInsignias() {
+        Setting.BooleanSetting previousNametagInsignias = SeqClient.showInsigniaBadgesSetting;
+        try {
+            SeqClient.showInsigniaBadgesSetting =
+                    new Setting.BooleanSetting("show_insignia_badges", "leaderboard_badges", false);
+            withSettings(
+                    true,
+                    true,
+                    () -> assertNotNull(
+                            DiscordRankChatDecorator.bridgeInsignia("dix", name -> SeqBadgeTier.DIAMOND)));
+        } finally {
+            SeqClient.showInsigniaBadgesSetting = previousNametagInsignias;
+        }
+    }
+
+    @Test
+    void bridgeColoringRequiresBothTheInGameRankParentAndItsChildSetting() {
+        Setting.BooleanSetting previousRanks = SeqClient.showDiscordRanksSetting;
+        Setting.BooleanSetting previousBridgeColoring = SeqClient.colorDiscordBridgeSetting;
+        try {
+            SeqClient.showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", false);
+            SeqClient.colorDiscordBridgeSetting = new Setting.BooleanSetting("color_discord_bridge", "chat", true);
+            assertFalse(DiscordRankChatDecorator.bridgeColoringEnabled());
+
+            SeqClient.showDiscordRanksSetting.setValue(true);
+            SeqClient.colorDiscordBridgeSetting.setValue(false);
+            assertFalse(DiscordRankChatDecorator.bridgeColoringEnabled());
+
+            SeqClient.colorDiscordBridgeSetting.setValue(true);
+            assertTrue(DiscordRankChatDecorator.bridgeColoringEnabled());
+        } finally {
+            SeqClient.showDiscordRanksSetting = previousRanks;
+            SeqClient.colorDiscordBridgeSetting = previousBridgeColoring;
         }
     }
 
@@ -676,6 +711,18 @@ class DiscordRankChatDecoratorTest {
                 ComponentTextEditor.flatten(firstPrefix).getFirst().style().getFont());
 
         DiscordRankChatDecorator.decorateGuildChat(Component.literal("interrupting chat"));
+        assertEquals(
+                DiscordRankChatDecorator.BRIDGE_ICON_GLYPH + " ",
+                DiscordRankChatDecorator.bridgePrefix().getString());
+    }
+
+    @Test
+    void neutralBridgeMessageDoesNotOpenAColoredContinuationSequence() {
+        DiscordRankChatDecorator.decorateGuildChat(Component.literal("ordinary chat"));
+        Component neutralLine = Component.literal("neutral bridge line");
+
+        DiscordRankChatDecorator.displayUndecorated(neutralLine, () -> {}, false);
+
         assertEquals(
                 DiscordRankChatDecorator.BRIDGE_ICON_GLYPH + " ",
                 DiscordRankChatDecorator.bridgePrefix().getString());

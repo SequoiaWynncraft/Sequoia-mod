@@ -713,48 +713,63 @@ public class ChatManager {
     }
 
     /**
-     * Renders a bridged Discord message as guild chat: a channel marker, the rank
-     * badge, the sender in their rank colour, then the text in Wynncraft's guild aqua.
+     * Renders a bridged Discord message. Ranked senders use the guild-chat-shaped
+     * Discord presentation when bridge colouring is enabled; otherwise the legacy
+     * Sequoia pill and white text keep an uncoloured bridge message identifiable.
      * <p>
      * A message carrying newlines becomes one chat line per line rather than one line
      * with breaks embedded in it. Minecraft draws an embedded break flush against the
      * left margin, which loses the marker column and detaches the rest of the message
-     * from its sender; separate lines pick up the continuation rail instead.
+     * from its sender; separate lines each receive the appropriate bridge prefix.
      */
     private void displayBridgeMessage(ConnectionManager.DiscordChatMessage msg) {
-        TextColor guildColor = DiscordRankChatDecorator.guildChatColor();
         List<String> lines = splitMessageLines(msg.message());
+        RankPresentation rank = DiscordRankChatDecorator.bridgeRank(msg.username(), msg.discordId());
 
         for (int index = 0; index < lines.size(); index++) {
             MutableComponent line = index == 0
-                    ? bridgeSenderLine(msg, lines.get(index), guildColor)
-                    : bridgeContinuationLine(lines.get(index), guildColor);
-            DiscordRankChatDecorator.displayUndecorated(line, () -> mc.player.displayClientMessage(line, false));
+                    ? bridgeSenderLine(msg, lines.get(index), rank)
+                    : bridgeContinuationLine(lines.get(index), rank != null);
+            DiscordRankChatDecorator.displayUndecorated(
+                    line, () -> mc.player.displayClientMessage(line, false), rank != null);
         }
     }
 
-    private static MutableComponent bridgeSenderLine(
-            ConnectionManager.DiscordChatMessage msg, String text, TextColor guildColor) {
-        RankPresentation rank = DiscordRankChatDecorator.bridgeRank(msg.username(), msg.discordId());
-        TextColor nameColor = rank == null ? guildColor : DiscordRankChatDecorator.colorFor(rank);
+    static MutableComponent bridgeSenderLine(
+            ConnectionManager.DiscordChatMessage msg, String text, RankPresentation rank) {
+        if (rank == null) {
+            return NotificationAccessor.prefixComponent()
+                    .append(Component.literal(msg.username())
+                            .withStyle(style -> style
+                                    .withColor(ChatFormatting.WHITE)
+                                    .withInsertion(msg.username())))
+                    .append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
+                    .append(Component.literal(text).withStyle(ChatFormatting.WHITE));
+        }
 
         MutableComponent line = Component.empty().append(DiscordRankChatDecorator.bridgePrefix());
-        if (rank != null) {
-            line.append(DiscordRankChatDecorator.rankPill(rank, null)).append(Component.literal(" "));
-        }
+        line.append(DiscordRankChatDecorator.rankPill(rank, null)).append(Component.literal(" "));
         // Same shift-click insertion Wynncraft puts on in-game names, so a bridged
         // sender links to their profile just like a guild one.
         line.append(Component.literal(msg.username())
-                .withStyle(style -> style.withColor(nameColor).withInsertion(msg.username())));
+                .withStyle(style -> style
+                        .withColor(DiscordRankChatDecorator.colorFor(rank))
+                        .withInsertion(msg.username())));
         MutableComponent insignia = DiscordRankChatDecorator.bridgeInsignia(msg.username(), msg.discordId());
         if (insignia != null) {
             line.append(insignia);
         }
+        TextColor guildColor = DiscordRankChatDecorator.guildChatColor();
         return line.append(Component.literal(": ").withStyle(style -> style.withColor(guildColor)))
                 .append(Component.literal(text).withStyle(style -> style.withColor(guildColor)));
     }
 
-    private static MutableComponent bridgeContinuationLine(String text, TextColor guildColor) {
+    static MutableComponent bridgeContinuationLine(String text, boolean colored) {
+        if (!colored) {
+            return NotificationAccessor.prefixComponent()
+                    .append(Component.literal(text).withStyle(ChatFormatting.WHITE));
+        }
+        TextColor guildColor = DiscordRankChatDecorator.guildChatColor();
         return Component.empty()
                 .append(DiscordRankChatDecorator.bridgePrefix())
                 .append(Component.literal(text).withStyle(style -> style.withColor(guildColor)));

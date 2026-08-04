@@ -107,6 +107,12 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting showDiscordRanksSetting;
 
     @Getter
+    public static Setting.BooleanSetting showChatInsigniasSetting;
+
+    @Getter
+    public static Setting.BooleanSetting colorDiscordBridgeSetting;
+
+    @Getter
     public static Setting.IntSetting chatLineSpacingSetting;
 
     @Getter
@@ -553,6 +559,10 @@ public class SeqClient implements ClientModInitializer {
         autoConnectSetting = new Setting.BooleanSetting("auto_connect", "network", true);
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
         showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", true);
+        showChatInsigniasSetting = new Setting.BooleanSetting("show_chat_insignias", "chat", false);
+        showChatInsigniasSetting.setVisibilityCondition(showDiscordRanksSetting::getValue);
+        colorDiscordBridgeSetting = new Setting.BooleanSetting("color_discord_bridge", "chat", false);
+        colorDiscordBridgeSetting.setVisibilityCondition(showDiscordRanksSetting::getValue);
         chatLineSpacingSetting = new Setting.IntSetting("chat_line_spacing", "chat", 4, 0, 10);
         // Off by default: shift-click is vanilla's "insert this name into the chat box"
         // gesture, so taking it over is opt-in rather than a surprise.
@@ -601,6 +611,8 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(showDiscordRanksSetting);
+        getConfigManager().register(showChatInsigniasSetting);
+        getConfigManager().register(colorDiscordBridgeSetting);
         getConfigManager().register(chatLineSpacingSetting);
         getConfigManager().register(profileOnShiftClickSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
