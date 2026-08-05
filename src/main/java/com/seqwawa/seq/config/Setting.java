@@ -18,6 +18,11 @@ public abstract class Setting<T> {
     private T value;
     private final T defaultValue;
     private BooleanSupplier visibilityCondition = () -> true;
+    private BooleanSupplier enabledCondition = () -> true;
+    private String displayName;
+    private String description;
+    private String section;
+    private Setting<?> parentSetting;
 
     protected Setting(String name, String category, T defaultValue) {
         this.name = name;
@@ -36,6 +41,62 @@ public abstract class Setting<T> {
 
     public boolean isVisible() {
         return visibilityCondition.getAsBoolean();
+    }
+
+    /** Keeps a setting visible while making its control unavailable. */
+    public void setEnabledCondition(BooleanSupplier enabledCondition) {
+        this.enabledCondition = Objects.requireNonNull(enabledCondition);
+    }
+
+    /**
+     * A parent establishes both visual indentation and an interaction dependency. A
+     * Boolean child is enabled only while its complete parent chain is enabled and on.
+     */
+    public void setParentSetting(Setting<?> parentSetting) {
+        Objects.requireNonNull(parentSetting, "parentSetting");
+        for (Setting<?> cursor = parentSetting; cursor != null; cursor = cursor.parentSetting) {
+            if (cursor == this) {
+                throw new IllegalArgumentException("Setting parent relationships cannot contain a cycle");
+            }
+        }
+        this.parentSetting = parentSetting;
+    }
+
+    public boolean isEnabled() {
+        if (!enabledCondition.getAsBoolean()) {
+            return false;
+        }
+        if (parentSetting == null) {
+            return true;
+        }
+        if (!parentSetting.isEnabled()) {
+            return false;
+        }
+        return !(parentSetting instanceof BooleanSetting parent) || Boolean.TRUE.equals(parent.getValue());
+    }
+
+    /** Number of parent rows this setting should be indented beneath. */
+    public int getIndentLevel() {
+        int depth = 0;
+        for (Setting<?> cursor = parentSetting; cursor != null; cursor = cursor.parentSetting) {
+            depth++;
+        }
+        return depth;
+    }
+
+    /** Human-facing metadata used by the settings screen and search. */
+    public void setPresentation(String displayName, String description, String section) {
+        this.displayName = normalizePresentationText(displayName);
+        this.description = normalizePresentationText(description);
+        this.section = normalizePresentationText(section);
+    }
+
+    private static String normalizePresentationText(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     public abstract JsonElement serialize();

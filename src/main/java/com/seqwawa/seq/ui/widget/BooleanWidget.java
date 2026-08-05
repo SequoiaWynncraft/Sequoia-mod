@@ -14,25 +14,52 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
     private static final float TOGGLE_HEIGHT = 18;
     private static final float KNOB_PADDING = 2;
     private static final float FONT_SIZE = 12;
+    private static final float DESCRIPTION_FONT_SIZE = 10;
 
     public BooleanWidget(Setting.BooleanSetting setting) {
         super(setting);
-        this.height = 28;
+        this.height = hasDescription() ? 42 : 28;
     }
 
     @Override
     public void render(UiCanvas canvas, float mouseX, float mouseY) {
         String fontName = SeqClient.getFontManager().getSelectedFont();
+        boolean enabled = isEnabled();
+        float indent = labelIndent();
+        float labelY = hasDescription() ? y + 12 : y + height / 2f;
 
-        canvas.drawText(getDisplayName(), x + 8, y + height / 2f, textStyle(
-                fontName, color(TEXT_SECONDARY), UiCanvas.HorizontalAlign.LEFT));
+        if (indent > 0) {
+            canvas.fillRect(x + indent - 7, y + 6, 2, height - 12, color(ACCENT_DIVIDER, enabled ? 170 : 80));
+        }
+        canvas.drawText(
+                getDisplayName(),
+                x + 8 + indent,
+                labelY,
+                textStyle(
+                        fontName,
+                        enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                        FONT_SIZE,
+                        UiCanvas.HorizontalAlign.LEFT));
+        if (hasDescription()) {
+            canvas.drawText(
+                    getDescription(),
+                    x + 8 + indent,
+                    y + 29,
+                    textStyle(
+                            fontName,
+                            enabled ? color(TEXT_MUTED) : color(TEXT_DISABLED),
+                            DESCRIPTION_FONT_SIZE,
+                            UiCanvas.HorizontalAlign.LEFT));
+        }
 
         // Toggle
         float toggleX = x + width - TOGGLE_WIDTH - 8;
         float toggleY = y + (height - TOGGLE_HEIGHT) / 2f;
         boolean on = setting.getValue();
 
-        Color bgColor = on ? color(ACCENT_PRIMARY) : color(ACCENT_SECONDARY, 200);
+        Color bgColor = !enabled
+                ? color(CONTROL_INPUT_SECONDARY, 120)
+                : on ? color(ACCENT_PRIMARY) : color(ACCENT_SECONDARY, 200);
         canvas.fillRect(toggleX, toggleY, TOGGLE_WIDTH, TOGGLE_HEIGHT, bgColor);
 
         float knobSize = TOGGLE_HEIGHT - KNOB_PADDING * 2;
@@ -40,18 +67,18 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
                 ? toggleX + TOGGLE_WIDTH - knobSize - KNOB_PADDING
                 : toggleX + KNOB_PADDING;
         float knobY = toggleY + KNOB_PADDING;
-        canvas.fillRect(knobX, knobY, knobSize, knobSize, color(TEXT_PRIMARY));
+        canvas.fillRect(knobX, knobY, knobSize, knobSize, enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED));
     }
 
     private static UiCanvas.TextStyle textStyle(
-            String font, Color color, UiCanvas.HorizontalAlign horizontalAlign) {
+            String font, Color color, float size, UiCanvas.HorizontalAlign horizontalAlign) {
         return new UiCanvas.TextStyle(
-                font, FONT_SIZE, color, horizontalAlign, UiCanvas.VerticalAlign.MIDDLE);
+                font, size, color, horizontalAlign, UiCanvas.VerticalAlign.MIDDLE);
     }
 
     @Override
     public boolean mouseClicked(float mouseX, float mouseY, int button) {
-        if (button == 0 && isHovered(mouseX, mouseY, x, y, width, height)) {
+        if (isEnabled() && button == 0 && isHovered(mouseX, mouseY, x, y, width, height)) {
             setting.setValue(!setting.getValue());
             return true;
         }

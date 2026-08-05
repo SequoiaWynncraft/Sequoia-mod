@@ -52,7 +52,7 @@ public record RankProfilesResponse(
             @SerializedName("role_keys") List<String> roleKeys,
             @SerializedName("award_keys") List<String> awardKeys,
             Summary summary,
-            RoleColors colors) {
+            @SerializedName(value = "display_colors", alternate = {"colors"}) RoleColors displayColors) {
 
         public Profile(MinecraftIdentity minecraft, List<String> roleKeys, List<String> awardKeys) {
             this(null, minecraft, roleKeys, awardKeys, null, null);

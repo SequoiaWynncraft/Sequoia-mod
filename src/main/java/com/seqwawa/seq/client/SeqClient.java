@@ -107,7 +107,22 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting showDiscordRanksSetting;
 
     @Getter
-    public static Setting.IntSetting chatLineSpacingSetting;
+    public static Setting.BooleanSetting showChatInsigniasSetting;
+
+    @Getter
+    public static Setting.BooleanSetting colorDiscordBridgeSetting;
+
+    @Getter
+    public static Setting.BooleanSetting showRankGradientsSetting;
+
+    @Getter
+    public static Setting.BooleanSetting animateRankGradientsSetting;
+
+    @Getter
+    public static Setting.BooleanSetting animateUsernameGradientsSetting;
+
+    @Getter
+    public static Setting.IntSetting visibleChatLinesSetting;
 
     @Getter
     public static Setting.BooleanSetting profileOnShiftClickSetting;
@@ -553,10 +568,57 @@ public class SeqClient implements ClientModInitializer {
         autoConnectSetting = new Setting.BooleanSetting("auto_connect", "network", true);
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
         showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", true);
-        chatLineSpacingSetting = new Setting.IntSetting("chat_line_spacing", "chat", 4, 0, 10);
+        showChatInsigniasSetting = new Setting.BooleanSetting("show_chat_insignias", "chat", false);
+        colorDiscordBridgeSetting = new Setting.BooleanSetting("color_discord_bridge", "chat", true);
+        showRankGradientsSetting = new Setting.BooleanSetting("show_rank_gradients", "chat", true);
+        // Off by default: moving colour draws the eye away from what is being said, and
+        // a still gradient is what a Discord role looks like everywhere else.
+        animateRankGradientsSetting = new Setting.BooleanSetting("animate_rank_gradients", "chat", false);
+        animateUsernameGradientsSetting =
+                new Setting.BooleanSetting("animate_username_gradients", "chat", false);
+        visibleChatLinesSetting = new Setting.IntSetting("visible_chat_lines", "chat", 12, 5, 20);
         // Off by default: shift-click is vanilla's "insert this name into the chat box"
         // gesture, so taking it over is opt-in rather than a surprise.
         profileOnShiftClickSetting = new Setting.BooleanSetting("profile_on_shift_click", "chat", false);
+
+        showDiscordChatSetting.setPresentation(
+                "Show Discord chat", "Display messages forwarded from the Sequoia Discord.", "Discord chat");
+        colorDiscordBridgeSetting.setPresentation(
+                "Style Discord messages like guild chat",
+                "Use rank badges, Discord colors and the guild-chat message style.",
+                "Discord chat");
+        colorDiscordBridgeSetting.setParentSetting(showDiscordChatSetting);
+        colorDiscordBridgeSetting.setEnabledCondition(showDiscordRanksSetting::getValue);
+
+        showDiscordRanksSetting.setPresentation(
+                "Show Discord ranks and colors",
+                "Replace Wynncraft guild ranks with each member's Sequoia Discord rank.",
+                "Discord ranks and colors");
+        showRankGradientsSetting.setPresentation(
+                "Use Discord gradients",
+                "Show complete gradient and holographic role palettes instead of only their primary color.",
+                "Discord ranks and colors");
+        showRankGradientsSetting.setParentSetting(showDiscordRanksSetting);
+        animateRankGradientsSetting.setPresentation(
+                "Animate rank badges",
+                "Move gradient colors across rank badges while chat is rendered.",
+                "Discord ranks and colors");
+        animateRankGradientsSetting.setParentSetting(showRankGradientsSetting);
+        animateUsernameGradientsSetting.setPresentation(
+                "Animate usernames",
+                "Move gradient colors across player and Discord bridge names independently of badges.",
+                "Discord ranks and colors");
+        animateUsernameGradientsSetting.setParentSetting(showRankGradientsSetting);
+        showChatInsigniasSetting.setPresentation(
+                "Show insignias", "Display a member's Sequoia insignia beside their chat name.", "Discord ranks and colors");
+        showChatInsigniasSetting.setParentSetting(showDiscordRanksSetting);
+
+        visibleChatLinesSetting.setPresentation(
+                "Visible chat lines", null, "Chat behavior");
+        profileOnShiftClickSetting.setPresentation(
+                "Open Sequoia profile on shift-click",
+                "Opens the Sequoia website player profile.",
+                "Chat behavior");
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
         radianceCheckerSetting = new Setting.BooleanSetting("enable_radiance_visualiser", "raids", true);
         radianceMarkerColorSetting = new Setting.ColorSetting("radiance_marker_color", "raids", 0xFF0000);
@@ -600,8 +662,13 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.BooleanSetting("notify_tracked_world_events", "world_events", false);
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
+        getConfigManager().register(colorDiscordBridgeSetting);
         getConfigManager().register(showDiscordRanksSetting);
-        getConfigManager().register(chatLineSpacingSetting);
+        getConfigManager().register(showRankGradientsSetting);
+        getConfigManager().register(animateRankGradientsSetting);
+        getConfigManager().register(animateUsernameGradientsSetting);
+        getConfigManager().register(showChatInsigniasSetting);
+        getConfigManager().register(visibleChatLinesSetting);
         getConfigManager().register(profileOnShiftClickSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
         getConfigManager().register(trackGuildWarsSetting);

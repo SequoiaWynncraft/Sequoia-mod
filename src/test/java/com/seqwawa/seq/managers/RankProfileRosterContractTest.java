@@ -13,6 +13,7 @@ import com.seqwawa.seq.model.SeqBadgeType;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -65,6 +66,29 @@ class RankProfileRosterContractTest {
         assertFalse(colors.get("rank.sapling").isGradient(), "a solid role stays solid");
         assertTrue(colors.get("rank.yggdrasil").isGradient(), "a two-stop role reads as a gradient");
         assertNull(colors.get("rank.upper_strategist"), "an uncoloured role gets no ramp");
+    }
+
+    @Test
+    void readsProfileDisplayColorsUnderEveryKnownIdentity() {
+        DiscordRankService.Index index = DiscordRankService.parseProfiles(roster());
+
+        for (String identity : new String[] {
+            "336de99f-2ee1-c996-9656-d265a1812516",
+            "alphaplayer",
+            "900000000000000101",
+            "yggdrasil alphaplayer"
+        }) {
+            assertEquals(
+                    List.of(0x112233, 0x445566, 0x778899),
+                    index.colorsByIdentity().get(identity).stops(),
+                    identity);
+        }
+
+        DiscordRankService service = DiscordRankService.withIndex(index);
+        assertEquals(
+                List.of(0x4CB4FA),
+                service.presentationForMinecraftUsername("BetaPlayer").colors().stops(),
+                "an absent display_colors field falls back to the progression catalog");
     }
 
     @Test

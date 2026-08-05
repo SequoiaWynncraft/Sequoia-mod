@@ -11,12 +11,12 @@ import net.minecraft.network.chat.TextColor;
 import org.jetbrains.annotations.NotNull;
 
 import com.seqwawa.seq.utils.ColorRamp;
+import com.seqwawa.seq.utils.RankGradientAnimation;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
 
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.function.IntFunction;
-import java.util.function.UnaryOperator;
 
 public interface NotificationAccessor {
 
@@ -62,17 +62,23 @@ public interface NotificationAccessor {
     /**
      * Pill whose background runs through {@code ramp} across its glyphs, so a Discord
      * gradient role reads as a gradient rather than as its primary colour alone.
-     * {@code labelColor} maps each glyph's background to the colour its letter is
-     * drawn in, because legibility depends on the background under that glyph.
+     * <p>
+     * Only the background is graded. The label keeps {@code labelColor} for the whole
+     * pill: letters that shifted hue from one to the next read as a rendering fault
+     * rather than as a gradient.
+     * <p>
+     * The background colours are minted through {@link RankGradientAnimation} so a
+     * gradient role can be scrolled at render time; they are the same colours either
+     * way while the animation setting is off.
      */
     static @NotNull MutableComponent wynnPill(
             String label,
             ColorRamp ramp,
-            UnaryOperator<TextColor> labelColor,
+            TextColor labelColor,
             ClickEvent clickEvent) {
         IntFunction<TextColor> backgroundAt =
-                index -> TextColor.fromRgb(ramp.sample(gradientPosition(index, label.length())));
-        return wynnPill(label, backgroundAt, index -> labelColor.apply(backgroundAt.apply(index)), clickEvent);
+                index -> RankGradientAnimation.colorAt(ramp, gradientPosition(index, label.length()));
+        return wynnPill(label, backgroundAt, index -> labelColor, clickEvent);
     }
 
     /**
@@ -93,9 +99,16 @@ public interface NotificationAccessor {
         pill.append(styledPillPart(PILL_CORNER_LEFT, backgroundAt.apply(0), clickEvent));
 
         for (int i = 0; i < label.length(); i++) {
-            String glyph = toWynncraftGlyph(label.charAt(i));
+            char rawChar = label.charAt(i);
             pill.append(styledPillPart(PILL_BG_BACK, backgroundAt.apply(i), clickEvent));
-            pill.append(labelPillPart(PILL_BG_FRONT + glyph, labelAt.apply(i), clickEvent));
+            // A character with no glyph, such as the space in "Upper Strategist", gets
+            // the background block on its own. Drawing a plain character on top instead
+            // would advance by a different amount than the block it sits on and push the
+            // rest of the label off its background; a bare block reads as a gap, which
+            // is what a space in a pill should look like anyway.
+            if (WynnPillGlyphs.hasGlyph(rawChar)) {
+                pill.append(labelPillPart(PILL_BG_FRONT + toWynncraftGlyph(rawChar), labelAt.apply(i), clickEvent));
+            }
         }
 
         pill.append(styledPillPart(PILL_CORNER_RIGHT, backgroundAt.apply(lastIndex), clickEvent));

@@ -32,19 +32,23 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
     private final double max;
     private final double increment;
     private final boolean isInteger;
-    private final boolean compact;
+    private final float sliderWidthRatio;
 
     public SliderWidget(Setting.IntSetting setting) {
         this(setting, false);
     }
 
     public SliderWidget(Setting.IntSetting setting, boolean compact) {
+        this(setting, compact ? COMPACT_SLIDER_WIDTH_RATIO : 1f);
+    }
+
+    public SliderWidget(Setting.IntSetting setting, float sliderWidthRatio) {
         super(setting);
         this.min = setting.getMin();
         this.max = setting.getMax();
         this.increment = setting.getIncrement();
         this.isInteger = true;
-        this.compact = compact;
+        this.sliderWidthRatio = Math.max(0f, Math.min(1f, sliderWidthRatio));
         this.height = 40;
     }
 
@@ -54,7 +58,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         this.max = setting.getMax();
         this.increment = setting.getIncrement();
         this.isInteger = false;
-        this.compact = false;
+        this.sliderWidthRatio = 1f;
         this.height = 40;
     }
 
@@ -64,7 +68,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         this.max = setting.getMax();
         this.increment = setting.getIncrement();
         this.isInteger = false;
-        this.compact = false;
+        this.sliderWidthRatio = 1f;
         this.height = 40;
     }
 
@@ -229,8 +233,8 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
     private SliderLayout layout() {
         float sliderX = x + 8;
         float fullSliderWidth = Math.max(1, width - TEXT_BOX_WIDTH - 24);
-        float sliderWidth = compact ? fullSliderWidth * COMPACT_SLIDER_WIDTH_RATIO : fullSliderWidth;
-        float textBoxX = compact
+        float sliderWidth = fullSliderWidth * sliderWidthRatio;
+        float textBoxX = sliderWidthRatio < 1f
                 ? sliderX + sliderWidth + CONTROL_GAP
                 : x + width - TEXT_BOX_WIDTH - 8;
         return new SliderLayout(

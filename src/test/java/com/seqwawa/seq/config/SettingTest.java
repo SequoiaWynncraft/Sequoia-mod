@@ -7,9 +7,45 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SettingTest {
+
+    @Test
+    void presentationMetadataAndParentDepthDescribeGroupedSettings() {
+        Setting.BooleanSetting parent = new Setting.BooleanSetting("parent", "chat", true);
+        Setting.BooleanSetting child = new Setting.BooleanSetting("child", "chat", false);
+        Setting.BooleanSetting grandchild = new Setting.BooleanSetting("grandchild", "chat", false);
+        child.setPresentation("Child control", "Explains the control", "Discord ranks and colors");
+        child.setParentSetting(parent);
+        grandchild.setParentSetting(child);
+
+        assertEquals("Child control", child.getDisplayName());
+        assertEquals("Explains the control", child.getDescription());
+        assertEquals("Discord ranks and colors", child.getSection());
+        assertEquals(1, child.getIndentLevel());
+        assertEquals(2, grandchild.getIndentLevel());
+        assertTrue(child.isEnabled());
+        assertFalse(grandchild.isEnabled(), "its direct Boolean parent is off");
+
+        child.setValue(true);
+        assertTrue(grandchild.isEnabled());
+        parent.setValue(false);
+        assertFalse(child.isEnabled());
+        assertFalse(grandchild.isEnabled(), "disabled state propagates through the parent chain");
+    }
+
+    @Test
+    void explicitEnabledConditionComposesWithAParentAndCyclesAreRejected() {
+        Setting.BooleanSetting parent = new Setting.BooleanSetting("parent", "chat", true);
+        Setting.BooleanSetting child = new Setting.BooleanSetting("child", "chat", false);
+        child.setParentSetting(parent);
+        child.setEnabledCondition(() -> false);
+
+        assertFalse(child.isEnabled());
+        assertThrows(IllegalArgumentException.class, () -> parent.setParentSetting(child));
+    }
 
     @Test
     void choiceSettingAcceptsKnownOptionsAndAppliesChanges() {

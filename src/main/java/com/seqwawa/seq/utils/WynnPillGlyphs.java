@@ -40,6 +40,18 @@ public final class WynnPillGlyphs {
     private static final char PRIVATE_USE_FIRST = '\uE000';
     private static final char PRIVATE_USE_LAST = '\uF8FF';
 
+    /**
+     * Tail of that block reserved for glyphs this mod draws itself: the Discord bridge
+     * marker and its continuation bar, the insignia, and the advance spacers (see
+     * {@code assets/seq/font}).
+     * <p>
+     * They are private-use characters exactly like Wynncraft's, so without carving them
+     * out the decorator cannot tell its own output from a server badge, and replaces
+     * one with the other. Wynncraft's own glyphs all sit far below this range.
+     */
+    public static final char MOD_GLYPH_FIRST = '\uF8E0';
+    public static final char MOD_GLYPH_LAST = '\uF8FE';
+
     /** Shortest label worth treating as a badge, to skip decorative glyph runs. */
     private static final int MIN_LABEL_LENGTH = 2;
 
@@ -118,6 +130,17 @@ public final class WynnPillGlyphs {
     }
 
     /**
+     * True when Wynncraft's pill font has a glyph for {@code rawChar}, i.e. when it is
+     * a letter or a digit. Anything else has no glyph and must not be drawn on top of a
+     * background block: the block and the character advance by different amounts, which
+     * shifts the whole rest of the pill off its background.
+     */
+    public static boolean hasGlyph(char rawChar) {
+        char lowered = Character.toLowerCase(rawChar);
+        return (lowered >= 'a' && lowered <= 'z') || (lowered >= '0' && lowered <= '9');
+    }
+
+    /**
      * Maps a plain character to its pill glyph, or leaves it as-is when Wynncraft's
      * font has no glyph for it.
      */
@@ -140,7 +163,11 @@ public final class WynnPillGlyphs {
     public static String encodePlainPill(String label) {
         StringBuilder pill = new StringBuilder().append(CORNER_LEFT).append(SEPARATOR);
         for (int index = 0; index < label.length(); index++) {
-            pill.append(BACKGROUND).append(TEXT_OFFSET).append(encodeGlyph(label.charAt(index)));
+            char rawChar = label.charAt(index);
+            pill.append(BACKGROUND);
+            if (hasGlyph(rawChar)) {
+                pill.append(TEXT_OFFSET).append(encodeGlyph(rawChar));
+            }
         }
         return pill.append(CORNER_RIGHT).append(SEPARATOR).toString();
     }
@@ -161,7 +188,12 @@ public final class WynnPillGlyphs {
     }
 
     private static boolean isPrivateUse(char glyph) {
-        return glyph >= PRIVATE_USE_FIRST && glyph <= PRIVATE_USE_LAST;
+        return glyph >= PRIVATE_USE_FIRST && glyph <= PRIVATE_USE_LAST && !isModGlyph(glyph);
+    }
+
+    /** True for a glyph this mod draws itself, which is never part of a server badge. */
+    public static boolean isModGlyph(char glyph) {
+        return glyph >= MOD_GLYPH_FIRST && glyph <= MOD_GLYPH_LAST;
     }
 
     private static boolean isPadding(char glyph) {

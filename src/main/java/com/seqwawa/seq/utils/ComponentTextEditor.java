@@ -2,6 +2,7 @@ package com.seqwawa.seq.utils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiFunction;
 import java.util.function.UnaryOperator;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -113,6 +114,79 @@ public final class ComponentTextEditor {
             addIfPresent(restyled, text.substring(localEnd), fragment.style());
         }
         return List.copyOf(restyled);
+    }
+
+    /**
+     * Applies a position-dependent style across {@code [start, endExclusive)}. The
+     * position runs from {@code 0} on the first code point to {@code 1} on the last,
+     * which lets callers paint a gradient without breaking surrogate pairs.
+     * <p>
+     * Every code point in the range becomes its own fragment because Minecraft gives a
+     * component leaf only one colour. Styling outside the range, and styling other than
+     * what {@code styleMapper} changes, is preserved.
+     */
+    public static List<Fragment> restyleRangeByPosition(
+            List<Fragment> fragments,
+            int start,
+            int endExclusive,
+            BiFunction<Style, Double, Style> styleMapper) {
+        if (fragments == null || styleMapper == null || start < 0 || endExclusive <= start) {
+            return fragments;
+        }
+
+        int codePointCount = codePointCount(fragments, start, endExclusive);
+        if (codePointCount == 0) {
+            return fragments;
+        }
+
+        List<Fragment> restyled = new ArrayList<>();
+        int cursor = 0;
+        int styledIndex = 0;
+        for (Fragment fragment : fragments) {
+            int fragmentStart = cursor;
+            int fragmentEnd = cursor + fragment.text().length();
+            cursor = fragmentEnd;
+
+            if (fragmentEnd <= start || fragmentStart >= endExclusive) {
+                restyled.add(fragment);
+                continue;
+            }
+
+            String text = fragment.text();
+            int localStart = Math.max(0, start - fragmentStart);
+            int localEnd = Math.min(text.length(), endExclusive - fragmentStart);
+            addIfPresent(restyled, text.substring(0, localStart), fragment.style());
+
+            for (int offset = localStart; offset < localEnd; ) {
+                int codePoint = text.codePointAt(offset);
+                int width = Character.charCount(codePoint);
+                double position = codePointCount <= 1 ? 0d : (double) styledIndex / (codePointCount - 1);
+                restyled.add(new Fragment(
+                        new String(Character.toChars(codePoint)), styleMapper.apply(fragment.style(), position)));
+                offset += width;
+                styledIndex++;
+            }
+
+            addIfPresent(restyled, text.substring(localEnd), fragment.style());
+        }
+        return List.copyOf(restyled);
+    }
+
+    private static int codePointCount(List<Fragment> fragments, int start, int endExclusive) {
+        int count = 0;
+        int cursor = 0;
+        for (Fragment fragment : fragments) {
+            int fragmentStart = cursor;
+            int fragmentEnd = cursor + fragment.text().length();
+            cursor = fragmentEnd;
+            if (fragmentEnd <= start || fragmentStart >= endExclusive) {
+                continue;
+            }
+            int localStart = Math.max(0, start - fragmentStart);
+            int localEnd = Math.min(fragment.text().length(), endExclusive - fragmentStart);
+            count += fragment.text().codePointCount(localStart, localEnd);
+        }
+        return count;
     }
 
     /**

@@ -6,10 +6,18 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.model.DiscordRank;
+import com.seqwawa.seq.model.RankPresentation;
+import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.utils.ColorRamp;
+import com.seqwawa.seq.utils.ComponentTextEditor;
+import com.seqwawa.seq.utils.WynnPillGlyphs;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
 
@@ -296,5 +304,75 @@ class ChatManagerTest {
                 .append(Component.literal("The Nameless Anomaly").withStyle(ChatFormatting.AQUA));
 
         assertFalse(ChatManager.hasLeadingGuildChatColor(message));
+    }
+
+    @Test
+    void splitsABridgedMessageIntoOneLinePerNewline() {
+        // Minecraft draws an embedded break flush against the left margin, which loses
+        // the marker column, so each line is displayed on its own instead.
+        assertEquals(
+                List.of("multi", "line", "message?"),
+                ChatManager.splitMessageLines("multi\nline\nmessage?"));
+        assertEquals(List.of("a", "b"), ChatManager.splitMessageLines("a\r\nb"));
+    }
+
+    @Test
+    void dropsTrailingBlankLinesButKeepsInnerOnes() {
+        // A rail drawn under nothing looks like a rendering fault; a deliberate blank
+        // line inside a message does not.
+        assertEquals(List.of("only"), ChatManager.splitMessageLines("only\n\n"));
+        assertEquals(List.of("top", "", "bottom"), ChatManager.splitMessageLines("top\n\nbottom"));
+        assertEquals(List.of(""), ChatManager.splitMessageLines(""));
+        assertEquals(List.of(""), ChatManager.splitMessageLines(null));
+    }
+
+    @Test
+    void uncolouredBridgeMessageUsesLegacySequoiaPillAndWhiteText() {
+        MutableComponent line = ChatManager.bridgeSenderLine(
+                new ConnectionManager.DiscordChatMessage("MrHmar", "hello", "215820027700576258"),
+                "hello",
+                null);
+
+        assertEquals("sequoia", WynnPillGlyphs.findPills(line.getString()).getFirst().label());
+        assertFragmentColor(line, "MrHmar", ChatFormatting.WHITE);
+        assertFragmentColor(line, ": ", ChatFormatting.GRAY);
+        assertFragmentColor(line, "hello", ChatFormatting.WHITE);
+    }
+
+    @Test
+    void colouredBridgeSenderUsesTheCompleteAnimatedGradientRamp() {
+        RankPresentation gradient = new RankPresentation(
+                new DiscordRank("rank.yggdrasil", "Yggdrasil", 120),
+                ColorRamp.of(List.of(0x123456, 0xFFFFFF)));
+
+        MutableComponent line = ChatManager.bridgeSenderLine(
+                new ConnectionManager.DiscordChatMessage("Name", "hello", "215820027700576258"),
+                "hello",
+                gradient);
+        List<ComponentTextEditor.Fragment> name = ComponentTextEditor.flatten(line).stream()
+                .filter(fragment -> "Name".equals(fragment.style().getInsertion()))
+                .toList();
+
+        assertEquals("Name", name.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
+        assertEquals(0x123456, name.getFirst().style().getColor().getValue());
+        assertEquals(0xFFFFFF, name.getLast().style().getColor().getValue());
+    }
+
+    @Test
+    void uncolouredBridgeContinuationKeepsLegacyPillAndWhiteText() {
+        MutableComponent line = ChatManager.bridgeContinuationLine("continued", false);
+
+        assertEquals("sequoia", WynnPillGlyphs.findPills(line.getString()).getFirst().label());
+        assertFragmentColor(line, "continued", ChatFormatting.WHITE);
+    }
+
+    private static void assertFragmentColor(Component component, String text, ChatFormatting expected) {
+        Style style = ComponentTextEditor.flatten(component).stream()
+                .filter(fragment -> fragment.text().equals(text))
+                .findFirst()
+                .orElseThrow()
+                .style();
+        assertNotNull(style.getColor());
+        assertEquals(expected.getColor(), style.getColor().getValue());
     }
 }

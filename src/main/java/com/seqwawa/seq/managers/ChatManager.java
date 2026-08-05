@@ -21,6 +21,7 @@ import com.seqwawa.seq.utils.PacketTextNormalizer;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -701,34 +702,7 @@ public class ChatManager {
 
             mc.execute(() -> {
                 if (mc.player != null) {
-                    // Mirrors in-game guild chat: a channel marker, rank badge, sender
-                    // in their rank colour, then the message in Wynncraft's guild aqua.
-                    // Consecutive bridge lines share a vertical rail instead of
-                    // repeating the Discord marker.
-                    RankPresentation rank = DiscordRankChatDecorator.bridgeRank(msg.username(), msg.discordId());
-                    TextColor guildColor = DiscordRankChatDecorator.guildChatColor();
-                    TextColor nameColor = rank == null ? guildColor : DiscordRankChatDecorator.colorFor(rank);
-
-                    MutableComponent formatted = Component.empty().append(DiscordRankChatDecorator.bridgePrefix());
-                    if (rank != null) {
-                        formatted.append(DiscordRankChatDecorator.rankPill(rank, null))
-                                .append(Component.literal(" "));
-                    }
-                    // Same shift-click insertion Wynncraft puts on in-game names, so a
-                    // bridged sender links to their profile just like a guild one.
-                    formatted.append(Component.literal(msg.username())
-                            .withStyle(style -> style.withColor(nameColor).withInsertion(msg.username())));
-                    MutableComponent insignia =
-                            DiscordRankChatDecorator.bridgeInsignia(msg.username(), msg.discordId());
-                    if (insignia != null) {
-                        formatted.append(insignia);
-                    }
-                    formatted.append(Component.literal(": ").withStyle(style -> style.withColor(guildColor)))
-                            .append(Component.literal(msg.message()).withStyle(style -> style.withColor(guildColor)));
-
-                    MutableComponent line = formatted;
-                    DiscordRankChatDecorator.displayUndecorated(
-                            line, () -> mc.player.displayClientMessage(line, false));
+                    displayBridgeMessage(msg);
                 }
 
                 if (SeqClient.getEventBus() != null) {
@@ -736,6 +710,82 @@ public class ChatManager {
                 }
             });
         });
+    }
+
+    /**
+     * Renders a bridged Discord message. Ranked senders use the guild-chat-shaped
+     * Discord presentation when bridge colouring is enabled; otherwise the legacy
+     * Sequoia pill and white text keep an uncoloured bridge message identifiable.
+     * <p>
+     * A message carrying newlines becomes one chat line per line rather than one line
+     * with breaks embedded in it. Minecraft draws an embedded break flush against the
+     * left margin, which loses the marker column and detaches the rest of the message
+     * from its sender; separate lines each receive the appropriate bridge prefix.
+     */
+    private void displayBridgeMessage(ConnectionManager.DiscordChatMessage msg) {
+        List<String> lines = splitMessageLines(msg.message());
+        RankPresentation rank = DiscordRankChatDecorator.bridgeRank(msg.username(), msg.discordId());
+
+        for (int index = 0; index < lines.size(); index++) {
+            MutableComponent line = index == 0
+                    ? bridgeSenderLine(msg, lines.get(index), rank)
+                    : bridgeContinuationLine(lines.get(index), rank != null);
+            DiscordRankChatDecorator.displayUndecorated(
+                    line, () -> mc.player.displayClientMessage(line, false), rank != null);
+        }
+    }
+
+    static MutableComponent bridgeSenderLine(
+            ConnectionManager.DiscordChatMessage msg, String text, RankPresentation rank) {
+        if (rank == null) {
+            return NotificationAccessor.prefixComponent()
+                    .append(Component.literal(msg.username())
+                            .withStyle(style -> style
+                                    .withColor(ChatFormatting.WHITE)
+                                    .withInsertion(msg.username())))
+                    .append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
+                    .append(Component.literal(text).withStyle(ChatFormatting.WHITE));
+        }
+
+        MutableComponent line = Component.empty().append(DiscordRankChatDecorator.bridgePrefix());
+        line.append(DiscordRankChatDecorator.rankPill(rank, null)).append(Component.literal(" "));
+        // Same shift-click insertion Wynncraft puts on in-game names, so a bridged
+        // sender links to their profile just like a guild one.
+        line.append(DiscordRankChatDecorator.colouredName(
+                msg.username(), rank, Style.EMPTY.withInsertion(msg.username())));
+        MutableComponent insignia = DiscordRankChatDecorator.bridgeInsignia(msg.username(), msg.discordId());
+        if (insignia != null) {
+            line.append(insignia);
+        }
+        TextColor guildColor = DiscordRankChatDecorator.guildChatColor();
+        return line.append(Component.literal(": ").withStyle(style -> style.withColor(guildColor)))
+                .append(Component.literal(text).withStyle(style -> style.withColor(guildColor)));
+    }
+
+    static MutableComponent bridgeContinuationLine(String text, boolean colored) {
+        if (!colored) {
+            return NotificationAccessor.prefixComponent()
+                    .append(Component.literal(text).withStyle(ChatFormatting.WHITE));
+        }
+        TextColor guildColor = DiscordRankChatDecorator.guildChatColor();
+        return Component.empty()
+                .append(DiscordRankChatDecorator.bridgePrefix())
+                .append(Component.literal(text).withStyle(style -> style.withColor(guildColor)));
+    }
+
+    /**
+     * Splits a bridged message on any newline, dropping trailing blank lines: Discord
+     * messages often end with one, and it would draw a rail under nothing.
+     */
+    static List<String> splitMessageLines(String message) {
+        if (message == null || message.isEmpty()) {
+            return List.of("");
+        }
+        List<String> lines = new ArrayList<>(Arrays.asList(message.split("\\R", -1)));
+        while (lines.size() > 1 && lines.getLast().isBlank()) {
+            lines.removeLast();
+        }
+        return List.copyOf(lines);
     }
 
     record ParsedMessage(

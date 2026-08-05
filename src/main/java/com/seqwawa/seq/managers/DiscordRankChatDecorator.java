@@ -7,7 +7,9 @@ import com.seqwawa.seq.model.SeqBadgeTier;
 import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
+import com.seqwawa.seq.utils.RankGradientAnimation;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
+import java.util.ArrayDeque;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -51,20 +53,17 @@ public final class DiscordRankChatDecorator {
     private static final TextColor FALLBACK_RANK_COLOR = TextColor.fromLegacyFormat(ChatFormatting.DARK_GREEN);
 
     /**
-     * Pill labels are muted greys rather than pure black or white, which read as
-     * harsh next to Wynncraft's chat. A little of the background bleeds through so
-     * each label sits with its own pill instead of looking pasted on.
+     * The one colour every pill label is drawn in.
+     * <p>
+     * Labels used to be tinted with their own pill's colour and flipped between a light
+     * and a dark grey depending on it, which left the palest and the most saturated
+     * roles with a label barely separable from its background, and made one rank read
+     * differently from one member to the next. A single dark tone, untinted, holds its
+     * contrast across the pastels and mid brights Discord roles are actually set to.
+     * It is deliberately short of pure black, which looks like a hole punched in the
+     * pill at chat's glyph size.
      */
-    private static final int LIGHT_LABEL_GREY = 0xDCDCDC;
-    private static final int DARK_LABEL_GREY = 0x2B2B2B;
-    private static final double LABEL_GREY_WEIGHT = 0.82d;
-
-    /**
-     * Relative luminance above which a rank colour counts as light and needs dark
-     * pill text. Discord role colours are often pastel, so a light label alone would
-     * be unreadable on them.
-     */
-    private static final double LIGHT_BACKGROUND_LUMINANCE = 0.55d;
+    private static final TextColor PILL_LABEL_COLOR = TextColor.fromRgb(0x1F2126);
 
     /** Aqua Wynncraft uses for guild chat; see {@code ChatManager}. */
     private static final int GUILD_CHAT_COLOR = 0x55FFFF;
@@ -104,12 +103,20 @@ public final class DiscordRankChatDecorator {
     /** Wynntils renders nicked players as {@code Nickname(RealUsername)}. */
     private static final Pattern NICKNAME_WITH_USERNAME_PATTERN =
             Pattern.compile("\\(([a-zA-Z0-9_]{3,16})\\)\\s*$");
+    /** The bracket-free variant, {@code username/nickname}. */
+    private static final Pattern SLASH_SEPARATED_NAMES_PATTERN =
+            Pattern.compile("([a-zA-Z0-9_]{3,16})\\s*/\\s*([a-zA-Z0-9_]{3,16})");
 
     private static volatile boolean debug;
     private static boolean suppressed;
     private static boolean bridgeSequenceOpen;
     /** The last line this mod displayed itself, kept so it can be recognised by identity. */
     private static Component lastBridgeLine;
+    /** Bridge components and their exact styled rail while Minecraft may still rewrap them. */
+    private static final ArrayDeque<ColoredBridgeLine> RECENT_COLORED_BRIDGE_LINES = new ArrayDeque<>();
+    private static final int MAX_REMEMBERED_BRIDGE_LINES = 128;
+
+    private record ColoredBridgeLine(Component message, Component continuationPrefix) {}
 
     private DiscordRankChatDecorator() {}
 
@@ -221,15 +228,14 @@ public final class DiscordRankChatDecorator {
         GuildChatMarkers.observe(fragments, start);
         int end = decorationEnd(text, badge.endExclusive(), colonIndex);
 
-        TextColor rankColor = colorFor(rank);
         int nameEnd = speakerNameEnd(fragments, text, end, colonIndex, speaker.username());
         // The resolved username is stamped on as the shift-click insertion too: names
         // are matched from the displayed "Nick(Username)" text rather than from an
         // insertion, so one is not guaranteed to be there, and where Wynncraft does set
         // it a nicked player's carries the nickname rather than the account.
         String speakerName = speaker.username();
-        List<ComponentTextEditor.Fragment> recoloured = ComponentTextEditor.restyleRange(
-                fragments, end, nameEnd, style -> style.withColor(rankColor).withInsertion(speakerName));
+        List<ComponentTextEditor.Fragment> recoloured = recolourName(
+                fragments, end, nameEnd, rank, speakerName);
 
         // The pill keeps the default font on purpose: Wynncraft's badge uses a font of
         // its own in which these glyphs mean nothing, so inheriting it collapses the
@@ -272,6 +278,13 @@ public final class DiscordRankChatDecorator {
         int legacyCode = region.indexOf(LEGACY_FORMATTING_PREFIX);
         if (legacyCode >= 0) {
             return nameStart + legacyCode;
+        }
+
+        // In the "username/nickname" form the separator is the only boundary there is:
+        // both halves are plain names, so nothing else says where one ends.
+        int slash = region.indexOf('/');
+        if (slash >= 0) {
+            return nameStart + slash;
         }
 
         int cursor = 0;
@@ -381,8 +394,14 @@ public final class DiscordRankChatDecorator {
      * {@link PacketTextNormalizer}: the badge and icon glyphs are spread across
      * private-use <em>and</em> unassigned codepoints, and missing the unassigned ones
      * cuts the walk short, leaving the old pill showing behind the new one.
+     * <p>
+     * Glyphs this mod draws are excluded. They are private use too, so counting them
+     * would let the walk swallow a marker or an insignia this very class had put there.
      */
     private static boolean isDecoration(int codePoint) {
+        if (codePoint <= Character.MAX_VALUE && WynnPillGlyphs.isModGlyph((char) codePoint)) {
+            return false;
+        }
         return switch (Character.getType(codePoint)) {
             case Character.CONTROL,
                     Character.FORMAT,
@@ -469,6 +488,7 @@ public final class DiscordRankChatDecorator {
         if (nicknameMatcher.find()) {
             candidates.add(nicknameMatcher.group(1));
         }
+        addSlashSeparatedCandidates(candidates, displayedName);
         addUsernameCandidate(candidates, displayedName);
         addUsernameCandidate(candidates, NicknameResolverCache.resolveUsername(displayedName));
 
@@ -486,6 +506,23 @@ public final class DiscordRankChatDecorator {
         return candidates;
     }
 
+    /**
+     * Offers both halves of a {@code username/nickname} name, the format add-ons use to
+     * show a nicked player without brackets.
+     * <p>
+     * Both sides are offered rather than picking one, because which half is the account
+     * name depends on the add-on and its settings. The roster decides: whichever half
+     * resolves to a member is the speaker, and a nickname that matches nobody costs
+     * only a failed lookup.
+     */
+    private static void addSlashSeparatedCandidates(Set<String> candidates, String displayedName) {
+        Matcher matcher = SLASH_SEPARATED_NAMES_PATTERN.matcher(displayedName);
+        if (matcher.find()) {
+            addUsernameCandidate(candidates, matcher.group(1));
+            addUsernameCandidate(candidates, matcher.group(2));
+        }
+    }
+
     private static void addUsernameCandidate(Set<String> candidates, String candidate) {
         if (candidate != null && USERNAME_PATTERN.matcher(candidate.trim()).matches()) {
             candidates.add(candidate.trim());
@@ -499,9 +536,16 @@ public final class DiscordRankChatDecorator {
      * use it for both the badge and the sender name colour.
      */
     public static RankPresentation bridgeRank(String senderName, String discordId) {
-        return isEnabled()
+        return bridgeColoringEnabled()
                 ? DiscordRankService.getInstance().presentationForBridgeSender(senderName, discordId)
                 : null;
+    }
+
+    /** Bridge colours are a child of in-game Discord rank decoration. */
+    static boolean bridgeColoringEnabled() {
+        return isEnabled()
+                && SeqClient.getColorDiscordBridgeSetting() != null
+                && SeqClient.getColorDiscordBridgeSetting().getValue();
     }
 
     /** The aqua Wynncraft paints guild chat with, so bridged lines read the same. */
@@ -514,25 +558,66 @@ public final class DiscordRankChatDecorator {
      * block, then an aligned vertical bar while bridge messages remain consecutive.
      */
     public static MutableComponent bridgePrefix() {
-        return padToCommonWidth(bridgeSequenceOpen ? continuationBar() : discordMark());
+        return alignToGuildColumn(bridgeSequenceOpen ? continuationBar() : discordMark());
+    }
+
+    /** Pure continuation form used for visual lines created by Minecraft's wrapping. */
+    private static MutableComponent bridgeContinuationPrefix() {
+        return alignToGuildColumn(continuationBar());
+    }
+
+    /** Exact styled rail retained for {@code message}, or {@code null} for ordinary chat. */
+    public static Component bridgeContinuationPrefixFor(Component message) {
+        if (message == null) {
+            return null;
+        }
+        for (ColoredBridgeLine bridgeLine : RECENT_COLORED_BRIDGE_LINES) {
+            if (bridgeLine.message() == message) {
+                return bridgeLine.continuationPrefix();
+            }
+        }
+        // Structural fallback for another mod that copied the component before it
+        // reached ChatComponent. The identity registry also covers captured Wynncraft
+        // continuation bars, which intentionally use Wynncraft's own font and glyphs.
+        boolean hasBridgeMarker = ComponentTextEditor.flatten(message).stream()
+                .anyMatch(fragment -> BRIDGE_PREFIX_FONT.equals(fragment.style().getFont())
+                        && (fragment.text().contains(BRIDGE_ICON_GLYPH)
+                                || fragment.text().contains(BRIDGE_CONTINUATION_GLYPH)));
+        return hasBridgeMarker ? bridgeContinuationPrefix() : null;
     }
 
     /**
-     * Pads the prefix out to whichever of the two forms is wider, so the message text
-     * starts on the same column whether the line opens a bridge block or continues
-     * one. The logo and the bar are unrelated glyphs and have no reason to advance by
-     * the same amount; measuring both and topping up the shorter keeps them aligned
-     * without either being redrawn to a particular width.
+     * Brings a bridge prefix to the column Wynncraft starts its guild badges on, so
+     * bridged lines, their continuations and real guild lines all line up.
+     * <p>
+     * There is deliberately one target rather than two. Sizing the logo against the
+     * guild marker and then sizing the two bridge forms against each other gives two
+     * answers that disagree, and which of them wins depends on whether a bar has been
+     * captured yet — which is what made the alignment come and go.
      */
-    private static MutableComponent padToCommonWidth(MutableComponent prefix) {
+    private static MutableComponent alignToGuildColumn(MutableComponent prefix) {
         try {
             Font font = Minecraft.getInstance().font;
-            int target = Math.max(font.width(discordMark()), font.width(continuationBar()));
-            return appendAdvance(prefix, target - font.width(prefix));
+            int target = guildColumnWidth(font);
+            return target < 0 ? prefix : appendAdvance(prefix, target - font.width(prefix));
         } catch (RuntimeException | LinkageError ignored) {
             // No client available (unit tests); the prefix keeps its natural width.
             return prefix;
         }
+    }
+
+    /**
+     * Width of everything Wynncraft draws before a guild badge: its marker plus the
+     * space after it. Negative until a guild line has been seen, since the marker is
+     * captured from real chat rather than redrawn.
+     */
+    private static int guildColumnWidth(Font font) {
+        GuildChatMarkers.Marker marker = GuildChatMarkers.arrow();
+        if (marker == null) {
+            return -1;
+        }
+        return font.width(Component.literal(marker.glyphs()).withStyle(marker.style()))
+                + font.width(Component.literal(" "));
     }
 
     /**
@@ -575,32 +660,9 @@ public final class DiscordRankChatDecorator {
             mark.append(Component.literal(new String(codePoints, 0, 1))
                     .withStyle(marker.style().withColor(DISCORD_ACCENT).withoutShadow()));
         }
-        mark.append(Component.literal(BRIDGE_ICON_GLYPH).withStyle(bridgeMarkStyle()));
-        return withSeparator(matchGuildMarkerWidth(mark, marker));
-    }
-
-    /**
-     * Makes the Discord mark advance exactly as far as the guild marker it stands in
-     * for, so a bridged line and an in-game guild line put their rank pill on the same
-     * column.
-     * <p>
-     * Dropping most of Wynncraft's arrow and substituting a logo of a different width
-     * is what pushes the two apart, and by an amount only the loaded resource pack
-     * knows. Measuring both and closing the gap is therefore the only way to align
-     * them; redrawing the logo to a guessed width is not.
-     */
-    private static MutableComponent matchGuildMarkerWidth(MutableComponent mark, GuildChatMarkers.Marker marker) {
-        if (marker == null) {
-            return mark;
-        }
-        try {
-            Font font = Minecraft.getInstance().font;
-            int guildMarker = font.width(Component.literal(marker.glyphs()).withStyle(marker.style()));
-            return appendAdvance(mark, guildMarker - font.width(mark));
-        } catch (RuntimeException | LinkageError ignored) {
-            // No client available (unit tests); the mark keeps its natural width.
-            return mark;
-        }
+        // Width is not corrected here: bridgePrefix aligns the finished prefix to the
+        // guild column, which is the single target both bridge forms answer to.
+        return withSeparator(mark.append(Component.literal(BRIDGE_ICON_GLYPH).withStyle(bridgeMarkStyle())));
     }
 
     /**
@@ -707,13 +769,31 @@ public final class DiscordRankChatDecorator {
      * synchronously, so a plain flag is enough.
      */
     public static void displayUndecorated(Component line, Runnable display) {
+        displayUndecorated(line, display, true);
+    }
+
+    /**
+     * Variant for neutral bridge lines, which are suppressed from rank decoration but
+     * must not open the Discord marker/continuation sequence.
+     */
+    static void displayUndecorated(Component line, Runnable display, boolean opensBridgeSequence) {
+        if (opensBridgeSequence) {
+            rememberColoredBridgeLine(line, bridgeContinuationPrefix());
+        }
         lastBridgeLine = line;
         suppressed = true;
         try {
             display.run();
-            bridgeSequenceOpen = true;
+            bridgeSequenceOpen = opensBridgeSequence;
         } finally {
             suppressed = false;
+        }
+    }
+
+    private static void rememberColoredBridgeLine(Component line, Component continuationPrefix) {
+        RECENT_COLORED_BRIDGE_LINES.addLast(new ColoredBridgeLine(line, continuationPrefix));
+        while (RECENT_COLORED_BRIDGE_LINES.size() > MAX_REMEMBERED_BRIDGE_LINES) {
+            RECENT_COLORED_BRIDGE_LINES.removeFirst();
         }
     }
 
@@ -721,8 +801,8 @@ public final class DiscordRankChatDecorator {
 
     /** Builds the glyph pill for {@code rank}, tooltipped with the rank it replaces. */
     static MutableComponent rankPill(RankPresentation rank, String replacedWynncraftRank) {
-        MutableComponent pill = NotificationAccessor.wynnPill(
-                rank.pillLabel(), rampFor(rank), DiscordRankChatDecorator::labelColorOn, null);
+        MutableComponent pill =
+                NotificationAccessor.wynnPill(rank.pillLabel(), rampFor(rank), PILL_LABEL_COLOR, null);
 
         // The tooltip is one component, so it cannot carry the gradient; it takes the
         // primary stop, which is the colour Discord itself shows the role under.
@@ -747,34 +827,60 @@ public final class DiscordRankChatDecorator {
     }
 
     /**
-     * A single colour for the rank, used where a gradient cannot be drawn: the
-     * speaker's name, the bridge sender, and tooltips are each one component.
+     * A name painted across the member's complete role palette. Gradient colours are
+     * minted through {@link RankGradientAnimation}, so the same render hook that moves
+     * a rank pill moves the name with it. Solid names stay one component.
      */
-    static TextColor colorFor(RankPresentation rank) {
-        return TextColor.fromRgb(rampFor(rank).first());
+    static MutableComponent colouredName(String name, RankPresentation rank, Style style) {
+        String text = name == null ? "" : name;
+        Style baseStyle = style == null ? Style.EMPTY : style;
+        ColorRamp ramp = rampFor(rank);
+        if (!ramp.isGradient() || text.codePointCount(0, text.length()) <= 1) {
+            return Component.literal(text).withStyle(baseStyle.withColor(colorFor(rank)));
+        }
+
+        MutableComponent coloured = Component.empty();
+        int codePointCount = text.codePointCount(0, text.length());
+        int index = 0;
+        for (int offset = 0; offset < text.length(); ) {
+            int codePoint = text.codePointAt(offset);
+            double position = (double) index / (codePointCount - 1);
+            TextColor color = RankGradientAnimation.colorAt(ramp, position, RankGradientAnimation.Target.USERNAME);
+            coloured.append(Component.literal(new String(Character.toChars(codePoint)))
+                    .withStyle(baseStyle.withColor(color)));
+            offset += Character.charCount(codePoint);
+            index++;
+        }
+        return coloured;
+    }
+
+    private static List<ComponentTextEditor.Fragment> recolourName(
+            List<ComponentTextEditor.Fragment> fragments,
+            int start,
+            int endExclusive,
+            RankPresentation rank,
+            String insertion) {
+        ColorRamp ramp = rampFor(rank);
+        if (!ramp.isGradient()) {
+            TextColor color = colorFor(rank);
+            return ComponentTextEditor.restyleRange(
+                    fragments, start, endExclusive, style -> style.withColor(color).withInsertion(insertion));
+        }
+        return ComponentTextEditor.restyleRangeByPosition(
+                fragments,
+                start,
+                endExclusive,
+                (style, position) -> style.withColor(
+                                RankGradientAnimation.colorAt(ramp, position, RankGradientAnimation.Target.USERNAME))
+                        .withInsertion(insertion));
     }
 
     /**
-     * A muted label colour for {@code background}: mostly grey, tinted with the
-     * background's own hue, and light or dark depending on which side stays legible.
+     * The primary colour for a rank, used by solid names and places such as tooltips
+     * where splitting the text into independently coloured glyphs would be distracting.
      */
-    static TextColor labelColorOn(TextColor background) {
-        int rgb = background.getValue();
-        int grey = luminanceOf(rgb) > LIGHT_BACKGROUND_LUMINANCE ? DARK_LABEL_GREY : LIGHT_LABEL_GREY;
-        return TextColor.fromRgb(blend(rgb, grey, LABEL_GREY_WEIGHT));
-    }
-
-    /** Mixes {@code target} over {@code base}, {@code weight} being the share of target. */
-    static int blend(int base, int target, double weight) {
-        return ColorRamp.blend(base, target, weight);
-    }
-
-    /** Rec. 709 relative luminance in {@code [0, 1]}. */
-    static double luminanceOf(int rgb) {
-        double red = ((rgb >> 16) & 0xFF) / 255d;
-        double green = ((rgb >> 8) & 0xFF) / 255d;
-        double blue = (rgb & 0xFF) / 255d;
-        return 0.2126d * red + 0.7152d * green + 0.0722d * blue;
+    static TextColor colorFor(RankPresentation rank) {
+        return TextColor.fromRgb(rampFor(rank).first());
     }
 
     private static boolean isEnabled() {
@@ -782,13 +888,11 @@ public final class DiscordRankChatDecorator {
                 && SeqClient.getShowDiscordRanksSetting().getValue();
     }
 
-    /**
-     * Insignia in chat answer to the same setting as insignia on nametags, on top of
-     * the rank decoration being on at all. Someone who turned the badge off does not
-     * expect it to reappear next to their name in chat.
-     */
+    /** Chat insignias are independently optional beneath Discord rank decoration. */
     private static boolean insigniaEnabled() {
-        return isEnabled() && SeqBadgeNametagRenderSupport.showInsigniaBadges();
+        return isEnabled()
+                && (SeqClient.getShowChatInsigniasSetting() == null
+                        || SeqClient.getShowChatInsigniasSetting().getValue());
     }
 
     // ── Diagnostics ──

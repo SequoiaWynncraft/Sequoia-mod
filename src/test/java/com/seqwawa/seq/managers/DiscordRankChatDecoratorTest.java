@@ -20,6 +20,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -132,6 +133,45 @@ class DiscordRankChatDecoratorTest {
 
         assertEquals(List.of("sapling"), pillLabels(decorated));
         assertTrue(decorated.getString().contains("ArcLeRetour: t"));
+    }
+
+    @Test
+    void leavesOurOwnBridgeLineAloneWhenItComesBackForDecoration() {
+        // Only the most recent bridged line is remembered by identity, so an earlier one
+        // can reach the decorator. Our marker sits in the same private-use block as
+        // Wynncraft's badges and the line carries guild aqua, which is exactly what the
+        // position fallback looks for: it would replace our own marker with a pill.
+        Component bridged = Component.empty()
+                .append(Component.literal(DiscordRankChatDecorator.BRIDGE_ICON_GLYPH + " ")
+                        .withStyle(Style.EMPTY.withColor(GUILD_AQUA)))
+                .append(Component.literal("ArcLeRetour")
+                        .withStyle(Style.EMPTY.withColor(GUILD_AQUA).withInsertion("ArcLeRetour")))
+                .append(Component.literal(": hi").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+
+        assertSame(
+                bridged, DiscordRankChatDecorator.decorateGuildChat(bridged, DiscordRankChatDecoratorTest::lookup));
+    }
+
+    @Test
+    void keepsAnInsigniaItAlreadyInsertedInsteadOfEatingIt() {
+        // A decorated line carries our insignia just before the ':'. Re-decorating must
+        // not treat that glyph as part of a Wynncraft badge.
+        Component decorated = Component.empty()
+                .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
+                .append(Component.literal("ArcLeRetour")
+                        .withStyle(Style.EMPTY.withColor(GUILD_AQUA).withInsertion("ArcLeRetour")))
+                .append(Component.literal(""))
+                .append(Component.literal(": hi").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+
+        String result = DiscordRankChatDecorator.decorateGuildChat(
+                        decorated, DiscordRankChatDecoratorTest::lookup)
+                .getString();
+
+        assertTrue(result.contains(""), "the insignia must survive: " + describe(result));
+    }
+
+    private static String describe(String text) {
+        return DiscordRankChatDecorator.describeCodepoints(text);
     }
 
     @Test
@@ -305,6 +345,40 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void resolvesSpeakersShownAsUsernameSlashNickname() {
+        Component message = guildLine("RECRUITER", "ArcLeRetour/EightySix", null, "hi");
+
+        Component decorated =
+                DiscordRankChatDecorator.decorateGuildChat(message, DiscordRankChatDecoratorTest::lookup);
+
+        assertEquals(List.of("sapling"), pillLabels(decorated));
+        assertTrue(decorated.getString().contains("ArcLeRetour/EightySix: hi"));
+    }
+
+    @Test
+    void resolvesSpeakersWhenTheNicknameComesFirst() {
+        // Which half is the account name depends on the add-on, so both are offered and
+        // the roster picks.
+        Component message = guildLine("RECRUITER", "EightySix/ArcLeRetour", null, "hi");
+
+        assertEquals(
+                List.of("sapling"),
+                pillLabels(DiscordRankChatDecorator.decorateGuildChat(
+                        message, DiscordRankChatDecoratorTest::lookup)));
+    }
+
+    @Test
+    void recolorsOnlyTheFirstHalfOfASlashSeparatedName() {
+        String text = "  ArcLeRetour/EightySix: hi";
+        int colon = text.indexOf(':');
+
+        assertEquals(
+                text.indexOf('/'),
+                DiscordRankChatDecorator.speakerNameEnd(
+                        ComponentTextEditor.flatten(Component.literal(text)), text, 2, colon, "ArcLeRetour"));
+    }
+
+    @Test
     void leavesTheNickRevealInItsOwnColour() {
         Component message = Component.empty()
                 .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
@@ -414,44 +488,21 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void keepsPillTextReadableOnBothPaleAndDarkRoleColours() {
-        // Dryad is near-white pastel, Yggdrasil is deep purple.
-        TextColor pale = TextColor.fromRgb(0xCDECE4);
-        TextColor dark = TextColor.fromRgb(0x7506D6);
+    void drawsEveryPillLabelInTheSameDarkColour() {
+        // Dryad is a near-white pastel, Yggdrasil a deep purple, Sapling a mid blue.
+        // A label that followed its pill left the first washed out and made one rank
+        // read differently from one member to the next.
+        RankPresentation pale = presentation("rank.dryad", "Dryad", 112, 0xCDECE4);
+        RankPresentation deep = presentation("rank.yggdrasil", "Ygg", 120, 0x7506D6);
 
-        double paleLabel = DiscordRankChatDecorator.luminanceOf(
-                DiscordRankChatDecorator.labelColorOn(pale).getValue());
-        double darkLabel = DiscordRankChatDecorator.luminanceOf(
-                DiscordRankChatDecorator.labelColorOn(dark).getValue());
+        int onPale = pillLabelColors(DiscordRankChatDecorator.rankPill(pale, null)).getFirst();
+        int onDeep = pillLabelColors(DiscordRankChatDecorator.rankPill(deep, null)).getFirst();
+        int onMid = pillLabelColors(DiscordRankChatDecorator.rankPill(SAPLING, null)).getFirst();
 
-        assertTrue(paleLabel < 0.35d, "a pale pill needs a dark label, was " + paleLabel);
-        assertTrue(darkLabel > 0.55d, "a dark pill needs a light label, was " + darkLabel);
-    }
-
-    @Test
-    void usesMutedGreysRatherThanPureBlackOrWhite() {
-        int onDark = DiscordRankChatDecorator.labelColorOn(TextColor.fromRgb(0x7506D6)).getValue();
-        int onPale = DiscordRankChatDecorator.labelColorOn(TextColor.fromRgb(0xCDECE4)).getValue();
-
-        assertNotEquals(0xFFFFFF, onDark);
-        assertNotEquals(0x000000, onPale);
-        assertTrue(DiscordRankChatDecorator.luminanceOf(onDark) < 0.85d, "must stay softer than white");
-        assertTrue(DiscordRankChatDecorator.luminanceOf(onPale) > 0.05d, "must stay softer than black");
-    }
-
-    @Test
-    void tintsTheLabelWithTheBackgroundHue() {
-        // Blue pill: the label leans blue too, instead of being a flat neutral grey.
-        int label = DiscordRankChatDecorator.labelColorOn(TextColor.fromRgb(0x4CB4FA)).getValue();
-
-        assertTrue((label & 0xFF) > ((label >> 16) & 0xFF), "blue channel should lead on a blue pill");
-    }
-
-    @Test
-    void blendMixesChannelsProportionally() {
-        assertEquals(0x808080, DiscordRankChatDecorator.blend(0x000000, 0xFFFFFF, 0.5039d));
-        assertEquals(0xFFFFFF, DiscordRankChatDecorator.blend(0x000000, 0xFFFFFF, 1d));
-        assertEquals(0x123456, DiscordRankChatDecorator.blend(0x123456, 0xFFFFFF, 0d));
+        assertEquals(onPale, onDeep, "every role shares one label colour");
+        assertEquals(onPale, onMid, "every role shares one label colour");
+        assertTrue(luminanceOf(onPale) < 0.15d, "and a dark one, was " + Integer.toHexString(onPale));
+        assertNotEquals(0x000000, onPale, "though short of pure black");
     }
 
     @Test
@@ -476,27 +527,52 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void relabelsEachGlyphForTheBackgroundUnderIt() {
-        // Black to white: the label has to flip from light to dark partway along, or
-        // one end of the pill becomes unreadable.
-        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x000000, 0xFFFFFF);
+    void keepsOneLabelColourAcrossAGradient() {
+        // Only the background is graded. Letters that shifted hue from one to the next
+        // read as a rendering fault rather than as a gradient.
+        RankPresentation gradient = presentation("rank.treant", "Treant", 104, 0x1B9056, 0x50C9A6);
 
         List<Integer> labels = pillLabelColors(DiscordRankChatDecorator.rankPill(gradient, null));
 
-        assertTrue(
-                DiscordRankChatDecorator.luminanceOf(labels.getFirst()) > 0.55d,
-                "a dark start needs a light label");
-        assertTrue(
-                DiscordRankChatDecorator.luminanceOf(labels.getLast()) < 0.35d,
-                "a light end needs a dark label");
+        assertEquals(1, Set.copyOf(labels).size(), "every letter shares one colour, was " + labels);
     }
 
     @Test
-    void speakerNameTakesThePrimaryStopOfAGradientRole() {
-        // A name is one component, so it cannot carry the gradient itself.
+    void primaryColourHelperTakesTheFirstStopOfAGradientRole() {
         RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x123456, 0xFFFFFF);
 
         assertEquals(0x123456, DiscordRankChatDecorator.colorFor(gradient).getValue());
+    }
+
+    @Test
+    void paintsTheGuildSpeakerAcrossTheirGradientAndKeepsInsertionStyling() {
+        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x123456, 0xFFFFFF);
+        Component message = guildLine("RECRUITER", "ArcLeRetour", "ArcLeRetour", "hi");
+
+        Component decorated = DiscordRankChatDecorator.decorateGuildChat(message, ignored -> gradient);
+        List<ComponentTextEditor.Fragment> name = ComponentTextEditor.flatten(decorated).stream()
+                .filter(fragment -> "ArcLeRetour".equals(fragment.style().getInsertion()))
+                .toList();
+
+        assertEquals("ArcLeRetour", name.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
+        assertEquals("A", name.getFirst().text());
+        assertEquals("r", name.getLast().text());
+        assertEquals(0x123456, name.getFirst().style().getColor().getValue());
+        assertEquals(0xFFFFFF, name.getLast().style().getColor().getValue());
+        assertTrue(
+                name.get(1).style().getColor().getValue() > 0x123456,
+                "the middle of the name must be sampled from inside the ramp");
+    }
+
+    @Test
+    void keepsASolidSpeakerNameAsOneFragment() {
+        MutableComponent name = DiscordRankChatDecorator.colouredName(
+                "ArcLeRetour", SAPLING, Style.EMPTY.withInsertion("ArcLeRetour"));
+
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(name);
+        assertEquals(1, fragments.size());
+        assertEquals(0x4CB4FA, fragments.getFirst().style().getColor().getValue());
+        assertEquals("ArcLeRetour", fragments.getFirst().style().getInsertion());
     }
 
     @Test
@@ -524,9 +600,7 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void insigniaObeyTheBadgeSettingEvenWhileRanksStayOn() {
-        // Someone who turned insignia off on nametags does not expect them back next to
-        // their name in chat, so the two answer to the same setting.
+    void insigniaObeyTheChatSettingEvenWhileRanksStayOn() {
         withSettings(true, false, () -> {
             AtomicBoolean consulted = new AtomicBoolean();
 
@@ -535,13 +609,13 @@ class DiscordRankChatDecoratorTest {
                 return SeqBadgeTier.DIAMOND;
             });
 
-            assertNull(insignia, "no insignia with the badge setting off");
+            assertNull(insignia, "no insignia with the chat setting off");
             assertFalse(consulted.get(), "and the roster must not even be consulted");
         });
     }
 
     @Test
-    void guildChatDropsTheInsigniaWhenTheBadgeSettingIsOff() {
+    void guildChatDropsTheInsigniaWhenTheChatSettingIsOff() {
         List<ComponentTextEditor.Fragment> fragments =
                 ComponentTextEditor.flatten(Component.literal("Name: hi"));
         int colon = "Name".length();
@@ -558,15 +632,52 @@ class DiscordRankChatDecoratorTest {
 
     private static void withSettings(boolean ranks, boolean insignia, Runnable body) {
         Setting.BooleanSetting previousRanks = SeqClient.showDiscordRanksSetting;
-        Setting.BooleanSetting previousInsignia = SeqClient.showInsigniaBadgesSetting;
+        Setting.BooleanSetting previousInsignia = SeqClient.showChatInsigniasSetting;
         try {
             SeqClient.showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", ranks);
-            SeqClient.showInsigniaBadgesSetting =
-                    new Setting.BooleanSetting("show_insignia_badges", "leaderboard_badges", insignia);
+            SeqClient.showChatInsigniasSetting =
+                    new Setting.BooleanSetting("show_chat_insignias", "chat", insignia);
             body.run();
         } finally {
             SeqClient.showDiscordRanksSetting = previousRanks;
-            SeqClient.showInsigniaBadgesSetting = previousInsignia;
+            SeqClient.showChatInsigniasSetting = previousInsignia;
+        }
+    }
+
+    @Test
+    void nametagInsigniaSettingDoesNotControlChatInsignias() {
+        Setting.BooleanSetting previousNametagInsignias = SeqClient.showInsigniaBadgesSetting;
+        try {
+            SeqClient.showInsigniaBadgesSetting =
+                    new Setting.BooleanSetting("show_insignia_badges", "leaderboard_badges", false);
+            withSettings(
+                    true,
+                    true,
+                    () -> assertNotNull(
+                            DiscordRankChatDecorator.bridgeInsignia("dix", name -> SeqBadgeTier.DIAMOND)));
+        } finally {
+            SeqClient.showInsigniaBadgesSetting = previousNametagInsignias;
+        }
+    }
+
+    @Test
+    void bridgeColoringRequiresBothTheInGameRankParentAndItsChildSetting() {
+        Setting.BooleanSetting previousRanks = SeqClient.showDiscordRanksSetting;
+        Setting.BooleanSetting previousBridgeColoring = SeqClient.colorDiscordBridgeSetting;
+        try {
+            SeqClient.showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", false);
+            SeqClient.colorDiscordBridgeSetting = new Setting.BooleanSetting("color_discord_bridge", "chat", true);
+            assertFalse(DiscordRankChatDecorator.bridgeColoringEnabled());
+
+            SeqClient.showDiscordRanksSetting.setValue(true);
+            SeqClient.colorDiscordBridgeSetting.setValue(false);
+            assertFalse(DiscordRankChatDecorator.bridgeColoringEnabled());
+
+            SeqClient.colorDiscordBridgeSetting.setValue(true);
+            assertTrue(DiscordRankChatDecorator.bridgeColoringEnabled());
+        } finally {
+            SeqClient.showDiscordRanksSetting = previousRanks;
+            SeqClient.colorDiscordBridgeSetting = previousBridgeColoring;
         }
     }
 
@@ -595,6 +706,18 @@ class DiscordRankChatDecoratorTest {
                 ComponentTextEditor.flatten(firstPrefix).getFirst().style().getFont());
 
         DiscordRankChatDecorator.decorateGuildChat(Component.literal("interrupting chat"));
+        assertEquals(
+                DiscordRankChatDecorator.BRIDGE_ICON_GLYPH + " ",
+                DiscordRankChatDecorator.bridgePrefix().getString());
+    }
+
+    @Test
+    void neutralBridgeMessageDoesNotOpenAColoredContinuationSequence() {
+        DiscordRankChatDecorator.decorateGuildChat(Component.literal("ordinary chat"));
+        Component neutralLine = Component.literal("neutral bridge line");
+
+        DiscordRankChatDecorator.displayUndecorated(neutralLine, () -> {}, false);
+
         assertEquals(
                 DiscordRankChatDecorator.BRIDGE_ICON_GLYPH + " ",
                 DiscordRankChatDecorator.bridgePrefix().getString());
@@ -660,6 +783,13 @@ class DiscordRankChatDecoratorTest {
                 .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
                 .map(fragment -> fragment.style().getColor().getValue())
                 .toList();
+    }
+
+    /** Rec. 709 relative luminance in {@code [0, 1]}, to argue about readability with. */
+    private static double luminanceOf(int rgb) {
+        return 0.2126d * ((rgb >> 16) & 0xFF) / 255d
+                + 0.7152d * ((rgb >> 8) & 0xFF) / 255d
+                + 0.0722d * (rgb & 0xFF) / 255d;
     }
 
     /** Colours of the pill's letter glyphs, one per glyph, in order. */

@@ -13,9 +13,11 @@ import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import net.fabricmc.loader.api.FabricLoader;
 
 /**
@@ -39,6 +41,8 @@ public final class RankProfileRoster {
 
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
     private final List<Consumer<RankProfilesResponse>> subscribers = new CopyOnWriteArrayList<>();
+    private final Path cachePath;
+    private final Supplier<CompletableFuture<RankProfilesResponse>> fetchProfiles;
     private volatile RankProfilesResponse snapshot;
     private volatile boolean cacheLoaded;
     private volatile boolean refreshInFlight;
@@ -47,6 +51,13 @@ public final class RankProfileRoster {
     private volatile String status = "not loaded";
 
     private RankProfileRoster() {
+        this(defaultCachePath(), () -> ApiClient.getInstance().getRecognizedRankProfiles());
+    }
+
+    /** Test seam for exercising cache and refresh behavior without a game directory. */
+    RankProfileRoster(Path cachePath, Supplier<CompletableFuture<RankProfilesResponse>> fetchProfiles) {
+        this.cachePath = Objects.requireNonNull(cachePath, "cachePath");
+        this.fetchProfiles = Objects.requireNonNull(fetchProfiles, "fetchProfiles");
         loadCache();
     }
 
@@ -92,8 +103,8 @@ public final class RankProfileRoster {
         lastRefreshAttemptMs = System.currentTimeMillis();
         status = "refreshing";
 
-        return ApiClient.getInstance()
-                .getRecognizedRankProfiles()
+        return fetchProfiles
+                .get()
                 .thenApply(response -> {
                     publish(response);
                     writeCache(response);
@@ -116,6 +127,7 @@ public final class RankProfileRoster {
     }
 
     private void publish(RankProfilesResponse response) {
+        requireValidSnapshot(response);
         snapshot = response;
         subscribers.forEach(consumer -> deliver(consumer, response));
     }
@@ -134,7 +146,6 @@ public final class RankProfileRoster {
 
     private void loadCache() {
         cacheLoaded = true;
-        Path cachePath = cachePath();
         if (!Files.isRegularFile(cachePath)) {
             status = "no cache";
             return;
@@ -149,8 +160,8 @@ public final class RankProfileRoster {
     }
 
     private void writeCache(RankProfilesResponse response) {
+        requireValidSnapshot(response);
         try {
-            Path cachePath = cachePath();
             Files.createDirectories(cachePath.getParent());
             Path temp = cachePath.resolveSibling(cachePath.getFileName() + ".tmp");
             Files.writeString(temp, gson.toJson(response));
@@ -168,7 +179,19 @@ public final class RankProfileRoster {
         return response == null || response.profiles() == null ? 0 : response.profiles().size();
     }
 
-    private static Path cachePath() {
+    private static void requireValidSnapshot(RankProfilesResponse response) {
+        if (response == null) {
+            throw new IllegalArgumentException("Rank-profile snapshot is empty");
+        }
+        if (response.schemaVersion() != 1) {
+            throw new IllegalArgumentException("Unsupported rank-profile schema version " + response.schemaVersion());
+        }
+        if (response.catalog() == null || response.profiles() == null) {
+            throw new IllegalArgumentException("Rank-profile snapshot is incomplete");
+        }
+    }
+
+    private static Path defaultCachePath() {
         return FabricLoader.getInstance()
                 .getGameDir()
                 .resolve("config")
