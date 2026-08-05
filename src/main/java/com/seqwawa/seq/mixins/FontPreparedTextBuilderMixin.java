@@ -7,7 +7,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
 /**
- * Moves a gradient rank's colours along its ramp as its chat pill is drawn.
+ * Moves a gradient rank's colours along its ramp as its chat pill or name is drawn.
  * <p>
  * A chat line is laid out once, into glyph sequences Minecraft keeps until the chat is
  * rescaled, so nothing that animates can live in the component itself. This is the one
@@ -15,8 +15,8 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
  * every frame, which makes it the only hook where a still component can be given a
  * moving colour.
  *
- * @see RankGradientAnimation which recognises the pill colours and leaves all others
- *      untouched
+ * @see RankGradientAnimation which recognises registered rank-decoration colours and
+ *      leaves all others untouched
  */
 @Mixin(targets = "net.minecraft.client.gui.Font$PreparedTextBuilder")
 public class FontPreparedTextBuilderMixin {

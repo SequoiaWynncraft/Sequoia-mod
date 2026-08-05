@@ -538,11 +538,41 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void speakerNameTakesThePrimaryStopOfAGradientRole() {
-        // A name is one component, so it cannot carry the gradient itself.
+    void primaryColourHelperTakesTheFirstStopOfAGradientRole() {
         RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x123456, 0xFFFFFF);
 
         assertEquals(0x123456, DiscordRankChatDecorator.colorFor(gradient).getValue());
+    }
+
+    @Test
+    void paintsTheGuildSpeakerAcrossTheirGradientAndKeepsInsertionStyling() {
+        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x123456, 0xFFFFFF);
+        Component message = guildLine("RECRUITER", "ArcLeRetour", "ArcLeRetour", "hi");
+
+        Component decorated = DiscordRankChatDecorator.decorateGuildChat(message, ignored -> gradient);
+        List<ComponentTextEditor.Fragment> name = ComponentTextEditor.flatten(decorated).stream()
+                .filter(fragment -> "ArcLeRetour".equals(fragment.style().getInsertion()))
+                .toList();
+
+        assertEquals("ArcLeRetour", name.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
+        assertEquals("A", name.getFirst().text());
+        assertEquals("r", name.getLast().text());
+        assertEquals(0x123456, name.getFirst().style().getColor().getValue());
+        assertEquals(0xFFFFFF, name.getLast().style().getColor().getValue());
+        assertTrue(
+                name.get(1).style().getColor().getValue() > 0x123456,
+                "the middle of the name must be sampled from inside the ramp");
+    }
+
+    @Test
+    void keepsASolidSpeakerNameAsOneFragment() {
+        MutableComponent name = DiscordRankChatDecorator.colouredName(
+                "ArcLeRetour", SAPLING, Style.EMPTY.withInsertion("ArcLeRetour"));
+
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(name);
+        assertEquals(1, fragments.size());
+        assertEquals(0x4CB4FA, fragments.getFirst().style().getColor().getValue());
+        assertEquals("ArcLeRetour", fragments.getFirst().style().getInsertion());
     }
 
     @Test

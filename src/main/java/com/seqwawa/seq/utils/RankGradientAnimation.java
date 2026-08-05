@@ -8,8 +8,8 @@ import java.util.Map;
 import net.minecraft.network.chat.TextColor;
 
 /**
- * Scrolls a gradient rank's colours along its chat pill, so a role whose colour is a
- * Discord gradient reads as one rather than as a fixed smear.
+ * Scrolls a gradient rank's colours along its chat pill and speaker name, so a role
+ * whose colour is a Discord gradient reads as one rather than as a fixed smear.
  * <p>
  * A chat line is drawn from a component that was built once, long before the frame it
  * appears on, so a colour cannot be animated by rebuilding it. What survives into
@@ -28,9 +28,9 @@ public final class RankGradientAnimation {
     private static final long CYCLE_MILLIS = 5000L;
 
     /**
-     * How many pill colours stay animatable. A pill contributes one stop per glyph, so
-     * this covers a few dozen messages; pills older than that simply hold still rather
-     * than being redrawn, which is invisible so far up the chat log.
+     * How many rank-decoration colours stay animatable. A pill and gradient name each
+     * contribute one stop per glyph, so this covers the recent chat history; older
+     * decorations simply hold still rather than being rebuilt.
      */
     private static final int MAX_REMEMBERED_STOPS = 512;
 
@@ -50,8 +50,8 @@ public final class RankGradientAnimation {
     private RankGradientAnimation() {}
 
     /**
-     * The pill colour at {@code position} along {@code ramp}, remembered so it can be
-     * moved later.
+     * The decoration colour at {@code position} along {@code ramp}, remembered so it
+     * can be moved later.
      * <p>
      * Only gradient roles are remembered: a solid role has one colour, and scrolling it
      * would produce that same colour back again.

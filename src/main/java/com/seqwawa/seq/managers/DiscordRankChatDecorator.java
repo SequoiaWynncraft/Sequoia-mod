@@ -7,6 +7,7 @@ import com.seqwawa.seq.model.SeqBadgeTier;
 import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
+import com.seqwawa.seq.utils.RankGradientAnimation;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
 import java.util.ArrayDeque;
 import java.util.LinkedHashSet;
@@ -227,15 +228,14 @@ public final class DiscordRankChatDecorator {
         GuildChatMarkers.observe(fragments, start);
         int end = decorationEnd(text, badge.endExclusive(), colonIndex);
 
-        TextColor rankColor = colorFor(rank);
         int nameEnd = speakerNameEnd(fragments, text, end, colonIndex, speaker.username());
         // The resolved username is stamped on as the shift-click insertion too: names
         // are matched from the displayed "Nick(Username)" text rather than from an
         // insertion, so one is not guaranteed to be there, and where Wynncraft does set
         // it a nicked player's carries the nickname rather than the account.
         String speakerName = speaker.username();
-        List<ComponentTextEditor.Fragment> recoloured = ComponentTextEditor.restyleRange(
-                fragments, end, nameEnd, style -> style.withColor(rankColor).withInsertion(speakerName));
+        List<ComponentTextEditor.Fragment> recoloured = recolourName(
+                fragments, end, nameEnd, rank, speakerName);
 
         // The pill keeps the default font on purpose: Wynncraft's badge uses a font of
         // its own in which these glyphs mean nothing, so inheriting it collapses the
@@ -827,8 +827,56 @@ public final class DiscordRankChatDecorator {
     }
 
     /**
-     * A single colour for the rank, used where a gradient cannot be drawn: the
-     * speaker's name, the bridge sender, and tooltips are each one component.
+     * A name painted across the member's complete role palette. Gradient colours are
+     * minted through {@link RankGradientAnimation}, so the same render hook that moves
+     * a rank pill moves the name with it. Solid names stay one component.
+     */
+    static MutableComponent colouredName(String name, RankPresentation rank, Style style) {
+        String text = name == null ? "" : name;
+        Style baseStyle = style == null ? Style.EMPTY : style;
+        ColorRamp ramp = rampFor(rank);
+        if (!ramp.isGradient() || text.codePointCount(0, text.length()) <= 1) {
+            return Component.literal(text).withStyle(baseStyle.withColor(colorFor(rank)));
+        }
+
+        MutableComponent coloured = Component.empty();
+        int codePointCount = text.codePointCount(0, text.length());
+        int index = 0;
+        for (int offset = 0; offset < text.length(); ) {
+            int codePoint = text.codePointAt(offset);
+            double position = (double) index / (codePointCount - 1);
+            TextColor color = RankGradientAnimation.colorAt(ramp, position);
+            coloured.append(Component.literal(new String(Character.toChars(codePoint)))
+                    .withStyle(baseStyle.withColor(color)));
+            offset += Character.charCount(codePoint);
+            index++;
+        }
+        return coloured;
+    }
+
+    private static List<ComponentTextEditor.Fragment> recolourName(
+            List<ComponentTextEditor.Fragment> fragments,
+            int start,
+            int endExclusive,
+            RankPresentation rank,
+            String insertion) {
+        ColorRamp ramp = rampFor(rank);
+        if (!ramp.isGradient()) {
+            TextColor color = colorFor(rank);
+            return ComponentTextEditor.restyleRange(
+                    fragments, start, endExclusive, style -> style.withColor(color).withInsertion(insertion));
+        }
+        return ComponentTextEditor.restyleRangeByPosition(
+                fragments,
+                start,
+                endExclusive,
+                (style, position) -> style.withColor(RankGradientAnimation.colorAt(ramp, position))
+                        .withInsertion(insertion));
+    }
+
+    /**
+     * The primary colour for a rank, used by solid names and places such as tooltips
+     * where splitting the text into independently coloured glyphs would be distracting.
      */
     static TextColor colorFor(RankPresentation rank) {
         return TextColor.fromRgb(rampFor(rank).first());

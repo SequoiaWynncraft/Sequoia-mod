@@ -91,6 +91,30 @@ class ComponentTextEditorTest {
     }
 
     @Test
+    void restylesARangeByCodePointPositionWithoutSplittingSurrogatePairs() {
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(
+                Component.literal("-A😀B-").withStyle(Style.EMPTY.withInsertion("Player")));
+
+        List<ComponentTextEditor.Fragment> restyled = ComponentTextEditor.restyleRangeByPosition(
+                fragments,
+                1,
+                "-A😀B".length(),
+                (style, position) -> style.withColor((int) Math.round(position * 100)));
+
+        assertEquals(List.of("-", "A", "😀", "B", "-"), restyled.stream()
+                .map(ComponentTextEditor.Fragment::text)
+                .toList());
+        assertEquals(
+                List.of(0, 50, 100),
+                restyled.subList(1, 4).stream()
+                        .map(fragment -> fragment.style().getColor().getValue())
+                        .toList());
+        restyled.subList(1, 4).forEach(fragment -> assertEquals("Player", fragment.style().getInsertion()));
+        assertNull(restyled.getFirst().style().getColor(), "text before the range is untouched");
+        assertNull(restyled.getLast().style().getColor(), "text after the range is untouched");
+    }
+
+    @Test
     void insertsAtAFragmentBoundary() {
         // The very case that silently dropped the insignia: the ':' starts its own
         // fragment, so an empty replaceRange range matched nothing.

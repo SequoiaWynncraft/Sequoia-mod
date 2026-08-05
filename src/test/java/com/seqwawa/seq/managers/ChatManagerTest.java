@@ -6,7 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.model.DiscordRank;
+import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
 import net.minecraft.ChatFormatting;
@@ -334,6 +337,25 @@ class ChatManagerTest {
         assertFragmentColor(line, "MrHmar", ChatFormatting.WHITE);
         assertFragmentColor(line, ": ", ChatFormatting.GRAY);
         assertFragmentColor(line, "hello", ChatFormatting.WHITE);
+    }
+
+    @Test
+    void colouredBridgeSenderUsesTheCompleteAnimatedGradientRamp() {
+        RankPresentation gradient = new RankPresentation(
+                new DiscordRank("rank.yggdrasil", "Yggdrasil", 120),
+                ColorRamp.of(List.of(0x123456, 0xFFFFFF)));
+
+        MutableComponent line = ChatManager.bridgeSenderLine(
+                new ConnectionManager.DiscordChatMessage("Name", "hello", "215820027700576258"),
+                "hello",
+                gradient);
+        List<ComponentTextEditor.Fragment> name = ComponentTextEditor.flatten(line).stream()
+                .filter(fragment -> "Name".equals(fragment.style().getInsertion()))
+                .toList();
+
+        assertEquals("Name", name.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
+        assertEquals(0x123456, name.getFirst().style().getColor().getValue());
+        assertEquals(0xFFFFFF, name.getLast().style().getColor().getValue());
     }
 
     @Test

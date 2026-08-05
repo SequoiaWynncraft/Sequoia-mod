@@ -751,10 +751,8 @@ public class ChatManager {
         line.append(DiscordRankChatDecorator.rankPill(rank, null)).append(Component.literal(" "));
         // Same shift-click insertion Wynncraft puts on in-game names, so a bridged
         // sender links to their profile just like a guild one.
-        line.append(Component.literal(msg.username())
-                .withStyle(style -> style
-                        .withColor(DiscordRankChatDecorator.colorFor(rank))
-                        .withInsertion(msg.username())));
+        line.append(DiscordRankChatDecorator.colouredName(
+                msg.username(), rank, Style.EMPTY.withInsertion(msg.username())));
         MutableComponent insignia = DiscordRankChatDecorator.bridgeInsignia(msg.username(), msg.discordId());
         if (insignia != null) {
             line.append(insignia);

@@ -4,12 +4,11 @@ import java.util.List;
 
 /**
  * An ordered list of {@code 0xRRGGBB} stops sampled by position, used to paint a
- * Discord role's gradient across the glyphs of a chat rank pill.
+ * Discord role's gradient across the glyphs of a chat rank pill or speaker name.
  * <p>
  * Minecraft gives a text component a single colour, so a gradient can only be
  * drawn by splitting the text and colouring each piece. Wynncraft's pills are
- * already built one glyph at a time, which is what makes this possible without
- * changing their geometry.
+ * are therefore built one glyph at a time where a gradient is required.
  */
 public final class ColorRamp {
 
