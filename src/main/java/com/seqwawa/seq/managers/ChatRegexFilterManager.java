@@ -24,11 +24,10 @@ public final class ChatRegexFilterManager {
                     + "[^:]{1,64} changed \\d+ (?:upgrades|bonuses) on .+"
                     + "|[^:]{1,64} changed (?:the global tax|the (?:ally )?tax of .+) to \\d+%"
                     + "|[^:]{1,64} changed the style of .+ to (?:fastest|cheapest)"
-                    + "|[^:]{1,64} changed the borders of .+ to (?:open|close)"
+                    + "|[^:]{1,64} changed (?:the global borders|the borders of .+) to (?:open|close)"
                     + "|[^:]{1,64} set the guild headquarters to .+"
-                    + "|[^:]{1,64} set .+ bonus to level \\d+ on .+"
-                    + "|[^:]{1,64} set .+ upgrade to level \\d+ on .+"
-                    + "|[^:]{1,64} removed .+ bonus from .+"
+                    + "|[^:]{1,64} set .+ (?:bonus|upgrade) to level \\d+ on .+"
+                    + "|[^:]{1,64} removed .+ (?:bonus|upgrade) from .+"
                     + "|[^:]{1,64} applied the loadout(?:\\s+|:).+ on .+"
                     + ")$",
             Pattern.CASE_INSENSITIVE);
