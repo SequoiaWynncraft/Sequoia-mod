@@ -16,6 +16,7 @@ import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyStatus;
+import com.seqwawa.seq.model.ReservedSlot;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 
 /**
@@ -193,8 +194,8 @@ public class PartyListing {
         return members.stream().filter(Objects::nonNull).toList();
     }
 
-    private static List<Member> safeReservedSlots(Listing listing) {
-        List<Member> reservedSlots = listing.reservedSlots();
+    private static List<ReservedSlot> safeReservedSlots(Listing listing) {
+        List<ReservedSlot> reservedSlots = listing.reservedSlots();
         if (reservedSlots == null) {
             return List.of();
         }

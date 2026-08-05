@@ -110,6 +110,22 @@ class ApiClientTest {
     }
 
     @Test
+    void createListingPayloadSerializesOtherRole() {
+        JsonObject payload = ApiClient.buildCreateListingPayload(
+                List.of(11L),
+                PartyMode.CHILL,
+                false,
+                PartyRegion.NA,
+                PartyRole.OTHER,
+                null,
+                null,
+                PartyJoinPolicy.OPEN,
+                0);
+
+        assertEquals("OTHER", payload.get("role").getAsString());
+    }
+
+    @Test
     void modVersionHeaderConstantMatchesBackendContract() {
         assertEquals("X-Sequoia-Mod-Version", ClientVersion.MOD_VERSION_HEADER);
         assertTrue(ClientVersion.MOD_VERSION_HEADER.startsWith("X-"));

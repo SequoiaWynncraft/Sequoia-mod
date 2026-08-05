@@ -137,7 +137,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final String LEA_UUID = "7792daec-00d8-49ce-b44e-fe97c5ec4e75";
     private static final String NEXUS_OF_LIGHT = "Nexus of Light";
     private static final String NEXUS_OF_LEA = "Nexus of Lea";
-    private static final String[] ROLES = {"DPS", "Healer", "Tank"};
+    private static final String[] ROLES = {"DPS", "Healer", "Tank", "Other"};
 
     // All possible tags = RAID_TYPES + PARTY_TAGS
     private static final String[] ALL_TAGS;

@@ -14,6 +14,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.seqwawa.seq.model.Activity;
+import com.seqwawa.seq.model.CreateInviteResponse;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.Member;
 import com.seqwawa.seq.model.PartyCloseReason;
@@ -22,6 +23,7 @@ import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.PartyStatus;
+import com.seqwawa.seq.model.ReservedSlot;
 import lombok.Getter;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.ClickEvent;
@@ -69,6 +71,9 @@ public class PartyFinderManager implements NotificationAccessor {
     /** Expanded state tracking (preserved across listing reloads). */
     private final Map<Long, Boolean> expandedStates = new ConcurrentHashMap<>();
 
+    /** Invite tokens issued by this client, retained so leaders can revoke them. */
+    private final Map<IssuedInviteKey, IssuedInvite> issuedInvites = new ConcurrentHashMap<>();
+
     /** Cached adapter list (avoids recreating wrappers every frame). */
     private List<PartyListing> cachedParties;
 
@@ -111,6 +116,10 @@ public class PartyFinderManager implements NotificationAccessor {
     private record InviteAllCandidate(String memberUUID, CompletableFuture<String> usernameFuture) {}
 
     private record ResolvedInviteTarget(String memberUUID, String username) {}
+
+    private record IssuedInviteKey(long listingId, String normalizedUsername) {}
+
+    private record IssuedInvite(UUID targetUUID, String username, String inviteToken) {}
 
     public PartyFinderManager() {
         SeqClient.LOGGER.info("[PartyFinderWS] Registering party finder websocket handlers");
@@ -386,12 +395,53 @@ public class PartyFinderManager implements NotificationAccessor {
                     return completedCommandFailureVoid("You cannot invite yourself.");
                 }
 
-                return executeVoidCommand(
-                        ApiClient.getInstance().createInvite(listing.id(), targetUUID),
-                        "Unable to create party invite",
-                        "Failed to create invite",
-                        "Created Sequoia invite for " + normalizedUsername + " on party #" + listing.id() + ".");
+                return ApiClient.getInstance()
+                        .createInvite(listing.id(), targetUUID)
+                        .thenApply(response -> {
+                            applyCreatedInvite(response, listing.id(), targetUUID, normalizedUsername);
+                            return CommandResult.<Void>success(
+                                    "Created Sequoia invite for " + normalizedUsername + " on party #" + listing.id()
+                                            + ".",
+                                    null);
+                        })
+                        .exceptionally(e -> commandFailure(
+                                e, "Unable to create party invite", "Failed to create invite"));
             });
+        });
+    }
+
+    public CompletableFuture<CommandResult<Listing>> revokeInviteFromCommand(String username) {
+        return ensureCurrentListingForCommand().thenCompose(currentResult -> {
+            if (!currentResult.success()) {
+                return completedCommandFailure(currentResult.message());
+            }
+            if (!isPartyLeader()) {
+                return completedCommandFailure("Only the party leader can revoke invites.");
+            }
+
+            String validationMessage = validateUsername(username, false);
+            if (validationMessage != null) {
+                return completedCommandFailure(validationMessage);
+            }
+
+            Listing listing = currentResult.data();
+            IssuedInviteKey key = issuedInviteKey(listing.id(), username);
+            IssuedInvite invite = issuedInvites.get(key);
+            if (invite == null) {
+                return completedCommandFailure(
+                        "No revocable invite for " + username.trim() + " was created during this session.");
+            }
+
+            return executeListingCommand(
+                    ApiClient.getInstance().revokeInvite(listing.id(), invite.inviteToken()),
+                    updatedListing -> {
+                        issuedInvites.remove(key, invite);
+                        applyUpdatedCurrentListingState(updatedListing);
+                    },
+                    "Unable to revoke party invite",
+                    "Failed to revoke invite",
+                    updatedListing -> "Revoked Sequoia invite for " + invite.username() + " on party #"
+                            + updatedListing.id() + ".");
         });
     }
 
@@ -831,6 +881,7 @@ public class PartyFinderManager implements NotificationAccessor {
             }
             case "UPDATED" -> {
                 upsertListing(listing, false);
+                pruneIssuedInvites(listing);
                 listingsVersion++;
             }
             case "DISBANDED" -> {
@@ -840,6 +891,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 if (currentListing != null && currentListing.id() == listing.id()) {
                     currentListing = null;
                 }
+                issuedInvites.keySet().removeIf(key -> key.listingId() == listing.id());
                 listingsVersion++;
             }
         }
@@ -1598,13 +1650,15 @@ public class PartyFinderManager implements NotificationAccessor {
                             targetUUID);
                     return ApiClient.getInstance()
                             .createInvite(requestedListingId, targetUUID)
-                            .thenApply(ignored -> true);
+                            .thenApply(response -> {
+                                applyCreatedInvite(response, requestedListingId, targetUUID, normalizedUsername);
+                                return true;
+                            });
                 })
                 .thenAccept(inviteCreated -> {
                     if (Boolean.TRUE.equals(inviteCreated)) {
-                        SeqClient.LOGGER.info("[PartyFinderWS] createInvite API success; reloading listings");
+                        SeqClient.LOGGER.info("[PartyFinderWS] createInvite API success; applied response listing");
                         notify("Party Finder invite created.");
-                        loadListings(null, null);
                     } else {
                         SeqClient.LOGGER.warn("[PartyFinderWS] createInvite did not complete successfully");
                     }
@@ -2400,13 +2454,6 @@ public class PartyFinderManager implements NotificationAccessor {
                 .exceptionally(e -> commandFailure(e, fallbackMessage, logMessage));
     }
 
-    private CompletableFuture<CommandResult<Void>> executeVoidCommand(
-            CompletableFuture<Void> apiFuture, String fallbackMessage, String logMessage, String successMessage) {
-        return apiFuture
-                .thenApply(ignored -> CommandResult.<Void>success(successMessage, null))
-                .exceptionally(e -> commandFailure(e, fallbackMessage, logMessage));
-    }
-
     private CompletableFuture<CommandResult<Listing>> runLeaderListingCommand(
             String notLeaderMessage, Function<Listing, CompletableFuture<CommandResult<Listing>>> action) {
         return ensureCurrentListingForCommand().thenCompose(currentResult -> {
@@ -2663,6 +2710,7 @@ public class PartyFinderManager implements NotificationAccessor {
             case DPS -> "DPS";
             case HEALER -> "Healer";
             case TANK -> "Tank";
+            case OTHER -> "Other";
         };
     }
 
@@ -2697,6 +2745,7 @@ public class PartyFinderManager implements NotificationAccessor {
         if (currentListing != null && currentListing.id() == listing.id()) {
             currentListing = listing;
         }
+        pruneIssuedInvites(listing);
         listingsVersion++;
     }
 
@@ -2705,6 +2754,7 @@ public class PartyFinderManager implements NotificationAccessor {
         if (currentListing != null && currentListing.id() == listing.id()) {
             currentListing = null;
         }
+        issuedInvites.keySet().removeIf(key -> key.listingId() == listing.id());
         listingsVersion++;
     }
 
@@ -2713,7 +2763,46 @@ public class PartyFinderManager implements NotificationAccessor {
         if (currentListing != null && currentListing.id() == listingId) {
             currentListing = null;
         }
+        issuedInvites.keySet().removeIf(key -> key.listingId() == listingId);
         listingsVersion++;
+    }
+
+    private void applyCreatedInvite(
+            CreateInviteResponse response, long listingId, UUID targetUUID, String targetUsername) {
+        if (response == null || response.listing() == null) {
+            throw new IllegalStateException("Party invite response did not include the updated listing.");
+        }
+        if (response.inviteToken() == null || response.inviteToken().isBlank()) {
+            throw new IllegalStateException("Party invite response did not include an invite token.");
+        }
+        if (response.listing().id() != listingId) {
+            throw new IllegalStateException("Party invite response referenced an unexpected listing.");
+        }
+
+        applyUpdatedCurrentListingState(response.listing());
+        issuedInvites.put(
+                issuedInviteKey(listingId, targetUsername),
+                new IssuedInvite(targetUUID, targetUsername.trim(), response.inviteToken()));
+    }
+
+    private void pruneIssuedInvites(Listing listing) {
+        if (listing == null) {
+            return;
+        }
+        Set<String> reservedPlayerKeys = listing.reservedSlots() == null
+                ? Set.of()
+                : listing.reservedSlots().stream()
+                        .filter(Objects::nonNull)
+                        .map(ReservedSlot::playerUUID)
+                        .map(PartyFinderManager::normalizeUuidLike)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
+        issuedInvites.entrySet().removeIf(entry -> entry.getKey().listingId() == listing.id()
+                && !reservedPlayerKeys.contains(normalizeUuidLike(entry.getValue().targetUUID().toString())));
+    }
+
+    private static IssuedInviteKey issuedInviteKey(long listingId, String username) {
+        return new IssuedInviteKey(listingId, username.trim().toLowerCase(Locale.ROOT));
     }
 
     private void sendGameDirectMessage(UUID targetUUID, String message) {
@@ -2757,7 +2846,7 @@ public class PartyFinderManager implements NotificationAccessor {
             return 0;
         }
 
-        List<Member> reservedSlots = listing.reservedSlots();
+        List<ReservedSlot> reservedSlots = listing.reservedSlots();
         if (reservedSlots != null) {
             return reservedSlots.size();
         }
@@ -2890,12 +2979,12 @@ public class PartyFinderManager implements NotificationAccessor {
             return false;
         }
 
-        List<Member> reservedSlots = listing.reservedSlots();
+        List<ReservedSlot> reservedSlots = listing.reservedSlots();
         if (reservedSlots == null || reservedSlots.isEmpty()) {
             return false;
         }
 
-        for (Member reserved : reservedSlots) {
+        for (ReservedSlot reserved : reservedSlots) {
             if (reserved == null) {
                 continue;
             }
@@ -2984,6 +3073,7 @@ public class PartyFinderManager implements NotificationAccessor {
             case "DPS" -> PartyRole.DPS;
             case "HEALER" -> PartyRole.HEALER;
             case "TANK" -> PartyRole.TANK;
+            case "OTHER" -> PartyRole.OTHER;
             default -> null;
         };
     }

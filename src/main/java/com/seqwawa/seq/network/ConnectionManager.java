@@ -2155,8 +2155,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_storage_snapshot".equals(type)
                 || "guild_storage_reward".equals(type)
                 || "guild_war_submission".equals(type)
-                || "party_sync_snapshot".equals(type)
-                || "party_sync_member_removed".equals(type)
                 || "get_connected".equals(type);
     }
 

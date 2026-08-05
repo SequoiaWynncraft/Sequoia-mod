@@ -3,6 +3,9 @@ package com.seqwawa.seq.managers;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonDeserializer;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -14,9 +17,43 @@ import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.PartyStatus;
+import com.seqwawa.seq.model.ReservedSlot;
 import com.seqwawa.seq.model.WynnClassType;
 
 class PartyListingTest {
+
+    @Test
+    void deserializesBackendOtherRole() {
+        assertEquals(PartyRole.OTHER, new Gson().fromJson("\"OTHER\"", PartyRole.class));
+    }
+
+    @Test
+    void deserializesBackendReservedSlotSchema() {
+        Gson gson = new GsonBuilder()
+                .registerTypeAdapter(
+                        Instant.class,
+                        (JsonDeserializer<Instant>)
+                                (json, type, context) -> Instant.parse(json.getAsString()))
+                .create();
+
+        Listing listing = gson.fromJson(
+                """
+                {
+                  "id": 42,
+                  "reservedSlots": [{
+                    "playerUUID": "00000000-0000-0000-0000-000000000042",
+                    "role": "OTHER",
+                    "createdAt": "2026-08-05T10:00:00Z"
+                  }]
+                }
+                """,
+                Listing.class);
+
+        ReservedSlot reservedSlot = listing.reservedSlots().getFirst();
+        assertEquals("00000000-0000-0000-0000-000000000042", reservedSlot.playerUUID());
+        assertEquals(PartyRole.OTHER, reservedSlot.role());
+        assertEquals(Instant.parse("2026-08-05T10:00:00Z"), reservedSlot.createdAt());
+    }
 
     @Test
     void mapsWartornPalaceAcrossDisplayBackendAndAssetNames() {
@@ -117,5 +154,26 @@ class PartyListingTest {
 
         assertEquals(PartyJoinPolicy.OPEN, legacyListing.resolvedJoinPolicy());
         assertEquals(PartyJoinPolicy.OPEN, listing.joinPolicy);
+    }
+
+    @Test
+    void displaysBackendOtherRoleWithoutFallingBackToDps() {
+        PartyListing listing = new PartyListing(new Listing(
+                4L,
+                List.of(new Activity(1L, "TNA", 4)),
+                null,
+                "leader",
+                PartyMode.CHILL,
+                false,
+                PartyRegion.EU,
+                "EU21",
+                PartyStatus.OPEN,
+                null,
+                null,
+                List.of(new Member("leader", PartyRole.OTHER, WynnClassType.MAGE, Instant.EPOCH)),
+                List.of(),
+                Instant.EPOCH));
+
+        assertEquals("Other", listing.members.getFirst().role);
     }
 }

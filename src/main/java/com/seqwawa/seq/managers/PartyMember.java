@@ -2,6 +2,7 @@ package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.model.Member;
 import com.seqwawa.seq.model.PartyRole;
+import com.seqwawa.seq.model.ReservedSlot;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.utils.PlayerNameCache;
 import com.seqwawa.seq.utils.WynnClassCache;
@@ -11,7 +12,7 @@ import com.seqwawa.seq.utils.WynnClassCache;
  * matching what {@link PartyFinderScreen} expects.
  *
  * <p>
- * {@code role} is the party role (DPS, Healer, Tank) — what function
+ * {@code role} is the party role (DPS, Healer, Tank, Other) — what function
  * the player serves in the group.
  *
  * <p>
@@ -29,7 +30,7 @@ public class PartyMember {
     public final String className;
     public final boolean isLeader;
     public final boolean isReserved;
-    /** Display-friendly party role (e.g. "DPS", "Healer", "Tank"). */
+    /** Display-friendly party role (e.g. "DPS", "Healer", "Tank", "Other"). */
     public final String role;
     public final String playerUUID;
 
@@ -48,7 +49,7 @@ public class PartyMember {
         this.className = backendClassIcon != null ? backendClassIcon : WynnClassCache.resolve(member.playerUUID());
     }
 
-    private PartyMember(Member reservedSlot) {
+    private PartyMember(ReservedSlot reservedSlot) {
         this.playerUUID = null;
         this.name = RESERVED_LABEL;
         this.isLeader = false;
@@ -57,7 +58,7 @@ public class PartyMember {
         this.className = null;
     }
 
-    public static PartyMember reserved(Member reservedSlot) {
+    public static PartyMember reserved(ReservedSlot reservedSlot) {
         return new PartyMember(reservedSlot);
     }
 
@@ -74,6 +75,7 @@ public class PartyMember {
      * <li>DPS → "DPS"</li>
      * <li>HEALER → "Healer"</li>
      * <li>TANK → "Tank"</li>
+     * <li>OTHER → "Other"</li>
      * </ul>
      */
     private static String formatRole(PartyRole partyRole) {
@@ -83,6 +85,7 @@ public class PartyMember {
             case DPS -> "DPS";
             case HEALER -> "Healer";
             case TANK -> "Tank";
+            case OTHER -> "Other";
         };
     }
 }
