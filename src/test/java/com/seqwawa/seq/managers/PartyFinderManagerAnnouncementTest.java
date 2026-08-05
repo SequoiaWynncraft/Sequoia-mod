@@ -16,6 +16,7 @@ import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.PartyStatus;
+import com.seqwawa.seq.model.ReservedSlot;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 
@@ -40,7 +41,7 @@ class PartyFinderManagerAnnouncementTest {
                 1,
                 1,
                 BASE_TIME.minusSeconds(150),
-                List.of(new Member(LOCAL_UUID, PartyRole.HEALER, WynnClassType.MAGE, BASE_TIME.minusSeconds(149))));
+                List.of(new ReservedSlot(LOCAL_UUID, PartyRole.HEALER, BASE_TIME.minusSeconds(149))));
 
         List<Listing> candidates = PartyFinderManager.selectOpenPartyAnnouncementCandidates(
                 List.of(eligible, full, closed, ownListing, inviteOnly, reservedForLocal),
@@ -192,7 +193,7 @@ class PartyFinderManagerAnnouncementTest {
             int memberCount,
             int reservedCount,
             Instant createdAt,
-            List<Member> reservedSlots) {
+            List<ReservedSlot> reservedSlots) {
         return listing(
                 id,
                 leaderUuid,
@@ -214,7 +215,7 @@ class PartyFinderManagerAnnouncementTest {
             Instant createdAt,
             List<Activity> activities,
             List<Member> members,
-            List<Member> reservedSlots) {
+            List<ReservedSlot> reservedSlots) {
         return new Listing(
                 id,
                 activities,
@@ -263,14 +264,11 @@ class PartyFinderManagerAnnouncementTest {
                 joinPolicy);
     }
 
-    private static List<Member> reserved(int reservedCount, Instant createdAt) {
-        java.util.ArrayList<Member> reservedSlots = new java.util.ArrayList<>();
+    private static List<ReservedSlot> reserved(int reservedCount, Instant createdAt) {
+        java.util.ArrayList<ReservedSlot> reservedSlots = new java.util.ArrayList<>();
         for (int i = 0; i < reservedCount; i++) {
-            reservedSlots.add(new Member(
-                    "reserved-" + i,
-                    PartyRole.HEALER,
-                    WynnClassType.MAGE,
-                    createdAt.plusSeconds(i + 1)));
+            reservedSlots.add(new ReservedSlot(
+                    "reserved-" + i, PartyRole.HEALER, createdAt.plusSeconds(i + 1)));
         }
         return reservedSlots;
     }

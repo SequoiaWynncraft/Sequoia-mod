@@ -2,6 +2,7 @@ package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.model.Member;
 import com.seqwawa.seq.model.PartyRole;
+import com.seqwawa.seq.model.ReservedSlot;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.utils.PlayerNameCache;
 import com.seqwawa.seq.utils.WynnClassCache;
@@ -48,7 +49,7 @@ public class PartyMember {
         this.className = backendClassIcon != null ? backendClassIcon : WynnClassCache.resolve(member.playerUUID());
     }
 
-    private PartyMember(Member reservedSlot) {
+    private PartyMember(ReservedSlot reservedSlot) {
         this.playerUUID = null;
         this.name = RESERVED_LABEL;
         this.isLeader = false;
@@ -57,7 +58,7 @@ public class PartyMember {
         this.className = null;
     }
 
-    public static PartyMember reserved(Member reservedSlot) {
+    public static PartyMember reserved(ReservedSlot reservedSlot) {
         return new PartyMember(reservedSlot);
     }
 

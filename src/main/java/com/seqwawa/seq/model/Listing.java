@@ -20,7 +20,7 @@ public record Listing(
         PartyCloseReason closeReason,
         String note,
         List<Member> members,
-        List<Member> reservedSlots,
+        List<ReservedSlot> reservedSlots,
         Instant createdAt,
         @SerializedName(
                         value = "joinPolicy",
@@ -39,7 +39,7 @@ public record Listing(
             PartyCloseReason closeReason,
             String note,
             List<Member> members,
-            List<Member> reservedSlots,
+            List<ReservedSlot> reservedSlots,
             Instant createdAt) {
         this(
                 id,
@@ -71,7 +71,7 @@ public record Listing(
             PartyCloseReason closeReason,
             String note,
             List<Member> members,
-            List<Member> reservedSlots,
+            List<ReservedSlot> reservedSlots,
             Instant createdAt) {
         this(
                 id,
@@ -102,7 +102,7 @@ public record Listing(
             PartyStatus status,
             String note,
             List<Member> members,
-            List<Member> reservedSlots,
+            List<ReservedSlot> reservedSlots,
             Instant createdAt) {
         this(
                 id,

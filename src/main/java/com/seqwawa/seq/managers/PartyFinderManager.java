@@ -23,6 +23,7 @@ import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.PartyStatus;
+import com.seqwawa.seq.model.ReservedSlot;
 import lombok.Getter;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.ClickEvent;
@@ -2792,7 +2793,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 ? Set.of()
                 : listing.reservedSlots().stream()
                         .filter(Objects::nonNull)
-                        .map(Member::playerUUID)
+                        .map(ReservedSlot::playerUUID)
                         .map(PartyFinderManager::normalizeUuidLike)
                         .filter(Objects::nonNull)
                         .collect(Collectors.toSet());
@@ -2845,7 +2846,7 @@ public class PartyFinderManager implements NotificationAccessor {
             return 0;
         }
 
-        List<Member> reservedSlots = listing.reservedSlots();
+        List<ReservedSlot> reservedSlots = listing.reservedSlots();
         if (reservedSlots != null) {
             return reservedSlots.size();
         }
@@ -2978,12 +2979,12 @@ public class PartyFinderManager implements NotificationAccessor {
             return false;
         }
 
-        List<Member> reservedSlots = listing.reservedSlots();
+        List<ReservedSlot> reservedSlots = listing.reservedSlots();
         if (reservedSlots == null || reservedSlots.isEmpty()) {
             return false;
         }
 
-        for (Member reserved : reservedSlots) {
+        for (ReservedSlot reserved : reservedSlots) {
             if (reserved == null) {
                 continue;
             }
