@@ -1,5 +1,8 @@
 {
   "key.category.sequoia-mod.controls": "Sequoia Mod Controls",
   "key.sequoia-mod.open_settings": "Open Settings",
+  "key.sequoia-mod.open_party_finder": "Open Party Finder",
+  "key.sequoia-mod.open_world_map": "Open World Map",
+  "key.sequoia-mod.open_ingredient_guide": "Open Ingredient Guide",
   "key.sequoia-mod.share_bombs": "Share Bombs"
 }

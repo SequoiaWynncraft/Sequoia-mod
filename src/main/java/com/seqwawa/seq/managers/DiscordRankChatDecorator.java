@@ -68,6 +68,9 @@ public final class DiscordRankChatDecorator {
     /** Aqua Wynncraft uses for guild chat; see {@code ChatManager}. */
     private static final int GUILD_CHAT_COLOR = 0x55FFFF;
 
+    /** Dark aqua Wynntils uses for the speaker name and trailing separator. */
+    private static final int GUILD_SPEAKER_COLOR = 0x00AAAA;
+
     /** Bar drawn down the left of a bridge block, used until a real one is captured. */
     static final String BRIDGE_CONTINUATION_GLYPH = "\uF8F1";
     /** Discord mark dropped into the middle of Wynncraft's arrow. */
@@ -137,29 +140,28 @@ public final class DiscordRankChatDecorator {
             bridgeSequenceOpen = false;
         }
 
-        if (message == null || !isEnabled() || ownLine) {
+        if (message == null || ownLine) {
             return message;
         }
 
-        if (!WynnPillGlyphs.containsPill(message.getString())) {
+        Component decorated = message;
+        if (isEnabled() && WynnPillGlyphs.containsPill(message.getString())) {
+            DiscordRankService service = DiscordRankService.getInstance();
+            if (!service.hasRanks()) {
+                logInspection(message, "no linked ranks loaded yet");
+            } else {
+                try {
+                    decorated = decorateGuildChat(message, service::presentationForMinecraftUsername);
+                    logInspection(
+                            message, decorated == message ? "no guild rank badge or unlinked speaker" : "rewritten");
+                } catch (RuntimeException exception) {
+                    SeqClient.LOGGER.debug("[DiscordRanks] Failed to decorate guild chat line.", exception);
+                }
+            }
+        } else if (isEnabled()) {
             logInspection(message, "no glyph badge in line");
-            return message;
         }
-
-        DiscordRankService service = DiscordRankService.getInstance();
-        if (!service.hasRanks()) {
-            logInspection(message, "no linked ranks loaded yet");
-            return message;
-        }
-
-        try {
-            Component decorated = decorateGuildChat(message, service::presentationForMinecraftUsername);
-            logInspection(message, decorated == message ? "no guild rank badge or unlinked speaker" : "rewritten");
-            return decorated;
-        } catch (RuntimeException exception) {
-            SeqClient.LOGGER.debug("[DiscordRanks] Failed to decorate guild chat line.", exception);
-            return message;
-        }
+        return recolourGuildMessageText(decorated, inGameGuildChatTextColor());
     }
 
     /** Decoration core, parameterised on the rank lookup so it stays unit-testable. */
@@ -437,6 +439,60 @@ public final class DiscordRankChatDecorator {
         });
     }
 
+    static Component recolourGuildMessageText(Component message, TextColor textColor) {
+        if (message == null || textColor == null || !WynnPillGlyphs.containsPill(message.getString())) {
+            return message;
+        }
+
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(message);
+        String text = ComponentTextEditor.textOf(fragments);
+        int messageStart = guildMessageStart(fragments, text);
+        if (messageStart < 0 || messageStart >= text.length()) {
+            return message;
+        }
+
+        List<ComponentTextEditor.Fragment> recoloured = ComponentTextEditor.restyleRange(
+                fragments,
+                messageStart,
+                text.length(),
+                style -> isGuildChatColor(style.getColor()) ? style.withColor(textColor) : style);
+        if (recoloured.equals(fragments)) {
+            return message;
+        }
+
+        MutableComponent result = Component.empty();
+        for (ComponentTextEditor.Fragment fragment : recoloured) {
+            result.append(Component.literal(fragment.text()).withStyle(fragment.style()));
+        }
+        return result;
+    }
+
+    private static int guildMessageStart(List<ComponentTextEditor.Fragment> fragments, String text) {
+        for (int index = 0; index < text.length(); index++) {
+            if (text.charAt(index) != ':' || !isGuildSeparatorColor(styleAt(fragments, index).getColor())) {
+                continue;
+            }
+            int start = index + 1;
+            while (start < text.length() && text.charAt(start) == ' ') {
+                start++;
+            }
+            return start;
+        }
+        return -1;
+    }
+
+    private static boolean isGuildChatColor(TextColor color) {
+        return color != null && color.getValue() == GUILD_CHAT_COLOR;
+    }
+
+    private static boolean isGuildSeparatorColor(TextColor color) {
+        if (color == null) {
+            return false;
+        }
+        int value = color.getValue();
+        return value == GUILD_SPEAKER_COLOR || value == GUILD_CHAT_COLOR;
+    }
+
     /**
      * The Wynncraft guild rank a decoded pill label denotes, or {@code null} for any
      * other badge. A suffix match tolerates a stray leading glyph decoding into the
@@ -548,9 +604,16 @@ public final class DiscordRankChatDecorator {
                 && SeqClient.getColorDiscordBridgeSetting().getValue();
     }
 
-    /** The aqua Wynncraft paints guild chat with, so bridged lines read the same. */
-    public static TextColor guildChatColor() {
-        return TextColor.fromRgb(GUILD_CHAT_COLOR);
+    public static TextColor discordChatTextColor() {
+        return TextColor.fromRgb(SeqClient.getDiscordChatTextColorSetting() == null
+                ? GUILD_CHAT_COLOR
+                : SeqClient.getDiscordChatTextColorSetting().getValue());
+    }
+
+    private static TextColor inGameGuildChatTextColor() {
+        return TextColor.fromRgb(SeqClient.getInGameGuildChatTextColorSetting() == null
+                ? GUILD_CHAT_COLOR
+                : SeqClient.getInGameGuildChatTextColorSetting().getValue());
     }
 
     /**

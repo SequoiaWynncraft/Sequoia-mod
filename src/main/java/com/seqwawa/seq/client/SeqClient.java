@@ -54,7 +54,10 @@ import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
+import com.seqwawa.seq.ui.IngredientGuideScreen;
+import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.ui.SequoiaScreen;
+import com.seqwawa.seq.ui.WorldMapScreen;
 import com.seqwawa.seq.update.UpdateManager;
 import com.seqwawa.seq.utils.WynnClassCache;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
@@ -113,6 +116,12 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting colorDiscordBridgeSetting;
 
     @Getter
+    public static Setting.ColorSetting discordChatTextColorSetting;
+
+    @Getter
+    public static Setting.ColorSetting inGameGuildChatTextColorSetting;
+
+    @Getter
     public static Setting.BooleanSetting showRankGradientsSetting;
 
     @Getter
@@ -120,9 +129,6 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static Setting.BooleanSetting animateUsernameGradientsSetting;
-
-    @Getter
-    public static Setting.IntSetting visibleChatLinesSetting;
 
     @Getter
     public static Setting.BooleanSetting profileOnShiftClickSetting;
@@ -230,6 +236,9 @@ public class SeqClient implements ClientModInitializer {
     public static IngredientGuideManager ingredientGuideManager;
 
     private static KeyMapping openScreenKey;
+    private static KeyMapping openPartyFinderKey;
+    private static KeyMapping openWorldMapKey;
+    private static KeyMapping openIngredientGuideKey;
     private static KeyMapping shareBombsKey;
     private static WynnClassType lastBroadcastPartyClass;
     private static boolean wasInPartyFinder;
@@ -283,6 +292,15 @@ public class SeqClient implements ClientModInitializer {
 
         openScreenKey = KeyBindingHelper.registerKeyBinding(
                 new KeyMapping("key.sequoia-mod.open_settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O, category));
+        openPartyFinderKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                "key.sequoia-mod.open_party_finder", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
+        openWorldMapKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                "key.sequoia-mod.open_world_map", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
+        openIngredientGuideKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                "key.sequoia-mod.open_ingredient_guide",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_UNKNOWN,
+                category));
         shareBombsKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.sequoia-mod.share_bombs", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
 
@@ -290,6 +308,21 @@ public class SeqClient implements ClientModInitializer {
             while (openScreenKey.consumeClick()) {
                 if (client.screen == null) {
                     openMainScreen();
+                }
+            }
+            while (openPartyFinderKey.consumeClick()) {
+                if (client.screen == null) {
+                    openPartyFinderScreen();
+                }
+            }
+            while (openWorldMapKey.consumeClick()) {
+                if (client.screen == null) {
+                    openWorldMapScreen();
+                }
+            }
+            while (openIngredientGuideKey.consumeClick()) {
+                if (client.screen == null) {
+                    openIngredientGuideScreen();
                 }
             }
             while (shareBombsKey.consumeClick()) {
@@ -553,6 +586,18 @@ public class SeqClient implements ClientModInitializer {
         mc.execute(() -> mc.setScreen(new SequoiaScreen()));
     }
 
+    public static void openPartyFinderScreen() {
+        mc.execute(() -> mc.setScreen(new PartyFinderScreen(mc.screen)));
+    }
+
+    public static void openWorldMapScreen() {
+        mc.execute(() -> mc.setScreen(new WorldMapScreen(mc.screen)));
+    }
+
+    public static void openIngredientGuideScreen() {
+        mc.execute(() -> mc.setScreen(new IngredientGuideScreen(mc.screen)));
+    }
+
     public static boolean isBombShareHotkeyDown() {
         return shareBombsKey != null && shareBombsKey.isDown();
     }
@@ -570,13 +615,15 @@ public class SeqClient implements ClientModInitializer {
         showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", true);
         showChatInsigniasSetting = new Setting.BooleanSetting("show_chat_insignias", "chat", false);
         colorDiscordBridgeSetting = new Setting.BooleanSetting("color_discord_bridge", "chat", true);
+        discordChatTextColorSetting = new Setting.ColorSetting("discord_chat_text_color", "chat", 0x55FFFF);
+        inGameGuildChatTextColorSetting =
+                new Setting.ColorSetting("in_game_guild_chat_text_color", "chat", 0x55FFFF);
         showRankGradientsSetting = new Setting.BooleanSetting("show_rank_gradients", "chat", true);
         // Off by default: moving colour draws the eye away from what is being said, and
         // a still gradient is what a Discord role looks like everywhere else.
         animateRankGradientsSetting = new Setting.BooleanSetting("animate_rank_gradients", "chat", false);
         animateUsernameGradientsSetting =
                 new Setting.BooleanSetting("animate_username_gradients", "chat", false);
-        visibleChatLinesSetting = new Setting.IntSetting("visible_chat_lines", "chat", 12, 5, 20);
         // Off by default: shift-click is vanilla's "insert this name into the chat box"
         // gesture, so taking it over is opt-in rather than a surprise.
         profileOnShiftClickSetting = new Setting.BooleanSetting("profile_on_shift_click", "chat", false);
@@ -589,6 +636,15 @@ public class SeqClient implements ClientModInitializer {
                 "Discord chat");
         colorDiscordBridgeSetting.setParentSetting(showDiscordChatSetting);
         colorDiscordBridgeSetting.setEnabledCondition(showDiscordRanksSetting::getValue);
+        discordChatTextColorSetting.setPresentation(
+                "Discord message text color",
+                "Choose the text color used for messages forwarded from Discord.",
+                "Chat colors");
+        discordChatTextColorSetting.setParentSetting(showDiscordChatSetting);
+        inGameGuildChatTextColorSetting.setPresentation(
+                "In-game guild message text color",
+                "Choose the text color used for native Wynncraft guild messages.",
+                "Chat colors");
 
         showDiscordRanksSetting.setPresentation(
                 "Show Discord ranks and colors",
@@ -613,8 +669,6 @@ public class SeqClient implements ClientModInitializer {
                 "Show insignias", "Display a member's Sequoia insignia beside their chat name.", "Discord ranks and colors");
         showChatInsigniasSetting.setParentSetting(showDiscordRanksSetting);
 
-        visibleChatLinesSetting.setPresentation(
-                "Visible chat lines", null, "Chat behavior");
         profileOnShiftClickSetting.setPresentation(
                 "Open Sequoia profile on shift-click",
                 "Opens the Sequoia website player profile.",
@@ -663,12 +717,13 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(colorDiscordBridgeSetting);
+        getConfigManager().register(discordChatTextColorSetting);
+        getConfigManager().register(inGameGuildChatTextColorSetting);
         getConfigManager().register(showDiscordRanksSetting);
         getConfigManager().register(showRankGradientsSetting);
         getConfigManager().register(animateRankGradientsSetting);
         getConfigManager().register(animateUsernameGradientsSetting);
         getConfigManager().register(showChatInsigniasSetting);
-        getConfigManager().register(visibleChatLinesSetting);
         getConfigManager().register(profileOnShiftClickSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
         getConfigManager().register(trackGuildWarsSetting);
