@@ -38,11 +38,24 @@ public final class ChatMediaLinkFilter {
         return filtered;
     }
 
+    /** Whether a bridge message still has visible content after media-link removal. */
+    public static boolean hasVisibleText(String message) {
+        if (message == null || message.isBlank()) {
+            return false;
+        }
+        String filtered = filter(Component.literal(message)).getString();
+        return filtered.codePoints().anyMatch(codePoint -> !Character.isWhitespace(codePoint)
+                && !Character.isISOControl(codePoint)
+                && Character.getType(codePoint) != Character.FORMAT);
+    }
+
     private static boolean isEnabled() {
         Setting.BooleanSetting embedSetting = SeqClient.getShowChatMediaEmbedsSetting();
+        Setting.IntSetting durationSetting = SeqClient.getChatMediaEmbedDurationSetting();
         Setting.BooleanSetting filterSetting = SeqClient.getHideEmbeddedMediaLinksSetting();
         return embedSetting != null
                 && embedSetting.getValue()
+                && (durationSetting == null || durationSetting.getValue() > 0)
                 && filterSetting != null
                 && filterSetting.getValue();
     }

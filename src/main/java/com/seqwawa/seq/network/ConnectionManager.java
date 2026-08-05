@@ -111,6 +111,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     // Callbacks for new message types
     private static Consumer<DiscordChatMessage> discordChatHandler;
+    private static Consumer<DiscordMediaMessage> discordMediaHandler;
     private static Consumer<PartyFinderUpdateMessage> partyFinderUpdateHandler;
     private static Consumer<PartyFinderInviteMessage> partyFinderInviteHandler;
     private static Consumer<PartyFinderStaleWarningMessage> partyFinderStaleWarningHandler;
@@ -1739,6 +1740,30 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         SeqClient.LOGGER.warn("[WebSocket] Received discord_chat but handler is not registered");
                     }
                 }
+                case "discord_media" -> {
+                    if (discordMediaHandler != null) {
+                        String username = json.get("username").getAsString();
+                        ConfigManager configManager = SeqClient.getConfigManager();
+                        if (configManager != null
+                                && shouldIgnoreDiscordChatSender(username, configManager.ignoredBridgeUsers())) {
+                            SeqClient.LOGGER.debug("[WebSocket] Ignoring discord_media from {}", username);
+                            return;
+                        }
+                        List<String> mediaUrls = parsePrimitiveStringArray(
+                                json.has("media_urls") && json.get("media_urls").isJsonArray()
+                                        ? json.getAsJsonArray("media_urls")
+                                        : null);
+                        if (!mediaUrls.isEmpty()) {
+                            SeqClient.LOGGER.info(
+                                    "[WebSocket] Dispatching discord_media from {} media={}",
+                                    username,
+                                    mediaUrls.size());
+                            discordMediaHandler.accept(new DiscordMediaMessage(username, mediaUrls));
+                        }
+                    } else {
+                        SeqClient.LOGGER.warn("[WebSocket] Received discord_media but handler is not registered");
+                    }
+                }
                 case "party_finder_update" -> {
                     String action = json.has("action") && !json.get("action").isJsonNull()
                             ? json.get("action").getAsString()
@@ -1936,6 +1961,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     public static void onDiscordChat(Consumer<DiscordChatMessage> handler) {
         SeqClient.LOGGER.info("[WebSocket] Registering discord_chat handler present={}", handler != null);
         discordChatHandler = handler;
+    }
+
+    public static void onDiscordMedia(Consumer<DiscordMediaMessage> handler) {
+        SeqClient.LOGGER.info("[WebSocket] Registering discord_media handler present={}", handler != null);
+        discordMediaHandler = handler;
     }
 
     public static void onPartyFinderUpdate(Consumer<PartyFinderUpdateMessage> handler) {
@@ -2494,6 +2524,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
         public DiscordChatMessage(String username, String message, String discordId) {
             this(username, message, discordId, List.of());
+        }
+    }
+
+    public record DiscordMediaMessage(String username, List<String> mediaUrls) {
+        public DiscordMediaMessage {
+            mediaUrls = mediaUrls == null ? List.of() : List.copyOf(mediaUrls);
         }
     }
 

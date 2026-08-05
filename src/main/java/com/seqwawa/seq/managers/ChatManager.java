@@ -706,7 +706,7 @@ public class ChatManager {
             mc.execute(() -> {
                 ChatMediaEmbedManager.getInstance().observe(
                         ChatMediaEmbedManager.Source.DISCORD, msg.username(), msg.message(), msg.mediaUrls());
-                if (mc.player != null) {
+                if (mc.player != null && ChatMediaLinkFilter.hasVisibleText(msg.message())) {
                     displayBridgeMessage(msg);
                 }
 
@@ -714,6 +714,13 @@ public class ChatManager {
                     SeqClient.getEventBus().dispatch(new DiscordChatEvent(msg.username(), msg.message()));
                 }
             });
+        });
+        ConnectionManager.onDiscordMedia(msg -> {
+            if (!SeqClient.getShowDiscordChatSetting().getValue())
+                return;
+
+            mc.execute(() -> ChatMediaEmbedManager.getInstance()
+                    .observe(ChatMediaEmbedManager.Source.DISCORD, msg.username(), "", msg.mediaUrls()));
         });
     }
 

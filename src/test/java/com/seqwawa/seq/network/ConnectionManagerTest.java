@@ -101,6 +101,29 @@ class ConnectionManagerTest {
     }
 
     @Test
+    void dispatchesLateDiscordMediaWithoutCreatingAnotherChatMessage() {
+        AtomicReference<ConnectionManager.DiscordMediaMessage> dispatched = new AtomicReference<>();
+        ConnectionManager.onDiscordMedia(dispatched::set);
+        try {
+            ConnectionManager.getInstance().onMessage("""
+                    {
+                      "type": "discord_media",
+                      "username": "LookingForSleep",
+                      "media_urls": ["https://media.discordapp.net/external/cached.gif"]
+                    }
+                    """);
+
+            assertEquals("LookingForSleep", dispatched.get().username());
+            assertEquals(
+                    List.of("https://media.discordapp.net/external/cached.gif"),
+                    dispatched.get().mediaUrls());
+        } finally {
+            ConnectionManager.onDiscordMedia(null);
+            ConnectionManager.resetForTest();
+        }
+    }
+
+    @Test
     void localCleanCloseDoesNotReconnect() {
         assertFalse(ConnectionManager.shouldReconnectAfterClose(1000, false));
     }

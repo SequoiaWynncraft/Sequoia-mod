@@ -138,6 +138,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting showChatMediaEmbedsSetting;
 
     @Getter
+    public static Setting.IntSetting chatMediaEmbedDurationSetting;
+
+    @Getter
     public static Setting.BooleanSetting hideEmbeddedMediaLinksSetting;
 
     @Getter
@@ -638,6 +641,8 @@ public class SeqClient implements ClientModInitializer {
         // gesture, so taking it over is opt-in rather than a surprise.
         profileOnShiftClickSetting = new Setting.BooleanSetting("profile_on_shift_click", "chat", false);
         showChatMediaEmbedsSetting = new Setting.BooleanSetting("show_chat_media_embeds", "chat", true);
+        chatMediaEmbedDurationSetting =
+                new Setting.IntSetting("chat_media_embed_duration_seconds", "chat", 5, 0, 10);
         hideEmbeddedMediaLinksSetting = new Setting.BooleanSetting("hide_embedded_media_links", "chat", true);
 
         showDiscordChatSetting.setPresentation(
@@ -689,6 +694,11 @@ public class SeqClient implements ClientModInitializer {
                 "Show chat media embeds",
                 "Display supported images and animations shared in guild or Discord chat.",
                 "Chat behavior");
+        chatMediaEmbedDurationSetting.setPresentation(
+                "Media embed duration (seconds)",
+                "How long chat images and animations remain visible.",
+                "Chat behavior");
+        chatMediaEmbedDurationSetting.setParentSetting(showChatMediaEmbedsSetting);
         hideEmbeddedMediaLinksSetting.setPresentation(
                 "Hide embedded media links",
                 "Remove supported media URLs from chat text while their embeds are enabled.",
@@ -747,6 +757,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(showChatInsigniasSetting);
         getConfigManager().register(profileOnShiftClickSetting);
         getConfigManager().register(showChatMediaEmbedsSetting);
+        getConfigManager().register(chatMediaEmbedDurationSetting);
         getConfigManager().register(hideEmbeddedMediaLinksSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
         getConfigManager().register(trackGuildWarsSetting);

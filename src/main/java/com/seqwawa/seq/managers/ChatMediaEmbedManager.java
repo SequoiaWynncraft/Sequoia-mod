@@ -46,13 +46,14 @@ public final class ChatMediaEmbedManager implements AutoCloseable {
     private static final Pattern TITLE_TAG = Pattern.compile("(?is)<title[^>]*>(.*?)</title>");
     private static final Pattern HTML_TAG = Pattern.compile("(?is)<[^>]+>");
     private static final int MAX_LINKS_PER_MESSAGE = 2;
+    private static final int MAX_RESOLVED_MEDIA_URLS = 4;
     private static final int MAX_ENTRIES = 6;
     private static final int MAX_VISIBLE_ENTRIES = 3;
     private static final int MAX_REDIRECTS = 3;
     private static final int MAX_HTML_BYTES = 512 * 1024;
     private static final int MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-    private static final long COLLAPSED_LIFETIME_MS = 45_000L;
-    private static final long FOCUSED_LIFETIME_MS = 5 * 60_000L;
+    private static final long DEFAULT_LIFETIME_MS = 5_000L;
+    private static final long PENDING_LIFETIME_MS = 30_000L;
     private static final long DEDUPE_WINDOW_MS = 3_000L;
     private static final float CARD_WIDTH = 302f;
     private static final float CARD_GAP = 6f;
@@ -104,19 +105,20 @@ public final class ChatMediaEmbedManager implements AutoCloseable {
             return;
         }
 
-        List<URI> links = new ArrayList<>();
+        List<URI> resolvedLinks = new ArrayList<>();
         if (resolvedMediaUrls != null) {
             for (String mediaUrl : resolvedMediaUrls) {
                 for (URI uri : ChatLinkExtractor.extract(mediaUrl, 1)) {
-                    if (!links.contains(uri) && links.size() < MAX_LINKS_PER_MESSAGE) {
-                        links.add(uri);
+                    if (!resolvedLinks.contains(uri) && resolvedLinks.size() < MAX_RESOLVED_MEDIA_URLS) {
+                        resolvedLinks.add(uri);
                     }
                 }
             }
         }
-        if (links.isEmpty()) {
-            links.addAll(ChatLinkExtractor.extract(message, MAX_LINKS_PER_MESSAGE));
-        }
+        List<URI> messageLinks = ChatLinkExtractor.extract(message, MAX_LINKS_PER_MESSAGE);
+        List<URI> links = messageLinks.isEmpty()
+                ? resolvedLinks.stream().limit(MAX_LINKS_PER_MESSAGE).toList()
+                : messageLinks;
 
         long now = System.currentTimeMillis();
         for (URI uri : links) {
@@ -128,7 +130,7 @@ public final class ChatMediaEmbedManager implements AutoCloseable {
                 if (duplicate) {
                     continue;
                 }
-                entry = new EmbedEntry(uri, source, clean(sender, 40), now);
+                entry = new EmbedEntry(uri, fallbackCandidates(uri, resolvedLinks), source, clean(sender, 40), now);
                 entries.add(entry);
                 if (entries.size() > MAX_ENTRIES) {
                     evictedImages = entries.removeFirst().images;
@@ -151,7 +153,7 @@ public final class ChatMediaEmbedManager implements AutoCloseable {
 
         boolean focused = mc.screen instanceof ChatScreen;
         long now = System.currentTimeMillis();
-        removeExpired(now, focused ? FOCUSED_LIFETIME_MS : COLLAPSED_LIFETIME_MS);
+        removeExpired(now, configuredLifetimeMs());
         List<EmbedEntry> candidates;
         synchronized (lock) {
             candidates = List.copyOf(entries);
@@ -286,52 +288,85 @@ public final class ChatMediaEmbedManager implements AutoCloseable {
         if (images.size() == 1 || entry.frameDurationMs <= 0) {
             return images.getFirst();
         }
-        long position = Math.floorMod(now - entry.createdAtMs, entry.frameDurationMs);
+        long animationStart = entry.visibleSinceMs > 0 ? entry.visibleSinceMs : entry.createdAtMs;
+        return images.get(frameIndexAt(entry.frameDelaysMs, entry.frameDurationMs, now - animationStart));
+    }
+
+    static int frameIndexAt(List<Integer> delaysMs, int totalDurationMs, long elapsedMs) {
+        if (delaysMs == null || delaysMs.isEmpty() || totalDurationMs <= 0) {
+            return 0;
+        }
+        long position = Math.floorMod(elapsedMs, totalDurationMs);
         int elapsed = 0;
-        for (int index = 0; index < entry.frameDelaysMs.size(); index++) {
-            elapsed += entry.frameDelaysMs.get(index);
+        for (int index = 0; index < delaysMs.size(); index++) {
+            elapsed += delaysMs.get(index);
             if (position < elapsed) {
-                return images.get(index);
+                return index;
             }
         }
-        return images.getLast();
+        return delaysMs.size() - 1;
     }
 
     private void load(EmbedEntry entry) {
-        try {
-            HttpPayload payload = fetch(entry.uri, MAX_IMAGE_BYTES, "text/html,image/*;q=0.9,*/*;q=0.5");
-            String contentType = payload.contentType();
-            if (isImage(contentType) || looksLikeImage(payload.body())) {
-                String title = fileName(payload.finalUri());
-                LoadedPreview preview = decodeImage(payload.body(), contentType, title, "Image", payload.finalUri());
+        Exception lastFailure = null;
+        for (URI candidate : entry.candidateUris) {
+            try {
+                LoadedPreview preview = loadPreview(candidate);
+                if (preview == null) {
+                    continue;
+                }
                 queueUpload(entry, preview);
                 return;
+            } catch (Exception exception) {
+                lastFailure = exception;
+                SeqClient.LOGGER.debug("Unable to load chat media preview candidate {}", candidate, exception);
             }
-
-            if (!isHtml(contentType, payload.body())) {
-                updateText(entry, host(payload.finalUri()), "Shared link");
-                return;
-            }
-
-            byte[] htmlBytes = payload.body().length > MAX_HTML_BYTES
-                    ? java.util.Arrays.copyOf(payload.body(), MAX_HTML_BYTES)
-                    : payload.body();
-            HtmlMetadata metadata = parseHtml(new String(htmlBytes, StandardCharsets.UTF_8), payload.finalUri());
-            updateText(entry, metadata.title(), metadata.description());
-            if (metadata.image() == null) {
-                return;
-            }
-
-            HttpPayload image = fetch(metadata.image(), MAX_IMAGE_BYTES, "image/*");
-            if (!isImage(image.contentType()) && !looksLikeImage(image.body())) {
-                return;
-            }
-            queueUpload(entry, decodeImage(
-                    image.body(), image.contentType(), metadata.title(), metadata.description(), payload.finalUri()));
-        } catch (Exception exception) {
-            SeqClient.LOGGER.debug("Unable to load chat media preview for {}", entry.uri, exception);
-            updateText(entry, host(entry.uri), previewFailureMessage(exception));
         }
+        updateText(
+                entry,
+                host(entry.uri),
+                lastFailure == null ? "Preview unavailable — open link" : previewFailureMessage(lastFailure));
+    }
+
+    private LoadedPreview loadPreview(URI uri) throws Exception {
+        HttpPayload payload = fetch(uri, MAX_IMAGE_BYTES, "text/html,image/*;q=0.9,*/*;q=0.5");
+        String contentType = payload.contentType();
+        if (isImage(contentType) || looksLikeImage(payload.body())) {
+            String title = fileName(payload.finalUri());
+            return decodeImage(payload.body(), contentType, title, "Image", payload.finalUri());
+        }
+
+        if (!isHtml(contentType, payload.body())) {
+            return null;
+        }
+
+        byte[] htmlBytes = payload.body().length > MAX_HTML_BYTES
+                ? java.util.Arrays.copyOf(payload.body(), MAX_HTML_BYTES)
+                : payload.body();
+        HtmlMetadata metadata = parseHtml(new String(htmlBytes, StandardCharsets.UTF_8), payload.finalUri());
+        if (metadata.image() == null) {
+            return null;
+        }
+
+        HttpPayload image = fetch(metadata.image(), MAX_IMAGE_BYTES, "image/*");
+        if (!isImage(image.contentType()) && !looksLikeImage(image.body())) {
+            return null;
+        }
+        return decodeImage(
+                image.body(), image.contentType(), metadata.title(), metadata.description(), payload.finalUri());
+    }
+
+    static List<URI> fallbackCandidates(URI original, List<URI> resolvedMedia) {
+        List<URI> candidates = new ArrayList<>();
+        candidates.add(original);
+        if (resolvedMedia != null) {
+            for (URI candidate : resolvedMedia) {
+                if (candidate != null && !candidates.contains(candidate)) {
+                    candidates.add(candidate);
+                }
+            }
+        }
+        return List.copyOf(candidates);
     }
 
     private LoadedPreview decodeImage(byte[] bytes, String contentType, String title, String description, URI page)
@@ -378,6 +413,7 @@ public final class ChatMediaEmbedManager implements AutoCloseable {
             entry.images = List.copyOf(images);
             entry.frameDelaysMs = List.copyOf(preview.delaysMs());
             entry.frameDurationMs = preview.delaysMs().stream().mapToInt(Integer::intValue).sum();
+            entry.visibleSinceMs = System.currentTimeMillis();
         } catch (RuntimeException exception) {
             deleteImages(images);
             updateText(entry, preview.title(), "Preview could not be rendered");
@@ -592,7 +628,9 @@ public final class ChatMediaEmbedManager implements AutoCloseable {
         List<UiImage> removed = new ArrayList<>();
         synchronized (lock) {
             entries.removeIf(entry -> {
-                if (now - entry.createdAtMs <= lifetime) {
+                long expiryStart = entry.visibleSinceMs > 0 ? entry.visibleSinceMs : entry.createdAtMs;
+                long effectiveLifetime = entry.visibleSinceMs > 0 ? lifetime : PENDING_LIFETIME_MS;
+                if (now - expiryStart <= effectiveLifetime) {
                     return false;
                 }
                 removed.addAll(entry.images);
@@ -628,7 +666,13 @@ public final class ChatMediaEmbedManager implements AutoCloseable {
 
     private static boolean isEnabled() {
         Setting.BooleanSetting setting = SeqClient.getShowChatMediaEmbedsSetting();
-        return setting != null && setting.getValue();
+        Setting.IntSetting duration = SeqClient.getChatMediaEmbedDurationSetting();
+        return setting != null && setting.getValue() && (duration == null || duration.getValue() > 0);
+    }
+
+    private static long configuredLifetimeMs() {
+        Setting.IntSetting setting = SeqClient.getChatMediaEmbedDurationSetting();
+        return setting == null ? DEFAULT_LIFETIME_MS : setting.getValue() * 1_000L;
     }
 
     @Override
@@ -645,6 +689,7 @@ public final class ChatMediaEmbedManager implements AutoCloseable {
 
     private static final class EmbedEntry {
         private final URI uri;
+        private final List<URI> candidateUris;
         private final Source source;
         private final String sender;
         private final long createdAtMs;
@@ -654,10 +699,12 @@ public final class ChatMediaEmbedManager implements AutoCloseable {
         private volatile List<UiImage> images = List.of();
         private volatile List<Integer> frameDelaysMs = List.of();
         private volatile int frameDurationMs;
+        private volatile long visibleSinceMs;
         private volatile LoadedPreview pendingPreview;
 
-        private EmbedEntry(URI uri, Source source, String sender, long createdAtMs) {
+        private EmbedEntry(URI uri, List<URI> candidateUris, Source source, String sender, long createdAtMs) {
             this.uri = uri;
+            this.candidateUris = candidateUris;
             this.source = source;
             this.sender = sender;
             this.createdAtMs = createdAtMs;
