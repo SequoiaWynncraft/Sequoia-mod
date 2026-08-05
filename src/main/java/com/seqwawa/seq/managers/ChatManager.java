@@ -706,8 +706,9 @@ public class ChatManager {
             mc.execute(() -> {
                 ChatMediaEmbedManager.getInstance().observe(
                         ChatMediaEmbedManager.Source.DISCORD, msg.username(), msg.message(), msg.mediaUrls());
-                if (mc.player != null && ChatMediaLinkFilter.hasVisibleText(msg.message())) {
-                    displayBridgeMessage(msg);
+                String visibleMessage = ChatMediaLinkFilter.filterText(msg.message());
+                if (mc.player != null && ChatMediaLinkFilter.hasVisibleText(visibleMessage)) {
+                    displayBridgeMessage(msg, visibleMessage);
                 }
 
                 if (SeqClient.getEventBus() != null) {
@@ -734,8 +735,8 @@ public class ChatManager {
      * left margin, which loses the marker column and detaches the rest of the message
      * from its sender; separate lines each receive the appropriate bridge prefix.
      */
-    private void displayBridgeMessage(ConnectionManager.DiscordChatMessage msg) {
-        List<String> lines = splitMessageLines(msg.message());
+    private void displayBridgeMessage(ConnectionManager.DiscordChatMessage msg, String visibleMessage) {
+        List<String> lines = splitMessageLines(visibleMessage);
         RankPresentation rank = DiscordRankChatDecorator.bridgeRank(msg.username(), msg.discordId());
 
         for (int index = 0; index < lines.size(); index++) {

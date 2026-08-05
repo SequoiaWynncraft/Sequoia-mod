@@ -38,12 +38,20 @@ public final class ChatMediaLinkFilter {
         return filtered;
     }
 
+    /** Removes supported media links before bridge text is split into visual lines. */
+    public static String filterText(String message) {
+        if (message == null) {
+            return "";
+        }
+        return filter(Component.literal(message)).getString();
+    }
+
     /** Whether a bridge message still has visible content after media-link removal. */
     public static boolean hasVisibleText(String message) {
         if (message == null || message.isBlank()) {
             return false;
         }
-        String filtered = filter(Component.literal(message)).getString();
+        String filtered = filterText(message);
         return filtered.codePoints().anyMatch(codePoint -> !Character.isWhitespace(codePoint)
                 && !Character.isISOControl(codePoint)
                 && Character.getType(codePoint) != Character.FORMAT);

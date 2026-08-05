@@ -23,6 +23,7 @@ final class ChatGifDecoder {
     static final int MAX_PREVIEW_WIDTH = 360;
     static final int MAX_PREVIEW_HEIGHT = 220;
     private static final long MAX_SOURCE_PIXELS = 40_000_000L;
+    private static final int MAX_SOURCE_FRAMES = 2_000;
 
     private ChatGifDecoder() {
     }
@@ -38,7 +39,7 @@ final class ChatGifDecoder {
             try {
                 reader.setInput(input, false, false);
                 int count = reader.getNumImages(true);
-                if (count <= 0 || count > MAX_FRAMES) {
+                if (count <= 0 || count > MAX_SOURCE_FRAMES) {
                     throw new IOException("GIF frame count is outside the preview limit");
                 }
 
@@ -51,8 +52,9 @@ final class ChatGifDecoder {
                 }
 
                 BufferedImage canvas = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-                List<byte[]> frames = new ArrayList<>(count);
-                List<Integer> delays = new ArrayList<>(count);
+                int stride = samplingStride(count);
+                List<byte[]> frames = new ArrayList<>(Math.min(count, MAX_FRAMES));
+                List<Integer> delays = new ArrayList<>(Math.min(count, MAX_FRAMES));
                 FrameInfo previousInfo = null;
                 BufferedImage restorePrevious = null;
 
@@ -76,8 +78,14 @@ final class ChatGifDecoder {
                         graphics.dispose();
                     }
 
-                    frames.add(toPng(scaleToPreview(canvas)));
-                    delays.add(Math.max(20, info.delayHundredths() * 10));
+                    int delay = Math.max(20, info.delayHundredths() * 10);
+                    if (index % stride == 0) {
+                        frames.add(toPng(scaleToPreview(canvas)));
+                        delays.add(delay);
+                    } else {
+                        int previous = delays.size() - 1;
+                        delays.set(previous, delays.get(previous) + delay);
+                    }
                     previousInfo = info;
                 }
                 return new DecodedGif(List.copyOf(frames), List.copyOf(delays));
@@ -85,6 +93,10 @@ final class ChatGifDecoder {
                 reader.dispose();
             }
         }
+    }
+
+    private static int samplingStride(int frameCount) {
+        return Math.max(1, (frameCount + MAX_FRAMES - 1) / MAX_FRAMES);
     }
 
     private static BufferedImage scaleToPreview(BufferedImage source) {

@@ -33,6 +33,8 @@ class ChatMediaUrlResolverTest {
                 URI.create("https://cdn.discordapp.com/attachments/example.gif")));
         assertTrue(ChatMediaUrlResolver.isDisplayableCandidate(
                 URI.create("https://klipy.com/gifs/example")));
+        assertTrue(ChatMediaUrlResolver.isDisplayableCandidate(URI.create(
+                "https://tenor.com/view/black-cat-dandelion-cat-silly-kitty-she-was-a-fairy-gif-14702056371420778419")));
         assertTrue(ChatMediaUrlResolver.isDisplayableCandidate(
                 URI.create("https://cdn.7tv.app/emote/id/4x.avif")));
         assertFalse(ChatMediaUrlResolver.isDisplayableCandidate(

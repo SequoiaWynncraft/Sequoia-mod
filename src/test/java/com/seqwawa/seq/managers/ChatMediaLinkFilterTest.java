@@ -58,6 +58,17 @@ class ChatMediaLinkFilterTest {
     }
 
     @Test
+    void removesTenorPagesBeforeBridgeLineWrapping() {
+        withSettings(true, true, () -> {
+            String tenorUrl =
+                    "https://tenor.com/view/black-cat-dandelion-cat-silly-kitty-she-was-a-fairy-gif-14702056371420778419";
+
+            assertEquals("look\n", ChatMediaLinkFilter.filterText("look\n" + tenorUrl));
+            assertFalse(ChatMediaLinkFilter.hasVisibleText(tenorUrl));
+        });
+    }
+
+    @Test
     void zeroDurationKeepsMediaLinksVisible() {
         withSettings(true, true, () -> {
             SeqClient.chatMediaEmbedDurationSetting.setValue(0);

@@ -53,6 +53,28 @@ class ChatGifDecoderTest {
         assertEquals(java.util.List.of(50, 100), decoded.delaysMs());
     }
 
+    @Test
+    void samplesTenorLengthAnimationsWithinTheGpuFrameLimit() throws Exception {
+        BufferedImage frame = solidFrame(Color.BLACK);
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        ImageWriter writer = ImageIO.getImageWritersByFormatName("gif").next();
+        try (ImageOutputStream output = ImageIO.createImageOutputStream(bytes)) {
+            writer.setOutput(output);
+            writer.prepareWriteSequence(null);
+            for (int index = 0; index < 132; index++) {
+                writeFrame(writer, frame, 10);
+            }
+            writer.endWriteSequence();
+        } finally {
+            writer.dispose();
+        }
+
+        ChatGifDecoder.DecodedGif decoded = ChatGifDecoder.decode(bytes.toByteArray());
+
+        assertEquals(66, decoded.pngFrames().size());
+        assertEquals(13_200, decoded.delaysMs().stream().mapToInt(Integer::intValue).sum());
+    }
+
     private static BufferedImage solidFrame(Color color) {
         BufferedImage frame = new BufferedImage(8, 6, BufferedImage.TYPE_INT_ARGB);
         java.awt.Graphics2D graphics = frame.createGraphics();
