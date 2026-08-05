@@ -1,25 +1,32 @@
 package com.seqwawa.seq.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+import com.mojang.brigadier.tree.ArgumentCommandNode;
+import com.mojang.brigadier.tree.CommandNode;
+import com.mojang.brigadier.tree.LiteralCommandNode;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
+import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.SharedSuggestionProvider;
 import com.seqwawa.seq.accessors.NotificationAccessor;
@@ -58,9 +65,12 @@ public class SeqCommand {
                         "50s",
                         "2stx5le",
                         "2stx5le+1stx5le+4stx4le");
+        private static final Set<String> CASE_INSENSITIVE_ROOTS = Set.of("seq", "e", "a");
+        private static volatile CommandNode<FabricClientCommandSource> commandRoot;
 
         public static void register() {
                 ClientCommandRegistrationCallback.EVENT.register(SeqCommand::registerCommands);
+                ClientSendMessageEvents.MODIFY_COMMAND.register(SeqCommand::normalizeCommandCapitalization);
         }
 
         static void registerCommands(
@@ -135,6 +145,89 @@ public class SeqCommand {
 
                 dispatcher.register(root);
                 dispatcher.register(buildEmeraldRewardCommand("e"));
+                dispatcher.register(ClientCommandManager.literal("a")
+                                .executes(ctx -> runQueuedGuildReward(
+                                                ctx,
+                                                GuildRewardAutomationManager.RewardType.ASPECT,
+                                                30)));
+                commandRoot = dispatcher.getRoot();
+        }
+
+        static String normalizeCommandCapitalization(String command) {
+                CommandNode<FabricClientCommandSource> root = commandRoot;
+                if (command == null || command.isBlank() || root == null) {
+                        return command;
+                }
+
+                StringReader reader = new StringReader(command);
+                int firstTokenStart = skipSpaces(reader);
+                if (!reader.canRead()) {
+                        return command;
+                }
+                String firstToken = reader.readUnquotedString();
+                if (!CASE_INSENSITIVE_ROOTS.contains(firstToken.toLowerCase(Locale.ROOT))) {
+                        return command;
+                }
+                reader.setCursor(firstTokenStart);
+
+                StringBuilder normalized = new StringBuilder(command);
+                CommandNode<FabricClientCommandSource> current = root;
+                while (reader.canRead()) {
+                        int tokenStart = skipSpaces(reader);
+                        if (!reader.canRead()) {
+                                break;
+                        }
+
+                        String token = reader.readUnquotedString();
+                        LiteralCommandNode<FabricClientCommandSource> literal = current.getChildren().stream()
+                                        .filter(LiteralCommandNode.class::isInstance)
+                                        .map(node -> (LiteralCommandNode<FabricClientCommandSource>) node)
+                                        .filter(node -> node.getLiteral().equalsIgnoreCase(token))
+                                        .findFirst()
+                                        .orElse(null);
+                        if (literal != null) {
+                                normalized.replace(tokenStart, reader.getCursor(), literal.getLiteral());
+                                current = literal;
+                                continue;
+                        }
+
+                        reader.setCursor(tokenStart);
+                        ArgumentCommandNode<FabricClientCommandSource, ?> argument = parseArgument(current, command, reader);
+                        if (argument == null) {
+                                break;
+                        }
+                        current = argument;
+                }
+                return normalized.toString();
+        }
+
+        private static int skipSpaces(StringReader reader) {
+                while (reader.canRead() && reader.peek() == ' ') {
+                        reader.skip();
+                }
+                return reader.getCursor();
+        }
+
+        private static ArgumentCommandNode<FabricClientCommandSource, ?> parseArgument(
+                        CommandNode<FabricClientCommandSource> current,
+                        String command,
+                        StringReader reader) {
+                for (CommandNode<FabricClientCommandSource> child : current.getChildren()) {
+                        if (!(child instanceof ArgumentCommandNode<FabricClientCommandSource, ?> argument)) {
+                                continue;
+                        }
+
+                        StringReader candidate = new StringReader(command);
+                        candidate.setCursor(reader.getCursor());
+                        try {
+                                argument.getType().parse(candidate);
+                                reader.setCursor(candidate.getCursor());
+                                return argument;
+                        } catch (CommandSyntaxException ignored) {
+                                // Try the next argument branch.
+                        }
+                }
+                return null;
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildPartyCommand(String literalName) {
