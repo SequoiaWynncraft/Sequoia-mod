@@ -488,44 +488,21 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void keepsPillTextReadableOnBothPaleAndDarkRoleColours() {
-        // Dryad is near-white pastel, Yggdrasil is deep purple.
-        TextColor pale = TextColor.fromRgb(0xCDECE4);
-        TextColor dark = TextColor.fromRgb(0x7506D6);
+    void drawsEveryPillLabelInTheSameDarkColour() {
+        // Dryad is a near-white pastel, Yggdrasil a deep purple, Sapling a mid blue.
+        // A label that followed its pill left the first washed out and made one rank
+        // read differently from one member to the next.
+        RankPresentation pale = presentation("rank.dryad", "Dryad", 112, 0xCDECE4);
+        RankPresentation deep = presentation("rank.yggdrasil", "Ygg", 120, 0x7506D6);
 
-        double paleLabel = DiscordRankChatDecorator.luminanceOf(
-                DiscordRankChatDecorator.labelColorOn(pale).getValue());
-        double darkLabel = DiscordRankChatDecorator.luminanceOf(
-                DiscordRankChatDecorator.labelColorOn(dark).getValue());
+        int onPale = pillLabelColors(DiscordRankChatDecorator.rankPill(pale, null)).getFirst();
+        int onDeep = pillLabelColors(DiscordRankChatDecorator.rankPill(deep, null)).getFirst();
+        int onMid = pillLabelColors(DiscordRankChatDecorator.rankPill(SAPLING, null)).getFirst();
 
-        assertTrue(paleLabel < 0.35d, "a pale pill needs a dark label, was " + paleLabel);
-        assertTrue(darkLabel > 0.55d, "a dark pill needs a light label, was " + darkLabel);
-    }
-
-    @Test
-    void usesMutedGreysRatherThanPureBlackOrWhite() {
-        int onDark = DiscordRankChatDecorator.labelColorOn(TextColor.fromRgb(0x7506D6)).getValue();
-        int onPale = DiscordRankChatDecorator.labelColorOn(TextColor.fromRgb(0xCDECE4)).getValue();
-
-        assertNotEquals(0xFFFFFF, onDark);
-        assertNotEquals(0x000000, onPale);
-        assertTrue(DiscordRankChatDecorator.luminanceOf(onDark) < 0.85d, "must stay softer than white");
-        assertTrue(DiscordRankChatDecorator.luminanceOf(onPale) > 0.05d, "must stay softer than black");
-    }
-
-    @Test
-    void tintsTheLabelWithTheBackgroundHue() {
-        // Blue pill: the label leans blue too, instead of being a flat neutral grey.
-        int label = DiscordRankChatDecorator.labelColorOn(TextColor.fromRgb(0x4CB4FA)).getValue();
-
-        assertTrue((label & 0xFF) > ((label >> 16) & 0xFF), "blue channel should lead on a blue pill");
-    }
-
-    @Test
-    void blendMixesChannelsProportionally() {
-        assertEquals(0x808080, DiscordRankChatDecorator.blend(0x000000, 0xFFFFFF, 0.5039d));
-        assertEquals(0xFFFFFF, DiscordRankChatDecorator.blend(0x000000, 0xFFFFFF, 1d));
-        assertEquals(0x123456, DiscordRankChatDecorator.blend(0x123456, 0xFFFFFF, 0d));
+        assertEquals(onPale, onDeep, "every role shares one label colour");
+        assertEquals(onPale, onMid, "every role shares one label colour");
+        assertTrue(luminanceOf(onPale) < 0.15d, "and a dark one, was " + Integer.toHexString(onPale));
+        assertNotEquals(0x000000, onPale, "though short of pure black");
     }
 
     @Test
@@ -558,18 +535,6 @@ class DiscordRankChatDecoratorTest {
         List<Integer> labels = pillLabelColors(DiscordRankChatDecorator.rankPill(gradient, null));
 
         assertEquals(1, Set.copyOf(labels).size(), "every letter shares one colour, was " + labels);
-    }
-
-    @Test
-    void picksTheLabelColourFromTheMiddleOfTheGradient() {
-        // Sampling an end instead would leave the other end of a wide ramp unreadable.
-        RankPresentation darkToLight = presentation("rank.yggdrasil", "Ygg", 120, 0x101010, 0x303030);
-
-        int label = pillLabelColors(DiscordRankChatDecorator.rankPill(darkToLight, null)).getFirst();
-
-        assertTrue(
-                DiscordRankChatDecorator.luminanceOf(label) > 0.55d,
-                "a dark pill needs a light label throughout, was " + Integer.toHexString(label));
     }
 
     @Test
@@ -788,6 +753,13 @@ class DiscordRankChatDecoratorTest {
                 .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
                 .map(fragment -> fragment.style().getColor().getValue())
                 .toList();
+    }
+
+    /** Rec. 709 relative luminance in {@code [0, 1]}, to argue about readability with. */
+    private static double luminanceOf(int rgb) {
+        return 0.2126d * ((rgb >> 16) & 0xFF) / 255d
+                + 0.7152d * ((rgb >> 8) & 0xFF) / 255d
+                + 0.0722d * (rgb & 0xFF) / 255d;
     }
 
     /** Colours of the pill's letter glyphs, one per glyph, in order. */

@@ -52,20 +52,17 @@ public final class DiscordRankChatDecorator {
     private static final TextColor FALLBACK_RANK_COLOR = TextColor.fromLegacyFormat(ChatFormatting.DARK_GREEN);
 
     /**
-     * Pill labels are muted greys rather than pure black or white, which read as
-     * harsh next to Wynncraft's chat. A little of the background bleeds through so
-     * each label sits with its own pill instead of looking pasted on.
+     * The one colour every pill label is drawn in.
+     * <p>
+     * Labels used to be tinted with their own pill's colour and flipped between a light
+     * and a dark grey depending on it, which left the palest and the most saturated
+     * roles with a label barely separable from its background, and made one rank read
+     * differently from one member to the next. A single dark tone, untinted, holds its
+     * contrast across the pastels and mid brights Discord roles are actually set to.
+     * It is deliberately short of pure black, which looks like a hole punched in the
+     * pill at chat's glyph size.
      */
-    private static final int LIGHT_LABEL_GREY = 0xDCDCDC;
-    private static final int DARK_LABEL_GREY = 0x2B2B2B;
-    private static final double LABEL_GREY_WEIGHT = 0.82d;
-
-    /**
-     * Relative luminance above which a rank colour counts as light and needs dark
-     * pill text. Discord role colours are often pastel, so a light label alone would
-     * be unreadable on them.
-     */
-    private static final double LIGHT_BACKGROUND_LUMINANCE = 0.55d;
+    private static final TextColor PILL_LABEL_COLOR = TextColor.fromRgb(0x1F2126);
 
     /** Aqua Wynncraft uses for guild chat; see {@code ChatManager}. */
     private static final int GUILD_CHAT_COLOR = 0x55FFFF;
@@ -804,8 +801,8 @@ public final class DiscordRankChatDecorator {
 
     /** Builds the glyph pill for {@code rank}, tooltipped with the rank it replaces. */
     static MutableComponent rankPill(RankPresentation rank, String replacedWynncraftRank) {
-        MutableComponent pill = NotificationAccessor.wynnPill(
-                rank.pillLabel(), rampFor(rank), DiscordRankChatDecorator::labelColorOn, null);
+        MutableComponent pill =
+                NotificationAccessor.wynnPill(rank.pillLabel(), rampFor(rank), PILL_LABEL_COLOR, null);
 
         // The tooltip is one component, so it cannot carry the gradient; it takes the
         // primary stop, which is the colour Discord itself shows the role under.
@@ -835,29 +832,6 @@ public final class DiscordRankChatDecorator {
      */
     static TextColor colorFor(RankPresentation rank) {
         return TextColor.fromRgb(rampFor(rank).first());
-    }
-
-    /**
-     * A muted label colour for {@code background}: mostly grey, tinted with the
-     * background's own hue, and light or dark depending on which side stays legible.
-     */
-    static TextColor labelColorOn(TextColor background) {
-        int rgb = background.getValue();
-        int grey = luminanceOf(rgb) > LIGHT_BACKGROUND_LUMINANCE ? DARK_LABEL_GREY : LIGHT_LABEL_GREY;
-        return TextColor.fromRgb(blend(rgb, grey, LABEL_GREY_WEIGHT));
-    }
-
-    /** Mixes {@code target} over {@code base}, {@code weight} being the share of target. */
-    static int blend(int base, int target, double weight) {
-        return ColorRamp.blend(base, target, weight);
-    }
-
-    /** Rec. 709 relative luminance in {@code [0, 1]}. */
-    static double luminanceOf(int rgb) {
-        double red = ((rgb >> 16) & 0xFF) / 255d;
-        double green = ((rgb >> 8) & 0xFF) / 255d;
-        double blue = (rgb & 0xFF) / 255d;
-        return 0.2126d * red + 0.7152d * green + 0.0722d * blue;
     }
 
     private static boolean isEnabled() {

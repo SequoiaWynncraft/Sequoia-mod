@@ -113,6 +113,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting colorDiscordBridgeSetting;
 
     @Getter
+    public static Setting.BooleanSetting animateRankGradientsSetting;
+
+    @Getter
     public static Setting.IntSetting chatLineSpacingSetting;
 
     @Getter
@@ -563,6 +566,10 @@ public class SeqClient implements ClientModInitializer {
         showChatInsigniasSetting.setVisibilityCondition(showDiscordRanksSetting::getValue);
         colorDiscordBridgeSetting = new Setting.BooleanSetting("color_discord_bridge", "chat", true);
         colorDiscordBridgeSetting.setVisibilityCondition(showDiscordRanksSetting::getValue);
+        // Off by default: moving colour draws the eye away from what is being said, and
+        // a still gradient is what a Discord role looks like everywhere else.
+        animateRankGradientsSetting = new Setting.BooleanSetting("animate_rank_gradients", "chat", false);
+        animateRankGradientsSetting.setVisibilityCondition(showDiscordRanksSetting::getValue);
         chatLineSpacingSetting = new Setting.IntSetting("chat_line_spacing", "chat", 4, 0, 10);
         // Off by default: shift-click is vanilla's "insert this name into the chat box"
         // gesture, so taking it over is opt-in rather than a surprise.
@@ -613,6 +620,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(showDiscordRanksSetting);
         getConfigManager().register(showChatInsigniasSetting);
         getConfigManager().register(colorDiscordBridgeSetting);
+        getConfigManager().register(animateRankGradientsSetting);
         getConfigManager().register(chatLineSpacingSetting);
         getConfigManager().register(profileOnShiftClickSetting);
         getConfigManager().register(raidAutoAnnounceSetting);

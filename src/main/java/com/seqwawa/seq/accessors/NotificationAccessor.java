@@ -11,12 +11,12 @@ import net.minecraft.network.chat.TextColor;
 import org.jetbrains.annotations.NotNull;
 
 import com.seqwawa.seq.utils.ColorRamp;
+import com.seqwawa.seq.utils.RankGradientAnimation;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
 
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.function.IntFunction;
-import java.util.function.UnaryOperator;
 
 public interface NotificationAccessor {
 
@@ -63,19 +63,22 @@ public interface NotificationAccessor {
      * Pill whose background runs through {@code ramp} across its glyphs, so a Discord
      * gradient role reads as a gradient rather than as its primary colour alone.
      * <p>
-     * Only the background is graded. The label keeps one colour for the whole pill,
-     * derived from the middle of the ramp by {@code labelColor}: letters that shifted
-     * hue from one to the next read as a rendering fault rather than as a gradient.
+     * Only the background is graded. The label keeps {@code labelColor} for the whole
+     * pill: letters that shifted hue from one to the next read as a rendering fault
+     * rather than as a gradient.
+     * <p>
+     * The background colours are minted through {@link RankGradientAnimation} so a
+     * gradient role can be scrolled at render time; they are the same colours either
+     * way while the animation setting is off.
      */
     static @NotNull MutableComponent wynnPill(
             String label,
             ColorRamp ramp,
-            UnaryOperator<TextColor> labelColor,
+            TextColor labelColor,
             ClickEvent clickEvent) {
         IntFunction<TextColor> backgroundAt =
-                index -> TextColor.fromRgb(ramp.sample(gradientPosition(index, label.length())));
-        TextColor labelAcrossPill = labelColor.apply(TextColor.fromRgb(ramp.sample(0.5d)));
-        return wynnPill(label, backgroundAt, index -> labelAcrossPill, clickEvent);
+                index -> RankGradientAnimation.colorAt(ramp, gradientPosition(index, label.length()));
+        return wynnPill(label, backgroundAt, index -> labelColor, clickEvent);
     }
 
     /**

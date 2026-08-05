@@ -81,6 +81,36 @@ public final class ColorRamp {
         return blend(stops.get(index), stops.get(index + 1), scaled - index);
     }
 
+    /**
+     * The colour at {@code position} once the ramp has been scrolled {@code phase}
+     * turns along itself, which is how a gradient role is animated.
+     * <p>
+     * Scrolling runs the ramp as a loop: past the last stop it returns to the first, so
+     * a phase that advances with time never reaches an end to stop at and there is no
+     * seam where it wraps. That closing run is a segment of its own, which is why a
+     * phase of one is a full turn over {@code stops.size()} segments rather than over
+     * the {@code stops.size() - 1} a static sweep covers.
+     * <p>
+     * A phase of zero reproduces {@link #sample} exactly, so the animation can be
+     * turned on and off without the pill jumping.
+     *
+     * @throws IllegalStateException when the ramp is empty, as for {@link #sample}
+     */
+    public int scroll(double position, double phase) {
+        if (stops.isEmpty()) {
+            throw new IllegalStateException("An uncoloured ramp has no colour to sample");
+        }
+        if (stops.size() == 1) {
+            return stops.getFirst();
+        }
+
+        double segments = stops.size();
+        double scaled = Math.clamp(position, 0d, 1d) * (stops.size() - 1) + phase * segments;
+        double wrapped = scaled - Math.floor(scaled / segments) * segments;
+        int index = Math.min((int) wrapped, stops.size() - 1);
+        return blend(stops.get(index), stops.get((index + 1) % stops.size()), wrapped - index);
+    }
+
     /** Mixes {@code target} over {@code base}, {@code weight} being the share of target. */
     public static int blend(int base, int target, double weight) {
         return channel(base, target, weight, 16) << 16

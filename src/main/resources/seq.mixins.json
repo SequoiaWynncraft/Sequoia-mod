@@ -13,6 +13,7 @@
     "ChatComponentMixin",
     "ChatScreenMixin",
     "ClientPacketListenerMixin",
+    "FontPreparedTextBuilderMixin",
     "GameRendererMixin",
     "GuildAllianceSnapshotPacketMixin",
     "InGameHudMixin",
