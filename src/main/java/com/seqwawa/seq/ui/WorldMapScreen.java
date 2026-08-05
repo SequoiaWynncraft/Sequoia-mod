@@ -1101,6 +1101,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private void renderClusterHulls(UiCanvas canvas, MapViewport viewport, boolean allowHover) {
         hoveredCluster = null;
         float bestHoverDistance = 18f;
+        List<ClusterOutlineRender> highlightedOutlines = new ArrayList<>();
         canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         for (int index = cachedClusters.size() - 1; index >= 0; index--) {
             GatheringNodeCluster cluster = cachedClusters.get(index);
@@ -1120,7 +1121,22 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 hoveredCluster = cluster;
             }
             boolean selected = cluster == selectedCluster;
-            renderClusterOutline(canvas, viewport, cluster, outline, x, y, selected, selected || hovered);
+            if (selected || hovered) {
+                highlightedOutlines.add(new ClusterOutlineRender(cluster, outline, x, y, selected));
+            } else {
+                renderClusterOutline(canvas, viewport, cluster, outline, x, y, false, false);
+            }
+        }
+        for (ClusterOutlineRender render : highlightedOutlines) {
+            renderClusterOutline(
+                    canvas,
+                    viewport,
+                    render.cluster(),
+                    render.outline(),
+                    render.centerScreenX(),
+                    render.centerScreenY(),
+                    render.selected(),
+                    true);
         }
         canvas.resetScissor();
     }
@@ -5666,6 +5682,13 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             Supplier<PlayerSkin> skinLookup) {}
 
     private record MapIngredientIcon(ItemStack stack, Supplier<PlayerSkin> skinLookup) {}
+
+    private record ClusterOutlineRender(
+            GatheringNodeCluster cluster,
+            ClusterOutlineShape outline,
+            float centerScreenX,
+            float centerScreenY,
+            boolean selected) {}
 
     private record TerritoryLabelLayout(List<String> lines, float fontSize, float lineHeight) {}
 
