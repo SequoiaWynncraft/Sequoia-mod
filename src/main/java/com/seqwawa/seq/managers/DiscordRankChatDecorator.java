@@ -2,7 +2,6 @@ package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.model.SeqBadgeTier;
 import com.seqwawa.seq.utils.ColorRamp;
@@ -243,8 +242,9 @@ public final class DiscordRankChatDecorator {
         // The pill keeps the default font on purpose: Wynncraft's badge uses a font of
         // its own in which these glyphs mean nothing, so inheriting it collapses the
         // pill to no width and drags the rest of the line left.
-        MutableComponent replacement =
-                Component.empty().append(rankPill(rank, replacedGuildRank)).append(Component.literal(" "));
+        MutableComponent replacement = Component.empty()
+                .append(rankPill(rank, replacedGuildRank, inGameGuildChatTextColor()))
+                .append(Component.literal(" "));
         List<ComponentTextEditor.Fragment> withBadge =
                 insertInsignia(recoloured, colonIndex, speaker.username());
         return ComponentTextEditor.replaceRange(withBadge, start, end, replacement);
@@ -865,10 +865,14 @@ public final class DiscordRankChatDecorator {
 
     /** Builds the glyph pill for {@code rank}, tooltipped with the rank it replaces. */
     static MutableComponent rankPill(RankPresentation rank, String replacedWynncraftRank) {
-        ColorRamp pillRamp = rankPillColoringEnabled()
-                ? rampFor(rank)
-                : ColorRamp.of(FALLBACK_RANK_COLOR.getValue());
-        MutableComponent pill = NotificationAccessor.wynnPill(rank.pillLabel(), pillRamp, PILL_LABEL_COLOR, null);
+        return rankPill(rank, replacedWynncraftRank, FALLBACK_RANK_COLOR);
+    }
+
+    /** Rank pill whose role colour can return to the supplied source/default background. */
+    static MutableComponent rankPill(
+            RankPresentation rank, String replacedWynncraftRank, TextColor baseBackgroundColor) {
+        MutableComponent pill = NotificationAccessor.wynnPill(
+                rank.pillLabel(), rampFor(rank), PILL_LABEL_COLOR, null, baseBackgroundColor);
 
         // The tooltip is one component, so it cannot carry the gradient; it takes the
         // primary stop, which is the colour Discord itself shows the role under.
@@ -900,12 +904,11 @@ public final class DiscordRankChatDecorator {
     static MutableComponent colouredName(String name, RankPresentation rank, Style style) {
         String text = name == null ? "" : name;
         Style baseStyle = style == null ? Style.EMPTY : style;
-        if (!usernameColoringEnabled()) {
-            return Component.literal(text).withStyle(baseStyle);
-        }
         ColorRamp ramp = rampFor(rank);
         if (!ramp.isGradient() || text.codePointCount(0, text.length()) <= 1) {
-            return Component.literal(text).withStyle(baseStyle.withColor(colorFor(rank)));
+            TextColor color = RankGradientAnimation.colorAt(
+                    ramp, 0d, RankGradientAnimation.Target.USERNAME, baseStyle.getColor());
+            return Component.literal(text).withStyle(baseStyle.withColor(color));
         }
 
         MutableComponent coloured = Component.empty();
@@ -914,7 +917,8 @@ public final class DiscordRankChatDecorator {
         for (int offset = 0; offset < text.length(); ) {
             int codePoint = text.codePointAt(offset);
             double position = (double) index / (codePointCount - 1);
-            TextColor color = RankGradientAnimation.colorAt(ramp, position, RankGradientAnimation.Target.USERNAME);
+            TextColor color = RankGradientAnimation.colorAt(
+                    ramp, position, RankGradientAnimation.Target.USERNAME, baseStyle.getColor());
             coloured.append(Component.literal(new String(Character.toChars(codePoint)))
                     .withStyle(baseStyle.withColor(color)));
             offset += Character.charCount(codePoint);
@@ -929,22 +933,23 @@ public final class DiscordRankChatDecorator {
             int endExclusive,
             RankPresentation rank,
             String insertion) {
-        if (!usernameColoringEnabled()) {
-            return ComponentTextEditor.restyleRange(
-                    fragments, start, endExclusive, style -> style.withInsertion(insertion));
-        }
         ColorRamp ramp = rampFor(rank);
         if (!ramp.isGradient()) {
-            TextColor color = colorFor(rank);
             return ComponentTextEditor.restyleRange(
-                    fragments, start, endExclusive, style -> style.withColor(color).withInsertion(insertion));
+                    fragments,
+                    start,
+                    endExclusive,
+                    style -> style.withColor(RankGradientAnimation.colorAt(
+                                    ramp, 0d, RankGradientAnimation.Target.USERNAME, style.getColor()))
+                            .withInsertion(insertion));
         }
         return ComponentTextEditor.restyleRangeByPosition(
                 fragments,
                 start,
                 endExclusive,
                 (style, position) -> style.withColor(
-                                RankGradientAnimation.colorAt(ramp, position, RankGradientAnimation.Target.USERNAME))
+                                RankGradientAnimation.colorAt(
+                                        ramp, position, RankGradientAnimation.Target.USERNAME, style.getColor()))
                         .withInsertion(insertion));
     }
 
@@ -954,16 +959,6 @@ public final class DiscordRankChatDecorator {
      */
     static TextColor colorFor(RankPresentation rank) {
         return TextColor.fromRgb(rampFor(rank).first());
-    }
-
-    private static boolean rankPillColoringEnabled() {
-        Setting.BooleanSetting setting = SeqClient.getColorRankPillsSetting();
-        return setting == null || setting.getValue();
-    }
-
-    private static boolean usernameColoringEnabled() {
-        Setting.BooleanSetting setting = SeqClient.getColorUsernamesSetting();
-        return setting == null || setting.getValue();
     }
 
     private static boolean isEnabled() {

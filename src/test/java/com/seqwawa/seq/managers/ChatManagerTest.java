@@ -13,12 +13,14 @@ import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
+import com.seqwawa.seq.utils.RankGradientAnimation;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.TextColor;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
@@ -358,6 +360,62 @@ class ChatManagerTest {
         assertEquals("Name", name.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
         assertEquals(0x123456, name.getFirst().style().getColor().getValue());
         assertEquals(0xFFFFFF, name.getLast().style().getColor().getValue());
+    }
+
+    @Test
+    void rankedBridgeUsernameReturnsToWhiteWhenRoleColoringIsDisabled() {
+        Setting.BooleanSetting previous = SeqClient.colorUsernamesSetting;
+        try {
+            SeqClient.colorUsernamesSetting = new Setting.BooleanSetting("color_usernames", "chat", false);
+            RankPresentation rank = new RankPresentation(
+                    new DiscordRank("rank.sapling", "Sapling", 88), ColorRamp.of(0x4CB4FA));
+
+            MutableComponent line = ChatManager.bridgeSenderLine(
+                    new ConnectionManager.DiscordChatMessage("Name", "hello", "215820027700576258"),
+                    "hello",
+                    rank);
+            TextColor stored = ComponentTextEditor.flatten(line).stream()
+                    .filter(fragment -> "Name".equals(fragment.text()))
+                    .findFirst()
+                    .orElseThrow()
+                    .style()
+                    .getColor();
+
+            assertEquals(0x4CB4FA, stored.getValue());
+            assertEquals(ChatFormatting.WHITE.getColor(), RankGradientAnimation.animate(stored).getValue());
+        } finally {
+            SeqClient.colorUsernamesSetting = previous;
+        }
+    }
+
+    @Test
+    void rankedBridgePillReturnsToConfiguredDiscordChatColor() {
+        Setting.BooleanSetting previousPills = SeqClient.colorRankPillsSetting;
+        Setting.ColorSetting previousTextColor = SeqClient.discordChatTextColorSetting;
+        try {
+            SeqClient.colorRankPillsSetting = new Setting.BooleanSetting("color_rank_pills", "chat", false);
+            SeqClient.discordChatTextColorSetting =
+                    new Setting.ColorSetting("discord_chat_text_color", "chat", 0xA1B2C3);
+            RankPresentation rank = new RankPresentation(
+                    new DiscordRank("rank.sapling", "Sapling", 88), ColorRamp.of(0x4CB4FA));
+
+            MutableComponent line = ChatManager.bridgeSenderLine(
+                    new ConnectionManager.DiscordChatMessage("Name", "hello", "215820027700576258"),
+                    "hello",
+                    rank);
+            TextColor stored = ComponentTextEditor.flatten(line).stream()
+                    .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
+                    .findFirst()
+                    .orElseThrow()
+                    .style()
+                    .getColor();
+
+            assertEquals(0x4CB4FA, stored.getValue());
+            assertEquals(0xA1B2C3, RankGradientAnimation.animate(stored).getValue());
+        } finally {
+            SeqClient.colorRankPillsSetting = previousPills;
+            SeqClient.discordChatTextColorSetting = previousTextColor;
+        }
     }
 
     @Test

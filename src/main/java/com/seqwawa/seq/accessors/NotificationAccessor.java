@@ -76,8 +76,21 @@ public interface NotificationAccessor {
             ColorRamp ramp,
             TextColor labelColor,
             ClickEvent clickEvent) {
-        IntFunction<TextColor> backgroundAt =
-                index -> RankGradientAnimation.colorAt(ramp, gradientPosition(index, label.length()));
+        return wynnPill(label, ramp, labelColor, clickEvent, null);
+    }
+
+    /** Gradient pill that returns to {@code baseBackgroundColor} when role colouring is off. */
+    static @NotNull MutableComponent wynnPill(
+            String label,
+            ColorRamp ramp,
+            TextColor labelColor,
+            ClickEvent clickEvent,
+            TextColor baseBackgroundColor) {
+        IntFunction<TextColor> backgroundAt = index -> RankGradientAnimation.colorAt(
+                ramp,
+                gradientPosition(index, label.length()),
+                RankGradientAnimation.Target.RANK_BADGE,
+                baseBackgroundColor);
         return wynnPill(label, backgroundAt, index -> labelColor, clickEvent);
     }
 

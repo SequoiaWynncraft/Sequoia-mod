@@ -15,6 +15,7 @@ import com.seqwawa.seq.model.SeqBadgeTier;
 import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
+import com.seqwawa.seq.utils.RankGradientAnimation;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
 import java.util.Arrays;
 import java.util.List;
@@ -353,12 +354,14 @@ class DiscordRankChatDecoratorTest {
             List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
 
             assertEquals(0x4CB4FA, pillBackgroundColors(decorated).getFirst());
-            assertNull(fragments.stream()
+            TextColor storedNameColor = fragments.stream()
                     .filter(fragment -> fragment.text().contains("ArcLeRetour"))
                     .findFirst()
                     .orElseThrow()
                     .style()
-                    .getColor());
+                    .getColor();
+            assertEquals(0x4CB4FA, storedNameColor.getValue(), "the role color remains available to turn back on");
+            assertNull(RankGradientAnimation.animate(storedNameColor), "rendering restores the inherited base color");
         });
     }
 
@@ -370,13 +373,29 @@ class DiscordRankChatDecoratorTest {
                     DiscordRankChatDecoratorTest::lookup);
             List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
 
-            assertEquals(
-                    DiscordRankChatDecorator.rampFor(new RankPresentation(
-                                    new DiscordRank("rank.uncoloured", "Uncoloured", 0), ColorRamp.empty()))
-                            .first(),
-                    pillBackgroundColors(decorated).getFirst());
+            assertEquals(GUILD_AQUA, renderedPillBackgroundColors(decorated).getFirst());
             assertEquals(0x4CB4FA, colorOfFragmentContaining(fragments, "ArcLeRetour"));
         });
+    }
+
+    @Test
+    void uncoloredNativeRankPillRestoresTheConfiguredChatColor() {
+        Setting.ColorSetting previous = SeqClient.inGameGuildChatTextColorSetting;
+        try {
+            SeqClient.inGameGuildChatTextColorSetting =
+                    new Setting.ColorSetting("in_game_guild_chat_text_color", "chat", 0xA1B2C3);
+            withRankColoring(false, true, () -> {
+                Component decorated = DiscordRankChatDecorator.decorateGuildChat(
+                        wynncraftGuildLine("RECRUITER", "EightySix", "ArcLeRetour", "hi"),
+                        DiscordRankChatDecoratorTest::lookup);
+
+                assertEquals(0xA1B2C3, renderedPillBackgroundColors(decorated).getFirst());
+                assertEquals(
+                        0x4CB4FA, pillBackgroundColors(decorated).getFirst(), "the role color can be restored live");
+            });
+        } finally {
+            SeqClient.inGameGuildChatTextColorSetting = previous;
+        }
     }
 
     @Test
@@ -388,7 +407,9 @@ class DiscordRankChatDecoratorTest {
                     DiscordRankChatDecorator.colouredName("ArcLeRetour", SAPLING, original));
 
             assertEquals(1, fragments.size());
-            assertEquals(0xABCDEF, fragments.getFirst().style().getColor().getValue());
+            TextColor storedColor = fragments.getFirst().style().getColor();
+            assertEquals(0x4CB4FA, storedColor.getValue());
+            assertEquals(0xABCDEF, RankGradientAnimation.animate(storedColor).getValue());
             assertEquals("ArcLeRetour", fragments.getFirst().style().getInsertion());
         });
     }
@@ -866,6 +887,14 @@ class DiscordRankChatDecoratorTest {
         return ComponentTextEditor.flatten(pill).stream()
                 .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
                 .map(fragment -> fragment.style().getColor().getValue())
+                .toList();
+    }
+
+    private static List<Integer> renderedPillBackgroundColors(Component pill) {
+        return ComponentTextEditor.flatten(pill).stream()
+                .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
+                .map(fragment -> RankGradientAnimation.animate(fragment.style().getColor()))
+                .map(TextColor::getValue)
                 .toList();
     }
 

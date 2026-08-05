@@ -74,6 +74,33 @@ class RankGradientAnimationTest {
     }
 
     @Test
+    void restoresEachTargetsBaseColorImmediatelyWhenRoleColoringIsDisabled() {
+        TextColor pillBase = TextColor.fromRgb(0x00AA00);
+        TextColor usernameBase = TextColor.fromRgb(0xFFFFFF);
+        TextColor badge = RankGradientAnimation.colorAt(
+                ColorRamp.of(0x4CB4FA), 0d, RankGradientAnimation.Target.RANK_BADGE, pillBase);
+        TextColor username = RankGradientAnimation.colorAt(
+                GRADIENT, 1d, RankGradientAnimation.Target.USERNAME, usernameBase);
+
+        withColorSettings(false, true, () -> {
+            assertSame(pillBase, RankGradientAnimation.animate(badge, 0.5d));
+            assertSame(username, RankGradientAnimation.animate(username, 0.5d));
+        });
+        withColorSettings(true, false, () -> {
+            assertSame(badge, RankGradientAnimation.animate(badge, 0.5d));
+            assertSame(usernameBase, RankGradientAnimation.animate(username, 0.5d));
+        });
+    }
+
+    @Test
+    void restoresAnInheritedUsernameColorAsNull() {
+        TextColor username = RankGradientAnimation.colorAt(
+                ColorRamp.of(0x4CB4FA), 0d, RankGradientAnimation.Target.USERNAME, null);
+
+        withColorSettings(true, false, () -> assertNull(RankGradientAnimation.animate(username, 0.5d)));
+    }
+
+    @Test
     void leavesSolidRolesAlone() {
         // One colour scrolled is that same colour back again, so it is never remembered.
         TextColor solid = RankGradientAnimation.colorAt(ColorRamp.of(0x4CB4FA), 0d);
@@ -116,6 +143,19 @@ class RankGradientAnimationTest {
 
     private static void withAnimation(boolean enabled, Runnable body) {
         withGradientSettings(true, true, enabled, false, body);
+    }
+
+    private static void withColorSettings(boolean pills, boolean usernames, Runnable body) {
+        Setting.BooleanSetting previousPills = SeqClient.colorRankPillsSetting;
+        Setting.BooleanSetting previousUsernames = SeqClient.colorUsernamesSetting;
+        try {
+            SeqClient.colorRankPillsSetting = new Setting.BooleanSetting("color_rank_pills", "chat", pills);
+            SeqClient.colorUsernamesSetting = new Setting.BooleanSetting("color_usernames", "chat", usernames);
+            body.run();
+        } finally {
+            SeqClient.colorRankPillsSetting = previousPills;
+            SeqClient.colorUsernamesSetting = previousUsernames;
+        }
     }
 
     private static void withGradientSettings(

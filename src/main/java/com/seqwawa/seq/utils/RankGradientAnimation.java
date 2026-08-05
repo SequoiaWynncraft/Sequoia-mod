@@ -35,14 +35,14 @@ public final class RankGradientAnimation {
     private static final long CYCLE_MILLIS = 5000L;
 
     /**
-     * How many rank-decoration colours stay animatable. A pill and gradient name each
+     * How many rank-decoration colours stay configurable. A pill and speaker name each
      * contribute one stop per glyph, so this covers the recent chat history; older
-     * decorations simply hold still rather than being rebuilt.
+     * decorations simply keep their stored colour rather than being rebuilt.
      */
-    private static final int MAX_REMEMBERED_STOPS = 512;
+    private static final int MAX_REMEMBERED_STOPS = 4096;
 
-    /** Where a remembered colour was sampled from, and on which ramp. */
-    private record Stop(ColorRamp ramp, double position, Target target) {}
+    /** Where a remembered colour was sampled from, its target, and its uncoloured base. */
+    private record Stop(ColorRamp ramp, double position, Target target, TextColor baseColor) {}
 
     /** Registration order, so the stops dropped on overflow are the oldest ones. */
     private static final ArrayDeque<TextColor> REGISTRATION_ORDER = new ArrayDeque<>();
@@ -60,8 +60,8 @@ public final class RankGradientAnimation {
      * The decoration colour at {@code position} along {@code ramp}, remembered so it
      * can be moved later.
      * <p>
-     * Only gradient roles are remembered: a solid role has one colour, and scrolling it
-     * would produce that same colour back again.
+     * Solid roles are remembered too, so their target can return to its base colour
+     * immediately when role colouring is switched off.
      */
     public static TextColor colorAt(ColorRamp ramp, double position) {
         return colorAt(ramp, position, Target.RANK_BADGE);
@@ -72,17 +72,24 @@ public final class RankGradientAnimation {
      * flatten or animate it immediately when its settings change.
      */
     public static TextColor colorAt(ColorRamp ramp, double position, Target target) {
+        return colorAt(ramp, position, target, null);
+    }
+
+    /**
+     * The decoration colour for {@code target}, paired with the colour it should return
+     * to when role colouring is disabled. A null base restores Minecraft's inherited
+     * text colour.
+     */
+    public static TextColor colorAt(ColorRamp ramp, double position, Target target, TextColor baseColor) {
         Objects.requireNonNull(target, "target");
         TextColor color = TextColor.fromRgb(ramp.sample(position));
-        if (ramp.isGradient()) {
-            remember(color, new Stop(ramp, position, target));
-        }
+        remember(color, new Stop(ramp, position, target, baseColor));
         return color;
     }
 
     /**
      * The colour {@code color} should be drawn as at this instant, or {@code color}
-     * itself when it is not a remembered gradient stop or the animation is off.
+     * itself when it is not a remembered role decoration or its settings leave it unchanged.
      */
     public static TextColor animate(TextColor color) {
         return animate(color, phase());
@@ -95,6 +102,12 @@ public final class RankGradientAnimation {
         }
         Stop stop = stops.get(color);
         if (stop == null) {
+            return color;
+        }
+        if (!coloringEnabled(stop.target())) {
+            return stop.baseColor();
+        }
+        if (!stop.ramp().isGradient()) {
             return color;
         }
         if (!gradientsEnabled(stop.target())) {
@@ -114,6 +127,14 @@ public final class RankGradientAnimation {
         Setting.BooleanSetting setting = switch (target) {
             case RANK_BADGE -> SeqClient.getShowRankPillGradientsSetting();
             case USERNAME -> SeqClient.getShowUsernameGradientsSetting();
+        };
+        return setting == null || setting.getValue();
+    }
+
+    private static boolean coloringEnabled(Target target) {
+        Setting.BooleanSetting setting = switch (target) {
+            case RANK_BADGE -> SeqClient.getColorRankPillsSetting();
+            case USERNAME -> SeqClient.getColorUsernamesSetting();
         };
         return setting == null || setting.getValue();
     }
