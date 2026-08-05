@@ -180,14 +180,15 @@ class ConnectionManagerTest {
     }
 
     @Test
-    void memberOnlyOutboundTypesExcludeUnrestrictedPartyClassUpdates() {
+    void memberOnlyOutboundTypesExcludeUnrestrictedPartyFinderUpdates() {
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_chat"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_alliance_snapshot"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_storage_snapshot"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_war_submission"));
-        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("party_sync_snapshot"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("get_connected"));
         assertFalse(ConnectionManager.isSequoiaMemberOnlyType("party_class_update"));
+        assertFalse(ConnectionManager.isSequoiaMemberOnlyType("party_sync_snapshot"));
+        assertFalse(ConnectionManager.isSequoiaMemberOnlyType("party_sync_member_removed"));
     }
 
     @Test
