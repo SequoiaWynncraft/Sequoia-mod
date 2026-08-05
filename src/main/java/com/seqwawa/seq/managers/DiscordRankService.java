@@ -382,24 +382,24 @@ public final class DiscordRankService {
         }
 
         List<Integer> ramp = new ArrayList<>(3);
-        ramp.add(Integer.parseInt(colors.primary().substring(1), 16));
+        ramp.add(parseHexColor(colors.primary()));
         if (colors.secondary() != null) {
             if (!isContractColor(colors.secondary())) {
                 return ColorRamp.empty();
             }
-            ramp.add(Integer.parseInt(colors.secondary().substring(1), 16));
+            ramp.add(parseHexColor(colors.secondary()));
         }
         if (colors.tertiary() != null) {
             if (colors.secondary() == null || !isContractColor(colors.tertiary())) {
                 return ColorRamp.empty();
             }
-            ramp.add(Integer.parseInt(colors.tertiary().substring(1), 16));
+            ramp.add(parseHexColor(colors.tertiary()));
         }
         return ColorRamp.of(ramp);
     }
 
     private static boolean isContractColor(String value) {
-        return value != null && value.matches("#[0-9A-F]{6}");
+        return value != null && value.matches("(?i)#[0-9a-f]{6}");
     }
 
     /** Parses a {@code #RRGGBB} colour, or {@code null} when it is absent or malformed. */
