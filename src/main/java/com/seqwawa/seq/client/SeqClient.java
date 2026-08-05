@@ -54,7 +54,10 @@ import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
+import com.seqwawa.seq.ui.IngredientGuideScreen;
+import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.ui.SequoiaScreen;
+import com.seqwawa.seq.ui.WorldMapScreen;
 import com.seqwawa.seq.update.UpdateManager;
 import com.seqwawa.seq.utils.WynnClassCache;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
@@ -233,6 +236,9 @@ public class SeqClient implements ClientModInitializer {
     public static IngredientGuideManager ingredientGuideManager;
 
     private static KeyMapping openScreenKey;
+    private static KeyMapping openPartyFinderKey;
+    private static KeyMapping openWorldMapKey;
+    private static KeyMapping openIngredientGuideKey;
     private static KeyMapping shareBombsKey;
     private static WynnClassType lastBroadcastPartyClass;
     private static boolean wasInPartyFinder;
@@ -286,6 +292,15 @@ public class SeqClient implements ClientModInitializer {
 
         openScreenKey = KeyBindingHelper.registerKeyBinding(
                 new KeyMapping("key.sequoia-mod.open_settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O, category));
+        openPartyFinderKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                "key.sequoia-mod.open_party_finder", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
+        openWorldMapKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                "key.sequoia-mod.open_world_map", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
+        openIngredientGuideKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                "key.sequoia-mod.open_ingredient_guide",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_UNKNOWN,
+                category));
         shareBombsKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.sequoia-mod.share_bombs", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
 
@@ -293,6 +308,21 @@ public class SeqClient implements ClientModInitializer {
             while (openScreenKey.consumeClick()) {
                 if (client.screen == null) {
                     openMainScreen();
+                }
+            }
+            while (openPartyFinderKey.consumeClick()) {
+                if (client.screen == null) {
+                    openPartyFinderScreen();
+                }
+            }
+            while (openWorldMapKey.consumeClick()) {
+                if (client.screen == null) {
+                    openWorldMapScreen();
+                }
+            }
+            while (openIngredientGuideKey.consumeClick()) {
+                if (client.screen == null) {
+                    openIngredientGuideScreen();
                 }
             }
             while (shareBombsKey.consumeClick()) {
@@ -554,6 +584,18 @@ public class SeqClient implements ClientModInitializer {
 
     public static void openMainScreen() {
         mc.execute(() -> mc.setScreen(new SequoiaScreen()));
+    }
+
+    public static void openPartyFinderScreen() {
+        mc.execute(() -> mc.setScreen(new PartyFinderScreen(mc.screen)));
+    }
+
+    public static void openWorldMapScreen() {
+        mc.execute(() -> mc.setScreen(new WorldMapScreen(mc.screen)));
+    }
+
+    public static void openIngredientGuideScreen() {
+        mc.execute(() -> mc.setScreen(new IngredientGuideScreen(mc.screen)));
     }
 
     public static boolean isBombShareHotkeyDown() {
