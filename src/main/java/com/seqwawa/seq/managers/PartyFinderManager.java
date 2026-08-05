@@ -2663,6 +2663,7 @@ public class PartyFinderManager implements NotificationAccessor {
             case DPS -> "DPS";
             case HEALER -> "Healer";
             case TANK -> "Tank";
+            case OTHER -> "Other";
         };
     }
 
@@ -2984,6 +2985,7 @@ public class PartyFinderManager implements NotificationAccessor {
             case "DPS" -> PartyRole.DPS;
             case "HEALER" -> PartyRole.HEALER;
             case "TANK" -> PartyRole.TANK;
+            case "OTHER" -> PartyRole.OTHER;
             default -> null;
         };
     }

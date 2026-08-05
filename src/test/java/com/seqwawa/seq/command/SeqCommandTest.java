@@ -5,11 +5,18 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.seqwawa.seq.model.PartyRole;
 import java.util.concurrent.atomic.AtomicReference;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import org.junit.jupiter.api.Test;
 
 class SeqCommandTest {
+
+    @Test
+    void parsesOtherPartyRole() {
+        assertEquals(PartyRole.OTHER, SeqCommand.parseRole("other"));
+        assertEquals(PartyRole.OTHER, SeqCommand.parseRole(" OTHER "));
+    }
 
     @Test
     void registersStandaloneEmeraldAlias() {

@@ -51,7 +51,7 @@ import com.seqwawa.seq.utils.PlayerNameCache;
 
 public class SeqCommand {
 
-        private static final List<String> ROLE_SUGGESTIONS = List.of("dps", "healer", "tank");
+        private static final List<String> ROLE_SUGGESTIONS = List.of("dps", "healer", "tank", "other");
         private static final List<String> TREASURY_AMOUNT_SUGGESTIONS = List.of(
                         "50",
                         "50le",
@@ -888,7 +888,7 @@ public class SeqCommand {
         private static int runPartyJoinWithRole(CommandContext<FabricClientCommandSource> ctx) {
                 PartyRole role = parseRole(StringArgumentType.getString(ctx, "role"));
                 if (role == null) {
-                        sendFeedback(ctx.getSource(), "Role must be one of: DPS, Healer, Tank.");
+                        sendFeedback(ctx.getSource(), "Role must be one of: DPS, Healer, Tank, Other.");
                         return 0;
                 }
                 return runPartyJoin(ctx, role, null);
@@ -904,7 +904,7 @@ public class SeqCommand {
         private static int runPartyJoinWithRoleAndToken(CommandContext<FabricClientCommandSource> ctx) {
                 PartyRole role = parseRole(StringArgumentType.getString(ctx, "role"));
                 if (role == null) {
-                        sendFeedback(ctx.getSource(), "Role must be one of: DPS, Healer, Tank.");
+                        sendFeedback(ctx.getSource(), "Role must be one of: DPS, Healer, Tank, Other.");
                         return 0;
                 }
                 return runPartyJoin(ctx, role, StringArgumentType.getString(ctx, "inviteToken"));
@@ -984,7 +984,7 @@ public class SeqCommand {
         private static int runPartyRole(CommandContext<FabricClientCommandSource> ctx) {
                 PartyRole role = parseRole(StringArgumentType.getString(ctx, "role"));
                 if (role == null) {
-                        sendFeedback(ctx.getSource(), "Role must be one of: DPS, Healer, Tank.");
+                        sendFeedback(ctx.getSource(), "Role must be one of: DPS, Healer, Tank, Other.");
                         return 0;
                 }
                 return relayCommandResult(
@@ -1104,7 +1104,7 @@ public class SeqCommand {
                 }
         }
 
-        private static PartyRole parseRole(String rawRole) {
+        static PartyRole parseRole(String rawRole) {
                         if (rawRole == null) {
                                 return null;
                         }
@@ -1112,6 +1112,7 @@ public class SeqCommand {
                                 case "dps" -> PartyRole.DPS;
                                 case "healer" -> PartyRole.HEALER;
                                 case "tank" -> PartyRole.TANK;
+                                case "other" -> PartyRole.OTHER;
                                 default -> null;
                         };
         }

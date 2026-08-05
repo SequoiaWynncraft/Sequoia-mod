@@ -11,7 +11,7 @@ import com.seqwawa.seq.utils.WynnClassCache;
  * matching what {@link PartyFinderScreen} expects.
  *
  * <p>
- * {@code role} is the party role (DPS, Healer, Tank) — what function
+ * {@code role} is the party role (DPS, Healer, Tank, Other) — what function
  * the player serves in the group.
  *
  * <p>
@@ -29,7 +29,7 @@ public class PartyMember {
     public final String className;
     public final boolean isLeader;
     public final boolean isReserved;
-    /** Display-friendly party role (e.g. "DPS", "Healer", "Tank"). */
+    /** Display-friendly party role (e.g. "DPS", "Healer", "Tank", "Other"). */
     public final String role;
     public final String playerUUID;
 
@@ -74,6 +74,7 @@ public class PartyMember {
      * <li>DPS → "DPS"</li>
      * <li>HEALER → "Healer"</li>
      * <li>TANK → "Tank"</li>
+     * <li>OTHER → "Other"</li>
      * </ul>
      */
     private static String formatRole(PartyRole partyRole) {
@@ -83,6 +84,7 @@ public class PartyMember {
             case DPS -> "DPS";
             case HEALER -> "Healer";
             case TANK -> "Tank";
+            case OTHER -> "Other";
         };
     }
 }
