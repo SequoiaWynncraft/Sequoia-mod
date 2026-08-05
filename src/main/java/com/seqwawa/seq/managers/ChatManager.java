@@ -166,14 +166,17 @@ public class ChatManager {
         if (!hasLeadingGuildChatColor(message))
             return;
 
+        ParsedMessage parsed = parseGuildMessage(message);
+        if (parsed == null)
+            return;
+
+        ChatMediaEmbedManager.getInstance().observe(
+                ChatMediaEmbedManager.Source.IN_GAME, parsed.username(), parsed.message());
+
         if (!ConnectionManager.isConnected())
             return;
 
         if (!shouldRelayForLocalGuild())
-            return;
-
-        ParsedMessage parsed = parseGuildMessage(message);
-        if (parsed == null)
             return;
 
         if (isDuplicateOutgoing(parsed.username(), parsed.message())) {
@@ -701,6 +704,8 @@ public class ChatManager {
                 return;
 
             mc.execute(() -> {
+                ChatMediaEmbedManager.getInstance().observe(
+                        ChatMediaEmbedManager.Source.DISCORD, msg.username(), msg.message(), msg.mediaUrls());
                 if (mc.player != null) {
                     displayBridgeMessage(msg);
                 }

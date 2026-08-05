@@ -2,11 +2,14 @@ package com.seqwawa.seq.mixins;
 
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
+import com.seqwawa.seq.managers.ChatMediaEmbedManager;
 import com.seqwawa.seq.utils.SequoiaProfileLinks;
+import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import java.net.URI;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import org.spongepowered.asm.mixin.Mixin;
@@ -47,6 +50,19 @@ public abstract class ChatScreenMixin extends Screen {
             return;
         }
         callback.setReturnValue(clickUrlAction(Minecraft.getInstance(), this, profile));
+    }
+
+    @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
+    private void seq$openChatMedia(
+            MouseButtonEvent click, boolean outsideScreen, CallbackInfoReturnable<Boolean> callback) {
+        if (click.button() != 0) {
+            return;
+        }
+        URI link = ChatMediaEmbedManager.getInstance().linkAt(
+                MinecraftUiRenderer.mouseX(click.x()), MinecraftUiRenderer.mouseY(click.y()));
+        if (link != null) {
+            callback.setReturnValue(clickUrlAction(Minecraft.getInstance(), this, link));
+        }
     }
 
     private static boolean isEnabled() {

@@ -1721,11 +1721,20 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         // because older backends do not send it, in which case
                         // matching falls back to the name.
                         String discordId = extractPrimitiveString(json, "discord_id");
+                        List<String> mediaUrls = new ArrayList<>();
+                        if (json.has("media_urls") && json.get("media_urls").isJsonArray()) {
+                            for (var element : json.getAsJsonArray("media_urls")) {
+                                if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()) {
+                                    mediaUrls.add(element.getAsString());
+                                }
+                            }
+                        }
                         SeqClient.LOGGER.info(
-                                "[WebSocket] Dispatching discord_chat from {} discordId={}",
+                                "[WebSocket] Dispatching discord_chat from {} discordId={} media={}",
                                 username,
-                                discordId != null);
-                        discordChatHandler.accept(new DiscordChatMessage(username, msg, discordId));
+                                discordId != null,
+                                mediaUrls.size());
+                        discordChatHandler.accept(new DiscordChatMessage(username, msg, discordId, mediaUrls));
                     } else {
                         SeqClient.LOGGER.warn("[WebSocket] Received discord_chat but handler is not registered");
                     }
@@ -2473,10 +2482,18 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
      *                  identity matching: it is stable, whereas a display name can be
      *                  changed or shared.
      */
-    public record DiscordChatMessage(String username, String message, String discordId) {
+    public record DiscordChatMessage(String username, String message, String discordId, List<String> mediaUrls) {
+
+        public DiscordChatMessage {
+            mediaUrls = mediaUrls == null ? List.of() : List.copyOf(mediaUrls);
+        }
 
         public DiscordChatMessage(String username, String message) {
-            this(username, message, null);
+            this(username, message, null, List.of());
+        }
+
+        public DiscordChatMessage(String username, String message, String discordId) {
+            this(username, message, discordId, List.of());
         }
     }
 

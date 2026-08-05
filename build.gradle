@@ -125,6 +125,9 @@ dependencies {
     // Theme files
     include(implementation("org.snakeyaml:snakeyaml-engine:3.0.1"))
 
+    // Pure-Java static and animated WebP decoding for chat media previews.
+    include(implementation("org.glavo:webp:0.2.0"))
+
     testImplementation(platform("org.junit:junit-bom:5.12.1"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

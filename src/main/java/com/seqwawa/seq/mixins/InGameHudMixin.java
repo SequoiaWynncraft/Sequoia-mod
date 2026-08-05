@@ -5,9 +5,11 @@ import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiGraphics;
 import com.seqwawa.seq.accessors.EventBusAccessor;
 import com.seqwawa.seq.events.Render2DEvent;
+import com.seqwawa.seq.managers.ChatMediaEmbedManager;
 import com.seqwawa.seq.ui.SequoiaScreen;
 import com.seqwawa.seq.ui.SettingsScreen;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
+import net.minecraft.client.gui.screens.ChatScreen;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -27,8 +29,13 @@ public class InGameHudMixin implements EventBusAccessor {
 
     @Inject(method = "render", at = @At("TAIL"))
     private void seq$onRender(GuiGraphics context, DeltaTracker tickCounter, CallbackInfo ci) {
-        if (mc.screen != null) return;
-        UiRenderer.renderHud(
-                canvas -> seqdispatch(new Render2DEvent(context, tickCounter.getGameTimeDeltaPartialTick(true))));
+        if (mc.screen == null) {
+            UiRenderer.renderHud(canvas -> {
+                seqdispatch(new Render2DEvent(context, tickCounter.getGameTimeDeltaPartialTick(true)));
+                ChatMediaEmbedManager.getInstance().render(canvas);
+            });
+        } else if (mc.screen instanceof ChatScreen chatScreen) {
+            UiRenderer.renderScreen(chatScreen, ChatMediaEmbedManager.getInstance()::render);
+        }
     }
 }

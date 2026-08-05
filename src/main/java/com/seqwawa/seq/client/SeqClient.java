@@ -27,6 +27,7 @@ import com.seqwawa.seq.halcyon.HalcyonRangeVisualiserClient;
 import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.BombShareManager;
 import com.seqwawa.seq.managers.ChatManager;
+import com.seqwawa.seq.managers.ChatMediaEmbedManager;
 import com.seqwawa.seq.managers.ChatRegexFilterManager;
 import com.seqwawa.seq.managers.FontManager;
 import com.seqwawa.seq.managers.GameManager;
@@ -132,6 +133,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static Setting.BooleanSetting profileOnShiftClickSetting;
+
+    @Getter
+    public static Setting.BooleanSetting showChatMediaEmbedsSetting;
 
     @Getter
     public static Setting.BooleanSetting raidAutoAnnounceSetting;
@@ -284,7 +288,10 @@ public class SeqClient implements ClientModInitializer {
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
         IngredientWaypointRenderer.initialize();
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> MinecraftUiRenderer.shutdown());
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            ChatMediaEmbedManager.getInstance().close();
+            MinecraftUiRenderer.shutdown();
+        });
         LightRoom.init();
 
         KeyMapping.Category category =
@@ -627,6 +634,7 @@ public class SeqClient implements ClientModInitializer {
         // Off by default: shift-click is vanilla's "insert this name into the chat box"
         // gesture, so taking it over is opt-in rather than a surprise.
         profileOnShiftClickSetting = new Setting.BooleanSetting("profile_on_shift_click", "chat", false);
+        showChatMediaEmbedsSetting = new Setting.BooleanSetting("show_chat_media_embeds", "chat", true);
 
         showDiscordChatSetting.setPresentation(
                 "Show Discord chat", "Display messages forwarded from the Sequoia Discord.", "Discord chat");
@@ -672,6 +680,10 @@ public class SeqClient implements ClientModInitializer {
         profileOnShiftClickSetting.setPresentation(
                 "Open Sequoia profile on shift-click",
                 "Opens the Sequoia website player profile.",
+                "Chat behavior");
+        showChatMediaEmbedsSetting.setPresentation(
+                "Show chat link previews",
+                "Embed images, animated GIFs and website cards shared in guild or Discord chat.",
                 "Chat behavior");
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
         radianceCheckerSetting = new Setting.BooleanSetting("enable_radiance_visualiser", "raids", true);
@@ -725,6 +737,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(animateUsernameGradientsSetting);
         getConfigManager().register(showChatInsigniasSetting);
         getConfigManager().register(profileOnShiftClickSetting);
+        getConfigManager().register(showChatMediaEmbedsSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
         getConfigManager().register(trackGuildWarsSetting);
         getConfigManager().register(checkUpdatesSetting);
