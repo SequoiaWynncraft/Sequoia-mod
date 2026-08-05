@@ -113,6 +113,12 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting colorDiscordBridgeSetting;
 
     @Getter
+    public static Setting.ColorSetting discordChatTextColorSetting;
+
+    @Getter
+    public static Setting.ColorSetting inGameGuildChatTextColorSetting;
+
+    @Getter
     public static Setting.BooleanSetting showRankGradientsSetting;
 
     @Getter
@@ -570,6 +576,9 @@ public class SeqClient implements ClientModInitializer {
         showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", true);
         showChatInsigniasSetting = new Setting.BooleanSetting("show_chat_insignias", "chat", false);
         colorDiscordBridgeSetting = new Setting.BooleanSetting("color_discord_bridge", "chat", true);
+        discordChatTextColorSetting = new Setting.ColorSetting("discord_chat_text_color", "chat", 0x55FFFF);
+        inGameGuildChatTextColorSetting =
+                new Setting.ColorSetting("in_game_guild_chat_text_color", "chat", 0x55FFFF);
         showRankGradientsSetting = new Setting.BooleanSetting("show_rank_gradients", "chat", true);
         // Off by default: moving colour draws the eye away from what is being said, and
         // a still gradient is what a Discord role looks like everywhere else.
@@ -589,6 +598,15 @@ public class SeqClient implements ClientModInitializer {
                 "Discord chat");
         colorDiscordBridgeSetting.setParentSetting(showDiscordChatSetting);
         colorDiscordBridgeSetting.setEnabledCondition(showDiscordRanksSetting::getValue);
+        discordChatTextColorSetting.setPresentation(
+                "Discord message text color",
+                "Choose the text color used for messages forwarded from Discord.",
+                "Chat colors");
+        discordChatTextColorSetting.setParentSetting(showDiscordChatSetting);
+        inGameGuildChatTextColorSetting.setPresentation(
+                "In-game guild message text color",
+                "Choose the text color used for native Wynncraft guild messages.",
+                "Chat colors");
 
         showDiscordRanksSetting.setPresentation(
                 "Show Discord ranks and colors",
@@ -663,6 +681,8 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(colorDiscordBridgeSetting);
+        getConfigManager().register(discordChatTextColorSetting);
+        getConfigManager().register(inGameGuildChatTextColorSetting);
         getConfigManager().register(showDiscordRanksSetting);
         getConfigManager().register(showRankGradientsSetting);
         getConfigManager().register(animateRankGradientsSetting);

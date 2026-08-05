@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.model.DiscordRank;
 import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.network.ConnectionManager;
@@ -327,7 +329,7 @@ class ChatManagerTest {
     }
 
     @Test
-    void uncolouredBridgeMessageUsesLegacySequoiaPillAndWhiteText() {
+    void uncolouredBridgeMessageUsesLegacySequoiaPillAndDefaultDiscordTextColor() {
         MutableComponent line = ChatManager.bridgeSenderLine(
                 new ConnectionManager.DiscordChatMessage("MrHmar", "hello", "215820027700576258"),
                 "hello",
@@ -336,7 +338,7 @@ class ChatManagerTest {
         assertEquals("sequoia", WynnPillGlyphs.findPills(line.getString()).getFirst().label());
         assertFragmentColor(line, "MrHmar", ChatFormatting.WHITE);
         assertFragmentColor(line, ": ", ChatFormatting.GRAY);
-        assertFragmentColor(line, "hello", ChatFormatting.WHITE);
+        assertFragmentColor(line, "hello", 0x55FFFF);
     }
 
     @Test
@@ -359,11 +361,31 @@ class ChatManagerTest {
     }
 
     @Test
-    void uncolouredBridgeContinuationKeepsLegacyPillAndWhiteText() {
+    void uncolouredBridgeContinuationKeepsLegacyPillAndDefaultDiscordTextColor() {
         MutableComponent line = ChatManager.bridgeContinuationLine("continued", false);
 
         assertEquals("sequoia", WynnPillGlyphs.findPills(line.getString()).getFirst().label());
-        assertFragmentColor(line, "continued", ChatFormatting.WHITE);
+        assertFragmentColor(line, "continued", 0x55FFFF);
+    }
+
+    @Test
+    void bridgeMessagesUseConfiguredDiscordTextColor() {
+        Setting.ColorSetting previous = SeqClient.discordChatTextColorSetting;
+        try {
+            SeqClient.discordChatTextColorSetting =
+                    new Setting.ColorSetting("discord_chat_text_color", "chat", 0xA1B2C3);
+
+            MutableComponent sender = ChatManager.bridgeSenderLine(
+                    new ConnectionManager.DiscordChatMessage("MrHmar", "hello", "215820027700576258"),
+                    "hello",
+                    null);
+            MutableComponent continuation = ChatManager.bridgeContinuationLine("continued", false);
+
+            assertFragmentColor(sender, "hello", 0xA1B2C3);
+            assertFragmentColor(continuation, "continued", 0xA1B2C3);
+        } finally {
+            SeqClient.discordChatTextColorSetting = previous;
+        }
     }
 
     private static void assertFragmentColor(Component component, String text, ChatFormatting expected) {
@@ -374,5 +396,15 @@ class ChatManagerTest {
                 .style();
         assertNotNull(style.getColor());
         assertEquals(expected.getColor(), style.getColor().getValue());
+    }
+
+    private static void assertFragmentColor(Component component, String text, int expectedRgb) {
+        Style style = ComponentTextEditor.flatten(component).stream()
+                .filter(fragment -> fragment.text().equals(text))
+                .findFirst()
+                .orElseThrow()
+                .style();
+        assertNotNull(style.getColor());
+        assertEquals(expectedRgb, style.getColor().getValue());
     }
 }

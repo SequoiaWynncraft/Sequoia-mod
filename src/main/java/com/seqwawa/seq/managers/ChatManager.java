@@ -744,7 +744,8 @@ public class ChatManager {
                                     .withColor(ChatFormatting.WHITE)
                                     .withInsertion(msg.username())))
                     .append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-                    .append(Component.literal(text).withStyle(ChatFormatting.WHITE));
+                    .append(Component.literal(text).withStyle(style -> style.withColor(
+                            DiscordRankChatDecorator.discordChatTextColor())));
         }
 
         MutableComponent line = Component.empty().append(DiscordRankChatDecorator.bridgePrefix());
@@ -757,20 +758,21 @@ public class ChatManager {
         if (insignia != null) {
             line.append(insignia);
         }
-        TextColor guildColor = DiscordRankChatDecorator.guildChatColor();
-        return line.append(Component.literal(": ").withStyle(style -> style.withColor(guildColor)))
-                .append(Component.literal(text).withStyle(style -> style.withColor(guildColor)));
+        TextColor textColor = DiscordRankChatDecorator.discordChatTextColor();
+        return line.append(Component.literal(": ").withStyle(style -> style.withColor(textColor)))
+                .append(Component.literal(text).withStyle(style -> style.withColor(textColor)));
     }
 
     static MutableComponent bridgeContinuationLine(String text, boolean colored) {
         if (!colored) {
             return NotificationAccessor.prefixComponent()
-                    .append(Component.literal(text).withStyle(ChatFormatting.WHITE));
+                    .append(Component.literal(text).withStyle(style -> style.withColor(
+                            DiscordRankChatDecorator.discordChatTextColor())));
         }
-        TextColor guildColor = DiscordRankChatDecorator.guildChatColor();
+        TextColor textColor = DiscordRankChatDecorator.discordChatTextColor();
         return Component.empty()
                 .append(DiscordRankChatDecorator.bridgePrefix())
-                .append(Component.literal(text).withStyle(style -> style.withColor(guildColor)));
+                .append(Component.literal(text).withStyle(style -> style.withColor(textColor)));
     }
 
     /**
