@@ -134,6 +134,10 @@ public final class DiscordRankChatDecorator {
      * guild chat or the speaker has no linked rank.
      */
     public static Component decorateGuildChat(Component message) {
+        return RankGradientAnimation.batchRegistrations(() -> decorateGuildChatNow(message));
+    }
+
+    private static Component decorateGuildChatNow(Component message) {
         // Every ordinary chat line ends the current bridge block. A bridged line must
         // not, so it is recognised by identity as well as by the suppression flag:
         // another mod may queue the message and deliver it here after
@@ -921,6 +925,10 @@ public final class DiscordRankChatDecorator {
      * a rank pill moves the name with it. Solid names stay one component.
      */
     static MutableComponent colouredName(String name, RankPresentation rank, Style style) {
+        return RankGradientAnimation.batchRegistrations(() -> colouredNameNow(name, rank, style));
+    }
+
+    private static MutableComponent colouredNameNow(String name, RankPresentation rank, Style style) {
         String text = name == null ? "" : name;
         Style baseStyle = style == null ? Style.EMPTY : style;
         ColorRamp displayRamp = rampFor(rank);
@@ -953,6 +961,16 @@ public final class DiscordRankChatDecorator {
     }
 
     private static List<ComponentTextEditor.Fragment> recolourName(
+            List<ComponentTextEditor.Fragment> fragments,
+            int start,
+            int endExclusive,
+            RankPresentation rank,
+            String insertion) {
+        return RankGradientAnimation.batchRegistrations(
+                () -> recolourNameNow(fragments, start, endExclusive, rank, insertion));
+    }
+
+    private static List<ComponentTextEditor.Fragment> recolourNameNow(
             List<ComponentTextEditor.Fragment> fragments,
             int start,
             int endExclusive,

@@ -143,6 +143,26 @@ class RankGradientAnimationTest {
                 0xFFFFFF, animated(backgrounds.getFirst(), 0.5d), "the pill's first block has moved"));
     }
 
+    @Test
+    void publishesAWholePillOnceEvenWhenTheRegistryIsFull() {
+        RankGradientAnimation.batchRegistrations(() -> {
+            for (int index = 0; index < 4096; index++) {
+                RankGradientAnimation.colorAt(GRADIENT, index / 4095d);
+            }
+            return null;
+        });
+        assertEquals(4096, RankGradientAnimation.rememberedStopCount());
+
+        long publicationsBefore = RankGradientAnimation.publicationCount();
+        NotificationAccessor.wynnPill("Upper Strategist", GRADIENT, TextColor.fromRgb(0xFFFFFF), null);
+
+        assertEquals(
+                publicationsBefore + 1,
+                RankGradientAnimation.publicationCount(),
+                "all glyph stops should share one copy-on-write publication");
+        assertEquals(4096, RankGradientAnimation.rememberedStopCount(), "the registry remains bounded");
+    }
+
     private static int animated(TextColor color, double phase) {
         return RankGradientAnimation.animate(color, phase).getValue();
     }

@@ -17,6 +17,7 @@ import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.utils.ChatIdentityResolver;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
+import com.seqwawa.seq.utils.RankGradientAnimation;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -736,6 +737,11 @@ public class ChatManager {
     }
 
     static MutableComponent bridgeSenderLine(
+            ConnectionManager.DiscordChatMessage msg, String text, RankPresentation rank) {
+        return RankGradientAnimation.batchRegistrations(() -> bridgeSenderLineNow(msg, text, rank));
+    }
+
+    private static MutableComponent bridgeSenderLineNow(
             ConnectionManager.DiscordChatMessage msg, String text, RankPresentation rank) {
         if (rank == null) {
             return NotificationAccessor.prefixComponent()

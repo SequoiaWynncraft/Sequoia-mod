@@ -3,9 +3,12 @@ package com.seqwawa.seq.utils;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
 import net.minecraft.network.chat.TextColor;
 
 /**
@@ -49,6 +52,9 @@ public final class RankGradientAnimation {
             Target target,
             TextColor baseColor) {}
 
+    /** A stop waiting to be included in the next registry publication. */
+    private record Registration(TextColor color, Stop stop) {}
+
     /** Registration order, so the stops dropped on overflow are the oldest ones. */
     private static final ArrayDeque<TextColor> REGISTRATION_ORDER = new ArrayDeque<>();
 
@@ -59,7 +65,38 @@ public final class RankGradientAnimation {
      */
     private static volatile Map<TextColor, Stop> stops = new IdentityHashMap<>();
 
+    /**
+     * Registrations made while one chat decoration is being built. Nested batches
+     * share the outer list, so composing a pill and a name still publishes once.
+     */
+    private static final ThreadLocal<List<Registration>> PENDING_REGISTRATIONS = new ThreadLocal<>();
+
+    /** Monotonic publication count, exposed package-locally for the batching test. */
+    private static long publicationCount;
+
     private RankGradientAnimation() {}
+
+    /**
+     * Builds one decoration while collecting all of its colours, then publishes them
+     * to the render thread in a single copy-on-write update. Calls may be nested: only
+     * the outermost call publishes.
+     */
+    public static <T> T batchRegistrations(Supplier<T> build) {
+        Objects.requireNonNull(build, "build");
+        if (PENDING_REGISTRATIONS.get() != null) {
+            return build.get();
+        }
+
+        List<Registration> pending = new ArrayList<>();
+        PENDING_REGISTRATIONS.set(pending);
+        try {
+            T result = build.get();
+            rememberAll(pending);
+            return result;
+        } finally {
+            PENDING_REGISTRATIONS.remove();
+        }
+    }
 
     /**
      * The decoration colour at {@code position} along {@code ramp}, remembered so it
@@ -103,7 +140,7 @@ public final class RankGradientAnimation {
         Objects.requireNonNull(displayRamp, "displayRamp");
         Objects.requireNonNull(roleRamp, "roleRamp");
         TextColor color = TextColor.fromRgb(displayRamp.sample(position));
-        remember(color, new Stop(displayRamp, roleRamp, position, target, baseColor));
+        remember(new Registration(color, new Stop(displayRamp, roleRamp, position, target, baseColor)));
         return color;
     }
 
@@ -175,13 +212,36 @@ public final class RankGradientAnimation {
         return setting != null && setting.getValue();
     }
 
-    private static synchronized void remember(TextColor color, Stop stop) {
+    private static void remember(Registration registration) {
+        List<Registration> pending = PENDING_REGISTRATIONS.get();
+        if (pending != null) {
+            pending.add(registration);
+            return;
+        }
+        rememberAll(List.of(registration));
+    }
+
+    private static synchronized void rememberAll(List<Registration> registrations) {
+        if (registrations.isEmpty()) {
+            return;
+        }
         IdentityHashMap<TextColor, Stop> updated = new IdentityHashMap<>(stops);
-        updated.put(color, stop);
-        REGISTRATION_ORDER.addLast(color);
-        while (REGISTRATION_ORDER.size() > MAX_REMEMBERED_STOPS) {
-            updated.remove(REGISTRATION_ORDER.removeFirst());
+        for (Registration registration : registrations) {
+            updated.put(registration.color(), registration.stop());
+            REGISTRATION_ORDER.addLast(registration.color());
+            while (REGISTRATION_ORDER.size() > MAX_REMEMBERED_STOPS) {
+                updated.remove(REGISTRATION_ORDER.removeFirst());
+            }
         }
         stops = updated;
+        publicationCount++;
+    }
+
+    static synchronized int rememberedStopCount() {
+        return stops.size();
+    }
+
+    static synchronized long publicationCount() {
+        return publicationCount;
     }
 }

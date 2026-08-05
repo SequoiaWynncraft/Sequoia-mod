@@ -103,7 +103,8 @@ public interface NotificationAccessor {
                 gradientPosition(index, label.length()),
                 RankGradientAnimation.Target.RANK_BADGE,
                 baseBackgroundColor);
-        return wynnPill(label, backgroundAt, index -> labelColor, clickEvent);
+        return RankGradientAnimation.batchRegistrations(
+                () -> wynnPill(label, backgroundAt, index -> labelColor, clickEvent));
     }
 
     /**
