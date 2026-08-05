@@ -108,10 +108,7 @@ public final class DiscordRankService {
     public RankPresentation presentationForMinecraftUsername(String username) {
         DiscordRank verified = rankForMinecraftUsername(username);
         if (verified != null) {
-            return new RankPresentation(
-                    verified,
-                    colorsWithCatalogFallback(
-                            verified, lookup(index.colorsByMinecraftUsername(), username)));
+            return presentation(verified, lookup(index.colorsByMinecraftUsername(), username));
         }
         return present(lookup(index.unverifiedMinecraftAliases(), username));
     }
@@ -131,23 +128,27 @@ public final class DiscordRankService {
         if (rank == null) {
             return null;
         }
-        return new RankPresentation(rank, colorsForBridgeSender(senderName, discordId, rank));
+        return presentation(rank, individualColorsForBridgeSender(senderName, discordId));
     }
 
-    private ColorRamp colorsForBridgeSender(String senderName, String discordId, DiscordRank rank) {
+    private ColorRamp individualColorsForBridgeSender(String senderName, String discordId) {
         ColorRamp byId = lookup(index.colorsByIdentity(), discordId);
-        return byId != null && !byId.isEmpty() ? byId : colorsFor(senderName, rank);
+        return byId != null && !byId.isEmpty() ? byId : lookup(index.colorsByIdentity(), senderName);
     }
 
     private RankPresentation present(DiscordRank rank, String identity) {
-        return rank == null ? null : new RankPresentation(rank, colorsFor(identity, rank));
+        return rank == null ? null : presentation(rank, lookup(index.colorsByIdentity(), identity));
     }
 
     private RankPresentation present(ProfilePresentation profile) {
-        return profile == null
-                ? null
-                : new RankPresentation(
-                        profile.rank(), colorsWithCatalogFallback(profile.rank(), profile.colors()));
+        return profile == null ? null : presentation(profile.rank(), profile.colors());
+    }
+
+    private RankPresentation presentation(DiscordRank rank, ColorRamp individual) {
+        return new RankPresentation(
+                rank,
+                roleColorsFor(rank),
+                individual == null ? ColorRamp.empty() : individual);
     }
 
     /**
@@ -166,6 +167,10 @@ public final class DiscordRankService {
         if (member != null && !member.isEmpty()) {
             return member;
         }
+        return roleColorsFor(rank);
+    }
+
+    private ColorRamp roleColorsFor(DiscordRank rank) {
         return rank == null ? ColorRamp.empty() : index.colorsByRoleKey().getOrDefault(rank.key(), ColorRamp.empty());
     }
 

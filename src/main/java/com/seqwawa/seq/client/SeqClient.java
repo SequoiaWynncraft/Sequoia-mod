@@ -113,6 +113,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting showChatInsigniasSetting;
 
     @Getter
+    public static Setting.BooleanSetting usePerUserColorsSetting;
+
+    @Getter
     public static Setting.BooleanSetting colorDiscordBridgeSetting;
 
     @Getter
@@ -623,6 +626,7 @@ public class SeqClient implements ClientModInitializer {
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
         showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", true);
         showChatInsigniasSetting = new Setting.BooleanSetting("show_chat_insignias", "chat", false);
+        usePerUserColorsSetting = new Setting.BooleanSetting("use_per_user_colors", "chat", true);
         colorDiscordBridgeSetting = new Setting.BooleanSetting("color_discord_bridge", "chat", true);
         discordChatTextColorSetting = new Setting.ColorSetting("discord_chat_text_color", "chat", 0x55FFFF);
         inGameGuildChatTextColorSetting =
@@ -665,6 +669,11 @@ public class SeqClient implements ClientModInitializer {
         showChatInsigniasSetting.setPresentation(
                 "Show insignias", "Display a member's Sequoia insignia beside their chat name.", "Discord ranks");
         showChatInsigniasSetting.setParentSetting(showDiscordRanksSetting);
+        usePerUserColorsSetting.setPresentation(
+                "Use per-user colors",
+                "Prefer each member's individual Discord palette over their progression rank's colors.",
+                "Discord ranks");
+        usePerUserColorsSetting.setParentSetting(showDiscordRanksSetting);
         colorRankPillsSetting.setPresentation(
                 "Color rank pills",
                 "Use each member's Discord role color on their rank pill.",
@@ -748,6 +757,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(inGameGuildChatTextColorSetting);
         getConfigManager().register(showDiscordRanksSetting);
         getConfigManager().register(showChatInsigniasSetting);
+        getConfigManager().register(usePerUserColorsSetting);
         getConfigManager().register(colorRankPillsSetting);
         getConfigManager().registerWithLegacyKeys(showRankPillGradientsSetting, "chat.show_rank_gradients");
         getConfigManager().register(animateRankGradientsSetting);

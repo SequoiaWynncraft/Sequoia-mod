@@ -618,6 +618,20 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void switchesARankPillBetweenIndividualAndRoleColors() {
+        RankPresentation presentation = new RankPresentation(
+                new DiscordRank("rank.sapling", "Sapling", 88),
+                ColorRamp.of(0x4CB4FA),
+                ColorRamp.of(0xFF00FF));
+        Component pill = DiscordRankChatDecorator.rankPill(presentation, null);
+
+        withPerUserColors(true, () -> assertEquals(
+                Set.of(0xFF00FF), Set.copyOf(renderedPillBackgroundColors(pill))));
+        withPerUserColors(false, () -> assertEquals(
+                Set.of(0x4CB4FA), Set.copyOf(renderedPillBackgroundColors(pill))));
+    }
+
+    @Test
     void keepsOneLabelColourAcrossAGradient() {
         // Only the background is graded. Letters that shifted hue from one to the next
         // read as a rendering fault rather than as a gradient.
@@ -653,6 +667,34 @@ class DiscordRankChatDecoratorTest {
         assertTrue(
                 name.get(1).style().getColor().getValue() > 0x123456,
                 "the middle of the name must be sampled from inside the ramp");
+    }
+
+    @Test
+    void switchesAUsernameFromItsSolidIndividualColorToItsGradientRolePalette() {
+        RankPresentation presentation = new RankPresentation(
+                new DiscordRank("rank.yggdrasil", "Ygg", 120),
+                ColorRamp.of(List.of(0x000000, 0xFFFFFF)),
+                ColorRamp.of(0xFF00FF));
+        List<TextColor> stored = ComponentTextEditor.flatten(DiscordRankChatDecorator.colouredName(
+                        "Name", presentation, Style.EMPTY.withColor(GUILD_AQUA)))
+                .stream()
+                .map(fragment -> fragment.style().getColor())
+                .toList();
+
+        withPerUserColors(true, () -> assertEquals(
+                Set.of(0xFF00FF),
+                Set.copyOf(stored.stream()
+                        .map(RankGradientAnimation::animate)
+                        .map(TextColor::getValue)
+                        .toList())));
+        withPerUserColors(false, () -> {
+            List<Integer> rendered = stored.stream()
+                    .map(RankGradientAnimation::animate)
+                    .map(TextColor::getValue)
+                    .toList();
+            assertEquals(0x000000, rendered.getFirst());
+            assertEquals(0xFFFFFF, rendered.getLast());
+        });
     }
 
     @Test
@@ -731,6 +773,17 @@ class DiscordRankChatDecoratorTest {
         } finally {
             SeqClient.colorRankPillsSetting = previousPills;
             SeqClient.colorUsernamesSetting = previousUsernames;
+        }
+    }
+
+    private static void withPerUserColors(boolean enabled, Runnable body) {
+        Setting.BooleanSetting previous = SeqClient.usePerUserColorsSetting;
+        try {
+            SeqClient.usePerUserColorsSetting =
+                    new Setting.BooleanSetting("use_per_user_colors", "chat", enabled);
+            body.run();
+        } finally {
+            SeqClient.usePerUserColorsSetting = previous;
         }
     }
 

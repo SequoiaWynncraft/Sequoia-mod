@@ -19,6 +19,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("show_discord_bridge", "Show Discord chat");
         DISPLAY_NAME_OVERRIDES.put("show_discord_ranks", "Show Discord ranks and colors in guild chat");
         DISPLAY_NAME_OVERRIDES.put("show_chat_insignias", "Show insignias in chat");
+        DISPLAY_NAME_OVERRIDES.put("use_per_user_colors", "Use per-user colors");
         DISPLAY_NAME_OVERRIDES.put("color_discord_bridge", "Color Chatbridge with Discord ranks");
         DISPLAY_NAME_OVERRIDES.put("discord_chat_text_color", "Discord message text color");
         DISPLAY_NAME_OVERRIDES.put("in_game_guild_chat_text_color", "In-game guild message text color");

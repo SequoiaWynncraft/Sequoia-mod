@@ -42,7 +42,12 @@ public final class RankGradientAnimation {
     private static final int MAX_REMEMBERED_STOPS = 4096;
 
     /** Where a remembered colour was sampled from, its target, and its uncoloured base. */
-    private record Stop(ColorRamp ramp, double position, Target target, TextColor baseColor) {}
+    private record Stop(
+            ColorRamp displayRamp,
+            ColorRamp roleRamp,
+            double position,
+            Target target,
+            TextColor baseColor) {}
 
     /** Registration order, so the stops dropped on overflow are the oldest ones. */
     private static final ArrayDeque<TextColor> REGISTRATION_ORDER = new ArrayDeque<>();
@@ -81,9 +86,24 @@ public final class RankGradientAnimation {
      * text colour.
      */
     public static TextColor colorAt(ColorRamp ramp, double position, Target target, TextColor baseColor) {
+        return colorAt(ramp, ramp, position, target, baseColor);
+    }
+
+    /**
+     * A member decoration that can switch between their individual display palette
+     * and the palette shared by their progression rank.
+     */
+    public static TextColor colorAt(
+            ColorRamp displayRamp,
+            ColorRamp roleRamp,
+            double position,
+            Target target,
+            TextColor baseColor) {
         Objects.requireNonNull(target, "target");
-        TextColor color = TextColor.fromRgb(ramp.sample(position));
-        remember(color, new Stop(ramp, position, target, baseColor));
+        Objects.requireNonNull(displayRamp, "displayRamp");
+        Objects.requireNonNull(roleRamp, "roleRamp");
+        TextColor color = TextColor.fromRgb(displayRamp.sample(position));
+        remember(color, new Stop(displayRamp, roleRamp, position, target, baseColor));
         return color;
     }
 
@@ -107,15 +127,18 @@ public final class RankGradientAnimation {
         if (!coloringEnabled(stop.target())) {
             return stop.baseColor();
         }
-        if (!stop.ramp().isGradient()) {
-            return color;
+        ColorRamp ramp = perUserColorsEnabled() ? stop.displayRamp() : stop.roleRamp();
+        boolean storedRampActive = ramp == stop.displayRamp();
+        if (!ramp.isGradient()) {
+            return storedRampActive ? color : TextColor.fromRgb(ramp.first());
         }
         if (!gradientsEnabled(stop.target())) {
-            return TextColor.fromRgb(stop.ramp().first());
+            return TextColor.fromRgb(ramp.first());
         }
-        return animationEnabled(stop.target())
-                ? TextColor.fromRgb(stop.ramp().scroll(stop.position(), phase))
-                : color;
+        if (animationEnabled(stop.target())) {
+            return TextColor.fromRgb(ramp.scroll(stop.position(), phase));
+        }
+        return storedRampActive ? color : TextColor.fromRgb(ramp.sample(stop.position()));
     }
 
     /** How far through the current turn the clock is, in {@code [0, 1)}. */
@@ -136,6 +159,11 @@ public final class RankGradientAnimation {
             case RANK_BADGE -> SeqClient.getColorRankPillsSetting();
             case USERNAME -> SeqClient.getColorUsernamesSetting();
         };
+        return setting == null || setting.getValue();
+    }
+
+    private static boolean perUserColorsEnabled() {
+        Setting.BooleanSetting setting = SeqClient.getUsePerUserColorsSetting();
         return setting == null || setting.getValue();
     }
 

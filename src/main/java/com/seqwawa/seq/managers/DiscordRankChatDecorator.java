@@ -872,7 +872,12 @@ public final class DiscordRankChatDecorator {
     static MutableComponent rankPill(
             RankPresentation rank, String replacedWynncraftRank, TextColor baseBackgroundColor) {
         MutableComponent pill = NotificationAccessor.wynnPill(
-                rank.pillLabel(), rampFor(rank), PILL_LABEL_COLOR, null, baseBackgroundColor);
+                rank.pillLabel(),
+                rampFor(rank),
+                roleRampFor(rank),
+                PILL_LABEL_COLOR,
+                null,
+                baseBackgroundColor);
 
         // The tooltip is one component, so it cannot carry the gradient; it takes the
         // primary stop, which is the colour Discord itself shows the role under.
@@ -896,6 +901,13 @@ public final class DiscordRankChatDecorator {
         return rank.colors().isEmpty() ? ColorRamp.of(FALLBACK_RANK_COLOR.getValue()) : rank.colors();
     }
 
+    /** Shared progression-rank palette used while per-user colouring is disabled. */
+    static ColorRamp roleRampFor(RankPresentation rank) {
+        return rank.roleColors().isEmpty()
+                ? ColorRamp.of(FALLBACK_RANK_COLOR.getValue())
+                : rank.roleColors();
+    }
+
     /**
      * A name painted across the member's complete role palette. Gradient colours are
      * minted through {@link RankGradientAnimation}, so the same render hook that moves
@@ -904,10 +916,12 @@ public final class DiscordRankChatDecorator {
     static MutableComponent colouredName(String name, RankPresentation rank, Style style) {
         String text = name == null ? "" : name;
         Style baseStyle = style == null ? Style.EMPTY : style;
-        ColorRamp ramp = rampFor(rank);
-        if (!ramp.isGradient() || text.codePointCount(0, text.length()) <= 1) {
+        ColorRamp displayRamp = rampFor(rank);
+        ColorRamp roleRamp = roleRampFor(rank);
+        if ((!displayRamp.isGradient() && !roleRamp.isGradient())
+                || text.codePointCount(0, text.length()) <= 1) {
             TextColor color = RankGradientAnimation.colorAt(
-                    ramp, 0d, RankGradientAnimation.Target.USERNAME, baseStyle.getColor());
+                    displayRamp, roleRamp, 0d, RankGradientAnimation.Target.USERNAME, baseStyle.getColor());
             return Component.literal(text).withStyle(baseStyle.withColor(color));
         }
 
@@ -918,7 +932,11 @@ public final class DiscordRankChatDecorator {
             int codePoint = text.codePointAt(offset);
             double position = (double) index / (codePointCount - 1);
             TextColor color = RankGradientAnimation.colorAt(
-                    ramp, position, RankGradientAnimation.Target.USERNAME, baseStyle.getColor());
+                    displayRamp,
+                    roleRamp,
+                    position,
+                    RankGradientAnimation.Target.USERNAME,
+                    baseStyle.getColor());
             coloured.append(Component.literal(new String(Character.toChars(codePoint)))
                     .withStyle(baseStyle.withColor(color)));
             offset += Character.charCount(codePoint);
@@ -933,14 +951,19 @@ public final class DiscordRankChatDecorator {
             int endExclusive,
             RankPresentation rank,
             String insertion) {
-        ColorRamp ramp = rampFor(rank);
-        if (!ramp.isGradient()) {
+        ColorRamp displayRamp = rampFor(rank);
+        ColorRamp roleRamp = roleRampFor(rank);
+        if (!displayRamp.isGradient() && !roleRamp.isGradient()) {
             return ComponentTextEditor.restyleRange(
                     fragments,
                     start,
                     endExclusive,
                     style -> style.withColor(RankGradientAnimation.colorAt(
-                                    ramp, 0d, RankGradientAnimation.Target.USERNAME, style.getColor()))
+                                    displayRamp,
+                                    roleRamp,
+                                    0d,
+                                    RankGradientAnimation.Target.USERNAME,
+                                    style.getColor()))
                             .withInsertion(insertion));
         }
         return ComponentTextEditor.restyleRangeByPosition(
@@ -949,7 +972,11 @@ public final class DiscordRankChatDecorator {
                 endExclusive,
                 (style, position) -> style.withColor(
                                 RankGradientAnimation.colorAt(
-                                        ramp, position, RankGradientAnimation.Target.USERNAME, style.getColor()))
+                                        displayRamp,
+                                        roleRamp,
+                                        position,
+                                        RankGradientAnimation.Target.USERNAME,
+                                        style.getColor()))
                         .withInsertion(insertion));
     }
 

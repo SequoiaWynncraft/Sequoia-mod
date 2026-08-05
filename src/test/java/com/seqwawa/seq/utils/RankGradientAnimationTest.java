@@ -101,6 +101,19 @@ class RankGradientAnimationTest {
     }
 
     @Test
+    void switchesExistingDecorationsBetweenIndividualAndRolePalettes() {
+        ColorRamp individual = ColorRamp.of(List.of(0x000000, 0xFFFFFF));
+        ColorRamp role = ColorRamp.of(0x4CB4FA);
+        TextColor color = RankGradientAnimation.colorAt(
+                individual, role, 1d, RankGradientAnimation.Target.USERNAME, TextColor.fromRgb(0xFFFFFF));
+
+        withPerUserColors(true, () -> assertSame(color, RankGradientAnimation.animate(color, 0.5d)));
+        withPerUserColors(
+                false, () -> assertEquals(0x4CB4FA, RankGradientAnimation.animate(color, 0.5d).getValue()));
+        withPerUserColors(true, () -> assertSame(color, RankGradientAnimation.animate(color, 0.5d)));
+    }
+
+    @Test
     void leavesSolidRolesAlone() {
         // One colour scrolled is that same colour back again, so it is never remembered.
         TextColor solid = RankGradientAnimation.colorAt(ColorRamp.of(0x4CB4FA), 0d);
@@ -155,6 +168,17 @@ class RankGradientAnimationTest {
         } finally {
             SeqClient.colorRankPillsSetting = previousPills;
             SeqClient.colorUsernamesSetting = previousUsernames;
+        }
+    }
+
+    private static void withPerUserColors(boolean enabled, Runnable body) {
+        Setting.BooleanSetting previous = SeqClient.usePerUserColorsSetting;
+        try {
+            SeqClient.usePerUserColorsSetting =
+                    new Setting.BooleanSetting("use_per_user_colors", "chat", enabled);
+            body.run();
+        } finally {
+            SeqClient.usePerUserColorsSetting = previous;
         }
     }
 

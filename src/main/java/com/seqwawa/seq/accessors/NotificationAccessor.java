@@ -76,7 +76,7 @@ public interface NotificationAccessor {
             ColorRamp ramp,
             TextColor labelColor,
             ClickEvent clickEvent) {
-        return wynnPill(label, ramp, labelColor, clickEvent, null);
+        return wynnPill(label, ramp, ramp, labelColor, clickEvent, null);
     }
 
     /** Gradient pill that returns to {@code baseBackgroundColor} when role colouring is off. */
@@ -86,8 +86,20 @@ public interface NotificationAccessor {
             TextColor labelColor,
             ClickEvent clickEvent,
             TextColor baseBackgroundColor) {
+        return wynnPill(label, ramp, ramp, labelColor, clickEvent, baseBackgroundColor);
+    }
+
+    /** Pill that can switch live between a member palette and their shared role palette. */
+    static @NotNull MutableComponent wynnPill(
+            String label,
+            ColorRamp displayRamp,
+            ColorRamp roleRamp,
+            TextColor labelColor,
+            ClickEvent clickEvent,
+            TextColor baseBackgroundColor) {
         IntFunction<TextColor> backgroundAt = index -> RankGradientAnimation.colorAt(
-                ramp,
+                displayRamp,
+                roleRamp,
                 gradientPosition(index, label.length()),
                 RankGradientAnimation.Target.RANK_BADGE,
                 baseBackgroundColor);
