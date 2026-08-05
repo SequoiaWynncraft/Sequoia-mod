@@ -97,7 +97,7 @@ public final class RankGradientAnimation {
         if (stop == null) {
             return color;
         }
-        if (!gradientsEnabled()) {
+        if (!gradientsEnabled(stop.target())) {
             return TextColor.fromRgb(stop.ramp().first());
         }
         return animationEnabled(stop.target())
@@ -110,8 +110,11 @@ public final class RankGradientAnimation {
         return Math.floorMod(System.nanoTime() / 1_000_000L, CYCLE_MILLIS) / (double) CYCLE_MILLIS;
     }
 
-    private static boolean gradientsEnabled() {
-        Setting.BooleanSetting setting = SeqClient.getShowRankGradientsSetting();
+    private static boolean gradientsEnabled(Target target) {
+        Setting.BooleanSetting setting = switch (target) {
+            case RANK_BADGE -> SeqClient.getShowRankPillGradientsSetting();
+            case USERNAME -> SeqClient.getShowUsernameGradientsSetting();
+        };
         return setting == null || setting.getValue();
     }
 

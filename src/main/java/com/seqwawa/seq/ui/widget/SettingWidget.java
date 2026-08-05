@@ -22,9 +22,12 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("color_discord_bridge", "Color Chatbridge with Discord ranks");
         DISPLAY_NAME_OVERRIDES.put("discord_chat_text_color", "Discord message text color");
         DISPLAY_NAME_OVERRIDES.put("in_game_guild_chat_text_color", "In-game guild message text color");
-        DISPLAY_NAME_OVERRIDES.put("show_rank_gradients", "Use Discord gradients");
-        DISPLAY_NAME_OVERRIDES.put("animate_rank_gradients", "Animate rank badges");
-        DISPLAY_NAME_OVERRIDES.put("animate_username_gradients", "Animate usernames");
+        DISPLAY_NAME_OVERRIDES.put("color_rank_pills", "Color rank pills");
+        DISPLAY_NAME_OVERRIDES.put("color_usernames", "Color usernames");
+        DISPLAY_NAME_OVERRIDES.put("show_rank_pill_gradients", "Use gradients");
+        DISPLAY_NAME_OVERRIDES.put("show_username_gradients", "Use gradients");
+        DISPLAY_NAME_OVERRIDES.put("animate_rank_gradients", "Animate gradients");
+        DISPLAY_NAME_OVERRIDES.put("animate_username_gradients", "Animate gradients");
         DISPLAY_NAME_OVERRIDES.put("profile_on_shift_click", "Open Sequoia profile on shift-click");
         DISPLAY_NAME_OVERRIDES.put("auto_announce", "Auto announce raids");
         DISPLAY_NAME_OVERRIDES.put("track_guild_wars", "Track guild wars");

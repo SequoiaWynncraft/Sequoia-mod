@@ -126,6 +126,36 @@ class ConfigManagerTest {
     }
 
     @Test
+    void loadsLegacySettingKeysOnlyWhenTheCurrentKeyIsAbsent() throws Exception {
+        Path configPath = tempDir.resolve("config").resolve("sequoia.json");
+        Files.createDirectories(configPath.getParent());
+        Files.writeString(configPath, """
+                {
+                  "chat.show_rank_gradients": false,
+                  "chat.show_rank_pill_gradients": true
+                }
+                """);
+        Setting.BooleanSetting pillGradients =
+                new Setting.BooleanSetting("show_rank_pill_gradients", "chat", false);
+        Setting.BooleanSetting usernameGradients =
+                new Setting.BooleanSetting("show_username_gradients", "chat", true);
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        manager.registerWithLegacyKeys(pillGradients, "chat.show_rank_gradients");
+        manager.registerWithLegacyKeys(usernameGradients, "chat.show_rank_gradients");
+
+        manager.load();
+
+        assertTrue(pillGradients.getValue(), "the current pill setting wins over its legacy key");
+        assertFalse(usernameGradients.getValue(), "a missing username setting inherits the old shared value");
+
+        manager.save();
+        String migrated = Files.readString(configPath);
+        assertFalse(migrated.contains("\"chat.show_rank_gradients\""));
+        assertTrue(migrated.contains("\"chat.show_rank_pill_gradients\": true"));
+        assertTrue(migrated.contains("\"chat.show_username_gradients\": false"));
+    }
+
+    @Test
     void persistsAndAppliesChoiceSetting() {
         Path configPath = tempDir.resolve("config").resolve("sequoia.json");
         Setting.ChoiceSetting setting = new Setting.ChoiceSetting(

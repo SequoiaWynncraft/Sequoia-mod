@@ -49,20 +49,28 @@ class RankGradientAnimationTest {
         TextColor badge = RankGradientAnimation.colorAt(GRADIENT, 0d, RankGradientAnimation.Target.RANK_BADGE);
         TextColor username = RankGradientAnimation.colorAt(GRADIENT, 0d, RankGradientAnimation.Target.USERNAME);
 
-        withGradientSettings(true, false, true, () -> {
+        withGradientSettings(true, true, false, true, () -> {
             assertSame(badge, RankGradientAnimation.animate(badge, 0.5d), "the badge stays static");
             assertEquals(0xFFFFFF, animated(username, 0.5d), "the username moves independently");
         });
     }
 
     @Test
-    void masterGradientToggleFlattensExistingDecorationsToTheirPrimaryColour() {
-        TextColor farStop = RankGradientAnimation.colorAt(GRADIENT, 1d, RankGradientAnimation.Target.USERNAME);
+    void controlsBadgeAndUsernameGradientsIndependently() {
+        TextColor badge = RankGradientAnimation.colorAt(GRADIENT, 1d, RankGradientAnimation.Target.RANK_BADGE);
+        TextColor username = RankGradientAnimation.colorAt(GRADIENT, 1d, RankGradientAnimation.Target.USERNAME);
 
-        withGradientSettings(false, true, true, () -> assertEquals(
-                0x000000,
-                animated(farStop, 0.5d),
-                "a line already in chat should react without being rebuilt"));
+        withGradientSettings(true, false, false, false, () -> {
+            assertSame(badge, RankGradientAnimation.animate(badge, 0.5d), "the pill keeps its complete gradient");
+            assertEquals(0x000000, animated(username, 0.5d), "the username flattens independently");
+        });
+        withGradientSettings(false, true, false, false, () -> {
+            assertEquals(0x000000, animated(badge, 0.5d), "the pill flattens independently");
+            assertSame(
+                    username,
+                    RankGradientAnimation.animate(username, 0.5d),
+                    "the username keeps its complete gradient");
+        });
     }
 
     @Test
@@ -107,26 +115,34 @@ class RankGradientAnimationTest {
     }
 
     private static void withAnimation(boolean enabled, Runnable body) {
-        withGradientSettings(true, enabled, false, body);
+        withGradientSettings(true, true, enabled, false, body);
     }
 
     private static void withGradientSettings(
-            boolean gradients, boolean badges, boolean usernames, Runnable body) {
-        Setting.BooleanSetting previousGradients = SeqClient.showRankGradientsSetting;
-        Setting.BooleanSetting previous = SeqClient.animateRankGradientsSetting;
-        Setting.BooleanSetting previousUsernames = SeqClient.animateUsernameGradientsSetting;
+            boolean pillGradients,
+            boolean usernameGradients,
+            boolean pillAnimation,
+            boolean usernameAnimation,
+            Runnable body) {
+        Setting.BooleanSetting previousPillGradients = SeqClient.showRankPillGradientsSetting;
+        Setting.BooleanSetting previousUsernameGradients = SeqClient.showUsernameGradientsSetting;
+        Setting.BooleanSetting previousPillAnimation = SeqClient.animateRankGradientsSetting;
+        Setting.BooleanSetting previousUsernameAnimation = SeqClient.animateUsernameGradientsSetting;
         try {
-            SeqClient.showRankGradientsSetting =
-                    new Setting.BooleanSetting("show_rank_gradients", "chat", gradients);
+            SeqClient.showRankPillGradientsSetting =
+                    new Setting.BooleanSetting("show_rank_pill_gradients", "chat", pillGradients);
+            SeqClient.showUsernameGradientsSetting =
+                    new Setting.BooleanSetting("show_username_gradients", "chat", usernameGradients);
             SeqClient.animateRankGradientsSetting =
-                    new Setting.BooleanSetting("animate_rank_gradients", "chat", badges);
+                    new Setting.BooleanSetting("animate_rank_gradients", "chat", pillAnimation);
             SeqClient.animateUsernameGradientsSetting =
-                    new Setting.BooleanSetting("animate_username_gradients", "chat", usernames);
+                    new Setting.BooleanSetting("animate_username_gradients", "chat", usernameAnimation);
             body.run();
         } finally {
-            SeqClient.showRankGradientsSetting = previousGradients;
-            SeqClient.animateRankGradientsSetting = previous;
-            SeqClient.animateUsernameGradientsSetting = previousUsernames;
+            SeqClient.showRankPillGradientsSetting = previousPillGradients;
+            SeqClient.showUsernameGradientsSetting = previousUsernameGradients;
+            SeqClient.animateRankGradientsSetting = previousPillAnimation;
+            SeqClient.animateUsernameGradientsSetting = previousUsernameAnimation;
         }
     }
 }

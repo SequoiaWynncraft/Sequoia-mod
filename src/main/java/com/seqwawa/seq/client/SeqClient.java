@@ -122,7 +122,16 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.ColorSetting inGameGuildChatTextColorSetting;
 
     @Getter
-    public static Setting.BooleanSetting showRankGradientsSetting;
+    public static Setting.BooleanSetting showRankPillGradientsSetting;
+
+    @Getter
+    public static Setting.BooleanSetting showUsernameGradientsSetting;
+
+    @Getter
+    public static Setting.BooleanSetting colorRankPillsSetting;
+
+    @Getter
+    public static Setting.BooleanSetting colorUsernamesSetting;
 
     @Getter
     public static Setting.BooleanSetting animateRankGradientsSetting;
@@ -618,7 +627,10 @@ public class SeqClient implements ClientModInitializer {
         discordChatTextColorSetting = new Setting.ColorSetting("discord_chat_text_color", "chat", 0x55FFFF);
         inGameGuildChatTextColorSetting =
                 new Setting.ColorSetting("in_game_guild_chat_text_color", "chat", 0x55FFFF);
-        showRankGradientsSetting = new Setting.BooleanSetting("show_rank_gradients", "chat", true);
+        colorRankPillsSetting = new Setting.BooleanSetting("color_rank_pills", "chat", true);
+        colorUsernamesSetting = new Setting.BooleanSetting("color_usernames", "chat", true);
+        showRankPillGradientsSetting = new Setting.BooleanSetting("show_rank_pill_gradients", "chat", true);
+        showUsernameGradientsSetting = new Setting.BooleanSetting("show_username_gradients", "chat", true);
         // Off by default: moving colour draws the eye away from what is being said, and
         // a still gradient is what a Discord role looks like everywhere else.
         animateRankGradientsSetting = new Setting.BooleanSetting("animate_rank_gradients", "chat", false);
@@ -649,25 +661,40 @@ public class SeqClient implements ClientModInitializer {
         showDiscordRanksSetting.setPresentation(
                 "Show Discord ranks and colors",
                 "Replace Wynncraft guild ranks with each member's Sequoia Discord rank.",
-                "Discord ranks and colors");
-        showRankGradientsSetting.setPresentation(
-                "Use Discord gradients",
-                "Show complete gradient and holographic role palettes instead of only their primary color.",
-                "Discord ranks and colors");
-        showRankGradientsSetting.setParentSetting(showDiscordRanksSetting);
-        animateRankGradientsSetting.setPresentation(
-                "Animate rank badges",
-                "Move gradient colors across rank badges while chat is rendered.",
-                "Discord ranks and colors");
-        animateRankGradientsSetting.setParentSetting(showRankGradientsSetting);
-        animateUsernameGradientsSetting.setPresentation(
-                "Animate usernames",
-                "Move gradient colors across player and Discord bridge names independently of badges.",
-                "Discord ranks and colors");
-        animateUsernameGradientsSetting.setParentSetting(showRankGradientsSetting);
+                "Discord ranks");
         showChatInsigniasSetting.setPresentation(
-                "Show insignias", "Display a member's Sequoia insignia beside their chat name.", "Discord ranks and colors");
+                "Show insignias", "Display a member's Sequoia insignia beside their chat name.", "Discord ranks");
         showChatInsigniasSetting.setParentSetting(showDiscordRanksSetting);
+        colorRankPillsSetting.setPresentation(
+                "Color rank pills",
+                "Use each member's Discord role color on their rank pill.",
+                "Rank pills");
+        colorRankPillsSetting.setParentSetting(showDiscordRanksSetting);
+        showRankPillGradientsSetting.setPresentation(
+                "Use gradients",
+                "Show the complete gradient or holographic role palette on rank pills.",
+                "Rank pills");
+        showRankPillGradientsSetting.setParentSetting(colorRankPillsSetting);
+        animateRankGradientsSetting.setPresentation(
+                "Animate gradients",
+                "Move gradient colors across rank pills while chat is rendered.",
+                "Rank pills");
+        animateRankGradientsSetting.setParentSetting(showRankPillGradientsSetting);
+        colorUsernamesSetting.setPresentation(
+                "Color usernames",
+                "Use each member's Discord role color on their player or Discord bridge name.",
+                "Usernames");
+        colorUsernamesSetting.setParentSetting(showDiscordRanksSetting);
+        showUsernameGradientsSetting.setPresentation(
+                "Use gradients",
+                "Show the complete gradient or holographic role palette on usernames.",
+                "Usernames");
+        showUsernameGradientsSetting.setParentSetting(colorUsernamesSetting);
+        animateUsernameGradientsSetting.setPresentation(
+                "Animate gradients",
+                "Move gradient colors across player and Discord bridge names while chat is rendered.",
+                "Usernames");
+        animateUsernameGradientsSetting.setParentSetting(showUsernameGradientsSetting);
 
         profileOnShiftClickSetting.setPresentation(
                 "Open Sequoia profile on shift-click",
@@ -720,10 +747,13 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(discordChatTextColorSetting);
         getConfigManager().register(inGameGuildChatTextColorSetting);
         getConfigManager().register(showDiscordRanksSetting);
-        getConfigManager().register(showRankGradientsSetting);
-        getConfigManager().register(animateRankGradientsSetting);
-        getConfigManager().register(animateUsernameGradientsSetting);
         getConfigManager().register(showChatInsigniasSetting);
+        getConfigManager().register(colorRankPillsSetting);
+        getConfigManager().registerWithLegacyKeys(showRankPillGradientsSetting, "chat.show_rank_gradients");
+        getConfigManager().register(animateRankGradientsSetting);
+        getConfigManager().register(colorUsernamesSetting);
+        getConfigManager().registerWithLegacyKeys(showUsernameGradientsSetting, "chat.show_rank_gradients");
+        getConfigManager().register(animateUsernameGradientsSetting);
         getConfigManager().register(profileOnShiftClickSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
         getConfigManager().register(trackGuildWarsSetting);

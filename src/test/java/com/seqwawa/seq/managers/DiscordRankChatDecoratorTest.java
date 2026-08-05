@@ -345,6 +345,55 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void canColorTheRankPillWithoutColoringTheUsername() {
+        withRankColoring(true, false, () -> {
+            Component decorated = DiscordRankChatDecorator.decorateGuildChat(
+                    guildLine("RECRUITER", "ArcLeRetour", "ArcLeRetour", "hi"),
+                    DiscordRankChatDecoratorTest::lookup);
+            List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
+
+            assertEquals(0x4CB4FA, pillBackgroundColors(decorated).getFirst());
+            assertNull(fragments.stream()
+                    .filter(fragment -> fragment.text().contains("ArcLeRetour"))
+                    .findFirst()
+                    .orElseThrow()
+                    .style()
+                    .getColor());
+        });
+    }
+
+    @Test
+    void canColorTheUsernameWithoutColoringTheRankPill() {
+        withRankColoring(false, true, () -> {
+            Component decorated = DiscordRankChatDecorator.decorateGuildChat(
+                    guildLine("RECRUITER", "ArcLeRetour", "ArcLeRetour", "hi"),
+                    DiscordRankChatDecoratorTest::lookup);
+            List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
+
+            assertEquals(
+                    DiscordRankChatDecorator.rampFor(new RankPresentation(
+                                    new DiscordRank("rank.uncoloured", "Uncoloured", 0), ColorRamp.empty()))
+                            .first(),
+                    pillBackgroundColors(decorated).getFirst());
+            assertEquals(0x4CB4FA, colorOfFragmentContaining(fragments, "ArcLeRetour"));
+        });
+    }
+
+    @Test
+    void uncoloredBridgeUsernamePreservesItsCallerSuppliedStyle() {
+        withRankColoring(true, false, () -> {
+            Style original = Style.EMPTY.withColor(0xABCDEF).withInsertion("ArcLeRetour");
+
+            List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(
+                    DiscordRankChatDecorator.colouredName("ArcLeRetour", SAPLING, original));
+
+            assertEquals(1, fragments.size());
+            assertEquals(0xABCDEF, fragments.getFirst().style().getColor().getValue());
+            assertEquals("ArcLeRetour", fragments.getFirst().style().getInsertion());
+        });
+    }
+
+    @Test
     void paintsNativeGuildMessageBodyWithConfiguredColorEvenWhenRanksAreDisabled() {
         Setting.BooleanSetting previousRanks = SeqClient.showDiscordRanksSetting;
         Setting.ColorSetting previousTextColor = SeqClient.inGameGuildChatTextColorSetting;
@@ -649,6 +698,19 @@ class DiscordRankChatDecoratorTest {
 
     private static void withDiscordRanks(boolean enabled, Runnable body) {
         withSettings(enabled, true, body);
+    }
+
+    private static void withRankColoring(boolean pills, boolean usernames, Runnable body) {
+        Setting.BooleanSetting previousPills = SeqClient.colorRankPillsSetting;
+        Setting.BooleanSetting previousUsernames = SeqClient.colorUsernamesSetting;
+        try {
+            SeqClient.colorRankPillsSetting = new Setting.BooleanSetting("color_rank_pills", "chat", pills);
+            SeqClient.colorUsernamesSetting = new Setting.BooleanSetting("color_usernames", "chat", usernames);
+            body.run();
+        } finally {
+            SeqClient.colorRankPillsSetting = previousPills;
+            SeqClient.colorUsernamesSetting = previousUsernames;
+        }
     }
 
     private static void withSettings(boolean ranks, boolean insignia, Runnable body) {

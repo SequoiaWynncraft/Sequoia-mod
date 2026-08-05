@@ -2,6 +2,7 @@ package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.model.SeqBadgeTier;
 import com.seqwawa.seq.utils.ColorRamp;
@@ -864,8 +865,10 @@ public final class DiscordRankChatDecorator {
 
     /** Builds the glyph pill for {@code rank}, tooltipped with the rank it replaces. */
     static MutableComponent rankPill(RankPresentation rank, String replacedWynncraftRank) {
-        MutableComponent pill =
-                NotificationAccessor.wynnPill(rank.pillLabel(), rampFor(rank), PILL_LABEL_COLOR, null);
+        ColorRamp pillRamp = rankPillColoringEnabled()
+                ? rampFor(rank)
+                : ColorRamp.of(FALLBACK_RANK_COLOR.getValue());
+        MutableComponent pill = NotificationAccessor.wynnPill(rank.pillLabel(), pillRamp, PILL_LABEL_COLOR, null);
 
         // The tooltip is one component, so it cannot carry the gradient; it takes the
         // primary stop, which is the colour Discord itself shows the role under.
@@ -897,6 +900,9 @@ public final class DiscordRankChatDecorator {
     static MutableComponent colouredName(String name, RankPresentation rank, Style style) {
         String text = name == null ? "" : name;
         Style baseStyle = style == null ? Style.EMPTY : style;
+        if (!usernameColoringEnabled()) {
+            return Component.literal(text).withStyle(baseStyle);
+        }
         ColorRamp ramp = rampFor(rank);
         if (!ramp.isGradient() || text.codePointCount(0, text.length()) <= 1) {
             return Component.literal(text).withStyle(baseStyle.withColor(colorFor(rank)));
@@ -923,6 +929,10 @@ public final class DiscordRankChatDecorator {
             int endExclusive,
             RankPresentation rank,
             String insertion) {
+        if (!usernameColoringEnabled()) {
+            return ComponentTextEditor.restyleRange(
+                    fragments, start, endExclusive, style -> style.withInsertion(insertion));
+        }
         ColorRamp ramp = rampFor(rank);
         if (!ramp.isGradient()) {
             TextColor color = colorFor(rank);
@@ -944,6 +954,16 @@ public final class DiscordRankChatDecorator {
      */
     static TextColor colorFor(RankPresentation rank) {
         return TextColor.fromRgb(rampFor(rank).first());
+    }
+
+    private static boolean rankPillColoringEnabled() {
+        Setting.BooleanSetting setting = SeqClient.getColorRankPillsSetting();
+        return setting == null || setting.getValue();
+    }
+
+    private static boolean usernameColoringEnabled() {
+        Setting.BooleanSetting setting = SeqClient.getColorUsernamesSetting();
+        return setting == null || setting.getValue();
     }
 
     private static boolean isEnabled() {
