@@ -174,6 +174,11 @@ public class SeqCommand {
                                                                 "username",
                                                                 StringArgumentType.word())
                                                                 .executes(SeqCommand::runPartyInvite)))
+                                .then(ClientCommandManager.literal("revoke-invite")
+                                                .then(ClientCommandManager.argument(
+                                                                "username",
+                                                                StringArgumentType.word())
+                                                                .executes(SeqCommand::runPartyRevokeInvite)))
                                 .then(ClientCommandManager.literal("reserve")
                                                 .then(ClientCommandManager.argument(
                                                                 "count",
@@ -972,6 +977,13 @@ public class SeqCommand {
                 return relayCommandResult(
                                 ctx,
                                 SeqClient.getPartyFinderManager().createInviteFromCommand(username));
+        }
+
+        private static int runPartyRevokeInvite(CommandContext<FabricClientCommandSource> ctx) {
+                String username = StringArgumentType.getString(ctx, "username");
+                return relayCommandResult(
+                                ctx,
+                                SeqClient.getPartyFinderManager().revokeInviteFromCommand(username));
         }
 
         private static int runPartyReserve(CommandContext<FabricClientCommandSource> ctx) {

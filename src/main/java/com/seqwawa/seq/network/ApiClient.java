@@ -20,6 +20,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.Activity;
+import com.seqwawa.seq.model.CreateInviteResponse;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyJoinPolicy;
@@ -209,11 +210,11 @@ public class ApiClient {
         return post(path, body, Listing.class);
     }
 
-    public CompletableFuture<Void> createInvite(long listingId, UUID targetUUID) {
+    public CompletableFuture<CreateInviteResponse> createInvite(long listingId, UUID targetUUID) {
         JsonObject body = new JsonObject();
         body.addProperty("targetUUID", targetUUID.toString());
 
-        return post("/party-finder/listings/" + listingId + "/invite", body, Void.class);
+        return post("/party-finder/listings/" + listingId + "/invite", body, CreateInviteResponse.class);
     }
 
     public CompletableFuture<Listing> revokeInvite(long listingId, String inviteToken) {
