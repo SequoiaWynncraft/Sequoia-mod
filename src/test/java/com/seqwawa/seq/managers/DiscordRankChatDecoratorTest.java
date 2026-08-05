@@ -41,7 +41,9 @@ class DiscordRankChatDecoratorTest {
     }
 
     private static final RankPresentation SAPLING = presentation("rank.sapling", "Sapling", 88, 0x4CB4FA);
-    private static final Map<String, RankPresentation> RANKS = Map.of("arcleretour", SAPLING);
+    private static final RankPresentation DRUID = presentation("rank.druid", "Druid", 92, 0xD7BCEA);
+    private static final Map<String, RankPresentation> RANKS =
+            Map.of("arcleretour", SAPLING, "pat_crafter07", DRUID);
     /** Wynncraft's guild chat aqua. */
     private static final int GUILD_AQUA = 0x55FFFF;
     private static final int DARK_AQUA = 0x00AAAA;
@@ -454,6 +456,29 @@ class DiscordRankChatDecoratorTest {
 
         assertEquals(
                 List.of("sapling"),
+                pillLabels(DiscordRankChatDecorator.decorateGuildChat(
+                        message, DiscordRankChatDecoratorTest::lookup)));
+    }
+
+    @Test
+    void resolvesTheLoggedUsernameSlashSpacedClassNickname() {
+        Component message = guildLine("RECRUITER", "pat_crafter07/I Burger", null, "test");
+
+        Component decorated =
+                DiscordRankChatDecorator.decorateGuildChat(message, DiscordRankChatDecoratorTest::lookup);
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
+
+        assertEquals(List.of("druid"), pillLabels(decorated));
+        assertEquals(0xD7BCEA, colorOfFragmentContaining(fragments, "pat_crafter07"));
+        assertTrue(decorated.getString().contains("pat_crafter07/I Burger: test"));
+    }
+
+    @Test
+    void resolvesAUsernameAfterASpacedClassNickname() {
+        Component message = guildLine("RECRUITER", "I Burger/pat_crafter07", null, "test");
+
+        assertEquals(
+                List.of("druid"),
                 pillLabels(DiscordRankChatDecorator.decorateGuildChat(
                         message, DiscordRankChatDecoratorTest::lookup)));
     }

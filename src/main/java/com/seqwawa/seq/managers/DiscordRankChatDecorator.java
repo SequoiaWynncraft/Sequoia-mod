@@ -106,9 +106,12 @@ public final class DiscordRankChatDecorator {
     /** Wynntils renders nicked players as {@code Nickname(RealUsername)}. */
     private static final Pattern NICKNAME_WITH_USERNAME_PATTERN =
             Pattern.compile("\\(([a-zA-Z0-9_]{3,16})\\)\\s*$");
-    /** The bracket-free variant, {@code username/nickname}. */
-    private static final Pattern SLASH_SEPARATED_NAMES_PATTERN =
-            Pattern.compile("([a-zA-Z0-9_]{3,16})\\s*/\\s*([a-zA-Z0-9_]{3,16})");
+    /** Account name before a slash, allowing the nickname after it to contain spaces. */
+    private static final Pattern USERNAME_BEFORE_SLASH_PATTERN =
+            Pattern.compile("^\\s*([a-zA-Z0-9_]{3,16})\\s*/");
+    /** Account name after a slash, allowing the nickname before it to contain spaces. */
+    private static final Pattern USERNAME_AFTER_SLASH_PATTERN =
+            Pattern.compile("/\\s*([a-zA-Z0-9_]{3,16})\\s*$");
 
     private static volatile boolean debug;
     private static boolean suppressed;
@@ -573,10 +576,14 @@ public final class DiscordRankChatDecorator {
      * only a failed lookup.
      */
     private static void addSlashSeparatedCandidates(Set<String> candidates, String displayedName) {
-        Matcher matcher = SLASH_SEPARATED_NAMES_PATTERN.matcher(displayedName);
-        if (matcher.find()) {
-            addUsernameCandidate(candidates, matcher.group(1));
-            addUsernameCandidate(candidates, matcher.group(2));
+        Matcher beforeSlash = USERNAME_BEFORE_SLASH_PATTERN.matcher(displayedName);
+        if (beforeSlash.find()) {
+            addUsernameCandidate(candidates, beforeSlash.group(1));
+        }
+
+        Matcher afterSlash = USERNAME_AFTER_SLASH_PATTERN.matcher(displayedName);
+        if (afterSlash.find()) {
+            addUsernameCandidate(candidates, afterSlash.group(1));
         }
     }
 
