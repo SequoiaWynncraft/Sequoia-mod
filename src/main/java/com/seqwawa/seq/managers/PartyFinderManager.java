@@ -954,7 +954,25 @@ public class PartyFinderManager implements NotificationAccessor {
                 disbandAt,
                 minutesRemaining);
 
+        String myUUID = getLocalPlayerUUID();
+        if (!shouldDisplayStaleWarning(currentListing, listingId, myUUID)) {
+            SeqClient.LOGGER.warn(
+                    "[PartyFinderWS] Ignoring stale warning for listingId={} currentListingId={} myUUID={} currentLeader={}",
+                    listingId,
+                    currentListing != null ? currentListing.id() : null,
+                    myUUID,
+                    currentListing != null ? currentListing.leaderUUID() : null);
+            return;
+        }
+
         notifyStaleWarningWithExtendAction(staleWarningMessage(minutesRemaining), listingId);
+    }
+
+    static boolean shouldDisplayStaleWarning(Listing currentListing, long listingId, String myUUID) {
+        return currentListing != null
+                && currentListing.id() == listingId
+                && uuidEquals(myUUID, currentListing.leaderUUID())
+                && listingHasActualMember(currentListing, myUUID);
     }
 
     static String staleWarningMessage(long minutesRemaining) {
@@ -2936,15 +2954,36 @@ public class PartyFinderManager implements NotificationAccessor {
 
     private void refreshCurrentListing() {
         String myUUID = getLocalPlayerUUID();
-        if (myUUID == null) {
-            currentListing = null;
-            return;
+        currentListing = selectCurrentListing(listings, myUUID, currentListing);
+    }
+
+    static Listing selectCurrentListing(List<Listing> listings, String myUUID, Listing previousCurrentListing) {
+        if (listings == null || myUUID == null || myUUID.isBlank()) {
+            return null;
         }
 
-        currentListing = listings.stream()
-                .filter(l -> listingContainsPlayer(l, myUUID))
-                .findFirst()
-                .orElse(null);
+        if (previousCurrentListing != null) {
+            for (Listing listing : listings) {
+                if (listing != null
+                        && listing.id() == previousCurrentListing.id()
+                        && listingHasActualMember(listing, myUUID)) {
+                    return listing;
+                }
+            }
+        }
+
+        for (Listing listing : listings) {
+            if (listingHasActualMember(listing, myUUID)) {
+                return listing;
+            }
+        }
+
+        for (Listing listing : listings) {
+            if (listing != null && uuidEquals(myUUID, listing.leaderUUID())) {
+                return listing;
+            }
+        }
+        return null;
     }
 
     private static boolean listingContainsPlayer(Listing listing, String myUUID) {
@@ -2954,6 +2993,14 @@ public class PartyFinderManager implements NotificationAccessor {
 
         if (uuidEquals(myUUID, listing.leaderUUID())) {
             return true;
+        }
+
+        return listingHasActualMember(listing, myUUID);
+    }
+
+    private static boolean listingHasActualMember(Listing listing, String myUUID) {
+        if (listing == null || myUUID == null || myUUID.isBlank()) {
+            return false;
         }
 
         List<Member> members = listing.members();

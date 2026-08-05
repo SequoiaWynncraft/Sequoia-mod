@@ -180,6 +180,7 @@ public class WynnPartySyncManager {
 
         boolean sent = ConnectionManager.getInstance()
                 .sendPartySyncSnapshot(
+                        currentListing.id(),
                         observedState.active,
                         observedState.leaderUsername,
                         List.copyOf(observedState.memberUsernames));
@@ -306,7 +307,10 @@ public class WynnPartySyncManager {
         String preservedLeader = findMatchingUsername(usernames, observedState.leaderUsername);
         observedState.memberUsernames.clear();
         observedState.memberUsernames.addAll(usernames);
-        observedState.leaderUsername = preservedLeader != null ? preservedLeader : usernames.get(0);
+        // Wynncraft's member list is not guaranteed to be leader-first. Keep a
+        // previously observed leader when possible, otherwise wait for an
+        // explicit leader event instead of transferring a listing by guesswork.
+        observedState.leaderUsername = preservedLeader;
         logObservedState("members_snapshot");
     }
 

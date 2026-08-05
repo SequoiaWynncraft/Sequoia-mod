@@ -1479,7 +1479,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         send("party_class_update", msg);
     }
 
-    public boolean sendPartySyncSnapshot(boolean active, String leaderUsername, List<String> memberUsernames) {
+    public boolean sendPartySyncSnapshot(
+            long listingId, boolean active, String leaderUsername, List<String> memberUsernames) {
         if (!authenticated || !isOpen()) {
             SeqClient.LOGGER.warn(
                     "[WebSocket] sendPartySyncSnapshot dropped open={} authenticated={}",
@@ -1495,7 +1496,25 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return false;
         }
 
+        JsonObject msg = buildPartySyncSnapshotPayload(listingId, active, leaderUsername, memberUsernames);
+        SeqClient.LOGGER.info(
+                "[WebSocket] Sending party_sync_snapshot listingId={} active={} leader={} members={} usernames={}",
+                listingId,
+                active,
+                leaderUsername,
+                msg.getAsJsonArray("member_usernames").size(),
+                memberUsernames);
+        return send("party_sync_snapshot", msg);
+    }
+
+    static JsonObject buildPartySyncSnapshotPayload(
+            long listingId, boolean active, String leaderUsername, List<String> memberUsernames) {
+        if (listingId <= 0L) {
+            throw new IllegalArgumentException("listingId must be positive");
+        }
+
         JsonObject msg = new JsonObject();
+        msg.addProperty("listing_id", listingId);
         msg.addProperty("active", active);
         if (leaderUsername != null && !leaderUsername.isBlank()) {
             msg.addProperty("leader_username", leaderUsername);
@@ -1509,13 +1528,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             }
         }
         msg.add("member_usernames", usernames);
-        SeqClient.LOGGER.info(
-                "[WebSocket] Sending party_sync_snapshot active={} leader={} members={} usernames={}",
-                active,
-                leaderUsername,
-                usernames.size(),
-                memberUsernames);
-        return send("party_sync_snapshot", msg);
+        return msg;
     }
 
     public boolean sendPartySyncMemberRemoved(String username, String reason) {
