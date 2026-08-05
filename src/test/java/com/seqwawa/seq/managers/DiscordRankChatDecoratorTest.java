@@ -345,6 +345,27 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void paintsNativeGuildMessageBodyWithConfiguredColorEvenWhenRanksAreDisabled() {
+        Setting.BooleanSetting previousRanks = SeqClient.showDiscordRanksSetting;
+        Setting.ColorSetting previousTextColor = SeqClient.inGameGuildChatTextColorSetting;
+        try {
+            SeqClient.showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", false);
+            SeqClient.inGameGuildChatTextColorSetting =
+                    new Setting.ColorSetting("in_game_guild_chat_text_color", "chat", 0xA1B2C3);
+
+            Component decorated = DiscordRankChatDecorator.decorateGuildChat(
+                    wynncraftGuildLine("RECRUITER", "EightySix", "ArcLeRetour", "hello"));
+            List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
+
+            assertEquals(0xA1B2C3, colorOfFragmentContaining(fragments, "hello"));
+            assertEquals(DARK_AQUA, colorOfFragmentContaining(fragments, "EightySix"));
+        } finally {
+            SeqClient.showDiscordRanksSetting = previousRanks;
+            SeqClient.inGameGuildChatTextColorSetting = previousTextColor;
+        }
+    }
+
+    @Test
     void resolvesSpeakersShownAsUsernameSlashNickname() {
         Component message = guildLine("RECRUITER", "ArcLeRetour/EightySix", null, "hi");
 
