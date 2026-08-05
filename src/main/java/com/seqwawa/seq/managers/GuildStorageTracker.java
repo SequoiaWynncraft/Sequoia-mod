@@ -415,6 +415,10 @@ public final class GuildStorageTracker implements NotificationAccessor {
             clearPendingSnapshot();
             return;
         }
+        if (!pendingRewardBursts.isEmpty()) {
+            pendingSnapshot = snapshot;
+            return;
+        }
         if (snapshot.equals(lastPublishedSnapshot)) {
             if (snapshot.equals(pendingSnapshot)) {
                 pendingSnapshot = null;
@@ -438,6 +442,9 @@ public final class GuildStorageTracker implements NotificationAccessor {
         }
         if (!connected) {
             clearPendingSnapshot();
+            return;
+        }
+        if (!pendingRewardBursts.isEmpty()) {
             return;
         }
 
@@ -483,7 +490,7 @@ public final class GuildStorageTracker implements NotificationAccessor {
         existing.increment(now);
     }
 
-    private void flushReadyRewardBursts(boolean force) {
+    void flushReadyRewardBursts(boolean force) {
         if (pendingRewardBursts.isEmpty()) {
             return;
         }
@@ -505,6 +512,9 @@ public final class GuildStorageTracker implements NotificationAccessor {
     }
 
     private void publishRewardBurst(RewardBurstAccumulator burst) {
+        // The backend applies rewards as deltas. Its previously seeded snapshot
+        // is no longer authoritative until a later local observation follows.
+        lastPublishedSnapshot = null;
         rewardPublisher.accept(burst.toRewardBurst());
     }
 
