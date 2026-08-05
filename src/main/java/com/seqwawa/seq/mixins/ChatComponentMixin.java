@@ -4,13 +4,17 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.managers.DiscordRankChatDecorator;
 import com.seqwawa.seq.utils.ChatBridgeLineWrapping;
+import com.seqwawa.seq.utils.ChatDisplayLayout;
 import java.util.List;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.GuiMessage;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
+import net.minecraft.util.Mth;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
@@ -28,6 +32,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(ChatComponent.class)
 public class ChatComponentMixin {
+
+    @Shadow
+    private int getLineHeight() {
+        throw new AssertionError();
+    }
 
     @ModifyVariable(
             method =
@@ -62,15 +71,21 @@ public class ChatComponentMixin {
     }
 
     /**
-     * Adds a little room between chat lines. Wynncraft's guild markers and rank
-     * badges are drawn taller than a chat line is high, so on consecutive messages
-     * they touch; vanilla leaves no gap to absorb that.
+     * Makes the player's requested visual-line count the chat height itself. Minecraft
+     * derives pagination, scroll bounds and pointer hit-testing from this height, while
+     * rendering uses the same vanilla line height, so every subsystem agrees.
      */
-    @Inject(method = "getLineHeight", at = @At("RETURN"), cancellable = true)
-    private void seq$padLineHeight(CallbackInfoReturnable<Integer> callback) {
-        Setting.IntSetting spacing = SeqClient.getChatLineSpacingSetting();
-        if (spacing != null && spacing.getValue() > 0) {
-            callback.setReturnValue(callback.getReturnValue() + spacing.getValue());
+    @Inject(method = "getHeight()I", at = @At("RETURN"), cancellable = true)
+    private void seq$setVisibleLineCount(CallbackInfoReturnable<Integer> callback) {
+        Setting.IntSetting visibleLines = SeqClient.getVisibleChatLinesSetting();
+        if (visibleLines == null) {
+            return;
         }
+
+        Minecraft minecraft = Minecraft.getInstance();
+        double chatScale = Math.max(0.01d, minecraft.options.chatScale().get());
+        int availableHeight = Mth.floor((minecraft.getWindow().getGuiScaledHeight() - 40) / chatScale);
+        callback.setReturnValue(ChatDisplayLayout.heightForVisibleLines(
+                visibleLines.getValue(), getLineHeight(), availableHeight));
     }
 }

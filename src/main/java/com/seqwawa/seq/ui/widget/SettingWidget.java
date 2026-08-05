@@ -23,7 +23,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("show_rank_gradients", "Use Discord gradients");
         DISPLAY_NAME_OVERRIDES.put("animate_rank_gradients", "Animate rank badges");
         DISPLAY_NAME_OVERRIDES.put("animate_username_gradients", "Animate usernames");
-        DISPLAY_NAME_OVERRIDES.put("chat_line_spacing", "Chat line spacing");
+        DISPLAY_NAME_OVERRIDES.put("visible_chat_lines", "Visible chat lines");
         DISPLAY_NAME_OVERRIDES.put("profile_on_shift_click", "Open Sequoia profile on shift-click");
         DISPLAY_NAME_OVERRIDES.put("auto_announce", "Auto announce raids");
         DISPLAY_NAME_OVERRIDES.put("track_guild_wars", "Track guild wars");
