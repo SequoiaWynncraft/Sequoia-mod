@@ -128,9 +128,6 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting animateUsernameGradientsSetting;
 
     @Getter
-    public static Setting.IntSetting visibleChatLinesSetting;
-
-    @Getter
     public static Setting.BooleanSetting profileOnShiftClickSetting;
 
     @Getter
@@ -585,7 +582,6 @@ public class SeqClient implements ClientModInitializer {
         animateRankGradientsSetting = new Setting.BooleanSetting("animate_rank_gradients", "chat", false);
         animateUsernameGradientsSetting =
                 new Setting.BooleanSetting("animate_username_gradients", "chat", false);
-        visibleChatLinesSetting = new Setting.IntSetting("visible_chat_lines", "chat", 12, 5, 20);
         // Off by default: shift-click is vanilla's "insert this name into the chat box"
         // gesture, so taking it over is opt-in rather than a surprise.
         profileOnShiftClickSetting = new Setting.BooleanSetting("profile_on_shift_click", "chat", false);
@@ -631,8 +627,6 @@ public class SeqClient implements ClientModInitializer {
                 "Show insignias", "Display a member's Sequoia insignia beside their chat name.", "Discord ranks and colors");
         showChatInsigniasSetting.setParentSetting(showDiscordRanksSetting);
 
-        visibleChatLinesSetting.setPresentation(
-                "Visible chat lines", null, "Chat behavior");
         profileOnShiftClickSetting.setPresentation(
                 "Open Sequoia profile on shift-click",
                 "Opens the Sequoia website player profile.",
@@ -688,7 +682,6 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(animateRankGradientsSetting);
         getConfigManager().register(animateUsernameGradientsSetting);
         getConfigManager().register(showChatInsigniasSetting);
-        getConfigManager().register(visibleChatLinesSetting);
         getConfigManager().register(profileOnShiftClickSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
         getConfigManager().register(trackGuildWarsSetting);

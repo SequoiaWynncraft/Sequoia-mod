@@ -772,7 +772,8 @@ class DiscordRankChatDecoratorTest {
                 .append(Component.literal(" "))
                 .append(Component.literal(nick + LEGACY_RED + "(" + username + ")" + LEGACY_RESET)
                         .withStyle(Style.EMPTY.withColor(DARK_AQUA).withInsertion(username)))
-                .append(Component.literal(": " + body).withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+                .append(Component.literal(":").withStyle(Style.EMPTY.withColor(DARK_AQUA)))
+                .append(Component.literal(" " + body).withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
     }
 
     /** Mirrors a Wynntils-rendered guild line: timestamp, rank pill, speaker, message. */

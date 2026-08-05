@@ -113,11 +113,8 @@ public class SettingsScreen extends Screen {
             return new BooleanWidget(b);
         if (setting instanceof Setting.ColorSetting c)
             return createColorWidget(c);
-        if (setting instanceof Setting.IntSetting i) {
-            if (i == SeqClient.getVisibleChatLinesSetting())
-                return new SliderWidget(i, 0.5f);
+        if (setting instanceof Setting.IntSetting i)
             return new SliderWidget(i, i == SeqClient.getUiSizePercentSetting());
-        }
         if (setting instanceof Setting.DoubleSetting d)
             return new SliderWidget(d);
         if (setting instanceof Setting.FloatSetting f)

@@ -249,6 +249,16 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
 
     @Override
     public boolean mouseClicked(float mouseX, float mouseY, int button) {
+        if (button == 1 && isHovered(mouseX, mouseY, swatchX(), controlY(), SWATCH_WIDTH, CONTROL_HEIGHT)) {
+            editing = false;
+            draggingSaturationValue = false;
+            draggingHue = false;
+            setting.reset();
+            editBuffer = hexDigits(setting);
+            syncPickerFromSetting();
+            return true;
+        }
+
         if (button != 0) {
             return false;
         }

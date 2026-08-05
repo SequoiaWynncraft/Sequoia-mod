@@ -68,6 +68,9 @@ public final class DiscordRankChatDecorator {
     /** Aqua Wynncraft uses for guild chat; see {@code ChatManager}. */
     private static final int GUILD_CHAT_COLOR = 0x55FFFF;
 
+    /** Dark aqua Wynntils uses for the speaker name and trailing separator. */
+    private static final int GUILD_SPEAKER_COLOR = 0x00AAAA;
+
     /** Bar drawn down the left of a bridge block, used until a real one is captured. */
     static final String BRIDGE_CONTINUATION_GLYPH = "\uF8F1";
     /** Discord mark dropped into the middle of Wynncraft's arrow. */
@@ -466,7 +469,7 @@ public final class DiscordRankChatDecorator {
 
     private static int guildMessageStart(List<ComponentTextEditor.Fragment> fragments, String text) {
         for (int index = 0; index < text.length(); index++) {
-            if (text.charAt(index) != ':' || !isGuildChatColor(styleAt(fragments, index).getColor())) {
+            if (text.charAt(index) != ':' || !isGuildSeparatorColor(styleAt(fragments, index).getColor())) {
                 continue;
             }
             int start = index + 1;
@@ -480,6 +483,14 @@ public final class DiscordRankChatDecorator {
 
     private static boolean isGuildChatColor(TextColor color) {
         return color != null && color.getValue() == GUILD_CHAT_COLOR;
+    }
+
+    private static boolean isGuildSeparatorColor(TextColor color) {
+        if (color == null) {
+            return false;
+        }
+        int value = color.getValue();
+        return value == GUILD_SPEAKER_COLOR || value == GUILD_CHAT_COLOR;
     }
 
     /**
