@@ -45,6 +45,27 @@ class RankGradientAnimationTest {
     }
 
     @Test
+    void controlsBadgeAndUsernameAnimationIndependently() {
+        TextColor badge = RankGradientAnimation.colorAt(GRADIENT, 0d, RankGradientAnimation.Target.RANK_BADGE);
+        TextColor username = RankGradientAnimation.colorAt(GRADIENT, 0d, RankGradientAnimation.Target.USERNAME);
+
+        withGradientSettings(true, false, true, () -> {
+            assertSame(badge, RankGradientAnimation.animate(badge, 0.5d), "the badge stays static");
+            assertEquals(0xFFFFFF, animated(username, 0.5d), "the username moves independently");
+        });
+    }
+
+    @Test
+    void masterGradientToggleFlattensExistingDecorationsToTheirPrimaryColour() {
+        TextColor farStop = RankGradientAnimation.colorAt(GRADIENT, 1d, RankGradientAnimation.Target.USERNAME);
+
+        withGradientSettings(false, true, true, () -> assertEquals(
+                0x000000,
+                animated(farStop, 0.5d),
+                "a line already in chat should react without being rebuilt"));
+    }
+
+    @Test
     void leavesSolidRolesAlone() {
         // One colour scrolled is that same colour back again, so it is never remembered.
         TextColor solid = RankGradientAnimation.colorAt(ColorRamp.of(0x4CB4FA), 0d);
@@ -86,13 +107,26 @@ class RankGradientAnimationTest {
     }
 
     private static void withAnimation(boolean enabled, Runnable body) {
+        withGradientSettings(true, enabled, false, body);
+    }
+
+    private static void withGradientSettings(
+            boolean gradients, boolean badges, boolean usernames, Runnable body) {
+        Setting.BooleanSetting previousGradients = SeqClient.showRankGradientsSetting;
         Setting.BooleanSetting previous = SeqClient.animateRankGradientsSetting;
+        Setting.BooleanSetting previousUsernames = SeqClient.animateUsernameGradientsSetting;
         try {
+            SeqClient.showRankGradientsSetting =
+                    new Setting.BooleanSetting("show_rank_gradients", "chat", gradients);
             SeqClient.animateRankGradientsSetting =
-                    new Setting.BooleanSetting("animate_rank_gradients", "chat", enabled);
+                    new Setting.BooleanSetting("animate_rank_gradients", "chat", badges);
+            SeqClient.animateUsernameGradientsSetting =
+                    new Setting.BooleanSetting("animate_username_gradients", "chat", usernames);
             body.run();
         } finally {
+            SeqClient.showRankGradientsSetting = previousGradients;
             SeqClient.animateRankGradientsSetting = previous;
+            SeqClient.animateUsernameGradientsSetting = previousUsernames;
         }
     }
 }

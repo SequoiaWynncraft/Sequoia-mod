@@ -40,6 +40,7 @@ public class SettingsScreen extends Screen {
     private static final float SIDEBAR_BUTTON_SPACING = 6;
     private static final float HEADER_HEIGHT = 30;
     private static final float CATEGORY_HEIGHT = 28;
+    private static final float SECTION_HEIGHT = 22;
     private static final float CATEGORY_SPACING = 6;
     private static final float PADDING = 8;
     private static final float SEARCH_BAR_HEIGHT = 18;
@@ -52,6 +53,7 @@ public class SettingsScreen extends Screen {
     private static final float SIDEBAR_TITLE_SIZE = 16;
     private static final float SIDEBAR_BUTTON_SIZE = 12;
     private static final float CATEGORY_FONT_SIZE = 14;
+    private static final float SECTION_FONT_SIZE = 11;
     private static final float SEARCH_FONT_SIZE = 12;
     private static final float SCROLL_SPEED = 12;
 
@@ -149,16 +151,25 @@ public class SettingsScreen extends Screen {
         }
     }
 
-    private boolean matchesSearch(String settingName, String categoryName) {
+    private boolean matchesSearch(Setting<?> setting, String categoryName) {
         if (searchQuery.isEmpty())
             return true;
         String query = searchQuery.toLowerCase();
-        String displaySettingName = SettingWidget.toDisplayName(settingName).toLowerCase();
+        String settingName = setting.getName();
+        String displaySettingName = setting.getDisplayName() == null
+                ? SettingWidget.toDisplayName(settingName).toLowerCase()
+                : setting.getDisplayName().toLowerCase();
         String displayCategoryName = SettingWidget.toDisplayName(categoryName).toLowerCase();
         return settingName.toLowerCase().contains(query)
                 || categoryName.toLowerCase().contains(query)
                 || displaySettingName.contains(query)
-                || displayCategoryName.contains(query);
+                || displayCategoryName.contains(query)
+                || containsIgnoreCase(setting.getDescription(), query)
+                || containsIgnoreCase(setting.getSection(), query);
+    }
+
+    private static boolean containsIgnoreCase(String value, String lowercaseQuery) {
+        return value != null && value.toLowerCase().contains(lowercaseQuery);
     }
 
     @Override
@@ -303,7 +314,7 @@ public class SettingsScreen extends Screen {
                 if (!searchQuery.isEmpty()) {
                     filtered = new ArrayList<>();
                     for (SettingWidget<?> w : widgets) {
-                        if (matchesSearch(w.getSetting().getName(), category)) {
+                        if (matchesSearch(w.getSetting(), category)) {
                             filtered.add(w);
                         }
                     }
@@ -330,7 +341,23 @@ public class SettingsScreen extends Screen {
 
                 // Settings under this category
                 if (!collapsed) {
+                    String currentSection = null;
                     for (SettingWidget<?> widget : filtered) {
+                        String section = widget.getSetting().getSection();
+                        if (section != null && !section.equals(currentSection)) {
+                            canvas.fillRect(contentX, cursorY, contentWidth, SECTION_HEIGHT, color(BACKGROUND_CONTENT, 170));
+                            drawText(
+                                    canvas,
+                                    fontName,
+                                    SECTION_FONT_SIZE,
+                                    color(ACCENT_SECONDARY),
+                                    UiCanvas.HorizontalAlign.LEFT,
+                                    contentX + PADDING + 8,
+                                    cursorY + SECTION_HEIGHT / 2f,
+                                    section);
+                            cursorY += SECTION_HEIGHT;
+                        }
+                        currentSection = section;
                         Color bg = (settingIndex % 2 == 0) ? color(BACKGROUND_BODY) : color(BACKGROUND_CONTENT_FOCUSED, 100);
                         canvas.fillRect(contentX, cursorY, contentWidth, widget.getHeight(), bg);
 
@@ -497,7 +524,7 @@ public class SettingsScreen extends Screen {
                 if (!searchQuery.isEmpty()) {
                     filtered = new ArrayList<>();
                     for (SettingWidget<?> w : widgets) {
-                        if (matchesSearch(w.getSetting().getName(), category)) {
+                        if (matchesSearch(w.getSetting(), category)) {
                             filtered.add(w);
                         }
                     }
@@ -517,7 +544,13 @@ public class SettingsScreen extends Screen {
                 cursorY += CATEGORY_HEIGHT;
 
                 if (!collapsed) {
+                    String currentSection = null;
                     for (SettingWidget<?> widget : filtered) {
+                        String section = widget.getSetting().getSection();
+                        if (section != null && !section.equals(currentSection)) {
+                            cursorY += SECTION_HEIGHT;
+                        }
+                        currentSection = section;
                         widget.setPosition(panelX + PADDING, cursorY, widgetWidth, widget.getHeight());
                         if (widget.mouseClicked(mx, my, click.button())) {
                             return true;

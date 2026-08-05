@@ -20,7 +20,9 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("show_discord_ranks", "Show Discord ranks and colors in guild chat");
         DISPLAY_NAME_OVERRIDES.put("show_chat_insignias", "Show insignias in chat");
         DISPLAY_NAME_OVERRIDES.put("color_discord_bridge", "Color Chatbridge with Discord ranks");
-        DISPLAY_NAME_OVERRIDES.put("animate_rank_gradients", "Animate gradient rank colors");
+        DISPLAY_NAME_OVERRIDES.put("show_rank_gradients", "Use Discord gradients");
+        DISPLAY_NAME_OVERRIDES.put("animate_rank_gradients", "Animate rank badges");
+        DISPLAY_NAME_OVERRIDES.put("animate_username_gradients", "Animate usernames");
         DISPLAY_NAME_OVERRIDES.put("chat_line_spacing", "Chat line spacing");
         DISPLAY_NAME_OVERRIDES.put("profile_on_shift_click", "Open Sequoia profile on shift-click");
         DISPLAY_NAME_OVERRIDES.put("auto_announce", "Auto announce raids");
@@ -98,7 +100,26 @@ public abstract class SettingWidget<T extends Setting<?>> {
     }
 
     protected String getDisplayName() {
+        if (setting.getDisplayName() != null) {
+            return setting.getDisplayName();
+        }
         return toDisplayName(setting.getName());
+    }
+
+    protected String getDescription() {
+        return setting.getDescription();
+    }
+
+    protected boolean hasDescription() {
+        return getDescription() != null;
+    }
+
+    protected boolean isEnabled() {
+        return setting.isEnabled();
+    }
+
+    protected float labelIndent() {
+        return setting.getIndentLevel() * 14f;
     }
 
     public static String toDisplayName(String rawName) {

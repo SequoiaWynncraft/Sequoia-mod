@@ -845,7 +845,7 @@ public final class DiscordRankChatDecorator {
         for (int offset = 0; offset < text.length(); ) {
             int codePoint = text.codePointAt(offset);
             double position = (double) index / (codePointCount - 1);
-            TextColor color = RankGradientAnimation.colorAt(ramp, position);
+            TextColor color = RankGradientAnimation.colorAt(ramp, position, RankGradientAnimation.Target.USERNAME);
             coloured.append(Component.literal(new String(Character.toChars(codePoint)))
                     .withStyle(baseStyle.withColor(color)));
             offset += Character.charCount(codePoint);
@@ -870,7 +870,8 @@ public final class DiscordRankChatDecorator {
                 fragments,
                 start,
                 endExclusive,
-                (style, position) -> style.withColor(RankGradientAnimation.colorAt(ramp, position))
+                (style, position) -> style.withColor(
+                                RankGradientAnimation.colorAt(ramp, position, RankGradientAnimation.Target.USERNAME))
                         .withInsertion(insertion));
     }
 

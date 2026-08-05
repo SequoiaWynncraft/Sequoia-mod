@@ -5,6 +5,7 @@ import com.seqwawa.seq.config.Setting;
 import java.util.ArrayDeque;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Objects;
 import net.minecraft.network.chat.TextColor;
 
 /**
@@ -19,10 +20,16 @@ import net.minecraft.network.chat.TextColor;
  * remembered stops below say where on which ramp it was sampled from.
  * <p>
  * The lookup runs for every glyph the game draws (see {@code
- * FontPreparedTextBuilderMixin}), so it is kept to a setting check and one identity
- * probe that misses on ordinary text.
+ * FontPreparedTextBuilderMixin}), so it starts with one identity probe that misses on
+ * ordinary text and only consults settings for a registered decoration.
  */
 public final class RankGradientAnimation {
+
+    /** Independently configurable places where a Discord role gradient is rendered. */
+    public enum Target {
+        RANK_BADGE,
+        USERNAME
+    }
 
     /** One full turn around a role's ramp, slow enough to read as a sheen. */
     private static final long CYCLE_MILLIS = 5000L;
@@ -35,7 +42,7 @@ public final class RankGradientAnimation {
     private static final int MAX_REMEMBERED_STOPS = 512;
 
     /** Where a remembered colour was sampled from, and on which ramp. */
-    private record Stop(ColorRamp ramp, double position) {}
+    private record Stop(ColorRamp ramp, double position, Target target) {}
 
     /** Registration order, so the stops dropped on overflow are the oldest ones. */
     private static final ArrayDeque<TextColor> REGISTRATION_ORDER = new ArrayDeque<>();
@@ -57,9 +64,18 @@ public final class RankGradientAnimation {
      * would produce that same colour back again.
      */
     public static TextColor colorAt(ColorRamp ramp, double position) {
+        return colorAt(ramp, position, Target.RANK_BADGE);
+    }
+
+    /**
+     * The decoration colour for {@code target}, registered with enough information to
+     * flatten or animate it immediately when its settings change.
+     */
+    public static TextColor colorAt(ColorRamp ramp, double position, Target target) {
+        Objects.requireNonNull(target, "target");
         TextColor color = TextColor.fromRgb(ramp.sample(position));
         if (ramp.isGradient()) {
-            remember(color, new Stop(ramp, position));
+            remember(color, new Stop(ramp, position, target));
         }
         return color;
     }
@@ -74,11 +90,19 @@ public final class RankGradientAnimation {
 
     /** Animation core, parameterised on the phase so it stays unit-testable. */
     static TextColor animate(TextColor color, double phase) {
-        if (color == null || !isEnabled()) {
+        if (color == null) {
             return color;
         }
         Stop stop = stops.get(color);
-        return stop == null ? color : TextColor.fromRgb(stop.ramp().scroll(stop.position(), phase));
+        if (stop == null) {
+            return color;
+        }
+        if (!gradientsEnabled()) {
+            return TextColor.fromRgb(stop.ramp().first());
+        }
+        return animationEnabled(stop.target())
+                ? TextColor.fromRgb(stop.ramp().scroll(stop.position(), phase))
+                : color;
     }
 
     /** How far through the current turn the clock is, in {@code [0, 1)}. */
@@ -86,8 +110,16 @@ public final class RankGradientAnimation {
         return Math.floorMod(System.nanoTime() / 1_000_000L, CYCLE_MILLIS) / (double) CYCLE_MILLIS;
     }
 
-    private static boolean isEnabled() {
-        Setting.BooleanSetting setting = SeqClient.getAnimateRankGradientsSetting();
+    private static boolean gradientsEnabled() {
+        Setting.BooleanSetting setting = SeqClient.getShowRankGradientsSetting();
+        return setting == null || setting.getValue();
+    }
+
+    private static boolean animationEnabled(Target target) {
+        Setting.BooleanSetting setting = switch (target) {
+            case RANK_BADGE -> SeqClient.getAnimateRankGradientsSetting();
+            case USERNAME -> SeqClient.getAnimateUsernameGradientsSetting();
+        };
         return setting != null && setting.getValue();
     }
 
