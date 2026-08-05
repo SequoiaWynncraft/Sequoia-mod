@@ -26,4 +26,12 @@ class ChatLinkExtractorTest {
     void ignoresNonWebAndMalformedLinks() {
         assertEquals(java.util.List.of(), ChatLinkExtractor.extract("ftp://example.com http://[broken", 2));
     }
+
+    @Test
+    void reportsExactVisibleRangesForFiltering() {
+        assertEquals(
+                java.util.List.of(new ChatLinkExtractor.LinkMatch(
+                        URI.create("https://example.com/image.gif"), 5, 34)),
+                ChatLinkExtractor.extractMatches("see: https://example.com/image.gif!", 2));
+    }
 }

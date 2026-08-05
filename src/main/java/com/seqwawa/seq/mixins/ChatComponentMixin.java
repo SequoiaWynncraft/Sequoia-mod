@@ -1,5 +1,6 @@
 package com.seqwawa.seq.mixins;
 
+import com.seqwawa.seq.managers.ChatMediaLinkFilter;
 import com.seqwawa.seq.managers.DiscordRankChatDecorator;
 import com.seqwawa.seq.utils.ChatBridgeLineWrapping;
 import java.util.List;
@@ -32,7 +33,7 @@ public class ChatComponentMixin {
             argsOnly = true,
             index = 1)
     private Component seq$applyDiscordRank(Component message) {
-        return DiscordRankChatDecorator.decorateGuildChat(message);
+        return ChatMediaLinkFilter.filter(DiscordRankChatDecorator.decorateGuildChat(message));
     }
 
     /**

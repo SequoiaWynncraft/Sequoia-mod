@@ -56,10 +56,13 @@ public final class ChatMediaEmbedManager implements AutoCloseable {
     private static final long DEDUPE_WINDOW_MS = 3_000L;
     private static final float CARD_WIDTH = 302f;
     private static final float CARD_GAP = 6f;
+    private static final float MEDIA_PADDING = 4f;
+    private static final float USERNAME_BAR_HEIGHT = 22f;
+    private static final float MIN_MEDIA_HEIGHT = 72f;
+    private static final float MAX_MEDIA_HEIGHT = 150f;
     private static final Color CARD_BACKGROUND = new Color(12, 16, 24, 230);
     private static final Color CARD_BORDER = new Color(255, 255, 255, 30);
-    private static final Color TITLE_COLOR = new Color(242, 246, 255);
-    private static final Color MUTED_COLOR = new Color(175, 184, 202);
+    private static final Color USERNAME_COLOR = new Color(242, 246, 255);
 
     private final Object lock = new Object();
     private final List<EmbedEntry> entries = new ArrayList<>();
@@ -149,11 +152,19 @@ public final class ChatMediaEmbedManager implements AutoCloseable {
         boolean focused = mc.screen instanceof ChatScreen;
         long now = System.currentTimeMillis();
         removeExpired(now, focused ? FOCUSED_LIFETIME_MS : COLLAPSED_LIFETIME_MS);
-        List<EmbedEntry> snapshot;
+        List<EmbedEntry> candidates;
         synchronized (lock) {
-            int from = Math.max(0, entries.size() - MAX_VISIBLE_ENTRIES);
-            snapshot = List.copyOf(entries.subList(from, entries.size()));
+            candidates = List.copyOf(entries);
         }
+        List<EmbedEntry> loadedEntries = new ArrayList<>();
+        for (EmbedEntry entry : candidates) {
+            uploadPendingPreview(entry);
+            if (!entry.images.isEmpty()) {
+                loadedEntries.add(entry);
+            }
+        }
+        int from = Math.max(0, loadedEntries.size() - MAX_VISIBLE_ENTRIES);
+        List<EmbedEntry> snapshot = List.copyOf(loadedEntries.subList(from, loadedEntries.size()));
         if (snapshot.isEmpty()) {
             clickableCards = List.of();
             return;
@@ -173,9 +184,11 @@ public final class ChatMediaEmbedManager implements AutoCloseable {
 
         for (int index = snapshot.size() - 1; index >= 0; index--) {
             EmbedEntry entry = snapshot.get(index);
-            uploadPendingPreview(entry);
-            float height = entry.images.isEmpty() ? 60f : 92f;
+            float height = cardHeight(entry, cardWidth);
             bottom -= height;
+            if (bottom < 8f) {
+                break;
+            }
             drawCard(canvas, entry, x, bottom, cardWidth, height, now);
             bounds.add(new CardBounds(x, bottom, cardWidth, height, entry.uri));
             bottom -= CARD_GAP;
@@ -207,40 +220,38 @@ public final class ChatMediaEmbedManager implements AutoCloseable {
         canvas.strokeRect(x, y, width, height, 0.7f, CARD_BORDER);
         canvas.fillRoundedRect(x, y, 3f, height, 2f, accent);
 
-        float mediaWidth = entry.images.isEmpty() ? 0f : 112f;
-        float textX = x + 10f;
-        float textWidth = width - 20f - mediaWidth;
-        if (!entry.images.isEmpty()) {
-            UiImage image = activeFrame(entry, now);
-            if (image != null) {
-                float boxX = x + width - mediaWidth - 7f;
-                float boxY = y + 7f;
-                float boxWidth = mediaWidth;
-                float boxHeight = height - 14f;
-                float scale = Math.min(boxWidth / image.width(), boxHeight / image.height());
-                float drawWidth = image.width() * scale;
-                float drawHeight = image.height() * scale;
-                canvas.drawImage(
-                        image,
-                        boxX + (boxWidth - drawWidth) / 2f,
-                        boxY + (boxHeight - drawHeight) / 2f,
-                        drawWidth,
-                        drawHeight,
-                        1f);
-            }
+        UiImage image = activeFrame(entry, now);
+        if (image == null) {
+            return;
         }
+        float boxX = x + MEDIA_PADDING;
+        float boxY = y + MEDIA_PADDING;
+        float boxWidth = width - MEDIA_PADDING * 2f;
+        float boxHeight = height - USERNAME_BAR_HEIGHT - MEDIA_PADDING * 2f;
+        float scale = Math.min(boxWidth / image.width(), boxHeight / image.height());
+        float drawWidth = image.width() * scale;
+        float drawHeight = image.height() * scale;
+        canvas.drawImage(
+                image,
+                boxX + (boxWidth - drawWidth) / 2f,
+                boxY + (boxHeight - drawHeight) / 2f,
+                drawWidth,
+                drawHeight,
+                1f);
 
-        String source = entry.source == Source.DISCORD ? "DISCORD" : "GUILD CHAT";
-        canvas.drawText(source + (entry.sender.isBlank() ? "" : " · " + entry.sender), textX, y + 8f,
-                textStyle(font, 7.5f, accent));
-        canvas.drawText(ellipsize(entry.title, font, 10f, textWidth), textX, y + 24f,
-                textStyle(font, 10f, TITLE_COLOR));
-        canvas.drawText(ellipsize(entry.description, font, 8f, textWidth), textX, y + 42f,
-                textStyle(font, 8f, MUTED_COLOR));
-        if (!entry.images.isEmpty()) {
-            canvas.drawText(ellipsize(entry.domain, font, 7.5f, textWidth), textX, y + 65f,
-                    textStyle(font, 7.5f, MUTED_COLOR));
+        if (!entry.sender.isBlank()) {
+            float usernameY = boxY + boxHeight + 6f;
+            canvas.drawText(ellipsize(entry.sender, font, 9f, width - 20f), x + 10f, usernameY,
+                    textStyle(font, 9f, USERNAME_COLOR));
         }
+    }
+
+    private static float cardHeight(EmbedEntry entry, float width) {
+        UiImage image = entry.images.getFirst();
+        float mediaWidth = width - MEDIA_PADDING * 2f;
+        float scaledHeight = mediaWidth * image.height() / image.width();
+        float mediaHeight = Math.max(MIN_MEDIA_HEIGHT, Math.min(MAX_MEDIA_HEIGHT, scaledHeight));
+        return mediaHeight + USERNAME_BAR_HEIGHT + MEDIA_PADDING * 2f;
     }
 
     private static UiCanvas.TextStyle textStyle(String font, float size, Color color) {

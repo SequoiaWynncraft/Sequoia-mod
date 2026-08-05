@@ -20,11 +20,16 @@ final class ChatLinkExtractor {
     }
 
     static List<URI> extract(String message, int limit) {
+        return extractMatches(message, limit).stream().map(LinkMatch::uri).toList();
+    }
+
+    static List<LinkMatch> extractMatches(String message, int limit) {
         if (message == null || message.isBlank() || limit <= 0) {
             return List.of();
         }
 
-        Set<URI> links = new LinkedHashSet<>();
+        Set<URI> seen = new LinkedHashSet<>();
+        List<LinkMatch> links = new ArrayList<>();
         Matcher matcher = WEB_LINK.matcher(message);
         while (matcher.find() && links.size() < limit) {
             String candidate = stripTrailingPunctuation(matcher.group());
@@ -35,14 +40,17 @@ final class ChatLinkExtractor {
             try {
                 URI uri = new URI(candidate);
                 String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
-                if ((scheme.equals("http") || scheme.equals("https")) && uri.getHost() != null) {
-                    links.add(uri.normalize());
+                URI normalized = uri.normalize();
+                if ((scheme.equals("http") || scheme.equals("https"))
+                        && uri.getHost() != null
+                        && seen.add(normalized)) {
+                    links.add(new LinkMatch(normalized, matcher.start(), matcher.start() + candidate.length()));
                 }
             } catch (URISyntaxException ignored) {
                 // Malformed chat links remain ordinary text.
             }
         }
-        return List.copyOf(new ArrayList<>(links));
+        return List.copyOf(links);
     }
 
     private static String stripTrailingPunctuation(String input) {
@@ -69,5 +77,8 @@ final class ChatLinkExtractor {
             }
         }
         return count;
+    }
+
+    record LinkMatch(URI uri, int start, int endExclusive) {
     }
 }

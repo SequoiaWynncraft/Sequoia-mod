@@ -46,4 +46,26 @@ final class ChatMediaUrlResolver {
         }
         return DEFAULT_USER_AGENT;
     }
+
+    static boolean isDisplayableCandidate(URI uri) {
+        if (uri == null || uri.getHost() == null) {
+            return false;
+        }
+        String host = uri.getHost().toLowerCase(Locale.ROOT);
+        String path = uri.getPath() == null ? "" : uri.getPath().toLowerCase(Locale.ROOT);
+        if (path.endsWith(".gif")
+                || path.endsWith(".webp")
+                || path.endsWith(".avif")
+                || path.endsWith(".png")
+                || path.endsWith(".jpg")
+                || path.endsWith(".jpeg")) {
+            return true;
+        }
+        return host.equals("klipy.com")
+                || host.endsWith(".klipy.com")
+                || host.equals("tenor.com")
+                || host.endsWith(".tenor.com")
+                || host.equals("giphy.com")
+                || host.endsWith(".giphy.com");
+    }
 }

@@ -138,6 +138,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting showChatMediaEmbedsSetting;
 
     @Getter
+    public static Setting.BooleanSetting hideEmbeddedMediaLinksSetting;
+
+    @Getter
     public static Setting.BooleanSetting raidAutoAnnounceSetting;
 
     @Getter
@@ -635,6 +638,7 @@ public class SeqClient implements ClientModInitializer {
         // gesture, so taking it over is opt-in rather than a surprise.
         profileOnShiftClickSetting = new Setting.BooleanSetting("profile_on_shift_click", "chat", false);
         showChatMediaEmbedsSetting = new Setting.BooleanSetting("show_chat_media_embeds", "chat", true);
+        hideEmbeddedMediaLinksSetting = new Setting.BooleanSetting("hide_embedded_media_links", "chat", true);
 
         showDiscordChatSetting.setPresentation(
                 "Show Discord chat", "Display messages forwarded from the Sequoia Discord.", "Discord chat");
@@ -682,9 +686,14 @@ public class SeqClient implements ClientModInitializer {
                 "Opens the Sequoia website player profile.",
                 "Chat behavior");
         showChatMediaEmbedsSetting.setPresentation(
-                "Show chat link previews",
-                "Embed images, animated GIFs and website cards shared in guild or Discord chat.",
+                "Show chat media embeds",
+                "Display supported images and animations shared in guild or Discord chat.",
                 "Chat behavior");
+        hideEmbeddedMediaLinksSetting.setPresentation(
+                "Hide embedded media links",
+                "Remove supported media URLs from chat text while their embeds are enabled.",
+                "Chat behavior");
+        hideEmbeddedMediaLinksSetting.setParentSetting(showChatMediaEmbedsSetting);
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
         radianceCheckerSetting = new Setting.BooleanSetting("enable_radiance_visualiser", "raids", true);
         radianceMarkerColorSetting = new Setting.ColorSetting("radiance_marker_color", "raids", 0xFF0000);
@@ -738,6 +747,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(showChatInsigniasSetting);
         getConfigManager().register(profileOnShiftClickSetting);
         getConfigManager().register(showChatMediaEmbedsSetting);
+        getConfigManager().register(hideEmbeddedMediaLinksSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
         getConfigManager().register(trackGuildWarsSetting);
         getConfigManager().register(checkUpdatesSetting);
