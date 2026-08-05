@@ -13,7 +13,6 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -1102,8 +1101,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private void renderClusterHulls(UiCanvas canvas, MapViewport viewport, boolean allowHover) {
         hoveredCluster = null;
         float bestHoverDistance = 18f;
-        Map<ClusterOutlineStyle, List<UiCanvas.Polygon>> batches = new LinkedHashMap<>();
-        List<ClusterOutlineRender> highlightedOutlines = new ArrayList<>();
         canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         for (int index = cachedClusters.size() - 1; index >= 0; index--) {
             GatheringNodeCluster cluster = cachedClusters.get(index);
@@ -1123,22 +1120,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 hoveredCluster = cluster;
             }
             boolean selected = cluster == selectedCluster;
-            boolean highlighted = selected || hovered;
-            ClusterOutlineRender render = clusterOutlineRender(
-                    viewport, cluster, outline, x, y, selected, highlighted);
-            if (highlighted) {
-                highlightedOutlines.add(render);
-            } else {
-                batches.computeIfAbsent(render.style(), ignored -> new ArrayList<>()).add(render.polygon());
-            }
-        }
-        for (Map.Entry<ClusterOutlineStyle, List<UiCanvas.Polygon>> batch : batches.entrySet()) {
-            ClusterOutlineStyle style = batch.getKey();
-            canvas.fillAndStrokePolygons(batch.getValue(), style.fill(), style.stroke(), style.strokeWidth());
-        }
-        for (ClusterOutlineRender render : highlightedOutlines) {
-            ClusterOutlineStyle style = render.style();
-            canvas.fillAndStrokePolygons(List.of(render.polygon()), style.fill(), style.stroke(), style.strokeWidth());
+            renderClusterOutline(canvas, viewport, cluster, outline, x, y, selected, selected || hovered);
         }
         canvas.resetScissor();
     }
@@ -1146,7 +1128,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private void renderClusterBadges(UiCanvas canvas, MapViewport viewport, boolean overviewMode) {
         canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         MapBounds visibleBounds = viewport.visibleBounds();
-        List<ClusterMarker> markers = new ArrayList<>();
         GatheringNodeCluster hoveredBadge = null;
         GatheringNodeCluster selectedBadge = null;
         for (int index = cachedClusters.size() - 1; index >= 0; index--) {
@@ -1169,9 +1150,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 selectedBadge = cluster;
                 continue;
             }
-            markers.add(new ClusterMarker(x, y, clusterRadius(cluster), cluster));
+            drawClusterMarker(canvas, x, y, clusterRadius(cluster), cluster, false, false);
         }
-        drawClusterMarkers(canvas, markers);
         if (selectedBadge != null) {
             float x = viewport.worldToScreenX(selectedBadge.centerX());
             float y = viewport.worldToScreenZ(selectedBadge.centerZ());
@@ -1186,7 +1166,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         canvas.resetScissor();
     }
 
-    private ClusterOutlineRender clusterOutlineRender(
+    private void renderClusterOutline(
+            UiCanvas canvas,
             MapViewport viewport,
             GatheringNodeCluster cluster,
             ClusterOutlineShape outline,
@@ -1197,39 +1178,17 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         Color color = selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color();
         Color fill = withAlpha(color, highlighted ? 48 : 18);
         Color stroke = withAlpha(color, highlighted ? 220 : 105);
-        boolean closed = outline.points().size() > 2;
-        return new ClusterOutlineRender(
-                new UiCanvas.Polygon(outline.points(), centerScreenX, centerScreenY, closed),
-                new ClusterOutlineStyle(
-                        closed ? fill : null,
-                        stroke,
-                        hullStrokeWidthForZoom(viewport.pixelsPerBlock(), highlighted)));
-    }
 
-    private void drawClusterMarkers(UiCanvas canvas, List<ClusterMarker> markers) {
-        if (markers.isEmpty()) {
-            return;
-        }
-        List<UiCanvas.Circle> backgrounds = new ArrayList<>(markers.size());
-        Map<Color, List<UiCanvas.Circle>> fills = new LinkedHashMap<>();
-        for (ClusterMarker marker : markers) {
-            backgrounds.add(new UiCanvas.Circle(marker.x(), marker.y(), marker.radius() + 3));
-            Color fill = withAlpha(marker.cluster().profession().color(), 220);
-            fills.computeIfAbsent(fill, ignored -> new ArrayList<>())
-                    .add(new UiCanvas.Circle(marker.x(), marker.y(), marker.radius()));
-        }
-        canvas.fillCircles(backgrounds, color(BACKGROUND_MODAL_OVERLAY, 150));
-        fills.forEach((fill, circles) -> canvas.fillCircles(circles, fill));
-        for (ClusterMarker marker : markers) {
-            drawText(
-                    canvas,
-                    marker.x(),
-                    marker.y() + 1,
-                    clusterCountTextSize(marker.cluster()),
-                    String.valueOf(marker.cluster().nodeCount()),
-                    color(MAP_TEXT),
-                    TextAlignment.CENTER);
-        }
+        List<UiCanvas.Point> points = outline.points().stream()
+                .map(point -> new UiCanvas.Point(centerScreenX + point.x(), centerScreenY + point.y()))
+                .toList();
+        boolean closed = points.size() > 2;
+        canvas.fillAndStrokePolygon(
+                points,
+                closed ? fill : null,
+                stroke,
+                hullStrokeWidthForZoom(viewport.pixelsPerBlock(), highlighted),
+                closed);
     }
 
     private void drawClusterMarker(UiCanvas canvas, float x, float y, float radius, GatheringNodeCluster cluster, boolean selected, boolean highlighted) {
@@ -5707,12 +5666,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             Supplier<PlayerSkin> skinLookup) {}
 
     private record MapIngredientIcon(ItemStack stack, Supplier<PlayerSkin> skinLookup) {}
-
-    private record ClusterMarker(float x, float y, float radius, GatheringNodeCluster cluster) {}
-
-    private record ClusterOutlineStyle(Color fill, Color stroke, float strokeWidth) {}
-
-    private record ClusterOutlineRender(UiCanvas.Polygon polygon, ClusterOutlineStyle style) {}
 
     private record TerritoryLabelLayout(List<String> lines, float fontSize, float lineHeight) {}
 
