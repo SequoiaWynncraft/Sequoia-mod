@@ -29,6 +29,39 @@ class SeqCommandTest {
     }
 
     @Test
+    void registersStandaloneThirtyAspectAlias() {
+        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+
+        SeqCommand.registerCommands(dispatcher, null);
+
+        assertNotNull(dispatcher.getRoot().getChild("a"));
+        assertNotNull(dispatcher.getRoot().getChild("a").getCommand());
+    }
+
+    @Test
+    void normalizesSequoiaCommandLiteralsWithoutChangingArguments() {
+        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+        SeqCommand.registerCommands(dispatcher, null);
+
+        assertEquals("seq aspects 30", SeqCommand.normalizeCommandCapitalization("SeQ AsPeCtS 30"));
+        assertEquals(
+                "seq party invite Status",
+                SeqCommand.normalizeCommandCapitalization("SEQ PARTY INVITE Status"));
+        assertEquals(
+                "seq party join 42 DPS token AbCdEf",
+                SeqCommand.normalizeCommandCapitalization("SEQ PARTY JOIN 42 DPS TOKEN AbCdEf"));
+        assertEquals("a", SeqCommand.normalizeCommandCapitalization("A"));
+    }
+
+    @Test
+    void leavesNonSequoiaCommandsUntouched() {
+        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+        SeqCommand.registerCommands(dispatcher, null);
+
+        assertEquals("Party INVITE Status", SeqCommand.normalizeCommandCapitalization("Party INVITE Status"));
+    }
+
+    @Test
     void treasuryOutParsesMultiWordReasonGreedily() throws Exception {
         AtomicReference<SeqCommand.TreasuryCommandArguments> captured = new AtomicReference<>();
         CommandDispatcher<Object> dispatcher = new CommandDispatcher<>();

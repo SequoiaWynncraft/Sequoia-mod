@@ -222,6 +222,70 @@ class GuildStorageTrackerTest {
     }
 
     @Test
+    void pendingRewardBurstPublishesBeforePostRewardSnapshot() {
+        List<String> publicationOrder = new ArrayList<>();
+        AtomicLong now = new AtomicLong(Instant.parse("2026-03-29T20:00:00Z").toEpochMilli());
+        GuildStorageTracker tracker = new GuildStorageTracker(
+                snapshot -> publicationOrder.add("snapshot:" + snapshot.emeralds().current()),
+                reward -> publicationOrder.add("reward:" + reward.amount() * reward.count()),
+                message -> {},
+                () -> true,
+                () -> 100,
+                () -> 100,
+                now::get);
+        GuildStorageTracker.StorageSnapshot initial = new GuildStorageTracker.StorageSnapshot(
+                new GuildStorageTracker.ResourceSnapshot(5_000, 92_160),
+                new GuildStorageTracker.ResourceSnapshot(10, 120));
+        GuildStorageTracker.StorageSnapshot afterReward = new GuildStorageTracker.StorageSnapshot(
+                new GuildStorageTracker.ResourceSnapshot(3_976, 92_160),
+                new GuildStorageTracker.ResourceSnapshot(10, 120));
+
+        tracker.applyObservedSnapshot(initial);
+        tracker.publishSnapshotIfNeeded(initial, true);
+        publicationOrder.clear();
+        tracker.onSystemChat(Component.literal("Dwoc rewarded 1024 Emeralds to cinfrascitizen"));
+        tracker.publishSnapshotIfNeeded(afterReward, true);
+        tracker.flushPendingSnapshotIfReady(true, true);
+
+        assertEquals(List.of(), publicationOrder);
+
+        now.addAndGet(GuildStorageTracker.REWARD_BURST_IDLE_GAP_MS + 1);
+        tracker.flushReadyRewardBursts(false);
+        tracker.flushPendingSnapshotIfReady(false, true);
+
+        assertEquals(List.of("reward:1024", "snapshot:3976"), publicationOrder);
+    }
+
+    @Test
+    void pendingRewardBurstRepublishesSnapshotMatchingPreviousBaseline() {
+        List<String> publicationOrder = new ArrayList<>();
+        AtomicLong now = new AtomicLong(Instant.parse("2026-03-29T20:00:00Z").toEpochMilli());
+        GuildStorageTracker tracker = new GuildStorageTracker(
+                snapshot -> publicationOrder.add("snapshot:" + snapshot.emeralds().current()),
+                reward -> publicationOrder.add("reward:" + reward.amount() * reward.count()),
+                message -> {},
+                () -> true,
+                () -> 100,
+                () -> 100,
+                now::get);
+        GuildStorageTracker.StorageSnapshot snapshot = new GuildStorageTracker.StorageSnapshot(
+                new GuildStorageTracker.ResourceSnapshot(5_000, 92_160),
+                new GuildStorageTracker.ResourceSnapshot(10, 120));
+
+        tracker.applyObservedSnapshot(snapshot);
+        tracker.publishSnapshotIfNeeded(snapshot, true);
+        publicationOrder.clear();
+        tracker.onSystemChat(Component.literal("Dwoc rewarded 1024 Emeralds to cinfrascitizen"));
+        tracker.publishSnapshotIfNeeded(snapshot, true);
+
+        now.addAndGet(GuildStorageTracker.REWARD_BURST_IDLE_GAP_MS + 1);
+        tracker.flushReadyRewardBursts(false);
+        tracker.flushPendingSnapshotIfReady(false, true);
+
+        assertEquals(List.of("reward:1024", "snapshot:5000"), publicationOrder);
+    }
+
+    @Test
     void resetClearsPendingSnapshotPublish() {
         List<GuildStorageTracker.StorageSnapshot> published = new ArrayList<>();
         AtomicLong now = new AtomicLong(10_000L);
