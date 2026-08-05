@@ -106,9 +106,12 @@ public final class DiscordRankChatDecorator {
     /** Wynntils renders nicked players as {@code Nickname(RealUsername)}. */
     private static final Pattern NICKNAME_WITH_USERNAME_PATTERN =
             Pattern.compile("\\(([a-zA-Z0-9_]{3,16})\\)\\s*$");
-    /** The bracket-free variant, {@code username/nickname}. */
-    private static final Pattern SLASH_SEPARATED_NAMES_PATTERN =
-            Pattern.compile("([a-zA-Z0-9_]{3,16})\\s*/\\s*([a-zA-Z0-9_]{3,16})");
+    /** Account name before a slash, allowing the nickname after it to contain spaces. */
+    private static final Pattern USERNAME_BEFORE_SLASH_PATTERN =
+            Pattern.compile("^\\s*([a-zA-Z0-9_]{3,16})\\s*/");
+    /** Account name after a slash, allowing the nickname before it to contain spaces. */
+    private static final Pattern USERNAME_AFTER_SLASH_PATTERN =
+            Pattern.compile("/\\s*([a-zA-Z0-9_]{3,16})\\s*$");
 
     private static volatile boolean debug;
     private static boolean suppressed;
@@ -131,6 +134,10 @@ public final class DiscordRankChatDecorator {
      * guild chat or the speaker has no linked rank.
      */
     public static Component decorateGuildChat(Component message) {
+        return RankGradientAnimation.batchRegistrations(() -> decorateGuildChatNow(message));
+    }
+
+    private static Component decorateGuildChatNow(Component message) {
         // Every ordinary chat line ends the current bridge block. A bridged line must
         // not, so it is recognised by identity as well as by the suppression flag:
         // another mod may queue the message and deliver it here after
@@ -242,8 +249,9 @@ public final class DiscordRankChatDecorator {
         // The pill keeps the default font on purpose: Wynncraft's badge uses a font of
         // its own in which these glyphs mean nothing, so inheriting it collapses the
         // pill to no width and drags the rest of the line left.
-        MutableComponent replacement =
-                Component.empty().append(rankPill(rank, replacedGuildRank)).append(Component.literal(" "));
+        MutableComponent replacement = Component.empty()
+                .append(rankPill(rank, replacedGuildRank, inGameGuildChatTextColor()))
+                .append(Component.literal(" "));
         List<ComponentTextEditor.Fragment> withBadge =
                 insertInsignia(recoloured, colonIndex, speaker.username());
         return ComponentTextEditor.replaceRange(withBadge, start, end, replacement);
@@ -572,10 +580,14 @@ public final class DiscordRankChatDecorator {
      * only a failed lookup.
      */
     private static void addSlashSeparatedCandidates(Set<String> candidates, String displayedName) {
-        Matcher matcher = SLASH_SEPARATED_NAMES_PATTERN.matcher(displayedName);
-        if (matcher.find()) {
-            addUsernameCandidate(candidates, matcher.group(1));
-            addUsernameCandidate(candidates, matcher.group(2));
+        Matcher beforeSlash = USERNAME_BEFORE_SLASH_PATTERN.matcher(displayedName);
+        if (beforeSlash.find()) {
+            addUsernameCandidate(candidates, beforeSlash.group(1));
+        }
+
+        Matcher afterSlash = USERNAME_AFTER_SLASH_PATTERN.matcher(displayedName);
+        if (afterSlash.find()) {
+            addUsernameCandidate(candidates, afterSlash.group(1));
         }
     }
 
@@ -864,8 +876,19 @@ public final class DiscordRankChatDecorator {
 
     /** Builds the glyph pill for {@code rank}, tooltipped with the rank it replaces. */
     static MutableComponent rankPill(RankPresentation rank, String replacedWynncraftRank) {
-        MutableComponent pill =
-                NotificationAccessor.wynnPill(rank.pillLabel(), rampFor(rank), PILL_LABEL_COLOR, null);
+        return rankPill(rank, replacedWynncraftRank, FALLBACK_RANK_COLOR);
+    }
+
+    /** Rank pill whose role colour can return to the supplied source/default background. */
+    static MutableComponent rankPill(
+            RankPresentation rank, String replacedWynncraftRank, TextColor baseBackgroundColor) {
+        MutableComponent pill = NotificationAccessor.wynnPill(
+                rank.pillLabel(),
+                rampFor(rank),
+                roleRampFor(rank),
+                PILL_LABEL_COLOR,
+                null,
+                baseBackgroundColor);
 
         // The tooltip is one component, so it cannot carry the gradient; it takes the
         // primary stop, which is the colour Discord itself shows the role under.
@@ -889,17 +912,32 @@ public final class DiscordRankChatDecorator {
         return rank.colors().isEmpty() ? ColorRamp.of(FALLBACK_RANK_COLOR.getValue()) : rank.colors();
     }
 
+    /** Shared progression-rank palette used while per-user colouring is disabled. */
+    static ColorRamp roleRampFor(RankPresentation rank) {
+        return rank.roleColors().isEmpty()
+                ? ColorRamp.of(FALLBACK_RANK_COLOR.getValue())
+                : rank.roleColors();
+    }
+
     /**
      * A name painted across the member's complete role palette. Gradient colours are
      * minted through {@link RankGradientAnimation}, so the same render hook that moves
      * a rank pill moves the name with it. Solid names stay one component.
      */
     static MutableComponent colouredName(String name, RankPresentation rank, Style style) {
+        return RankGradientAnimation.batchRegistrations(() -> colouredNameNow(name, rank, style));
+    }
+
+    private static MutableComponent colouredNameNow(String name, RankPresentation rank, Style style) {
         String text = name == null ? "" : name;
         Style baseStyle = style == null ? Style.EMPTY : style;
-        ColorRamp ramp = rampFor(rank);
-        if (!ramp.isGradient() || text.codePointCount(0, text.length()) <= 1) {
-            return Component.literal(text).withStyle(baseStyle.withColor(colorFor(rank)));
+        ColorRamp displayRamp = rampFor(rank);
+        ColorRamp roleRamp = roleRampFor(rank);
+        if ((!displayRamp.isGradient() && !roleRamp.isGradient())
+                || text.codePointCount(0, text.length()) <= 1) {
+            TextColor color = RankGradientAnimation.colorAt(
+                    displayRamp, roleRamp, 0d, RankGradientAnimation.Target.USERNAME, baseStyle.getColor());
+            return Component.literal(text).withStyle(baseStyle.withColor(color));
         }
 
         MutableComponent coloured = Component.empty();
@@ -908,7 +946,12 @@ public final class DiscordRankChatDecorator {
         for (int offset = 0; offset < text.length(); ) {
             int codePoint = text.codePointAt(offset);
             double position = (double) index / (codePointCount - 1);
-            TextColor color = RankGradientAnimation.colorAt(ramp, position, RankGradientAnimation.Target.USERNAME);
+            TextColor color = RankGradientAnimation.colorAt(
+                    displayRamp,
+                    roleRamp,
+                    position,
+                    RankGradientAnimation.Target.USERNAME,
+                    baseStyle.getColor());
             coloured.append(Component.literal(new String(Character.toChars(codePoint)))
                     .withStyle(baseStyle.withColor(color)));
             offset += Character.charCount(codePoint);
@@ -923,18 +966,42 @@ public final class DiscordRankChatDecorator {
             int endExclusive,
             RankPresentation rank,
             String insertion) {
-        ColorRamp ramp = rampFor(rank);
-        if (!ramp.isGradient()) {
-            TextColor color = colorFor(rank);
+        return RankGradientAnimation.batchRegistrations(
+                () -> recolourNameNow(fragments, start, endExclusive, rank, insertion));
+    }
+
+    private static List<ComponentTextEditor.Fragment> recolourNameNow(
+            List<ComponentTextEditor.Fragment> fragments,
+            int start,
+            int endExclusive,
+            RankPresentation rank,
+            String insertion) {
+        ColorRamp displayRamp = rampFor(rank);
+        ColorRamp roleRamp = roleRampFor(rank);
+        if (!displayRamp.isGradient() && !roleRamp.isGradient()) {
             return ComponentTextEditor.restyleRange(
-                    fragments, start, endExclusive, style -> style.withColor(color).withInsertion(insertion));
+                    fragments,
+                    start,
+                    endExclusive,
+                    style -> style.withColor(RankGradientAnimation.colorAt(
+                                    displayRamp,
+                                    roleRamp,
+                                    0d,
+                                    RankGradientAnimation.Target.USERNAME,
+                                    style.getColor()))
+                            .withInsertion(insertion));
         }
         return ComponentTextEditor.restyleRangeByPosition(
                 fragments,
                 start,
                 endExclusive,
                 (style, position) -> style.withColor(
-                                RankGradientAnimation.colorAt(ramp, position, RankGradientAnimation.Target.USERNAME))
+                                RankGradientAnimation.colorAt(
+                                        displayRamp,
+                                        roleRamp,
+                                        position,
+                                        RankGradientAnimation.Target.USERNAME,
+                                        style.getColor()))
                         .withInsertion(insertion));
     }
 

@@ -11,9 +11,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -38,6 +40,7 @@ public class ConfigManager {
     private final Path configPath;
     private final Path legacyTokenFile;
     private final List<Setting<?>> settings = new ArrayList<>();
+    private final Map<Setting<?>, List<String>> legacySettingKeys = new IdentityHashMap<>();
     private final Set<String> ignoredBridgeUsers = new LinkedHashSet<>();
     private final Set<String> trackedWorldEventIds = new LinkedHashSet<>();
     private String authToken;
@@ -65,6 +68,15 @@ public class ConfigManager {
 
     public void register(Setting<?> setting) {
         settings.add(setting);
+    }
+
+    /**
+     * Registers a setting with old fully-qualified config keys to consult only when
+     * its current key is absent. A later save writes only the current key.
+     */
+    public void registerWithLegacyKeys(Setting<?> setting, String... legacyKeys) {
+        register(setting);
+        legacySettingKeys.put(setting, List.of(legacyKeys));
     }
 
     // ── Token management ──
@@ -343,6 +355,14 @@ public class ConfigManager {
                 }
                 String key = setting.getCategory() + "." + setting.getName();
                 JsonElement element = root.get(key);
+                if (element == null) {
+                    for (String legacyKey : legacySettingKeys.getOrDefault(setting, List.of())) {
+                        element = root.get(legacyKey);
+                        if (element != null) {
+                            break;
+                        }
+                    }
+                }
                 if (element != null) {
                     setting.deserialize(element);
                 }

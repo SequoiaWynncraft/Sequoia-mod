@@ -15,6 +15,7 @@ import com.seqwawa.seq.model.SeqBadgeTier;
 import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
+import com.seqwawa.seq.utils.RankGradientAnimation;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
 import java.util.Arrays;
 import java.util.List;
@@ -40,7 +41,9 @@ class DiscordRankChatDecoratorTest {
     }
 
     private static final RankPresentation SAPLING = presentation("rank.sapling", "Sapling", 88, 0x4CB4FA);
-    private static final Map<String, RankPresentation> RANKS = Map.of("arcleretour", SAPLING);
+    private static final RankPresentation DRUID = presentation("rank.druid", "Druid", 92, 0xD7BCEA);
+    private static final Map<String, RankPresentation> RANKS =
+            Map.of("arcleretour", SAPLING, "pat_crafter07", DRUID);
     /** Wynncraft's guild chat aqua. */
     private static final int GUILD_AQUA = 0x55FFFF;
     private static final int DARK_AQUA = 0x00AAAA;
@@ -345,6 +348,75 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void canColorTheRankPillWithoutColoringTheUsername() {
+        withRankColoring(true, false, () -> {
+            Component decorated = DiscordRankChatDecorator.decorateGuildChat(
+                    guildLine("RECRUITER", "ArcLeRetour", "ArcLeRetour", "hi"),
+                    DiscordRankChatDecoratorTest::lookup);
+            List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
+
+            assertEquals(0x4CB4FA, pillBackgroundColors(decorated).getFirst());
+            TextColor storedNameColor = fragments.stream()
+                    .filter(fragment -> fragment.text().contains("ArcLeRetour"))
+                    .findFirst()
+                    .orElseThrow()
+                    .style()
+                    .getColor();
+            assertEquals(0x4CB4FA, storedNameColor.getValue(), "the role color remains available to turn back on");
+            assertNull(RankGradientAnimation.animate(storedNameColor), "rendering restores the inherited base color");
+        });
+    }
+
+    @Test
+    void canColorTheUsernameWithoutColoringTheRankPill() {
+        withRankColoring(false, true, () -> {
+            Component decorated = DiscordRankChatDecorator.decorateGuildChat(
+                    guildLine("RECRUITER", "ArcLeRetour", "ArcLeRetour", "hi"),
+                    DiscordRankChatDecoratorTest::lookup);
+            List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
+
+            assertEquals(GUILD_AQUA, renderedPillBackgroundColors(decorated).getFirst());
+            assertEquals(0x4CB4FA, colorOfFragmentContaining(fragments, "ArcLeRetour"));
+        });
+    }
+
+    @Test
+    void uncoloredNativeRankPillRestoresTheConfiguredChatColor() {
+        Setting.ColorSetting previous = SeqClient.inGameGuildChatTextColorSetting;
+        try {
+            SeqClient.inGameGuildChatTextColorSetting =
+                    new Setting.ColorSetting("in_game_guild_chat_text_color", "chat", 0xA1B2C3);
+            withRankColoring(false, true, () -> {
+                Component decorated = DiscordRankChatDecorator.decorateGuildChat(
+                        wynncraftGuildLine("RECRUITER", "EightySix", "ArcLeRetour", "hi"),
+                        DiscordRankChatDecoratorTest::lookup);
+
+                assertEquals(0xA1B2C3, renderedPillBackgroundColors(decorated).getFirst());
+                assertEquals(
+                        0x4CB4FA, pillBackgroundColors(decorated).getFirst(), "the role color can be restored live");
+            });
+        } finally {
+            SeqClient.inGameGuildChatTextColorSetting = previous;
+        }
+    }
+
+    @Test
+    void uncoloredBridgeUsernamePreservesItsCallerSuppliedStyle() {
+        withRankColoring(true, false, () -> {
+            Style original = Style.EMPTY.withColor(0xABCDEF).withInsertion("ArcLeRetour");
+
+            List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(
+                    DiscordRankChatDecorator.colouredName("ArcLeRetour", SAPLING, original));
+
+            assertEquals(1, fragments.size());
+            TextColor storedColor = fragments.getFirst().style().getColor();
+            assertEquals(0x4CB4FA, storedColor.getValue());
+            assertEquals(0xABCDEF, RankGradientAnimation.animate(storedColor).getValue());
+            assertEquals("ArcLeRetour", fragments.getFirst().style().getInsertion());
+        });
+    }
+
+    @Test
     void paintsNativeGuildMessageBodyWithConfiguredColorEvenWhenRanksAreDisabled() {
         Setting.BooleanSetting previousRanks = SeqClient.showDiscordRanksSetting;
         Setting.ColorSetting previousTextColor = SeqClient.inGameGuildChatTextColorSetting;
@@ -384,6 +456,29 @@ class DiscordRankChatDecoratorTest {
 
         assertEquals(
                 List.of("sapling"),
+                pillLabels(DiscordRankChatDecorator.decorateGuildChat(
+                        message, DiscordRankChatDecoratorTest::lookup)));
+    }
+
+    @Test
+    void resolvesTheLoggedUsernameSlashSpacedClassNickname() {
+        Component message = guildLine("RECRUITER", "pat_crafter07/I Burger", null, "test");
+
+        Component decorated =
+                DiscordRankChatDecorator.decorateGuildChat(message, DiscordRankChatDecoratorTest::lookup);
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
+
+        assertEquals(List.of("druid"), pillLabels(decorated));
+        assertEquals(0xD7BCEA, colorOfFragmentContaining(fragments, "pat_crafter07"));
+        assertTrue(decorated.getString().contains("pat_crafter07/I Burger: test"));
+    }
+
+    @Test
+    void resolvesAUsernameAfterASpacedClassNickname() {
+        Component message = guildLine("RECRUITER", "I Burger/pat_crafter07", null, "test");
+
+        assertEquals(
+                List.of("druid"),
                 pillLabels(DiscordRankChatDecorator.decorateGuildChat(
                         message, DiscordRankChatDecoratorTest::lookup)));
     }
@@ -548,6 +643,20 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void switchesARankPillBetweenIndividualAndRoleColors() {
+        RankPresentation presentation = new RankPresentation(
+                new DiscordRank("rank.sapling", "Sapling", 88),
+                ColorRamp.of(0x4CB4FA),
+                ColorRamp.of(0xFF00FF));
+        Component pill = DiscordRankChatDecorator.rankPill(presentation, null);
+
+        withPerUserColors(true, () -> assertEquals(
+                Set.of(0xFF00FF), Set.copyOf(renderedPillBackgroundColors(pill))));
+        withPerUserColors(false, () -> assertEquals(
+                Set.of(0x4CB4FA), Set.copyOf(renderedPillBackgroundColors(pill))));
+    }
+
+    @Test
     void keepsOneLabelColourAcrossAGradient() {
         // Only the background is graded. Letters that shifted hue from one to the next
         // read as a rendering fault rather than as a gradient.
@@ -583,6 +692,34 @@ class DiscordRankChatDecoratorTest {
         assertTrue(
                 name.get(1).style().getColor().getValue() > 0x123456,
                 "the middle of the name must be sampled from inside the ramp");
+    }
+
+    @Test
+    void switchesAUsernameFromItsSolidIndividualColorToItsGradientRolePalette() {
+        RankPresentation presentation = new RankPresentation(
+                new DiscordRank("rank.yggdrasil", "Ygg", 120),
+                ColorRamp.of(List.of(0x000000, 0xFFFFFF)),
+                ColorRamp.of(0xFF00FF));
+        List<TextColor> stored = ComponentTextEditor.flatten(DiscordRankChatDecorator.colouredName(
+                        "Name", presentation, Style.EMPTY.withColor(GUILD_AQUA)))
+                .stream()
+                .map(fragment -> fragment.style().getColor())
+                .toList();
+
+        withPerUserColors(true, () -> assertEquals(
+                Set.of(0xFF00FF),
+                Set.copyOf(stored.stream()
+                        .map(RankGradientAnimation::animate)
+                        .map(TextColor::getValue)
+                        .toList())));
+        withPerUserColors(false, () -> {
+            List<Integer> rendered = stored.stream()
+                    .map(RankGradientAnimation::animate)
+                    .map(TextColor::getValue)
+                    .toList();
+            assertEquals(0x000000, rendered.getFirst());
+            assertEquals(0xFFFFFF, rendered.getLast());
+        });
     }
 
     @Test
@@ -649,6 +786,30 @@ class DiscordRankChatDecoratorTest {
 
     private static void withDiscordRanks(boolean enabled, Runnable body) {
         withSettings(enabled, true, body);
+    }
+
+    private static void withRankColoring(boolean pills, boolean usernames, Runnable body) {
+        Setting.BooleanSetting previousPills = SeqClient.colorRankPillsSetting;
+        Setting.BooleanSetting previousUsernames = SeqClient.colorUsernamesSetting;
+        try {
+            SeqClient.colorRankPillsSetting = new Setting.BooleanSetting("color_rank_pills", "chat", pills);
+            SeqClient.colorUsernamesSetting = new Setting.BooleanSetting("color_usernames", "chat", usernames);
+            body.run();
+        } finally {
+            SeqClient.colorRankPillsSetting = previousPills;
+            SeqClient.colorUsernamesSetting = previousUsernames;
+        }
+    }
+
+    private static void withPerUserColors(boolean enabled, Runnable body) {
+        Setting.BooleanSetting previous = SeqClient.usePerUserColorsSetting;
+        try {
+            SeqClient.usePerUserColorsSetting =
+                    new Setting.BooleanSetting("use_per_user_colors", "chat", enabled);
+            body.run();
+        } finally {
+            SeqClient.usePerUserColorsSetting = previous;
+        }
     }
 
     private static void withSettings(boolean ranks, boolean insignia, Runnable body) {
@@ -804,6 +965,14 @@ class DiscordRankChatDecoratorTest {
         return ComponentTextEditor.flatten(pill).stream()
                 .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
                 .map(fragment -> fragment.style().getColor().getValue())
+                .toList();
+    }
+
+    private static List<Integer> renderedPillBackgroundColors(Component pill) {
+        return ComponentTextEditor.flatten(pill).stream()
+                .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
+                .map(fragment -> RankGradientAnimation.animate(fragment.style().getColor()))
+                .map(TextColor::getValue)
                 .toList();
     }
 

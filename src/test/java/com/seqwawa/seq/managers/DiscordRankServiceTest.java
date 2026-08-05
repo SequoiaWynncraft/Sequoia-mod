@@ -198,10 +198,16 @@ class DiscordRankServiceTest {
         assertEquals(List.of(0xFF00FF, 0x00FFFF, 0xFFFF00), index.colorsByIdentity().get("special").stops());
         assertNull(index.colorsByIdentity().get("plain"), "an ordinary member falls back to their role");
         assertEquals(List.of(0x4CB4FA), index.colorsByRoleKey().get("rank.sapling").stops());
-        assertEquals(List.of(0x4CB4FA), service.presentationForMinecraftUsername("Plain").colors().stops());
+        RankPresentation plain = service.presentationForMinecraftUsername("Plain");
+        RankPresentation special = service.presentationForMinecraftUsername("Special");
+        assertEquals(List.of(0x4CB4FA), plain.colors().stops());
+        assertEquals(List.of(0x4CB4FA), plain.roleColors().stops());
+        assertTrue(plain.individualColors().isEmpty());
         assertEquals(
                 List.of(0xFF00FF, 0x00FFFF, 0xFFFF00),
-                service.presentationForMinecraftUsername("Special").colors().stops());
+                special.colors().stops());
+        assertEquals(List.of(0x4CB4FA), special.roleColors().stops());
+        assertEquals(List.of(0xFF00FF, 0x00FFFF, 0xFFFF00), special.individualColors().stops());
     }
 
     @Test

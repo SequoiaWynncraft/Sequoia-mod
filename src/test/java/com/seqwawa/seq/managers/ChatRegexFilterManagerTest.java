@@ -46,10 +46,12 @@ class ChatRegexFilterManagerTest {
             "󏿼󐀆 Torment changed the style of Wood Sprite Hideaway to \n󏿼󐀆 cheapest",
             "󏿼󏿿󏿾 Envy changed the borders of Harnort Compound to close",
             "󏿼󐀆 Envy changed the borders of Harnort Compound to open",
+            "󏿼󏿿󏿾 Yearnm changed the global borders to close",
             "󏿼󐀆 Envy set the guild headquarters to Harnort Compound",
             "󏿼󏿿󏿾 Territory Citadel's Shadow is using more resources than it\n󏿼󐀆 can store!",
             "󏿼󐀆 Territory Lake Rieke is using more resources than it can\n󏿼󐀆 store!",
             "󏿼󐀆 Torment removed Larger Resource Storage bonus from \n󏿼󐀆 Citadel's Shadow",
+            "󏿼󏿿󏿾 Yearnm removed Damage upgrade from Cliffheart Orc Camp",
             "󏿼󐀆 Kablob set Larger Resource Storage bonus to level 1 on \n󏿼󐀆 Citadel's Shadow",
             "󏿼󐀆 Sorrow applied the loadout ragebait on Void Valley",
             "󏿼󐀆 Charlvtte applied the loadout :void: on Royal Gate§b,\n"
@@ -78,7 +80,9 @@ class ChatRegexFilterManagerTest {
         assertFalse(manager.shouldFilter("Torment: I changed the ally tax of our route to 67%"));
         assertFalse(manager.shouldFilter("Torment: I changed the style of my house to fastest"));
         assertFalse(manager.shouldFilter("Envy: I changed the borders of my build to open"));
+        assertFalse(manager.shouldFilter("Yearnm: I changed the global borders to close"));
         assertFalse(manager.shouldFilter("Envy: I set the guild headquarters to Harnort Compound"));
+        assertFalse(manager.shouldFilter("Yearnm: I removed Damage upgrade from Cliffheart Orc Camp"));
         assertFalse(manager.shouldFilter("Sorrow: I applied the loadout ragebait on Void Valley"));
         assertFalse(manager.shouldFilter("Territory Lake Rieke is under attack!"));
         assertFalse(manager.shouldFilter("Territory Lake Rieke production increased"));

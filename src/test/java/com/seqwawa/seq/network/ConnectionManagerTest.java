@@ -14,6 +14,17 @@ import org.junit.jupiter.api.Test;
 class ConnectionManagerTest {
 
     @Test
+    void partySyncSnapshotPayloadIsBoundToListing() {
+        var payload = ConnectionManager.buildPartySyncSnapshotPayload(
+                1204L, true, "Leader", List.of("Leader", "Guest"));
+
+        assertEquals(1204L, payload.get("listing_id").getAsLong());
+        assertTrue(payload.get("active").getAsBoolean());
+        assertEquals("Leader", payload.get("leader_username").getAsString());
+        assertEquals(2, payload.getAsJsonArray("member_usernames").size());
+    }
+
+    @Test
     void guildMembershipEventPayloadIdentifiesActionActorAndTarget() {
         var payload = ConnectionManager.buildGuildMembershipEventPayload("invited", "GaztheCat", "NewMember");
 

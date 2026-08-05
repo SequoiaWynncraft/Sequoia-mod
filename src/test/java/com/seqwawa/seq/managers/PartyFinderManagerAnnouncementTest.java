@@ -147,6 +147,75 @@ class PartyFinderManagerAnnouncementTest {
         assertEquals("/seq p extend 42", PartyFinderManager.staleWarningExtendCommand(42));
     }
 
+    @Test
+    void currentListingSelectionPreservesExistingMembershipAcrossDuplicateUpdate() {
+        Listing existing = listing(40L, LOCAL_UUID, PartyStatus.OPEN, 1, 0, BASE_TIME.minusSeconds(60));
+        Listing duplicate = listing(41L, LOCAL_UUID, PartyStatus.CLOSED, 1, 0, BASE_TIME.minusSeconds(10));
+
+        Listing selected = PartyFinderManager.selectCurrentListing(List.of(duplicate, existing), LOCAL_UUID, existing);
+
+        assertEquals(40L, selected.id());
+    }
+
+    @Test
+    void currentListingSelectionPrefersActualMembershipOverLeaderOnlyCorruption() {
+        Listing leaderOnly = listing(
+                41L,
+                LOCAL_UUID,
+                PartyStatus.CLOSED,
+                1,
+                0,
+                BASE_TIME.minusSeconds(10),
+                List.of(new Activity(1L, "Nest of the Grootslangs", 4)),
+                List.of(new Member("remote-member", PartyRole.DPS, WynnClassType.WARRIOR, BASE_TIME)),
+                List.of());
+        Listing actualMembership = listing(
+                40L,
+                "remote-leader",
+                PartyStatus.OPEN,
+                1,
+                0,
+                BASE_TIME.minusSeconds(60),
+                List.of(new Activity(1L, "Nest of the Grootslangs", 4)),
+                List.of(new Member(LOCAL_UUID, PartyRole.DPS, WynnClassType.WARRIOR, BASE_TIME)),
+                List.of());
+
+        Listing selected =
+                PartyFinderManager.selectCurrentListing(List.of(leaderOnly, actualMembership), LOCAL_UUID, leaderOnly);
+
+        assertEquals(40L, selected.id());
+    }
+
+    @Test
+    void staleWarningRequiresCurrentLeaderMembership() {
+        Listing valid = listing(42L, LOCAL_UUID, PartyStatus.OPEN, 1, 0, BASE_TIME);
+        Listing leaderOnly = listing(
+                42L,
+                LOCAL_UUID,
+                PartyStatus.OPEN,
+                1,
+                0,
+                BASE_TIME,
+                List.of(new Activity(1L, "Nest of the Grootslangs", 4)),
+                List.of(new Member("remote-member", PartyRole.DPS, WynnClassType.WARRIOR, BASE_TIME)),
+                List.of());
+        Listing noLongerLeader = listing(
+                42L,
+                "remote-leader",
+                PartyStatus.OPEN,
+                1,
+                0,
+                BASE_TIME,
+                List.of(new Activity(1L, "Nest of the Grootslangs", 4)),
+                List.of(new Member(LOCAL_UUID, PartyRole.DPS, WynnClassType.WARRIOR, BASE_TIME)),
+                List.of());
+
+        assertTrue(PartyFinderManager.shouldDisplayStaleWarning(valid, 42L, LOCAL_UUID));
+        assertFalse(PartyFinderManager.shouldDisplayStaleWarning(valid, 99L, LOCAL_UUID));
+        assertFalse(PartyFinderManager.shouldDisplayStaleWarning(leaderOnly, 42L, LOCAL_UUID));
+        assertFalse(PartyFinderManager.shouldDisplayStaleWarning(noLongerLeader, 42L, LOCAL_UUID));
+    }
+
     private static Listing listing(
             long id,
             String leaderUuid,

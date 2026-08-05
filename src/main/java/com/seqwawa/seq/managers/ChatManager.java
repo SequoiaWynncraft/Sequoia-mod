@@ -17,6 +17,7 @@ import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.utils.ChatIdentityResolver;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
+import com.seqwawa.seq.utils.RankGradientAnimation;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -737,6 +738,11 @@ public class ChatManager {
 
     static MutableComponent bridgeSenderLine(
             ConnectionManager.DiscordChatMessage msg, String text, RankPresentation rank) {
+        return RankGradientAnimation.batchRegistrations(() -> bridgeSenderLineNow(msg, text, rank));
+    }
+
+    private static MutableComponent bridgeSenderLineNow(
+            ConnectionManager.DiscordChatMessage msg, String text, RankPresentation rank) {
         if (rank == null) {
             return NotificationAccessor.prefixComponent()
                     .append(Component.literal(msg.username())
@@ -749,11 +755,15 @@ public class ChatManager {
         }
 
         MutableComponent line = Component.empty().append(DiscordRankChatDecorator.bridgePrefix());
-        line.append(DiscordRankChatDecorator.rankPill(rank, null)).append(Component.literal(" "));
+        line.append(DiscordRankChatDecorator.rankPill(
+                        rank, null, DiscordRankChatDecorator.discordChatTextColor()))
+                .append(Component.literal(" "));
         // Same shift-click insertion Wynncraft puts on in-game names, so a bridged
         // sender links to their profile just like a guild one.
         line.append(DiscordRankChatDecorator.colouredName(
-                msg.username(), rank, Style.EMPTY.withInsertion(msg.username())));
+                msg.username(),
+                rank,
+                Style.EMPTY.withColor(ChatFormatting.WHITE).withInsertion(msg.username())));
         MutableComponent insignia = DiscordRankChatDecorator.bridgeInsignia(msg.username(), msg.discordId());
         if (insignia != null) {
             line.append(insignia);

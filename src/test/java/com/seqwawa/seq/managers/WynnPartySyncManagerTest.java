@@ -2,6 +2,7 @@ package com.seqwawa.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.lang.reflect.Field;
 import java.util.List;
@@ -31,7 +32,7 @@ class WynnPartySyncManagerTest {
         manager.onSystemChat(Component.literal("Party members: SophiaChan, and Guildsman"));
 
         assertEquals(List.of("SophiaChan", "Guildsman"), memberUsernames(manager));
-        assertEquals("SophiaChan", leaderUsername(manager));
+        assertNull(leaderUsername(manager));
         assertEquals(true, isActive(manager));
         assertEquals(true, isInitialized(manager));
     }
@@ -43,7 +44,7 @@ class WynnPartySyncManagerTest {
         manager.onSystemChat(Component.literal("Party members: SophiaChan, Guildsman, C0INZS, and Orphion_"));
 
         assertEquals(List.of("SophiaChan", "Guildsman", "C0INZS", "Orphion_"), memberUsernames(manager));
-        assertEquals("SophiaChan", leaderUsername(manager));
+        assertNull(leaderUsername(manager));
         assertEquals(true, isActive(manager));
         assertEquals(true, isInitialized(manager));
     }
@@ -65,7 +66,7 @@ class WynnPartySyncManagerTest {
     }
 
     @Test
-    void authoritativeMembersSnapshotFallsBackLeaderToFirstMemberWhenCurrentLeaderMissing() throws Exception {
+    void authoritativeMembersSnapshotClearsLeaderWhenCurrentLeaderMissing() throws Exception {
         WynnPartySyncManager manager = new WynnPartySyncManager();
 
         manager.onSystemChat(Component.literal("Party members: SophiaChan, Guildsman, and C0INZS"));
@@ -73,7 +74,18 @@ class WynnPartySyncManagerTest {
         manager.onSystemChat(Component.literal("Party members: Orphion_, and SophiaChan"));
 
         assertEquals(List.of("Orphion_", "SophiaChan"), memberUsernames(manager));
-        assertEquals("Orphion_", leaderUsername(manager));
+        assertNull(leaderUsername(manager));
+    }
+
+    @Test
+    void authoritativeMembersSnapshotPreservesExplicitLeader() throws Exception {
+        WynnPartySyncManager manager = new WynnPartySyncManager();
+
+        manager.onSystemChat(Component.literal("Party members: SophiaChan, Guildsman, and C0INZS"));
+        manager.onSystemChat(Component.literal("Guildsman is now the Party Leader!"));
+        manager.onSystemChat(Component.literal("Party members: SophiaChan, Guildsman, and C0INZS"));
+
+        assertEquals("Guildsman", leaderUsername(manager));
     }
 
     private boolean isInitialized(WynnPartySyncManager manager) throws Exception {

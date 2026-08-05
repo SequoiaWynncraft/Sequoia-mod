@@ -414,12 +414,22 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
-        if (click.button() == 0) {
-            float mx = MinecraftUiRenderer.mouseX(click.x());
-            float my = MinecraftUiRenderer.mouseY(click.y());
+        if (click.button() != 0 && click.button() != 1) {
+            return super.mouseClicked(click, outsideScreen);
+        }
 
-            float screenWidth = MinecraftUiRenderer.screenWidth();
-            float screenHeight = MinecraftUiRenderer.screenHeight();
+        float mx = MinecraftUiRenderer.mouseX(click.x());
+        float my = MinecraftUiRenderer.mouseY(click.y());
+
+        float screenWidth = MinecraftUiRenderer.screenWidth();
+        float screenHeight = MinecraftUiRenderer.screenHeight();
+        float panelX = SIDEBAR_WIDTH;
+        float panelWidth = screenWidth - SIDEBAR_WIDTH;
+        float panelHeight = screenHeight;
+        float contentY = HEADER_HEIGHT;
+        float contentHeight = panelHeight - HEADER_HEIGHT;
+
+        if (click.button() == 0) {
 
             // Sidebar button clicks
             float btnX = SIDEBAR_PADDING;
@@ -466,7 +476,6 @@ public class SettingsScreen extends Screen {
             }
 
             // Search bar click
-            float panelX = SIDEBAR_WIDTH;
             float searchX = panelX + SEARCH_BAR_MARGIN;
             float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
 
@@ -485,11 +494,6 @@ public class SettingsScreen extends Screen {
             }
 
             // Main panel calculations
-            float panelWidth = screenWidth - SIDEBAR_WIDTH;
-            float panelHeight = screenHeight;
-            float contentY = HEADER_HEIGHT;
-            float contentHeight = panelHeight - HEADER_HEIGHT;
-
             // Scrollbar drag
             if (maxScroll > 0) {
                 float scrollbarX = panelX + panelWidth - 5;
@@ -500,40 +504,42 @@ public class SettingsScreen extends Screen {
                     return true;
                 }
             }
+        }
 
-            // Only process clicks in content area
-            if (mx < panelX || my < contentY || my > contentY + contentHeight) {
-                return super.mouseClicked(click, outsideScreen);
+        // Only process clicks in content area
+        if (mx < panelX || my < contentY || my > contentY + contentHeight) {
+            return super.mouseClicked(click, outsideScreen);
+        }
+
+        // Category headers and widgets
+        float contentWidth = panelWidth;
+        float widgetWidth = contentWidth - PADDING * 2 - 6;
+        float cursorY = contentY - scrollOffset + PADDING;
+
+        for (Map.Entry<String, List<SettingWidget<?>>> entry : categories.entrySet()) {
+            String category = entry.getKey();
+            List<SettingWidget<?>> widgets = visibleWidgets(entry.getValue());
+            if (widgets.isEmpty()) {
+                continue;
+            }
+            boolean collapsed = isCategoryCollapsed(category);
+
+            // Filter widgets by search
+            List<SettingWidget<?>> filtered = widgets;
+            if (!searchQuery.isEmpty()) {
+                filtered = new ArrayList<>();
+                for (SettingWidget<?> w : widgets) {
+                    if (matchesSearch(w.getSetting(), category)) {
+                        filtered.add(w);
+                    }
+                }
+                if (filtered.isEmpty())
+                    continue;
             }
 
-            // Category headers and widgets
-            float contentWidth = panelWidth;
-            float widgetWidth = contentWidth - PADDING * 2 - 6;
-            float cursorY = contentY - scrollOffset + PADDING;
-
-            for (Map.Entry<String, List<SettingWidget<?>>> entry : categories.entrySet()) {
-                String category = entry.getKey();
-                List<SettingWidget<?>> widgets = visibleWidgets(entry.getValue());
-                if (widgets.isEmpty()) {
-                    continue;
-                }
-                boolean collapsed = isCategoryCollapsed(category);
-
-                // Filter widgets by search
-                List<SettingWidget<?>> filtered = widgets;
-                if (!searchQuery.isEmpty()) {
-                    filtered = new ArrayList<>();
-                    for (SettingWidget<?> w : widgets) {
-                        if (matchesSearch(w.getSetting(), category)) {
-                            filtered.add(w);
-                        }
-                    }
-                    if (filtered.isEmpty())
-                        continue;
-                }
-
-                // Category header click
-                if (isHovered(mx, my, panelX, cursorY, contentWidth, CATEGORY_HEIGHT)) {
+            // Category header click
+            if (isHovered(mx, my, panelX, cursorY, contentWidth, CATEGORY_HEIGHT)) {
+                if (click.button() == 0) {
                     if (collapsed) {
                         collapsedCategories.remove(category);
                     } else {
@@ -541,26 +547,27 @@ public class SettingsScreen extends Screen {
                     }
                     return true;
                 }
-                cursorY += CATEGORY_HEIGHT;
-
-                if (!collapsed) {
-                    String currentSection = null;
-                    for (SettingWidget<?> widget : filtered) {
-                        String section = widget.getSetting().getSection();
-                        if (section != null && !section.equals(currentSection)) {
-                            cursorY += SECTION_HEIGHT;
-                        }
-                        currentSection = section;
-                        widget.setPosition(panelX + PADDING, cursorY, widgetWidth, widget.getHeight());
-                        if (widget.mouseClicked(mx, my, click.button())) {
-                            return true;
-                        }
-                        cursorY += widget.getHeight();
-                    }
-                }
-
-                cursorY += CATEGORY_SPACING;
+                return super.mouseClicked(click, outsideScreen);
             }
+            cursorY += CATEGORY_HEIGHT;
+
+            if (!collapsed) {
+                String currentSection = null;
+                for (SettingWidget<?> widget : filtered) {
+                    String section = widget.getSetting().getSection();
+                    if (section != null && !section.equals(currentSection)) {
+                        cursorY += SECTION_HEIGHT;
+                    }
+                    currentSection = section;
+                    widget.setPosition(panelX + PADDING, cursorY, widgetWidth, widget.getHeight());
+                    if (widget.mouseClicked(mx, my, click.button())) {
+                        return true;
+                    }
+                    cursorY += widget.getHeight();
+                }
+            }
+
+            cursorY += CATEGORY_SPACING;
         }
         return super.mouseClicked(click, outsideScreen);
     }
