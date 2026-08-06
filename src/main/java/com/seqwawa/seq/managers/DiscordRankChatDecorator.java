@@ -291,11 +291,13 @@ public final class DiscordRankChatDecorator {
             return nameStart + legacyCode;
         }
 
-        // In the "username/nickname" form the separator is the only boundary there is:
-        // both halves are plain names, so nothing else says where one ends.
-        int slash = region.indexOf('/');
-        if (slash >= 0) {
-            return nameStart + slash;
+        // Add-ons may expose a nicked speaker as "username/nickname" (or the
+        // reverse). Both halves belong to the displayed speaker, so the complete
+        // region should receive the role colour. Stopping at the slash used to leave
+        // the nickname in Wynncraft's dark-aqua base colour, most noticeably for
+        // solid-colour roles that remain a single text fragment.
+        if (region.indexOf('/') >= 0) {
+            return colonIndex;
         }
 
         int cursor = 0;

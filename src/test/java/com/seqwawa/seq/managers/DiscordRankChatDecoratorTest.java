@@ -472,6 +472,7 @@ class DiscordRankChatDecoratorTest {
 
         assertEquals(List.of("druid"), pillLabels(decorated));
         assertEquals(0xD7BCEA, colorOfFragmentContaining(fragments, "pat_crafter07"));
+        assertEquals(0xD7BCEA, colorOfFragmentContaining(fragments, "I Burger"));
         assertTrue(decorated.getString().contains("pat_crafter07/I Burger: test"));
     }
 
@@ -486,12 +487,12 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void recolorsOnlyTheFirstHalfOfASlashSeparatedName() {
+    void recolorsTheCompleteSlashSeparatedDisplayName() {
         String text = "  ArcLeRetour/EightySix: hi";
         int colon = text.indexOf(':');
 
         assertEquals(
-                text.indexOf('/'),
+                text.indexOf(':'),
                 DiscordRankChatDecorator.speakerNameEnd(
                         ComponentTextEditor.flatten(Component.literal(text)), text, 2, colon, "ArcLeRetour"));
     }
