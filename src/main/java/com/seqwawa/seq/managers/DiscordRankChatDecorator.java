@@ -238,7 +238,9 @@ public final class DiscordRankChatDecorator {
         GuildChatMarkers.observe(fragments, start);
         int end = decorationEnd(text, badge.endExclusive(), colonIndex);
 
-        int nameEnd = speakerNameEnd(fragments, text, end, colonIndex, speaker.username());
+        int nameEnd = speaker.wholeDisplayName()
+                ? colonIndex
+                : speakerNameEnd(fragments, text, end, colonIndex, speaker.username());
         // The resolved username is stamped on as the shift-click insertion too: names
         // are matched from the displayed "Nick(Username)" text rather than from an
         // insertion, so one is not guaranteed to be there, and where Wynncraft does set
@@ -562,14 +564,58 @@ public final class DiscordRankChatDecorator {
         for (String candidate : speakerCandidates(fragments, text, pillEnd, colonIndex)) {
             RankPresentation rank = rankLookup.apply(candidate);
             if (rank != null) {
-                return new Speaker(candidate, rank);
+                return new Speaker(candidate, rank, false);
             }
         }
-        return null;
+
+        String displayedName = PacketTextNormalizer.normalizeForParsing(text.substring(pillEnd, colonIndex));
+        String cachedUsername = NicknameResolverCache.resolveUsername(displayedName);
+        if (cachedUsername != null) {
+            RankPresentation cachedRank = rankLookup.apply(cachedUsername);
+            if (cachedRank != null) {
+                return new Speaker(cachedUsername, cachedRank, true);
+            }
+        }
+        return uniqueEmbeddedSpeaker(rankLookup, displayedName);
     }
 
     /** The player a guild chat line belongs to, and the rank that was matched for them. */
-    private record Speaker(String username, RankPresentation rank) {}
+    private record Speaker(String username, RankPresentation rank, boolean wholeDisplayName) {}
+
+    /**
+     * Last-resort resolution for metadata-free, spaced nicknames that include the
+     * account name, such as {@code Ascended nunot}. A result is accepted only when
+     * exactly one complete nickname token belongs to a linked member; two matches are
+     * ambiguous and deliberately leave the line untouched.
+     */
+    private static Speaker uniqueEmbeddedSpeaker(
+            Function<String, RankPresentation> rankLookup, String displayedName) {
+        if (displayedName == null
+                || displayedName.indexOf(' ') < 0
+                || displayedName.indexOf('/') >= 0
+                || displayedName.indexOf('(') >= 0
+                || displayedName.indexOf('[') >= 0) {
+            return null;
+        }
+
+        Set<String> candidates = new LinkedHashSet<>();
+        for (String token : displayedName.split("[^a-zA-Z0-9_]+")) {
+            addUsernameCandidate(candidates, token);
+        }
+
+        Speaker match = null;
+        for (String candidate : candidates) {
+            RankPresentation rank = rankLookup.apply(candidate);
+            if (rank == null) {
+                continue;
+            }
+            if (match != null) {
+                return null;
+            }
+            match = new Speaker(candidate, rank, true);
+        }
+        return match;
+    }
 
     private static Set<String> speakerCandidates(
             List<ComponentTextEditor.Fragment> fragments, String text, int regionStart, int regionEnd) {
@@ -582,7 +628,6 @@ public final class DiscordRankChatDecorator {
         }
         addSlashSeparatedCandidates(candidates, displayedName);
         addUsernameCandidate(candidates, displayedName);
-        addUsernameCandidate(candidates, NicknameResolverCache.resolveUsername(displayedName));
 
         int cursor = 0;
         for (ComponentTextEditor.Fragment fragment : fragments) {

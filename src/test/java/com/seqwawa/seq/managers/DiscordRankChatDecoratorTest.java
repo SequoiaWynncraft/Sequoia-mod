@@ -498,16 +498,11 @@ class DiscordRankChatDecoratorTest {
 
     @Test
     void colorsAscendedNunotWhenOnlyTheNicknameIsDisplayed() {
-        Style nicknameStyle = Style.EMPTY
-                .withColor(DARK_AQUA)
-                .withHoverEvent(new HoverEvent.ShowText(
-                        Component.literal("§fnunot§7's nickname is §fAscended nunot")));
+        Style nicknameStyle = Style.EMPTY.withColor(DARK_AQUA);
         Component message = Component.empty()
                 .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
                 .append(Component.literal("Ascended nunot").withStyle(nicknameStyle))
                 .append(Component.literal(": test").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
-
-        assertEquals("nunot", ChatManager.extractHoverRealUsername(nicknameStyle));
 
         RankPresentation nunotRank = presentation("rank.druid", "Druid", 92, 0xD7BCEA);
         Component decorated = DiscordRankChatDecorator.decorateGuildChat(
@@ -517,6 +512,23 @@ class DiscordRankChatDecoratorTest {
         assertEquals(List.of("druid"), pillLabels(decorated));
         assertEquals(0xD7BCEA, colorOfFragmentContaining(fragments, "Ascended nunot"));
         assertTrue(decorated.getString().contains("Ascended nunot: test"));
+    }
+
+    @Test
+    void refusesAnAmbiguousMetadataFreeSpacedNickname() {
+        Component message = Component.empty()
+                .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
+                .append(Component.literal("Ascended nunot").withStyle(Style.EMPTY.withColor(DARK_AQUA)))
+                .append(Component.literal(": test").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+
+        RankPresentation linkedRank = presentation("rank.druid", "Druid", 92, 0xD7BCEA);
+        Component decorated = DiscordRankChatDecorator.decorateGuildChat(
+                message,
+                candidate -> candidate.equalsIgnoreCase("Ascended") || candidate.equalsIgnoreCase("nunot")
+                        ? linkedRank
+                        : null);
+
+        assertSame(message, decorated);
     }
 
     @Test
