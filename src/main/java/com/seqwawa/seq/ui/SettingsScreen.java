@@ -6,6 +6,7 @@ import static com.seqwawa.seq.ui.theme.UiColor.*;
 import java.awt.Color;
 import com.seqwawa.seq.LightRoomTnaRange.LightRoom;
 import com.seqwawa.seq.halcyon.HalcyonRingRenderer;
+import com.seqwawa.seq.managers.PrincessMode;
 import com.seqwawa.seq.radiance.PingRenderer;
 import com.seqwawa.seq.ui.widget.BooleanWidget;
 import com.seqwawa.seq.ui.widget.ChoiceWidget;
@@ -47,6 +48,7 @@ public class SettingsScreen extends Screen {
     private static final float SEARCH_BAR_WIDTH = 180;
     private static final float SEARCH_BAR_MARGIN = 8;
     private static final float THEME_EDITOR_BUTTON_WIDTH = 94;
+    private static final float PRINCESS_PROMPT_HEIGHT = 24;
 
     // Font sizes
     private static final float TITLE_FONT_SIZE = 18;
@@ -74,6 +76,8 @@ public class SettingsScreen extends Screen {
     private boolean searchFocused = false;
     private String searchQuery = "";
     private int searchCursorBlink = 0;
+    private final PrincessSidebarPrompt princessPrompt =
+            new PrincessSidebarPrompt(new Random(), System.currentTimeMillis());
 
     public SettingsScreen(Screen parent) {
         super(Component.literal("Settings"));
@@ -174,6 +178,9 @@ public class SettingsScreen extends Screen {
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        if (!princessPromptAllowed() && PrincessMode.isEnabled()) {
+            PrincessMode.setEnabled(false);
+        }
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
         nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
@@ -213,6 +220,8 @@ public class SettingsScreen extends Screen {
                     btnW, "Ingredients", false);
             drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5,
                     btnW, "Github", false);
+
+            renderPrincessPrompt(canvas, fontName, screenHeight, System.currentTimeMillis());
 
             // === Main Content Panel (fills rest of screen) ===
             float panelX = SIDEBAR_WIDTH;
@@ -399,6 +408,67 @@ public class SettingsScreen extends Screen {
                 x + w / 2f, y + SIDEBAR_BUTTON_HEIGHT / 2f, label);
     }
 
+    private void renderPrincessPrompt(UiCanvas canvas, String fontName, float screenHeight, long nowMs) {
+        if (!princessPromptAllowed()) {
+            return;
+        }
+
+        float progress = princessPrompt.slideProgress(nowMs);
+        if (progress <= 0f) {
+            return;
+        }
+
+        float x = SIDEBAR_PADDING;
+        float width = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
+        float y = princessPromptY(screenHeight, progress);
+        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, width, PRINCESS_PROMPT_HEIGHT);
+        canvas.fillRect(
+                x,
+                y,
+                width,
+                PRINCESS_PROMPT_HEIGHT,
+                hovered ? color(CONTROL_INPUT_HOVER) : color(BACKGROUND_CONTENT));
+
+        float checkboxSize = 12;
+        float checkboxX = x + 7;
+        float checkboxY = y + (PRINCESS_PROMPT_HEIGHT - checkboxSize) / 2f;
+        canvas.fillRect(
+                checkboxX,
+                checkboxY,
+                checkboxSize,
+                checkboxSize,
+                PrincessMode.isEnabled() ? color(ACCENT_PRIMARY) : color(CONTROL_INPUT_SECONDARY));
+        if (PrincessMode.isEnabled()) {
+            drawText(
+                    canvas,
+                    fontName,
+                    10,
+                    color(TEXT_PRIMARY),
+                    UiCanvas.HorizontalAlign.CENTER,
+                    checkboxX + checkboxSize / 2f,
+                    checkboxY + checkboxSize / 2f,
+                    "✓");
+        }
+        drawText(
+                canvas,
+                fontName,
+                11,
+                color(TEXT_PRIMARY),
+                UiCanvas.HorizontalAlign.LEFT,
+                checkboxX + checkboxSize + 7,
+                y + PRINCESS_PROMPT_HEIGHT / 2f,
+                "Princess mode");
+    }
+
+    private static float princessPromptY(float screenHeight, float progress) {
+        float visibleY = screenHeight - SIDEBAR_PADDING - PRINCESS_PROMPT_HEIGHT;
+        return screenHeight + (visibleY - screenHeight) * progress;
+    }
+
+    private static boolean princessPromptAllowed() {
+        return SeqClient.getEasterEggsSetting() != null && SeqClient.getEasterEggsSetting().getValue();
+    }
+
     private static void drawText(
             UiCanvas canvas,
             String font,
@@ -435,6 +505,16 @@ public class SettingsScreen extends Screen {
             float btnX = SIDEBAR_PADDING;
             float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
             float btnStartY = 50;
+
+            if (princessPromptAllowed()) {
+                long nowMs = System.currentTimeMillis();
+                float progress = princessPrompt.slideProgress(nowMs);
+                float promptY = princessPromptY(screenHeight, progress);
+                if (progress > 0f && isHovered(mx, my, btnX, promptY, btnW, PRINCESS_PROMPT_HEIGHT)) {
+                    PrincessMode.toggle();
+                    return true;
+                }
+            }
 
             // Partyfinder
             if (isHovered(mx, my, btnX, btnStartY, btnW, SIDEBAR_BUTTON_HEIGHT)) {

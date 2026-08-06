@@ -122,6 +122,40 @@ class ChatManagerTest {
     }
 
     @Test
+    void parseGuildMessageHandlesUnrevealedSpacedNicknameWithRealUsernameHover() {
+        Style style = Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
+                Component.literal("§fI Burger§7's real username is §fpat_crafter07")));
+        Component message = Component.empty()
+                .append(Component.literal("󏿼󐀆 "))
+                .append(Component.literal("I Burger").withStyle(style))
+                .append(Component.literal(": hello"));
+
+        ChatManager.ParsedMessage parsed = ChatManager.parseGuildMessage(message);
+
+        assertNotNull(parsed);
+        assertEquals("pat_crafter07", parsed.username());
+        assertEquals("I Burger", parsed.nickname());
+        assertEquals("hello", parsed.message());
+    }
+
+    @Test
+    void parseGuildMessageHandlesUnrevealedNicknameWithReversedWynntilsHover() {
+        Style style = Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
+                Component.literal("§fnunohover§7's nickname is §fSkybound nunohover")));
+        Component message = Component.empty()
+                .append(Component.literal("󏿼󐀆 "))
+                .append(Component.literal("Skybound nunohover").withStyle(style))
+                .append(Component.literal(": hello"));
+
+        ChatManager.ParsedMessage parsed = ChatManager.parseGuildMessage(message);
+
+        assertNotNull(parsed);
+        assertEquals("nunohover", parsed.username());
+        assertEquals("Skybound nunohover", parsed.nickname());
+        assertEquals("hello", parsed.message());
+    }
+
+    @Test
     void observesNicknameMappingFromNonChatPacketMetadata() {
         Component message = Component.empty()
                 .append(Component.literal("DrBavaro").withStyle(Style.EMPTY.withInsertion("xmattypazox")))

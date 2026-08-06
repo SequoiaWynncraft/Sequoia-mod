@@ -2,6 +2,7 @@ package com.seqwawa.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -29,8 +30,40 @@ class ThemeManagerTest {
         assertTrue(Files.isDirectory(externalThemes));
         assertTrue(ThemeManager.loadedThemeNames().contains("default"));
         assertTrue(ThemeManager.loadedThemeNames().contains("high_contrast"));
+        assertFalse(ThemeManager.loadedThemeNames().contains("princess"));
+        assertTrue(ThemeManager.theme("princess").isPresent());
         assertEquals("default", ThemeManager.currentTheme().name());
         assertEquals(new Color(160, 130, 220, 255), ThemeManager.color(UiColor.ACCENT_PRIMARY));
+    }
+
+    @Test
+    void princessModeTemporarilyOverridesAndThenRestoresTheSelectedTheme() {
+        ThemeManager.initialize(tempDir.resolve("themes"));
+
+        assertTrue(PrincessMode.setEnabled(true));
+        assertTrue(PrincessMode.isEnabled());
+        assertEquals("princess", ThemeManager.currentTheme().name());
+        assertEquals(new Color(255, 93, 214, 255), ThemeManager.color(UiColor.ACCENT_PRIMARY));
+        assertEquals(0xFF5DD6, PrincessMode.paletteColorOverride());
+
+        assertTrue(ThemeManager.setCurrentTheme("high_contrast"));
+        assertEquals("princess", ThemeManager.currentTheme().name());
+        ThemeManager.previewTheme(Theme.defaults());
+        assertEquals("princess", ThemeManager.currentTheme().name());
+
+        PrincessMode.setEnabled(false);
+
+        assertFalse(PrincessMode.isEnabled());
+        assertEquals("high_contrast", ThemeManager.currentTheme().name());
+        assertNull(PrincessMode.paletteColorOverride());
+    }
+
+    @Test
+    void hiddenPrincessThemeCannotBeSelectedDirectly() {
+        ThemeManager.initialize(tempDir.resolve("themes"));
+
+        assertFalse(ThemeManager.setCurrentTheme("princess"));
+        assertEquals("default", ThemeManager.currentTheme().name());
     }
 
     @Test

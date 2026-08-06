@@ -1,0 +1,71 @@
+name: princess
+
+background:
+  overlay: [9, 4, 22, 135]
+  modal_overlay: [7, 2, 18, 195]
+  sidebar: [35, 10, 46, 240]
+  body: [42, 13, 50, 180]
+  body_opaque: [36, 10, 45, 255]
+  header: [58, 17, 65, 230]
+  content: [70, 23, 75, 215]
+  content_focused: [94, 30, 98, 235]
+  popup: [54, 15, 62, 250]
+
+accent:
+  primary: [255, 93, 214, 255]
+  primary_hover: [255, 159, 231, 255]
+  primary_dark: [118, 28, 107, 255]
+  primary_dark_hover: [158, 42, 140, 255]
+  disabled: [83, 70, 105, 255]
+  secondary: [255, 187, 226, 255]
+  divider: [149, 62, 138, 255]
+
+text:
+  primary: [255, 249, 255, 255]
+  secondary: [241, 225, 255, 255]
+  muted: [212, 159, 204, 255]
+  disabled: [145, 101, 140, 255]
+
+control:
+  input: [54, 17, 62, 255]
+  input_secondary: [106, 45, 116, 255]
+  input_hover: [137, 52, 142, 255]
+  border: [255, 93, 214, 220]
+  scrollbar_track: [58, 18, 65, 255]
+  scrollbar_thumb: [255, 93, 214, 255]
+  danger: [218, 71, 111, 230]
+  danger_hover: [245, 108, 143, 245]
+  warning: [250, 210, 128, 255]
+  success: [126, 222, 184, 255]
+
+status:
+  success_background: [36, 112, 89, 235]
+  success_border: [126, 222, 184, 255]
+  warning_background: [136, 96, 38, 235]
+  warning_border: [250, 210, 128, 255]
+  danger_background: [139, 42, 75, 235]
+  danger_border: [245, 108, 143, 255]
+
+map:
+  sidebar: [35, 10, 46, 248]
+  tint: [15, 5, 35, 58]
+  header: [58, 17, 65, 245]
+  control: [88, 35, 94, 240]
+  control_inactive: [54, 17, 62, 245]
+  control_hover: [124, 46, 127, 245]
+  control_active: [181, 54, 157, 250]
+  border: [179, 139, 207, 225]
+  text: [255, 249, 255, 255]
+  subtext: [208, 186, 226, 255]
+  title: [255, 159, 231, 255]
+  player: [255, 255, 255, 255]
+  selected_cluster: [255, 103, 151, 255]
+  territory: [255, 93, 214, 220]
+  territory_hover_text: [255, 225, 248, 255]
+  selected_territory: [250, 210, 128, 255]
+  world_event: [143, 177, 255, 255]
+  tracked_world_event: [250, 210, 128, 255]
+  totem: [250, 210, 128, 255]
+  totem_muted: [204, 168, 109, 190]
+  totem_range: [224, 128, 255, 255]
+  totem_reach: [244, 178, 255, 220]

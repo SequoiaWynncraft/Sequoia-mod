@@ -23,7 +23,8 @@ public final class ChatIdentityResolver {
 
     private static final Pattern USERNAME_PATTERN = Pattern.compile("[a-zA-Z0-9_]{3,16}");
     private static final Pattern HOVER_REAL_NAME_PATTERN = Pattern.compile(
-        "(?i)(?:\\breal\\s+name\\s+is\\s+|\\breal\\s+username:\\s*)([a-zA-Z0-9_]{3,16})\\b"
+        "(?i)(?:(?:\\breal\\s+(?:user)?name\\s+is|\\breal\\s+username:)\\s*"
+            + "([a-zA-Z0-9_]{3,16})\\b|\\b([a-zA-Z0-9_]{3,16})'(?:s)?\\s+nickname\\s+is\\b)"
     );
 
     public static String resolveCanonicalUsername(Component message, String displayedName) {
@@ -125,12 +126,12 @@ public final class ChatIdentityResolver {
         if (hoverEvent instanceof HoverEvent.ShowText showTextEvent) {
             Component hoverComponent = showTextEvent.value();
             if (hoverComponent != null) {
-                String hoverText = hoverComponent.getString()
+                String hoverText = PacketTextNormalizer.normalizeForParsing(hoverComponent.getString())
                     .replace('\u2019', '\'')
                     .replace('\u2018', '\'');
                 Matcher matcher = HOVER_REAL_NAME_PATTERN.matcher(hoverText);
                 if (matcher.find()) {
-                    return matcher.group(1);
+                    return matcher.group(1) != null ? matcher.group(1) : matcher.group(2);
                 }
             }
         }

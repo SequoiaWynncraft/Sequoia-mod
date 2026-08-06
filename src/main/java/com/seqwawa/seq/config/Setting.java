@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -302,9 +303,25 @@ public abstract class Setting<T> {
 
     public static class ColorSetting extends Setting<Integer> {
         private static final int RGB_MASK = 0xFFFFFF;
+        private Supplier<Integer> valueOverride;
 
         public ColorSetting(String name, String category, int defaultRgb) {
             super(name, category, defaultRgb & RGB_MASK);
+        }
+
+        /**
+         * Supplies a temporary display/runtime value without replacing the configured
+         * value. Returning {@code null} leaves the configured value in effect.
+         */
+        public ColorSetting withValueOverride(Supplier<Integer> valueOverride) {
+            this.valueOverride = Objects.requireNonNull(valueOverride);
+            return this;
+        }
+
+        @Override
+        public Integer getValue() {
+            Integer override = valueOverride == null ? null : valueOverride.get();
+            return override == null ? super.getValue() : override & RGB_MASK;
         }
 
         @Override
@@ -324,7 +341,7 @@ public abstract class Setting<T> {
         }
 
         public String getHexValue() {
-            return String.format(Locale.ROOT, "#%06X", getValue());
+            return formatHex(getValue());
         }
 
         public static boolean isValidHex(String hexValue) {
@@ -333,12 +350,12 @@ public abstract class Setting<T> {
 
         public static String normalizeHex(String hexValue) {
             Integer parsed = parseHex(hexValue);
-            return parsed == null ? null : String.format(Locale.ROOT, "#%06X", parsed);
+            return parsed == null ? null : formatHex(parsed);
         }
 
         @Override
         public JsonElement serialize() {
-            return new JsonPrimitive(getHexValue());
+            return new JsonPrimitive(formatHex(super.getValue()));
         }
 
         @Override
@@ -368,6 +385,10 @@ public abstract class Setting<T> {
             }
 
             return Integer.parseInt(normalized, 16);
+        }
+
+        private static String formatHex(int rgb) {
+            return String.format(Locale.ROOT, "#%06X", rgb & RGB_MASK);
         }
     }
 

@@ -30,9 +30,12 @@ public final class ThemeManager {
     private static final Path EXTERNAL_THEMES_DIRECTORY = Path.of("config", "sequoia", "themes");
     private static final Map<String, Theme> LOADED_THEMES = new LinkedHashMap<>();
     private static final Set<String> BUNDLED_THEME_NAMES = new HashSet<>();
+    private static final Set<String> HIDDEN_THEME_NAMES = Set.of(PrincessMode.THEME_NAME);
     private static final Map<String, Path> PERSONAL_THEME_PATHS = new LinkedHashMap<>();
     private static Path externalThemesDirectory = EXTERNAL_THEMES_DIRECTORY;
     private static volatile Theme currentTheme = Theme.defaults();
+    private static String selectedThemeName = "default";
+    private static String overrideThemeName;
 
     private ThemeManager() {
     }
@@ -45,11 +48,14 @@ public final class ThemeManager {
         LOADED_THEMES.clear();
         BUNDLED_THEME_NAMES.clear();
         PERSONAL_THEME_PATHS.clear();
+        overrideThemeName = null;
+        PrincessMode.resetForThemeInitialization();
         ThemeManager.externalThemesDirectory = externalThemesDirectory;
         Theme fallback = Theme.defaults();
         LOADED_THEMES.put(fallback.name(), fallback);
         BUNDLED_THEME_NAMES.add(fallback.name());
         currentTheme = fallback;
+        selectedThemeName = fallback.name();
 
         loadBundledThemes();
         loadExternalThemes(externalThemesDirectory);
@@ -60,6 +66,7 @@ public final class ThemeManager {
             return;
         }
         currentTheme = defaultTheme;
+        selectedThemeName = defaultTheme.name();
     }
 
     private static void loadBundledThemes() {
@@ -167,7 +174,9 @@ public final class ThemeManager {
     }
 
     public static synchronized List<String> loadedThemeNames() {
-        return List.copyOf(LOADED_THEMES.keySet());
+        return LOADED_THEMES.keySet().stream()
+                .filter(name -> !HIDDEN_THEME_NAMES.contains(name))
+                .toList();
     }
 
     public static synchronized Optional<Theme> theme(String themeName) {
@@ -179,7 +188,9 @@ public final class ThemeManager {
     }
 
     public static synchronized void previewTheme(Theme theme) {
-        currentTheme = theme;
+        if (overrideThemeName == null) {
+            currentTheme = theme;
+        }
     }
 
     public static synchronized Path savePersonalTheme(Theme theme) throws IOException {
@@ -208,10 +219,28 @@ public final class ThemeManager {
 
     public static synchronized boolean setCurrentTheme(String themeName) {
         Theme theme = LOADED_THEMES.get(themeName);
+        if (theme == null || HIDDEN_THEME_NAMES.contains(themeName)) {
+            return false;
+        }
+        selectedThemeName = themeName;
+        if (overrideThemeName == null) {
+            currentTheme = theme;
+        }
+        return true;
+    }
+
+    static synchronized boolean setThemeOverride(String themeName) {
+        Theme theme = LOADED_THEMES.get(themeName);
         if (theme == null) {
             return false;
         }
+        overrideThemeName = themeName;
         currentTheme = theme;
         return true;
+    }
+
+    static synchronized void clearThemeOverride() {
+        overrideThemeName = null;
+        currentTheme = LOADED_THEMES.getOrDefault(selectedThemeName, Theme.defaults());
     }
 }

@@ -14,6 +14,7 @@ import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.contents.PlainTextContents;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.ui.PrincessRaidCelebration;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 
 /**
@@ -62,61 +63,55 @@ public class RaidTracker {
     public static void onSystemChat(Component message) {
         String plain = message != null ? message.getString() : null;
         boolean raidCandidate = isRaidCandidateText(plain);
-
-        if (!ConnectionManager.isConnected()) {
-            if (raidCandidate) {
-                SeqClient.LOGGER.warn(
-                        "[RaidTracker] Skipping raid candidate because backend is disconnected raw='{}'",
-                        abbreviateForLog(plain));
-            }
+        if (!raidCandidate) {
             return;
         }
-        if (!SeqClient.getRaidAutoAnnounceSetting().getValue()) {
-            if (raidCandidate) {
-                SeqClient.LOGGER.info(
-                        "[RaidTracker] Skipping raid candidate because auto-announce is disabled raw='{}'",
-                        abbreviateForLog(plain));
-            }
-            return;
-        }
-
-        if (raidCandidate) {
-            SeqClient.LOGGER.info("[RaidTracker] Processing raid candidate raw='{}'", abbreviateForLog(plain));
-        }
+        SeqClient.LOGGER.info("[RaidTracker] Processing raid candidate raw='{}'", abbreviateForLog(plain));
 
         ParsedRaidCompletion completion = parseRaidCompletion(message);
         if (completion == null) {
-            if (raidCandidate) {
-                SeqClient.LOGGER.warn(
-                        "[RaidTracker] Raid candidate did not produce a parsed completion raw='{}'",
-                        abbreviateForLog(plain));
-            }
+            SeqClient.LOGGER.warn(
+                    "[RaidTracker] Raid candidate did not produce a parsed completion raw='{}'",
+                    abbreviateForLog(plain));
+            return;
+        }
+
+        ResolvedRaidCompletion resolved = resolveForClient(completion, localMinecraftUsername());
+        finishLocalCompletion(resolved);
+
+        if (!ConnectionManager.isConnected()) {
+            SeqClient.LOGGER.warn(
+                    "[RaidTracker] Skipping raid announcement because backend is disconnected raw='{}'",
+                    abbreviateForLog(plain));
+            return;
+        }
+        if (SeqClient.getRaidAutoAnnounceSetting() == null
+                || !SeqClient.getRaidAutoAnnounceSetting().getValue()) {
+            SeqClient.LOGGER.info(
+                    "[RaidTracker] Skipping raid announcement because auto-announce is disabled raw='{}'",
+                    abbreviateForLog(plain));
             return;
         }
 
         ConnectionManager instance = ConnectionManager.getInstance();
-        if (instance != null && !completion.partyMembers().isEmpty()) {
-            ResolvedRaidCompletion resolved = resolveForClient(completion, localMinecraftUsername());
-            SeqClient.LOGGER.info(
-                    "[RaidTracker] Forwarding raid completion raid='{}' members={} aspects={} emeralds={} guildExp={} seasonalRating={}",
-                    completion.raidName(),
-                    resolved.partyMembers(),
-                    completion.aspects(),
-                    completion.emeralds(),
-                    completion.guildExp(),
-                    completion.seasonalRating());
-            try {
-                instance.sendRaidAnnouncement(
-                        resolved.partyMembers(),
-                        completion.raidName(),
-                        completion.aspects(),
-                        completion.emeralds(),
-                        completion.guildExp(),
-                        completion.seasonalRating());
-            } finally {
-                finishLocalCompletion(resolved);
-            }
+        if (instance == null || resolved.partyMembers().isEmpty()) {
+            return;
         }
+        SeqClient.LOGGER.info(
+                "[RaidTracker] Forwarding raid completion raid='{}' members={} aspects={} emeralds={} guildExp={} seasonalRating={}",
+                completion.raidName(),
+                resolved.partyMembers(),
+                completion.aspects(),
+                completion.emeralds(),
+                completion.guildExp(),
+                completion.seasonalRating());
+        instance.sendRaidAnnouncement(
+                resolved.partyMembers(),
+                completion.raidName(),
+                completion.aspects(),
+                completion.emeralds(),
+                completion.guildExp(),
+                completion.seasonalRating());
     }
 
     static ResolvedRaidCompletion resolveForClient(
@@ -132,8 +127,13 @@ public class RaidTracker {
     }
 
     static void finishLocalCompletion(ResolvedRaidCompletion completion) {
+        finishLocalCompletion(completion, PrincessRaidCelebration::triggerIfEnabled);
+    }
+
+    static void finishLocalCompletion(ResolvedRaidCompletion completion, Runnable completionEffect) {
         if (completion.localCompletion()) {
             RaidPartySnapshotTracker.onRaidCompleted();
+            completionEffect.run();
         }
     }
 

@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.Style;
@@ -57,6 +58,7 @@ class DiscordRankChatDecoratorTest {
     private static final FontDescription BADGE_FONT =
             new FontDescription.Resource(Identifier.fromNamespaceAndPath("wynncraft", "bp"));
     private static final String ICON_GLYPHS = "\uDAFF\uDFFC\uE01E\uDBFF\uDFFF\uE002";
+    private static final String CONTINUATION_GLYPHS = "\uDAFF\uDFFC\uE001\uDB00\uDC06";
     private static final String BADGE_GEOMETRY = "\uE001 \uE002\uE003";
     private static final String LEGACY_RED = "\u00A7c";
     private static final String LEGACY_RESET = "\u00A7f";
@@ -136,6 +138,7 @@ class DiscordRankChatDecoratorTest {
 
         assertEquals(List.of("sapling"), pillLabels(decorated));
         assertTrue(decorated.getString().contains("ArcLeRetour: t"));
+        assertEquals("In-game rank: Unknown", hoverText(decorated));
     }
 
     @Test
@@ -438,6 +441,24 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void keepsNativeMultilineGuildRailAquaWhileRecoloringMessageText() {
+        Component message = wynncraftGuildLine("RECRUITER", "EightySix", "ArcLeRetour", "first line")
+                .copy()
+                .append(Component.literal("\n"))
+                .append(Component.literal(CONTINUATION_GLYPHS)
+                        .withStyle(Style.EMPTY.withFont(ICON_FONT).withColor(GUILD_AQUA)))
+                .append(Component.literal(" second line").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+
+        Component decorated = DiscordRankChatDecorator.recolourGuildMessageText(
+                message, TextColor.fromRgb(0xA1B2C3));
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
+
+        assertEquals(0xA1B2C3, colorOfFragmentContaining(fragments, "first line"));
+        assertEquals(GUILD_AQUA, colorOfFragmentContaining(fragments, CONTINUATION_GLYPHS));
+        assertEquals(0xA1B2C3, colorOfFragmentContaining(fragments, "second line"));
+    }
+
+    @Test
     void resolvesSpeakersShownAsUsernameSlashNickname() {
         Component message = guildLine("RECRUITER", "ArcLeRetour/EightySix", null, "hi");
 
@@ -470,7 +491,48 @@ class DiscordRankChatDecoratorTest {
 
         assertEquals(List.of("druid"), pillLabels(decorated));
         assertEquals(0xD7BCEA, colorOfFragmentContaining(fragments, "pat_crafter07"));
+        assertEquals(0xD7BCEA, colorOfFragmentContaining(fragments, "I Burger"));
         assertTrue(decorated.getString().contains("pat_crafter07/I Burger: test"));
+    }
+
+    @Test
+    void colorsAnUnrevealedSpacedNicknameResolvedFromItsRealUsernameHover() {
+        Style nicknameStyle = Style.EMPTY
+                .withColor(DARK_AQUA)
+                .withHoverEvent(new HoverEvent.ShowText(
+                        Component.literal("§fI Burger§7's real username is §fpat_crafter07")));
+        Component message = Component.empty()
+                .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
+                .append(Component.literal("I Burger").withStyle(nicknameStyle))
+                .append(Component.literal(": test").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+
+        Component decorated =
+                DiscordRankChatDecorator.decorateGuildChat(message, DiscordRankChatDecoratorTest::lookup);
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
+
+        assertEquals(List.of("druid"), pillLabels(decorated));
+        assertEquals(0xD7BCEA, colorOfFragmentContaining(fragments, "I Burger"));
+        assertTrue(decorated.getString().contains("I Burger: test"));
+    }
+
+    @Test
+    void colorsAscendedNunotWhenMetadataResolvesItsEmbeddedUsernameFirst() {
+        Style nicknameStyle = Style.EMPTY.withColor(DARK_AQUA).withInsertion("nunot");
+        Component message = Component.empty()
+                .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
+                .append(Component.literal("Ascended nunot").withStyle(nicknameStyle))
+                .append(Component.literal(": test").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+
+        RankPresentation nunotRank = presentation("rank.sprite", "Sprite", 84, 0xFF007B, 0xC54FA3);
+        Component decorated = DiscordRankChatDecorator.decorateGuildChat(
+                message, candidate -> candidate.equalsIgnoreCase("nunot") ? nunotRank : null);
+        List<ComponentTextEditor.Fragment> name = ComponentTextEditor.flatten(decorated).stream()
+                .filter(fragment -> "nunot".equals(fragment.style().getInsertion()))
+                .toList();
+
+        assertEquals("Ascended nunot", name.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
+        assertEquals(0xFF007B, name.getFirst().style().getColor().getValue());
+        assertEquals(0xC54FA3, name.getLast().style().getColor().getValue());
     }
 
     @Test
@@ -484,12 +546,12 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void recolorsOnlyTheFirstHalfOfASlashSeparatedName() {
+    void recolorsTheCompleteSlashSeparatedDisplayName() {
         String text = "  ArcLeRetour/EightySix: hi";
         int colon = text.indexOf(':');
 
         assertEquals(
-                text.indexOf('/'),
+                text.indexOf(':'),
                 DiscordRankChatDecorator.speakerNameEnd(
                         ComponentTextEditor.flatten(Component.literal(text)), text, 2, colon, "ArcLeRetour"));
     }
@@ -643,6 +705,22 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void pillTooltipShowsOnlyTheReplacedInGameRank() {
+        Component pill = DiscordRankChatDecorator.rankPill(
+                SAPLING, "recruiter", TextColor.fromRgb(GUILD_AQUA), "ArcLeRetour");
+
+        assertEquals("In-game rank: Recruiter", hoverText(pill));
+    }
+
+    @Test
+    void pillStillHasAHoverTargetWhenNoInGameRankMetadataExists() {
+        Component pill = DiscordRankChatDecorator.rankPill(
+                SAPLING, null, TextColor.fromRgb(GUILD_AQUA), "SomeoneElse");
+
+        assertEquals("In-game rank: Unknown", hoverText(pill));
+    }
+
+    @Test
     void switchesARankPillBetweenIndividualAndRoleColors() {
         RankPresentation presentation = new RankPresentation(
                 new DiscordRank("rank.sapling", "Sapling", 88),
@@ -720,6 +798,25 @@ class DiscordRankChatDecoratorTest {
             assertEquals(0x000000, rendered.getFirst());
             assertEquals(0xFFFFFF, rendered.getLast());
         });
+    }
+
+    @Test
+    void keepsGradientRegistrationWhenItsEndStopMatchesTheBaseColor() {
+        RankPresentation presentation = new RankPresentation(
+                new DiscordRank("rank.treant", "Treant", 102),
+                ColorRamp.of(0xFF00FF),
+                ColorRamp.of(List.of(0xFF0000, 0xFFFFFF)));
+        List<TextColor> stored = ComponentTextEditor.flatten(DiscordRankChatDecorator.colouredName(
+                        "MrHmar", presentation, Style.EMPTY.withColor(0xFFFFFF)))
+                .stream()
+                .map(fragment -> fragment.style().getColor())
+                .toList();
+
+        assertEquals(0xFFFFFF, stored.getLast().getValue());
+        withPerUserColors(false, () -> assertEquals(
+                0xFF00FF,
+                RankGradientAnimation.animate(stored.getLast()).getValue(),
+                "the white endpoint must remain a registered gradient colour"));
     }
 
     @Test
@@ -955,6 +1052,16 @@ class DiscordRankChatDecoratorTest {
                 .style()
                 .getColor()
                 .getValue();
+    }
+
+    private static String hoverText(Component component) {
+        return ComponentTextEditor.flatten(component).stream()
+                .map(fragment -> fragment.style().getHoverEvent())
+                .filter(HoverEvent.ShowText.class::isInstance)
+                .map(HoverEvent.ShowText.class::cast)
+                .map(event -> event.value().getString())
+                .findFirst()
+                .orElse(null);
     }
 
     /**
