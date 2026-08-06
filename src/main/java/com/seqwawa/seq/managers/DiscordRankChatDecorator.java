@@ -561,14 +561,17 @@ public final class DiscordRankChatDecorator {
             return null;
         }
 
+        String displayedName = PacketTextNormalizer.normalizeForParsing(text.substring(pillEnd, colonIndex));
         for (String candidate : speakerCandidates(fragments, text, pillEnd, colonIndex)) {
             RankPresentation rank = rankLookup.apply(candidate);
             if (rank != null) {
-                return new Speaker(candidate, rank, false);
+                return new Speaker(
+                        candidate,
+                        rank,
+                        metadataCoversEmbeddedUsername(fragments, pillEnd, colonIndex, candidate));
             }
         }
 
-        String displayedName = PacketTextNormalizer.normalizeForParsing(text.substring(pillEnd, colonIndex));
         String cachedUsername = NicknameResolverCache.resolveUsername(displayedName);
         if (cachedUsername != null) {
             RankPresentation cachedRank = rankLookup.apply(cachedUsername);
@@ -577,6 +580,52 @@ public final class DiscordRankChatDecorator {
             }
         }
         return uniqueEmbeddedSpeaker(rankLookup, displayedName);
+    }
+
+    /**
+     * Whether metadata resolved an account name embedded in an otherwise plain,
+     * unrevealed nickname. In that shape the username-looking word is part of the
+     * nickname itself, not a separately styled reveal to stop before.
+     */
+    private static boolean metadataCoversEmbeddedUsername(
+            List<ComponentTextEditor.Fragment> fragments, int start, int endExclusive, String username) {
+        int cursor = 0;
+        for (ComponentTextEditor.Fragment fragment : fragments) {
+            int fragmentStart = cursor;
+            cursor += fragment.text().length();
+            if (cursor <= start || fragmentStart >= endExclusive) {
+                continue;
+            }
+
+            String insertion = ChatManager.extractInsertionUsername(fragment.style());
+            String hovered = ChatManager.extractHoverRealUsername(fragment.style());
+            if (!username.equalsIgnoreCase(insertion == null ? "" : insertion)
+                    && !username.equalsIgnoreCase(hovered == null ? "" : hovered)) {
+                continue;
+            }
+
+            String fragmentName = PacketTextNormalizer.normalizeForParsing(fragment.text());
+            if (isPlainEmbeddedUsername(fragmentName, username)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isPlainEmbeddedUsername(String displayedName, String username) {
+        if (displayedName == null
+                || displayedName.indexOf(' ') < 0
+                || displayedName.indexOf('/') >= 0
+                || displayedName.indexOf('(') >= 0
+                || displayedName.indexOf('[') >= 0) {
+            return false;
+        }
+        for (String token : displayedName.split("[^a-zA-Z0-9_]+")) {
+            if (token.equalsIgnoreCase(username)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The player a guild chat line belongs to, and the rank that was matched for them. */

@@ -515,6 +515,26 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void colorsAscendedNunotWhenMetadataResolvesItsEmbeddedUsernameFirst() {
+        Style nicknameStyle = Style.EMPTY.withColor(DARK_AQUA).withInsertion("nunot");
+        Component message = Component.empty()
+                .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
+                .append(Component.literal("Ascended nunot").withStyle(nicknameStyle))
+                .append(Component.literal(": test").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+
+        RankPresentation nunotRank = presentation("rank.sprite", "Sprite", 84, 0xFF007B, 0xC54FA3);
+        Component decorated = DiscordRankChatDecorator.decorateGuildChat(
+                message, candidate -> candidate.equalsIgnoreCase("nunot") ? nunotRank : null);
+        List<ComponentTextEditor.Fragment> name = ComponentTextEditor.flatten(decorated).stream()
+                .filter(fragment -> "nunot".equals(fragment.style().getInsertion()))
+                .toList();
+
+        assertEquals("Ascended nunot", name.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
+        assertEquals(0xFF007B, name.getFirst().style().getColor().getValue());
+        assertEquals(0xC54FA3, name.getLast().style().getColor().getValue());
+    }
+
+    @Test
     void refusesAnAmbiguousMetadataFreeSpacedNickname() {
         Component message = Component.empty()
                 .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
