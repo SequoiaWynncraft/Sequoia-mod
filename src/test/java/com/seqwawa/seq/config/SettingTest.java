@@ -187,4 +187,30 @@ class SettingTest {
 
         assertEquals(0xA1B2C3, setting.getValue());
     }
+
+    @Test
+    void colorSettingOverrideIsTemporaryAndIsNotSerialized() {
+        int[] override = {0xFF5DD6};
+        Setting.ColorSetting setting = new Setting.ColorSetting("color", "test", 0x123456)
+                .withValueOverride(() -> override[0]);
+
+        assertEquals(0xFF5DD6, setting.getValue());
+        assertEquals("#FF5DD6", setting.getHexValue());
+        assertEquals(new JsonPrimitive("#123456"), setting.serialize());
+
+        override[0] = 0xABCDEF;
+        setting.setValue(0x654321);
+
+        assertEquals(0xABCDEF, setting.getValue());
+        assertEquals(new JsonPrimitive("#654321"), setting.serialize());
+    }
+
+    @Test
+    void colorSettingUsesConfiguredValueWhenOverrideReturnsNull() {
+        Setting.ColorSetting setting = new Setting.ColorSetting("color", "test", 0x123456)
+                .withValueOverride(() -> null);
+
+        assertEquals(0x123456, setting.getValue());
+        assertEquals("#123456", setting.getHexValue());
+    }
 }

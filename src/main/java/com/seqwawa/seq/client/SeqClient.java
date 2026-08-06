@@ -40,6 +40,7 @@ import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.RankProfileRoster;
 import com.seqwawa.seq.managers.PartyHealthCache;
 import com.seqwawa.seq.managers.PartyFinderManager;
+import com.seqwawa.seq.managers.PrincessMode;
 import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
@@ -628,9 +629,11 @@ public class SeqClient implements ClientModInitializer {
         showChatInsigniasSetting = new Setting.BooleanSetting("show_chat_insignias", "chat", false);
         usePerUserColorsSetting = new Setting.BooleanSetting("use_per_user_colors", "chat", true);
         colorDiscordBridgeSetting = new Setting.BooleanSetting("color_discord_bridge", "chat", true);
-        discordChatTextColorSetting = new Setting.ColorSetting("discord_chat_text_color", "chat", 0x55FFFF);
+        discordChatTextColorSetting = new Setting.ColorSetting("discord_chat_text_color", "chat", 0x55FFFF)
+                .withValueOverride(PrincessMode::paletteColorOverride);
         inGameGuildChatTextColorSetting =
-                new Setting.ColorSetting("in_game_guild_chat_text_color", "chat", 0x55FFFF);
+                new Setting.ColorSetting("in_game_guild_chat_text_color", "chat", 0x55FFFF)
+                        .withValueOverride(PrincessMode::paletteColorOverride);
         colorRankPillsSetting = new Setting.BooleanSetting("color_rank_pills", "chat", true);
         colorUsernamesSetting = new Setting.BooleanSetting("color_usernames", "chat", true);
         showRankPillGradientsSetting = new Setting.BooleanSetting("show_rank_pill_gradients", "chat", true);
@@ -711,13 +714,16 @@ public class SeqClient implements ClientModInitializer {
                 "Chat behavior");
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
         radianceCheckerSetting = new Setting.BooleanSetting("enable_radiance_visualiser", "raids", true);
-        radianceMarkerColorSetting = new Setting.ColorSetting("radiance_marker_color", "raids", 0xFF0000);
+        radianceMarkerColorSetting = new Setting.ColorSetting("radiance_marker_color", "raids", 0xFF0000)
+                .withValueOverride(PrincessMode::paletteColorOverride);
         radianceMarkerColorSetting.setVisibilityCondition(() -> radianceCheckerSetting.getValue());
         halcyonRangeVisualiserSetting = new Setting.BooleanSetting("enable_halcyon_range_visualiser", "raids", true);
-        halcyonRingColorSetting = new Setting.ColorSetting("halcyon_ring_color", "raids", 0x00FFFF);
+        halcyonRingColorSetting = new Setting.ColorSetting("halcyon_ring_color", "raids", 0x00FFFF)
+                .withValueOverride(PrincessMode::paletteColorOverride);
         halcyonRingColorSetting.setVisibilityCondition(() -> halcyonRangeVisualiserSetting.getValue());
         lightRoomVisualiserSetting = new Setting.BooleanSetting("enable_light_room_visualiser", "raids", true);
-        lightRoomRingColorSetting = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF);
+        lightRoomRingColorSetting = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF)
+                .withValueOverride(PrincessMode::paletteColorOverride);
         lightRoomRingColorSetting.setVisibilityCondition(() -> lightRoomVisualiserSetting.getValue());
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
