@@ -35,16 +35,17 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 
 ## First-time setup
 
-1. **Join Sequoia or an allied guild** - party finder access is available to Sequoia and allied guild members.
+1. **Have Party Finder access** - link an account that is in Sequoia/an allied guild or can view the Party Finder
+   Discord channel (including Veteran, Honoured Veteran, and Community members).
 2. **Install the mod** using the steps below.
 3. **Connect** - the mod auto-connects on startup if enabled, or by using a button in the Connection section.
 4. **Link if prompted** - if the backend reports no linked account, run `/link` in Discord and reconnect.
 5. **Check status** - run `/seq status` to make sure you're connected.
 6. **Configure** - press `O` and open settings to toggle Discord chat, raid announcements, and related behavior.
 
-Linked players who are not Sequoia members can still use Party Finder and unrestricted local features. When such a
-session connects, the mod shows one notice and disables Sequoia-only integrations for that session; later membership
-rejections stay silent.
+Linked players need Sequoia/allied guild membership or access to the Party Finder Discord channel to view, join,
+create, or manage Party Finder listings. When a non-guild session connects, the mod shows one notice and disables
+Sequoia-only integrations for that session; later membership rejections stay silent.
 
 ## Common commands
 

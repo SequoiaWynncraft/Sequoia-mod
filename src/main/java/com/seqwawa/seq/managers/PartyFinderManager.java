@@ -2304,7 +2304,8 @@ public class PartyFinderManager implements NotificationAccessor {
         }
         if (statusCode == 403) {
             if (body.contains("guild") || body.contains("not in guild")) {
-                return "Access denied: party finder is available to Sequoia and allied guild members.";
+                return "Access denied: managing parties requires Sequoia/allied guild membership or access to the"
+                        + " Party Finder Discord channel.";
             }
             if (backendError != null) {
                 return backendError;
