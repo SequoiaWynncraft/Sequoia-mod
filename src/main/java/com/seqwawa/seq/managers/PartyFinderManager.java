@@ -31,7 +31,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.events.PartyFinderUpdateEvent;
 import com.seqwawa.seq.integrations.WynntilsWorldStateAccess;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.ConnectionManager;
@@ -897,11 +896,6 @@ public class PartyFinderManager implements NotificationAccessor {
         }
         refreshCurrentListing();
         notifyPartyActionUx(action, previousListing, listing, myUUID);
-
-        // Fire event for the UI
-        if (SeqClient.getEventBus() != null) {
-            SeqClient.getEventBus().dispatch(new PartyFinderUpdateEvent(action, listing));
-        }
     }
 
     public void handlePartyFinderInvite(long listingId, String inviterUUID, String inviteToken, Listing listing) {

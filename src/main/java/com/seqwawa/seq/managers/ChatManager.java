@@ -9,7 +9,6 @@ import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.events.DiscordChatEvent;
 import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
 import com.seqwawa.seq.integrations.WynntilsItemPreviewAccess;
 import com.seqwawa.seq.model.ChatItemPreview;
@@ -704,10 +703,6 @@ public class ChatManager {
             mc.execute(() -> {
                 if (mc.player != null) {
                     displayBridgeMessage(msg);
-                }
-
-                if (SeqClient.getEventBus() != null) {
-                    SeqClient.getEventBus().dispatch(new DiscordChatEvent(msg.username(), msg.message()));
                 }
             });
         });
