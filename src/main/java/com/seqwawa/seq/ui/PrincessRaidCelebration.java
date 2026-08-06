@@ -68,7 +68,8 @@ public final class PrincessRaidCelebration {
         int width = graphics.guiWidth();
         int height = graphics.guiHeight();
         int centerX = width / 2;
-        int bannerY = Math.min(height - 48, Math.max(54, height / 3)) + Math.round(frame.bannerOffset());
+        int bannerY = Math.min(height - 26, Math.max(54, height / 2 + 12))
+                + Math.round(frame.bannerOffset());
         int bannerWidth = Math.max(96, Math.min(250, width - 24));
         int bannerLeft = centerX - bannerWidth / 2;
         int alpha = Math.round(frame.opacity() * 255f);
@@ -94,9 +95,9 @@ public final class PrincessRaidCelebration {
         drawOutline(graphics, bannerLeft, bannerY - 10, bannerWidth, 32, argb(alpha, PINK));
         drawOutline(graphics, bannerLeft + 3, bannerY - 7, bannerWidth - 6, 26, argb(alpha, GOLD));
 
-        drawCrown(graphics, centerX, bannerY - 45, alpha);
+        drawCrown(graphics, centerX, bannerY - 51, alpha);
         drawCenteredScaledText(
-                graphics, client.font, "Raid conquered", centerX, bannerY - 2, 1.5f, argb(alpha, 0xFFF7FC));
+                graphics, client.font, "Raid conquered", centerX, bannerY - 1, 1.5f, argb(alpha, 0xFFF7FC));
     }
 
     private static void drawEdgeGlow(GuiGraphics graphics, int width, int height, int alpha, long elapsedMs) {
@@ -144,7 +145,7 @@ public final class PrincessRaidCelebration {
     }
 
     private static void drawCrown(GuiGraphics graphics, int centerX, int top, int alpha) {
-        int scale = 5;
+        int scale = 6;
         int left = centerX - CROWN.getFirst().length() * scale / 2;
         for (int row = 0; row < CROWN.size(); row++) {
             String pixels = CROWN.get(row);
