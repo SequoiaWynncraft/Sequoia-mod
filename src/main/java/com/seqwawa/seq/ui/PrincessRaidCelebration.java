@@ -4,6 +4,7 @@ import com.seqwawa.seq.managers.PrincessMode;
 import java.util.List;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.Identifier;
 
@@ -80,27 +81,22 @@ public final class PrincessRaidCelebration {
 
         graphics.fill(
                 bannerLeft - 3,
-                bannerY - 14,
+                bannerY - 13,
                 bannerLeft + bannerWidth + 3,
-                bannerY + 31,
+                bannerY + 25,
                 argb(Math.round(alpha * 0.25f), PINK));
         graphics.fill(
                 bannerLeft,
-                bannerY - 11,
+                bannerY - 10,
                 bannerLeft + bannerWidth,
-                bannerY + 28,
+                bannerY + 22,
                 argb(Math.round(alpha * 0.82f), 0x2A0D32));
-        drawOutline(graphics, bannerLeft, bannerY - 11, bannerWidth, 39, argb(alpha, PINK));
-        drawOutline(graphics, bannerLeft + 3, bannerY - 8, bannerWidth - 6, 33, argb(alpha, GOLD));
+        drawOutline(graphics, bannerLeft, bannerY - 10, bannerWidth, 32, argb(alpha, PINK));
+        drawOutline(graphics, bannerLeft + 3, bannerY - 7, bannerWidth - 6, 26, argb(alpha, GOLD));
 
-        drawCrown(graphics, centerX, bannerY - 34, alpha);
-        graphics.drawCenteredString(client.font, "RAID CONQUERED", centerX, bannerY - 5, argb(alpha, 0xFFF7FC));
-        graphics.drawCenteredString(
-                client.font,
-                "Her Majesty's court remains undefeated",
-                centerX,
-                bannerY + 11,
-                argb(Math.round(alpha * 0.92f), PALE_PINK));
+        drawCrown(graphics, centerX, bannerY - 45, alpha);
+        drawCenteredScaledText(
+                graphics, client.font, "Raid conquered", centerX, bannerY - 2, 1.5f, argb(alpha, 0xFFF7FC));
     }
 
     private static void drawEdgeGlow(GuiGraphics graphics, int width, int height, int alpha, long elapsedMs) {
@@ -148,7 +144,7 @@ public final class PrincessRaidCelebration {
     }
 
     private static void drawCrown(GuiGraphics graphics, int centerX, int top, int alpha) {
-        int scale = 3;
+        int scale = 5;
         int left = centerX - CROWN.getFirst().length() * scale / 2;
         for (int row = 0; row < CROWN.size(); row++) {
             String pixels = CROWN.get(row);
@@ -164,6 +160,18 @@ public final class PrincessRaidCelebration {
                         top + (row + 1) * scale,
                         argb(alpha, color));
             }
+        }
+    }
+
+    private static void drawCenteredScaledText(
+            GuiGraphics graphics, Font font, String text, int centerX, int top, float scale, int color) {
+        graphics.pose().pushMatrix();
+        try {
+            graphics.pose().translate(centerX, top);
+            graphics.pose().scale(scale, scale);
+            graphics.drawCenteredString(font, text, 0, 0, color);
+        } finally {
+            graphics.pose().popMatrix();
         }
     }
 

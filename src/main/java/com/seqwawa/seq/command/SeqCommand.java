@@ -658,7 +658,6 @@ public class SeqCommand {
 
         private static int runPrincessRaidAnimation(CommandContext<FabricClientCommandSource> ctx) {
                 PrincessRaidCelebration.forceTrigger();
-                sendFeedback(ctx.getSource(), "Princess raid animation triggered.");
                 return 1;
         }
 
