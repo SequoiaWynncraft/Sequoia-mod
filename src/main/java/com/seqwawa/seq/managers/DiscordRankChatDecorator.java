@@ -300,6 +300,15 @@ public final class DiscordRankChatDecorator {
             return colonIndex;
         }
 
+        // A nickname can contain the real username as one of its words, as in
+        // "Ascended nunot". Wynntils' reverse hover explicitly says that the whole
+        // fragment is nunot's nickname; without this check the generic username
+        // search below mistakes the suffix for a separately displayed reveal and
+        // leaves an empty recolouring range.
+        if (hasNicknameDescription(fragments, nameStart, colonIndex, username)) {
+            return colonIndex;
+        }
+
         int cursor = 0;
         for (ComponentTextEditor.Fragment fragment : fragments) {
             int fragmentStart = cursor;
@@ -317,6 +326,22 @@ public final class DiscordRankChatDecorator {
                     : Math.max(nameStart, fragmentStart);
         }
         return colonIndex;
+    }
+
+    private static boolean hasNicknameDescription(
+            List<ComponentTextEditor.Fragment> fragments, int start, int endExclusive, String username) {
+        int cursor = 0;
+        for (ComponentTextEditor.Fragment fragment : fragments) {
+            int fragmentStart = cursor;
+            cursor += fragment.text().length();
+            if (cursor <= start || fragmentStart >= endExclusive) {
+                continue;
+            }
+            if (ChatManager.hoverDescribesNickname(fragment.style(), username)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean containsIgnoreCase(String haystack, String needle) {

@@ -139,6 +139,23 @@ class ChatManagerTest {
     }
 
     @Test
+    void parseGuildMessageHandlesUnrevealedNicknameWithReversedWynntilsHover() {
+        Style style = Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
+                Component.literal("§fnunot§7's nickname is §fAscended nunot")));
+        Component message = Component.empty()
+                .append(Component.literal("󏿼󐀆 "))
+                .append(Component.literal("Ascended nunot").withStyle(style))
+                .append(Component.literal(": hello"));
+
+        ChatManager.ParsedMessage parsed = ChatManager.parseGuildMessage(message);
+
+        assertNotNull(parsed);
+        assertEquals("nunot", parsed.username());
+        assertEquals("Ascended nunot", parsed.nickname());
+        assertEquals("hello", parsed.message());
+    }
+
+    @Test
     void observesNicknameMappingFromNonChatPacketMetadata() {
         Component message = Component.empty()
                 .append(Component.literal("DrBavaro").withStyle(Style.EMPTY.withInsertion("xmattypazox")))

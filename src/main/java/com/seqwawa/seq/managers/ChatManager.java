@@ -64,8 +64,10 @@ public class ChatManager {
             // "<nick>'s real username is <username>".
             // Also accepts nicknames ending in 's' where Wynncraft uses "<nick>' real name
             // is <username>"
-            // Legacy format: "Real Username: <username>"
-            "(?:'(?:s)? real (?:user)?name is\\s+|Real Username:\\s*)([a-zA-Z0-9_]{3,16})",
+            // Wynntils may reverse the description to "<username>'s nickname is <nick>".
+            // Legacy format: "Real Username: <username>".
+            "(?:(?:'(?:s)? real (?:user)?name is|Real Username:)\\s*([a-zA-Z0-9_]{3,16})"
+                    + "|\\b([a-zA-Z0-9_]{3,16})'(?:s)? nickname is\\b)",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern LEADING_NICKNAME_USERNAME_PATTERN = Pattern.compile(
             "^(?:<\\d+>\\s*)?([a-zA-Z0-9_][a-zA-Z0-9_ ]*?)\\s*"
@@ -663,7 +665,9 @@ public class ChatManager {
         }
     }
 
-    static String extractHoverRealUsername(Style style) {
+    private record HoverIdentity(String username, boolean nicknameDescription) {}
+
+    private static HoverIdentity hoverIdentity(Style style) {
         if (style == null) {
             return null;
         }
@@ -680,7 +684,24 @@ public class ChatManager {
 
         String hoverText = PacketTextNormalizer.normalizeForParsing(hoverComponent.getString());
         Matcher matcher = HOVER_REAL_NAME_PATTERN.matcher(hoverText);
-        return matcher.find() ? matcher.group(1) : null;
+        if (!matcher.find()) {
+            return null;
+        }
+        boolean nicknameDescription = matcher.group(2) != null;
+        return new HoverIdentity(
+                nicknameDescription ? matcher.group(2) : matcher.group(1), nicknameDescription);
+    }
+
+    static String extractHoverRealUsername(Style style) {
+        HoverIdentity identity = hoverIdentity(style);
+        return identity == null ? null : identity.username();
+    }
+
+    static boolean hoverDescribesNickname(Style style, String username) {
+        HoverIdentity identity = hoverIdentity(style);
+        return identity != null
+                && identity.nicknameDescription()
+                && identity.username().equalsIgnoreCase(username);
     }
 
     static String extractInsertionUsername(Style style) {
