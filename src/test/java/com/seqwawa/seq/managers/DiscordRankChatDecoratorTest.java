@@ -477,6 +477,26 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void colorsAnUnrevealedSpacedNicknameResolvedFromItsRealUsernameHover() {
+        Style nicknameStyle = Style.EMPTY
+                .withColor(DARK_AQUA)
+                .withHoverEvent(new HoverEvent.ShowText(
+                        Component.literal("§fI Burger§7's real username is §fpat_crafter07")));
+        Component message = Component.empty()
+                .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
+                .append(Component.literal("I Burger").withStyle(nicknameStyle))
+                .append(Component.literal(": test").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+
+        Component decorated =
+                DiscordRankChatDecorator.decorateGuildChat(message, DiscordRankChatDecoratorTest::lookup);
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
+
+        assertEquals(List.of("druid"), pillLabels(decorated));
+        assertEquals(0xD7BCEA, colorOfFragmentContaining(fragments, "I Burger"));
+        assertTrue(decorated.getString().contains("I Burger: test"));
+    }
+
+    @Test
     void resolvesAUsernameAfterASpacedClassNickname() {
         Component message = guildLine("RECRUITER", "I Burger/pat_crafter07", null, "test");
 

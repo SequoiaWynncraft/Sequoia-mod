@@ -122,6 +122,23 @@ class ChatManagerTest {
     }
 
     @Test
+    void parseGuildMessageHandlesUnrevealedSpacedNicknameWithRealUsernameHover() {
+        Style style = Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
+                Component.literal("§fI Burger§7's real username is §fpat_crafter07")));
+        Component message = Component.empty()
+                .append(Component.literal("󏿼󐀆 "))
+                .append(Component.literal("I Burger").withStyle(style))
+                .append(Component.literal(": hello"));
+
+        ChatManager.ParsedMessage parsed = ChatManager.parseGuildMessage(message);
+
+        assertNotNull(parsed);
+        assertEquals("pat_crafter07", parsed.username());
+        assertEquals("I Burger", parsed.nickname());
+        assertEquals("hello", parsed.message());
+    }
+
+    @Test
     void observesNicknameMappingFromNonChatPacketMetadata() {
         Component message = Component.empty()
                 .append(Component.literal("DrBavaro").withStyle(Style.EMPTY.withInsertion("xmattypazox")))

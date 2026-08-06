@@ -60,11 +60,12 @@ public class ChatManager {
             "^(?:<\\d+>\\s*)?([a-zA-Z0-9_][a-zA-Z0-9_ ]*[a-zA-Z0-9_]|[a-zA-Z0-9_]{3,16})\\s*:\\s*(.*)$",
             Pattern.DOTALL);
     private static final Pattern HOVER_REAL_NAME_PATTERN = Pattern.compile(
-            // Wynntils format: "<nick>'s real name is <username>"
+            // Wynncraft/Wynntils formats: "<nick>'s real name is <username>" and
+            // "<nick>'s real username is <username>".
             // Also accepts nicknames ending in 's' where Wynncraft uses "<nick>' real name
             // is <username>"
             // Legacy format: "Real Username: <username>"
-            "(?:'(?:s)? real name is\\s+|Real Username:\\s*)([a-zA-Z0-9_]{3,16})",
+            "(?:'(?:s)? real (?:user)?name is\\s+|Real Username:\\s*)([a-zA-Z0-9_]{3,16})",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern LEADING_NICKNAME_USERNAME_PATTERN = Pattern.compile(
             "^(?:<\\d+>\\s*)?([a-zA-Z0-9_][a-zA-Z0-9_ ]*?)\\s*"
@@ -677,7 +678,7 @@ public class ChatManager {
             return null;
         }
 
-        String hoverText = hoverComponent.getString();
+        String hoverText = PacketTextNormalizer.normalizeForParsing(hoverComponent.getString());
         Matcher matcher = HOVER_REAL_NAME_PATTERN.matcher(hoverText);
         return matcher.find() ? matcher.group(1) : null;
     }
