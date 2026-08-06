@@ -13,7 +13,6 @@ import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.Member;
 import com.seqwawa.seq.model.PartyJoinPolicy;
-import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.PartyStatus;
@@ -74,15 +73,6 @@ class PartyListingTest {
                         "TWP",
                         "ANNI"),
                 PartyListing.activityCommandAliases());
-        assertEquals(
-                List.of(
-                        "Nest of the Grootslangs",
-                        "The Nameless Anomaly",
-                        "The Canyon Colossus",
-                        "Nexus of Light",
-                        "The Wartorn Palace",
-                        "Prelude to Annihilation"),
-                PartyListing.activityDisplayNames());
     }
 
     @Test
@@ -92,8 +82,6 @@ class PartyListingTest {
                 List.of(new Activity(1L, "TNA", 4)),
                 null,
                 "leader",
-                PartyMode.CHILL,
-                false,
                 PartyRegion.EU,
                 "EU21",
                 PartyStatus.OPEN,
@@ -103,7 +91,7 @@ class PartyListingTest {
                 List.of(),
                 Instant.EPOCH));
 
-        assertEquals("EU21 · Chill · The Nameless Anomaly", listing.displayLabel());
+        assertEquals("EU21 · The Nameless Anomaly", listing.displayLabel());
         assertEquals("EU21", listing.tags.get(1));
         assertEquals(PartyJoinPolicy.OPEN, listing.joinPolicy);
     }
@@ -115,8 +103,6 @@ class PartyListingTest {
                 List.of(new Activity(1L, "TNA", 4)),
                 null,
                 "leader",
-                PartyMode.CHILL,
-                false,
                 PartyRegion.EU,
                 "EU21",
                 PartyStatus.OPEN,
@@ -138,8 +124,6 @@ class PartyListingTest {
                 List.of(new Activity(1L, "TNA", 4)),
                 null,
                 "leader",
-                PartyMode.CHILL,
-                false,
                 PartyRegion.EU,
                 "EU21",
                 PartyStatus.OPEN,
@@ -163,8 +147,6 @@ class PartyListingTest {
                 List.of(new Activity(1L, "TNA", 4)),
                 null,
                 "leader",
-                PartyMode.CHILL,
-                false,
                 PartyRegion.EU,
                 "EU21",
                 PartyStatus.OPEN,

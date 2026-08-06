@@ -2,13 +2,13 @@ package com.seqwawa.seq.network;
 
 import com.google.gson.JsonObject;
 import com.seqwawa.seq.model.PartyJoinPolicy;
-import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -79,8 +79,6 @@ class ApiClientTest {
     void createListingPayloadIncludesAtomicAdmissionSettings() {
         JsonObject payload = ApiClient.buildCreateListingPayload(
                 List.of(11L, 12L),
-                PartyMode.GRIND,
-                true,
                 PartyRegion.EU,
                 PartyRole.TANK,
                 "Fast clears",
@@ -91,6 +89,8 @@ class ApiClientTest {
         assertEquals("INVITE_ONLY", payload.get("joinPolicy").getAsString());
         assertEquals(2, payload.get("reservedSlots").getAsInt());
         assertEquals(2, payload.getAsJsonArray("activityIds").size());
+        assertFalse(payload.has("mode"));
+        assertFalse(payload.has("strict"));
     }
 
     @Test
@@ -99,8 +99,6 @@ class ApiClientTest {
                 IllegalArgumentException.class,
                 () -> ApiClient.buildCreateListingPayload(
                         List.of(11L),
-                        PartyMode.CHILL,
-                        false,
                         PartyRegion.NA,
                         PartyRole.DPS,
                         null,
@@ -113,8 +111,6 @@ class ApiClientTest {
     void createListingPayloadSerializesOtherRole() {
         JsonObject payload = ApiClient.buildCreateListingPayload(
                 List.of(11L),
-                PartyMode.CHILL,
-                false,
                 PartyRegion.NA,
                 PartyRole.OTHER,
                 null,

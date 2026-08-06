@@ -25,7 +25,6 @@ import com.seqwawa.seq.managers.PartyListing;
 import com.seqwawa.seq.managers.PartyMember;
 import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.PartyJoinPolicy;
-import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyStatus;
 import com.seqwawa.seq.utils.TextInputFilters;
@@ -36,7 +35,7 @@ import com.seqwawa.seq.utils.rendering.UiRenderer;
 
 public class PartyFinderScreen extends Screen implements PartyAccessor {
 
-    // ── Raid types & Party tags ──
+    // ── Raid types ──
     private static final String[] RAID_TYPES = {
         "Nest of the Grootslangs",
         "Nexus of Light",
@@ -45,7 +44,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         "The Wartorn Palace",
         "Prelude to Annihilation",
     };
-    private static final String[] PARTY_TAGS = {"Chill", "Grind"};
     private static final PartyRegion[] PARTY_REGIONS = {
         PartyRegion.NA, PartyRegion.EU, PartyRegion.AS,
     };
@@ -139,17 +137,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final String NEXUS_OF_LEA = "Nexus of Lea";
     private static final String[] ROLES = {"DPS", "Healer", "Tank", "Other"};
 
-    // All possible tags = RAID_TYPES + PARTY_TAGS
-    private static final String[] ALL_TAGS;
-
-    static {
-        ALL_TAGS = new String[RAID_TYPES.length + PARTY_TAGS.length];
-        System.arraycopy(RAID_TYPES, 0, ALL_TAGS, 0, RAID_TYPES.length);
-        System.arraycopy(PARTY_TAGS, 0, ALL_TAGS, RAID_TYPES.length, PARTY_TAGS.length);
-    }
-
-    private static final Set<String> RAID_TYPE_SET = new HashSet<>(Arrays.asList(RAID_TYPES));
-
     // ── State ──
     private final Screen parent;
     private final boolean openCreateModalOnInit;
@@ -176,20 +163,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private String inviteUsernameInput = "";
     private final Set<String> modalSelectedRaids = new LinkedHashSet<>();
     private int modalReservedSlots = 0;
-    private boolean modalStrictRoles = false;
     private PartyRegion modalSelectedRegion = PartyRegion.NA;
     private PartyJoinPolicy modalJoinPolicy = PartyJoinPolicy.INVITE_ONLY;
     private boolean reservedSlotsFocused = false;
     private String reservedSlotsInput = "0";
     private long nextLoadingNameRefreshAtMs = 0L;
-
-    // Edit tags sub-overlay in modal
-    private boolean editTagsScreenOpen = false;
-    private final Set<String> modalActiveTags = new LinkedHashSet<>();
-    private final Set<String> modalInactiveTags = new LinkedHashSet<>();
-    private final Map<String, Long> modalTagAnimStartTimes = new HashMap<>();
-    private final List<TagChipHitbox> renderedModalActiveChipBounds = new ArrayList<>();
-    private final List<TagChipHitbox> renderedModalInactiveChipBounds = new ArrayList<>();
 
     // Cached modal position
     private float modalX, modalY;
@@ -252,13 +230,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         super(Component.literal("Party Finder"));
         this.parent = parent;
         this.openCreateModalOnInit = openCreateModalOnInit;
-        // Initialize filter: all tags active
-        for (String tag : ALL_TAGS) {
+        // Initialize filter with every activity active.
+        for (String tag : RAID_TYPES) {
             activeFilterTags.add(tag);
         }
-        // Initialize modal tags: Chill active, Grind inactive
-        modalActiveTags.add("Chill");
-        modalInactiveTags.add("Grind");
     }
 
     // ══════════════════════════════ INIT ══════════════════════════════
@@ -1397,8 +1372,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // "Reserved slots" label
         float rowY = circleY + RAID_CIRCLE_SIZE + 16;
-        float leftColX = modalX + MODAL_WIDTH * 0.25f;
-        float rightColX = modalX + MODAL_WIDTH * 0.75f;
+        float rightColX = modalX + MODAL_WIDTH / 2f;
 
         drawText(
                 canvas,
@@ -1410,26 +1384,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 "Reserved slots",
                 UiCanvas.HorizontalAlign.CENTER);
 
-        // Edit tags button (same color as Filter+)
-        float etBtnX = leftColX - MODAL_DROPDOWN_W / 2f;
         float etBtnY = rowY + 12;
-        boolean etHovered = isHovered(uiMouseX, uiMouseY, etBtnX, etBtnY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H);
-        canvas.fillRect(
-                etBtnX,
-                etBtnY,
-                MODAL_DROPDOWN_W,
-                MODAL_DROPDOWN_H,
-                etHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
-        drawText(
-                canvas,
-                fontName,
-                MODAL_LABEL_SIZE,
-                color(TEXT_PRIMARY),
-                leftColX,
-                etBtnY + MODAL_DROPDOWN_H / 2f,
-                "Edit tags",
-                UiCanvas.HorizontalAlign.CENTER);
-
         // Reserved slots with up/down arrows
         float arrowW = 16;
         float rsFieldW = MODAL_DROPDOWN_W - arrowW;
@@ -1586,40 +1541,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     UiCanvas.HorizontalAlign.CENTER);
         }
 
-        boolean grindSelected = isModalGrindSelected();
-        if (grindSelected) {
-            float strictLabelY = joinPolicyButtonsY + MODAL_DROPDOWN_H + 18;
-            float checkboxSize = 12;
-            float checkboxX = modalX + MODAL_WIDTH / 2f - 72;
-            float checkboxY = strictLabelY - checkboxSize / 2f;
-
-            Color checkboxBg = modalStrictRoles ? color(ACCENT_PRIMARY, 120) : color(CONTROL_INPUT);
-            Color checkboxBorder = modalStrictRoles ? color(CONTROL_BORDER) : color(CONTROL_INPUT_SECONDARY);
-
-            canvas.fillRect(checkboxX, checkboxY, checkboxSize, checkboxSize, checkboxBg);
-            canvas.strokeRect(checkboxX, checkboxY, checkboxSize, checkboxSize, 1, checkboxBorder);
-
-            if (modalStrictRoles) {
-                float innerInset = 3f;
-                canvas.fillRect(
-                        checkboxX + innerInset,
-                        checkboxY + innerInset,
-                        checkboxSize - innerInset * 2,
-                        checkboxSize - innerInset * 2,
-                        color(TEXT_PRIMARY));
-            }
-
-            drawText(
-                    canvas,
-                    fontName,
-                    MODAL_LABEL_SIZE,
-                    color(TEXT_MUTED),
-                    checkboxX + checkboxSize + 8,
-                    strictLabelY,
-                    "Strict roles",
-                    UiCanvas.HorizontalAlign.LEFT);
-        }
-
         // Create/Update button
         float createBtnX = modalX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
         float createBtnY = modalY + PARTY_MODAL_HEIGHT - MODAL_BUTTON_H - 14;
@@ -1642,117 +1563,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 createLabel,
                 UiCanvas.HorizontalAlign.CENTER);
 
-        // Edit tags sub-overlay (on top of modal)
-        if (editTagsScreenOpen) {
-            renderEditTagsOverlay(
-                    canvas,
-                    fontName,
-                    panelX,
-                    panelX + (canvas.metrics().width() - SIDEBAR_WIDTH),
-                    screenHeight);
-        }
-    }
-
-    // ── Edit Tags Sub-Overlay (in modal) — same layout as Filter+ screen ──
-
-    private void renderEditTagsOverlay(
-            UiCanvas canvas, String fontName, float panelX, float panelWidth, float screenHeight) {
-        float overlayW = TAG_OVERLAY_WIDTH;
-        float overlayH = TAG_OVERLAY_HEIGHT;
-        float overlayX = modalX + (MODAL_WIDTH - overlayW) / 2f;
-        float overlayY = modalY + (PARTY_MODAL_HEIGHT - overlayH) / 2f;
-
-        canvas.fillRect(modalX, modalY, MODAL_WIDTH, PARTY_MODAL_HEIGHT, color(BACKGROUND_MODAL_OVERLAY));
-        canvas.fillRect(overlayX, overlayY, overlayW, overlayH, color(BACKGROUND_BODY_OPAQUE));
-        canvas.strokeRect(overlayX, overlayY, overlayW, overlayH, 1, color(ACCENT_SECONDARY));
-
-        // Title
-        drawText(
-                canvas,
-                fontName,
-                MODAL_TITLE_SIZE,
-                color(TEXT_PRIMARY),
-                overlayX + overlayW / 2f,
-                overlayY + 18,
-                "Tag selection",
-                UiCanvas.HorizontalAlign.CENTER);
-
-        float boxPadding = 12;
-        float boxW = overlayW - boxPadding * 2;
-        float boxH = TAG_BOX_HEIGHT;
-        float boxX = overlayX + boxPadding;
-
-        // Active tags box
-        float activeBoxY = overlayY + 34;
-        canvas.fillRect(boxX, activeBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
-        drawText(
-                canvas,
-                fontName,
-                9,
-                color(TEXT_MUTED),
-                boxX + 4,
-                activeBoxY + 2,
-                "Active tags",
-                UiCanvas.HorizontalAlign.LEFT,
-                UiCanvas.VerticalAlign.TOP);
-
-        renderTagChips(
-                canvas,
-                fontName,
-                boxX + 4,
-                activeBoxY + 14,
-                boxW - 8,
-                modalActiveTags,
-                true,
-                modalTagAnimStartTimes,
-                renderedModalActiveChipBounds);
-
-        // Inactive tags box
-        float inactiveBoxY = activeBoxY + boxH + 8;
-        canvas.fillRect(boxX, inactiveBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
-        drawText(
-                canvas,
-                fontName,
-                9,
-                color(TEXT_MUTED),
-                boxX + 4,
-                inactiveBoxY + 2,
-                "Inactive tags",
-                UiCanvas.HorizontalAlign.LEFT,
-                UiCanvas.VerticalAlign.TOP);
-
-        renderTagChips(
-                canvas,
-                fontName,
-                boxX + 4,
-                inactiveBoxY + 14,
-                boxW - 8,
-                modalInactiveTags,
-                false,
-                modalTagAnimStartTimes,
-                renderedModalInactiveChipBounds);
-
-        // Back button
-        float backW = 70;
-        float backH = 20;
-        float backX = overlayX + (overlayW - backW) / 2f;
-        float backY = overlayY + overlayH - backH - 8;
-        boolean backHovered = isHovered(uiMouseX, uiMouseY, backX, backY, backW, backH);
-        canvas.fillRect(
-                backX,
-                backY,
-                backW,
-                backH,
-                backHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
-        drawText(
-                canvas,
-                fontName,
-                MEMBER_FONT_SIZE,
-                color(TEXT_PRIMARY),
-                backX + backW / 2f,
-                backY + backH / 2f,
-                "< Back",
-                UiCanvas.HorizontalAlign.CENTER);
     }
 
     // ── Filter+ Screen ──
@@ -1878,16 +1688,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         renderedChipBounds.clear();
 
-        // Sort: raid tags first, then non-raid tags
-        List<String> sorted = new ArrayList<>(tags.size());
         for (String tag : tags) {
-            if (RAID_TYPE_SET.contains(tag)) sorted.add(tag);
-        }
-        for (String tag : tags) {
-            if (!RAID_TYPE_SET.contains(tag)) sorted.add(tag);
-        }
-
-        for (String tag : sorted) {
             String label = getTagChipLabel(tag, isActive);
             float chipW = textWidth(label, fontName, TAG_CHIP_FONT_SIZE) + chipPadding * 2;
 
@@ -1932,12 +1733,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     4,
                     chipHovered ? color(CONTROL_INPUT_HOVER) : color(ACCENT_DIVIDER, 220));
 
-            Color chipTextColor = RAID_TYPE_SET.contains(tag) ? color(ACCENT_PRIMARY) : color(TEXT_PRIMARY);
             drawText(
                     canvas,
                     fontName,
                     TAG_CHIP_FONT_SIZE,
-                    chipTextColor,
+                    color(ACCENT_PRIMARY),
                     chipCenterX,
                     chipCenterY,
                     label,
@@ -2446,9 +2246,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private void openModal(boolean managing) {
         modalOpen = true;
         inviteModalOpen = false;
-        editTagsScreenOpen = false;
         reservedSlotsFocused = false;
-        party().setHasListedParty(managing);
         if (!managing) {
             applyDefaultModalSelections();
             modalReservedSlots = 0;
@@ -2461,11 +2259,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     private void applyDefaultModalSelections() {
         modalSelectedRaids.clear();
-        modalActiveTags.clear();
-        modalActiveTags.add("Chill");
-        modalInactiveTags.clear();
-        modalInactiveTags.add("Grind");
-        modalStrictRoles = false;
         modalSelectedRegion = PartyRegion.NA;
         modalJoinPolicy = PartyJoinPolicy.INVITE_ONLY;
     }
@@ -2491,23 +2284,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         modalSelectedRaids.clear();
         modalSelectedRaids.addAll(getCurrentListingRaidTags());
 
-        modalActiveTags.clear();
-        modalInactiveTags.clear();
-
-        PartyMode mode = party().getCurrentListing() != null
-                ? party().getCurrentListing().mode()
-                : PartyMode.CHILL;
-
-        if (mode == PartyMode.GRIND) {
-            modalActiveTags.add("Grind");
-            modalInactiveTags.add("Chill");
-        } else {
-            modalActiveTags.add("Chill");
-            modalInactiveTags.add("Grind");
-        }
-
-        modalStrictRoles = party().getCurrentListing() != null
-                && party().getCurrentListing().strict();
         modalSelectedRegion = party().getCurrentListing() != null
                         && party().getCurrentListing().region() != null
                 ? party().getCurrentListing().region()
@@ -2515,10 +2291,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         modalJoinPolicy = party().getCurrentListing() != null
                 ? party().getCurrentListing().resolvedJoinPolicy()
                 : PartyJoinPolicy.INVITE_ONLY;
-    }
-
-    private boolean isModalGrindSelected() {
-        return modalActiveTags.stream().anyMatch(tag -> "Grind".equalsIgnoreCase(tag));
     }
 
     private static String joinPolicyLabel(PartyJoinPolicy joinPolicy) {
@@ -2703,15 +2475,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float mX = panelX + (panelWidth - MODAL_WIDTH) / 2f;
         float mY = (screenHeight - PARTY_MODAL_HEIGHT) / 2f;
 
-        // Edit tags sub-overlay (highest priority within modal)
-        if (editTagsScreenOpen) {
-            return handleEditTagsClick(mx, my, mX, mY);
-        }
-
         // Click outside modal closes it
         if (!isHovered(mx, my, mX, mY, MODAL_WIDTH, PARTY_MODAL_HEIGHT)) {
             modalOpen = false;
-            editTagsScreenOpen = false;
             reservedSlotsFocused = false;
             return true;
         }
@@ -2743,19 +2509,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             }
         }
 
-        // Edit tags button click
-        float leftColX = mX + MODAL_WIDTH * 0.25f;
         float rowY = circleY + RAID_CIRCLE_SIZE + 16;
-        float etBtnX = leftColX - MODAL_DROPDOWN_W / 2f;
         float etBtnY = rowY + 12;
 
-        if (isHovered(mx, my, etBtnX, etBtnY, MODAL_DROPDOWN_W, MODAL_DROPDOWN_H)) {
-            editTagsScreenOpen = true;
-            return true;
-        }
-
         // Reserved slots - up/down arrows and number field
-        float rightColX = mX + MODAL_WIDTH * 0.75f;
+        float rightColX = mX + MODAL_WIDTH / 2f;
         float arrowW = 16;
         float rsFieldW = MODAL_DROPDOWN_W - arrowW;
         float rsBoxX = rightColX - MODAL_DROPDOWN_W / 2f;
@@ -2822,19 +2580,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             }
         }
 
-        if (isModalGrindSelected()) {
-            float strictLabelY = joinPolicyButtonsY + MODAL_DROPDOWN_H + 18;
-            float checkboxSize = 12;
-            float checkboxX = mX + MODAL_WIDTH / 2f - 72;
-            float checkboxY = strictLabelY - checkboxSize / 2f;
-            float strictClickW = 144;
-
-            if (isHovered(mx, my, checkboxX, checkboxY, strictClickW, checkboxSize)) {
-                modalStrictRoles = !modalStrictRoles;
-                return true;
-            }
-        }
-
         // Create/Update button
         float createBtnX = mX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
         float createBtnY = mY + PARTY_MODAL_HEIGHT - MODAL_BUTTON_H - 14;
@@ -2860,89 +2605,27 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             }
 
             commitReservedSlotsInput();
-            List<String> tags = new ArrayList<>(selectedRaids);
-            tags.addAll(modalActiveTags);
-            boolean strictRoles = isModalGrindSelected() && modalStrictRoles;
+            List<String> activityNames = new ArrayList<>(selectedRaids);
 
             if (updatingParty) {
                 party().updateParty(
-                        tags,
+                        activityNames,
                         selectedRole,
                         modalReservedSlots,
-                        strictRoles,
                         modalSelectedRegion,
                         modalJoinPolicy);
             } else {
                 party().createParty(
-                        tags,
+                        activityNames,
                         selectedRole,
                         modalReservedSlots,
-                        strictRoles,
                         modalSelectedRegion,
                         modalJoinPolicy);
             }
 
             modalOpen = false;
-            editTagsScreenOpen = false;
             reservedSlotsFocused = false;
             scrollOffset = 0;
-            return true;
-        }
-
-        return true;
-    }
-
-    private boolean handleEditTagsClick(float mx, float my, float modalX, float modalY) {
-        float overlayW = TAG_OVERLAY_WIDTH;
-        float overlayH = TAG_OVERLAY_HEIGHT;
-        float overlayX = modalX + (MODAL_WIDTH - overlayW) / 2f;
-        float overlayY = modalY + (PARTY_MODAL_HEIGHT - overlayH) / 2f;
-
-        // Back button
-        float backW = 70;
-        float backH = 20;
-        float backX = overlayX + (overlayW - backW) / 2f;
-        float backY = overlayY + overlayH - backH - 8;
-        if (isHovered(mx, my, backX, backY, backW, backH)) {
-            editTagsScreenOpen = false;
-            return true;
-        }
-
-        // Click outside overlay closes it
-        if (!isHovered(mx, my, overlayX, overlayY, overlayW, overlayH)) {
-            editTagsScreenOpen = false;
-            return true;
-        }
-
-        // Check tag chip clicks
-        // Active tags area
-        String clickedActiveTag = findClickedTagChip(mx, my, renderedModalActiveChipBounds);
-        if (clickedActiveTag != null) {
-            modalActiveTags.remove(clickedActiveTag);
-            modalInactiveTags.add(clickedActiveTag);
-            modalTagAnimStartTimes.put(clickedActiveTag, System.currentTimeMillis());
-            return true;
-        }
-
-        // Inactive tags area
-        String clickedInactiveTag = findClickedTagChip(mx, my, renderedModalInactiveChipBounds);
-        if (clickedInactiveTag != null) {
-            modalInactiveTags.remove(clickedInactiveTag);
-            modalActiveTags.add(clickedInactiveTag);
-            // Enforce single party tag: activating one deactivates the others
-            if (Arrays.asList(PARTY_TAGS).contains(clickedInactiveTag)) {
-                for (String pt : PARTY_TAGS) {
-                    if (!pt.equals(clickedInactiveTag) && modalActiveTags.contains(pt)) {
-                        modalActiveTags.remove(pt);
-                        modalInactiveTags.add(pt);
-                        modalTagAnimStartTimes.put(pt, System.currentTimeMillis());
-                    }
-                }
-            }
-            if (!isModalGrindSelected()) {
-                modalStrictRoles = false;
-            }
-            modalTagAnimStartTimes.put(clickedInactiveTag, System.currentTimeMillis());
             return true;
         }
 
@@ -3083,14 +2766,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         if (modalOpen) {
             int keyCode = keyEvent.key();
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                if (editTagsScreenOpen) {
-                    editTagsScreenOpen = false;
-                } else if (reservedSlotsFocused) {
+                if (reservedSlotsFocused) {
                     commitReservedSlotsInput();
                     reservedSlotsFocused = false;
                 } else {
                     modalOpen = false;
-                    editTagsScreenOpen = false;
                 }
                 return true;
             }
