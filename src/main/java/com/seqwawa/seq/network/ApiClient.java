@@ -22,7 +22,6 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.CreateInviteResponse;
 import com.seqwawa.seq.model.Listing;
-import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
@@ -101,42 +100,8 @@ public class ApiClient {
         return get(path.toString(), new TypeToken<List<Listing>>() {}.getType());
     }
 
-    public CompletableFuture<Listing> getListing(long id) {
-        return get("/party-finder/listings/" + id, Listing.class);
-    }
-
-    public CompletableFuture<Listing> createListing(
-            List<Long> activityIds, PartyMode mode, boolean strict, PartyRegion region, PartyRole role, String note) {
-        return createListing(activityIds, mode, strict, region, role, note, null, PartyJoinPolicy.OPEN);
-    }
-
     public CompletableFuture<Listing> createListing(
             List<Long> activityIds,
-            PartyMode mode,
-            boolean strict,
-            PartyRegion region,
-            PartyRole role,
-            String note,
-            String world) {
-        return createListing(activityIds, mode, strict, region, role, note, world, PartyJoinPolicy.OPEN);
-    }
-
-    public CompletableFuture<Listing> createListing(
-            List<Long> activityIds,
-            PartyMode mode,
-            boolean strict,
-            PartyRegion region,
-            PartyRole role,
-            String note,
-            String world,
-            PartyJoinPolicy joinPolicy) {
-        return createListing(activityIds, mode, strict, region, role, note, world, joinPolicy, 0);
-    }
-
-    public CompletableFuture<Listing> createListing(
-            List<Long> activityIds,
-            PartyMode mode,
-            boolean strict,
             PartyRegion region,
             PartyRole role,
             String note,
@@ -144,14 +109,12 @@ public class ApiClient {
             PartyJoinPolicy joinPolicy,
             int reservedSlots) {
         JsonObject body = buildCreateListingPayload(
-                activityIds, mode, strict, region, role, note, world, joinPolicy, reservedSlots);
+                activityIds, region, role, note, world, joinPolicy, reservedSlots);
         return post("/party-finder/listings", body, Listing.class);
     }
 
     static JsonObject buildCreateListingPayload(
             List<Long> activityIds,
-            PartyMode mode,
-            boolean strict,
             PartyRegion region,
             PartyRole role,
             String note,
@@ -178,8 +141,6 @@ public class ApiClient {
         if (activityIdsJson.size() > 0) {
             body.addProperty("activityId", activityIdsJson.get(0).getAsLong());
         }
-        body.addProperty("mode", mode.name());
-        body.addProperty("strict", strict);
         body.addProperty("region", region.name());
         body.addProperty("role", role.name());
         body.addProperty(
@@ -270,26 +231,8 @@ public class ApiClient {
     }
 
     public CompletableFuture<Listing> updateListing(
-            long id, List<Long> activityIds, PartyMode mode, boolean strict, PartyRegion region, String note) {
-        return updateListing(id, activityIds, mode, strict, region, note, null, PartyJoinPolicy.OPEN);
-    }
-
-    public CompletableFuture<Listing> updateListing(
             long id,
             List<Long> activityIds,
-            PartyMode mode,
-            boolean strict,
-            PartyRegion region,
-            String note,
-            String world) {
-        return updateListing(id, activityIds, mode, strict, region, note, world, PartyJoinPolicy.OPEN);
-    }
-
-    public CompletableFuture<Listing> updateListing(
-            long id,
-            List<Long> activityIds,
-            PartyMode mode,
-            boolean strict,
             PartyRegion region,
             String note,
             String world,
@@ -310,8 +253,6 @@ public class ApiClient {
         }
 
         body.add("activityIds", activityIdsJson);
-        body.addProperty("mode", mode.name());
-        body.addProperty("strict", strict);
         body.addProperty("region", region.name());
         body.addProperty(
                 "joinPolicy", (joinPolicy != null ? joinPolicy : PartyJoinPolicy.OPEN).name());
@@ -332,15 +273,6 @@ public class ApiClient {
         }
 
         return post("/party-finder/listings/" + listingId + "/reserve", body, Listing.class);
-    }
-
-    public CompletableFuture<Listing> unreserveSlots(long listingId, Integer count) {
-        JsonObject body = new JsonObject();
-        if (count != null) {
-            body.addProperty("count", count);
-        }
-
-        return post("/party-finder/listings/" + listingId + "/unreserve", body, Listing.class);
     }
 
     // ── Reward Queue ──

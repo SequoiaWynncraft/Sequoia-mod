@@ -13,7 +13,6 @@ import com.seqwawa.seq.model.Member;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyCloseReason;
 import com.seqwawa.seq.model.PartyJoinPolicy;
-import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyStatus;
 import com.seqwawa.seq.model.ReservedSlot;
@@ -52,7 +51,6 @@ public class PartyListing {
     private static final Map<String, String> DISPLAY_TO_ASSET = new LinkedHashMap<>();
 
     private static final List<String> ACTIVITY_COMMAND_ALIASES;
-    private static final List<String> ACTIVITY_DISPLAY_NAMES;
 
     static {
         register("Nest of the Grootslangs", "NOTG", "notg");
@@ -67,7 +65,6 @@ public class PartyListing {
         BACKEND_TO_DISPLAY.put("The Orphions Nexus of Light", "Nexus of Light");
 
         ACTIVITY_COMMAND_ALIASES = List.copyOf(new LinkedHashSet<>(DISPLAY_TO_BACKEND.values()));
-        ACTIVITY_DISPLAY_NAMES = List.copyOf(DISPLAY_TO_BACKEND.keySet());
     }
 
     private static void register(String displayName, String backendName, String assetKey) {
@@ -136,10 +133,6 @@ public class PartyListing {
         return ACTIVITY_COMMAND_ALIASES;
     }
 
-    public static List<String> activityDisplayNames() {
-        return ACTIVITY_DISPLAY_NAMES;
-    }
-
     private static String lookupIgnoreCase(Map<String, String> map, String key) {
         String direct = map.get(key);
         if (direct != null) {
@@ -206,7 +199,6 @@ public class PartyListing {
         List<String> t = new ArrayList<>();
         t.addAll(getDisplayActivityNames(listing));
         t.add(worldOrRegionLabel(listing));
-        t.add(listing.mode() == PartyMode.CHILL ? "Chill" : "Grind");
         return Collections.unmodifiableList(t);
     }
 
@@ -263,33 +255,20 @@ public class PartyListing {
         return getDisplayActivityNames(backing);
     }
 
-    /**
-     * Label shown on party cards, e.g. "Chill · Nest of the Grootslangs".
-     */
+    /** Label shown on party cards with full activity names. */
     public String displayLabel() {
-        String modeLabel = backing.mode() == PartyMode.CHILL ? "Chill" : "Grind";
-        if (backing.mode() == PartyMode.GRIND && backing.strict()) {
-            modeLabel += " (Strict)";
-        }
         String displayNames = String.join(", ", getDisplayActivityNames(backing));
-        return worldOrRegionLabel(backing) + " · " + modeLabel + " · " + displayNames;
+        return worldOrRegionLabel(backing) + " · " + displayNames;
     }
 
-    /**
-     * Label shown on party cards with short activity names,
-     * e.g. "Chill · NOTG, TNA".
-     */
+    /** Label shown on party cards with short activity names. */
     public String displayShortLabel() {
-        String modeLabel = backing.mode() == PartyMode.CHILL ? "Chill" : "Grind";
-        if (backing.mode() == PartyMode.GRIND && backing.strict()) {
-            modeLabel += " (Strict)";
-        }
         List<String> shortNames = getDisplayActivityNames(backing).stream()
                 .map(PartyListing::displayNameToBackendName)
                 .map(name -> name == null ? "" : name.trim())
                 .filter(name -> !name.isEmpty())
                 .toList();
-        return worldOrRegionLabel(backing) + " · " + modeLabel + " · "
+        return worldOrRegionLabel(backing) + " · "
                 + (shortNames.isEmpty() ? "Unknown Activity" : String.join(", ", shortNames));
     }
 
@@ -297,15 +276,8 @@ public class PartyListing {
         return members.stream().filter(m -> m.isLeader).findFirst().orElse(members.isEmpty() ? null : members.get(0));
     }
 
-    public Listing getBacking() {
-        return backing;
-    }
-
     public boolean isJoinable() {
         return status == PartyStatus.OPEN && joinPolicy == PartyJoinPolicy.OPEN;
     }
 
-    public boolean isAutoCapacityClosed() {
-        return status == PartyStatus.CLOSED && closeReason == PartyCloseReason.AUTO_CAPACITY;
-    }
 }
