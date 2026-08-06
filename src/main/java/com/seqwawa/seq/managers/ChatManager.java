@@ -665,9 +665,7 @@ public class ChatManager {
         }
     }
 
-    private record HoverIdentity(String username, boolean nicknameDescription) {}
-
-    private static HoverIdentity hoverIdentity(Style style) {
+    static String extractHoverRealUsername(Style style) {
         if (style == null) {
             return null;
         }
@@ -687,21 +685,7 @@ public class ChatManager {
         if (!matcher.find()) {
             return null;
         }
-        boolean nicknameDescription = matcher.group(2) != null;
-        return new HoverIdentity(
-                nicknameDescription ? matcher.group(2) : matcher.group(1), nicknameDescription);
-    }
-
-    static String extractHoverRealUsername(Style style) {
-        HoverIdentity identity = hoverIdentity(style);
-        return identity == null ? null : identity.username();
-    }
-
-    static boolean hoverDescribesNickname(Style style, String username) {
-        HoverIdentity identity = hoverIdentity(style);
-        return identity != null
-                && identity.nicknameDescription()
-                && identity.username().equalsIgnoreCase(username);
+        return matcher.group(2) == null ? matcher.group(1) : matcher.group(2);
     }
 
     static String extractInsertionUsername(Style style) {

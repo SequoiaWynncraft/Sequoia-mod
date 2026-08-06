@@ -302,15 +302,6 @@ public final class DiscordRankChatDecorator {
             return colonIndex;
         }
 
-        // A nickname can contain the real username as one of its words, as in
-        // "Ascended nunot". Wynntils' reverse hover explicitly says that the whole
-        // fragment is nunot's nickname; without this check the generic username
-        // search below mistakes the suffix for a separately displayed reveal and
-        // leaves an empty recolouring range.
-        if (hasNicknameDescription(fragments, nameStart, colonIndex, username)) {
-            return colonIndex;
-        }
-
         int cursor = 0;
         for (ComponentTextEditor.Fragment fragment : fragments) {
             int fragmentStart = cursor;
@@ -328,22 +319,6 @@ public final class DiscordRankChatDecorator {
                     : Math.max(nameStart, fragmentStart);
         }
         return colonIndex;
-    }
-
-    private static boolean hasNicknameDescription(
-            List<ComponentTextEditor.Fragment> fragments, int start, int endExclusive, String username) {
-        int cursor = 0;
-        for (ComponentTextEditor.Fragment fragment : fragments) {
-            int fragmentStart = cursor;
-            cursor += fragment.text().length();
-            if (cursor <= start || fragmentStart >= endExclusive) {
-                continue;
-            }
-            if (ChatManager.hoverDescribesNickname(fragment.style(), username)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static boolean containsIgnoreCase(String haystack, String needle) {
@@ -579,7 +554,7 @@ public final class DiscordRankChatDecorator {
                 return new Speaker(cachedUsername, cachedRank, true);
             }
         }
-        return uniqueEmbeddedSpeaker(rankLookup, displayedName);
+        return null;
     }
 
     /**
@@ -630,41 +605,6 @@ public final class DiscordRankChatDecorator {
 
     /** The player a guild chat line belongs to, and the rank that was matched for them. */
     private record Speaker(String username, RankPresentation rank, boolean wholeDisplayName) {}
-
-    /**
-     * Last-resort resolution for metadata-free, spaced nicknames that include the
-     * account name, such as {@code Ascended nunot}. A result is accepted only when
-     * exactly one complete nickname token belongs to a linked member; two matches are
-     * ambiguous and deliberately leave the line untouched.
-     */
-    private static Speaker uniqueEmbeddedSpeaker(
-            Function<String, RankPresentation> rankLookup, String displayedName) {
-        if (displayedName == null
-                || displayedName.indexOf(' ') < 0
-                || displayedName.indexOf('/') >= 0
-                || displayedName.indexOf('(') >= 0
-                || displayedName.indexOf('[') >= 0) {
-            return null;
-        }
-
-        Set<String> candidates = new LinkedHashSet<>();
-        for (String token : displayedName.split("[^a-zA-Z0-9_]+")) {
-            addUsernameCandidate(candidates, token);
-        }
-
-        Speaker match = null;
-        for (String candidate : candidates) {
-            RankPresentation rank = rankLookup.apply(candidate);
-            if (rank == null) {
-                continue;
-            }
-            if (match != null) {
-                return null;
-            }
-            match = new Speaker(candidate, rank, true);
-        }
-        return match;
-    }
 
     private static Set<String> speakerCandidates(
             List<ComponentTextEditor.Fragment> fragments, String text, int regionStart, int regionEnd) {

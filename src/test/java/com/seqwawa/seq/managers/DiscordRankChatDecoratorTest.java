@@ -497,24 +497,6 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void colorsAscendedNunotWhenOnlyTheNicknameIsDisplayed() {
-        Style nicknameStyle = Style.EMPTY.withColor(DARK_AQUA);
-        Component message = Component.empty()
-                .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
-                .append(Component.literal("Ascended nunot").withStyle(nicknameStyle))
-                .append(Component.literal(": test").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
-
-        RankPresentation nunotRank = presentation("rank.druid", "Druid", 92, 0xD7BCEA);
-        Component decorated = DiscordRankChatDecorator.decorateGuildChat(
-                message, candidate -> candidate.equalsIgnoreCase("nunot") ? nunotRank : null);
-        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
-
-        assertEquals(List.of("druid"), pillLabels(decorated));
-        assertEquals(0xD7BCEA, colorOfFragmentContaining(fragments, "Ascended nunot"));
-        assertTrue(decorated.getString().contains("Ascended nunot: test"));
-    }
-
-    @Test
     void colorsAscendedNunotWhenMetadataResolvesItsEmbeddedUsernameFirst() {
         Style nicknameStyle = Style.EMPTY.withColor(DARK_AQUA).withInsertion("nunot");
         Component message = Component.empty()
@@ -532,23 +514,6 @@ class DiscordRankChatDecoratorTest {
         assertEquals("Ascended nunot", name.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
         assertEquals(0xFF007B, name.getFirst().style().getColor().getValue());
         assertEquals(0xC54FA3, name.getLast().style().getColor().getValue());
-    }
-
-    @Test
-    void refusesAnAmbiguousMetadataFreeSpacedNickname() {
-        Component message = Component.empty()
-                .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
-                .append(Component.literal("Ascended nunot").withStyle(Style.EMPTY.withColor(DARK_AQUA)))
-                .append(Component.literal(": test").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
-
-        RankPresentation linkedRank = presentation("rank.druid", "Druid", 92, 0xD7BCEA);
-        Component decorated = DiscordRankChatDecorator.decorateGuildChat(
-                message,
-                candidate -> candidate.equalsIgnoreCase("Ascended") || candidate.equalsIgnoreCase("nunot")
-                        ? linkedRank
-                        : null);
-
-        assertSame(message, decorated);
     }
 
     @Test
