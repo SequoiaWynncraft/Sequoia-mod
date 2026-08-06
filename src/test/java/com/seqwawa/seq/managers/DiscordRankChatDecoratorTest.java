@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.Style;
@@ -136,6 +137,7 @@ class DiscordRankChatDecoratorTest {
 
         assertEquals(List.of("sapling"), pillLabels(decorated));
         assertTrue(decorated.getString().contains("ArcLeRetour: t"));
+        assertEquals("In-game rank: Unknown", hoverText(decorated));
     }
 
     @Test
@@ -643,6 +645,22 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void pillTooltipShowsOnlyTheReplacedInGameRank() {
+        Component pill = DiscordRankChatDecorator.rankPill(
+                SAPLING, "recruiter", TextColor.fromRgb(GUILD_AQUA), "ArcLeRetour");
+
+        assertEquals("In-game rank: Recruiter", hoverText(pill));
+    }
+
+    @Test
+    void pillStillHasAHoverTargetWhenNoInGameRankMetadataExists() {
+        Component pill = DiscordRankChatDecorator.rankPill(
+                SAPLING, null, TextColor.fromRgb(GUILD_AQUA), "SomeoneElse");
+
+        assertEquals("In-game rank: Unknown", hoverText(pill));
+    }
+
+    @Test
     void switchesARankPillBetweenIndividualAndRoleColors() {
         RankPresentation presentation = new RankPresentation(
                 new DiscordRank("rank.sapling", "Sapling", 88),
@@ -955,6 +973,16 @@ class DiscordRankChatDecoratorTest {
                 .style()
                 .getColor()
                 .getValue();
+    }
+
+    private static String hoverText(Component component) {
+        return ComponentTextEditor.flatten(component).stream()
+                .map(fragment -> fragment.style().getHoverEvent())
+                .filter(HoverEvent.ShowText.class::isInstance)
+                .map(HoverEvent.ShowText.class::cast)
+                .map(event -> event.value().getString())
+                .findFirst()
+                .orElse(null);
     }
 
     /**

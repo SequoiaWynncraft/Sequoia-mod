@@ -2,6 +2,7 @@ package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
 import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.model.SeqBadgeTier;
 import com.seqwawa.seq.utils.ColorRamp;
@@ -250,7 +251,7 @@ public final class DiscordRankChatDecorator {
         // its own in which these glyphs mean nothing, so inheriting it collapses the
         // pill to no width and drags the rest of the line left.
         MutableComponent replacement = Component.empty()
-                .append(rankPill(rank, replacedGuildRank, inGameGuildChatTextColor()))
+                .append(rankPill(rank, replacedGuildRank, inGameGuildChatTextColor(), speaker.username()))
                 .append(Component.literal(" "));
         List<ComponentTextEditor.Fragment> withBadge =
                 insertInsignia(recoloured, colonIndex, speaker.username());
@@ -882,16 +883,7 @@ public final class DiscordRankChatDecorator {
     /** Rank pill whose role colour can return to the supplied source/default background. */
     static MutableComponent rankPill(
             RankPresentation rank, String replacedWynncraftRank, TextColor baseBackgroundColor) {
-        MutableComponent pill = NotificationAccessor.wynnPill(
-                rank.pillLabel(),
-                rampFor(rank),
-                roleRampFor(rank),
-                PILL_LABEL_COLOR,
-                null,
-                baseBackgroundColor);
-
-        // The tooltip is one component, so it cannot carry the gradient; it takes the
-        // primary stop, which is the colour Discord itself shows the role under.
+        MutableComponent pill = buildRankPill(rank, rank.pillLabel(), baseBackgroundColor);
         TextColor primary = colorFor(rank);
         MutableComponent tooltip = Component.literal("Sequoia rank: ")
                 .withStyle(ChatFormatting.GRAY)
@@ -900,6 +892,43 @@ public final class DiscordRankChatDecorator {
             tooltip.append(Component.literal("\nGuild rank: " + capitalize(replacedWynncraftRank))
                     .withStyle(ChatFormatting.DARK_GRAY));
         }
+        return withTooltip(pill, tooltip);
+    }
+
+    /** In-game pill with the local label easter egg and the original guild rank on hover. */
+    static MutableComponent rankPill(
+            RankPresentation rank,
+            String replacedWynncraftRank,
+            TextColor baseBackgroundColor,
+            String speakerUsername) {
+        MutableComponent pill = buildRankPill(
+                rank, PrincessRankEasterEgg.pillLabel(rank.pillLabel(), speakerUsername), baseBackgroundColor);
+
+        String inGameRank = replacedWynncraftRank == null || replacedWynncraftRank.isBlank()
+                ? null
+                : capitalize(replacedWynncraftRank);
+        if (inGameRank == null && PrincessRankEasterEgg.isLocalSpeaker(speakerUsername)) {
+            inGameRank = WynntilsGuildRankAccess.currentRankLabel();
+        }
+        MutableComponent tooltip = Component.literal("In-game rank: ")
+                .withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(inGameRank == null ? "Unknown" : inGameRank)
+                        .withStyle(ChatFormatting.WHITE));
+        return withTooltip(pill, tooltip);
+    }
+
+    private static MutableComponent buildRankPill(
+            RankPresentation rank, String pillLabel, TextColor baseBackgroundColor) {
+        return NotificationAccessor.wynnPill(
+                pillLabel,
+                rampFor(rank),
+                roleRampFor(rank),
+                PILL_LABEL_COLOR,
+                null,
+                baseBackgroundColor);
+    }
+
+    private static MutableComponent withTooltip(MutableComponent pill, Component tooltip) {
         return pill.withStyle(style -> style.withHoverEvent(new HoverEvent.ShowText(tooltip)));
     }
 

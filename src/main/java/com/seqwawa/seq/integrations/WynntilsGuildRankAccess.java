@@ -27,6 +27,17 @@ public final class WynntilsGuildRankAccess {
         return rank == GuildRank.CHIEF || rank == GuildRank.OWNER;
     }
 
+    /** The local player's live Wynncraft guild rank, as exposed by Wynntils. */
+    public static String currentRankLabel() {
+        GuildRank rank = currentRank();
+        return rank == GuildRank.UNKNOWN ? null : rank.label();
+    }
+
+    static String rankLabel(String wynntilsName) {
+        GuildRank rank = GuildRank.fromWynntilsName(wynntilsName);
+        return rank == GuildRank.UNKNOWN ? null : rank.label();
+    }
+
     public static GuildMembership guildMembership(String expectedGuildName) {
         if (!ensureGuildNameAvailable()) {
             return GuildMembership.unavailable();
@@ -132,19 +143,33 @@ public final class WynntilsGuildRankAccess {
     }
 
     private enum GuildRank {
-        CHIEF,
-        OWNER,
-        UNKNOWN;
+        RECRUIT("Recruit"),
+        RECRUITER("Recruiter"),
+        CAPTAIN("Captain"),
+        STRATEGIST("Strategist"),
+        CHIEF("Chief"),
+        OWNER("Owner"),
+        UNKNOWN(null);
+
+        private final String label;
+
+        GuildRank(String label) {
+            this.label = label;
+        }
+
+        String label() {
+            return label;
+        }
 
         static GuildRank fromWynntilsName(String name) {
             if (name == null) {
                 return UNKNOWN;
             }
-            return switch (name) {
-                case "CHIEF" -> CHIEF;
-                case "OWNER" -> OWNER;
-                default -> UNKNOWN;
-            };
+            try {
+                return valueOf(name.trim().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException ignored) {
+                return UNKNOWN;
+            }
         }
     }
 }
