@@ -39,6 +39,20 @@ class SeqCommandTest {
     }
 
     @Test
+    void registersPrincessRaidAnimationTestCommand() {
+        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+
+        SeqCommand.registerCommands(dispatcher, null);
+
+        assertNotNull(dispatcher.getRoot().getChild("seq").getChild("princess").getChild("animation"));
+        assertNotNull(dispatcher.getRoot()
+                .getChild("seq")
+                .getChild("princess")
+                .getChild("animation")
+                .getCommand());
+    }
+
+    @Test
     void normalizesSequoiaCommandLiteralsWithoutChangingArguments() {
         CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
         SeqCommand.registerCommands(dispatcher, null);

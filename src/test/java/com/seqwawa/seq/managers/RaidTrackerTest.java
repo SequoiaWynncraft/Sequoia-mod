@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
@@ -312,9 +313,11 @@ class RaidTrackerTest {
 
         RaidTracker.ResolvedRaidCompletion resolved =
                 RaidTracker.resolveForClient(remoteCompletion, "LocalPlayer");
-        RaidTracker.finishLocalCompletion(resolved);
+        AtomicBoolean celebrationTriggered = new AtomicBoolean();
+        RaidTracker.finishLocalCompletion(resolved, () -> celebrationTriggered.set(true));
 
         assertFalse(resolved.localCompletion());
+        assertFalse(celebrationTriggered.get());
         assertEquals(List.of("MrHmar", "Teslanator", "LoubiOP"), resolved.partyMembers());
         assertEquals(RaidPartySnapshotTracker.Phase.ACTIVE,
                 RaidPartySnapshotTracker.stateForTest().phase());
@@ -336,8 +339,10 @@ class RaidTrackerTest {
                 List.of("ActualOne", "ActualTwo", "ActualThree", "LocalPlayer"),
                 resolved.partyMembers());
 
-        RaidTracker.finishLocalCompletion(resolved);
+        AtomicBoolean celebrationTriggered = new AtomicBoolean();
+        RaidTracker.finishLocalCompletion(resolved, () -> celebrationTriggered.set(true));
 
+        assertTrue(celebrationTriggered.get());
         assertEquals(RaidPartySnapshotTracker.Phase.FINISHED_WAITING_FOR_EXIT,
                 RaidPartySnapshotTracker.stateForTest().phase());
         assertTrue(RaidPartySnapshotTracker.stateForTest().activeRaidParty().usernames().isEmpty());

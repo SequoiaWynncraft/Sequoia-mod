@@ -57,6 +57,7 @@ import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
 import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
+import com.seqwawa.seq.ui.PrincessRaidCelebration;
 import com.seqwawa.seq.ui.SequoiaScreen;
 import com.seqwawa.seq.ui.WorldMapScreen;
 import com.seqwawa.seq.update.UpdateManager;
@@ -294,6 +295,7 @@ public class SeqClient implements ClientModInitializer {
         ingredientGuideManager = IngredientGuideManager.getInstance();
         authService = MinecraftAuthService.getInstance();
         SeqCommand.register();
+        PrincessRaidCelebration.initialize();
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
         IngredientWaypointRenderer.initialize();
