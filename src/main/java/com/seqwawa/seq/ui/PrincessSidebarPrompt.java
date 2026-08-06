@@ -6,8 +6,8 @@ import java.util.Random;
 /** Randomly cycles a settings-sidebar prompt through hidden and sliding phases. */
 final class PrincessSidebarPrompt {
     static final long SLIDE_DURATION_MS = 320;
-    static final long MIN_HIDDEN_MS = 20_000;
-    static final long MAX_HIDDEN_MS = 50_000;
+    static final long MIN_HIDDEN_MS = 10_000;
+    static final long MAX_HIDDEN_MS = 25_000;
     static final long MIN_VISIBLE_MS = 1_800;
     static final long MAX_VISIBLE_MS = 3_200;
 
