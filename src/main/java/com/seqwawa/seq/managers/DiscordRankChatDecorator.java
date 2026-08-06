@@ -1032,7 +1032,7 @@ public final class DiscordRankChatDecorator {
                 || text.codePointCount(0, text.length()) <= 1) {
             TextColor color = RankGradientAnimation.colorAt(
                     displayRamp, roleRamp, 0d, RankGradientAnimation.Target.USERNAME, baseStyle.getColor());
-            return Component.literal(text).withStyle(baseStyle.withColor(color));
+            return Component.literal(text).withStyle(withRegisteredColor(baseStyle, color));
         }
 
         MutableComponent coloured = Component.empty();
@@ -1048,7 +1048,7 @@ public final class DiscordRankChatDecorator {
                     RankGradientAnimation.Target.USERNAME,
                     baseStyle.getColor());
             coloured.append(Component.literal(new String(Character.toChars(codePoint)))
-                    .withStyle(baseStyle.withColor(color)));
+                    .withStyle(withRegisteredColor(baseStyle, color)));
             offset += Character.charCount(codePoint);
             index++;
         }
@@ -1078,19 +1078,22 @@ public final class DiscordRankChatDecorator {
                     fragments,
                     start,
                     endExclusive,
-                    style -> style.withColor(RankGradientAnimation.colorAt(
-                                    displayRamp,
-                                    roleRamp,
-                                    0d,
-                                    RankGradientAnimation.Target.USERNAME,
-                                    style.getColor()))
+                    style -> withRegisteredColor(
+                                    style,
+                                    RankGradientAnimation.colorAt(
+                                            displayRamp,
+                                            roleRamp,
+                                            0d,
+                                            RankGradientAnimation.Target.USERNAME,
+                                            style.getColor()))
                             .withInsertion(insertion));
         }
         return ComponentTextEditor.restyleRangeByPosition(
                 fragments,
                 start,
                 endExclusive,
-                (style, position) -> style.withColor(
+                (style, position) -> withRegisteredColor(
+                                style,
                                 RankGradientAnimation.colorAt(
                                         displayRamp,
                                         roleRamp,
@@ -1098,6 +1101,15 @@ public final class DiscordRankChatDecorator {
                                         RankGradientAnimation.Target.USERNAME,
                                         style.getColor()))
                         .withInsertion(insertion));
+    }
+
+    /**
+     * Keeps the freshly registered colour instance even when its RGB value matches
+     * the source style. {@link Style#withColor(TextColor)} otherwise returns the
+     * source style unchanged, which drops the identity used to animate that glyph.
+     */
+    private static Style withRegisteredColor(Style style, TextColor color) {
+        return style.withColor((TextColor) null).withColor(color);
     }
 
     /**

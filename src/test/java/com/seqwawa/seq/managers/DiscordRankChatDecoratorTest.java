@@ -801,6 +801,25 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void keepsGradientRegistrationWhenItsEndStopMatchesTheBaseColor() {
+        RankPresentation presentation = new RankPresentation(
+                new DiscordRank("rank.treant", "Treant", 102),
+                ColorRamp.of(0xFF00FF),
+                ColorRamp.of(List.of(0xFF0000, 0xFFFFFF)));
+        List<TextColor> stored = ComponentTextEditor.flatten(DiscordRankChatDecorator.colouredName(
+                        "MrHmar", presentation, Style.EMPTY.withColor(0xFFFFFF)))
+                .stream()
+                .map(fragment -> fragment.style().getColor())
+                .toList();
+
+        assertEquals(0xFFFFFF, stored.getLast().getValue());
+        withPerUserColors(false, () -> assertEquals(
+                0xFF00FF,
+                RankGradientAnimation.animate(stored.getLast()).getValue(),
+                "the white endpoint must remain a registered gradient colour"));
+    }
+
+    @Test
     void keepsASolidSpeakerNameAsOneFragment() {
         MutableComponent name = DiscordRankChatDecorator.colouredName(
                 "ArcLeRetour", SAPLING, Style.EMPTY.withInsertion("ArcLeRetour"));
