@@ -468,7 +468,7 @@ public final class DiscordRankChatDecorator {
                 fragments,
                 messageStart,
                 text.length(),
-                style -> isGuildChatColor(style.getColor()) ? style.withColor(textColor) : style);
+                style -> isGuildMessageText(style) ? style.withColor(textColor) : style);
         if (recoloured.equals(fragments)) {
             return message;
         }
@@ -496,6 +496,11 @@ public final class DiscordRankChatDecorator {
 
     private static boolean isGuildChatColor(TextColor color) {
         return color != null && color.getValue() == GUILD_CHAT_COLOR;
+    }
+
+    /** Guild marker glyphs share aqua with the body but live in Wynncraft's icon font. */
+    private static boolean isGuildMessageText(Style style) {
+        return FontDescription.DEFAULT.equals(style.getFont()) && isGuildChatColor(style.getColor());
     }
 
     private static boolean isGuildSeparatorColor(TextColor color) {

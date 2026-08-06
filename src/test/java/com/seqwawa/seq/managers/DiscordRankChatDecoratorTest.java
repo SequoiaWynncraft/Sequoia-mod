@@ -58,6 +58,7 @@ class DiscordRankChatDecoratorTest {
     private static final FontDescription BADGE_FONT =
             new FontDescription.Resource(Identifier.fromNamespaceAndPath("wynncraft", "bp"));
     private static final String ICON_GLYPHS = "\uDAFF\uDFFC\uE01E\uDBFF\uDFFF\uE002";
+    private static final String CONTINUATION_GLYPHS = "\uDAFF\uDFFC\uE001\uDB00\uDC06";
     private static final String BADGE_GEOMETRY = "\uE001 \uE002\uE003";
     private static final String LEGACY_RED = "\u00A7c";
     private static final String LEGACY_RESET = "\u00A7f";
@@ -437,6 +438,24 @@ class DiscordRankChatDecoratorTest {
             SeqClient.showDiscordRanksSetting = previousRanks;
             SeqClient.inGameGuildChatTextColorSetting = previousTextColor;
         }
+    }
+
+    @Test
+    void keepsNativeMultilineGuildRailAquaWhileRecoloringMessageText() {
+        Component message = wynncraftGuildLine("RECRUITER", "EightySix", "ArcLeRetour", "first line")
+                .copy()
+                .append(Component.literal("\n"))
+                .append(Component.literal(CONTINUATION_GLYPHS)
+                        .withStyle(Style.EMPTY.withFont(ICON_FONT).withColor(GUILD_AQUA)))
+                .append(Component.literal(" second line").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+
+        Component decorated = DiscordRankChatDecorator.recolourGuildMessageText(
+                message, TextColor.fromRgb(0xA1B2C3));
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
+
+        assertEquals(0xA1B2C3, colorOfFragmentContaining(fragments, "first line"));
+        assertEquals(GUILD_AQUA, colorOfFragmentContaining(fragments, CONTINUATION_GLYPHS));
+        assertEquals(0xA1B2C3, colorOfFragmentContaining(fragments, "second line"));
     }
 
     @Test
