@@ -38,13 +38,8 @@ public final class PrincessRaidCelebration {
     /** Starts the celebration only when the hidden Princess mode is active. */
     public static void triggerIfEnabled() {
         if (PrincessMode.isEnabled()) {
-            forceTrigger();
+            startedAtMs = monotonicMillis();
         }
-    }
-
-    /** Starts the celebration regardless of mode, for the local test command. */
-    public static void forceTrigger() {
-        startedAtMs = monotonicMillis();
     }
 
     private static void render(GuiGraphics graphics, long nowMs) {

@@ -1,6 +1,7 @@
 package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.client.SeqClient;
+
 /** Applies the private rank-pill label to the local player while Princess mode is active. */
 final class PrincessRankEasterEgg {
     static final String PILL_LABEL = "PRINCESS";

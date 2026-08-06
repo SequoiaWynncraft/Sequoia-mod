@@ -52,7 +52,6 @@ import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.AuthException;
 import com.seqwawa.seq.ui.PartyFinderScreen;
-import com.seqwawa.seq.ui.PrincessRaidCelebration;
 import com.seqwawa.seq.utils.PlayerNameCache;
 
 public class SeqCommand {
@@ -134,7 +133,6 @@ public class SeqCommand {
                                 .then(buildBadgeCommand("badge"))
                                 .then(buildRankCommand("ranks"))
                                 .then(buildRankCommand("rank"))
-                                .then(buildPrincessCommand())
                                 .then(buildMapCommand())
                                 .then(ClientCommandManager.literal("ingredients")
                                                 .executes(SeqCommand::openIngredientGuideScreen))
@@ -477,12 +475,6 @@ public class SeqCommand {
                                                 .executes(SeqCommand::runDiscordRankDebug));
         }
 
-        private static LiteralArgumentBuilder<FabricClientCommandSource> buildPrincessCommand() {
-                return ClientCommandManager.literal("princess")
-                                .then(ClientCommandManager.literal("animation")
-                                                .executes(SeqCommand::runPrincessRaidAnimation));
-        }
-
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildMapCommand() {
                 return ClientCommandManager.literal("map")
                                 .executes(SeqCommand::openWorldMapScreen)
@@ -653,11 +645,6 @@ public class SeqCommand {
                                 enabled
                                                 ? "Discord rank debug on: guild rank decoration details are dumped to the game log."
                                                 : "Discord rank debug off.");
-                return 1;
-        }
-
-        private static int runPrincessRaidAnimation(CommandContext<FabricClientCommandSource> ctx) {
-                PrincessRaidCelebration.forceTrigger();
                 return 1;
         }
 
