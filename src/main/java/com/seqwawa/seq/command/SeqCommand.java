@@ -643,7 +643,7 @@ public class SeqCommand {
                 sendFeedback(
                                 ctx.getSource(),
                                 enabled
-                                                ? "Discord rank debug on: guild and party chat decoration details are dumped to the game log."
+                                                ? "Discord rank debug on: guild rank decoration details are dumped to the game log."
                                                 : "Discord rank debug off.");
                 return 1;
         }

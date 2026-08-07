@@ -166,9 +166,6 @@ public final class DiscordRankChatDecorator {
         // for them. Detect the channel independently and give the more specific party
         // shape precedence instead of letting the broad guild pre-check mask it.
         boolean partyCandidate = isPartyChatCandidate(message);
-        if (debug && !guildCandidate && !partyCandidate) {
-            logInspection(message, "not recognized as guild or party chat");
-        }
         if (isEnabled() && (guildCandidate || partyCandidate)) {
             DiscordRankService service = DiscordRankService.getInstance();
             if (!service.hasRanks()) {
@@ -1261,7 +1258,7 @@ public final class DiscordRankChatDecorator {
         debug = enabled;
     }
 
-    /** Whether undecorated supported-chat lines are being dumped to the log. */
+    /** Whether undecorated guild lines are being dumped to the log. */
     public static boolean isDebug() {
         return debug;
     }
@@ -1270,8 +1267,7 @@ public final class DiscordRankChatDecorator {
         if (!debug) {
             return;
         }
-        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(message);
-        String text = ComponentTextEditor.textOf(fragments);
+        String text = ComponentTextEditor.textOf(ComponentTextEditor.flatten(message));
         if (text.indexOf(':') < 0) {
             return;
         }
@@ -1280,30 +1276,18 @@ public final class DiscordRankChatDecorator {
         String speakers = pills.stream()
                 .map(pill -> pill.label() + "->"
                         + speakerCandidates(
-                                fragments,
+                                ComponentTextEditor.flatten(message),
                                 text,
                                 pill.endExclusive(),
                                 Math.max(pill.endExclusive(), indexOfColon(text, pill.endExclusive()))))
                 .toList()
                 .toString();
-        String fragmentStyles = fragments.stream()
-                .limit(24)
-                .map(fragment -> "{text=" + describeCodepoints(fragment.text())
-                        + ",color=" + colorValue(fragment.style().getColor())
-                        + ",font=" + fragment.style().getFont() + "}")
-                .toList()
-                .toString();
         SeqClient.LOGGER.info(
-                "[DiscordRanks] {} | badges={} | speakers={} | fragments={} | codepoints={}",
+                "[DiscordRanks] {} | badges={} | speakers={} | codepoints={}",
                 outcome,
                 pills.stream().map(WynnPillGlyphs.Pill::label).toList(),
                 speakers,
-                fragmentStyles,
                 describeCodepoints(text));
-    }
-
-    private static String colorValue(TextColor color) {
-        return color == null ? "inherited" : String.format("#%06X", color.getValue());
     }
 
     private static int indexOfColon(String text, int from) {
