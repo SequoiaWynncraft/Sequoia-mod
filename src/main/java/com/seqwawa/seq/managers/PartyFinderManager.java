@@ -19,7 +19,6 @@ import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.Member;
 import com.seqwawa.seq.model.PartyCloseReason;
 import com.seqwawa.seq.model.PartyJoinPolicy;
-import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.PartyStatus;
@@ -31,7 +30,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.events.PartyFinderUpdateEvent;
 import com.seqwawa.seq.integrations.WynntilsWorldStateAccess;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.ConnectionManager;
@@ -256,8 +254,6 @@ public class PartyFinderManager implements NotificationAccessor {
                         ApiClient.getInstance()
                                 .createListing(
                                         resolution.activityIds(),
-                                        PartyMode.CHILL,
-                                        false,
                                         PartyRegion.NA,
                                         PartyRole.DPS,
                                         null,
@@ -300,8 +296,6 @@ public class PartyFinderManager implements NotificationAccessor {
                                 .updateListing(
                                         listing.id(),
                                         resolution.activityIds(),
-                                        listing.mode(),
-                                        listing.strict(),
                                         region,
                                         listing.note(),
                                         currentLeaderWorldName(),
@@ -603,21 +597,7 @@ public class PartyFinderManager implements NotificationAccessor {
     // ══════════════════════════════════════════════════════════════
 
     public CompletableFuture<Listing> createParty(
-            long activityId, PartyMode mode, PartyRegion region, PartyRole role, String note) {
-        return createParty(
-                List.of(activityId), mode, false, region, role, note, PartyJoinPolicy.INVITE_ONLY, 0);
-    }
-
-    public CompletableFuture<Listing> createParty(
-            List<Long> activityIds, PartyMode mode, boolean strict, PartyRegion region, PartyRole role, String note) {
-        return createParty(
-                activityIds, mode, strict, region, role, note, PartyJoinPolicy.INVITE_ONLY, 0);
-    }
-
-    public CompletableFuture<Listing> createParty(
             List<Long> activityIds,
-            PartyMode mode,
-            boolean strict,
             PartyRegion region,
             PartyRole role,
             String note,
@@ -626,8 +606,6 @@ public class PartyFinderManager implements NotificationAccessor {
         return ApiClient.getInstance()
                 .createListing(
                         activityIds,
-                        mode,
-                        strict,
                         region,
                         role,
                         note,
@@ -654,21 +632,6 @@ public class PartyFinderManager implements NotificationAccessor {
                 .exceptionally(e -> {
                     String errorMessage = extractUserFriendlyApiError(e, "Unable to join party");
                     SeqClient.LOGGER.warn("Failed to join party: {}", errorMessage);
-                    pushUiError(errorMessage);
-                    return null;
-                });
-    }
-
-    public CompletableFuture<Listing> joinPartyWithInviteToken(long listingId, PartyRole role, String inviteToken) {
-        return ApiClient.getInstance()
-                .joinListing(listingId, role, inviteToken)
-                .thenApply(listing -> {
-                    applyJoinedListingState(listing);
-                    return listing;
-                })
-                .exceptionally(e -> {
-                    String errorMessage = extractUserFriendlyApiError(e, "Unable to join party");
-                    SeqClient.LOGGER.warn("Failed to join party with invite token: {}", errorMessage);
                     pushUiError(errorMessage);
                     return null;
                 });
@@ -898,10 +861,6 @@ public class PartyFinderManager implements NotificationAccessor {
         refreshCurrentListing();
         notifyPartyActionUx(action, previousListing, listing, myUUID);
 
-        // Fire event for the UI
-        if (SeqClient.getEventBus() != null) {
-            SeqClient.getEventBus().dispatch(new PartyFinderUpdateEvent(action, listing));
-        }
     }
 
     public void handlePartyFinderInvite(long listingId, String inviterUUID, String inviteToken, Listing listing) {
@@ -1487,11 +1446,6 @@ public class PartyFinderManager implements NotificationAccessor {
         return isPartyLeader();
     }
 
-    /** No-op — state is derived from backend. Kept for screen compatibility. */
-    public void setHasListedParty(boolean managing) {
-        // intentionally empty — state is derived from isPartyLeader()
-    }
-
     /** Disbands the local player's current listing. */
     public void delistParty() {
         if (currentListing != null) {
@@ -1907,27 +1861,14 @@ public class PartyFinderManager implements NotificationAccessor {
         }
     }
 
-    /**
-     * Creates a party from the modal's tag list + role string.
-     * Extracts activityIds from raid tags, mode from Chill/Grind tag.
-     */
+    /** Creates a party from the modal's activity list and role string. */
     public void createParty(
-            List<String> tags,
+            List<String> activityNames,
             String role,
             int reservedSlots,
-            boolean strictRoles,
             PartyRegion region,
             PartyJoinPolicy joinPolicy) {
-        // Separate party-mode tags from raid/activity display names
-        PartyMode mode = PartyMode.CHILL;
-        List<String> raidDisplayNames = new ArrayList<>();
-        for (String tag : tags) {
-            if ("Grind".equalsIgnoreCase(tag)) {
-                mode = PartyMode.GRIND;
-            } else if (!"Chill".equalsIgnoreCase(tag)) {
-                raidDisplayNames.add(tag);
-            }
-        }
+        List<String> raidDisplayNames = activityNames == null ? List.of() : activityNames;
 
         if (raidDisplayNames.isEmpty()) {
             SeqClient.LOGGER.error("Cannot create party without a selected activity");
@@ -1975,15 +1916,12 @@ public class PartyFinderManager implements NotificationAccessor {
 
         PartyRole mappedCreateRole = mapDisplayRole(role);
         final PartyRole createRole = mappedCreateRole != null ? mappedCreateRole : PartyRole.DPS;
-        final boolean strict = mode == PartyMode.GRIND && strictRoles;
         final PartyRegion selectedRegion = region != null ? region : PartyRegion.NA;
 
         PartyJoinPolicy selectedJoinPolicy =
                 joinPolicy != null ? joinPolicy : PartyJoinPolicy.INVITE_ONLY;
         createParty(
                 activityIds,
-                mode,
-                strict,
                 selectedRegion,
                 createRole,
                 null,
@@ -1992,10 +1930,9 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public void updateParty(
-            List<String> tags,
+            List<String> activityNames,
             String role,
             int reservedSlots,
-            boolean strictRoles,
             PartyRegion region,
             PartyJoinPolicy joinPolicy) {
         if (currentListing == null) {
@@ -2005,15 +1942,7 @@ public class PartyFinderManager implements NotificationAccessor {
 
         int requestedReservedSlots = reservedSlots;
 
-        PartyMode mode = PartyMode.CHILL;
-        List<String> raidDisplayNames = new ArrayList<>();
-        for (String tag : tags) {
-            if ("Grind".equalsIgnoreCase(tag)) {
-                mode = PartyMode.GRIND;
-            } else if (!"Chill".equalsIgnoreCase(tag)) {
-                raidDisplayNames.add(tag);
-            }
-        }
+        List<String> raidDisplayNames = activityNames == null ? List.of() : activityNames;
 
         if (raidDisplayNames.isEmpty()) {
             pushUiError("Select at least one raid before updating your party.");
@@ -2045,7 +1974,6 @@ public class PartyFinderManager implements NotificationAccessor {
 
         PartyRegion selectedRegion =
                 region != null ? region : (currentListing.region() != null ? currentListing.region() : PartyRegion.NA);
-        boolean strict = mode == PartyMode.GRIND && strictRoles;
         PartyJoinPolicy selectedJoinPolicy = joinPolicy != null
                 ? joinPolicy
                 : currentListing.resolvedJoinPolicy();
@@ -2053,8 +1981,6 @@ public class PartyFinderManager implements NotificationAccessor {
                 .updateListing(
                         currentListing.id(),
                         activityIds,
-                        mode,
-                        strict,
                         selectedRegion,
                         currentListing.note(),
                         currentLeaderWorldName(),
@@ -2304,7 +2230,8 @@ public class PartyFinderManager implements NotificationAccessor {
         }
         if (statusCode == 403) {
             if (body.contains("guild") || body.contains("not in guild")) {
-                return "Access denied: party finder is available to Sequoia and allied guild members.";
+                return "Access denied: managing parties requires Sequoia/allied guild membership or access to the"
+                        + " Party Finder Discord channel.";
             }
             if (backendError != null) {
                 return backendError;
@@ -2338,10 +2265,6 @@ public class PartyFinderManager implements NotificationAccessor {
             case "only the party leader can reopen the listing" -> "Only the party leader can reopen the party.";
             case "only the party leader can disband the listing" -> "Only the party leader can disband the party.";
             case "you are not a member of this party" -> "You are not in this party.";
-            case "strict grind party allows at most 1 healer" -> "This strict grind party already has a healer.";
-            case "strict grind party must include at least 1 tank" -> "This strict grind party still needs a tank.";
-            case "strict grind party has too many dps slots filled" ->
-                "This strict grind party has no DPS slots left.";
             default -> backendError;
         };
     }

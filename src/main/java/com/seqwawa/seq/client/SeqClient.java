@@ -680,7 +680,7 @@ public class SeqClient implements ClientModInitializer {
 
         showDiscordRanksSetting.setPresentation(
                 "Show Discord ranks and colors",
-                "Replace Wynncraft guild ranks with each member's Sequoia Discord rank.",
+                "Show Sequoia Discord ranks in guild chat and member colors in supported chat channels.",
                 "Discord ranks");
         showChatInsigniasSetting.setPresentation(
                 "Show insignias", "Display a member's Sequoia insignia beside their chat name.", "Discord ranks");
@@ -706,8 +706,8 @@ public class SeqClient implements ClientModInitializer {
                 "Rank pills");
         animateRankGradientsSetting.setParentSetting(showRankPillGradientsSetting);
         colorUsernamesSetting.setPresentation(
-                "Color usernames",
-                "Use each member's Discord role color on their player or Discord bridge name.",
+                "Color chat usernames",
+                "Use each member's Discord role color on guild, party and Discord bridge names.",
                 "Usernames");
         colorUsernamesSetting.setParentSetting(showDiscordRanksSetting);
         showUsernameGradientsSetting.setPresentation(
@@ -717,7 +717,7 @@ public class SeqClient implements ClientModInitializer {
         showUsernameGradientsSetting.setParentSetting(colorUsernamesSetting);
         animateUsernameGradientsSetting.setPresentation(
                 "Animate gradients",
-                "Move gradient colors across player and Discord bridge names while chat is rendered.",
+                "Move gradient colors across guild, party and Discord bridge names while chat is rendered.",
                 "Usernames");
         animateUsernameGradientsSetting.setParentSetting(showUsernameGradientsSetting);
 

@@ -1243,8 +1243,6 @@ public class SeqCommand {
                                 + " | "
                                 + activities
                                 + " | "
-                                + formatEnumLabel(listing.mode().name())
-                                + " | "
                                 + listing.occupiedSlotCount()
                                 + "/"
                                 + listing.maxPartySize()

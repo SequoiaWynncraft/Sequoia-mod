@@ -12,7 +12,6 @@ import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.Member;
 import com.seqwawa.seq.model.PartyJoinPolicy;
-import com.seqwawa.seq.model.PartyMode;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.PartyStatus;
@@ -290,8 +289,6 @@ class PartyFinderManagerAnnouncementTest {
                 activities,
                 null,
                 leaderUuid,
-                PartyMode.CHILL,
-                false,
                 PartyRegion.NA,
                 status,
                 null,
@@ -320,8 +317,6 @@ class PartyFinderManagerAnnouncementTest {
                 listing.activities(),
                 listing.activity(),
                 listing.leaderUUID(),
-                listing.mode(),
-                listing.strict(),
                 listing.region(),
                 listing.world(),
                 listing.status(),

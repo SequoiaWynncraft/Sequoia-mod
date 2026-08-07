@@ -15,8 +15,10 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
 /**
- * Rewrites the Wynncraft guild rank badge into the sender's Sequoia Discord rank,
- * and links the worlds a line names, just before it is queued for display.
+ * Applies Sequoia Discord rank presentation and world-name links just before a chat
+ * line is queued for display. Guild chat can replace its rank badge, party chat only
+ * receives the linked member's username colour, and supported world names become
+ * clickable after that rank decoration is complete.
  * <p>
  * This is the last hop every chat line takes, since {@code addMessage(Component)}
  * delegates here, so it also covers messages Wynntils has already reformatted

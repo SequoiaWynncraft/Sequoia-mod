@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -33,7 +34,8 @@ import net.minecraft.resources.Identifier;
 
 /**
  * Swaps the Wynncraft guild rank shown in chat for the member's Sequoia Discord
- * rank, and gives guild bridge messages the same badge.
+ * rank, gives guild bridge messages the same badge, and applies the same member
+ * colours to party-chat names without adding a badge there.
  * <p>
  * In guild chat Wynncraft draws the in-game rank as a glyph "pill"
  * ({@code RECRUITER}); this replaces that pill in place with the linked Discord
@@ -71,6 +73,13 @@ public final class DiscordRankChatDecorator {
 
     /** Dark aqua Wynntils uses for the speaker name and trailing separator. */
     private static final int GUILD_SPEAKER_COLOR = 0x00AAAA;
+
+    /** Yellow Wynncraft uses for party chat; see Wynntils' party recipient pattern. */
+    private static final int PARTY_CHAT_COLOR = 0xFFFF55;
+
+    /** Complete primary party marker; individual glyphs can also occur inside guild pills. */
+    private static final String PARTY_MARKER_GLYPHS =
+            "\uDAFF\uDFFC\uE005\uDBFF\uDFFF\uE002\uDBFF\uDFFE";
 
     /** Bar drawn down the left of a bridge block, used until a real one is captured. */
     static final String BRIDGE_CONTINUATION_GLYPH = "\uF8F1";
@@ -153,23 +162,42 @@ public final class DiscordRankChatDecorator {
         }
 
         Component decorated = message;
-        if (isEnabled() && WynnPillGlyphs.containsPill(message.getString())) {
+        boolean guildCandidate = WynnPillGlyphs.containsPill(message.getString());
+        // Party markers also contain BMP private-use glyphs, so containsPill() is true
+        // for them. Detect the channel independently and give the more specific party
+        // shape precedence instead of letting the broad guild pre-check mask it.
+        boolean partyCandidate = isPartyChatCandidate(message);
+        if (isEnabled() && (guildCandidate || partyCandidate)) {
             DiscordRankService service = DiscordRankService.getInstance();
             if (!service.hasRanks()) {
                 logInspection(message, "no linked ranks loaded yet");
             } else {
                 try {
-                    decorated = decorateGuildChat(message, service::presentationForMinecraftUsername);
+                    decorated = decorateSupportedChat(
+                            message, service::presentationForMinecraftUsername, guildCandidate, partyCandidate);
                     logInspection(
-                            message, decorated == message ? "no guild rank badge or unlinked speaker" : "rewritten");
+                            message,
+                            decorated == message
+                                    ? "no supported chat speaker or unlinked speaker"
+                                    : "rewritten");
                 } catch (RuntimeException exception) {
-                    SeqClient.LOGGER.debug("[DiscordRanks] Failed to decorate guild chat line.", exception);
+                    SeqClient.LOGGER.debug("[DiscordRanks] Failed to decorate chat line.", exception);
                 }
             }
-        } else if (isEnabled()) {
-            logInspection(message, "no glyph badge in line");
         }
         return recolourGuildMessageText(decorated, inGameGuildChatTextColor());
+    }
+
+    /** Channel selection core, parameterised so the private-use overlap stays testable. */
+    static Component decorateSupportedChat(
+            Component message,
+            Function<String, RankPresentation> rankLookup,
+            boolean guildCandidate,
+            boolean partyCandidate) {
+        if (partyCandidate) {
+            return decoratePartyChat(message, rankLookup);
+        }
+        return guildCandidate ? decorateGuildChat(message, rankLookup) : message;
     }
 
     /** Decoration core, parameterised on the rank lookup so it stays unit-testable. */
@@ -190,6 +218,85 @@ public final class DiscordRankChatDecorator {
         }
 
         return decorateByPosition(fragments, text, rankLookup, message);
+    }
+
+    /**
+     * Colours a linked member's party-chat name while leaving the channel marker,
+     * separator and message body exactly as Wynncraft supplied them. Party chat has
+     * no guild-rank badge to replace, so this deliberately reuses only the existing
+     * speaker resolution and name-colouring path.
+     */
+    static Component decoratePartyChat(Component message, Function<String, RankPresentation> rankLookup) {
+        if (message == null) {
+            return null;
+        }
+
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(message);
+        String text = ComponentTextEditor.textOf(fragments);
+        int nameStart = partySpeakerStart(fragments, text);
+        if (nameStart < 0) {
+            return message;
+        }
+
+        Speaker speaker = resolveSpeaker(rankLookup, fragments, text, nameStart);
+        if (speaker == null) {
+            return message;
+        }
+
+        int colonIndex = text.indexOf(':', nameStart);
+        int nameEnd = speaker.wholeDisplayName()
+                ? colonIndex
+                : speakerNameEnd(fragments, text, nameStart, colonIndex, speaker.username());
+        List<ComponentTextEditor.Fragment> recoloured =
+                recolourName(fragments, nameStart, nameEnd, speaker.rank(), speaker.username());
+        return rebuild(recoloured);
+    }
+
+    /**
+     * Finds the first visible character after Wynncraft's yellow party marker. The
+     * marker check keeps other yellow messages with a colon out, while locating it by
+     * style still works when Wynntils has prepended a timestamp.
+     */
+    private static int partySpeakerStart(List<ComponentTextEditor.Fragment> fragments, String text) {
+        int primaryMarker = text.indexOf(PARTY_MARKER_GLYPHS);
+        if (primaryMarker >= 0) {
+            int start = decorationEnd(text, primaryMarker, text.length());
+            return start < text.length() ? start : -1;
+        }
+
+        int cursor = 0;
+        for (ComponentTextEditor.Fragment fragment : fragments) {
+            TextColor color = fragment.style().getColor();
+            int fragmentEnd = cursor + fragment.text().length();
+            if (color != null && color.getValue() == PARTY_CHAT_COLOR) {
+                for (int index = cursor; index < fragmentEnd; ) {
+                    int codePoint = text.codePointAt(index);
+                    if (isDecoration(codePoint)) {
+                        int start = decorationEnd(text, index, text.length());
+                        return start < text.length() ? start : -1;
+                    }
+                    index += Character.charCount(codePoint);
+                }
+            }
+            cursor = fragmentEnd;
+        }
+        return -1;
+    }
+
+    /** Cheap gate before the party decorator allocates a flattened fragment list. */
+    static boolean isPartyChatCandidate(Component message) {
+        if (message.getString().contains(PARTY_MARKER_GLYPHS)) {
+            return true;
+        }
+        return message.visit((style, text) -> {
+            TextColor color = style.getColor();
+            boolean yellowMarker = color != null
+                    && color.getValue() == PARTY_CHAT_COLOR
+                    && text.codePoints().anyMatch(DiscordRankChatDecorator::isDecoration);
+            return yellowMarker
+                    ? Optional.of(true)
+                    : Optional.empty();
+        }, Style.EMPTY).orElse(false);
     }
 
     /**
@@ -473,8 +580,13 @@ public final class DiscordRankChatDecorator {
             return message;
         }
 
+        return rebuild(recoloured);
+    }
+
+    /** Reassembles edited fragments without dropping any non-colour style metadata. */
+    private static MutableComponent rebuild(List<ComponentTextEditor.Fragment> fragments) {
         MutableComponent result = Component.empty();
-        for (ComponentTextEditor.Fragment fragment : recoloured) {
+        for (ComponentTextEditor.Fragment fragment : fragments) {
             result.append(Component.literal(fragment.text()).withStyle(fragment.style()));
         }
         return result;
@@ -827,13 +939,16 @@ public final class DiscordRankChatDecorator {
         return ComponentTextEditor.insertAt(fragments, colonIndex, insigniaBadge(tier));
     }
 
-    /** The insignia glyph with its tooltip, shared by guild chat and the bridge. */
+    /** A spaced insignia glyph with its tooltip, shared by guild chat and the bridge. */
     static MutableComponent insigniaBadge(SeqBadgeTier tier) {
         MutableComponent tooltip = Component.literal("Sequoia insignia: ")
                 .withStyle(ChatFormatting.GRAY)
                 .append(Component.literal(insigniaName(tier)).withStyle(INSIGNIA_COLORS.get(tier)));
-        return Component.literal(INSIGNIA_GLYPHS.get(tier))
-                .withStyle(style -> style.withFont(INSIGNIA_FONT).withHoverEvent(new HoverEvent.ShowText(tooltip)));
+        return Component.empty()
+                .append(Component.literal(" "))
+                .append(Component.literal(INSIGNIA_GLYPHS.get(tier))
+                        .withStyle(style ->
+                                style.withFont(INSIGNIA_FONT).withHoverEvent(new HoverEvent.ShowText(tooltip))));
     }
 
     /**
