@@ -148,6 +148,12 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting profileOnShiftClickSetting;
 
     @Getter
+    public static Setting.BooleanSetting linkWorldNamesSetting;
+
+    @Getter
+    public static Setting.BooleanSetting worldLinkRunsSwitchSetting;
+
+    @Getter
     public static Setting.BooleanSetting raidAutoAnnounceSetting;
 
     @Getter
@@ -648,6 +654,11 @@ public class SeqClient implements ClientModInitializer {
         // Off by default: shift-click is vanilla's "insert this name into the chat box"
         // gesture, so taking it over is opt-in rather than a surprise.
         profileOnShiftClickSetting = new Setting.BooleanSetting("profile_on_shift_click", "chat", false);
+        linkWorldNamesSetting = new Setting.BooleanSetting("link_world_names", "chat", true);
+        // Switching on the click itself is the point: a fresh profession world fills
+        // while you retype the command. The link has to be clicked deliberately, and
+        // anyone who would rather read the command first can turn this off.
+        worldLinkRunsSwitchSetting = new Setting.BooleanSetting("world_link_runs_switch", "chat", true);
 
         showDiscordChatSetting.setPresentation(
                 "Show Discord chat", "Display messages forwarded from the Sequoia Discord.", "Discord chat");
@@ -714,6 +725,16 @@ public class SeqClient implements ClientModInitializer {
                 "Open Sequoia profile on shift-click",
                 "Opens the Sequoia website player profile.",
                 "Chat behavior");
+        linkWorldNamesSetting.setPresentation(
+                "Link world names in chat",
+                "Turn a world named in chat, such as NA6, into a link that switches you to it.",
+                "Chat behavior");
+        worldLinkRunsSwitchSetting.setPresentation(
+                "Switch on click",
+                "Click a world name to switch straight away. When off, the /switch command is typed"
+                        + " into your chat box so you can send it yourself.",
+                "Chat behavior");
+        worldLinkRunsSwitchSetting.setParentSetting(linkWorldNamesSetting);
         raidAutoAnnounceSetting = new Setting.BooleanSetting("auto_announce", "raids", true);
         radianceCheckerSetting = new Setting.BooleanSetting("enable_radiance_visualiser", "raids", true);
         radianceMarkerColorSetting = new Setting.ColorSetting("radiance_marker_color", "raids", 0xFF0000)
@@ -773,6 +794,8 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().registerWithLegacyKeys(showUsernameGradientsSetting, "chat.show_rank_gradients");
         getConfigManager().register(animateUsernameGradientsSetting);
         getConfigManager().register(profileOnShiftClickSetting);
+        getConfigManager().register(linkWorldNamesSetting);
+        getConfigManager().register(worldLinkRunsSwitchSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
         getConfigManager().register(trackGuildWarsSetting);
         getConfigManager().register(checkUpdatesSetting);

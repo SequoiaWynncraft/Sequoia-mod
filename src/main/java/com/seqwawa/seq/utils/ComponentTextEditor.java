@@ -43,6 +43,22 @@ public final class ComponentTextEditor {
     }
 
     /**
+     * Rebuilds {@code fragments} into a component, each leaf keeping its own style.
+     * <p>
+     * For callers that only restyle, since {@link #replaceRange} rebuilds as a side
+     * effect of splicing and so needs a replacement it has nothing to put.
+     */
+    public static MutableComponent toComponent(List<Fragment> fragments) {
+        MutableComponent rebuilt = Component.empty();
+        if (fragments != null) {
+            for (Fragment fragment : fragments) {
+                appendIfPresent(rebuilt, fragment.text(), fragment.style());
+            }
+        }
+        return rebuilt;
+    }
+
+    /**
      * Rebuilds {@code fragments} with {@code [start, endExclusive)} swapped for
      * {@code replacement}. Fragments straddling a boundary are split, keeping their
      * style on both halves.

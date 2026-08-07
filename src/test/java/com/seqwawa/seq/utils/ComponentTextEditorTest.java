@@ -163,6 +163,27 @@ class ComponentTextEditorTest {
     }
 
     @Test
+    void rebuildsRestyledFragmentsKeepingEveryLeafStyle() {
+        List<ComponentTextEditor.Fragment> fragments =
+                ComponentTextEditor.flatten(Component.literal("abcdef").withStyle(Style.EMPTY.withColor(0x112233)));
+
+        Component rebuilt = ComponentTextEditor.toComponent(
+                ComponentTextEditor.restyleRange(fragments, 2, 4, style -> style.withUnderlined(true)));
+
+        assertEquals("abcdef", rebuilt.getString());
+        assertEquals(
+                List.of(false, true, false),
+                ComponentTextEditor.flatten(rebuilt).stream()
+                        .map(fragment -> fragment.style().isUnderlined())
+                        .toList());
+        assertEquals(
+                List.of(0x112233, 0x112233, 0x112233),
+                ComponentTextEditor.flatten(rebuilt).stream()
+                        .map(fragment -> fragment.style().getColor().getValue())
+                        .toList());
+    }
+
+    @Test
     void returnsNullWhenTheRangeMatchesNothing() {
         List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(Component.literal("abc"));
 
