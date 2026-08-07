@@ -1,6 +1,7 @@
 package com.seqwawa.seq.mixins;
 
 import com.seqwawa.seq.managers.DiscordRankChatDecorator;
+import com.seqwawa.seq.managers.WorldSwitchChatDecorator;
 import com.seqwawa.seq.utils.ChatBridgeLineWrapping;
 import java.util.List;
 import net.minecraft.client.GuiMessage;
@@ -14,9 +15,10 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
 /**
- * Applies Sequoia Discord rank presentation to supported Wynncraft chat channels
- * just before the line is queued for display. Guild chat can replace its rank badge;
- * party chat only receives the linked member's username colour.
+ * Applies Sequoia Discord rank presentation and world-name links just before a chat
+ * line is queued for display. Guild chat can replace its rank badge, party chat only
+ * receives the linked member's username colour, and supported world names become
+ * clickable after that rank decoration is complete.
  * <p>
  * This is the last hop every chat line takes, since {@code addMessage(Component)}
  * delegates here, so it also covers messages Wynntils has already reformatted
@@ -26,14 +28,23 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 @Mixin(ChatComponent.class)
 public class ChatComponentMixin {
 
+    /**
+     * Rank decoration runs first: it rebuilds guild lines around the pill it
+     * inserts, and linking is a pure restyle that survives being applied to the
+     * result. World links are deliberately not limited to guild chat, so a world
+     * named on the Discord bridge or in a shared bomb list is clickable too.
+     */
     @ModifyVariable(
             method =
                     "addMessage(Lnet/minecraft/network/chat/Component;Lnet/minecraft/network/chat/MessageSignature;Lnet/minecraft/client/GuiMessageTag;)V",
             at = @At("HEAD"),
             argsOnly = true,
             index = 1)
-    private Component seq$applyDiscordRank(Component message) {
-        return DiscordRankChatDecorator.decorateGuildChat(message);
+    private Component seq$decorateChatLine(Component message) {
+        Component decorated = DiscordRankChatDecorator.decorateGuildChat(message);
+        Component linked = WorldSwitchChatDecorator.decorate(decorated);
+        DiscordRankChatDecorator.retainBridgeRail(decorated, linked);
+        return linked;
     }
 
     /**

@@ -19,6 +19,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Automatic backend authentication
 - Automatic connection to Sequoia services
 - In-game Discord chat bridge
+- Clickable world names in chat, so a called-out world is one click away
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
 - Raid tracking and announcements
@@ -121,6 +122,7 @@ The settings screen includes controls for:
 
 - Auto connect to the Sequoia backend
 - Discord chat display
+- World name links in chat, and whether clicking one switches immediately or types `/switch` into the chat box
 - Raid auto-announce
 - Tracked world-event notifications
 - Global Sequoia UI size

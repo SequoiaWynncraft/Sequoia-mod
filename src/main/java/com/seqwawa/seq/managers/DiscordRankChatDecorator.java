@@ -1054,6 +1054,32 @@ public final class DiscordRankChatDecorator {
         }
     }
 
+    /**
+     * Carries a remembered rail over to {@code rewritten} when a later decoration
+     * rebuilds a bridged line, as world links do to the lines that name a world.
+     * <p>
+     * A rail is retained by identity, and only the first line of a block is
+     * recognisable from its shape: a continuation carries Wynncraft's own captured
+     * bar. Without this, rewriting a line mid-block would drop the rail from every
+     * visual line Minecraft's wrapping makes of it.
+     */
+    public static void retainBridgeRail(Component original, Component rewritten) {
+        if (original == null || rewritten == null || original == rewritten) {
+            return;
+        }
+
+        Component continuationPrefix = null;
+        for (ColoredBridgeLine bridgeLine : RECENT_COLORED_BRIDGE_LINES) {
+            if (bridgeLine.message() == original) {
+                continuationPrefix = bridgeLine.continuationPrefix();
+                break;
+            }
+        }
+        if (continuationPrefix != null) {
+            rememberColoredBridgeLine(rewritten, continuationPrefix);
+        }
+    }
+
     // ── Shared ──
 
     /** Builds the glyph pill for {@code rank}, tooltipped with the rank it replaces. */

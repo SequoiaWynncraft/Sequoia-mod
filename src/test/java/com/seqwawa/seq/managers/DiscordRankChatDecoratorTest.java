@@ -1124,6 +1124,21 @@ class DiscordRankChatDecoratorTest {
                 DiscordRankChatDecorator.bridgePrefix().getString());
     }
 
+    /** A bridged line stays railed after world links rebuild the component. */
+    @Test
+    void rewrittenBridgeLineKeepsItsRail() {
+        Component bridgeLine = Component.literal("bridged line");
+        DiscordRankChatDecorator.displayUndecorated(bridgeLine, () -> {});
+        Component rewritten = Component.literal("bridged line");
+
+        assertNull(DiscordRankChatDecorator.bridgeContinuationPrefixFor(rewritten));
+        DiscordRankChatDecorator.retainBridgeRail(bridgeLine, rewritten);
+
+        assertEquals(
+                DiscordRankChatDecorator.bridgeContinuationPrefixFor(bridgeLine).getString(),
+                DiscordRankChatDecorator.bridgeContinuationPrefixFor(rewritten).getString());
+    }
+
     @Test
     void neutralBridgeMessageDoesNotOpenAColoredContinuationSequence() {
         DiscordRankChatDecorator.decorateGuildChat(Component.literal("ordinary chat"));
