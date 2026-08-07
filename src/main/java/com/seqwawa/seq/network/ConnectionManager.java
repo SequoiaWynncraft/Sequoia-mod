@@ -1118,6 +1118,18 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             int emeraldCount,
             double experienceCount,
             int srCount) {
+        sendRaidAnnouncement(
+                usernames, raidType, aspectCount, emeraldCount, experienceCount, srCount, null);
+    }
+
+    public void sendRaidAnnouncement(
+            List<String> usernames,
+            String raidType,
+            int aspectCount,
+            int emeraldCount,
+            double experienceCount,
+            int srCount,
+            Integer gambitCount) {
         if (!authenticated || !isOpen()) {
             SeqClient.LOGGER.warn(
                     "[WebSocket] sendRaidAnnouncement dropped open={} authenticated={}", isOpen(), authenticated);
@@ -1144,6 +1156,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 raidType,
                 usernames.size(),
                 usernames);
+        JsonObject msg = buildRaidAnnouncementPayload(
+                usernames, raidType, aspectCount, emeraldCount, experienceCount, srCount, gambitCount);
+        send("guild_raid_announcement", msg);
+    }
+
+    static JsonObject buildRaidAnnouncementPayload(
+            List<String> usernames,
+            String raidType,
+            int aspectCount,
+            int emeraldCount,
+            double experienceCount,
+            int srCount,
+            Integer gambitCount) {
         JsonObject msg = new JsonObject();
         JsonArray names = new JsonArray();
         usernames.forEach(names::add);
@@ -1153,7 +1178,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         msg.addProperty("emerald_count", emeraldCount);
         msg.addProperty("experience_count", experienceCount);
         msg.addProperty("sr_count", srCount);
-        send("guild_raid_announcement", msg);
+        if (gambitCount != null) {
+            msg.addProperty("gambit_count", gambitCount);
+        }
+        return msg;
     }
 
     public void sendGuildBankEvent(

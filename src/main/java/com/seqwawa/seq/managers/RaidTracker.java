@@ -13,6 +13,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.contents.PlainTextContents;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.integrations.WynntilsGambitAccess;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.ui.PrincessRaidCelebration;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
@@ -77,6 +78,9 @@ public class RaidTracker {
         }
 
         ResolvedRaidCompletion resolved = resolveForClient(completion, localMinecraftUsername());
+        Integer gambitCount = resolved.localCompletion()
+                ? WynntilsGambitAccess.currentGambitCount().stream().boxed().findFirst().orElse(null)
+                : null;
         finishLocalCompletion(resolved);
 
         if (!ConnectionManager.isConnected()) {
@@ -98,20 +102,22 @@ public class RaidTracker {
             return;
         }
         SeqClient.LOGGER.info(
-                "[RaidTracker] Forwarding raid completion raid='{}' members={} aspects={} emeralds={} guildExp={} seasonalRating={}",
+                "[RaidTracker] Forwarding raid completion raid='{}' members={} aspects={} emeralds={} guildExp={} seasonalRating={} gambits={}",
                 completion.raidName(),
                 resolved.partyMembers(),
                 completion.aspects(),
                 completion.emeralds(),
                 completion.guildExp(),
-                completion.seasonalRating());
+                completion.seasonalRating(),
+                gambitCount);
         instance.sendRaidAnnouncement(
                 resolved.partyMembers(),
                 completion.raidName(),
                 completion.aspects(),
                 completion.emeralds(),
                 completion.guildExp(),
-                completion.seasonalRating());
+                completion.seasonalRating(),
+                gambitCount);
     }
 
     static ResolvedRaidCompletion resolveForClient(

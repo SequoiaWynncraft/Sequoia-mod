@@ -14,6 +14,22 @@ import org.junit.jupiter.api.Test;
 class ConnectionManagerTest {
 
     @Test
+    void raidAnnouncementIncludesKnownLocalGambitCount() {
+        var payload = ConnectionManager.buildRaidAnnouncementPayload(
+                List.of("Reporter", "PartyMember"), "The Nameless Anomaly", 2, 2048, 10.367, 220, 3);
+
+        assertEquals(3, payload.get("gambit_count").getAsInt());
+    }
+
+    @Test
+    void raidAnnouncementOmitsUnavailableGambitCountForOlderClients() {
+        var payload = ConnectionManager.buildRaidAnnouncementPayload(
+                List.of("Reporter"), "The Nameless Anomaly", 2, 2048, 10.367, 220, null);
+
+        assertFalse(payload.has("gambit_count"));
+    }
+
+    @Test
     void partySyncSnapshotPayloadIsBoundToListing() {
         var payload = ConnectionManager.buildPartySyncSnapshotPayload(
                 1204L, true, "Leader", List.of("Leader", "Guest"));
