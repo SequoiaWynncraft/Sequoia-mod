@@ -162,19 +162,21 @@ public final class DiscordRankChatDecorator {
 
         Component decorated = message;
         boolean guildCandidate = WynnPillGlyphs.containsPill(message.getString());
-        boolean partyCandidate = !guildCandidate && isPartyChatCandidate(message);
+        // Party markers also contain BMP private-use glyphs, so containsPill() is true
+        // for them. Detect the channel independently and give the more specific party
+        // shape precedence instead of letting the broad guild pre-check mask it.
+        boolean partyCandidate = isPartyChatCandidate(message);
+        if (debug && !guildCandidate && !partyCandidate) {
+            logInspection(message, "not recognized as guild or party chat");
+        }
         if (isEnabled() && (guildCandidate || partyCandidate)) {
             DiscordRankService service = DiscordRankService.getInstance();
             if (!service.hasRanks()) {
                 logInspection(message, "no linked ranks loaded yet");
             } else {
                 try {
-                    if (guildCandidate) {
-                        decorated = decorateGuildChat(message, service::presentationForMinecraftUsername);
-                    }
-                    if (decorated == message && partyCandidate) {
-                        decorated = decoratePartyChat(message, service::presentationForMinecraftUsername);
-                    }
+                    decorated = decorateSupportedChat(
+                            message, service::presentationForMinecraftUsername, guildCandidate, partyCandidate);
                     logInspection(
                             message,
                             decorated == message
@@ -186,6 +188,18 @@ public final class DiscordRankChatDecorator {
             }
         }
         return recolourGuildMessageText(decorated, inGameGuildChatTextColor());
+    }
+
+    /** Channel selection core, parameterised so the private-use overlap stays testable. */
+    static Component decorateSupportedChat(
+            Component message,
+            Function<String, RankPresentation> rankLookup,
+            boolean guildCandidate,
+            boolean partyCandidate) {
+        if (partyCandidate) {
+            return decoratePartyChat(message, rankLookup);
+        }
+        return guildCandidate ? decorateGuildChat(message, rankLookup) : message;
     }
 
     /** Decoration core, parameterised on the rank lookup so it stays unit-testable. */
@@ -278,7 +292,10 @@ public final class DiscordRankChatDecorator {
         }
         return message.visit((style, text) -> {
             TextColor color = style.getColor();
-            return color != null && color.getValue() == PARTY_CHAT_COLOR
+            boolean yellowMarker = color != null
+                    && color.getValue() == PARTY_CHAT_COLOR
+                    && text.codePoints().anyMatch(DiscordRankChatDecorator::isDecoration);
+            return yellowMarker
                     ? Optional.of(true)
                     : Optional.empty();
         }, Style.EMPTY).orElse(false);
@@ -924,13 +941,16 @@ public final class DiscordRankChatDecorator {
         return ComponentTextEditor.insertAt(fragments, colonIndex, insigniaBadge(tier));
     }
 
-    /** The insignia glyph with its tooltip, shared by guild chat and the bridge. */
+    /** A spaced insignia glyph with its tooltip, shared by guild chat and the bridge. */
     static MutableComponent insigniaBadge(SeqBadgeTier tier) {
         MutableComponent tooltip = Component.literal("Sequoia insignia: ")
                 .withStyle(ChatFormatting.GRAY)
                 .append(Component.literal(insigniaName(tier)).withStyle(INSIGNIA_COLORS.get(tier)));
-        return Component.literal(INSIGNIA_GLYPHS.get(tier))
-                .withStyle(style -> style.withFont(INSIGNIA_FONT).withHoverEvent(new HoverEvent.ShowText(tooltip)));
+        return Component.empty()
+                .append(Component.literal(" "))
+                .append(Component.literal(INSIGNIA_GLYPHS.get(tier))
+                        .withStyle(style ->
+                                style.withFont(INSIGNIA_FONT).withHoverEvent(new HoverEvent.ShowText(tooltip))));
     }
 
     /**
@@ -1241,7 +1261,7 @@ public final class DiscordRankChatDecorator {
         debug = enabled;
     }
 
-    /** Whether undecorated guild lines are being dumped to the log. */
+    /** Whether undecorated supported-chat lines are being dumped to the log. */
     public static boolean isDebug() {
         return debug;
     }
@@ -1250,7 +1270,8 @@ public final class DiscordRankChatDecorator {
         if (!debug) {
             return;
         }
-        String text = ComponentTextEditor.textOf(ComponentTextEditor.flatten(message));
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(message);
+        String text = ComponentTextEditor.textOf(fragments);
         if (text.indexOf(':') < 0) {
             return;
         }
@@ -1259,18 +1280,30 @@ public final class DiscordRankChatDecorator {
         String speakers = pills.stream()
                 .map(pill -> pill.label() + "->"
                         + speakerCandidates(
-                                ComponentTextEditor.flatten(message),
+                                fragments,
                                 text,
                                 pill.endExclusive(),
                                 Math.max(pill.endExclusive(), indexOfColon(text, pill.endExclusive()))))
                 .toList()
                 .toString();
+        String fragmentStyles = fragments.stream()
+                .limit(24)
+                .map(fragment -> "{text=" + describeCodepoints(fragment.text())
+                        + ",color=" + colorValue(fragment.style().getColor())
+                        + ",font=" + fragment.style().getFont() + "}")
+                .toList()
+                .toString();
         SeqClient.LOGGER.info(
-                "[DiscordRanks] {} | badges={} | speakers={} | codepoints={}",
+                "[DiscordRanks] {} | badges={} | speakers={} | fragments={} | codepoints={}",
                 outcome,
                 pills.stream().map(WynnPillGlyphs.Pill::label).toList(),
                 speakers,
+                fragmentStyles,
                 describeCodepoints(text));
+    }
+
+    private static String colorValue(TextColor color) {
+        return color == null ? "inherited" : String.format("#%06X", color.getValue());
     }
 
     private static int indexOfColon(String text, int from) {

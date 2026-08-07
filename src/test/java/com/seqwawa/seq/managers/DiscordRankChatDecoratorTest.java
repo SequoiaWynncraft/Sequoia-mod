@@ -358,9 +358,12 @@ class DiscordRankChatDecoratorTest {
     @Test
     void paintsPartyChatSpeakerWithoutAddingARankPill() {
         Component message = partyLine("ArcLeRetour", "ArcLeRetour", "ready");
+        assertTrue(
+                WynnPillGlyphs.containsPill(message.getString()),
+                "the party marker overlaps the broad guild pill pre-check");
 
-        Component decorated =
-                DiscordRankChatDecorator.decoratePartyChat(message, DiscordRankChatDecoratorTest::lookup);
+        Component decorated = DiscordRankChatDecorator.decorateSupportedChat(
+                message, DiscordRankChatDecoratorTest::lookup, true, true);
         List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
 
         assertEquals(message.getString(), decorated.getString());
@@ -921,6 +924,15 @@ class DiscordRankChatDecoratorTest {
         withDiscordRanks(
                 true,
                 () -> assertNotNull(DiscordRankChatDecorator.bridgeInsignia("dix", name -> SeqBadgeTier.DIAMOND)));
+    }
+
+    @Test
+    void insigniaLeavesASpaceAfterTheUsername() {
+        Component insignia = DiscordRankChatDecorator.insigniaBadge(SeqBadgeTier.DIAMOND);
+
+        assertEquals(" \uF8E3", insignia.getString());
+        assertEquals(" ", ComponentTextEditor.flatten(insignia).getFirst().text());
+        assertEquals(FontDescription.DEFAULT, ComponentTextEditor.flatten(insignia).getFirst().style().getFont());
     }
 
     @Test
