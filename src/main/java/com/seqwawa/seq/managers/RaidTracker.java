@@ -102,14 +102,13 @@ public class RaidTracker {
             return;
         }
         SeqClient.LOGGER.info(
-                "[RaidTracker] Forwarding raid completion raid='{}' members={} aspects={} emeralds={} guildExp={} seasonalRating={} gambits={}",
+                "[RaidTracker] Forwarding raid completion raid='{}' members={} aspects={} emeralds={} guildExp={} seasonalRating={}",
                 completion.raidName(),
                 resolved.partyMembers(),
                 completion.aspects(),
                 completion.emeralds(),
                 completion.guildExp(),
-                completion.seasonalRating(),
-                gambitCounts);
+                completion.seasonalRating());
         instance.sendRaidAnnouncement(
                 resolved.partyMembers(),
                 completion.raidName(),
@@ -137,10 +136,6 @@ public class RaidTracker {
                 completion,
                 PrincessRaidCelebration::triggerIfEnabled,
                 RaidGambitRosterTracker::reset);
-    }
-
-    static void finishLocalCompletion(ResolvedRaidCompletion completion, Runnable completionEffect) {
-        finishLocalCompletion(completion, completionEffect, RaidGambitRosterTracker::reset);
     }
 
     static void finishLocalCompletion(

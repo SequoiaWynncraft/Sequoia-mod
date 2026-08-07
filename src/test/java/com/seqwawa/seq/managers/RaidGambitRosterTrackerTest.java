@@ -71,11 +71,4 @@ class RaidGambitRosterTrackerTest {
         assertTrue(RaidGambitRosterTracker.parsePlayerSlot(new ItemStack(Items.SNOW)).isEmpty());
     }
 
-    @Test
-    void formatsChangedGambitCountsAsOneCompactChatLine() {
-        assertEquals(
-                "FirstPlayer=0, Reporter=3, ThirdPlayer=1",
-                RaidGambitRosterTracker.formatCounts(
-                        Map.of("ThirdPlayer", 1, "Reporter", 3, "FirstPlayer", 0)));
-    }
 }

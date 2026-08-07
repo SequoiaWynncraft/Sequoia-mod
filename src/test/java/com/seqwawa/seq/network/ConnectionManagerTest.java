@@ -14,22 +14,6 @@ import org.junit.jupiter.api.Test;
 class ConnectionManagerTest {
 
     @Test
-    void raidAnnouncementIncludesKnownLocalGambitCount() {
-        var payload = ConnectionManager.buildRaidAnnouncementPayload(
-                List.of("Reporter", "PartyMember"), "The Nameless Anomaly", 2, 2048, 10.367, 220, 3);
-
-        assertEquals(3, payload.get("gambit_count").getAsInt());
-    }
-
-    @Test
-    void raidAnnouncementOmitsUnavailableGambitCountForOlderClients() {
-        var payload = ConnectionManager.buildRaidAnnouncementPayload(
-                List.of("Reporter"), "The Nameless Anomaly", 2, 2048, 10.367, 220, null);
-
-        assertFalse(payload.has("gambit_count"));
-    }
-
-    @Test
     void raidAnnouncementIncludesObservedPartyGambitCounts() {
         var payload = ConnectionManager.buildRaidAnnouncementPayload(
                 List.of("Reporter", "PartyMember"),
@@ -38,12 +22,19 @@ class ConnectionManagerTest {
                 2048,
                 10.367,
                 220,
-                null,
                 Map.of("Reporter", 0, "PartyMember", 3));
 
         assertEquals(0, payload.getAsJsonObject("gambit_counts").get("Reporter").getAsInt());
         assertEquals(3, payload.getAsJsonObject("gambit_counts").get("PartyMember").getAsInt());
         assertFalse(payload.has("gambit_count"));
+    }
+
+    @Test
+    void raidAnnouncementOmitsUnavailablePartyGambitCounts() {
+        var payload = ConnectionManager.buildRaidAnnouncementPayload(
+                List.of("Reporter"), "The Nameless Anomaly", 2, 2048, 10.367, 220, Map.of());
+
+        assertFalse(payload.has("gambit_counts"));
     }
 
     @Test
