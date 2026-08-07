@@ -77,8 +77,9 @@ public final class DiscordRankChatDecorator {
     /** Yellow Wynncraft uses for party chat; see Wynntils' party recipient pattern. */
     private static final int PARTY_CHAT_COLOR = 0xFFFF55;
 
-    /** Distinctive center glyph in Wynncraft's primary party-chat marker. */
-    private static final char PARTY_MARKER_GLYPH = '\uE005';
+    /** Complete primary party marker; individual glyphs can also occur inside guild pills. */
+    private static final String PARTY_MARKER_GLYPHS =
+            "\uDAFF\uDFFC\uE005\uDBFF\uDFFF\uE002\uDBFF\uDFFE";
 
     /** Bar drawn down the left of a bridge block, used until a real one is captured. */
     static final String BRIDGE_CONTINUATION_GLYPH = "\uF8F1";
@@ -257,7 +258,7 @@ public final class DiscordRankChatDecorator {
      * style still works when Wynntils has prepended a timestamp.
      */
     private static int partySpeakerStart(List<ComponentTextEditor.Fragment> fragments, String text) {
-        int primaryMarker = text.indexOf(PARTY_MARKER_GLYPH);
+        int primaryMarker = text.indexOf(PARTY_MARKER_GLYPHS);
         if (primaryMarker >= 0) {
             int start = decorationEnd(text, primaryMarker, text.length());
             return start < text.length() ? start : -1;
@@ -283,8 +284,8 @@ public final class DiscordRankChatDecorator {
     }
 
     /** Cheap gate before the party decorator allocates a flattened fragment list. */
-    private static boolean isPartyChatCandidate(Component message) {
-        if (message.getString().indexOf(PARTY_MARKER_GLYPH) >= 0) {
+    static boolean isPartyChatCandidate(Component message) {
+        if (message.getString().contains(PARTY_MARKER_GLYPHS)) {
             return true;
         }
         return message.visit((style, text) -> {

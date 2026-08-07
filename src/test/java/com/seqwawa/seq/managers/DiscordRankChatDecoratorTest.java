@@ -64,6 +64,32 @@ class DiscordRankChatDecoratorTest {
     private static final String PARTY_ICON_GLYPHS =
             "\uDAFF\uDFFC\uE005\uDBFF\uDFFF\uE002\uDBFF\uDFFE";
     private static final String CONTINUATION_GLYPHS = "\uDAFF\uDFFC\uE001\uDB00\uDC06";
+    /** Guild pill captured from the Regret line that contains a party-marker glyph internally. */
+    private static final String ALTERNATE_GUILD_PILL = new String(
+            new int[] {
+                0xE060,
+                0xCFFFF,
+                0xE032,
+                0xCFFFF,
+                0xE037,
+                0xCFFFF,
+                0xE038,
+                0xCFFFF,
+                0xE034,
+                0xCFFFF,
+                0xE035,
+                0xCFFFF,
+                0xE062,
+                0xCFFE2,
+                0xE002,
+                0xE007,
+                0xE008,
+                0xE004,
+                0xE005,
+                0xD0002
+            },
+            0,
+            20);
     private static final String BADGE_GEOMETRY = "\uE001 \uE002\uE003";
     private static final String LEGACY_RED = "\u00A7c";
     private static final String LEGACY_RESET = "\u00A7f";
@@ -76,6 +102,33 @@ class DiscordRankChatDecoratorTest {
 
         assertEquals(List.of("sapling"), pillLabels(decorated));
         assertTrue(decorated.getString().contains("EightySix(ArcLeRetour): =')"));
+    }
+
+    @Test
+    void guildPillContainingPartyGlyphStillUsesGuildDecoration() {
+        Component message = Component.empty()
+                .append(Component.literal(CONTINUATION_GLYPHS)
+                        .withStyle(Style.EMPTY.withFont(ICON_FONT).withColor(GUILD_AQUA)))
+                .append(Component.literal(" ").withStyle(Style.EMPTY.withColor(GUILD_AQUA)))
+                .append(Component.literal(ALTERNATE_GUILD_PILL)
+                        .withStyle(Style.EMPTY.withFont(BADGE_FONT).withColor(GUILD_AQUA)))
+                .append(Component.literal(" ").withStyle(Style.EMPTY.withColor(GUILD_AQUA)))
+                .append(Component.literal("Regret")
+                        .withStyle(Style.EMPTY.withColor(DARK_AQUA).withInsertion("Regret")))
+                .append(Component.literal(":").withStyle(Style.EMPTY.withColor(DARK_AQUA)))
+                .append(Component.literal(" oh nvm").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+
+        boolean partyCandidate = DiscordRankChatDecorator.isPartyChatCandidate(message);
+        Component decorated = DiscordRankChatDecorator.decorateSupportedChat(
+                message,
+                candidate -> candidate.equalsIgnoreCase("Regret") ? SAPLING : null,
+                WynnPillGlyphs.containsPill(message.getString()),
+                partyCandidate);
+
+        assertFalse(partyCandidate, "a glyph inside the guild pill is not a party marker");
+        assertEquals(List.of("sapling"), pillLabels(decorated));
+        assertFalse(decorated.getString().contains(ALTERNATE_GUILD_PILL));
+        assertTrue(decorated.getString().contains("Regret: oh nvm"));
     }
 
     @Test
