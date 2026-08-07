@@ -48,6 +48,9 @@ class DiscordRankChatDecoratorTest {
     /** Wynncraft's guild chat aqua. */
     private static final int GUILD_AQUA = 0x55FFFF;
     private static final int DARK_AQUA = 0x00AAAA;
+    /** Wynncraft's party chat yellow. */
+    private static final int PARTY_YELLOW = 0xFFFF55;
+    private static final int PARTY_SPEAKER_GOLD = 0xFFAA00;
 
     // Shapes taken from a real guild line (latest.log): Wynncraft draws the guild
     // icon in one font, the rank badge in another, and the text in the default one.
@@ -58,6 +61,8 @@ class DiscordRankChatDecoratorTest {
     private static final FontDescription BADGE_FONT =
             new FontDescription.Resource(Identifier.fromNamespaceAndPath("wynncraft", "bp"));
     private static final String ICON_GLYPHS = "\uDAFF\uDFFC\uE01E\uDBFF\uDFFF\uE002";
+    private static final String PARTY_ICON_GLYPHS =
+            "\uDAFF\uDFFC\uE005\uDBFF\uDFFF\uE002\uDBFF\uDFFE";
     private static final String CONTINUATION_GLYPHS = "\uDAFF\uDFFC\uE001\uDB00\uDC06";
     private static final String BADGE_GEOMETRY = "\uE001 \uE002\uE003";
     private static final String LEGACY_RED = "\u00A7c";
@@ -348,6 +353,70 @@ class DiscordRankChatDecoratorTest {
                         .style()
                         .getColor()
                         .getValue());
+    }
+
+    @Test
+    void paintsPartyChatSpeakerWithoutAddingARankPill() {
+        Component message = partyLine("ArcLeRetour", "ArcLeRetour", "ready");
+
+        Component decorated =
+                DiscordRankChatDecorator.decoratePartyChat(message, DiscordRankChatDecoratorTest::lookup);
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
+
+        assertEquals(message.getString(), decorated.getString());
+        assertTrue(WynnPillGlyphs.findPills(decorated.getString()).isEmpty());
+        assertEquals(0x4CB4FA, colorOfFragmentContaining(fragments, "ArcLeRetour"));
+        assertEquals(PARTY_YELLOW, colorOfFragmentContaining(fragments, "ready"));
+    }
+
+    @Test
+    void paintsPartySpeakerWhenWynncraftUsesItsGenericChatMarker() {
+        Component message = partyLine(CONTINUATION_GLYPHS, "ArcLeRetour", "ArcLeRetour", "ready");
+
+        Component decorated =
+                DiscordRankChatDecorator.decoratePartyChat(message, DiscordRankChatDecoratorTest::lookup);
+
+        assertEquals(
+                0x4CB4FA,
+                colorOfFragmentContaining(ComponentTextEditor.flatten(decorated), "ArcLeRetour"));
+        assertTrue(WynnPillGlyphs.findPills(decorated.getString()).isEmpty());
+    }
+
+    @Test
+    void partyUsernameColorCanBeDisabledWithoutRebuildingTheMessage() {
+        withRankColoring(true, false, () -> {
+            Component decorated = DiscordRankChatDecorator.decoratePartyChat(
+                    partyLine("ArcLeRetour", "ArcLeRetour", "ready"),
+                    DiscordRankChatDecoratorTest::lookup);
+            TextColor storedNameColor = ComponentTextEditor.flatten(decorated).stream()
+                    .filter(fragment -> fragment.text().contains("ArcLeRetour"))
+                    .findFirst()
+                    .orElseThrow()
+                    .style()
+                    .getColor();
+
+            assertEquals(0x4CB4FA, storedNameColor.getValue());
+            assertEquals(PARTY_SPEAKER_GOLD, RankGradientAnimation.animate(storedNameColor).getValue());
+        });
+    }
+
+    @Test
+    void leavesYellowNonPartyMessagesAlone() {
+        Component message = Component.literal("ArcLeRetour: ready")
+                .withStyle(Style.EMPTY.withColor(PARTY_YELLOW));
+
+        assertSame(
+                message,
+                DiscordRankChatDecorator.decoratePartyChat(message, DiscordRankChatDecoratorTest::lookup));
+    }
+
+    @Test
+    void leavesUnlinkedPartySpeakersAlone() {
+        Component message = partyLine("SomeoneElse", "SomeoneElse", "ready");
+
+        assertSame(
+                message,
+                DiscordRankChatDecorator.decoratePartyChat(message, DiscordRankChatDecoratorTest::lookup));
     }
 
     @Test
@@ -1032,6 +1101,23 @@ class DiscordRankChatDecoratorTest {
                         .withStyle(Style.EMPTY.withColor(DARK_AQUA).withInsertion(username)))
                 .append(Component.literal(":").withStyle(Style.EMPTY.withColor(DARK_AQUA)))
                 .append(Component.literal(" " + body).withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+    }
+
+    /** Mirrors a Wynntils-rendered party line: timestamp, party marker and speaker. */
+    private static Component partyLine(String displayedName, String insertion, String body) {
+        return partyLine(PARTY_ICON_GLYPHS, displayedName, insertion, body);
+    }
+
+    private static Component partyLine(String marker, String displayedName, String insertion, String body) {
+        Style nameStyle = Style.EMPTY.withColor(PARTY_SPEAKER_GOLD).withInsertion(insertion);
+        return Component.empty()
+                .append(Component.literal("[19:25:32] "))
+                .append(Component.literal(marker)
+                        .withStyle(Style.EMPTY.withFont(ICON_FONT).withColor(PARTY_YELLOW)))
+                .append(Component.literal(" ").withStyle(Style.EMPTY.withColor(PARTY_YELLOW)))
+                .append(Component.literal(displayedName).withStyle(nameStyle))
+                .append(Component.literal(":").withStyle(Style.EMPTY.withColor(PARTY_SPEAKER_GOLD)))
+                .append(Component.literal(" " + body).withStyle(Style.EMPTY.withColor(PARTY_YELLOW)));
     }
 
     /** Mirrors a Wynntils-rendered guild line: timestamp, rank pill, speaker, message. */
