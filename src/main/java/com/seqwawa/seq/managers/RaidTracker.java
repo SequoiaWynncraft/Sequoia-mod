@@ -3,6 +3,7 @@ package com.seqwawa.seq.managers;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -13,7 +14,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.contents.PlainTextContents;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.integrations.WynntilsGambitAccess;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.ui.PrincessRaidCelebration;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
@@ -78,9 +78,9 @@ public class RaidTracker {
         }
 
         ResolvedRaidCompletion resolved = resolveForClient(completion, localMinecraftUsername());
-        Integer gambitCount = resolved.localCompletion()
-                ? WynntilsGambitAccess.currentGambitCount().stream().boxed().findFirst().orElse(null)
-                : null;
+        Map<String, Integer> gambitCounts = resolved.localCompletion()
+                ? RaidGambitRosterTracker.snapshotForParty(resolved.partyMembers())
+                : Map.of();
         finishLocalCompletion(resolved);
 
         if (!ConnectionManager.isConnected()) {
@@ -109,7 +109,7 @@ public class RaidTracker {
                 completion.emeralds(),
                 completion.guildExp(),
                 completion.seasonalRating(),
-                gambitCount);
+                gambitCounts);
         instance.sendRaidAnnouncement(
                 resolved.partyMembers(),
                 completion.raidName(),
@@ -117,7 +117,8 @@ public class RaidTracker {
                 completion.emeralds(),
                 completion.guildExp(),
                 completion.seasonalRating(),
-                gambitCount);
+                gambitCounts);
+        RaidGambitRosterTracker.reset();
     }
 
     static ResolvedRaidCompletion resolveForClient(
@@ -165,6 +166,7 @@ public class RaidTracker {
         if (isRaidFailedTitle(title)) {
             SeqClient.LOGGER.debug("[RaidTracker] Raid failure title detected");
             RaidPartySnapshotTracker.onRaidFailed();
+            RaidGambitRosterTracker.reset();
         }
     }
 

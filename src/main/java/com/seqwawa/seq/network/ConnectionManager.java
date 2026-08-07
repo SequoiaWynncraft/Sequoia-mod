@@ -1119,7 +1119,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             double experienceCount,
             int srCount) {
         sendRaidAnnouncement(
-                usernames, raidType, aspectCount, emeraldCount, experienceCount, srCount, null);
+                usernames, raidType, aspectCount, emeraldCount, experienceCount, srCount, (Integer) null);
     }
 
     public void sendRaidAnnouncement(
@@ -1130,6 +1130,31 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             double experienceCount,
             int srCount,
             Integer gambitCount) {
+        sendRaidAnnouncement(
+                usernames, raidType, aspectCount, emeraldCount, experienceCount, srCount, gambitCount, Map.of());
+    }
+
+    public void sendRaidAnnouncement(
+            List<String> usernames,
+            String raidType,
+            int aspectCount,
+            int emeraldCount,
+            double experienceCount,
+            int srCount,
+            Map<String, Integer> gambitCounts) {
+        sendRaidAnnouncement(
+                usernames, raidType, aspectCount, emeraldCount, experienceCount, srCount, null, gambitCounts);
+    }
+
+    private void sendRaidAnnouncement(
+            List<String> usernames,
+            String raidType,
+            int aspectCount,
+            int emeraldCount,
+            double experienceCount,
+            int srCount,
+            Integer gambitCount,
+            Map<String, Integer> gambitCounts) {
         if (!authenticated || !isOpen()) {
             SeqClient.LOGGER.warn(
                     "[WebSocket] sendRaidAnnouncement dropped open={} authenticated={}", isOpen(), authenticated);
@@ -1157,7 +1182,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 usernames.size(),
                 usernames);
         JsonObject msg = buildRaidAnnouncementPayload(
-                usernames, raidType, aspectCount, emeraldCount, experienceCount, srCount, gambitCount);
+                usernames, raidType, aspectCount, emeraldCount, experienceCount, srCount, gambitCount, gambitCounts);
         send("guild_raid_announcement", msg);
     }
 
@@ -1169,6 +1194,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             double experienceCount,
             int srCount,
             Integer gambitCount) {
+        return buildRaidAnnouncementPayload(
+                usernames, raidType, aspectCount, emeraldCount, experienceCount, srCount, gambitCount, Map.of());
+    }
+
+    static JsonObject buildRaidAnnouncementPayload(
+            List<String> usernames,
+            String raidType,
+            int aspectCount,
+            int emeraldCount,
+            double experienceCount,
+            int srCount,
+            Integer gambitCount,
+            Map<String, Integer> gambitCounts) {
         JsonObject msg = new JsonObject();
         JsonArray names = new JsonArray();
         usernames.forEach(names::add);
@@ -1180,6 +1218,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         msg.addProperty("sr_count", srCount);
         if (gambitCount != null) {
             msg.addProperty("gambit_count", gambitCount);
+        }
+        if (gambitCounts != null && !gambitCounts.isEmpty()) {
+            JsonObject counts = new JsonObject();
+            gambitCounts.forEach(counts::addProperty);
+            msg.add("gambit_counts", counts);
         }
         return msg;
     }

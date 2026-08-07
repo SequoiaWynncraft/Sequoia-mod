@@ -1,7 +1,7 @@
 package com.seqwawa.seq.mixins;
 
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.managers.RaidGambitSlotDumper;
+import com.seqwawa.seq.managers.RaidGambitRosterTracker;
 import com.seqwawa.seq.ui.GuildStorageShortcutOverlay;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -41,10 +41,10 @@ public abstract class AbstractContainerScreenMixin<T extends AbstractContainerMe
     }
 
     @Inject(method = "renderContents", at = @At("TAIL"))
-    private void seq$dumpRaidGambitSlots(
+    private void seq$observeRaidGambitRoster(
             GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
         Screen screen = (Screen) (Object) this;
-        RaidGambitSlotDumper.tick(menu, screen.getTitle());
+        RaidGambitRosterTracker.observe(menu, screen.getTitle());
     }
 
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
