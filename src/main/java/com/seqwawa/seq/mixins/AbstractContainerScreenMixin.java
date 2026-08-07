@@ -1,12 +1,14 @@
 package com.seqwawa.seq.mixins;
 
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.ui.GuildStorageShortcutOverlay;
+import com.seqwawa.seq.ui.RaidSlotIndexOverlay;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import com.seqwawa.seq.ui.GuildStorageShortcutOverlay;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
 import org.spongepowered.asm.mixin.Final;
@@ -36,6 +38,13 @@ public abstract class AbstractContainerScreenMixin<T extends AbstractContainerMe
     private void seq$renderGuildStorageShortcut(
             GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
         GuildStorageShortcutOverlay.render(graphics, menu, leftPos, topPos, imageWidth, mouseX, mouseY);
+    }
+
+    @Inject(method = "renderContents", at = @At("TAIL"))
+    private void seq$renderRaidSlotIndices(
+            GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
+        Screen screen = (Screen) (Object) this;
+        RaidSlotIndexOverlay.render(graphics, menu, screen.getTitle(), leftPos, topPos);
     }
 
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
