@@ -10,6 +10,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -59,9 +61,13 @@ public final class RaidGambitRosterTracker {
 
         Map<String, Integer> snapshot = Map.copyOf(observed);
         List<String> diagnosticsSnapshot = List.copyOf(slotDiagnostics);
-        if (!snapshot.equals(latestCounts) || !diagnosticsSnapshot.equals(latestSlotDiagnostics)) {
+        boolean countsChanged = !snapshot.equals(latestCounts);
+        if (countsChanged || !diagnosticsSnapshot.equals(latestSlotDiagnostics)) {
             SeqClient.LOGGER.info(
                     "[RaidGambits] Raid-start snapshot counts={} slots={}", snapshot, diagnosticsSnapshot);
+            if (countsChanged && !snapshot.isEmpty()) {
+                displayCountsInChat(snapshot);
+            }
             latestCounts = snapshot;
             latestSlotDiagnostics = diagnosticsSnapshot;
         }
@@ -84,6 +90,25 @@ public final class RaidGambitRosterTracker {
 
     private static boolean containsUsername(Map<String, Integer> counts, String username) {
         return counts.keySet().stream().anyMatch(username::equalsIgnoreCase);
+    }
+
+    private static void displayCountsInChat(Map<String, Integer> counts) {
+        if (SeqClient.mc == null || SeqClient.mc.player == null) {
+            return;
+        }
+        SeqClient.mc.player.displayClientMessage(
+                Component.literal("[Seq Gambits] ")
+                        .withStyle(ChatFormatting.DARK_AQUA)
+                        .append(Component.literal("Parsed: " + formatCounts(counts))
+                                .withStyle(ChatFormatting.GRAY)),
+                false);
+    }
+
+    static String formatCounts(Map<String, Integer> counts) {
+        return counts.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey(String.CASE_INSENSITIVE_ORDER))
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(Collectors.joining(", "));
     }
 
     static Map<String, Integer> filterForParty(
