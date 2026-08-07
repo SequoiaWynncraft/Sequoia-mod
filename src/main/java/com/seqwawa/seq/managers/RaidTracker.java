@@ -118,7 +118,6 @@ public class RaidTracker {
                 completion.guildExp(),
                 completion.seasonalRating(),
                 gambitCounts);
-        RaidGambitRosterTracker.reset();
     }
 
     static ResolvedRaidCompletion resolveForClient(
@@ -134,12 +133,23 @@ public class RaidTracker {
     }
 
     static void finishLocalCompletion(ResolvedRaidCompletion completion) {
-        finishLocalCompletion(completion, PrincessRaidCelebration::triggerIfEnabled);
+        finishLocalCompletion(
+                completion,
+                PrincessRaidCelebration::triggerIfEnabled,
+                RaidGambitRosterTracker::reset);
     }
 
     static void finishLocalCompletion(ResolvedRaidCompletion completion, Runnable completionEffect) {
+        finishLocalCompletion(completion, completionEffect, RaidGambitRosterTracker::reset);
+    }
+
+    static void finishLocalCompletion(
+            ResolvedRaidCompletion completion,
+            Runnable completionEffect,
+            Runnable gambitResetEffect) {
         if (completion.localCompletion()) {
             RaidPartySnapshotTracker.onRaidCompleted();
+            gambitResetEffect.run();
             completionEffect.run();
         }
     }

@@ -314,10 +314,15 @@ class RaidTrackerTest {
         RaidTracker.ResolvedRaidCompletion resolved =
                 RaidTracker.resolveForClient(remoteCompletion, "LocalPlayer");
         AtomicBoolean celebrationTriggered = new AtomicBoolean();
-        RaidTracker.finishLocalCompletion(resolved, () -> celebrationTriggered.set(true));
+        AtomicBoolean gambitsReset = new AtomicBoolean();
+        RaidTracker.finishLocalCompletion(
+                resolved,
+                () -> celebrationTriggered.set(true),
+                () -> gambitsReset.set(true));
 
         assertFalse(resolved.localCompletion());
         assertFalse(celebrationTriggered.get());
+        assertFalse(gambitsReset.get());
         assertEquals(List.of("MrHmar", "Teslanator", "LoubiOP"), resolved.partyMembers());
         assertEquals(RaidPartySnapshotTracker.Phase.ACTIVE,
                 RaidPartySnapshotTracker.stateForTest().phase());
@@ -340,9 +345,14 @@ class RaidTrackerTest {
                 resolved.partyMembers());
 
         AtomicBoolean celebrationTriggered = new AtomicBoolean();
-        RaidTracker.finishLocalCompletion(resolved, () -> celebrationTriggered.set(true));
+        AtomicBoolean gambitsReset = new AtomicBoolean();
+        RaidTracker.finishLocalCompletion(
+                resolved,
+                () -> celebrationTriggered.set(true),
+                () -> gambitsReset.set(true));
 
         assertTrue(celebrationTriggered.get());
+        assertTrue(gambitsReset.get());
         assertEquals(RaidPartySnapshotTracker.Phase.FINISHED_WAITING_FOR_EXIT,
                 RaidPartySnapshotTracker.stateForTest().phase());
         assertTrue(RaidPartySnapshotTracker.stateForTest().activeRaidParty().usernames().isEmpty());
