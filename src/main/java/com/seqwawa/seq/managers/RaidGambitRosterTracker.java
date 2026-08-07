@@ -3,6 +3,7 @@ package com.seqwawa.seq.managers;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.utils.ChatIdentityResolver;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -23,9 +24,11 @@ public final class RaidGambitRosterTracker {
     private static final int MAX_GAMBIT_COUNT = 4;
     private static final String GAMBIT_HEADER = "Enabled Gambits:";
     private static final Pattern GAMBIT_NAME_PATTERN = Pattern.compile("(?i)^-\\s+.+\\sGambit$");
+    private static final int MAX_LOGGED_GAMBIT_LINES = 5;
 
     private static AbstractContainerMenu activeMenu;
     private static volatile Map<String, Integer> latestCounts = Map.of();
+    private static List<String> latestSlotDiagnostics = List.of();
 
     private RaidGambitRosterTracker() {}
 
@@ -36,26 +39,51 @@ public final class RaidGambitRosterTracker {
         if (activeMenu != menu) {
             activeMenu = menu;
             latestCounts = Map.of();
+            latestSlotDiagnostics = List.of();
+            SeqClient.LOGGER.info("[RaidGambits] Detected raid-start menu containerSlots={}", menu.slots.size());
         }
 
         Map<String, Integer> observed = new LinkedHashMap<>();
+        List<String> slotDiagnostics = new ArrayList<>();
         for (int slotIndex : PLAYER_SLOTS) {
             if (slotIndex >= menu.slots.size()) {
+                slotDiagnostics.add(slotIndex + ":missing");
                 continue;
             }
-            parsePlayerSlot(menu.slots.get(slotIndex).getItem())
-                    .ifPresent(player -> observed.put(player.username(), player.gambitCount()));
+            SlotInspection inspection = inspectPlayerSlot(menu.slots.get(slotIndex).getItem());
+            slotDiagnostics.add(slotIndex + ":" + inspection.summary());
+            if (inspection.observation() != null) {
+                observed.put(inspection.observation().username(), inspection.observation().gambitCount());
+            }
         }
 
         Map<String, Integer> snapshot = Map.copyOf(observed);
-        if (!snapshot.equals(latestCounts)) {
-            SeqClient.LOGGER.info("[RaidGambits] Observed raid-start roster counts={}", snapshot);
+        List<String> diagnosticsSnapshot = List.copyOf(slotDiagnostics);
+        if (!snapshot.equals(latestCounts) || !diagnosticsSnapshot.equals(latestSlotDiagnostics)) {
+            SeqClient.LOGGER.info(
+                    "[RaidGambits] Raid-start snapshot counts={} slots={}", snapshot, diagnosticsSnapshot);
             latestCounts = snapshot;
+            latestSlotDiagnostics = diagnosticsSnapshot;
         }
     }
 
     public static Map<String, Integer> snapshotForParty(List<String> partyMembers) {
-        return filterForParty(latestCounts, partyMembers);
+        Map<String, Integer> matched = filterForParty(latestCounts, partyMembers);
+        List<String> missing = partyMembers == null
+                ? List.of()
+                : partyMembers.stream()
+                        .filter(username -> username != null && !containsUsername(matched, username))
+                        .toList();
+        SeqClient.LOGGER.info(
+                "[RaidGambits] Completion snapshot observed={} matched={} missing={}",
+                latestCounts,
+                matched,
+                missing);
+        return matched;
+    }
+
+    private static boolean containsUsername(Map<String, Integer> counts, String username) {
+        return counts.keySet().stream().anyMatch(username::equalsIgnoreCase);
     }
 
     static Map<String, Integer> filterForParty(
@@ -82,38 +110,74 @@ public final class RaidGambitRosterTracker {
     public static void reset() {
         activeMenu = null;
         latestCounts = Map.of();
+        latestSlotDiagnostics = List.of();
     }
 
     static Optional<PlayerGambitObservation> parsePlayerSlot(ItemStack stack) {
+        return Optional.ofNullable(inspectPlayerSlot(stack).observation());
+    }
+
+    private static SlotInspection inspectPlayerSlot(ItemStack stack) {
         if (stack == null || stack.isEmpty() || !stack.is(Items.PLAYER_HEAD)) {
-            return Optional.empty();
+            return new SlotInspection(null, stack == null || stack.isEmpty() ? "empty" : "placeholder");
         }
         String username = resolveUsername(stack);
         if (username == null) {
-            return Optional.empty();
+            return new SlotInspection(null, "unresolved-head{name='" + compact(stack.getHoverName().getString()) + "'}");
         }
         ItemLore lore = stack.get(DataComponents.LORE);
-        int count = parseGambitCount(lore == null ? List.of() : lore.lines());
-        return count < 0 ? Optional.empty() : Optional.of(new PlayerGambitObservation(username, count));
+        GambitLoreAnalysis analysis = analyzeGambitLore(lore == null ? List.of() : lore.lines());
+        String summary = username + "=" + analysis.count() + "{header=" + analysis.headerPresent()
+                + ",matched=" + analysis.matchedLines() + ",candidates=" + analysis.candidateLines()
+                + ",lore=" + analysis.loreLines()
+                + (analysis.count() == 0 || analysis.count() < 0 ? ",gambitText=" + analysis.gambitText() : "")
+                + "}";
+        PlayerGambitObservation observation = analysis.count() < 0
+                ? null
+                : new PlayerGambitObservation(username, analysis.count());
+        return new SlotInspection(observation, summary);
     }
 
     static int parseGambitCount(List<Component> loreLines) {
+        return analyzeGambitLore(loreLines).count();
+    }
+
+    private static GambitLoreAnalysis analyzeGambitLore(List<Component> loreLines) {
         boolean insideGambits = false;
+        boolean headerPresent = false;
         int count = 0;
+        int candidateLines = 0;
+        List<String> gambitText = new ArrayList<>();
         for (Component line : loreLines) {
             String text = PacketTextNormalizer.normalizeForParsing(line.getString());
+            boolean gambitName = GAMBIT_NAME_PATTERN.matcher(text).matches();
+            if (gambitName) {
+                candidateLines++;
+            }
+            if (text.toLowerCase(Locale.ROOT).contains("gambit")
+                    && gambitText.size() < MAX_LOGGED_GAMBIT_LINES) {
+                gambitText.add(compact(text));
+            }
             if (GAMBIT_HEADER.equalsIgnoreCase(text)) {
                 insideGambits = true;
+                headerPresent = true;
                 continue;
             }
-            if (insideGambits && GAMBIT_NAME_PATTERN.matcher(text).matches()) {
+            if (insideGambits && gambitName) {
                 count++;
                 if (count > MAX_GAMBIT_COUNT) {
-                    return -1;
+                    return new GambitLoreAnalysis(
+                            -1, headerPresent, count, candidateLines, loreLines.size(), List.copyOf(gambitText));
                 }
             }
         }
-        return count;
+        return new GambitLoreAnalysis(
+                count, headerPresent, count, candidateLines, loreLines.size(), List.copyOf(gambitText));
+    }
+
+    private static String compact(String value) {
+        String normalized = PacketTextNormalizer.normalizeForParsing(value);
+        return normalized.length() <= 80 ? normalized : normalized.substring(0, 77) + "...";
     }
 
     private static String resolveUsername(ItemStack stack) {
@@ -135,4 +199,14 @@ public final class RaidGambitRosterTracker {
     }
 
     record PlayerGambitObservation(String username, int gambitCount) {}
+
+    private record GambitLoreAnalysis(
+            int count,
+            boolean headerPresent,
+            int matchedLines,
+            int candidateLines,
+            int loreLines,
+            List<String> gambitText) {}
+
+    private record SlotInspection(PlayerGambitObservation observation, String summary) {}
 }

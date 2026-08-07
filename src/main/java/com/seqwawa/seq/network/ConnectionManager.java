@@ -1177,10 +1177,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             return;
         }
         SeqClient.LOGGER.info(
-                "[WebSocket] Sending guild_raid_announcement type={} usernames={} payloadMembers={}",
+                "[WebSocket] Sending guild_raid_announcement type={} usernames={} payloadMembers={} gambits={}",
                 raidType,
                 usernames.size(),
-                usernames);
+                usernames,
+                gambitCounts);
         JsonObject msg = buildRaidAnnouncementPayload(
                 usernames, raidType, aspectCount, emeraldCount, experienceCount, srCount, gambitCount, gambitCounts);
         send("guild_raid_announcement", msg);
