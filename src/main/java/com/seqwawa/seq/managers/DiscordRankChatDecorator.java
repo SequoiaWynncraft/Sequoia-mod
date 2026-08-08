@@ -195,9 +195,15 @@ public final class DiscordRankChatDecorator {
             boolean guildCandidate,
             boolean partyCandidate) {
         if (partyCandidate) {
-            return decoratePartyChat(message, rankLookup);
+            return partyChatColoringEnabled() ? decoratePartyChat(message, rankLookup) : message;
         }
         return guildCandidate ? decorateGuildChat(message, rankLookup) : message;
+    }
+
+    /** Party colouring is independently optional beneath general username colouring. */
+    static boolean partyChatColoringEnabled() {
+        return SeqClient.getColorPartyChatSetting() == null
+                || SeqClient.getColorPartyChatSetting().getValue();
     }
 
     /** Decoration core, parameterised on the rank lookup so it stays unit-testable. */
@@ -217,7 +223,10 @@ public final class DiscordRankChatDecorator {
             }
         }
 
-        return decorateByPosition(fragments, text, rankLookup, message);
+        // Fail closed when no known Wynncraft guild-rank pill is present. Other
+        // channels use the same private-use glyph range, so guessing from a glyph's
+        // position can turn system markers into a player's rank pill and insignia.
+        return message;
     }
 
     /**
@@ -297,32 +306,6 @@ public final class DiscordRankChatDecorator {
                     ? Optional.of(true)
                     : Optional.empty();
         }, Style.EMPTY).orElse(false);
-    }
-
-    /**
-     * Fallback for when the badge text cannot be read, which happens if Wynncraft
-     * moves its rank glyphs to codepoints this build does not know. It replaces the
-     * glyph run sitting closest to the speaker's name, so it is restricted to lines
-     * carrying Wynncraft's guild chat colour: that keeps it off global chat, where
-     * the same shape holds an account rank badge instead.
-     */
-    private static Component decorateByPosition(
-            List<ComponentTextEditor.Fragment> fragments,
-            String text,
-            Function<String, RankPresentation> rankLookup,
-            Component original) {
-        if (!hasGuildChatColor(fragments)) {
-            return original;
-        }
-
-        List<WynnPillGlyphs.Pill> runs = WynnPillGlyphs.findGlyphRuns(text);
-        for (int index = runs.size() - 1; index >= 0; index--) {
-            Component rewritten = replaceBadge(fragments, text, runs.get(index), rankLookup, null);
-            if (rewritten != null) {
-                return rewritten;
-            }
-        }
-        return original;
     }
 
     private static Component replaceBadge(
@@ -549,14 +532,6 @@ public final class DiscordRankChatDecorator {
             }
         }
         return Style.EMPTY;
-    }
-
-    /** True when any part of the line uses Wynncraft's aqua guild chat colour. */
-    private static boolean hasGuildChatColor(List<ComponentTextEditor.Fragment> fragments) {
-        return fragments.stream().anyMatch(fragment -> {
-            TextColor color = fragment.style().getColor();
-            return color != null && color.getValue() == GUILD_CHAT_COLOR;
-        });
     }
 
     static Component recolourGuildMessageText(Component message, TextColor textColor) {

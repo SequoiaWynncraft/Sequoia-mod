@@ -139,6 +139,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting colorUsernamesSetting;
 
     @Getter
+    public static Setting.BooleanSetting colorPartyChatSetting;
+
+    @Getter
     public static Setting.BooleanSetting animateRankGradientsSetting;
 
     @Getter
@@ -644,6 +647,7 @@ public class SeqClient implements ClientModInitializer {
                         .withValueOverride(PrincessMode::paletteColorOverride);
         colorRankPillsSetting = new Setting.BooleanSetting("color_rank_pills", "chat", true);
         colorUsernamesSetting = new Setting.BooleanSetting("color_usernames", "chat", true);
+        colorPartyChatSetting = new Setting.BooleanSetting("color_party_chat", "chat", true);
         showRankPillGradientsSetting = new Setting.BooleanSetting("show_rank_pill_gradients", "chat", true);
         showUsernameGradientsSetting = new Setting.BooleanSetting("show_username_gradients", "chat", true);
         // Off by default: moving colour draws the eye away from what is being said, and
@@ -710,6 +714,11 @@ public class SeqClient implements ClientModInitializer {
                 "Use each member's Discord role color on guild, party and Discord bridge names.",
                 "Usernames");
         colorUsernamesSetting.setParentSetting(showDiscordRanksSetting);
+        colorPartyChatSetting.setPresentation(
+                "Color party chat",
+                "Apply Sequoia member colors to player names in Wynncraft party chat.",
+                "Usernames");
+        colorPartyChatSetting.setParentSetting(colorUsernamesSetting);
         showUsernameGradientsSetting.setPresentation(
                 "Use gradients",
                 "Show the complete gradient or holographic role palette on usernames.",
@@ -791,6 +800,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().registerWithLegacyKeys(showRankPillGradientsSetting, "chat.show_rank_gradients");
         getConfigManager().register(animateRankGradientsSetting);
         getConfigManager().register(colorUsernamesSetting);
+        getConfigManager().register(colorPartyChatSetting);
         getConfigManager().registerWithLegacyKeys(showUsernameGradientsSetting, "chat.show_rank_gradients");
         getConfigManager().register(animateUsernameGradientsSetting);
         getConfigManager().register(profileOnShiftClickSetting);
