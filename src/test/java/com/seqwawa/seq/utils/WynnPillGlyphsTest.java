@@ -63,6 +63,39 @@ class WynnPillGlyphsTest {
     }
 
     @Test
+    void decodesCapturedLayeredGuildRankBadges() {
+        assertLayeredRank("chief", 0xCFFE2, 0xE032, 0xE037, 0xE038, 0xE034, 0xE035);
+        assertLayeredRank("owner", 0xCFFE0, 0xE03E, 0xE046, 0xE03D, 0xE034, 0xE041);
+        assertLayeredRank(
+                "strategist",
+                0xCFFC4,
+                0xE042,
+                0xE043,
+                0xE041,
+                0xE030,
+                0xE043,
+                0xE034,
+                0xE036,
+                0xE038,
+                0xE042,
+                0xE043);
+        assertLayeredRank("captain", 0xCFFD6, 0xE032, 0xE030, 0xE03F, 0xE043, 0xE030, 0xE038, 0xE03D);
+        assertLayeredRank(
+                "recruiter",
+                0xCFFCA,
+                0xE041,
+                0xE034,
+                0xE032,
+                0xE041,
+                0xE044,
+                0xE038,
+                0xE043,
+                0xE034,
+                0xE041);
+        assertLayeredRank("recruit", 0xCFFD6, 0xE041, 0xE034, 0xE032, 0xE041, 0xE044, 0xE038, 0xE043);
+    }
+
+    @Test
     void stopsAtSupplementaryPlaneIconsSoTheyAreNeverReplaced() {
         String guildIcon = "\uDAFF\uDFFC";
         String pill = WynnPillGlyphs.encodePlainPill("recruiter");
@@ -144,5 +177,22 @@ class WynnPillGlyphsTest {
         assertEquals("sapling2", WynnPillGlyphs.findPills(WynnPillGlyphs.encodePlainPill("Sapling2"))
                 .get(0)
                 .label());
+    }
+
+    private static void assertLayeredRank(String expected, int advance, int... foregroundGlyphs) {
+        StringBuilder badge = new StringBuilder().appendCodePoint(0xE060);
+        for (int glyph : foregroundGlyphs) {
+            badge.appendCodePoint(0xCFFFF).appendCodePoint(glyph);
+        }
+        badge.appendCodePoint(0xCFFFF).appendCodePoint(0xE062).appendCodePoint(advance);
+        expected.codePoints().forEach(letter -> badge.appendCodePoint(0xE000 + letter - 'a'));
+        badge.appendCodePoint(0xD0002);
+
+        List<WynnPillGlyphs.Pill> pills = WynnPillGlyphs.findPills(badge + " Player: hi");
+
+        assertEquals(1, pills.size());
+        assertEquals(expected, pills.getFirst().label());
+        assertEquals(0, pills.getFirst().start());
+        assertEquals(badge.length(), pills.getFirst().endExclusive());
     }
 }

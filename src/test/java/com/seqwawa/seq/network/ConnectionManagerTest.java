@@ -14,6 +14,30 @@ import org.junit.jupiter.api.Test;
 class ConnectionManagerTest {
 
     @Test
+    void raidAnnouncementIncludesObservedPartyGambitCounts() {
+        var payload = ConnectionManager.buildRaidAnnouncementPayload(
+                List.of("Reporter", "PartyMember"),
+                "The Nameless Anomaly",
+                2,
+                2048,
+                10.367,
+                220,
+                Map.of("Reporter", 0, "PartyMember", 3));
+
+        assertEquals(0, payload.getAsJsonObject("gambit_counts").get("Reporter").getAsInt());
+        assertEquals(3, payload.getAsJsonObject("gambit_counts").get("PartyMember").getAsInt());
+        assertFalse(payload.has("gambit_count"));
+    }
+
+    @Test
+    void raidAnnouncementOmitsUnavailablePartyGambitCounts() {
+        var payload = ConnectionManager.buildRaidAnnouncementPayload(
+                List.of("Reporter"), "The Nameless Anomaly", 2, 2048, 10.367, 220, Map.of());
+
+        assertFalse(payload.has("gambit_counts"));
+    }
+
+    @Test
     void partySyncSnapshotPayloadIsBoundToListing() {
         var payload = ConnectionManager.buildPartySyncSnapshotPayload(
                 1204L, true, "Leader", List.of("Leader", "Guest"));

@@ -1117,7 +1117,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             int aspectCount,
             int emeraldCount,
             double experienceCount,
-            int srCount) {
+            int srCount,
+            Map<String, Integer> gambitCounts) {
         if (!authenticated || !isOpen()) {
             SeqClient.LOGGER.warn(
                     "[WebSocket] sendRaidAnnouncement dropped open={} authenticated={}", isOpen(), authenticated);
@@ -1144,6 +1145,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 raidType,
                 usernames.size(),
                 usernames);
+        JsonObject msg = buildRaidAnnouncementPayload(
+                usernames, raidType, aspectCount, emeraldCount, experienceCount, srCount, gambitCounts);
+        send("guild_raid_announcement", msg);
+    }
+
+    static JsonObject buildRaidAnnouncementPayload(
+            List<String> usernames,
+            String raidType,
+            int aspectCount,
+            int emeraldCount,
+            double experienceCount,
+            int srCount,
+            Map<String, Integer> gambitCounts) {
         JsonObject msg = new JsonObject();
         JsonArray names = new JsonArray();
         usernames.forEach(names::add);
@@ -1153,7 +1167,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         msg.addProperty("emerald_count", emeraldCount);
         msg.addProperty("experience_count", experienceCount);
         msg.addProperty("sr_count", srCount);
-        send("guild_raid_announcement", msg);
+        if (gambitCounts != null && !gambitCounts.isEmpty()) {
+            JsonObject counts = new JsonObject();
+            gambitCounts.forEach(counts::addProperty);
+            msg.add("gambit_counts", counts);
+        }
+        return msg;
     }
 
     public void sendGuildBankEvent(

@@ -3,6 +3,7 @@ package com.seqwawa.seq.managers;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -77,6 +78,9 @@ public class RaidTracker {
         }
 
         ResolvedRaidCompletion resolved = resolveForClient(completion, localMinecraftUsername());
+        Map<String, Integer> gambitCounts = resolved.localCompletion()
+                ? RaidGambitRosterTracker.snapshotForParty(resolved.partyMembers())
+                : Map.of();
         finishLocalCompletion(resolved);
 
         if (!ConnectionManager.isConnected()) {
@@ -111,7 +115,8 @@ public class RaidTracker {
                 completion.aspects(),
                 completion.emeralds(),
                 completion.guildExp(),
-                completion.seasonalRating());
+                completion.seasonalRating(),
+                gambitCounts);
     }
 
     static ResolvedRaidCompletion resolveForClient(
@@ -127,12 +132,19 @@ public class RaidTracker {
     }
 
     static void finishLocalCompletion(ResolvedRaidCompletion completion) {
-        finishLocalCompletion(completion, PrincessRaidCelebration::triggerIfEnabled);
+        finishLocalCompletion(
+                completion,
+                PrincessRaidCelebration::triggerIfEnabled,
+                RaidGambitRosterTracker::reset);
     }
 
-    static void finishLocalCompletion(ResolvedRaidCompletion completion, Runnable completionEffect) {
+    static void finishLocalCompletion(
+            ResolvedRaidCompletion completion,
+            Runnable completionEffect,
+            Runnable gambitResetEffect) {
         if (completion.localCompletion()) {
             RaidPartySnapshotTracker.onRaidCompleted();
+            gambitResetEffect.run();
             completionEffect.run();
         }
     }
@@ -159,6 +171,7 @@ public class RaidTracker {
         if (isRaidFailedTitle(title)) {
             SeqClient.LOGGER.debug("[RaidTracker] Raid failure title detected");
             RaidPartySnapshotTracker.onRaidFailed();
+            RaidGambitRosterTracker.reset();
         }
     }
 

@@ -200,6 +200,21 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void showsTheRankDecodedFromACapturedLayeredBadge() {
+        Component message = Component.empty()
+                .append(Component.literal("[23:38:16] "))
+                .append(Component.literal(layeredGuildRankPill("chief", 0xCFFE2) + " "))
+                .append(Component.literal("ArcLeRetour")
+                        .withStyle(Style.EMPTY.withColor(GUILD_AQUA).withInsertion("ArcLeRetour")))
+                .append(Component.literal(": hi").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+
+        Component decorated =
+                DiscordRankChatDecorator.decorateGuildChat(message, DiscordRankChatDecoratorTest::lookup);
+
+        assertEquals("In-game rank: Chief", hoverText(decorated));
+    }
+
+    @Test
     void leavesOurOwnBridgeLineAloneWhenItComesBackForDecoration() {
         // Only the most recent bridged line is remembered by identity, so an earlier one
         // can reach the decorator. Our marker sits in the same private-use block as
@@ -1208,6 +1223,15 @@ class DiscordRankChatDecoratorTest {
                 .append(Component.literal(WynnPillGlyphs.encodePlainPill(rank) + " "))
                 .append(Component.literal(displayedName).withStyle(nameStyle))
                 .append(Component.literal(": " + body));
+    }
+
+    private static String layeredGuildRankPill(String rank, int advance) {
+        StringBuilder badge = new StringBuilder().appendCodePoint(0xE060);
+        rank.codePoints().forEach(letter -> badge.appendCodePoint(0xCFFFF)
+                .appendCodePoint(0xE030 + letter - 'a'));
+        badge.appendCodePoint(0xCFFFF).appendCodePoint(0xE062).appendCodePoint(advance);
+        rank.codePoints().forEach(letter -> badge.appendCodePoint(0xE000 + letter - 'a'));
+        return badge.appendCodePoint(0xD0002).toString();
     }
 
     private static int colorOfFragmentContaining(List<ComponentTextEditor.Fragment> fragments, String needle) {

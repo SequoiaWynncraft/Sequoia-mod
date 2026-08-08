@@ -1,6 +1,7 @@
 package com.seqwawa.seq.utils;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -12,6 +13,9 @@ import java.util.List;
  * glyphs, one background block plus one back-offset per character, and the
  * letter glyphs themselves. Letters live at {@code U+E040..U+E059} and digits at
  * {@code U+E060..U+E069}, which is what makes the visible label recoverable.
+ * Newer guild-rank badges use a layered form framed by {@code U+E060}/{@code U+E062}:
+ * their foreground letters live at {@code U+E030..U+E049}, separated by
+ * {@code U+CFFFF}, and a shadow layer repeats them at {@code U+E000..U+E019}.
  * <p>
  * Detection deliberately keys on the letter glyphs and on the Basic Multilingual
  * Plane private-use block as a whole rather than on specific corner or
@@ -35,6 +39,16 @@ public final class WynnPillGlyphs {
     private static final char LETTER_LAST = '\uE059';
     private static final char DIGIT_FIRST = '\uE060';
     private static final char DIGIT_LAST = '\uE069';
+
+    private static final int LAYERED_CORNER_LEFT = 0xE060;
+    private static final int LAYERED_CORNER_RIGHT = 0xE062;
+    private static final int LAYERED_SEPARATOR = 0xCFFFF;
+    private static final int LAYERED_LETTER_FIRST = 0xE030;
+    private static final int LAYERED_LETTER_LAST = 0xE049;
+    private static final int LAYERED_SHADOW_FIRST = 0xE000;
+    private static final int LAYERED_ADVANCE_FIRST = 0xCFF00;
+    private static final int LAYERED_ADVANCE_LAST = 0xCFFFE;
+    private static final int LAYERED_END = 0xD0002;
 
     /** Basic Multilingual Plane private use area, where the pill font lives. */
     private static final char PRIVATE_USE_FIRST = '\uE000';
@@ -78,9 +92,105 @@ public final class WynnPillGlyphs {
      * one pill, which still lets callers replace it wholesale.
      */
     public static List<Pill> findPills(String text) {
-        return findGlyphRuns(text).stream()
+        List<Pill> pills = new ArrayList<>(findLayeredPills(text));
+        findGlyphRuns(text).stream()
                 .filter(pill -> pill.label().length() >= MIN_LABEL_LENGTH)
-                .toList();
+                .filter(candidate -> pills.stream().noneMatch(layered -> overlaps(layered, candidate)))
+                .forEach(pills::add);
+        pills.sort(Comparator.comparingInt(Pill::start));
+        return List.copyOf(pills);
+    }
+
+    /** Reads Wynncraft's current two-layer guild-rank badge representation. */
+    private static List<Pill> findLayeredPills(String text) {
+        if (text == null || text.isEmpty()) {
+            return List.of();
+        }
+
+        List<Pill> pills = new ArrayList<>();
+        int index = 0;
+        while (index < text.length()) {
+            if (text.codePointAt(index) != LAYERED_CORNER_LEFT) {
+                index += Character.charCount(text.codePointAt(index));
+                continue;
+            }
+
+            Pill pill = readLayeredPill(text, index);
+            if (pill == null) {
+                index += Character.charCount(LAYERED_CORNER_LEFT);
+                continue;
+            }
+            pills.add(pill);
+            index = pill.endExclusive();
+        }
+        return List.copyOf(pills);
+    }
+
+    private static Pill readLayeredPill(String text, int start) {
+        int cursor = start + Character.charCount(LAYERED_CORNER_LEFT);
+        StringBuilder label = new StringBuilder();
+        while (cursor < text.length() && text.codePointAt(cursor) == LAYERED_SEPARATOR) {
+            cursor += Character.charCount(LAYERED_SEPARATOR);
+            if (cursor >= text.length()) {
+                return null;
+            }
+
+            int glyph = text.codePointAt(cursor);
+            cursor += Character.charCount(glyph);
+            if (glyph == LAYERED_CORNER_RIGHT) {
+                if (label.length() < MIN_LABEL_LENGTH) {
+                    return null;
+                }
+                return new Pill(start, layeredPillEnd(text, cursor, label), label.toString());
+            }
+
+            char decoded = decodeLayeredLetter(glyph);
+            if (decoded == 0) {
+                return null;
+            }
+            label.append(decoded);
+        }
+        return null;
+    }
+
+    /** Includes the advance and shadow layer when it exactly repeats the foreground. */
+    private static int layeredPillEnd(String text, int primaryEnd, StringBuilder label) {
+        int cursor = primaryEnd;
+        if (cursor >= text.length()) {
+            return primaryEnd;
+        }
+        int advance = text.codePointAt(cursor);
+        if (advance < LAYERED_ADVANCE_FIRST || advance > LAYERED_ADVANCE_LAST) {
+            return primaryEnd;
+        }
+        cursor += Character.charCount(advance);
+
+        for (int index = 0; index < label.length(); index++) {
+            if (cursor >= text.length()) {
+                return primaryEnd;
+            }
+            int expected = LAYERED_SHADOW_FIRST + (label.charAt(index) - 'a');
+            int actual = text.codePointAt(cursor);
+            if (actual != expected) {
+                return primaryEnd;
+            }
+            cursor += Character.charCount(actual);
+        }
+
+        if (cursor >= text.length() || text.codePointAt(cursor) != LAYERED_END) {
+            return primaryEnd;
+        }
+        return cursor + Character.charCount(LAYERED_END);
+    }
+
+    private static char decodeLayeredLetter(int glyph) {
+        return glyph >= LAYERED_LETTER_FIRST && glyph <= LAYERED_LETTER_LAST
+                ? (char) ('a' + glyph - LAYERED_LETTER_FIRST)
+                : 0;
+    }
+
+    private static boolean overlaps(Pill left, Pill right) {
+        return left.start() < right.endExclusive() && right.start() < left.endExclusive();
     }
 
     /**

@@ -23,6 +23,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
 - Raid tracking and announcements
+- Per-player raid gambit counts parsed natively from the raid-start roster
 - Interactive world map with gathering nodes analysis and active world events
 - Guild-specific settings and status screens
 
