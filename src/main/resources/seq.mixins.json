@@ -13,11 +13,13 @@
     "ChatComponentMixin",
     "ChatScreenMixin",
     "ClientPacketListenerMixin",
+    "FontMixin",
     "FontPreparedTextBuilderMixin",
     "GameRendererMixin",
     "GuildAllianceSnapshotPacketMixin",
     "InGameHudMixin",
     "ParticleEngineMixin",
+    "SubmitNodeCollectionMixin",
     "TitleScreenMixin"
   ],
   "injectors": {

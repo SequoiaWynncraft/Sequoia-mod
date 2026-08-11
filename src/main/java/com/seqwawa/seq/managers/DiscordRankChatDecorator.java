@@ -66,7 +66,7 @@ public final class DiscordRankChatDecorator {
      * It is deliberately short of pure black, which looks like a hole punched in the
      * pill at chat's glyph size.
      */
-    private static final TextColor PILL_LABEL_COLOR = TextColor.fromRgb(0x1F2126);
+    static final TextColor PILL_LABEL_COLOR = TextColor.fromRgb(0x1F2126);
 
     /** Aqua Wynncraft uses for guild chat; see {@code ChatManager}. */
     private static final int GUILD_CHAT_COLOR = 0x55FFFF;
@@ -1249,7 +1249,7 @@ public final class DiscordRankChatDecorator {
      * the source style. {@link Style#withColor(TextColor)} otherwise returns the
      * source style unchanged, which drops the identity used to animate that glyph.
      */
-    private static Style withRegisteredColor(Style style, TextColor color) {
+    static Style withRegisteredColor(Style style, TextColor color) {
         return style.withColor((TextColor) null).withColor(color);
     }
 

@@ -20,6 +20,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Automatic connection to Sequoia services
 - In-game Discord chat bridge
 - Clickable world names in chat, so a called-out world is one click away
+- Sequoia ranks on member nametags, replacing the Wynncraft rank badge above their head and coloring the name to match (off by default)
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
 - Raid tracking and announcements
