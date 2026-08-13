@@ -191,7 +191,7 @@ public final class LightRoom {
             }
             return new RoomState(
                     prepRoom || text.contains("Gather the Light!"),
-                    inRoom || text.contains("Find and kill"));
+                    inRoom || text.contains("Find and kill") || text.contains("The creature in the"));
         }
 
         private boolean complete() {
