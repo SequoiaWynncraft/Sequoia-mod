@@ -146,7 +146,7 @@ public record Listing(
     }
 
     public int occupiedSlotCount() {
-        return memberCount() + reservedSlotCount();
+        return memberCount() + (reservedSlots != null ? reservedSlots.size() : 0);
     }
 
     public int memberCount() {
@@ -154,7 +154,21 @@ public record Listing(
     }
 
     public int reservedSlotCount() {
-        return reservedSlots != null ? reservedSlots.size() : 0;
+        if (reservedSlots == null) {
+            return 0;
+        }
+        return (int) reservedSlots.stream()
+                .filter(slot -> slot != null && !slot.isObservedWynnMember())
+                .count();
+    }
+
+    public int observedRosterCount() {
+        if (reservedSlots == null) {
+            return 0;
+        }
+        return (int) reservedSlots.stream()
+                .filter(slot -> slot != null && slot.isObservedWynnMember())
+                .count();
     }
 
     public PartyJoinPolicy resolvedJoinPolicy() {

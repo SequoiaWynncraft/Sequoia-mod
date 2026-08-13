@@ -27,13 +27,13 @@ class SeqBadgeTest {
     @Test
     void buildsTypeSpecificTexturePath() {
         assertEquals(
-                "seq:badges/wtp_gold.png",
+                "seq:textures/badges/wtp_gold.png",
                 new SeqBadge(SeqBadgeType.WTP, SeqBadgeTier.GOLD).textureId().toString());
         assertEquals(
-                "seq:badges/nol_gold.png",
+                "seq:textures/badges/nol_gold.png",
                 new SeqBadge(SeqBadgeType.NOL, SeqBadgeTier.GOLD).textureId().toString());
         assertEquals(
-                "seq:badges/insignia_gold.png",
+                "seq:textures/badges/insignia_gold.png",
                 new SeqBadge(SeqBadgeType.INSIGNIA, SeqBadgeTier.GOLD).textureId().toString());
     }
 

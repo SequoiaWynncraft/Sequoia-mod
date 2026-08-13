@@ -46,7 +46,7 @@ public class PartyFinderManager implements NotificationAccessor {
     private static final long INVITE_NAME_LOOKUP_TIMEOUT_SECONDS = 3L;
     private static final long INVITE_ALL_COMMAND_DELAY_MS = 500L;
     private static final String GAME_PARTY_CREATE_COMMAND = "party create";
-    private static final String GAME_PARTY_INVITE_PREFIX = "party ";
+    private static final String GAME_PARTY_INVITE_PREFIX = "party invite ";
     private static final String GAME_PARTY_KICK_PREFIX = "party kick ";
     private static final String GAME_PARTY_PROMOTE_PREFIX = "party promote ";
     private static final String SEQ_INVITE_ALL_COMMAND = "/seq p invite-all";
@@ -559,7 +559,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<CommandResult<Listing>> promoteMemberFromCommand(String username) {
-        return resolveCurrentMemberTargetForCommand(username, true).thenCompose(targetResult -> {
+        return resolvePromotionTargetForCommand(username).thenCompose(targetResult -> {
             if (!targetResult.success()) {
                 return completedCommandFailure(targetResult.message());
             }
@@ -569,8 +569,14 @@ public class PartyFinderManager implements NotificationAccessor {
                 return completedCommandFailure(target.username() + " is already the party leader.");
             }
 
+            CompletableFuture<Listing> transfer = ApiClient.getInstance()
+                    .transferLeadership(target.listing().id(), target.targetUUID())
+                    .thenApply(listing -> {
+                        sendGamePartyCommandForUuid(target.targetUUID(), GAME_PARTY_PROMOTE_PREFIX);
+                        return listing;
+                    });
             return executeListingCommand(
-                    ApiClient.getInstance().transferLeadership(target.listing().id(), target.targetUUID()),
+                    transfer,
                     this::applyUpdatedCurrentListingState,
                     "Unable to promote member",
                     "Failed to transfer leadership",
@@ -590,6 +596,29 @@ public class PartyFinderManager implements NotificationAccessor {
                             ? CommandResult.success("Invite all: " + inviteAllResult.message(), null)
                             : CommandResult.failure("Invite all: " + inviteAllResult.message()));
         });
+    }
+
+    public CompletableFuture<CommandResult<Void>> scanCurrentWynnPartyFromCommand() {
+        return CompletableFuture.completedFuture(scanCurrentWynnParty());
+    }
+
+    public CommandResult<Void> scanCurrentWynnParty() {
+        if (currentListing == null) {
+            return CommandResult.failure("You need an active Sequoia party before scanning your Wynn party.");
+        }
+        if (!isPartyLeader()) {
+            return CommandResult.failure("Only the party leader can scan the current Wynn party.");
+        }
+        if (!ConnectionManager.isConnected()) {
+            return CommandResult.failure("Connect to Sequoia before scanning your Wynn party.");
+        }
+        WynnPartySyncManager syncManager = SeqClient.getWynnPartySyncManager();
+        if (syncManager == null || !syncManager.requestCurrentPartySnapshot()) {
+            return CommandResult.failure("Unable to request the current Wynn party roster.");
+        }
+        return CommandResult.success(
+                "Requested the current Wynn party roster. The Sequoia party will update when Wynncraft replies.",
+                null);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -1664,6 +1693,12 @@ public class PartyFinderManager implements NotificationAccessor {
 
         Listing listingSnapshot = currentListing;
         long listingId = listingSnapshot.id();
+        WynnPartySyncManager syncManager = SeqClient.getWynnPartySyncManager();
+        Set<String> observedWynnMemberNames = syncManager == null
+                ? Set.of()
+                : syncManager.getObservedMemberUsernames().stream()
+                        .map(username -> username.toLowerCase(Locale.ROOT))
+                        .collect(Collectors.toUnmodifiableSet());
         List<Member> members = listingSnapshot.members();
         if (members == null || members.isEmpty()) {
             return CompletableFuture.completedFuture(
@@ -1735,6 +1770,11 @@ public class PartyFinderManager implements NotificationAccessor {
                             continue;
                         }
 
+                        if (observedWynnMemberNames.contains(normalizedUsername)) {
+                            resolvedSkippedCount++;
+                            continue;
+                        }
+
                         targets.add(new ResolvedInviteTarget(inviteCandidate.memberUUID(), username));
                     }
 
@@ -1795,7 +1835,7 @@ public class PartyFinderManager implements NotificationAccessor {
                                 continue;
                             }
 
-                            String command = GAME_PARTY_INVITE_PREFIX + target.username();
+                            String command = gamePartyInviteCommand(target.username());
                             long delayMs = (long) sendFutures.size() * INVITE_ALL_COMMAND_DELAY_MS;
                             CompletableFuture<Boolean> sendFuture = new CompletableFuture<>();
                             CompletableFuture.delayedExecutor(delayMs, TimeUnit.MILLISECONDS)
@@ -2544,6 +2584,51 @@ public class PartyFinderManager implements NotificationAccessor {
         });
     }
 
+    private CompletableFuture<CommandResult<ListingMemberTarget>> resolvePromotionTargetForCommand(String username) {
+        String validationMessage = validateUsername(username, false);
+        if (validationMessage != null) {
+            return completedCommandFailure(validationMessage);
+        }
+
+        String normalizedUsername = username.trim();
+        return ensureCurrentListingForCommand().thenCompose(currentResult -> {
+            if (!currentResult.success()) {
+                return completedCommandFailure(currentResult.message());
+            }
+            if (!isPartyLeader()) {
+                return completedCommandFailure("Only the party leader can manage party members.");
+            }
+
+            Listing listing = currentResult.data();
+            return resolveUuidForCommand(normalizedUsername).thenApply(uuidResult -> {
+                if (!uuidResult.success()) {
+                    return CommandResult.failure(uuidResult.message());
+                }
+
+                UUID targetUUID = uuidResult.data();
+                if (findMemberByUuid(listing, targetUUID) == null
+                        && !hasObservedReservation(listing, normalizedUsername)) {
+                    return CommandResult.failure(normalizedUsername + " is not in your Sequoia party.");
+                }
+
+                return CommandResult.success(
+                        "Resolved promotion target.",
+                        new ListingMemberTarget(listing, targetUUID, normalizedUsername));
+            });
+        });
+    }
+
+    static boolean hasObservedReservation(Listing listing, String username) {
+        if (listing == null || username == null || username.isBlank() || listing.reservedSlots() == null) {
+            return false;
+        }
+        return listing.reservedSlots().stream()
+                .filter(Objects::nonNull)
+                .map(ReservedSlot::observedUsername)
+                .filter(Objects::nonNull)
+                .anyMatch(observedUsername -> observedUsername.equalsIgnoreCase(username.trim()));
+    }
+
     private static Member findMemberByUuid(Listing listing, UUID targetUUID) {
         if (listing == null || targetUUID == null || listing.members() == null) {
             return null;
@@ -2581,8 +2666,12 @@ public class PartyFinderManager implements NotificationAccessor {
                 && SeqClient.mc.player.getName().getString().equalsIgnoreCase(normalizedUsername)) {
             return CommandResult.failure("You cannot invite yourself.");
         }
-        SeqClient.mc.player.connection.sendCommand(GAME_PARTY_INVITE_PREFIX + normalizedUsername);
+        SeqClient.mc.player.connection.sendCommand(gamePartyInviteCommand(normalizedUsername));
         return CommandResult.success("Sent Wynn party invite to " + normalizedUsername + ".", null);
+    }
+
+    static String gamePartyInviteCommand(String username) {
+        return GAME_PARTY_INVITE_PREFIX + username;
     }
 
     private void sendGamePartyCommandForUuid(UUID targetUUID, String commandPrefix) {
@@ -2789,7 +2878,10 @@ public class PartyFinderManager implements NotificationAccessor {
 
         List<ReservedSlot> reservedSlots = listing.reservedSlots();
         if (reservedSlots != null) {
-            return reservedSlots.size();
+            return (int) reservedSlots.stream()
+                    .filter(Objects::nonNull)
+                    .filter(slot -> !slot.isObservedWynnMember())
+                    .count();
         }
 
         if (listing.members() == null) {

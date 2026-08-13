@@ -323,7 +323,12 @@ public class SeqCommand {
                                                 .executes(ctx -> relayCommandResult(
                                                                 ctx,
                                                                 SeqClient.getPartyFinderManager()
-                                                                                .inviteAllCurrentMembersFromCommand())));
+                                                                                .inviteAllCurrentMembersFromCommand())))
+                                .then(ClientCommandManager.literal("scan")
+                                                .executes(ctx -> relayCommandResult(
+                                                                ctx,
+                                                                SeqClient.getPartyFinderManager()
+                                                                                .scanCurrentWynnPartyFromCommand())));
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildIgnoreCommand() {

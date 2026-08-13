@@ -21,6 +21,11 @@ import com.seqwawa.seq.network.auth.StoredAuthSession;
 
 class PartyFinderManagerAnnouncementTest {
 
+    @Test
+    void buildsExplicitWynnPartyInviteCommand() {
+        assertEquals("party invite ScannedPlayer", PartyFinderManager.gamePartyInviteCommand("ScannedPlayer"));
+    }
+
     private static final String LOCAL_UUID = "00000000-0000-0000-0000-000000000001";
     private static final Instant BASE_TIME = Instant.parse("2026-03-20T12:00:00Z");
 

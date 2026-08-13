@@ -15,7 +15,7 @@ public record SeqBadge(SeqBadgeType type, SeqBadgeTier tier) {
 
     public Identifier textureId() {
         return Identifier.fromNamespaceAndPath(
-                "seq", "badges/" + type.commandName() + "_" + tier.commandName() + ".png");
+                "seq", "textures/badges/" + type.commandName() + "_" + tier.commandName() + ".png");
     }
 
     public static List<SeqBadge> sortForRender(Collection<SeqBadge> badges) {
