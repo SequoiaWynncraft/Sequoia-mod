@@ -982,15 +982,18 @@ public final class DiscordRankChatDecorator {
     private static MutableComponent continuationBar() {
         GuildChatMarkers.Marker bar = GuildChatMarkers.bar();
         if (bar == null) {
+            // Unlike discord_mark.png, the bundled continuation glyph is already
+            // painted in Discord blurple. Draw it white so Minecraft does not
+            // multiply #5865F2 by #5865F2 a second time, and retain the same text
+            // shadow as the Discord mark above it.
             return withSeparator(Component.literal(BRIDGE_CONTINUATION_GLYPH)
-                    .withStyle(style ->
-                            style.withFont(BRIDGE_PREFIX_FONT).withColor(DISCORD_ACCENT).withoutShadow()));
+                    .withStyle(style -> style.withFont(BRIDGE_PREFIX_FONT).withColor(ChatFormatting.WHITE)));
         }
         // Wynncraft's bar ends with its own spacer glyph. Adding a separator on top of
         // it would push the line right of the one above.
         return Component.empty()
                 .append(Component.literal(bar.glyphs())
-                        .withStyle(bar.style().withColor(DISCORD_ACCENT).withoutShadow()));
+                        .withStyle(bar.style().withColor(DISCORD_ACCENT)));
     }
 
     /**
