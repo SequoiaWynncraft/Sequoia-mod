@@ -138,6 +138,25 @@ public class SeqCommand {
                                                 .executes(SeqCommand::openIngredientGuideScreen))
                                 .then(ClientCommandManager.literal("ingredient")
                                                 .executes(SeqCommand::openIngredientGuideScreen))
+                                .then(buildWynnBuilderCommand("wynnbuilder"))
+                                .then(buildWynnBuilderCommand("wb"))
+                                .then(ClientCommandManager.literal("debug")
+                                                .executes(ctx -> {
+                                                        var session = com.seqwawa.seq.wynnbuilder.WynnBuilderSession
+                                                                        .getInstance();
+                                                        com.seqwawa.seq.wynnbuilder.WynnBuilderDiagnostics
+                                                                        .setEnabled(true);
+                                                        com.seqwawa.seq.wynnbuilder.WynnBuilderDiagnostics
+                                                                        .dump(session);
+                                                        sendFeedback(ctx.getSource(),
+                                                                        "WynnBuilder diagnostics written to the log.");
+                                                        return 1;
+                                                }))
+                                .then(ClientCommandManager.literal("craft")
+                                                .executes(ctx -> {
+                                                        SeqClient.openWynnBuilderCrafterScreen();
+                                                        return 1;
+                                                }))
                                 .then(buildPartyCommand("party"))
                                 .then(buildPartyCommand("p"));
 
@@ -324,6 +343,71 @@ public class SeqCommand {
                                                                 ctx,
                                                                 SeqClient.getPartyFinderManager()
                                                                                 .inviteAllCurrentMembersFromCommand())));
+        }
+
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildWynnBuilderCommand(String name) {
+                return ClientCommandManager.literal(name)
+                                .executes(ctx -> {
+                                        SeqClient.openWynnBuilderScreen();
+                                        return 1;
+                                })
+                                .then(ClientCommandManager.literal("build")
+                                                .executes(ctx -> {
+                                                        SeqClient.openWynnBuilderBuilderScreen();
+                                                        return 1;
+                                                })
+                                                .then(ClientCommandManager.argument(
+                                                                "link",
+                                                                StringArgumentType.greedyString())
+                                                                .executes(SeqCommand::runImportWynnBuilderLink)))
+                                .then(ClientCommandManager.literal("debug")
+                                                .executes(ctx -> {
+                                                        var session = com.seqwawa.seq.wynnbuilder.WynnBuilderSession
+                                                                        .getInstance();
+                                                        com.seqwawa.seq.wynnbuilder.WynnBuilderDiagnostics
+                                                                        .setEnabled(true);
+                                                        com.seqwawa.seq.wynnbuilder.WynnBuilderDiagnostics
+                                                                        .dump(session);
+                                                        sendFeedback(ctx.getSource(),
+                                                                        "WynnBuilder diagnostics written to the log.");
+                                                        return 1;
+                                                }))
+                                .then(ClientCommandManager.literal("craft")
+                                                .executes(ctx -> {
+                                                        SeqClient.openWynnBuilderCrafterScreen();
+                                                        return 1;
+                                                })
+                                                .then(ClientCommandManager.argument(
+                                                                "link",
+                                                                StringArgumentType.greedyString())
+                                                                .executes(SeqCommand::runImportWynnCraftLink)));
+        }
+
+        /**
+         * Imports a build link, waiting for the item data to finish downloading before decoding it,
+         * so pasting a link on a cold start works rather than reporting a spurious failure.
+         */
+        private static int runImportWynnBuilderLink(CommandContext<FabricClientCommandSource> ctx) {
+                String link = StringArgumentType.getString(ctx, "link");
+                var session = com.seqwawa.seq.wynnbuilder.WynnBuilderSession.getInstance();
+                session.ensureData().thenRun(() -> SeqClient.mc.execute(() -> {
+                        session.importBuildLink(link);
+                        SeqClient.openWynnBuilderBuilderScreen();
+                }));
+                return 1;
+        }
+
+        private static int runImportWynnCraftLink(CommandContext<FabricClientCommandSource> ctx) {
+                String link = StringArgumentType.getString(ctx, "link");
+                var session = com.seqwawa.seq.wynnbuilder.WynnBuilderSession.getInstance();
+                session.ensureData().thenRun(() -> SeqClient.mc.execute(() -> {
+                        if (session.importCraftLink(link)) {
+                                SeqClient.openWynnBuilderCrafterScreen();
+                        } else {
+                                sendFeedback(ctx.getSource(), session.message());
+                        }
+                }));
+                return 1;
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildIgnoreCommand() {

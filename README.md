@@ -25,6 +25,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Raid tracking and announcements
 - Per-player raid gambit counts parsed natively from the raid-start roster
 - Interactive world map with gathering nodes analysis and active world events
+- In-game WynnBuilder builder and crafter, including reading and generating WynnBuilder links
 - Guild-specific settings and status screens
 
 ## Requirements
@@ -54,6 +55,7 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq`: open the main Sequoia screen
 - `/seq p`: open the Sequoia party finder UI
 - `/seq map`: open the Sequoia world map
+- `/seq wb`: open the WynnBuilder tools (builder and crafter)
 - `/seq connect`: connect to the backend
 - `/seq status`: show connection state
 - `/seq logout`: clear the current backend session
@@ -76,6 +78,13 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq ignore <IGN>`
 - `/seq unignore <IGN>`
 - `/seq map`
+- `/seq wb`
+- `/seq wb build`
+- `/seq wb build <link>`
+- `/seq wb craft`
+- `/seq wb craft <link>`
+- `/seq wynnbuilder`
+- `/seq craft`
 - `/seq map params`
 - `/seq map eps <blocks>`
 - `/seq map minSamples <count>`
@@ -116,6 +125,51 @@ Navigation and map mode controls remain pinned in the left sidebar. Its map, ana
 Gathering analysis supports three scopes: all bundled gathering nodes, nodes inside any guild territory, or nodes inside the selected territory. Resource, profession, cluster, and score controls continue to refine the active scope.
 
 The Events view shows runs currently visible through the Wynncraft API. Choose All or Tracked to filter the markers, click a marker for event details, and use Track Event or the searchable tracking dropdown to manage persistent tracking. The management list can be limited to Tracked Only for quick removal. Tracked-event detection messages can be enabled in the World Events settings category.
+
+## WynnBuilder
+
+Open **WynnBuilder** from the main Sequoia screen, or run `/seq wb`, for an in-game version of
+[WynnBuilder](https://wynnbuilder.github.io). It has two tools:
+
+- **Builder** (`/seq wb build`) — fill the nine equipment slots, apply powders, set the build level,
+  and read the aggregated statistics: health, effective health, elemental defences, skill point
+  requirements and every identification. **Ability tree** opens the class tree for the equipped
+  weapon.
+
+  The right panel has three tabs — **Build**, **Items** and **Damage** — and every section folds. **Build** shows the totals; **Items** is a
+  plain list of what is equipped, and clicking a piece unfolds its breakdown, listing each
+  identification as the range a real drop can roll rather than a single value. Crafted pieces unfold
+  to their recipe, materials and resulting ranges, plus an **Open in crafter** button that loads that
+  exact craft into the crafter — the ingredient grid itself is left to the crafter. **Damage** lists
+  every source the build has: the melee hit and its damage per second, the critical chance, and each
+  spell broken down part by part, along with the buffs from the selected abilities that you can
+  switch on and off.
+- **Crafter** (`/seq wb craft` or `/seq craft`) — pick a recipe, material tiers and up to six
+  ingredients, and see the resulting item. Ingredient effectiveness is shown per grid position,
+  since where an ingredient sits changes what it contributes.
+
+### Links
+
+Builds and crafts are exchanged as ordinary WynnBuilder links, so they work with the website and
+with anything else that reads them.
+
+- **Copy link** (or `Ctrl+C`) puts a `wynnbuilder.github.io` URL on the clipboard.
+- **Paste link** (or `Ctrl+V`) reads one back. Both the current format and the older link formats
+  are understood, so links shared years ago still open. A link written against an older data version
+  opens too: only that version's encoding constants are fetched, about a kilobyte, because item IDs
+  are stable between versions.
+- `/seq wb build <link>` and `/seq wb craft <link>` import a link straight from chat.
+
+### Item data
+
+Item, ingredient, recipe, tome, aspect and ability tree data is downloaded from
+`wynnbuilder.github.io` the first time the section is opened and cached under
+`config/sequoia/wynnbuilder/`. Nothing is bundled in the mod: WynnBuilder is GPL-3 licensed and
+Sequoia is MIT, so its data files are used at runtime rather than redistributed. Opening a link
+built on an older data version fetches that version, because item IDs are version specific.
+
+WynnBuilder is a separate project; Sequoia is not affiliated with it and only reads its published
+data and link format.
 
 ## Settings
 

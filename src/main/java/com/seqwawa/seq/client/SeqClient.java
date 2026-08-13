@@ -619,6 +619,21 @@ public class SeqClient implements ClientModInitializer {
         mc.execute(() -> mc.setScreen(new IngredientGuideScreen(mc.screen)));
     }
 
+    public static void openWynnBuilderScreen() {
+        mc.execute(() -> mc.setScreen(
+                new com.seqwawa.seq.wynnbuilder.ui.WynnBuilderHubScreen(mc.screen)));
+    }
+
+    public static void openWynnBuilderBuilderScreen() {
+        mc.execute(() -> mc.setScreen(
+                new com.seqwawa.seq.wynnbuilder.ui.BuilderScreen(mc.screen)));
+    }
+
+    public static void openWynnBuilderCrafterScreen() {
+        mc.execute(() -> mc.setScreen(
+                new com.seqwawa.seq.wynnbuilder.ui.CrafterScreen(mc.screen)));
+    }
+
     public static boolean isBombShareHotkeyDown() {
         return shareBombsKey != null && shareBombsKey.isDown();
     }
