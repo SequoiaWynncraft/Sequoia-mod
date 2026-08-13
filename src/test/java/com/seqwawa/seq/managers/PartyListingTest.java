@@ -16,6 +16,7 @@ import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.Member;
 import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyRegion;
+import com.seqwawa.seq.model.PartyReservedSlotSource;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.PartyStatus;
 import com.seqwawa.seq.model.ReservedSlot;
@@ -82,7 +83,22 @@ class PartyListingTest {
                 new ReservedSlot(null, "ScannedPlayer", PartyRole.OTHER, Instant.EPOCH));
 
         assertEquals("ScannedPlayer", member.displayName());
-        assertEquals(true, member.isReserved);
+        assertTrue(member.isObserved);
+        assertFalse(member.isReserved);
+    }
+
+    @Test
+    void wynnSyncSlotDisplaysAsObservedRosterMember() {
+        PartyMember member = PartyMember.reserved(new ReservedSlot(
+                null,
+                "ScannedPlayer",
+                null,
+                Instant.EPOCH,
+                PartyReservedSlotSource.WYNN_SYNC));
+
+        assertEquals("ScannedPlayer", member.displayName());
+        assertTrue(member.isObserved);
+        assertFalse(member.isReserved);
     }
 
     @Test

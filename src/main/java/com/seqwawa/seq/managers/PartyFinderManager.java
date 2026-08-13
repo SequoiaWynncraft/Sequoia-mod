@@ -2872,7 +2872,10 @@ public class PartyFinderManager implements NotificationAccessor {
 
         List<ReservedSlot> reservedSlots = listing.reservedSlots();
         if (reservedSlots != null) {
-            return reservedSlots.size();
+            return (int) reservedSlots.stream()
+                    .filter(Objects::nonNull)
+                    .filter(slot -> !slot.isObservedWynnMember())
+                    .count();
         }
 
         if (listing.members() == null) {

@@ -39,6 +39,8 @@ public class WynnPartySyncManager {
             Pattern.compile("^Your party has been disbanded\\.?$", Pattern.CASE_INSENSITIVE);
     private static final Pattern PARTY_MEMBERS_PATTERN =
             Pattern.compile("^Party members:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NOT_IN_PARTY_PATTERN =
+            Pattern.compile("^You must be in a party to use this[.!]?$", Pattern.CASE_INSENSITIVE);
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Duration DUPLICATE_WINDOW = Duration.ofMillis(750);
     private static final Duration HEARTBEAT_RESEND_INTERVAL = Duration.ofSeconds(60);
@@ -56,6 +58,11 @@ public class WynnPartySyncManager {
     public void onSystemChat(Component message) {
         String normalized = PacketTextNormalizer.normalizeForParsing(message == null ? null : message.getString());
         if (normalized.isBlank()) {
+            return;
+        }
+        if (manualScanPending && NOT_IN_PARTY_PATTERN.matcher(normalized).matches()) {
+            SeqClient.LOGGER.info("[WynnPartySync] Manual scan confirmed that the player has no active Wynn party");
+            handleNoPartySnapshot();
             return;
         }
         if (isDuplicateEvent(normalized)) {
@@ -344,6 +351,18 @@ public class WynnPartySyncManager {
             lastSentSnapshotKey = null;
         }
         logObservedState("members_snapshot");
+    }
+
+    private void handleNoPartySnapshot() {
+        RaidPartySnapshotTracker.onPartyChanged();
+        observedState.initialized = true;
+        observedState.active = false;
+        observedState.leaderUsername = null;
+        observedState.memberUsernames.clear();
+        manualScanPending = false;
+        manualSnapshotReady = true;
+        lastSentSnapshotKey = null;
+        logObservedState("no_party_snapshot");
     }
 
     private void handlePartyDisbanded() {

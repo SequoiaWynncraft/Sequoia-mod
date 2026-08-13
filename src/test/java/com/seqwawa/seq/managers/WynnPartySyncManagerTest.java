@@ -98,6 +98,32 @@ class WynnPartySyncManagerTest {
         assertFalse(manager.isObservedMember("SomeoneElse"));
     }
 
+    @Test
+    void manualScanNoPartyResponseProducesInactiveSnapshot() throws Exception {
+        WynnPartySyncManager manager = new WynnPartySyncManager();
+        manager.onSystemChat(Component.literal("Party members: SophiaChan, and Guildsman"));
+        setBooleanField(manager, "manualScanPending", true);
+
+        manager.onSystemChat(Component.literal("You must be in a party to use this."));
+
+        assertEquals(true, isInitialized(manager));
+        assertFalse(isActive(manager));
+        assertEquals(List.of(), memberUsernames(manager));
+        assertFalse(booleanField(manager, "manualScanPending"));
+        assertEquals(true, booleanField(manager, "manualSnapshotReady"));
+    }
+
+    @Test
+    void unrelatedNoPartyResponseDoesNotOverwriteObservedState() throws Exception {
+        WynnPartySyncManager manager = new WynnPartySyncManager();
+        manager.onSystemChat(Component.literal("Party members: SophiaChan, and Guildsman"));
+
+        manager.onSystemChat(Component.literal("You must be in a party to use this."));
+
+        assertEquals(true, isActive(manager));
+        assertEquals(List.of("SophiaChan", "Guildsman"), memberUsernames(manager));
+    }
+
     private boolean isInitialized(WynnPartySyncManager manager) throws Exception {
         Object observedState = observedState(manager);
         Field initializedField = observedState.getClass().getDeclaredField("initialized");
@@ -125,6 +151,18 @@ class WynnPartySyncManagerTest {
         Field leaderField = observedState.getClass().getDeclaredField("leaderUsername");
         leaderField.setAccessible(true);
         return (String) leaderField.get(observedState);
+    }
+
+    private boolean booleanField(WynnPartySyncManager manager, String fieldName) throws Exception {
+        Field field = WynnPartySyncManager.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return field.getBoolean(manager);
+    }
+
+    private void setBooleanField(WynnPartySyncManager manager, String fieldName, boolean value) throws Exception {
+        Field field = WynnPartySyncManager.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.setBoolean(manager, value);
     }
 
     private Object observedState(WynnPartySyncManager manager) throws Exception {
