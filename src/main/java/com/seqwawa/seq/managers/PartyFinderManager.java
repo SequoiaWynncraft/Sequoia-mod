@@ -559,7 +559,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<CommandResult<Listing>> promoteMemberFromCommand(String username) {
-        return resolveCurrentMemberTargetForCommand(username, true).thenCompose(targetResult -> {
+        return resolvePromotionTargetForCommand(username).thenCompose(targetResult -> {
             if (!targetResult.success()) {
                 return completedCommandFailure(targetResult.message());
             }
@@ -2576,6 +2576,51 @@ public class PartyFinderManager implements NotificationAccessor {
                         "Resolved target member.", new ListingMemberTarget(listing, targetUUID, normalizedUsername));
             });
         });
+    }
+
+    private CompletableFuture<CommandResult<ListingMemberTarget>> resolvePromotionTargetForCommand(String username) {
+        String validationMessage = validateUsername(username, false);
+        if (validationMessage != null) {
+            return completedCommandFailure(validationMessage);
+        }
+
+        String normalizedUsername = username.trim();
+        return ensureCurrentListingForCommand().thenCompose(currentResult -> {
+            if (!currentResult.success()) {
+                return completedCommandFailure(currentResult.message());
+            }
+            if (!isPartyLeader()) {
+                return completedCommandFailure("Only the party leader can manage party members.");
+            }
+
+            Listing listing = currentResult.data();
+            return resolveUuidForCommand(normalizedUsername).thenApply(uuidResult -> {
+                if (!uuidResult.success()) {
+                    return CommandResult.failure(uuidResult.message());
+                }
+
+                UUID targetUUID = uuidResult.data();
+                if (findMemberByUuid(listing, targetUUID) == null
+                        && !hasObservedReservation(listing, normalizedUsername)) {
+                    return CommandResult.failure(normalizedUsername + " is not in your Sequoia party.");
+                }
+
+                return CommandResult.success(
+                        "Resolved promotion target.",
+                        new ListingMemberTarget(listing, targetUUID, normalizedUsername));
+            });
+        });
+    }
+
+    static boolean hasObservedReservation(Listing listing, String username) {
+        if (listing == null || username == null || username.isBlank() || listing.reservedSlots() == null) {
+            return false;
+        }
+        return listing.reservedSlots().stream()
+                .filter(Objects::nonNull)
+                .map(ReservedSlot::observedUsername)
+                .filter(Objects::nonNull)
+                .anyMatch(observedUsername -> observedUsername.equalsIgnoreCase(username.trim()));
     }
 
     private static Member findMemberByUuid(Listing listing, UUID targetUUID) {

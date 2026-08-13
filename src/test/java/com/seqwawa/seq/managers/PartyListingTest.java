@@ -2,12 +2,14 @@ package com.seqwawa.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonDeserializer;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.Listing;
@@ -20,6 +22,24 @@ import com.seqwawa.seq.model.ReservedSlot;
 import com.seqwawa.seq.model.WynnClassType;
 
 class PartyListingTest {
+
+    @Test
+    void observedReservationIsRecognizedAsPromotionCandidate() {
+        Listing listing = new Listing(
+                1L,
+                List.of(),
+                null,
+                UUID.randomUUID().toString(),
+                PartyRegion.EU,
+                PartyStatus.OPEN,
+                null,
+                null,
+                List.of(),
+                List.of(new ReservedSlot(null, "NotReyz", null, Instant.now())),
+                Instant.now());
+
+        assertTrue(PartyFinderManager.hasObservedReservation(listing, "notreyz"));
+    }
 
     @Test
     void deserializesBackendOtherRole() {
