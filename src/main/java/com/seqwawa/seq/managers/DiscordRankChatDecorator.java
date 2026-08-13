@@ -163,6 +163,7 @@ public final class DiscordRankChatDecorator {
 
         Component decorated = message;
         boolean guildCandidate = WynnPillGlyphs.containsPill(message.getString());
+        boolean knownGuildRank = guildCandidate && hasKnownGuildRankPill(message);
         // Party markers also contain BMP private-use glyphs, so containsPill() is true
         // for them. Detect the channel independently and give the more specific party
         // shape precedence instead of letting the broad guild pre-check mask it.
@@ -185,7 +186,7 @@ public final class DiscordRankChatDecorator {
                 }
             }
         }
-        return recolourGuildMessageText(decorated, inGameGuildChatTextColor());
+        return knownGuildRank ? recolourGuildMessageText(decorated, inGameGuildChatTextColor()) : decorated;
     }
 
     /** Channel selection core, parameterised so the private-use overlap stays testable. */
@@ -611,6 +612,11 @@ public final class DiscordRankChatDecorator {
             }
         }
         return null;
+    }
+
+    private static boolean hasKnownGuildRankPill(Component message) {
+        return WynnPillGlyphs.findPills(message.getString()).stream()
+                .anyMatch(pill -> guildRankOf(pill.label()) != null);
     }
 
     /**

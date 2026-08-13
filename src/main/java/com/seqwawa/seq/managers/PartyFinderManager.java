@@ -569,8 +569,14 @@ public class PartyFinderManager implements NotificationAccessor {
                 return completedCommandFailure(target.username() + " is already the party leader.");
             }
 
+            CompletableFuture<Listing> transfer = ApiClient.getInstance()
+                    .transferLeadership(target.listing().id(), target.targetUUID())
+                    .thenApply(listing -> {
+                        sendGamePartyCommandForUuid(target.targetUUID(), GAME_PARTY_PROMOTE_PREFIX);
+                        return listing;
+                    });
             return executeListingCommand(
-                    ApiClient.getInstance().transferLeadership(target.listing().id(), target.targetUUID()),
+                    transfer,
                     this::applyUpdatedCurrentListingState,
                     "Unable to promote member",
                     "Failed to transfer leadership",

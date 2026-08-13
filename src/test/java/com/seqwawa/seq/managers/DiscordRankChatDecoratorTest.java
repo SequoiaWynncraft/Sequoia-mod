@@ -247,6 +247,20 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void configuredGuildColorDoesNotRecolorUnknownPill() {
+        Setting.ColorSetting previous = SeqClient.inGameGuildChatTextColorSetting;
+        try {
+            SeqClient.inGameGuildChatTextColorSetting =
+                    new Setting.ColorSetting("in_game_guild_chat_text_color", "chat", 0xA1B2C3);
+            Component message = wynncraftGuildLine("UNKNOWN", "EightySix", "ArcLeRetour", "hello");
+
+            assertSame(message, DiscordRankChatDecorator.decorateGuildChat(message));
+        } finally {
+            SeqClient.inGameGuildChatTextColorSetting = previous;
+        }
+    }
+
+    @Test
     void leavesPartyFinderSystemMessagesWithLaterGuildAquaAlone() {
         // Captured Party Finder prefix. Its private-use icon looks like an unreadable
         // badge, while the activity name later in the line can be guild aqua. Only a
