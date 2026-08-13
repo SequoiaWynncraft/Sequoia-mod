@@ -64,6 +64,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float HEADER_OPEN_CLOSE_BUTTON_W = 84;
     private static final float HEADER_DELIST_BUTTON_W = 72;
     private static final float HEADER_INVITE_ALL_BUTTON_W = 68;
+    private static final float HEADER_SCAN_BUTTON_W = 68;
     private static final float HEADER_NEW_PARTY_BUTTON_W = 80;
     private static final float HEADER_ROLE_DROPDOWN_W = 80;
     private static final float SCROLL_SPEED = 12;
@@ -219,6 +220,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             HeaderButtonBounds openCloseButton,
             HeaderButtonBounds delistButton,
             HeaderButtonBounds inviteAllButton,
+            HeaderButtonBounds scanButton,
             HeaderButtonBounds newPartyButton,
             HeaderButtonBounds roleDropdown) {}
 
@@ -562,6 +564,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             drawHeaderButton(
                     canvas, fontName, layout.delistButton(), "Delist party", color(CONTROL_DANGER, 200), color(CONTROL_DANGER_HOVER));
             drawHeaderButton(canvas, fontName, layout.inviteAllButton(), "Invite all", color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
+            drawHeaderButton(canvas, fontName, layout.scanButton(), "Scan party", color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
         } else {
             boolean inPartyAsMember = party().getJoinedPartyIndex() >= 0;
             Color newBg = inPartyAsMember ? color(ACCENT_DISABLED, 180) : color(ACCENT_PRIMARY, 200);
@@ -687,6 +690,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         HeaderButtonBounds openCloseButton = null;
         HeaderButtonBounds delistButton = null;
         HeaderButtonBounds inviteAllButton = null;
+        HeaderButtonBounds scanButton = null;
         HeaderButtonBounds newPartyButton = null;
 
         if (party().isPartyLeader()) {
@@ -706,6 +710,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             inviteAllButton =
                     new HeaderButtonBounds(nextButtonX, searchY, HEADER_INVITE_ALL_BUTTON_W, SEARCH_BAR_HEIGHT);
             nextButtonX += HEADER_INVITE_ALL_BUTTON_W + HEADER_BUTTON_SPACING;
+
+            scanButton = new HeaderButtonBounds(nextButtonX, searchY, HEADER_SCAN_BUTTON_W, SEARCH_BAR_HEIGHT);
+            nextButtonX += HEADER_SCAN_BUTTON_W + HEADER_BUTTON_SPACING;
         } else {
             newPartyButton = new HeaderButtonBounds(nextButtonX, searchY, HEADER_NEW_PARTY_BUTTON_W, SEARCH_BAR_HEIGHT);
             nextButtonX += HEADER_NEW_PARTY_BUTTON_W + HEADER_BUTTON_SPACING;
@@ -720,6 +727,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 openCloseButton,
                 delistButton,
                 inviteAllButton,
+                scanButton,
                 newPartyButton,
                 roleDropdown);
     }
@@ -2141,6 +2149,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 party().inviteAllCurrentMembers()
                         .thenAccept(inviteAllResult ->
                                 SeqClient.mc.execute(() -> showStatusBanner(inviteAllResult.message())));
+                return true;
+            }
+            if (isHovered(mx, my, headerLayout.scanButton())) {
+                var result = party().scanCurrentWynnParty();
+                showStatusBanner(result.message());
                 return true;
             }
         } else {

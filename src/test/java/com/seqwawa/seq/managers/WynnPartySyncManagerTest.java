@@ -88,6 +88,16 @@ class WynnPartySyncManagerTest {
         assertEquals("Guildsman", leaderUsername(manager));
     }
 
+    @Test
+    void observedMemberLookupIsCaseInsensitive() {
+        WynnPartySyncManager manager = new WynnPartySyncManager();
+
+        manager.onSystemChat(Component.literal("Party members: SophiaChan, and Guildsman"));
+
+        assertEquals(true, manager.isObservedMember("sophiachan"));
+        assertFalse(manager.isObservedMember("SomeoneElse"));
+    }
+
     private boolean isInitialized(WynnPartySyncManager manager) throws Exception {
         Object observedState = observedState(manager);
         Field initializedField = observedState.getClass().getDeclaredField("initialized");

@@ -41,6 +41,7 @@ class PartyListingTest {
                   "id": 42,
                   "reservedSlots": [{
                     "playerUUID": "00000000-0000-0000-0000-000000000042",
+                    "observedUsername": "ScannedPlayer",
                     "role": "OTHER",
                     "createdAt": "2026-08-05T10:00:00Z"
                   }]
@@ -50,8 +51,18 @@ class PartyListingTest {
 
         ReservedSlot reservedSlot = listing.reservedSlots().getFirst();
         assertEquals("00000000-0000-0000-0000-000000000042", reservedSlot.playerUUID());
+        assertEquals("ScannedPlayer", reservedSlot.observedUsername());
         assertEquals(PartyRole.OTHER, reservedSlot.role());
         assertEquals(Instant.parse("2026-08-05T10:00:00Z"), reservedSlot.createdAt());
+    }
+
+    @Test
+    void scannedReservedSlotDisplaysObservedUsername() {
+        PartyMember member = PartyMember.reserved(
+                new ReservedSlot(null, "ScannedPlayer", PartyRole.OTHER, Instant.EPOCH));
+
+        assertEquals("ScannedPlayer", member.displayName());
+        assertEquals(true, member.isReserved);
     }
 
     @Test

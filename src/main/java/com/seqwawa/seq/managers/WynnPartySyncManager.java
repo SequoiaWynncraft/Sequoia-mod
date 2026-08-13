@@ -43,12 +43,15 @@ public class WynnPartySyncManager {
     private static final Duration DUPLICATE_WINDOW = Duration.ofMillis(750);
     private static final Duration HEARTBEAT_RESEND_INTERVAL = Duration.ofSeconds(60);
     private static final String OPEN_CREATE_UI_COMMAND = "/seq party create-ui";
+    private static final String PARTY_LIST_COMMAND = "party list";
 
     private final ObservedWynnPartyState observedState = new ObservedWynnPartyState();
     private String lastSentSnapshotKey;
     private Instant lastSentSnapshotAt = Instant.EPOCH;
     private String lastEventKey;
     private Instant lastEventAt = Instant.EPOCH;
+    private boolean manualScanPending;
+    private boolean manualSnapshotReady;
 
     public void onSystemChat(Component message) {
         String normalized = PacketTextNormalizer.normalizeForParsing(message == null ? null : message.getString());
@@ -141,7 +144,9 @@ public class WynnPartySyncManager {
             lastSentSnapshotAt = Instant.EPOCH;
             return;
         }
-        if (SeqClient.getSyncWynnPartySetting() == null || !SeqClient.getSyncWynnPartySetting().getValue()) {
+        boolean automaticSyncEnabled = SeqClient.getSyncWynnPartySetting() != null
+                && SeqClient.getSyncWynnPartySetting().getValue();
+        if (!automaticSyncEnabled && !manualSnapshotReady) {
             return;
         }
 
@@ -193,6 +198,7 @@ public class WynnPartySyncManager {
                     observedState.memberUsernames);
             lastSentSnapshotKey = snapshotKey;
             lastSentSnapshotAt = now;
+            manualSnapshotReady = false;
         }
     }
 
@@ -206,10 +212,31 @@ public class WynnPartySyncManager {
         lastSentSnapshotAt = Instant.EPOCH;
         lastEventKey = null;
         lastEventAt = Instant.EPOCH;
+        manualScanPending = false;
+        manualSnapshotReady = false;
     }
 
     public List<String> getObservedMemberUsernames() {
         return List.copyOf(observedState.memberUsernames);
+    }
+
+    public boolean isObservedMember(String username) {
+        return username != null
+                && observedState.memberUsernames.stream().anyMatch(member -> member.equalsIgnoreCase(username));
+    }
+
+    public boolean requestCurrentPartySnapshot() {
+        LocalPlayer player = SeqClient.mc != null ? SeqClient.mc.player : null;
+        if (player == null || player.connection == null) {
+            return false;
+        }
+
+        manualScanPending = true;
+        manualSnapshotReady = false;
+        lastEventKey = null;
+        lastEventAt = Instant.EPOCH;
+        player.connection.sendCommand(PARTY_LIST_COMMAND);
+        return true;
     }
 
     private void handlePartyCreated() {
@@ -311,6 +338,11 @@ public class WynnPartySyncManager {
         // previously observed leader when possible, otherwise wait for an
         // explicit leader event instead of transferring a listing by guesswork.
         observedState.leaderUsername = preservedLeader;
+        if (manualScanPending) {
+            manualScanPending = false;
+            manualSnapshotReady = true;
+            lastSentSnapshotKey = null;
+        }
         logObservedState("members_snapshot");
     }
 

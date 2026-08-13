@@ -46,7 +46,7 @@ public class PartyFinderManager implements NotificationAccessor {
     private static final long INVITE_NAME_LOOKUP_TIMEOUT_SECONDS = 3L;
     private static final long INVITE_ALL_COMMAND_DELAY_MS = 500L;
     private static final String GAME_PARTY_CREATE_COMMAND = "party create";
-    private static final String GAME_PARTY_INVITE_PREFIX = "party ";
+    private static final String GAME_PARTY_INVITE_PREFIX = "party invite ";
     private static final String GAME_PARTY_KICK_PREFIX = "party kick ";
     private static final String GAME_PARTY_PROMOTE_PREFIX = "party promote ";
     private static final String SEQ_INVITE_ALL_COMMAND = "/seq p invite-all";
@@ -590,6 +590,29 @@ public class PartyFinderManager implements NotificationAccessor {
                             ? CommandResult.success("Invite all: " + inviteAllResult.message(), null)
                             : CommandResult.failure("Invite all: " + inviteAllResult.message()));
         });
+    }
+
+    public CompletableFuture<CommandResult<Void>> scanCurrentWynnPartyFromCommand() {
+        return CompletableFuture.completedFuture(scanCurrentWynnParty());
+    }
+
+    public CommandResult<Void> scanCurrentWynnParty() {
+        if (currentListing == null) {
+            return CommandResult.failure("You need an active Sequoia party before scanning your Wynn party.");
+        }
+        if (!isPartyLeader()) {
+            return CommandResult.failure("Only the party leader can scan the current Wynn party.");
+        }
+        if (!ConnectionManager.isConnected()) {
+            return CommandResult.failure("Connect to Sequoia before scanning your Wynn party.");
+        }
+        WynnPartySyncManager syncManager = SeqClient.getWynnPartySyncManager();
+        if (syncManager == null || !syncManager.requestCurrentPartySnapshot()) {
+            return CommandResult.failure("Unable to request the current Wynn party roster.");
+        }
+        return CommandResult.success(
+                "Requested the current Wynn party roster. The Sequoia party will update when Wynncraft replies.",
+                null);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -1664,6 +1687,12 @@ public class PartyFinderManager implements NotificationAccessor {
 
         Listing listingSnapshot = currentListing;
         long listingId = listingSnapshot.id();
+        WynnPartySyncManager syncManager = SeqClient.getWynnPartySyncManager();
+        Set<String> observedWynnMemberNames = syncManager == null
+                ? Set.of()
+                : syncManager.getObservedMemberUsernames().stream()
+                        .map(username -> username.toLowerCase(Locale.ROOT))
+                        .collect(Collectors.toUnmodifiableSet());
         List<Member> members = listingSnapshot.members();
         if (members == null || members.isEmpty()) {
             return CompletableFuture.completedFuture(
@@ -1735,6 +1764,11 @@ public class PartyFinderManager implements NotificationAccessor {
                             continue;
                         }
 
+                        if (observedWynnMemberNames.contains(normalizedUsername)) {
+                            resolvedSkippedCount++;
+                            continue;
+                        }
+
                         targets.add(new ResolvedInviteTarget(inviteCandidate.memberUUID(), username));
                     }
 
@@ -1795,7 +1829,7 @@ public class PartyFinderManager implements NotificationAccessor {
                                 continue;
                             }
 
-                            String command = GAME_PARTY_INVITE_PREFIX + target.username();
+                            String command = gamePartyInviteCommand(target.username());
                             long delayMs = (long) sendFutures.size() * INVITE_ALL_COMMAND_DELAY_MS;
                             CompletableFuture<Boolean> sendFuture = new CompletableFuture<>();
                             CompletableFuture.delayedExecutor(delayMs, TimeUnit.MILLISECONDS)
@@ -2581,8 +2615,12 @@ public class PartyFinderManager implements NotificationAccessor {
                 && SeqClient.mc.player.getName().getString().equalsIgnoreCase(normalizedUsername)) {
             return CommandResult.failure("You cannot invite yourself.");
         }
-        SeqClient.mc.player.connection.sendCommand(GAME_PARTY_INVITE_PREFIX + normalizedUsername);
+        SeqClient.mc.player.connection.sendCommand(gamePartyInviteCommand(normalizedUsername));
         return CommandResult.success("Sent Wynn party invite to " + normalizedUsername + ".", null);
+    }
+
+    static String gamePartyInviteCommand(String username) {
+        return GAME_PARTY_INVITE_PREFIX + username;
     }
 
     private void sendGamePartyCommandForUuid(UUID targetUUID, String commandPrefix) {

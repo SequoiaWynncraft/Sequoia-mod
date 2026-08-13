@@ -101,6 +101,7 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq party role <role>`
 - `/seq party kick <username>`
 - `/seq party promote <username>`
+- `/seq party scan`
 - `/seq party game create`
 - `/seq party game invite <username>`
 - `/seq party game invite-all`

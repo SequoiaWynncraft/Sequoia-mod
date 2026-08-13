@@ -50,8 +50,11 @@ public class PartyMember {
     }
 
     private PartyMember(ReservedSlot reservedSlot) {
-        this.playerUUID = null;
-        this.name = RESERVED_LABEL;
+        this.playerUUID = reservedSlot != null ? reservedSlot.playerUUID() : null;
+        String observedUsername = reservedSlot != null ? reservedSlot.observedUsername() : null;
+        this.name = observedUsername != null && !observedUsername.isBlank()
+                ? observedUsername
+                : (playerUUID != null && !playerUUID.isBlank() ? PlayerNameCache.resolve(playerUUID) : RESERVED_LABEL);
         this.isLeader = false;
         this.isReserved = true;
         this.role = formatRole(reservedSlot != null ? reservedSlot.role() : null);
@@ -64,7 +67,7 @@ public class PartyMember {
 
     public String displayName() {
         if (isReserved) {
-            return RESERVED_LABEL;
+            return name;
         }
         return PlayerNameCache.resolve(playerUUID);
     }
