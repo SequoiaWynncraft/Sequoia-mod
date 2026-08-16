@@ -211,7 +211,7 @@ public final class WarPlannerScreen extends Screen {
         if (snapshot.teams().isEmpty()) {
             String message = manager.canManage()
                     ? "No war teams yet. Use New team to create one."
-                    : "No war teams yet · View only (manager role required).";
+                    : "No war teams yet · View only (manager access required).";
             text(canvas, message, PADDING, top + 22, 13, color(TEXT_MUTED), false);
             return;
         }
@@ -246,7 +246,7 @@ public final class WarPlannerScreen extends Screen {
         if (snapshot.zones().isEmpty()) {
             String message = manager.canManage()
                     ? "No territory zones yet. Use New zone to create one."
-                    : "No territory zones yet · View only (manager role required).";
+                    : "No territory zones yet · View only (manager access required).";
             text(canvas, message, PADDING, top + 22, 13, color(TEXT_MUTED), false);
             return;
         }
