@@ -121,7 +121,7 @@ The War Planner entry and `/seq war` command only appear after the protected bac
 current account is a Sequoia member. Members can advertise timed availability and see their own team immediately;
 authorized managers can atomically create or edit teams of one to five people with exactly one war leader and up to
 three ecoers. The Zones view assigns named, colored groups of territories to teams through a focused interactive map.
-Discord role keys, eligibility, team exclusivity, versions, and all mutations remain server-authoritative.
+Composition capabilities, eligibility, team exclusivity, versions, and all mutations remain server-authoritative.
 
 ## World map
 
