@@ -54,13 +54,13 @@ public record WarPlannerSnapshot(
             @SerializedName("minecraft_username") String minecraftUsername,
             @SerializedName("discord_id") String discordId,
             @SerializedName("discord_username") String discordUsername,
-            @SerializedName("discord_role_keys") List<String> discordRoleKeys,
+            @SerializedName("composition_roles") List<WarCompositionRole> compositionRoles,
             boolean available,
             @SerializedName("available_until") Instant availableUntil,
             @SerializedName("team_id") Long teamId,
             @SerializedName("team_role") WarTeamRole teamRole) {
         public RosterMember {
-            discordRoleKeys = discordRoleKeys == null ? List.of() : List.copyOf(discordRoleKeys);
+            compositionRoles = WarCompositionRole.ordered(compositionRoles);
         }
 
         public String displayName() {

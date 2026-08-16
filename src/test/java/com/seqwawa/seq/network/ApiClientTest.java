@@ -157,6 +157,7 @@ class ApiClientTest {
                 .get(0).getAsJsonObject().get("player_uuid").getAsString());
         assertEquals("WAR_LEADER", payload.getAsJsonArray("members")
                 .get(0).getAsJsonObject().get("role").getAsString());
+        assertFalse(payload.getAsJsonArray("members").get(0).getAsJsonObject().has("composition_roles"));
         assertFalse(ApiClient.buildWarTeamPayload(new TeamDraft("Alpha", null, draft.members()), false)
                 .has("version"));
     }

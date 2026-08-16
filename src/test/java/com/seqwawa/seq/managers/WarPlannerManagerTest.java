@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
+import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.model.war.WarTeamRole;
 import com.seqwawa.seq.network.ApiClient;
@@ -128,7 +129,7 @@ class WarPlannerManagerTest {
                 new WarPlannerSnapshot.Self("self", canManage),
                 true,
                 List.of(new WarPlannerSnapshot.RosterMember(
-                        "self", "Player", "discord-id", "discord", List.of("military.member"),
+                        "self", "Player", "discord-id", "discord", List.of(WarCompositionRole.DPS),
                         true, serverNow.plus(Duration.ofMinutes(30)), null, null)),
                 List.of(),
                 List.of(),

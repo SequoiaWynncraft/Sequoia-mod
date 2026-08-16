@@ -26,7 +26,7 @@ class WarPlannerSnapshotTest {
                   "roster": [{
                     "player_uuid": "self", "minecraft_username": "Player",
                     "discord_id": "1", "discord_username": "discord",
-                    "discord_role_keys": ["military.member"], "available": true,
+                    "composition_roles": ["TANK", "SOLO", "DPS", "SOLO"], "available": true,
                     "available_until": "2026-08-16T13:00:00Z", "team_id": 12,
                     "team_role": "WAR_LEADER"
                   }],
@@ -45,9 +45,38 @@ class WarPlannerSnapshotTest {
         assertTrue(snapshot.self().canManage());
         assertEquals(12L, snapshot.roster().getFirst().teamId());
         assertEquals(WarTeamRole.WAR_LEADER, snapshot.roster().getFirst().teamRole());
+        assertEquals(
+                java.util.List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS, WarCompositionRole.TANK),
+                snapshot.roster().getFirst().compositionRoles());
         assertEquals(12L, snapshot.teams().getFirst().id());
         assertEquals(8L, snapshot.zones().getFirst().id());
         assertEquals(12L, snapshot.zones().getFirst().assignedTeamId());
         assertEquals("#AABBCC", snapshot.zones().getFirst().color());
+    }
+
+    @Test
+    void compositionRolesIgnoreUnknownAndNullValues() {
+        String json = """
+                {
+                  "schema_version": 1,
+                  "roster": [
+                    {"player_uuid": "known", "composition_roles": ["UNKNOWN", null, "DPS"]},
+                    {"player_uuid": "missing"},
+                    {"player_uuid": "null", "composition_roles": null}
+                  ]
+                }
+                """;
+
+        WarPlannerSnapshot snapshot = GSON.fromJson(json, WarPlannerSnapshot.class);
+
+        assertEquals(
+                java.util.List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS),
+                snapshot.roster().get(0).compositionRoles());
+        assertEquals(
+                java.util.List.of(WarCompositionRole.SOLO),
+                snapshot.roster().get(1).compositionRoles());
+        assertEquals(
+                java.util.List.of(WarCompositionRole.SOLO),
+                snapshot.roster().get(2).compositionRoles());
     }
 }

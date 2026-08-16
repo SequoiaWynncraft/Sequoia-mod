@@ -4,7 +4,9 @@ import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.WarPlannerManager;
+import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
@@ -40,6 +42,8 @@ public final class WarPlannerScreen extends Screen {
     private static final float TAB_HEIGHT = 24;
     private static final float ROW_HEIGHT = 38;
     private static final float BUTTON_HEIGHT = 22;
+    private static final float COMPOSITION_ICON_SIZE = 12;
+    private static final float COMPOSITION_ICON_GAP = 3;
 
     private final Screen parent;
     private final WarPlannerManager manager;
@@ -187,7 +191,10 @@ public final class WarPlannerScreen extends Screen {
             text(canvas, truncate(member.displayName() + (caller ? " · You" : ""), 22),
                     PADDING + 8, y + 13, 13, color(TEXT_PRIMARY), false);
             String discord = member.discordUsername() == null ? "Discord unlinked" : "@" + member.discordUsername();
-            text(canvas, truncate(discord + roleKeys(member), 48), PADDING + 8, y + 28, 10, color(TEXT_MUTED), false);
+            float detailX = renderCompositionIcons(canvas, member.compositionRoles(), PADDING + 8, y + 20);
+            int detailCharacters = availableCharacters(detailX, width - 190, 10, 44);
+            text(canvas, truncate(compositionLabel(member.compositionRoles()) + " · " + discord, detailCharacters),
+                    detailX + iconTextGap(member.compositionRoles()), y + 28, 10, color(TEXT_MUTED), false);
             String assignment = member.teamId() == null ? "No team" : teamName(snapshot, member.teamId());
             if (member.teamRole() != null) {
                 assignment += " · " + roleLabel(member.teamRole());
@@ -216,7 +223,12 @@ public final class WarPlannerScreen extends Screen {
                     color(ownTeam ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT));
             text(canvas, truncate(team.name() + (ownTeam ? " · Your team" : ""), 28),
                     PADDING + 8, y + 13, 13, color(TEXT_PRIMARY), false);
-            text(canvas, truncate(teamSummary(team), 70), PADDING + 8, y + 28, 10, color(TEXT_MUTED), false);
+            List<WarCompositionRole> compositionRoles = teamCompositionRoles(snapshot, team);
+            float summaryX = renderCompositionIcons(canvas, compositionRoles, PADDING + 8, y + 20);
+            float summaryRight = manager.canManage() ? width - 148 : width - PADDING;
+            int summaryCharacters = availableCharacters(summaryX, summaryRight, 10, 70);
+            text(canvas, truncate(compositionLabel(compositionRoles) + " · " + teamSummary(team), summaryCharacters),
+                    summaryX + iconTextGap(compositionRoles), y + 28, 10, color(TEXT_MUTED), false);
             if (manager.canManage()) {
                 button(canvas, width - 140, y + 8, 52, BUTTON_HEIGHT, "Edit", false, manager.isMutating());
                 boolean confirming = pendingDeleteTeamId != null && pendingDeleteTeamId == team.id();
@@ -272,7 +284,7 @@ public final class WarPlannerScreen extends Screen {
         canvas.strokeRect(x + 12, fieldY, w - 24, 24, 1, color(CONTROL_BORDER));
         text(canvas, teamName.isBlank() ? "Team name" : teamName, x + 18, fieldY + 12, 12,
                 color(teamName.isBlank() ? TEXT_MUTED : TEXT_PRIMARY), false);
-        text(canvas, "Click a member to cycle: off → warrer → ecoer → leader", x + 12, fieldY + 38, 10,
+        text(canvas, "Click to cycle duty. Capabilities: Solo wand · DPS relik · Tank spear", x + 12, fieldY + 38, 10,
                 color(TEXT_MUTED), false);
 
         if (flashMessage != null && !flashMessage.isBlank()) {
@@ -289,7 +301,11 @@ public final class WarPlannerScreen extends Screen {
             TeamMemberDraft selected = teamMember(member.playerUuid());
             canvas.fillRect(x + 12, rowY + 2, w - 24, 24,
                     color(selected == null ? BACKGROUND_CONTENT : ACCENT_PRIMARY_DARK));
-            text(canvas, truncate(member.displayName(), 28), x + 18, rowY + 14, 11, color(TEXT_PRIMARY), false);
+            text(canvas, truncate(member.displayName(), w >= 360 ? 24 : 14), x + 18, rowY + 14, 11,
+                    color(TEXT_PRIMARY), false);
+            float dutyX = x + w - 92;
+            float rolesX = Math.max(x + 104, dutyX - 52);
+            renderCompositionIcons(canvas, member.compositionRoles(), rolesX, rowY + 8);
             text(canvas, selected == null ? "Off" : roleLabel(selected.role()), x + w - 92, rowY + 14, 10,
                     color(selected == null ? TEXT_MUTED : TEXT_PRIMARY), false);
         }
@@ -635,9 +651,55 @@ public final class WarPlannerScreen extends Screen {
         };
     }
 
-    private static String roleKeys(RosterMember member) {
-        if (member.discordRoleKeys().isEmpty()) return "";
-        return " · " + String.join(", ", member.discordRoleKeys());
+    private static float renderCompositionIcons(
+            UiCanvas canvas, List<WarCompositionRole> compositionRoles, float x, float y) {
+        float nextX = x;
+        for (WarCompositionRole role : WarCompositionRole.ordered(compositionRoles)) {
+            AssetManager.Asset asset = SeqClient.assetManager == null
+                    ? null
+                    : SeqClient.assetManager.getAsset(role.assetKey());
+            if (asset != null && asset.getImage() != null) {
+                canvas.drawImage(asset.getImage(), nextX, y, COMPOSITION_ICON_SIZE, COMPOSITION_ICON_SIZE, 1f);
+            } else {
+                canvas.fillRoundedRect(nextX, y, COMPOSITION_ICON_SIZE, COMPOSITION_ICON_SIZE, 2,
+                        color(CONTROL_INPUT));
+                text(canvas, role.name().substring(0, 1), nextX + COMPOSITION_ICON_SIZE / 2,
+                        y + COMPOSITION_ICON_SIZE / 2, 8, color(TEXT_SECONDARY), true);
+            }
+            nextX += COMPOSITION_ICON_SIZE + COMPOSITION_ICON_GAP;
+        }
+        return nextX;
+    }
+
+    private static float iconTextGap(List<WarCompositionRole> roles) {
+        return roles == null || roles.isEmpty() ? 0 : 2;
+    }
+
+    private static String compositionLabel(List<WarCompositionRole> roles) {
+        return WarCompositionRole.ordered(roles).stream()
+                .map(WarCompositionRole::label)
+                .reduce((left, right) -> left + "/" + right)
+                .orElse("No composition role");
+    }
+
+    private static List<WarCompositionRole> teamCompositionRoles(WarPlannerSnapshot snapshot, Team team) {
+        List<WarCompositionRole> roles = new ArrayList<>();
+        for (TeamMember member : team.members()) {
+            snapshot.roster().stream()
+                    .filter(candidate -> samePlayer(candidate.playerUuid(), member.playerUuid()))
+                    .findFirst()
+                    .ifPresent(candidate -> roles.addAll(candidate.compositionRoles()));
+        }
+        return WarCompositionRole.ordered(roles);
+    }
+
+    private static boolean samePlayer(String left, String right) {
+        return left != null && right != null && left.equalsIgnoreCase(right);
+    }
+
+    private static int availableCharacters(float left, float right, float fontSize, int maximum) {
+        float approximateCharacterWidth = fontSize * .55f;
+        return Math.max(1, Math.min(maximum, (int) ((right - left) / approximateCharacterWidth)));
     }
 
     private static String teamSummary(Team team) {
