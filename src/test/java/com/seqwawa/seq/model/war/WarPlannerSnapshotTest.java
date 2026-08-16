@@ -26,7 +26,8 @@ class WarPlannerSnapshotTest {
                   "roster": [{
                     "player_uuid": "self", "minecraft_username": "Player",
                     "discord_id": "1", "discord_username": "discord",
-                    "composition_roles": ["TANK", "SOLO", "DPS", "SOLO"], "available": true,
+                    "composition_roles": ["TANK", "SOLO", "DPS", "SOLO"],
+                    "online": true, "available": true,
                     "available_until": "2026-08-16T13:00:00Z", "team_id": 12,
                     "team_role": "WAR_LEADER"
                   }],
@@ -44,6 +45,7 @@ class WarPlannerSnapshotTest {
         assertTrue(snapshot.isSupported());
         assertTrue(snapshot.self().canManage());
         assertEquals(12L, snapshot.roster().getFirst().teamId());
+        assertTrue(snapshot.roster().getFirst().online());
         assertEquals(WarTeamRole.WAR_LEADER, snapshot.roster().getFirst().teamRole());
         assertEquals(
                 java.util.List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS, WarCompositionRole.TANK),
@@ -78,5 +80,34 @@ class WarPlannerSnapshotTest {
         assertEquals(
                 java.util.List.of(WarCompositionRole.SOLO),
                 snapshot.roster().get(2).compositionRoles());
+        assertTrue(snapshot.onlineRoster().isEmpty());
+    }
+
+    @Test
+    void onlineRosterAndTeamCandidatesPreserveOfflineCurrentMembers() {
+        String json = """
+                {
+                  "schema_version": 1,
+                  "roster": [
+                    {"player_uuid": "online-free", "online": true},
+                    {"player_uuid": "offline-free", "online": false},
+                    {"player_uuid": "online-other", "online": true, "team_id": 9},
+                    {"player_uuid": "offline-current", "online": false, "team_id": 7},
+                    {"player_uuid": "online-current", "online": true, "team_id": 7}
+                  ]
+                }
+                """;
+
+        WarPlannerSnapshot snapshot = GSON.fromJson(json, WarPlannerSnapshot.class);
+
+        assertEquals(
+                java.util.List.of("online-free", "online-other", "online-current"),
+                snapshot.onlineRoster().stream().map(WarPlannerSnapshot.RosterMember::playerUuid).toList());
+        assertEquals(
+                java.util.List.of("online-free"),
+                snapshot.teamCandidates(null).stream().map(WarPlannerSnapshot.RosterMember::playerUuid).toList());
+        assertEquals(
+                java.util.List.of("online-free", "offline-current", "online-current"),
+                snapshot.teamCandidates(7L).stream().map(WarPlannerSnapshot.RosterMember::playerUuid).toList());
     }
 }

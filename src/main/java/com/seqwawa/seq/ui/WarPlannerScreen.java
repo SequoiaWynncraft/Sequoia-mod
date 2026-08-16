@@ -42,6 +42,7 @@ public final class WarPlannerScreen extends Screen {
     private static final float TAB_HEIGHT = 24;
     private static final float ROW_HEIGHT = 38;
     private static final float BUTTON_HEIGHT = 22;
+    private static final float MANAGER_ACTION_WIDTH = 92;
     private static final float COMPOSITION_ICON_SIZE = 12;
     private static final float COMPOSITION_ICON_GAP = 3;
 
@@ -136,7 +137,7 @@ public final class WarPlannerScreen extends Screen {
 
     private void renderTabs(UiCanvas canvas, float width) {
         float y = HEADER_HEIGHT + AVAILABILITY_HEIGHT;
-        float tabWidth = Math.min(120, (width - PADDING * 2) / 3f);
+        float tabWidth = tabWidth(width, manager.canManage());
         int index = 0;
         for (Tab candidate : Tab.values()) {
             float x = PADDING + tabWidth * index++;
@@ -170,13 +171,11 @@ public final class WarPlannerScreen extends Screen {
     }
 
     private void renderRoster(UiCanvas canvas, WarPlannerSnapshot snapshot, float width, float top, float bottom) {
-        List<RosterMember> roster = snapshot.roster().stream()
+        List<RosterMember> roster = snapshot.onlineRoster().stream()
                 .sorted(Comparator.comparing(RosterMember::displayName, String.CASE_INSENSITIVE_ORDER))
                 .toList();
         if (roster.isEmpty()) {
-            text(canvas,
-                    snapshot.discordRolesAvailable() ? "No eligible war members." : "Discord roles are temporarily unavailable.",
-                    PADDING, top + 22, 13, color(TEXT_MUTED), false);
+            text(canvas, "No Sequoia members are online.", PADDING, top + 22, 13, color(TEXT_MUTED), false);
             return;
         }
         int start = Math.min(scrollRows, Math.max(0, roster.size() - 1));
@@ -210,7 +209,10 @@ public final class WarPlannerScreen extends Screen {
 
     private void renderTeams(UiCanvas canvas, WarPlannerSnapshot snapshot, float width, float top, float bottom) {
         if (snapshot.teams().isEmpty()) {
-            text(canvas, "No war teams yet.", PADDING, top + 22, 13, color(TEXT_MUTED), false);
+            String message = manager.canManage()
+                    ? "No war teams yet. Use New team to create one."
+                    : "No war teams yet · View only (manager role required).";
+            text(canvas, message, PADDING, top + 22, 13, color(TEXT_MUTED), false);
             return;
         }
         int start = Math.min(scrollRows, Math.max(0, snapshot.teams().size() - 1));
@@ -227,7 +229,9 @@ public final class WarPlannerScreen extends Screen {
             float summaryX = renderCompositionIcons(canvas, compositionRoles, PADDING + 8, y + 20);
             float summaryRight = manager.canManage() ? width - 148 : width - PADDING;
             int summaryCharacters = availableCharacters(summaryX, summaryRight, 10, 70);
-            text(canvas, truncate(compositionLabel(compositionRoles) + " · " + teamSummary(team), summaryCharacters),
+            text(canvas, truncate(
+                            compositionLabel(compositionRoles) + " · " + teamSummary(snapshot, team),
+                            summaryCharacters),
                     summaryX + iconTextGap(compositionRoles), y + 28, 10, color(TEXT_MUTED), false);
             if (manager.canManage()) {
                 button(canvas, width - 140, y + 8, 52, BUTTON_HEIGHT, "Edit", false, manager.isMutating());
@@ -240,7 +244,10 @@ public final class WarPlannerScreen extends Screen {
 
     private void renderZones(UiCanvas canvas, WarPlannerSnapshot snapshot, float width, float top, float bottom) {
         if (snapshot.zones().isEmpty()) {
-            text(canvas, "No territory zones yet.", PADDING, top + 22, 13, color(TEXT_MUTED), false);
+            String message = manager.canManage()
+                    ? "No territory zones yet. Use New zone to create one."
+                    : "No territory zones yet · View only (manager role required).";
+            text(canvas, message, PADDING, top + 22, 13, color(TEXT_MUTED), false);
             return;
         }
         int start = Math.min(scrollRows, Math.max(0, snapshot.zones().size() - 1));
@@ -301,7 +308,8 @@ public final class WarPlannerScreen extends Screen {
             TeamMemberDraft selected = teamMember(member.playerUuid());
             canvas.fillRect(x + 12, rowY + 2, w - 24, 24,
                     color(selected == null ? BACKGROUND_CONTENT : ACCENT_PRIMARY_DARK));
-            text(canvas, truncate(member.displayName(), w >= 360 ? 24 : 14), x + 18, rowY + 14, 11,
+            String memberLabel = member.displayName() + (member.online() ? "" : " · Offline");
+            text(canvas, truncate(memberLabel, w >= 360 ? 24 : 14), x + 18, rowY + 14, 11,
                     color(TEXT_PRIMARY), false);
             float dutyX = x + w - 92;
             float rolesX = Math.max(x + 104, dutyX - 52);
@@ -344,7 +352,7 @@ public final class WarPlannerScreen extends Screen {
         }
 
         float tabsY = HEADER_HEIGHT + AVAILABILITY_HEIGHT;
-        float tabWidth = Math.min(120, (width - PADDING * 2) / 3f);
+        float tabWidth = tabWidth(width, manager.canManage());
         for (int index = 0; index < Tab.values().length; index++) {
             if (hit(mx, my, PADDING + tabWidth * index, tabsY, tabWidth - 4, TAB_HEIGHT)) {
                 tab = Tab.values()[index];
@@ -452,7 +460,7 @@ public final class WarPlannerScreen extends Screen {
             editorScrollRows = clampRows(editorScrollRows + delta, editableRoster(snapshot).size());
         } else {
             int size = switch (tab) {
-                case ROSTER -> snapshot.roster().size();
+                case ROSTER -> snapshot.onlineRoster().size();
                 case TEAMS -> snapshot.teams().size();
                 case ZONES -> snapshot.zones().size();
             };
@@ -503,10 +511,10 @@ public final class WarPlannerScreen extends Screen {
         teamName = team == null ? "New team" : team.name();
         if (team == null) {
             RosterMember caller = manager.snapshot() == null ? null : manager.snapshot().caller();
-            RosterMember initialLeader = caller != null && caller.teamId() == null
+            RosterMember initialLeader = caller != null && caller.online() && caller.teamId() == null
                     ? caller
                     : manager.snapshot() == null ? null : manager.snapshot().roster().stream()
-                            .filter(member -> member.teamId() == null)
+                            .filter(member -> member.online() && member.teamId() == null)
                             .findFirst()
                             .orElse(null);
             if (initialLeader != null) {
@@ -603,9 +611,7 @@ public final class WarPlannerScreen extends Screen {
     }
 
     private List<RosterMember> editableRoster(WarPlannerSnapshot snapshot) {
-        return snapshot.roster().stream()
-                .filter(member -> member.teamId() == null
-                        || (editingTeamId != null && member.teamId().longValue() == editingTeamId))
+        return snapshot.teamCandidates(editingTeamId).stream()
                 .sorted(Comparator.comparing(RosterMember::displayName, String.CASE_INSENSITIVE_ORDER))
                 .toList();
     }
@@ -631,9 +637,9 @@ public final class WarPlannerScreen extends Screen {
         return switch (manager.state()) {
             case UNKNOWN -> "Waiting";
             case LOADING -> "Loading…";
-            case READY -> manager.isMutating() ? "Saving…" : "Live";
+            case READY -> manager.isMutating() ? "Saving…" : manager.canManage() ? "Live" : "Live · view only";
             case FORBIDDEN -> "Unavailable";
-            case OFFLINE -> "Offline · cached";
+            case OFFLINE -> manager.canManage() ? "Offline · cached" : "Offline · view only";
         };
     }
 
@@ -702,13 +708,27 @@ public final class WarPlannerScreen extends Screen {
         return Math.max(1, Math.min(maximum, (int) ((right - left) / approximateCharacterWidth)));
     }
 
-    private static String teamSummary(Team team) {
+    private static String teamSummary(WarPlannerSnapshot snapshot, Team team) {
         return team.members().stream()
                 .sorted(Comparator.comparingInt(TeamMember::position))
                 .map(member -> (member.minecraftUsername() == null ? member.playerUuid() : member.minecraftUsername())
-                        + " (" + roleLabel(member.role()) + ")")
+                        + " (" + roleLabel(member.role())
+                        + (isOnline(snapshot, member.playerUuid()) ? "" : ", offline") + ")")
                 .reduce((left, right) -> left + " · " + right)
                 .orElse("No members");
+    }
+
+    private static boolean isOnline(WarPlannerSnapshot snapshot, String playerUuid) {
+        return snapshot.roster().stream()
+                .filter(member -> samePlayer(member.playerUuid(), playerUuid))
+                .map(RosterMember::online)
+                .findFirst()
+                .orElse(false);
+    }
+
+    static float tabWidth(float width, boolean reserveManagerAction) {
+        float reservedWidth = reserveManagerAction ? MANAGER_ACTION_WIDTH : 0;
+        return Math.max(1, Math.min(120, (width - PADDING * 2 - reservedWidth) / Tab.values().length));
     }
 
     private static String teamName(WarPlannerSnapshot snapshot, Long id) {

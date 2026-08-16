@@ -45,6 +45,24 @@ public record WarPlannerSnapshot(
         return teams.stream().filter(team -> id.longValue() == team.id()).findFirst().orElse(null);
     }
 
+    /** Current online roster used by the overview. Missing legacy status fails closed as offline. */
+    public List<RosterMember> onlineRoster() {
+        return roster.stream().filter(RosterMember::online).toList();
+    }
+
+    /**
+     * Online unassigned members are eligible for a new assignment. Members of the team being edited remain visible
+     * even when offline so editing cannot silently remove them.
+     */
+    public List<RosterMember> teamCandidates(Long editingTeamId) {
+        return roster.stream()
+                .filter(member -> (member.online() && member.teamId() == null)
+                        || (editingTeamId != null
+                                && member.teamId() != null
+                                && member.teamId().longValue() == editingTeamId.longValue()))
+                .toList();
+    }
+
     public record Self(
             @SerializedName("player_uuid") String playerUuid,
             @SerializedName("can_manage") boolean canManage) {}
@@ -55,6 +73,7 @@ public record WarPlannerSnapshot(
             @SerializedName("discord_id") String discordId,
             @SerializedName("discord_username") String discordUsername,
             @SerializedName("composition_roles") List<WarCompositionRole> compositionRoles,
+            boolean online,
             boolean available,
             @SerializedName("available_until") Instant availableUntil,
             @SerializedName("team_id") Long teamId,

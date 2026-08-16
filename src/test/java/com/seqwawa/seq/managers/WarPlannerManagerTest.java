@@ -130,7 +130,7 @@ class WarPlannerManagerTest {
                 true,
                 List.of(new WarPlannerSnapshot.RosterMember(
                         "self", "Player", "discord-id", "discord", List.of(WarCompositionRole.DPS),
-                        true, serverNow.plus(Duration.ofMinutes(30)), null, null)),
+                        true, true, serverNow.plus(Duration.ofMinutes(30)), null, null)),
                 List.of(),
                 List.of(),
                 List.of("Ragni"));
