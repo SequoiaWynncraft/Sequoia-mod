@@ -27,6 +27,10 @@ import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.RankProfilesResponse;
 import com.seqwawa.seq.model.WynnClassType;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
+import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.network.auth.MinecraftAuthChallengeResponse;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteRequest;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteResponse;
@@ -215,6 +219,109 @@ public class ApiClient {
 
     public CompletableFuture<RankProfilesResponse> getRecognizedRankProfiles() {
         return get(authBaseUrl, "/v1/rank-profiles?scope=recognized", RankProfilesResponse.class, false);
+    }
+
+    // ── War Planner ──
+
+    public CompletableFuture<WarPlannerSnapshot> getWarPlannerSnapshot() {
+        return get("/war-planner/snapshot", WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> setWarPlannerAvailability(int durationMinutes) {
+        return put(
+                "/war-planner/availability/me",
+                buildWarAvailabilityPayload(durationMinutes),
+                WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> clearWarPlannerAvailability() {
+        return deleteTyped("/war-planner/availability/me", WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> createWarPlannerTeam(TeamDraft draft) {
+        return post("/war-planner/teams", buildWarTeamPayload(draft, false), WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> updateWarPlannerTeam(long id, TeamDraft draft) {
+        return put(
+                "/war-planner/teams/" + id,
+                buildWarTeamPayload(draft, true),
+                WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> deleteWarPlannerTeam(long id) {
+        return deleteTyped("/war-planner/teams/" + id, WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> createWarPlannerZone(ZoneDraft draft) {
+        return post("/war-planner/zones", buildWarZonePayload(draft, false), WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> updateWarPlannerZone(long id, ZoneDraft draft) {
+        return put(
+                "/war-planner/zones/" + id,
+                buildWarZonePayload(draft, true),
+                WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> deleteWarPlannerZone(long id) {
+        return deleteTyped("/war-planner/zones/" + id, WarPlannerSnapshot.class);
+    }
+
+    static JsonObject buildWarAvailabilityPayload(int durationMinutes) {
+        if (durationMinutes < 1 || durationMinutes > 1440) {
+            throw new IllegalArgumentException("Availability duration must be between 1 and 1440 minutes.");
+        }
+        JsonObject body = new JsonObject();
+        body.addProperty("duration_minutes", durationMinutes);
+        return body;
+    }
+
+    static JsonObject buildWarTeamPayload(TeamDraft draft, boolean includeVersion) {
+        if (draft == null) {
+            throw new IllegalArgumentException("Team draft is required.");
+        }
+        JsonObject body = new JsonObject();
+        body.addProperty("name", draft.name());
+        if (includeVersion) {
+            if (draft.version() == null || draft.version() <= 0) {
+                throw new IllegalArgumentException("Team version is required for updates.");
+            }
+            body.addProperty("version", draft.version());
+        }
+        JsonArray members = new JsonArray();
+        for (TeamMemberDraft member : draft.members()) {
+            JsonObject item = new JsonObject();
+            item.addProperty("player_uuid", member.playerUuid());
+            item.addProperty("role", member.role().name());
+            members.add(item);
+        }
+        body.add("members", members);
+        return body;
+    }
+
+    static JsonObject buildWarZonePayload(ZoneDraft draft, boolean includeVersion) {
+        if (draft == null) {
+            throw new IllegalArgumentException("Zone draft is required.");
+        }
+        JsonObject body = new JsonObject();
+        body.addProperty("name", draft.name());
+        body.addProperty("color", draft.color());
+        if (draft.assignedTeamId() == null) {
+            body.add("assigned_team_id", JsonNull.INSTANCE);
+        } else {
+            body.addProperty("assigned_team_id", draft.assignedTeamId());
+        }
+        if (includeVersion) {
+            if (draft.version() == null || draft.version() <= 0) {
+                throw new IllegalArgumentException("Zone version is required for updates.");
+            }
+            body.addProperty("version", draft.version());
+        }
+        JsonArray territories = new JsonArray();
+        draft.territories().forEach(territories::add);
+        body.add("territories", territories);
+        return body;
     }
 
 
@@ -429,6 +536,14 @@ public class ApiClient {
         HttpRequest request = newRequest(baseUrl, path, true)
                 .header("Content-Type", "application/json")
                 .method("PATCH", HttpRequest.BodyPublishers.ofString(gson.toJson(body)))
+                .build();
+        return sendAsync(request, type);
+    }
+
+    private <T> CompletableFuture<T> put(String path, JsonObject body, java.lang.reflect.Type type) {
+        HttpRequest request = newRequest(baseUrl, path, true)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(gson.toJson(body)))
                 .build();
         return sendAsync(request, type);
     }

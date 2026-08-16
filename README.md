@@ -22,6 +22,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Clickable world names in chat, so a called-out world is one click away
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
+- Seq-only war planner with timed availability, exclusive 1–5 player teams, and territory zones
 - Raid tracking and announcements
 - Per-player raid gambit counts parsed natively from the raid-start roster
 - Interactive world map with gathering nodes analysis and active world events
@@ -54,6 +55,9 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq`: open the main Sequoia screen
 - `/seq p`: open the Sequoia party finder UI
 - `/seq map`: open the Sequoia world map
+- `/seq war`: open the Seq-only war planner after the backend authorizes the current member
+- `/seq war available <minutes>`: advertise war availability for 1–1440 minutes
+- `/seq war unavailable`: clear your war availability
 - `/seq connect`: connect to the backend
 - `/seq status`: show connection state
 - `/seq logout`: clear the current backend session
@@ -81,6 +85,9 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq map minSamples <count>`
 - `/seq map reset`
 - `/seq map debug`
+- `/seq war`
+- `/seq war available <minutes>`
+- `/seq war unavailable`
 - `/seq party`
 - `/seq p`
 - `/seq party list`
@@ -107,6 +114,14 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq party game invite-all`
 
 </details>
+
+## War planner
+
+The War Planner entry and `/seq war` command only appear after the protected backend snapshot confirms that the
+current account is a Sequoia member. Members can advertise timed availability and see their own team immediately;
+authorized managers can atomically create or edit teams of one to five people with exactly one war leader and up to
+three ecoers. The Zones view assigns named, colored groups of territories to teams through a focused interactive map.
+Discord role keys, eligibility, team exclusivity, versions, and all mutations remain server-authoritative.
 
 ## World map
 

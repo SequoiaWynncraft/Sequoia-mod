@@ -48,6 +48,7 @@ import com.seqwawa.seq.managers.ThemeManager;
 import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.managers.WorldEventManager;
+import com.seqwawa.seq.managers.WarPlannerManager;
 import com.seqwawa.seq.map.IngredientWaypointRenderer;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
@@ -60,6 +61,7 @@ import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.ui.PrincessRaidCelebration;
 import com.seqwawa.seq.ui.SequoiaScreen;
 import com.seqwawa.seq.ui.WorldMapScreen;
+import com.seqwawa.seq.ui.WarPlannerScreen;
 import com.seqwawa.seq.update.UpdateManager;
 import com.seqwawa.seq.utils.WynnClassCache;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
@@ -86,6 +88,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static PartyFinderManager partyFinderManager;
+
+    @Getter
+    public static WarPlannerManager warPlannerManager;
 
     @Getter
     public static MinecraftAuthService authService;
@@ -281,6 +286,7 @@ public class SeqClient implements ClientModInitializer {
         fontManager = new FontManager();
         gameManager = new GameManager();
         partyFinderManager = new PartyFinderManager();
+        warPlannerManager = new WarPlannerManager();
         wynnPartySyncManager = new WynnPartySyncManager();
         guildWarTracker = GuildWarTrackers.createIfAvailable();
         guildStorageTracker = GuildStorageTracker.getInstance();
@@ -380,12 +386,18 @@ public class SeqClient implements ClientModInitializer {
                 if (guildStorageTracker != null) {
                     guildStorageTracker.reset();
                 }
+                if (warPlannerManager != null) {
+                    warPlannerManager.reset();
+                }
                 return;
             }
             if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
                 RadianceCheckerClient.reset();
                 RaidPartySnapshotTracker.onServerUnavailable();
                 ConnectionManager.flushPendingOutbound();
+                if (warPlannerManager != null) {
+                    warPlannerManager.reset();
+                }
                 return;
             }
 
@@ -394,6 +406,10 @@ public class SeqClient implements ClientModInitializer {
             }
 
             maybeRecoverProductionConnection(serverScope, previousServerScope, currentHost);
+
+            if (warPlannerManager != null) {
+                warPlannerManager.tick();
+            }
 
             if (partyFinderManager != null) {
                 partyFinderManager.tickOpenPartyAnnouncements();
@@ -489,6 +505,9 @@ public class SeqClient implements ClientModInitializer {
         }
         if (guildStorageTracker != null) {
             guildStorageTracker.reset();
+        }
+        if (warPlannerManager != null) {
+            warPlannerManager.reset();
         }
         return true;
     }
@@ -612,6 +631,14 @@ public class SeqClient implements ClientModInitializer {
 
     public static void openPartyFinderScreen() {
         mc.execute(() -> mc.setScreen(new PartyFinderScreen(mc.screen)));
+    }
+
+    public static void openWarPlannerScreen() {
+        WarPlannerManager manager = getWarPlannerManager();
+        if (manager == null || !manager.isAuthorized()) {
+            return;
+        }
+        mc.execute(() -> mc.setScreen(new WarPlannerScreen(mc.screen)));
     }
 
     public static void openWorldMapScreen() {

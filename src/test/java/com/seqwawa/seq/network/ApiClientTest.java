@@ -4,6 +4,10 @@ import com.google.gson.JsonObject;
 import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
+import com.seqwawa.seq.model.war.WarTeamRole;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -125,5 +129,49 @@ class ApiClientTest {
     void modVersionHeaderConstantMatchesBackendContract() {
         assertEquals("X-Sequoia-Mod-Version", ClientVersion.MOD_VERSION_HEADER);
         assertTrue(ClientVersion.MOD_VERSION_HEADER.startsWith("X-"));
+    }
+
+    @Test
+    void warAvailabilityPayloadUsesSnakeCaseAndBounds() {
+        JsonObject payload = ApiClient.buildWarAvailabilityPayload(90);
+
+        assertEquals(90, payload.get("duration_minutes").getAsInt());
+        assertThrows(IllegalArgumentException.class, () -> ApiClient.buildWarAvailabilityPayload(0));
+        assertThrows(IllegalArgumentException.class, () -> ApiClient.buildWarAvailabilityPayload(1441));
+    }
+
+    @Test
+    void warTeamUpdatePayloadIsAtomicAndVersioned() {
+        TeamDraft draft = new TeamDraft(
+                "Alpha",
+                7L,
+                List.of(
+                        new TeamMemberDraft("leader-uuid", WarTeamRole.WAR_LEADER),
+                        new TeamMemberDraft("eco-uuid", WarTeamRole.ECOER)));
+
+        JsonObject payload = ApiClient.buildWarTeamPayload(draft, true);
+
+        assertEquals("Alpha", payload.get("name").getAsString());
+        assertEquals(7L, payload.get("version").getAsLong());
+        assertEquals("leader-uuid", payload.getAsJsonArray("members")
+                .get(0).getAsJsonObject().get("player_uuid").getAsString());
+        assertEquals("WAR_LEADER", payload.getAsJsonArray("members")
+                .get(0).getAsJsonObject().get("role").getAsString());
+        assertFalse(ApiClient.buildWarTeamPayload(new TeamDraft("Alpha", null, draft.members()), false)
+                .has("version"));
+    }
+
+    @Test
+    void warZonePayloadKeepsNumericAssignmentAndExplicitNull() {
+        JsonObject assigned = ApiClient.buildWarZonePayload(
+                new ZoneDraft("North", "#AABBCC", 42L, 3L, List.of("Ragni")), true);
+        JsonObject unassigned = ApiClient.buildWarZonePayload(
+                new ZoneDraft("North", "#AABBCC", null, null, List.of("Ragni")), false);
+
+        assertEquals(42L, assigned.get("assigned_team_id").getAsLong());
+        assertEquals(3L, assigned.get("version").getAsLong());
+        assertEquals("Ragni", assigned.getAsJsonArray("territories").get(0).getAsString());
+        assertTrue(unassigned.get("assigned_team_id").isJsonNull());
+        assertFalse(unassigned.has("version"));
     }
 }
