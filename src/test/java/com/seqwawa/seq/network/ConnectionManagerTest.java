@@ -50,9 +50,9 @@ class ConnectionManagerTest {
 
     @Test
     void guildMembershipEventPayloadIdentifiesActionActorAndTarget() {
-        var payload = ConnectionManager.buildGuildMembershipEventPayload("invited", "GaztheCat", "NewMember");
+        var payload = ConnectionManager.buildGuildMembershipEventPayload("uninvited", "GaztheCat", "NewMember");
 
-        assertEquals("invited", payload.get("action").getAsString());
+        assertEquals("uninvited", payload.get("action").getAsString());
         assertEquals("GaztheCat", payload.get("actor").getAsString());
         assertEquals("NewMember", payload.get("target").getAsString());
     }

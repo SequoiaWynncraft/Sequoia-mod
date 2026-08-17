@@ -957,7 +957,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         String safeAction = action == null ? "" : action.trim().toLowerCase(Locale.ROOT);
         String safeActor = sanitizeMinecraftUsername(actor);
         String safeTarget = sanitizeMinecraftUsername(target);
-        if ((!"invited".equals(safeAction) && !"removed".equals(safeAction))
+        if ((!"invited".equals(safeAction) && !"uninvited".equals(safeAction) && !"removed".equals(safeAction))
                 || safeActor == null
                 || safeTarget == null) {
             SeqClient.LOGGER.warn(

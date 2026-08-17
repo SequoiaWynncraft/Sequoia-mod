@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.time.Duration;
@@ -449,7 +450,11 @@ public class ChatManager {
         if (!ChatIdentityResolver.isValidUsername(actor) || !ChatIdentityResolver.isValidUsername(target)) {
             return null;
         }
-        String action = "invited".equalsIgnoreCase(verb) ? "invited" : "removed";
+        String action = switch (verb.toLowerCase(Locale.ROOT)) {
+            case "invited" -> "invited";
+            case "uninvited" -> "uninvited";
+            default -> "removed";
+        };
         return new ParsedGuildMembershipEvent(action, actor, target);
     }
 

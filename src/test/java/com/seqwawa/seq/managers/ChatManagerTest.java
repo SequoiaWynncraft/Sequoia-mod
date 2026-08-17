@@ -269,7 +269,7 @@ class ChatManagerTest {
                 "GaztheCat");
 
         assertNotNull(parsed);
-        assertEquals("removed", parsed.action());
+        assertEquals("uninvited", parsed.action());
         assertEquals("GaztheCat", parsed.actor());
         assertEquals("NewMember", parsed.target());
     }
