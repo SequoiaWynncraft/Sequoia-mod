@@ -22,7 +22,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Clickable world names in chat, so a called-out world is one click away
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
-- Seq-only war planner with timed availability, exclusive 1–5 player teams, and territory zones
+- Seq-only war planner with timed availability, exclusive 1–5 player parties, a shared Lead + three Eco board, and collaborative territory zones
 - Raid tracking and announcements
 - Per-player raid gambit counts parsed natively from the raid-start roster
 - Interactive world map with gathering nodes analysis and active world events
@@ -116,6 +116,12 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 </details>
 
 ## War planner
+
+The planner uses backend schema v2: party membership is separate from the
+shared Lead/Eco support slots, so support players may also join a party. The
+zone map provides palette colors, multi-party assignment, territory routes,
+and resource coloring. Ordinary 9k emerald income is treated as the baseline;
+18k+ emerald territories are highlighted as emerald generators.
 
 The War Planner entry and `/seq war` command only appear after the protected backend snapshot confirms that the
 current account is a Sequoia member. Members can advertise timed availability and see their own team immediately;

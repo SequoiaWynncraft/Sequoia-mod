@@ -6,8 +6,9 @@ import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportSlotDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
-import com.seqwawa.seq.model.war.WarTeamRole;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -146,8 +147,8 @@ class ApiClientTest {
                 "Alpha",
                 7L,
                 List.of(
-                        new TeamMemberDraft("leader-uuid", WarTeamRole.WAR_LEADER),
-                        new TeamMemberDraft("eco-uuid", WarTeamRole.ECOER)));
+                        new TeamMemberDraft("leader-uuid"),
+                        new TeamMemberDraft("eco-uuid")));
 
         JsonObject payload = ApiClient.buildWarTeamPayload(draft, true);
 
@@ -155,24 +156,38 @@ class ApiClientTest {
         assertEquals(7L, payload.get("version").getAsLong());
         assertEquals("leader-uuid", payload.getAsJsonArray("members")
                 .get(0).getAsJsonObject().get("player_uuid").getAsString());
-        assertEquals("WAR_LEADER", payload.getAsJsonArray("members")
-                .get(0).getAsJsonObject().get("role").getAsString());
+        assertFalse(payload.getAsJsonArray("members").get(0).getAsJsonObject().has("role"));
         assertFalse(payload.getAsJsonArray("members").get(0).getAsJsonObject().has("composition_roles"));
         assertFalse(ApiClient.buildWarTeamPayload(new TeamDraft("Alpha", null, draft.members()), false)
                 .has("version"));
     }
 
     @Test
-    void warZonePayloadKeepsNumericAssignmentAndExplicitNull() {
+    void warZonePayloadKeepsMultipleNumericAssignments() {
         JsonObject assigned = ApiClient.buildWarZonePayload(
-                new ZoneDraft("North", "#AABBCC", 42L, 3L, List.of("Ragni")), true);
+                new ZoneDraft("North", "#AABBCC", List.of(42L, 43L), 3L, List.of("Ragni")), true);
         JsonObject unassigned = ApiClient.buildWarZonePayload(
-                new ZoneDraft("North", "#AABBCC", null, null, List.of("Ragni")), false);
+                new ZoneDraft("North", "#AABBCC", List.of(), null, List.of("Ragni")), false);
 
-        assertEquals(42L, assigned.get("assigned_team_id").getAsLong());
+        assertEquals(42L, assigned.getAsJsonArray("assigned_team_ids").get(0).getAsLong());
         assertEquals(3L, assigned.get("version").getAsLong());
         assertEquals("Ragni", assigned.getAsJsonArray("territories").get(0).getAsString());
-        assertTrue(unassigned.get("assigned_team_id").isJsonNull());
+        assertTrue(unassigned.getAsJsonArray("assigned_team_ids").isEmpty());
         assertFalse(unassigned.has("version"));
+    }
+
+    @Test
+    void warSupportPayloadKeepsTheFourSharedSlotsSeparateFromParties() {
+        JsonObject payload = ApiClient.buildWarSupportPayload(new SupportDraft(
+                4L,
+                List.of(
+                        new SupportSlotDraft("LEAD", "lead-uuid"),
+                        new SupportSlotDraft("ECO_1", "eco-uuid"))));
+
+        assertEquals(4L, payload.get("version").getAsLong());
+        assertEquals("LEAD", payload.getAsJsonArray("slots").get(0).getAsJsonObject().get("code").getAsString());
+        assertEquals(
+                "eco-uuid",
+                payload.getAsJsonArray("slots").get(1).getAsJsonObject().get("player_uuid").getAsString());
     }
 }

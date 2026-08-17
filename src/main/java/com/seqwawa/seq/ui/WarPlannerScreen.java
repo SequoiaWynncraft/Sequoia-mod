@@ -9,12 +9,14 @@ import com.seqwawa.seq.managers.WarPlannerManager;
 import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportSlotDraft;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.RosterMember;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.Team;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.TeamMember;
+import com.seqwawa.seq.model.war.WarPlannerSnapshot.SupportSlot;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.Zone;
-import com.seqwawa.seq.model.war.WarTeamRole;
 import com.seqwawa.seq.utils.TextInputHelper;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
@@ -25,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
@@ -41,6 +44,8 @@ public final class WarPlannerScreen extends Screen {
     private static final float AVAILABILITY_HEIGHT = 48;
     private static final float TAB_HEIGHT = 24;
     private static final float ROW_HEIGHT = 38;
+    private static final float TEAM_CARD_HEIGHT = 88;
+    private static final float TEAM_CARD_STEP = 92;
     private static final float BUTTON_HEIGHT = 22;
     private static final float MANAGER_ACTION_WIDTH = 92;
     private static final float COMPOSITION_ICON_SIZE = 12;
@@ -63,6 +68,9 @@ public final class WarPlannerScreen extends Screen {
     private int editorScrollRows;
     private Long pendingDeleteTeamId;
     private Long pendingDeleteZoneId;
+    private Integer editingSupportSlot;
+    private int supportEditorScrollRows;
+    private boolean supportEditorSaving;
 
     public WarPlannerScreen(Screen parent) {
         super(Component.literal("War Planner"));
@@ -112,6 +120,8 @@ public final class WarPlannerScreen extends Screen {
 
         if (teamEditorOpen) {
             renderTeamEditor(canvas, width, height);
+        } else if (editingSupportSlot != null) {
+            renderSupportEditor(canvas, width, height);
         }
     }
 
@@ -195,9 +205,6 @@ public final class WarPlannerScreen extends Screen {
             text(canvas, truncate(compositionLabel(member.compositionRoles()) + " · " + discord, detailCharacters),
                     detailX + iconTextGap(member.compositionRoles()), y + 28, 10, color(TEXT_MUTED), false);
             String assignment = member.teamId() == null ? "No team" : teamName(snapshot, member.teamId());
-            if (member.teamRole() != null) {
-                assignment += " · " + roleLabel(member.teamRole());
-            }
             text(canvas, truncate(assignment, 28), width - 184, y + 13, 11, color(TEXT_SECONDARY), false);
             Duration remaining = member.available()
                     ? WarPlannerManager.remainingUntil(member.availableUntil(), manager.serverNow())
@@ -208,6 +215,9 @@ public final class WarPlannerScreen extends Screen {
     }
 
     private void renderTeams(UiCanvas canvas, WarPlannerSnapshot snapshot, float width, float top, float bottom) {
+        float supportWidth = Math.min(214, Math.max(176, width * .28f));
+        float cardsRight = width - supportWidth - PADDING * 2;
+        renderSupportBoard(canvas, snapshot, cardsRight + PADDING, top, supportWidth, bottom);
         if (snapshot.teams().isEmpty()) {
             String message = manager.canManage()
                     ? "No war teams yet. Use New team to create one."
@@ -218,25 +228,25 @@ public final class WarPlannerScreen extends Screen {
         int start = Math.min(scrollRows, Math.max(0, snapshot.teams().size() - 1));
         float y = top;
         RosterMember caller = snapshot.caller();
-        for (int index = start; index < snapshot.teams().size() && y + ROW_HEIGHT <= bottom; index++, y += ROW_HEIGHT) {
+        for (int index = start; index < snapshot.teams().size() && y + TEAM_CARD_HEIGHT <= bottom;
+                index++, y += TEAM_CARD_STEP) {
             Team team = snapshot.teams().get(index);
             boolean ownTeam = caller != null && caller.teamId() != null && caller.teamId() == team.id();
-            canvas.fillRect(PADDING, y + 2, width - PADDING * 2, ROW_HEIGHT - 4,
+            canvas.fillRect(PADDING, y + 2, cardsRight - PADDING, TEAM_CARD_HEIGHT - 4,
                     color(ownTeam ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT));
             text(canvas, truncate(team.name() + (ownTeam ? " · Your team" : ""), 28),
                     PADDING + 8, y + 13, 13, color(TEXT_PRIMARY), false);
-            List<WarCompositionRole> compositionRoles = teamCompositionRoles(snapshot, team);
-            float summaryX = renderCompositionIcons(canvas, compositionRoles, PADDING + 8, y + 20);
-            float summaryRight = manager.canManage() ? width - 148 : width - PADDING;
-            int summaryCharacters = availableCharacters(summaryX, summaryRight, 10, 70);
-            text(canvas, truncate(
-                            compositionLabel(compositionRoles) + " · " + teamSummary(snapshot, team),
-                            summaryCharacters),
-                    summaryX + iconTextGap(compositionRoles), y + 28, 10, color(TEXT_MUTED), false);
+            float memberY = y + 31;
+            for (TeamMember member : team.members().stream().sorted(Comparator.comparingInt(TeamMember::position)).toList()) {
+                text(canvas, truncate((member.minecraftUsername() == null ? member.playerUuid() : member.minecraftUsername())
+                                + (isOnline(snapshot, member.playerUuid()) ? "" : " · Offline"), 34),
+                        PADDING + 12, memberY, 10, color(TEXT_SECONDARY), false);
+                memberY += 11;
+            }
             if (manager.canManage()) {
-                button(canvas, width - 140, y + 8, 52, BUTTON_HEIGHT, "Edit", false, manager.isMutating());
+                button(canvas, cardsRight - 132, y + 8, 52, BUTTON_HEIGHT, "Edit", false, manager.isMutating());
                 boolean confirming = pendingDeleteTeamId != null && pendingDeleteTeamId == team.id();
-                button(canvas, width - 82, y + 8, 70, BUTTON_HEIGHT,
+                button(canvas, cardsRight - 74, y + 8, 70, BUTTON_HEIGHT,
                         confirming ? "Confirm" : "Delete", true, manager.isMutating());
             }
         }
@@ -257,9 +267,12 @@ public final class WarPlannerScreen extends Screen {
             canvas.fillRect(PADDING, y + 2, width - PADDING * 2, ROW_HEIGHT - 4, color(BACKGROUND_CONTENT));
             canvas.fillRect(PADDING + 7, y + 8, 8, 22, parseColor(zone.color(), color(ACCENT_PRIMARY)));
             text(canvas, truncate(zone.name(), 24), PADDING + 22, y + 13, 13, color(TEXT_PRIMARY), false);
-            String assigned = zone.assignedTeamId() == null ? "Unassigned" : teamName(snapshot, zone.assignedTeamId());
-            text(canvas, zone.territories().size() + " territories · " + assigned,
-                    PADDING + 22, y + 28, 10, color(TEXT_MUTED), false);
+            String assigned = zone.assignedTeamIds().isEmpty()
+                    ? "Unassigned"
+                    : zone.assignedTeamIds().stream().map(id -> teamName(snapshot, id)).reduce((a, b) -> a + " + " + b).orElse("Unassigned");
+            String zoneDetail = zone.territories().size() + " territories · " + assigned + " · Click to inspect map";
+            int detailLength = manager.canManage() ? 48 : Math.max(24, (int) ((width - 48) / 5.5f));
+            text(canvas, truncate(zoneDetail, detailLength), PADDING + 22, y + 28, 10, color(TEXT_MUTED), false);
             if (manager.canManage()) {
                 button(canvas, width - 140, y + 8, 52, BUTTON_HEIGHT, "Edit", false, manager.isMutating());
                 boolean confirming = pendingDeleteZoneId != null && pendingDeleteZoneId == zone.id();
@@ -267,6 +280,66 @@ public final class WarPlannerScreen extends Screen {
                         confirming ? "Confirm" : "Delete", true, manager.isMutating());
             }
         }
+    }
+
+    private void renderSupportBoard(
+            UiCanvas canvas, WarPlannerSnapshot snapshot, float x, float top, float panelWidth, float bottom) {
+        canvas.fillRoundedRect(x, top + 2, panelWidth, Math.min(bottom - top - 4, 168), 5, color(BACKGROUND_CONTENT));
+        text(canvas, "Shared support", x + 10, top + 17, 13, color(ACCENT_PRIMARY), false);
+        text(canvas, "Click to cycle · may join party", x + 10, top + 31, 9, color(TEXT_MUTED), false);
+        String[] codes = {"LEAD", "ECO_1", "ECO_2", "ECO_3"};
+        for (int index = 0; index < codes.length; index++) {
+            float y = top + 43 + index * 28;
+            String code = codes[index];
+            SupportSlot slot = snapshot.support().slots().stream()
+                    .filter(candidate -> code.equals(candidate.code()))
+                    .findFirst()
+                    .orElse(null);
+            boolean hovered = manager.canManage() && hit(nvgMouseX, nvgMouseY, x + 7, y, panelWidth - 14, 23);
+            canvas.fillRoundedRect(x + 7, y, panelWidth - 14, 23, 3,
+                    color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
+            text(canvas, index == 0 ? "Lead" : "Eco " + index, x + 13, y + 12, 10, color(TEXT_MUTED), false);
+            String name = slot == null ? "Empty" : slot.minecraftUsername() == null ? slot.playerUuid() : slot.minecraftUsername();
+            text(canvas, truncate(name, 16), x + 60, y + 12, 10,
+                    color(slot == null ? TEXT_MUTED : TEXT_PRIMARY), false);
+        }
+    }
+
+    private void renderSupportEditor(UiCanvas canvas, float width, float height) {
+        WarPlannerSnapshot snapshot = manager.snapshot();
+        if (snapshot == null || editingSupportSlot == null) return;
+        String label = editingSupportSlot == 0 ? "Lead" : "Eco " + editingSupportSlot;
+        float w = Math.min(430, width - PADDING * 2);
+        float h = Math.min(390, height - 44);
+        float x = (width - w) / 2;
+        float y = (height - h) / 2;
+        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
+        canvas.fillRoundedRect(x, y, w, h, 7, color(BACKGROUND_BODY_OPAQUE));
+        canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
+        text(canvas, "Assign shared " + label, x + 14, y + 21, 16, color(ACCENT_PRIMARY), false);
+        text(canvas, "Support members can also belong to any party.", x + 14, y + 39, 10, color(TEXT_MUTED), false);
+        button(canvas, x + w - 34, y + 9, 24, BUTTON_HEIGHT, "×", true, supportEditorSaving);
+
+        List<RosterMember> candidates = supportCandidates(snapshot, editingSupportSlot);
+        float listTop = y + 54;
+        float listBottom = y + h - 42;
+        canvas.scissor(x + 8, listTop, w - 16, listBottom - listTop);
+        int start = Math.min(supportEditorScrollRows, Math.max(0, candidates.size() - 1));
+        float rowY = listTop;
+        String selectedUuid = supportSlot(snapshot, editingSupportSlot) == null
+                ? null : supportSlot(snapshot, editingSupportSlot).playerUuid();
+        for (int index = start; index < candidates.size() && rowY + 30 <= listBottom; index++, rowY += 30) {
+            RosterMember candidate = candidates.get(index);
+            boolean selected = samePlayer(selectedUuid, candidate.playerUuid());
+            canvas.fillRoundedRect(x + 12, rowY + 2, w - 24, 25, 3,
+                    color(selected ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT));
+            text(canvas, truncate(candidate.displayName(), 28), x + 18, rowY + 14, 11, color(TEXT_PRIMARY), false);
+            text(canvas, candidate.online() ? "Online" : "Offline · currently assigned", x + w - 150, rowY + 14,
+                    9, color(candidate.online() ? CONTROL_SUCCESS : TEXT_MUTED), false);
+        }
+        canvas.resetScissor();
+        button(canvas, x + 12, y + h - 32, 72, BUTTON_HEIGHT, "Clear slot", true, supportEditorSaving);
+        button(canvas, x + w - 80, y + h - 32, 68, BUTTON_HEIGHT, "Cancel", false, supportEditorSaving);
     }
 
     private void renderTeamEditor(UiCanvas canvas, float width, float height) {
@@ -291,7 +364,7 @@ public final class WarPlannerScreen extends Screen {
         canvas.strokeRect(x + 12, fieldY, w - 24, 24, 1, color(CONTROL_BORDER));
         text(canvas, teamName.isBlank() ? "Team name" : teamName, x + 18, fieldY + 12, 12,
                 color(teamName.isBlank() ? TEXT_MUTED : TEXT_PRIMARY), false);
-        text(canvas, "Click to cycle duty. Capabilities: Solo wand · DPS relik · Tank spear", x + 12, fieldY + 38, 10,
+        text(canvas, "Click a player to add/remove. Capabilities: Solo wand · DPS relik · Tank spear", x + 12, fieldY + 38, 10,
                 color(TEXT_MUTED), false);
 
         if (flashMessage != null && !flashMessage.isBlank()) {
@@ -314,7 +387,7 @@ public final class WarPlannerScreen extends Screen {
             float dutyX = x + w - 92;
             float rolesX = Math.max(x + 104, dutyX - 52);
             renderCompositionIcons(canvas, member.compositionRoles(), rolesX, rowY + 8);
-            text(canvas, selected == null ? "Off" : roleLabel(selected.role()), x + w - 92, rowY + 14, 10,
+            text(canvas, selected == null ? "Off" : "In party", x + w - 92, rowY + 14, 10,
                     color(selected == null ? TEXT_MUTED : TEXT_PRIMARY), false);
         }
         canvas.resetScissor();
@@ -336,6 +409,9 @@ public final class WarPlannerScreen extends Screen {
 
         if (teamEditorOpen) {
             return clickTeamEditor(mx, my, width, height);
+        }
+        if (editingSupportSlot != null) {
+            return clickSupportEditor(mx, my, width, height);
         }
         if (hit(mx, my, width - 82, 8, 70, BUTTON_HEIGHT)) {
             showResult(manager.refreshNow());
@@ -375,18 +451,32 @@ public final class WarPlannerScreen extends Screen {
 
     private boolean clickContent(float mx, float my, float width, float height) {
         WarPlannerSnapshot snapshot = manager.snapshot();
-        if (snapshot == null || !manager.canManage() || my < contentTop() || my > height - 42) {
+        if (snapshot == null || my < contentTop() || my > height - 42) {
             return false;
         }
-        int row = scrollRows + Math.max(0, (int) ((my - contentTop()) / ROW_HEIGHT));
-        float rowY = contentTop() + (row - scrollRows) * ROW_HEIGHT;
-        if (tab == Tab.TEAMS && row < snapshot.teams().size()) {
+        if (tab == Tab.TEAMS && manager.canManage()) {
+            float supportWidth = Math.min(214, Math.max(176, width * .28f));
+            float supportX = width - supportWidth - PADDING;
+            for (int index = 0; index < 4; index++) {
+                if (hit(mx, my, supportX + 7, contentTop() + 43 + index * 28, supportWidth - 14, 23)) {
+                    editingSupportSlot = index;
+                    supportEditorScrollRows = 0;
+                    return true;
+                }
+            }
+        }
+        float itemHeight = tab == Tab.TEAMS ? TEAM_CARD_STEP : ROW_HEIGHT;
+        int row = scrollRows + Math.max(0, (int) ((my - contentTop()) / itemHeight));
+        float rowY = contentTop() + (row - scrollRows) * itemHeight;
+        if (tab == Tab.TEAMS && manager.canManage() && row < snapshot.teams().size()) {
             Team team = snapshot.teams().get(row);
-            if (hit(mx, my, width - 140, rowY + 8, 52, BUTTON_HEIGHT)) {
+            float supportWidth = Math.min(214, Math.max(176, width * .28f));
+            float cardsRight = width - supportWidth - PADDING * 2;
+            if (hit(mx, my, cardsRight - 132, rowY + 8, 52, BUTTON_HEIGHT)) {
                 beginTeamEdit(team);
                 return true;
             }
-            if (hit(mx, my, width - 82, rowY + 8, 70, BUTTON_HEIGHT)) {
+            if (hit(mx, my, cardsRight - 74, rowY + 8, 70, BUTTON_HEIGHT)) {
                 if (pendingDeleteTeamId != null && pendingDeleteTeamId == team.id()) {
                     showResult(manager.deleteTeam(team.id()));
                     pendingDeleteTeamId = null;
@@ -398,11 +488,11 @@ public final class WarPlannerScreen extends Screen {
         }
         if (tab == Tab.ZONES && row < snapshot.zones().size()) {
             Zone zone = snapshot.zones().get(row);
-            if (hit(mx, my, width - 140, rowY + 8, 52, BUTTON_HEIGHT)) {
+            if (manager.canManage() && hit(mx, my, width - 140, rowY + 8, 52, BUTTON_HEIGHT)) {
                 SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, zone));
                 return true;
             }
-            if (hit(mx, my, width - 82, rowY + 8, 70, BUTTON_HEIGHT)) {
+            if (manager.canManage() && hit(mx, my, width - 82, rowY + 8, 70, BUTTON_HEIGHT)) {
                 if (pendingDeleteZoneId != null && pendingDeleteZoneId == zone.id()) {
                     showResult(manager.deleteZone(zone.id()));
                     pendingDeleteZoneId = null;
@@ -411,6 +501,8 @@ public final class WarPlannerScreen extends Screen {
                 }
                 return true;
             }
+            SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, zone, true));
+            return true;
         }
         return false;
     }
@@ -451,6 +543,34 @@ public final class WarPlannerScreen extends Screen {
         return true;
     }
 
+    private boolean clickSupportEditor(float mx, float my, float width, float height) {
+        WarPlannerSnapshot snapshot = manager.snapshot();
+        if (snapshot == null || editingSupportSlot == null || supportEditorSaving) return true;
+        float w = Math.min(430, width - PADDING * 2);
+        float h = Math.min(390, height - 44);
+        float x = (width - w) / 2;
+        float y = (height - h) / 2;
+        if (hit(mx, my, x + w - 34, y + 9, 24, BUTTON_HEIGHT)
+                || hit(mx, my, x + w - 80, y + h - 32, 68, BUTTON_HEIGHT)) {
+            closeSupportEditor();
+            return true;
+        }
+        if (hit(mx, my, x + 12, y + h - 32, 72, BUTTON_HEIGHT)) {
+            saveSupportSlot(editingSupportSlot, null);
+            return true;
+        }
+        float listTop = y + 54;
+        float listBottom = y + h - 42;
+        if (my >= listTop && my <= listBottom) {
+            List<RosterMember> candidates = supportCandidates(snapshot, editingSupportSlot);
+            int row = supportEditorScrollRows + (int) ((my - listTop) / 30);
+            if (row >= 0 && row < candidates.size()) {
+                saveSupportSlot(editingSupportSlot, candidates.get(row).playerUuid());
+            }
+        }
+        return true;
+    }
+
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         int delta = scrollY > 0 ? -1 : 1;
@@ -458,6 +578,9 @@ public final class WarPlannerScreen extends Screen {
         if (snapshot == null) return true;
         if (teamEditorOpen) {
             editorScrollRows = clampRows(editorScrollRows + delta, editableRoster(snapshot).size());
+        } else if (editingSupportSlot != null) {
+            supportEditorScrollRows = clampRows(
+                    supportEditorScrollRows + delta, supportCandidates(snapshot, editingSupportSlot).size());
         } else {
             int size = switch (tab) {
                 case ROSTER -> snapshot.onlineRoster().size();
@@ -518,7 +641,7 @@ public final class WarPlannerScreen extends Screen {
                             .findFirst()
                             .orElse(null);
             if (initialLeader != null) {
-                teamMembers.add(new TeamMemberDraft(initialLeader.playerUuid(), WarTeamRole.WAR_LEADER));
+                teamMembers.add(new TeamMemberDraft(initialLeader.playerUuid()));
             }
         } else {
             WarPlannerSnapshot snapshot = manager.snapshot();
@@ -529,7 +652,7 @@ public final class WarPlannerScreen extends Screen {
                 boolean stillInRoster = snapshot != null && snapshot.roster().stream()
                         .anyMatch(rosterMember -> rosterMember.playerUuid().equalsIgnoreCase(member.playerUuid()));
                 if (stillInRoster) {
-                    teamMembers.add(new TeamMemberDraft(member.playerUuid(), member.role()));
+                    teamMembers.add(new TeamMemberDraft(member.playerUuid()));
                 } else {
                     staleMembers++;
                 }
@@ -587,20 +710,62 @@ public final class WarPlannerScreen extends Screen {
                 flashMessage = "A war team can contain at most five people.";
                 return;
             }
-            teamMembers.add(new TeamMemberDraft(member.playerUuid(), WarTeamRole.WARRER));
+            teamMembers.add(new TeamMemberDraft(member.playerUuid()));
             return;
         }
         teamMembers.remove(current);
-        switch (current.role()) {
-            case WARRER -> teamMembers.add(new TeamMemberDraft(member.playerUuid(), WarTeamRole.ECOER));
-            case ECOER -> {
-                teamMembers.removeIf(draft -> draft.role() == WarTeamRole.WAR_LEADER);
-                teamMembers.add(new TeamMemberDraft(member.playerUuid(), WarTeamRole.WAR_LEADER));
-            }
-            case WAR_LEADER -> {
-                // Cycling the leader removes them; validation explains that a new leader is required.
+    }
+
+    private void saveSupportSlot(int slotIndex, String playerUuid) {
+        WarPlannerSnapshot snapshot = manager.snapshot();
+        if (snapshot == null || snapshot.support() == null) return;
+        String[] codes = {"LEAD", "ECO_1", "ECO_2", "ECO_3"};
+        String code = codes[slotIndex];
+        List<SupportSlotDraft> slots = new ArrayList<>();
+        for (SupportSlot slot : snapshot.support().slots()) {
+            if (!code.equals(slot.code()) && !samePlayer(slot.playerUuid(), playerUuid)) {
+                slots.add(new SupportSlotDraft(slot.code(), slot.playerUuid()));
             }
         }
+        if (playerUuid != null) slots.add(new SupportSlotDraft(code, playerUuid));
+        supportEditorSaving = true;
+        manager.saveSupport(new SupportDraft(snapshot.support().version(), slots)).whenComplete((result, error) ->
+                SeqClient.mc.execute(() -> {
+                    supportEditorSaving = false;
+                    if (error != null || result == null || !result.success()) {
+                        flashMessage = error != null ? "War planner request failed." : result == null ? "No response." : result.message();
+                        return;
+                    }
+                    flashMessage = result.message();
+                    closeSupportEditor();
+                }));
+    }
+
+    private static SupportSlot supportSlot(WarPlannerSnapshot snapshot, int slotIndex) {
+        String[] codes = {"LEAD", "ECO_1", "ECO_2", "ECO_3"};
+        return snapshot.support().slots().stream()
+                .filter(slot -> codes[slotIndex].equals(slot.code()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static List<RosterMember> supportCandidates(WarPlannerSnapshot snapshot, int slotIndex) {
+        SupportSlot current = supportSlot(snapshot, slotIndex);
+        Set<String> assignedElsewhere = snapshot.support().slots().stream()
+                .filter(slot -> current == null || !samePlayer(slot.playerUuid(), current.playerUuid()))
+                .map(slot -> slot.playerUuid().toLowerCase(Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet());
+        return snapshot.roster().stream()
+                .filter(member -> member.online() || (current != null && samePlayer(member.playerUuid(), current.playerUuid())))
+                .filter(member -> !assignedElsewhere.contains(member.playerUuid().toLowerCase(Locale.ROOT)))
+                .sorted(Comparator.comparing(RosterMember::displayName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    private void closeSupportEditor() {
+        editingSupportSlot = null;
+        supportEditorScrollRows = 0;
+        supportEditorSaving = false;
     }
 
     private TeamMemberDraft teamMember(String playerUuid) {
@@ -688,17 +853,6 @@ public final class WarPlannerScreen extends Screen {
                 .orElse("No composition role");
     }
 
-    private static List<WarCompositionRole> teamCompositionRoles(WarPlannerSnapshot snapshot, Team team) {
-        List<WarCompositionRole> roles = new ArrayList<>();
-        for (TeamMember member : team.members()) {
-            snapshot.roster().stream()
-                    .filter(candidate -> samePlayer(candidate.playerUuid(), member.playerUuid()))
-                    .findFirst()
-                    .ifPresent(candidate -> roles.addAll(candidate.compositionRoles()));
-        }
-        return WarCompositionRole.ordered(roles);
-    }
-
     private static boolean samePlayer(String left, String right) {
         return left != null && right != null && left.equalsIgnoreCase(right);
     }
@@ -706,16 +860,6 @@ public final class WarPlannerScreen extends Screen {
     private static int availableCharacters(float left, float right, float fontSize, int maximum) {
         float approximateCharacterWidth = fontSize * .55f;
         return Math.max(1, Math.min(maximum, (int) ((right - left) / approximateCharacterWidth)));
-    }
-
-    private static String teamSummary(WarPlannerSnapshot snapshot, Team team) {
-        return team.members().stream()
-                .sorted(Comparator.comparingInt(TeamMember::position))
-                .map(member -> (member.minecraftUsername() == null ? member.playerUuid() : member.minecraftUsername())
-                        + " (" + roleLabel(member.role())
-                        + (isOnline(snapshot, member.playerUuid()) ? "" : ", offline") + ")")
-                .reduce((left, right) -> left + " · " + right)
-                .orElse("No members");
     }
 
     private static boolean isOnline(WarPlannerSnapshot snapshot, String playerUuid) {
@@ -734,15 +878,6 @@ public final class WarPlannerScreen extends Screen {
     private static String teamName(WarPlannerSnapshot snapshot, Long id) {
         Team team = snapshot.team(id);
         return team == null ? "Team #" + id : team.name();
-    }
-
-    private static String roleLabel(WarTeamRole role) {
-        if (role == null) return "Unknown";
-        return switch (role) {
-            case WAR_LEADER -> "Leader";
-            case WARRER -> "Warrer";
-            case ECOER -> "Ecoer";
-        };
     }
 
     private static String formatDuration(Duration duration) {

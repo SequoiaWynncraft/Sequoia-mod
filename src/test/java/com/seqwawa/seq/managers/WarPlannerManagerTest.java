@@ -11,7 +11,6 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
-import com.seqwawa.seq.model.war.WarTeamRole;
 import com.seqwawa.seq.network.ApiClient;
 import java.time.Clock;
 import java.time.Duration;
@@ -36,7 +35,7 @@ class WarPlannerManagerTest {
         assertEquals(WarPlannerManager.State.LOADING, manager.state());
         assertFalse(manager.isAuthorized());
 
-        WarPlannerSnapshot snapshot = snapshot(1, true);
+        WarPlannerSnapshot snapshot = snapshot(2, true);
         gateway.next.complete(snapshot);
 
         assertEquals(WarPlannerManager.State.READY, manager.state());
@@ -51,12 +50,12 @@ class WarPlannerManagerTest {
         WarPlannerManager manager = manager(gateway);
         manager.tick(true, true);
 
-        gateway.next.complete(snapshot(2, true));
+        gateway.next.complete(snapshot(1, true));
 
         assertEquals(WarPlannerManager.State.OFFLINE, manager.state());
         assertFalse(manager.isAuthorized());
         assertNull(manager.snapshot());
-        assertTrue(manager.lastError().contains("schema 2"));
+        assertTrue(manager.lastError().contains("schema 1"));
     }
 
     @Test
@@ -64,7 +63,7 @@ class WarPlannerManagerTest {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
         manager.tick(true, true);
-        gateway.next.complete(snapshot(1, true));
+        gateway.next.complete(snapshot(2, true));
         gateway.next = new CompletableFuture<>();
 
         manager.refreshNow();
@@ -80,7 +79,7 @@ class WarPlannerManagerTest {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
         manager.tick(true, true);
-        gateway.next.complete(snapshot(1, true));
+        gateway.next.complete(snapshot(2, true));
         gateway.next = new CompletableFuture<>();
 
         manager.refreshNow();
@@ -98,7 +97,7 @@ class WarPlannerManagerTest {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
         manager.tick(true, true);
-        gateway.next.complete(snapshot(1, false));
+        gateway.next.complete(snapshot(2, false));
 
         assertEquals(Duration.ofMinutes(30), manager.ownAvailabilityRemaining());
     }
@@ -108,10 +107,10 @@ class WarPlannerManagerTest {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
         manager.tick(true, true);
-        gateway.next.complete(snapshot(1, false));
+        gateway.next.complete(snapshot(2, false));
 
         var result = manager.saveTeam(null, new TeamDraft(
-                "Alpha", null, List.of(new TeamMemberDraft("self", WarTeamRole.WAR_LEADER)))).join();
+                "Alpha", null, List.of(new TeamMemberDraft("self")))).join();
 
         assertFalse(result.success());
         assertEquals(1, gateway.calls);
@@ -130,10 +129,12 @@ class WarPlannerManagerTest {
                 true,
                 List.of(new WarPlannerSnapshot.RosterMember(
                         "self", "Player", "discord-id", "discord", List.of(WarCompositionRole.DPS),
-                        true, true, serverNow.plus(Duration.ofMinutes(30)), null, null)),
+                        true, true, serverNow.plus(Duration.ofMinutes(30)), null)),
                 List.of(),
+                new WarPlannerSnapshot.SupportBoard(1L, List.of()),
                 List.of(),
-                List.of("Ragni"));
+                List.of("Ragni"),
+                List.of());
     }
 
     private static final class FakeGateway implements WarPlannerManager.Gateway {
@@ -151,6 +152,7 @@ class WarPlannerManagerTest {
         @Override public CompletableFuture<WarPlannerSnapshot> createTeam(TeamDraft draft) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> updateTeam(long id, TeamDraft draft) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> deleteTeam(long id) { return call(); }
+        @Override public CompletableFuture<WarPlannerSnapshot> updateSupport(com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft draft) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> createZone(ZoneDraft draft) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> updateZone(long id, ZoneDraft draft) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> deleteZone(long id) { return call(); }

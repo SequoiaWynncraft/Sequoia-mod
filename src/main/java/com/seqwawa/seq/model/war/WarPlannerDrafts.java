@@ -6,13 +6,10 @@ import java.util.List;
 public final class WarPlannerDrafts {
     private WarPlannerDrafts() {}
 
-    public record TeamMemberDraft(String playerUuid, WarTeamRole role) {
+    public record TeamMemberDraft(String playerUuid) {
         public TeamMemberDraft {
             if (playerUuid == null || playerUuid.isBlank()) {
                 throw new IllegalArgumentException("A team member must have a player UUID.");
-            }
-            if (role == null) {
-                throw new IllegalArgumentException("A team member must have a role.");
             }
         }
     }
@@ -31,11 +28,19 @@ public final class WarPlannerDrafts {
             if (distinct != members.size()) {
                 throw new IllegalArgumentException("A person can only occupy one slot in a team.");
             }
-            if (members.stream().filter(member -> member.role() == WarTeamRole.WAR_LEADER).count() != 1) {
-                throw new IllegalArgumentException("A war team must have exactly one war leader.");
-            }
-            if (members.stream().filter(member -> member.role() == WarTeamRole.ECOER).count() > 3) {
-                throw new IllegalArgumentException("A war team can have at most three ecoers.");
+        }
+    }
+
+    public record SupportSlotDraft(String code, String playerUuid) {}
+
+    public record SupportDraft(Long version, List<SupportSlotDraft> slots) {
+        public SupportDraft {
+            if (version == null || version <= 0) throw new IllegalArgumentException("Support version must be positive.");
+            slots = slots == null ? List.of() : List.copyOf(slots);
+            var codes = slots.stream().map(SupportSlotDraft::code).distinct().count();
+            var players = slots.stream().map(SupportSlotDraft::playerUuid).distinct().count();
+            if (codes != slots.size() || players != slots.size()) {
+                throw new IllegalArgumentException("Support slots and players must be unique.");
             }
         }
     }
@@ -43,7 +48,7 @@ public final class WarPlannerDrafts {
     public record ZoneDraft(
             String name,
             String color,
-            Long assignedTeamId,
+            List<Long> assignedTeamIds,
             Long version,
             List<String> territories) {
         public ZoneDraft {
@@ -52,6 +57,7 @@ public final class WarPlannerDrafts {
                 throw new IllegalArgumentException("Zone version must be positive.");
             }
             color = normalizeColor(color);
+            assignedTeamIds = assignedTeamIds == null ? List.of() : List.copyOf(new LinkedHashSet<>(assignedTeamIds));
             territories = territories == null
                     ? List.of()
                     : List.copyOf(new LinkedHashSet<>(territories.stream()

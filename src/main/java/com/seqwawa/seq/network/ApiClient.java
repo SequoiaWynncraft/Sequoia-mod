@@ -29,6 +29,7 @@ import com.seqwawa.seq.model.RankProfilesResponse;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.network.auth.MinecraftAuthChallengeResponse;
@@ -253,6 +254,27 @@ public class ApiClient {
         return deleteTyped("/war-planner/teams/" + id, WarPlannerSnapshot.class);
     }
 
+    public CompletableFuture<WarPlannerSnapshot> updateWarPlannerSupport(SupportDraft draft) {
+        return put("/war-planner/support", buildWarSupportPayload(draft), WarPlannerSnapshot.class);
+    }
+
+    static JsonObject buildWarSupportPayload(SupportDraft draft) {
+        if (draft == null) {
+            throw new IllegalArgumentException("Support draft is required.");
+        }
+        JsonObject body = new JsonObject();
+        body.addProperty("version", draft.version());
+        JsonArray slots = new JsonArray();
+        draft.slots().forEach(slot -> {
+            JsonObject item = new JsonObject();
+            item.addProperty("code", slot.code());
+            item.addProperty("player_uuid", slot.playerUuid());
+            slots.add(item);
+        });
+        body.add("slots", slots);
+        return body;
+    }
+
     public CompletableFuture<WarPlannerSnapshot> createWarPlannerZone(ZoneDraft draft) {
         return post("/war-planner/zones", buildWarZonePayload(draft, false), WarPlannerSnapshot.class);
     }
@@ -293,7 +315,6 @@ public class ApiClient {
         for (TeamMemberDraft member : draft.members()) {
             JsonObject item = new JsonObject();
             item.addProperty("player_uuid", member.playerUuid());
-            item.addProperty("role", member.role().name());
             members.add(item);
         }
         body.add("members", members);
@@ -307,11 +328,9 @@ public class ApiClient {
         JsonObject body = new JsonObject();
         body.addProperty("name", draft.name());
         body.addProperty("color", draft.color());
-        if (draft.assignedTeamId() == null) {
-            body.add("assigned_team_id", JsonNull.INSTANCE);
-        } else {
-            body.addProperty("assigned_team_id", draft.assignedTeamId());
-        }
+        JsonArray assignedTeamIds = new JsonArray();
+        draft.assignedTeamIds().forEach(assignedTeamIds::add);
+        body.add("assigned_team_ids", assignedTeamIds);
         if (includeVersion) {
             if (draft.version() == null || draft.version() <= 0) {
                 throw new IllegalArgumentException("Zone version is required for updates.");

@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.RosterMember;
@@ -43,6 +44,8 @@ public final class WarPlannerManager {
         CompletableFuture<WarPlannerSnapshot> updateTeam(long id, TeamDraft draft);
 
         CompletableFuture<WarPlannerSnapshot> deleteTeam(long id);
+
+        CompletableFuture<WarPlannerSnapshot> updateSupport(SupportDraft draft);
 
         CompletableFuture<WarPlannerSnapshot> createZone(ZoneDraft draft);
 
@@ -165,6 +168,10 @@ public final class WarPlannerManager {
         return mutate(
                 () -> id == null ? gateway.createTeam(draft) : gateway.updateTeam(id, draft),
                 id == null ? "War team created." : "War team updated.");
+    }
+
+    public CompletableFuture<ActionResult> saveSupport(SupportDraft draft) {
+        return mutate(() -> gateway.updateSupport(draft), "Support board updated.");
     }
 
     public CompletableFuture<ActionResult> deleteTeam(long id) {
@@ -373,6 +380,11 @@ public final class WarPlannerManager {
         @Override
         public CompletableFuture<WarPlannerSnapshot> deleteTeam(long id) {
             return api.deleteWarPlannerTeam(id);
+        }
+
+        @Override
+        public CompletableFuture<WarPlannerSnapshot> updateSupport(SupportDraft draft) {
+            return api.updateWarPlannerSupport(draft);
         }
 
         @Override

@@ -19,7 +19,7 @@ class WarPlannerSnapshotTest {
     void readsSettledSnakeCaseContractAndNumericIds() {
         String json = """
                 {
-                  "schema_version": 1,
+                  "schema_version": 2,
                   "server_time": "2026-08-16T12:00:00Z",
                   "self": {"player_uuid": "self", "can_manage": true},
                   "discord_roles_available": true,
@@ -28,15 +28,20 @@ class WarPlannerSnapshotTest {
                     "discord_id": "1", "discord_username": "discord",
                     "composition_roles": ["TANK", "SOLO", "DPS", "SOLO"],
                     "online": true, "available": true,
-                    "available_until": "2026-08-16T13:00:00Z", "team_id": 12,
-                    "team_role": "WAR_LEADER"
+                    "available_until": "2026-08-16T13:00:00Z", "team_id": 12
                   }],
                   "teams": [{"id": 12, "name": "Alpha", "version": 3,
                     "members": [{"player_uuid": "self", "minecraft_username": "Player",
-                      "role": "WAR_LEADER", "position": 0}]}],
+                      "position": 0}]}],
+                  "support": {"version": 1, "slots": [
+                    {"code":"LEAD","player_uuid":"self","minecraft_username":"Player"}
+                  ]},
                   "zones": [{"id": 8, "name": "North", "color": "#AABBCC",
-                    "assigned_team_id": 12, "version": 4, "territories": ["Ragni"]}],
-                  "territories": ["Ragni", "Detlas"]
+                    "assigned_team_ids": [12], "version": 4, "territories": ["Ragni"]}],
+                  "territories": ["Ragni", "Detlas"],
+                  "territory_details": [{
+                    "name":"Ragni","connections":["Ragni Main Entrance"],"resources":["EMERALD","CROP"]
+                  }]
                 }
                 """;
 
@@ -46,14 +51,15 @@ class WarPlannerSnapshotTest {
         assertTrue(snapshot.self().canManage());
         assertEquals(12L, snapshot.roster().getFirst().teamId());
         assertTrue(snapshot.roster().getFirst().online());
-        assertEquals(WarTeamRole.WAR_LEADER, snapshot.roster().getFirst().teamRole());
         assertEquals(
                 java.util.List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS, WarCompositionRole.TANK),
                 snapshot.roster().getFirst().compositionRoles());
         assertEquals(12L, snapshot.teams().getFirst().id());
         assertEquals(8L, snapshot.zones().getFirst().id());
-        assertEquals(12L, snapshot.zones().getFirst().assignedTeamId());
+        assertEquals(java.util.List.of(12L), snapshot.zones().getFirst().assignedTeamIds());
         assertEquals("#AABBCC", snapshot.zones().getFirst().color());
+        assertEquals("self", snapshot.support().slots().getFirst().playerUuid());
+        assertEquals(java.util.List.of("Ragni Main Entrance"), snapshot.territoryDetails().getFirst().connections());
     }
 
     @Test
