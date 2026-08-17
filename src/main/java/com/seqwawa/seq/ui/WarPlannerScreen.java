@@ -6,6 +6,10 @@ import static com.seqwawa.seq.ui.theme.UiColor.*;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.WarPlannerManager;
+import com.seqwawa.seq.map.GuildTerritory;
+import com.seqwawa.seq.map.GuildTerritoryIndex;
+import com.seqwawa.seq.map.GuildTerritoryService;
+import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
@@ -17,7 +21,6 @@ import com.seqwawa.seq.model.war.WarPlannerSnapshot.Team;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.TeamMember;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.SupportSlot;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.Zone;
-import com.seqwawa.seq.utils.TextInputHelper;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
@@ -27,15 +30,14 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.input.CharacterEvent;
-import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
-import org.lwjgl.glfw.GLFW;
 
 /** Seq-only war management overlay. Authorization is supplied solely by the protected snapshot. */
 public final class WarPlannerScreen extends Screen {
@@ -46,6 +48,8 @@ public final class WarPlannerScreen extends Screen {
     private static final float ROW_HEIGHT = 38;
     private static final float TEAM_CARD_HEIGHT = 88;
     private static final float TEAM_CARD_STEP = 92;
+    private static final float ZONE_CARD_HEIGHT = 132;
+    private static final float ZONE_CARD_GAP = 8;
     private static final float BUTTON_HEIGHT = 22;
     private static final float MANAGER_ACTION_WIDTH = 92;
     private static final float COMPOSITION_ICON_SIZE = 12;
@@ -53,6 +57,7 @@ public final class WarPlannerScreen extends Screen {
 
     private final Screen parent;
     private final WarPlannerManager manager;
+    private final GuildTerritoryIndex territoryIndex;
     private Tab tab = Tab.ROSTER;
     private float nvgMouseX;
     private float nvgMouseY;
@@ -63,7 +68,6 @@ public final class WarPlannerScreen extends Screen {
     private boolean teamEditorOpen;
     private String teamName = "";
     private final List<TeamMemberDraft> teamMembers = new ArrayList<>();
-    private boolean teamNameFocused;
     private boolean teamEditorSaving;
     private int editorScrollRows;
     private Long pendingDeleteTeamId;
@@ -76,6 +80,8 @@ public final class WarPlannerScreen extends Screen {
         super(Component.literal("War Planner"));
         this.parent = parent;
         this.manager = SeqClient.getWarPlannerManager();
+        GuildTerritoryService.getInstance().loadBundledTerritories();
+        this.territoryIndex = GuildTerritoryService.getInstance().index();
     }
 
     @Override
@@ -238,9 +244,27 @@ public final class WarPlannerScreen extends Screen {
                     PADDING + 8, y + 13, 13, color(TEXT_PRIMARY), false);
             float memberY = y + 31;
             for (TeamMember member : team.members().stream().sorted(Comparator.comparingInt(TeamMember::position)).toList()) {
-                text(canvas, truncate((member.minecraftUsername() == null ? member.playerUuid() : member.minecraftUsername())
-                                + (isOnline(snapshot, member.playerUuid()) ? "" : " · Offline"), 34),
-                        PADDING + 12, memberY, 10, color(TEXT_SECONDARY), false);
+                String displayName = member.minecraftUsername() == null ? member.playerUuid() : member.minecraftUsername();
+                List<WarCompositionRole> roles = teamMemberRoles(snapshot, member.playerUuid());
+                String roleLabel = compositionLabel(roles);
+                float iconWidth = roles.size() * (COMPOSITION_ICON_SIZE + COMPOSITION_ICON_GAP);
+                float textWidth = UiRenderer.measureText(
+                                roleLabel, SeqClient.getFontManager().getSelectedFont(), 9)
+                        .width();
+                float labelX = PADDING + 12;
+                float fullRoleWidth = iconWidth + 2 + textWidth;
+                boolean showRoleText = cardsRight - labelX >= fullRoleWidth + 62;
+                float roleWidth = showRoleText ? fullRoleWidth : iconWidth;
+                float rolesX = Math.max(labelX + 44, cardsRight - roleWidth - 8);
+                String offlineSuffix = isOnline(snapshot, member.playerUuid()) ? "" : " · Offline";
+                String memberLabel = truncate(
+                        displayName + offlineSuffix,
+                        availableCharacters(labelX, rolesX - 6, 10, 22));
+                text(canvas, memberLabel, labelX, memberY, 10, color(TEXT_SECONDARY), false);
+                float roleLabelX = renderCompositionIcons(canvas, roles, rolesX, memberY - COMPOSITION_ICON_SIZE / 2);
+                if (showRoleText) {
+                    text(canvas, roleLabel, roleLabelX + 2, memberY, 9, color(TEXT_MUTED), false);
+                }
                 memberY += 11;
             }
             if (manager.canManage()) {
@@ -260,25 +284,117 @@ public final class WarPlannerScreen extends Screen {
             text(canvas, message, PADDING, top + 22, 13, color(TEXT_MUTED), false);
             return;
         }
-        int start = Math.min(scrollRows, Math.max(0, snapshot.zones().size() - 1));
-        float y = top;
-        for (int index = start; index < snapshot.zones().size() && y + ROW_HEIGHT <= bottom; index++, y += ROW_HEIGHT) {
-            Zone zone = snapshot.zones().get(index);
-            canvas.fillRect(PADDING, y + 2, width - PADDING * 2, ROW_HEIGHT - 4, color(BACKGROUND_CONTENT));
-            canvas.fillRect(PADDING + 7, y + 8, 8, 22, parseColor(zone.color(), color(ACCENT_PRIMARY)));
-            text(canvas, truncate(zone.name(), 24), PADDING + 22, y + 13, 13, color(TEXT_PRIMARY), false);
-            String assigned = zone.assignedTeamIds().isEmpty()
-                    ? "Unassigned"
-                    : zone.assignedTeamIds().stream().map(id -> teamName(snapshot, id)).reduce((a, b) -> a + " + " + b).orElse("Unassigned");
-            String zoneDetail = zone.territories().size() + " territories · " + assigned + " · Click to inspect map";
-            int detailLength = manager.canManage() ? 48 : Math.max(24, (int) ((width - 48) / 5.5f));
-            text(canvas, truncate(zoneDetail, detailLength), PADDING + 22, y + 28, 10, color(TEXT_MUTED), false);
-            if (manager.canManage()) {
-                button(canvas, width - 140, y + 8, 52, BUTTON_HEIGHT, "Edit", false, manager.isMutating());
-                boolean confirming = pendingDeleteZoneId != null && pendingDeleteZoneId == zone.id();
-                button(canvas, width - 82, y + 8, 70, BUTTON_HEIGHT,
-                        confirming ? "Confirm" : "Delete", true, manager.isMutating());
+        int columns = zoneGridColumns(width);
+        int start = Math.min(scrollRows * columns, Math.max(0, snapshot.zones().size() - 1));
+        float cardWidth = zoneCardWidth(width, columns);
+        int visibleIndex = 0;
+        for (int index = start; index < snapshot.zones().size(); index++, visibleIndex++) {
+            int row = visibleIndex / columns;
+            int column = visibleIndex % columns;
+            float x = PADDING + column * (cardWidth + ZONE_CARD_GAP);
+            float y = top + row * (ZONE_CARD_HEIGHT + ZONE_CARD_GAP);
+            if (y + ZONE_CARD_HEIGHT > bottom) {
+                break;
             }
+            renderZoneCard(canvas, snapshot, snapshot.zones().get(index), x, y, cardWidth);
+        }
+    }
+
+    private void renderZoneCard(
+            UiCanvas canvas, WarPlannerSnapshot snapshot, Zone zone, float x, float y, float cardWidth) {
+        Color zoneColor = parseColor(zone.color(), color(ACCENT_PRIMARY));
+        canvas.fillRoundedRect(x, y, cardWidth, ZONE_CARD_HEIGHT, 5, color(BACKGROUND_CONTENT));
+        canvas.strokeRect(x, y, cardWidth, ZONE_CARD_HEIGHT, 1, new Color(
+                zoneColor.getRed(), zoneColor.getGreen(), zoneColor.getBlue(), 150));
+        canvas.fillRect(x + 7, y + 8, 6, 22, zoneColor);
+
+        float previewX = x + 18;
+        float previewY = y + 34;
+        float previewWidth = Math.min(178, Math.max(112, cardWidth * .43f));
+        float previewHeight = ZONE_CARD_HEIGHT - 44;
+        renderZonePreview(canvas, snapshot, zone, previewX, previewY, previewWidth, previewHeight, zoneColor);
+
+        float detailsX = previewX + previewWidth + 10;
+        float detailsWidth = Math.max(1, x + cardWidth - detailsX - 8);
+        text(canvas, truncate(zone.name(), Math.max(8, (int) (detailsWidth / 7))),
+                detailsX, y + 16, 13, color(TEXT_PRIMARY), false);
+        String assigned = zone.assignedTeamIds().isEmpty()
+                ? "Unassigned"
+                : zone.assignedTeamIds().stream()
+                        .map(id -> teamName(snapshot, id))
+                        .reduce((left, right) -> left + " + " + right)
+                        .orElse("Unassigned");
+        text(canvas, truncate(assigned, Math.max(8, (int) (detailsWidth / 6))),
+                detailsX, y + 39, 10, color(TEXT_SECONDARY), false);
+        text(canvas, zone.territories().size() + " territories", detailsX, y + 56, 10, color(TEXT_MUTED), false);
+        text(canvas, "Click map to inspect", detailsX, y + 73, 9, color(TEXT_MUTED), false);
+        if (manager.canManage()) {
+            float actionsY = y + ZONE_CARD_HEIGHT - BUTTON_HEIGHT - 8;
+            button(canvas, detailsX, actionsY, 52, BUTTON_HEIGHT, "Edit", false, manager.isMutating());
+            boolean confirming = pendingDeleteZoneId != null && pendingDeleteZoneId == zone.id();
+            button(canvas, x + cardWidth - 78, actionsY, 70, BUTTON_HEIGHT,
+                    confirming ? "Confirm" : "Delete", true, manager.isMutating());
+        }
+    }
+
+    private void renderZonePreview(
+            UiCanvas canvas,
+            WarPlannerSnapshot snapshot,
+            Zone zone,
+            float x,
+            float y,
+            float width,
+            float height,
+            Color zoneColor) {
+        canvas.fillRoundedRect(x, y, width, height, 3, color(CONTROL_INPUT));
+        List<GuildTerritory> territories = zone.territories().stream()
+                .map(territoryIndex::territory)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        if (territories.isEmpty()) {
+            text(canvas, "Map unavailable", x + width / 2, y + height / 2, 9, color(TEXT_MUTED), true);
+            return;
+        }
+        MapBounds fitted = fittedBounds(territories);
+        float scale = (float) Math.min(
+                (width - 10) / Math.max(1, fitted.maxX() - fitted.minX()),
+                (height - 10) / Math.max(1, fitted.maxZ() - fitted.minZ()));
+        float contentWidth = (float) ((fitted.maxX() - fitted.minX()) * scale);
+        float contentHeight = (float) ((fitted.maxZ() - fitted.minZ()) * scale);
+        float offsetX = x + (width - contentWidth) / 2;
+        float offsetY = y + (height - contentHeight) / 2;
+        Map<String, GuildTerritory> byName = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        territories.forEach(territory -> byName.put(territory.name(), territory));
+        Map<String, WarPlannerSnapshot.TerritoryDetails> details = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        snapshot.territoryDetails().forEach(detail -> details.put(detail.name(), detail));
+        Set<String> drawnConnections = new java.util.HashSet<>();
+        for (GuildTerritory territory : territories) {
+            WarPlannerSnapshot.TerritoryDetails detail = details.get(territory.name());
+            if (detail == null) continue;
+            for (String linkedName : detail.connections()) {
+                GuildTerritory linked = byName.get(linkedName);
+                if (linked == null) continue;
+                String key = territory.name().compareToIgnoreCase(linkedName) < 0
+                        ? territory.name() + "\n" + linkedName : linkedName + "\n" + territory.name();
+                if (!drawnConnections.add(key)) continue;
+                canvas.strokeLine(
+                        previewX(territory.centerX(), fitted, offsetX, scale),
+                        previewY(territory.centerZ(), fitted, offsetY, scale),
+                        previewX(linked.centerX(), fitted, offsetX, scale),
+                        previewY(linked.centerZ(), fitted, offsetY, scale),
+                        1,
+                        color(CONTROL_BORDER));
+            }
+        }
+        Color fill = new Color(zoneColor.getRed(), zoneColor.getGreen(), zoneColor.getBlue(), 145);
+        for (GuildTerritory territory : territories) {
+            MapBounds bounds = territory.bounds();
+            float territoryX = previewX(bounds.minX(), fitted, offsetX, scale);
+            float territoryY = previewY(bounds.minZ(), fitted, offsetY, scale);
+            float territoryWidth = Math.max(2, (float) ((bounds.maxX() - bounds.minX()) * scale));
+            float territoryHeight = Math.max(2, (float) ((bounds.maxZ() - bounds.minZ()) * scale));
+            canvas.fillRect(territoryX, territoryY, territoryWidth, territoryHeight, fill);
+            canvas.strokeRect(territoryX, territoryY, territoryWidth, territoryHeight, .6f, zoneColor);
         }
     }
 
@@ -359,11 +475,10 @@ public final class WarPlannerScreen extends Screen {
         button(canvas, x + w - 34, y + 8, 24, BUTTON_HEIGHT, "×", true, teamEditorSaving);
 
         float fieldY = y + 34;
-        canvas.fillRect(x + 12, fieldY, w - 24, 24,
-                color(teamNameFocused ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
+        canvas.fillRect(x + 12, fieldY, w - 24, 24, color(CONTROL_INPUT));
         canvas.strokeRect(x + 12, fieldY, w - 24, 24, 1, color(CONTROL_BORDER));
-        text(canvas, teamName.isBlank() ? "Team name" : teamName, x + 18, fieldY + 12, 12,
-                color(teamName.isBlank() ? TEXT_MUTED : TEXT_PRIMARY), false);
+        text(canvas, teamName, x + 18, fieldY + 12, 12, color(TEXT_PRIMARY), false);
+        text(canvas, "Name assigned automatically", x + w - 170, fieldY + 12, 9, color(TEXT_MUTED), false);
         text(canvas, "Click a player to add/remove. Capabilities: Solo wand · DPS relik · Tank spear", x + 12, fieldY + 38, 10,
                 color(TEXT_MUTED), false);
 
@@ -465,6 +580,9 @@ public final class WarPlannerScreen extends Screen {
                 }
             }
         }
+        if (tab == Tab.ZONES) {
+            return clickZoneContent(snapshot, mx, my, width);
+        }
         float itemHeight = tab == Tab.TEAMS ? TEAM_CARD_STEP : ROW_HEIGHT;
         int row = scrollRows + Math.max(0, (int) ((my - contentTop()) / itemHeight));
         float rowY = contentTop() + (row - scrollRows) * itemHeight;
@@ -486,13 +604,30 @@ public final class WarPlannerScreen extends Screen {
                 return true;
             }
         }
-        if (tab == Tab.ZONES && row < snapshot.zones().size()) {
-            Zone zone = snapshot.zones().get(row);
-            if (manager.canManage() && hit(mx, my, width - 140, rowY + 8, 52, BUTTON_HEIGHT)) {
+        return false;
+    }
+
+    private boolean clickZoneContent(WarPlannerSnapshot snapshot, float mx, float my, float width) {
+        int columns = zoneGridColumns(width);
+        float cardWidth = zoneCardWidth(width, columns);
+        int visibleRow = (int) ((my - contentTop()) / (ZONE_CARD_HEIGHT + ZONE_CARD_GAP));
+        int column = (int) ((mx - PADDING) / (cardWidth + ZONE_CARD_GAP));
+        if (visibleRow < 0 || column < 0 || column >= columns) return false;
+        float cardX = PADDING + column * (cardWidth + ZONE_CARD_GAP);
+        float cardY = contentTop() + visibleRow * (ZONE_CARD_HEIGHT + ZONE_CARD_GAP);
+        if (!hit(mx, my, cardX, cardY, cardWidth, ZONE_CARD_HEIGHT)) return false;
+        int index = (scrollRows + visibleRow) * columns + column;
+        if (index < 0 || index >= snapshot.zones().size()) return false;
+        Zone zone = snapshot.zones().get(index);
+        if (manager.canManage()) {
+            float previewWidth = Math.min(178, Math.max(112, cardWidth * .43f));
+            float detailsX = cardX + 18 + previewWidth + 10;
+            float actionsY = cardY + ZONE_CARD_HEIGHT - BUTTON_HEIGHT - 8;
+            if (hit(mx, my, detailsX, actionsY, 52, BUTTON_HEIGHT)) {
                 SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, zone));
                 return true;
             }
-            if (manager.canManage() && hit(mx, my, width - 82, rowY + 8, 70, BUTTON_HEIGHT)) {
+            if (hit(mx, my, cardX + cardWidth - 78, actionsY, 70, BUTTON_HEIGHT)) {
                 if (pendingDeleteZoneId != null && pendingDeleteZoneId == zone.id()) {
                     showResult(manager.deleteZone(zone.id()));
                     pendingDeleteZoneId = null;
@@ -501,10 +636,9 @@ public final class WarPlannerScreen extends Screen {
                 }
                 return true;
             }
-            SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, zone, true));
-            return true;
         }
-        return false;
+        SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, zone, true));
+        return true;
     }
 
     private boolean clickTeamEditor(float mx, float my, float width, float height) {
@@ -521,10 +655,6 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         float fieldY = y + 34;
-        if (hit(mx, my, x + 12, fieldY, w - 24, 24)) {
-            teamNameFocused = true;
-            return true;
-        }
         if (hit(mx, my, x + w - 78, y + h - 32, 66, BUTTON_HEIGHT)) {
             saveTeam();
             return true;
@@ -539,7 +669,6 @@ public final class WarPlannerScreen extends Screen {
             }
             return true;
         }
-        teamNameFocused = false;
         return true;
     }
 
@@ -585,40 +714,11 @@ public final class WarPlannerScreen extends Screen {
             int size = switch (tab) {
                 case ROSTER -> snapshot.onlineRoster().size();
                 case TEAMS -> snapshot.teams().size();
-                case ZONES -> snapshot.zones().size();
+                case ZONES -> zoneGridRows(snapshot.zones().size(), MinecraftUiRenderer.screenWidth());
             };
             scrollRows = clampRows(scrollRows + delta, size);
         }
         return true;
-    }
-
-    @Override
-    public boolean keyPressed(@NotNull KeyEvent event) {
-        if (teamNameFocused) {
-            if (event.key() == GLFW.GLFW_KEY_ESCAPE || event.key() == GLFW.GLFW_KEY_ENTER
-                    || event.key() == GLFW.GLFW_KEY_KP_ENTER) {
-                teamNameFocused = false;
-                return true;
-            }
-            if (event.key() == GLFW.GLFW_KEY_BACKSPACE && !teamName.isEmpty()) {
-                teamName = teamName.substring(0, teamName.length() - 1);
-                return true;
-            }
-            return true;
-        }
-        return super.keyPressed(event);
-    }
-
-    @Override
-    public boolean charTyped(@NotNull CharacterEvent event) {
-        if (teamNameFocused) {
-            String typed = TextInputHelper.getTypedText(event);
-            if (typed != null && typed.length() == 1 && !Character.isISOControl(typed.charAt(0)) && teamName.length() < 64) {
-                teamName += typed;
-            }
-            return true;
-        }
-        return super.charTyped(event);
     }
 
     @Override
@@ -631,7 +731,7 @@ public final class WarPlannerScreen extends Screen {
         teamEditorOpen = true;
         flashMessage = null;
         editingTeamId = team == null ? null : team.id();
-        teamName = team == null ? "New team" : team.name();
+        teamName = team == null ? nextStandardTeamName(manager.snapshot()) : team.name();
         if (team == null) {
             RosterMember caller = manager.snapshot() == null ? null : manager.snapshot().caller();
             RosterMember initialLeader = caller != null && caller.online() && caller.teamId() == null
@@ -662,7 +762,6 @@ public final class WarPlannerScreen extends Screen {
                         + " removed from this draft. Save to apply.";
             }
         }
-        teamNameFocused = true;
     }
 
     private void closeTeamEditor() {
@@ -670,7 +769,6 @@ public final class WarPlannerScreen extends Screen {
         editingTeamId = null;
         teamName = "";
         teamMembers.clear();
-        teamNameFocused = false;
         editorScrollRows = 0;
         teamEditorSaving = false;
     }
@@ -868,6 +966,67 @@ public final class WarPlannerScreen extends Screen {
                 .map(RosterMember::online)
                 .findFirst()
                 .orElse(false);
+    }
+
+    private static RosterMember rosterMember(WarPlannerSnapshot snapshot, String playerUuid) {
+        return snapshot.roster().stream()
+                .filter(member -> samePlayer(member.playerUuid(), playerUuid))
+                .findFirst()
+                .orElse(null);
+    }
+
+    static List<WarCompositionRole> teamMemberRoles(WarPlannerSnapshot snapshot, String playerUuid) {
+        RosterMember member = rosterMember(snapshot, playerUuid);
+        return member == null ? List.of(WarCompositionRole.SOLO) : member.compositionRoles();
+    }
+
+    static String nextStandardTeamName(WarPlannerSnapshot snapshot) {
+        Set<String> names = snapshot == null
+                ? Set.of()
+                : snapshot.teams().stream()
+                        .map(Team::name)
+                        .filter(java.util.Objects::nonNull)
+                        .map(name -> name.toLowerCase(Locale.ROOT))
+                        .collect(java.util.stream.Collectors.toSet());
+        if (!names.contains("hq team")) {
+            return "HQ Team";
+        }
+        for (int number = 1; number < Integer.MAX_VALUE; number++) {
+            String candidate = "VLow Munch " + number;
+            if (!names.contains(candidate.toLowerCase(Locale.ROOT))) {
+                return candidate;
+            }
+        }
+        return "VLow Munch";
+    }
+
+    static int zoneGridColumns(float width) {
+        return width >= 720 ? 2 : 1;
+    }
+
+    static int zoneGridRows(int zoneCount, float width) {
+        int columns = zoneGridColumns(width);
+        return Math.max(0, (zoneCount + columns - 1) / columns);
+    }
+
+    private static float zoneCardWidth(float width, int columns) {
+        return (width - PADDING * 2 - ZONE_CARD_GAP * (columns - 1)) / columns;
+    }
+
+    static MapBounds fittedBounds(List<GuildTerritory> territories) {
+        double minX = territories.stream().map(GuildTerritory::bounds).mapToDouble(MapBounds::minX).min().orElse(0);
+        double minZ = territories.stream().map(GuildTerritory::bounds).mapToDouble(MapBounds::minZ).min().orElse(0);
+        double maxX = territories.stream().map(GuildTerritory::bounds).mapToDouble(MapBounds::maxX).max().orElse(1);
+        double maxZ = territories.stream().map(GuildTerritory::bounds).mapToDouble(MapBounds::maxZ).max().orElse(1);
+        return new MapBounds(minX, minZ, maxX, maxZ);
+    }
+
+    private static float previewX(double worldX, MapBounds fitted, float offsetX, float scale) {
+        return offsetX + (float) ((worldX - fitted.minX()) * scale);
+    }
+
+    private static float previewY(double worldZ, MapBounds fitted, float offsetY, float scale) {
+        return offsetY + (float) ((worldZ - fitted.minZ()) * scale);
     }
 
     static float tabWidth(float width, boolean reserveManagerAction) {
