@@ -17,13 +17,18 @@ class WarPlannerDraftsTest {
     @Test
     void teamRequiresOneToFiveUniqueMembersWithoutEmbeddedDuties() {
         assertThrows(IllegalArgumentException.class,
-                () -> new TeamDraft("Alpha", null, List.of(
+                () -> new TeamDraft(null, null, List.of(member("a"))));
+        assertThrows(IllegalArgumentException.class,
+                () -> new TeamDraft(WarTeamType.FFA, null, List.of(
                         member("a"), member("a"))));
 
-        TeamDraft valid = new TeamDraft(" Alpha ", null, List.of(
+        TeamDraft valid = new TeamDraft(WarTeamType.VLOW_MUNCH, null, List.of(
                 member("a"), member("b")));
-        assertEquals("Alpha", valid.name());
+        assertEquals(WarTeamType.VLOW_MUNCH, valid.teamType());
         assertEquals(2, valid.members().size());
+        assertEquals(WarTeamType.HQ, WarTeamType.fromTeamName("HQ Team"));
+        assertEquals(WarTeamType.VLOW_MUNCH, WarTeamType.fromTeamName("VLow Munch 3"));
+        assertEquals(WarTeamType.FFA, WarTeamType.fromTeamName("FFA 7"));
     }
 
     @Test
@@ -38,7 +43,7 @@ class WarPlannerDraftsTest {
     @Test
     void updateVersionsMustBePositive() {
         assertThrows(IllegalArgumentException.class, () -> new TeamDraft(
-                "Alpha", 0L, List.of(member("leader"))));
+                WarTeamType.HQ, 0L, List.of(member("leader"))));
         assertThrows(IllegalArgumentException.class, () -> new ZoneDraft(
                 "North", "#AABBCC", List.of(7L), -1L, List.of("Ragni")));
     }

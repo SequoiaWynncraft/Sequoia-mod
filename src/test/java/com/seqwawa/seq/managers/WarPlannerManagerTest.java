@@ -11,6 +11,7 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
+import com.seqwawa.seq.model.war.WarTeamType;
 import com.seqwawa.seq.network.ApiClient;
 import java.time.Clock;
 import java.time.Duration;
@@ -110,7 +111,7 @@ class WarPlannerManagerTest {
         gateway.next.complete(snapshot(2, false));
 
         var result = manager.saveTeam(null, new TeamDraft(
-                "Alpha", null, List.of(new TeamMemberDraft("self")))).join();
+                WarTeamType.VLOW_MUNCH, null, List.of(new TeamMemberDraft("self")))).join();
 
         assertFalse(result.success());
         assertEquals(1, gateway.calls);

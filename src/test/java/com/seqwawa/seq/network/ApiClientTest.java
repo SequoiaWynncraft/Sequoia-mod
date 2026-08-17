@@ -9,6 +9,7 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportSlotDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
+import com.seqwawa.seq.model.war.WarTeamType;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -144,7 +145,7 @@ class ApiClientTest {
     @Test
     void warTeamUpdatePayloadIsAtomicAndVersioned() {
         TeamDraft draft = new TeamDraft(
-                "Alpha",
+                WarTeamType.FFA,
                 7L,
                 List.of(
                         new TeamMemberDraft("leader-uuid"),
@@ -152,13 +153,14 @@ class ApiClientTest {
 
         JsonObject payload = ApiClient.buildWarTeamPayload(draft, true);
 
-        assertEquals("Alpha", payload.get("name").getAsString());
+        assertEquals("FFA", payload.get("team_type").getAsString());
+        assertFalse(payload.has("name"));
         assertEquals(7L, payload.get("version").getAsLong());
         assertEquals("leader-uuid", payload.getAsJsonArray("members")
                 .get(0).getAsJsonObject().get("player_uuid").getAsString());
         assertFalse(payload.getAsJsonArray("members").get(0).getAsJsonObject().has("role"));
         assertFalse(payload.getAsJsonArray("members").get(0).getAsJsonObject().has("composition_roles"));
-        assertFalse(ApiClient.buildWarTeamPayload(new TeamDraft("Alpha", null, draft.members()), false)
+        assertFalse(ApiClient.buildWarTeamPayload(new TeamDraft(WarTeamType.FFA, null, draft.members()), false)
                 .has("version"));
     }
 

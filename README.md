@@ -120,7 +120,7 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 The planner uses backend schema v2: party membership is separate from the
 shared Lead/Eco support slots, so support players may also join a party. The
 zone map provides palette colors, multi-party assignment, territory routes,
-responsive zone previews, and production-based resource coloring. Stored
+responsive full-map zone previews, and production-based resource coloring. Stored
 resources do not affect color. Ordinary 9k emerald income is treated as the
 baseline; territories with 18k base emerald production are highlighted as
 emerald generators.
@@ -128,9 +128,10 @@ emerald generators.
 The War Planner entry and `/seq war` command only appear after the protected backend snapshot confirms that the
 current account is a Sequoia member. Members can advertise timed availability and see their own team immediately;
 authorized managers can atomically create or edit parties of one to five people, while one shared Lead and three Eco
-slots remain independent of party membership. Parties are named `HQ Team`, then `VLow Munch 1`, `VLow Munch 2`, and
-so on by the backend. Team cards show each member's Solo/DPS/Tank capabilities. The Zones view assigns named, colored
-groups of territories to teams through a focused interactive map.
+slots remain independent of party membership. Managers choose `HQ Team`, `VLow Munch`, or `FFA` from the team editor;
+the backend keeps HQ unique and assigns the numeric VLow/FFA suffixes. Compact team cards show each member's
+Solo/DPS/Tank capabilities without colliding with manager actions. The Zones view assigns named, colored groups of
+territories to teams and previews each zone against the complete territory map.
 Composition capabilities, eligibility, team exclusivity, versions, and all mutations remain server-authoritative.
 
 ## World map

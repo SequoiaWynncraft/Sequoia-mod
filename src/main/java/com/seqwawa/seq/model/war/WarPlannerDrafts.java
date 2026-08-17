@@ -14,9 +14,11 @@ public final class WarPlannerDrafts {
         }
     }
 
-    public record TeamDraft(String name, Long version, List<TeamMemberDraft> members) {
+    public record TeamDraft(WarTeamType teamType, Long version, List<TeamMemberDraft> members) {
         public TeamDraft {
-            name = requireName(name, "Team");
+            if (teamType == null) {
+                throw new IllegalArgumentException("A team type is required.");
+            }
             if (version != null && version <= 0) {
                 throw new IllegalArgumentException("Team version must be positive.");
             }

@@ -1,12 +1,15 @@
 package com.seqwawa.seq.ui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.map.GuildTerritory;
+import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
+import com.seqwawa.seq.model.war.WarTeamType;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -28,13 +31,27 @@ class WarPlannerScreenTest {
     }
 
     @Test
-    void standardTeamPreviewFillsTheFirstAvailableName() {
+    void teamTypePreviewUsesIndependentAutomaticSequencesAndUniqueHq() {
+        assertEquals(3, WarTeamType.values().length);
         WarPlannerSnapshot snapshot = snapshot(
                 List.of(new WarPlannerSnapshot.Team(1, "HQ Team", 1L, List.of()),
-                        new WarPlannerSnapshot.Team(2, "VLow Munch 2", 1L, List.of())),
+                        new WarPlannerSnapshot.Team(2, "VLow Munch 2", 1L, List.of()),
+                        new WarPlannerSnapshot.Team(3, "FFA 2", 1L, List.of())),
                 List.of());
 
-        assertEquals("VLow Munch 1", WarPlannerScreen.nextStandardTeamName(snapshot));
+        assertEquals(WarTeamType.VLOW_MUNCH, WarPlannerScreen.defaultTeamType(snapshot));
+        assertEquals("VLow Munch 1", WarPlannerScreen.automaticTeamName(snapshot, WarTeamType.VLOW_MUNCH, null));
+        assertEquals("FFA 1", WarPlannerScreen.automaticTeamName(snapshot, WarTeamType.FFA, null));
+        assertFalse(WarPlannerScreen.teamTypeSelectable(snapshot, WarTeamType.HQ, null));
+        assertTrue(WarPlannerScreen.teamTypeSelectable(snapshot, WarTeamType.HQ, 1L));
+        assertEquals("HQ Team", WarPlannerScreen.automaticTeamName(snapshot, WarTeamType.HQ, 1L));
+    }
+
+    @Test
+    void compactTeamGridKeepsActionsAboveMemberRoles() {
+        assertEquals(3, WarPlannerScreen.teamMemberGridColumns(420));
+        assertEquals(66, WarPlannerScreen.teamCardHeight(420));
+        assertTrue(WarPlannerScreen.teamActionBottomOffset() < WarPlannerScreen.teamMemberContentTopOffset());
     }
 
     @Test
@@ -51,12 +68,12 @@ class WarPlannerScreenTest {
     }
 
     @Test
-    void zonePreviewFitsEveryTerritoryBoundary() {
-        MapBounds fitted = WarPlannerScreen.fittedBounds(List.of(
-                GuildTerritory.fromCorners("West", -30, 10, -5, 40),
-                GuildTerritory.fromCorners("East", 8, -20, 50, 25)));
+    void zonePreviewUsesAContextCropOverTheCalibratedMapImage() {
+        GuildTerritory selected = GuildTerritory.fromCorners("Selected", -1000, -3000, -800, -2800);
+        MapBounds fitted = WarPlannerScreen.zonePreviewBounds(List.of(selected));
 
-        assertEquals(new MapBounds(-30, -20, 50, 40), fitted);
+        assertEquals(new MapBounds(-1180, -3180, -620, -2620), fitted);
+        assertEquals(MapCalibration.fullBounds(), WarPlannerScreen.mapImageBounds());
     }
 
     private static WarPlannerSnapshot snapshot(

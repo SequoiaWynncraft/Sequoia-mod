@@ -304,7 +304,7 @@ public class ApiClient {
             throw new IllegalArgumentException("Team draft is required.");
         }
         JsonObject body = new JsonObject();
-        body.addProperty("name", draft.name());
+        body.addProperty("team_type", draft.teamType().name());
         if (includeVersion) {
             if (draft.version() == null || draft.version() <= 0) {
                 throw new IllegalArgumentException("Team version is required for updates.");
