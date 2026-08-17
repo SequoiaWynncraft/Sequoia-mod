@@ -74,8 +74,9 @@ public class WynnPartySyncManager {
             if (!expectedManualResponse) {
                 return;
             }
-            SeqClient.LOGGER.info("[WynnPartySync] Manual scan confirmed that the player has no active Wynn party");
-            handleNoPartySnapshot();
+            SeqClient.LOGGER.info(
+                    "[WynnPartySync] Manual scan found no active Wynn party; preserving the Sequoia listing");
+            handleNoPartyScanResponse();
             return;
         }
         if (isDuplicateEvent(normalized)) {
@@ -387,16 +388,8 @@ public class WynnPartySyncManager {
         logObservedState("members_snapshot");
     }
 
-    private void handleNoPartySnapshot() {
-        RaidPartySnapshotTracker.onPartyChanged();
-        observedState.initialized = true;
-        observedState.active = false;
-        observedState.leaderUsername = null;
-        observedState.memberUsernames.clear();
-        manualScanPending = false;
-        manualSnapshotReady = true;
-        lastSentSnapshotKey = null;
-        logObservedState("no_party_snapshot");
+    void handleNoPartyScanResponse() {
+        clearManualScan();
     }
 
     boolean shouldDiscardPartyListResponse(Long currentListingId, Instant now) {

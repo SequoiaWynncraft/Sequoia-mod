@@ -135,6 +135,23 @@ class WynnPartySyncManagerTest {
         assertEquals(List.of("SophiaChan", "Guildsman"), memberUsernames(manager));
     }
 
+    @Test
+    void manualNoPartyResponsePreservesListingSnapshotState() throws Exception {
+        WynnPartySyncManager manager = new WynnPartySyncManager();
+        manager.onSystemChat(Component.literal("Party members: SophiaChan, and Guildsman"));
+        setBooleanField(manager, "manualScanPending", true);
+        setField(manager, "manualScanListingId", 42L);
+        setField(manager, "manualScanDeadline", Instant.parse("2026-08-13T12:00:05Z"));
+
+        manager.handleNoPartyScanResponse();
+
+        assertEquals(true, isActive(manager));
+        assertEquals(List.of("SophiaChan", "Guildsman"), memberUsernames(manager));
+        assertFalse(booleanField(manager, "manualScanPending"));
+        assertFalse(booleanField(manager, "manualSnapshotReady"));
+        assertNull(field(manager, "manualScanListingId"));
+    }
+
     private boolean isInitialized(WynnPartySyncManager manager) throws Exception {
         Object observedState = observedState(manager);
         Field initializedField = observedState.getClass().getDeclaredField("initialized");
