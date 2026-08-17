@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
+import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
@@ -140,6 +141,17 @@ class ApiClientTest {
         assertEquals(90, payload.get("duration_minutes").getAsInt());
         assertThrows(IllegalArgumentException.class, () -> ApiClient.buildWarAvailabilityPayload(0));
         assertThrows(IllegalArgumentException.class, () -> ApiClient.buildWarAvailabilityPayload(1441));
+    }
+
+    @Test
+    void warCompositionRolePayloadIsOrderedDeduplicatedAndAllowsEmpty() {
+        JsonObject payload = ApiClient.buildWarCompositionRolesPayload(
+                List.of(WarCompositionRole.TANK, WarCompositionRole.SOLO, WarCompositionRole.TANK));
+
+        assertEquals("SOLO", payload.getAsJsonArray("roles").get(0).getAsString());
+        assertEquals("TANK", payload.getAsJsonArray("roles").get(1).getAsString());
+        assertTrue(ApiClient.buildWarCompositionRolesPayload(List.of()).getAsJsonArray("roles").isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> ApiClient.buildWarCompositionRolesPayload(null));
     }
 
     @Test

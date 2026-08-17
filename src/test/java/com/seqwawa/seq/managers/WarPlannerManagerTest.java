@@ -36,7 +36,7 @@ class WarPlannerManagerTest {
         assertEquals(WarPlannerManager.State.LOADING, manager.state());
         assertFalse(manager.isAuthorized());
 
-        WarPlannerSnapshot snapshot = snapshot(2, true);
+        WarPlannerSnapshot snapshot = snapshot(3, true);
         gateway.next.complete(snapshot);
 
         assertEquals(WarPlannerManager.State.READY, manager.state());
@@ -64,7 +64,7 @@ class WarPlannerManagerTest {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
         manager.tick(true, true);
-        gateway.next.complete(snapshot(2, true));
+        gateway.next.complete(snapshot(3, true));
         gateway.next = new CompletableFuture<>();
 
         manager.refreshNow();
@@ -80,7 +80,7 @@ class WarPlannerManagerTest {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
         manager.tick(true, true);
-        gateway.next.complete(snapshot(2, true));
+        gateway.next.complete(snapshot(3, true));
         gateway.next = new CompletableFuture<>();
 
         manager.refreshNow();
@@ -98,7 +98,7 @@ class WarPlannerManagerTest {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
         manager.tick(true, true);
-        gateway.next.complete(snapshot(2, false));
+        gateway.next.complete(snapshot(3, false));
 
         assertEquals(Duration.ofMinutes(30), manager.ownAvailabilityRemaining());
     }
@@ -108,13 +108,61 @@ class WarPlannerManagerTest {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
         manager.tick(true, true);
-        gateway.next.complete(snapshot(2, false));
+        gateway.next.complete(snapshot(3, false));
 
         var result = manager.saveTeam(null, new TeamDraft(
                 WarTeamType.VLOW_MUNCH, null, List.of(new TeamMemberDraft("self")))).join();
 
         assertFalse(result.success());
         assertEquals(1, gateway.calls);
+    }
+
+    @Test
+    void regularMemberCanDispatchWarChatPing() {
+        FakeGateway gateway = new FakeGateway();
+        WarPlannerManager manager = manager(gateway);
+        manager.tick(true, true);
+        gateway.next.complete(snapshot(3, false));
+        gateway.next = new CompletableFuture<>();
+
+        CompletableFuture<WarPlannerManager.ActionResult> result = manager.pingPlayer("target");
+        gateway.next.complete(snapshot(3, false));
+
+        assertTrue(result.join().success());
+        assertEquals(2, gateway.calls);
+    }
+
+    @Test
+    void regularMemberCanDispatchOwnTeamMutation() {
+        FakeGateway gateway = new FakeGateway();
+        WarPlannerManager manager = manager(gateway);
+        manager.tick(true, true);
+        gateway.next.complete(snapshot(3, false));
+        gateway.next = new CompletableFuture<>();
+
+        CompletableFuture<WarPlannerManager.ActionResult> result = manager.joinTeam(7L);
+        gateway.next.complete(snapshot(3, false));
+
+        assertTrue(result.join().success());
+        assertEquals("Joined war team.", result.join().message());
+        assertEquals(2, gateway.calls);
+    }
+
+    @Test
+    void regularMemberCanReplaceOwnDiscordCompositionRoles() {
+        FakeGateway gateway = new FakeGateway();
+        WarPlannerManager manager = manager(gateway);
+        manager.tick(true, true);
+        gateway.next.complete(snapshot(3, false));
+        gateway.next = new CompletableFuture<>();
+
+        CompletableFuture<WarPlannerManager.ActionResult> result =
+                manager.updateCompositionRoles(List.of(WarCompositionRole.SOLO, WarCompositionRole.TANK));
+        gateway.next.complete(snapshot(3, false));
+
+        assertTrue(result.join().success());
+        assertEquals("Discord war roles updated.", result.join().message());
+        assertEquals(2, gateway.calls);
     }
 
     private static WarPlannerManager manager(FakeGateway gateway) {
@@ -150,9 +198,13 @@ class WarPlannerManagerTest {
         @Override public CompletableFuture<WarPlannerSnapshot> snapshot() { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> setAvailability(int durationMinutes) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> clearAvailability() { return call(); }
+        @Override public CompletableFuture<WarPlannerSnapshot> updateCompositionRoles(List<WarCompositionRole> roles) { return call(); }
+        @Override public CompletableFuture<WarPlannerSnapshot> pingPlayer(String playerUuid) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> createTeam(TeamDraft draft) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> updateTeam(long id, TeamDraft draft) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> deleteTeam(long id) { return call(); }
+        @Override public CompletableFuture<WarPlannerSnapshot> joinTeam(long id) { return call(); }
+        @Override public CompletableFuture<WarPlannerSnapshot> leaveTeam() { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> updateSupport(com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft draft) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> createZone(ZoneDraft draft) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> updateZone(long id, ZoneDraft draft) { return call(); }

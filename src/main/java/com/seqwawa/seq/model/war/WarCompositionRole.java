@@ -29,10 +29,10 @@ public enum WarCompositionRole {
         return assetKey;
     }
 
-    /** Adds the implicit Solo capability, then removes null/duplicate values in contract order. */
+    /** Removes null/duplicate values and preserves the API's stable contract order. */
     public static List<WarCompositionRole> ordered(List<WarCompositionRole> roles) {
         return Arrays.stream(values())
-                .filter(role -> role == SOLO || roles != null && roles.contains(role))
+                .filter(role -> roles != null && roles.contains(role))
                 .toList();
     }
 }

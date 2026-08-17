@@ -19,7 +19,7 @@ class WarPlannerSnapshotTest {
     void readsSettledSnakeCaseContractAndNumericIds() {
         String json = """
                 {
-                  "schema_version": 2,
+                  "schema_version": 3,
                   "server_time": "2026-08-16T12:00:00Z",
                   "self": {"player_uuid": "self", "can_manage": true},
                   "discord_roles_available": true,
@@ -78,13 +78,13 @@ class WarPlannerSnapshotTest {
         WarPlannerSnapshot snapshot = GSON.fromJson(json, WarPlannerSnapshot.class);
 
         assertEquals(
-                java.util.List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS),
+                java.util.List.of(WarCompositionRole.DPS),
                 snapshot.roster().get(0).compositionRoles());
         assertEquals(
-                java.util.List.of(WarCompositionRole.SOLO),
+                java.util.List.of(),
                 snapshot.roster().get(1).compositionRoles());
         assertEquals(
-                java.util.List.of(WarCompositionRole.SOLO),
+                java.util.List.of(),
                 snapshot.roster().get(2).compositionRoles());
         assertTrue(snapshot.onlineRoster().isEmpty());
     }
@@ -110,10 +110,10 @@ class WarPlannerSnapshotTest {
                 java.util.List.of("online-free", "online-other", "online-current"),
                 snapshot.onlineRoster().stream().map(WarPlannerSnapshot.RosterMember::playerUuid).toList());
         assertEquals(
-                java.util.List.of("online-free"),
+                java.util.List.of("online-free", "online-other", "online-current"),
                 snapshot.teamCandidates(null).stream().map(WarPlannerSnapshot.RosterMember::playerUuid).toList());
         assertEquals(
-                java.util.List.of("online-free", "offline-current", "online-current"),
+                java.util.List.of("online-free", "online-other", "offline-current", "online-current"),
                 snapshot.teamCandidates(7L).stream().map(WarPlannerSnapshot.RosterMember::playerUuid).toList());
     }
 }

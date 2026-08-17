@@ -15,12 +15,34 @@ import org.junit.jupiter.api.Test;
 
 class WarPlannerScreenTest {
     @Test
+    void wideScreensUseACenteredCappedPlannerViewport() {
+        assertEquals(new WarPlannerScreen.PlannerViewport(510, 900), WarPlannerScreen.plannerViewport(1920));
+        assertEquals(new WarPlannerScreen.PlannerViewport(0, 640), WarPlannerScreen.plannerViewport(640));
+    }
+
+    @Test
     void narrowManagerTabsReserveSpaceForActionButton() {
         float screenWidth = 320;
         float tabsRight = 12 + WarPlannerScreen.tabWidth(screenWidth, true) * 3;
         float managerActionLeft = screenWidth - 92;
 
         assertTrue(tabsRight <= managerActionLeft);
+    }
+
+    @Test
+    void displayControlsReserveManagerLockAndMapOpacityAcrossTheFullSlider() {
+        WarPlannerScreen.DisplayControls member = WarPlannerScreen.displayControls(640, false);
+        WarPlannerScreen.DisplayControls manager = WarPlannerScreen.displayControls(640, true);
+        WarPlannerScreen.DisplayControls narrowManager = WarPlannerScreen.displayControls(320, true);
+
+        assertTrue(manager.opacityX() < member.opacityX());
+        assertTrue(manager.opacityX() < manager.resourceX());
+        assertTrue(manager.resourceX() < manager.lockX());
+        assertEquals(0, WarPlannerScreen.opacityPercentForMouse(manager.opacityX() + 65, manager));
+        assertEquals(100, WarPlannerScreen.opacityPercentForMouse(manager.opacityX() + 125, manager));
+        assertEquals(100, WarPlannerScreen.opacityAlpha(200, 50));
+        assertTrue(narrowManager.opacityX() >= 12);
+        assertTrue(narrowManager.lockX() + narrowManager.lockWidth() <= 308);
     }
 
     @Test
@@ -48,10 +70,15 @@ class WarPlannerScreenTest {
     }
 
     @Test
-    void compactTeamGridKeepsActionsAboveMemberRoles() {
-        assertEquals(3, WarPlannerScreen.teamMemberGridColumns(420));
-        assertEquals(66, WarPlannerScreen.teamCardHeight(420));
-        assertTrue(WarPlannerScreen.teamActionBottomOffset() < WarPlannerScreen.teamMemberContentTopOffset());
+    void teamMembersUseTheDenseVerticalStack() {
+        assertEquals(88, WarPlannerScreen.teamCardHeight());
+        assertEquals(11, WarPlannerScreen.teamMemberRowStep());
+    }
+
+    @Test
+    void compactTeamRolesFollowTheNameWithoutOverflowingTheMemberChip() {
+        assertEquals(44, WarPlannerScreen.compactRoleX(10, 30, 150, 12));
+        assertEquals(138, WarPlannerScreen.compactRoleX(10, 200, 150, 12));
     }
 
     @Test
@@ -64,7 +91,65 @@ class WarPlannerScreenTest {
         assertEquals(
                 List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS),
                 WarPlannerScreen.teamMemberRoles(snapshot, "member"));
-        assertEquals(List.of(WarCompositionRole.SOLO), WarPlannerScreen.teamMemberRoles(snapshot, "missing"));
+        assertEquals(List.of(), WarPlannerScreen.teamMemberRoles(snapshot, "missing"));
+    }
+
+    @Test
+    void ownTeamControlsJoinSwitchAndLeaveWithoutAnHqRoleGate() {
+        WarPlannerSnapshot.Team hq = new WarPlannerSnapshot.Team(1, "HQ Team", 1L, List.of());
+        WarPlannerSnapshot.Team ffa = new WarPlannerSnapshot.Team(2, "FFA 1", 1L, List.of());
+        WarPlannerSnapshot.RosterMember solo = new WarPlannerSnapshot.RosterMember(
+                "self", "Self", null, null, List.of(WarCompositionRole.SOLO), true, true, null, null);
+        WarPlannerSnapshot soloSnapshot = snapshot(List.of(hq, ffa), List.of(solo));
+
+        assertTrue(WarPlannerScreen.canChangeOwnTeam(soloSnapshot, hq));
+        assertEquals("Join", WarPlannerScreen.teamMembershipActionLabel(soloSnapshot, hq));
+        assertTrue(WarPlannerScreen.canChangeOwnTeam(soloSnapshot, ffa));
+        assertEquals("Join", WarPlannerScreen.teamMembershipActionLabel(soloSnapshot, ffa));
+
+        WarPlannerSnapshot.RosterMember tank = new WarPlannerSnapshot.RosterMember(
+                "self", "Self", null, null, List.of(WarCompositionRole.SOLO, WarCompositionRole.TANK),
+                true, true, null, 1L);
+        WarPlannerSnapshot tankSnapshot = snapshot(List.of(hq, ffa), List.of(tank));
+        assertTrue(WarPlannerScreen.canChangeOwnTeam(tankSnapshot, hq));
+        assertEquals("Leave", WarPlannerScreen.teamMembershipActionLabel(tankSnapshot, hq));
+        assertEquals("Switch", WarPlannerScreen.teamMembershipActionLabel(tankSnapshot, ffa));
+    }
+
+    @Test
+    void onlineWarRosterSortsByAvailabilityThenRoleCountThenName() {
+        WarPlannerSnapshot.RosterMember unavailable = rosterMember(
+                "unavailable", "Able", List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS, WarCompositionRole.TANK), false);
+        WarPlannerSnapshot.RosterMember flexible = rosterMember(
+                "flexible", "Zulu", List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS), true);
+        WarPlannerSnapshot.RosterMember alpha = rosterMember(
+                "alpha", "Alpha", List.of(WarCompositionRole.SOLO), true);
+        WarPlannerSnapshot.RosterMember bravo = rosterMember(
+                "bravo", "Bravo", List.of(WarCompositionRole.SOLO), true);
+
+        List<String> ordered = WarPlannerScreen.sortedWarRoster(
+                        snapshot(List.of(), List.of(unavailable, bravo, flexible, alpha)))
+                .stream()
+                .map(WarPlannerSnapshot.RosterMember::playerUuid)
+                .toList();
+
+        assertEquals(List.of("flexible", "alpha", "bravo", "unavailable"), ordered);
+    }
+
+    @Test
+    void pingRequiresAConnectedDiscordAccountAndCannotTargetSelf() {
+        WarPlannerSnapshot.RosterMember linked = new WarPlannerSnapshot.RosterMember(
+                "linked", "Linked", "123", null, List.of(WarCompositionRole.SOLO), true, true, null, null);
+        WarPlannerSnapshot.RosterMember unlinked = rosterMember(
+                "unlinked", "Unlinked", List.of(WarCompositionRole.SOLO), true);
+        WarPlannerSnapshot.RosterMember self = new WarPlannerSnapshot.RosterMember(
+                "self", "Self", "456", null, List.of(WarCompositionRole.SOLO), true, true, null, null);
+        WarPlannerSnapshot snapshot = snapshot(List.of(), List.of(linked, unlinked, self));
+
+        assertTrue(WarPlannerScreen.canPingPlayer(snapshot, linked));
+        assertFalse(WarPlannerScreen.canPingPlayer(snapshot, unlinked));
+        assertFalse(WarPlannerScreen.canPingPlayer(snapshot, self));
+        assertEquals(308, WarPlannerScreen.rosterPingButtonX(420));
     }
 
     @Test
@@ -76,12 +161,41 @@ class WarPlannerScreenTest {
         assertEquals(MapCalibration.fullBounds(), WarPlannerScreen.mapImageBounds());
     }
 
+    @Test
+    void lockedTerritoryViewContainsOnlyTerritoriesAssignedToAnyZone() {
+        GuildTerritory zoned = GuildTerritory.fromCorners("Zoned", -1000, -3000, -800, -2800);
+        GuildTerritory free = GuildTerritory.fromCorners("Free", -700, -2700, -500, -2500);
+        WarPlannerSnapshot base = snapshot(List.of(), List.of());
+        WarPlannerSnapshot withZone = new WarPlannerSnapshot(
+                base.schemaVersion(),
+                base.serverTime(),
+                base.self(),
+                base.discordRolesAvailable(),
+                base.roster(),
+                base.teams(),
+                base.support(),
+                List.of(new WarPlannerSnapshot.Zone(1, "North", "#55B8C5", List.of(), 1L, List.of("Zoned"))),
+                List.of("Zoned", "Free"),
+                List.of());
+
+        assertEquals(
+                List.of(zoned, free),
+                WarPlannerScreen.visibleMapTerritories(List.of(zoned, free), withZone, false));
+        assertEquals(
+                List.of(zoned),
+                WarPlannerScreen.visibleMapTerritories(List.of(zoned, free), withZone, true));
+        assertEquals(
+                java.util.Set.of("Zoned"),
+                WarPlannerScreen.visibleTerritoryNames(
+                        withZone, java.util.Set.of("Zoned", "Free"), true));
+    }
+
     private static WarPlannerSnapshot snapshot(
             List<WarPlannerSnapshot.Team> teams, List<WarPlannerSnapshot.RosterMember> roster) {
         return new WarPlannerSnapshot(
                 2,
                 null,
-                null,
+                new WarPlannerSnapshot.Self("self", true),
                 true,
                 roster,
                 teams,
@@ -89,5 +203,11 @@ class WarPlannerScreenTest {
                 List.of(),
                 List.of(),
                 List.of());
+    }
+
+    private static WarPlannerSnapshot.RosterMember rosterMember(
+            String uuid, String username, List<WarCompositionRole> roles, boolean available) {
+        return new WarPlannerSnapshot.RosterMember(
+                uuid, username, null, null, roles, true, available, null, null);
     }
 }

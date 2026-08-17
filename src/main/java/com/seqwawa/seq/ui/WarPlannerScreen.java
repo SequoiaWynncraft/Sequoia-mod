@@ -33,6 +33,7 @@ import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -51,16 +52,22 @@ public final class WarPlannerScreen extends Screen {
     private static final float AVAILABILITY_HEIGHT = 48;
     private static final float TAB_HEIGHT = 24;
     private static final float ROW_HEIGHT = 38;
-    private static final float TEAM_CARD_GAP = 6;
-    private static final float TEAM_MEMBER_ROW_HEIGHT = 17;
-    private static final float TEAM_ACTION_TOP = 4;
-    private static final float TEAM_MEMBER_FIRST_BASELINE = 36;
+    private static final float TEAM_CARD_HEIGHT = 88;
+    private static final float TEAM_CARD_STEP = 92;
+    private static final float TEAM_MEMBER_ROW_STEP = 11;
+    private static final float TEAM_ACTION_TOP = 8;
+    private static final float TEAM_SELF_ACTION_WIDTH = 68;
     private static final float ZONE_CARD_HEIGHT = 132;
     private static final float ZONE_CARD_GAP = 8;
     private static final float BUTTON_HEIGHT = 22;
     private static final float MANAGER_ACTION_WIDTH = 92;
+    private static final float MAX_CONTENT_WIDTH = 900;
     private static final float COMPOSITION_ICON_SIZE = 12;
     private static final float COMPOSITION_ICON_GAP = 3;
+    private static final float DISPLAY_CONTROL_GAP = 6;
+    private static final float OPACITY_CONTROL_WIDTH = 132;
+    private static final float RESOURCE_CONTROL_WIDTH = 104;
+    private static final float LOCK_CONTROL_WIDTH = 110;
 
     private final Screen parent;
     private final WarPlannerManager manager;
@@ -86,6 +93,11 @@ public final class WarPlannerScreen extends Screen {
     private Integer editingSupportSlot;
     private int supportEditorScrollRows;
     private boolean supportEditorSaving;
+    private boolean draggingBackgroundOpacity;
+    private boolean roleEditorOpen;
+    private boolean roleEditorSaving;
+    private final EnumSet<WarCompositionRole> selectedCompositionRoles =
+            EnumSet.noneOf(WarCompositionRole.class);
 
     public WarPlannerScreen(Screen parent) {
         super(Component.literal("War Planner"));
@@ -112,40 +124,75 @@ public final class WarPlannerScreen extends Screen {
     }
 
     private void renderPlanner(UiCanvas canvas) {
-        float width = canvas.metrics().width();
+        float screenWidth = canvas.metrics().width();
         float height = canvas.metrics().height();
-        canvas.fillRect(0, 0, width, height, color(BACKGROUND_BODY_OPAQUE));
-        canvas.fillRect(0, 0, width, HEADER_HEIGHT, color(BACKGROUND_HEADER));
-        text(canvas, "War Planner", PADDING, HEADER_HEIGHT / 2, 19, color(ACCENT_PRIMARY), false);
-        text(canvas, stateLabel(), Math.max(132, width - 240), HEADER_HEIGHT / 2, 11, stateColor(), false);
-        button(canvas, width - 82, 8, 70, BUTTON_HEIGHT, "Refresh", false, manager.isMutating());
+        PlannerViewport viewport = plannerViewport(screenWidth);
+        canvas.fillRect(0, 0, screenWidth, height, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
+        canvas.fillRect(0, 0, screenWidth, HEADER_HEIGHT, plannerBackground(color(BACKGROUND_HEADER)));
+        float screenMouseX = nvgMouseX;
+        nvgMouseX -= viewport.x();
+        canvas.save();
+        canvas.translate(viewport.x(), 0);
+        try {
+            float width = viewport.width();
+            text(canvas, "War Planner", PADDING, HEADER_HEIGHT / 2, 19, color(ACCENT_PRIMARY), false);
+            if (width >= 520) {
+                text(canvas, stateLabel(), width - 300, HEADER_HEIGHT / 2, 11, stateColor(), false);
+            }
+            WarPlannerSnapshot current = manager.snapshot();
+            RosterMember caller = current == null ? null : current.caller();
+            boolean rolesEditable = current != null
+                    && current.discordRolesAvailable()
+                    && caller != null
+                    && caller.discordId() != null
+                    && !caller.discordId().isBlank();
+            button(canvas, width - 158, 8, 70, BUTTON_HEIGHT, "My roles", false,
+                    manager.isMutating() || !rolesEditable);
+            button(canvas, width - 82, 8, 70, BUTTON_HEIGHT, "Refresh", false, manager.isMutating());
 
-        renderAvailability(canvas, width);
-        renderTabs(canvas, width);
-        renderContent(canvas, width, height);
+            renderAvailability(canvas, width);
+            renderTabs(canvas, width);
+            renderContent(canvas, width, height);
+            DisplayControls controls = renderDisplayControls(canvas, width, height);
 
-        if (flashMessage != null && !flashMessage.isBlank()) {
-            canvas.fillRoundedRect(PADDING, height - 34, Math.min(width - PADDING * 2, 480), 24, 5,
-                    color(BACKGROUND_POPUP));
-            text(canvas, truncate(flashMessage, 68), PADDING + 8, height - 22, 11,
-                    color(manager.lastError() == null ? TEXT_SECONDARY : CONTROL_WARNING), false);
-        } else if (manager.lastError() != null) {
-            canvas.fillRoundedRect(PADDING, height - 34, Math.min(width - PADDING * 2, 480), 24, 5,
-                    color(STATUS_WARNING_BACKGROUND));
-            text(canvas, truncate(manager.lastError(), 68), PADDING + 8, height - 22, 11,
-                    color(TEXT_PRIMARY), false);
-        }
+            if (flashMessage != null && !flashMessage.isBlank()) {
+                boolean stacked = controls.left() < PADDING + 100;
+                float messageY = stacked ? height - 64 : height - 34;
+                float messageWidth = stacked
+                        ? Math.min(width - PADDING * 2, 480)
+                        : Math.max(80, Math.min(480, controls.left() - PADDING - DISPLAY_CONTROL_GAP));
+                canvas.fillRoundedRect(PADDING, messageY, messageWidth, 24, 5,
+                        plannerBackground(color(BACKGROUND_POPUP)));
+                text(canvas, truncate(flashMessage, 68), PADDING + 8, messageY + 12, 11,
+                        color(manager.lastError() == null ? TEXT_SECONDARY : CONTROL_WARNING), false);
+            } else if (manager.lastError() != null) {
+                boolean stacked = controls.left() < PADDING + 100;
+                float messageY = stacked ? height - 64 : height - 34;
+                float messageWidth = stacked
+                        ? Math.min(width - PADDING * 2, 480)
+                        : Math.max(80, Math.min(480, controls.left() - PADDING - DISPLAY_CONTROL_GAP));
+                canvas.fillRoundedRect(PADDING, messageY, messageWidth, 24, 5,
+                        plannerBackground(color(STATUS_WARNING_BACKGROUND)));
+                text(canvas, truncate(manager.lastError(), 68), PADDING + 8, messageY + 12, 11,
+                        color(TEXT_PRIMARY), false);
+            }
 
-        if (teamEditorOpen) {
-            renderTeamEditor(canvas, width, height);
-        } else if (editingSupportSlot != null) {
-            renderSupportEditor(canvas, width, height);
+            if (roleEditorOpen) {
+                renderRoleEditor(canvas, width, height);
+            } else if (teamEditorOpen) {
+                renderTeamEditor(canvas, width, height);
+            } else if (editingSupportSlot != null) {
+                renderSupportEditor(canvas, width, height);
+            }
+        } finally {
+            canvas.restore();
+            nvgMouseX = screenMouseX;
         }
     }
 
     private void renderAvailability(UiCanvas canvas, float width) {
         float y = HEADER_HEIGHT;
-        canvas.fillRect(0, y, width, AVAILABILITY_HEIGHT, color(BACKGROUND_CONTENT));
+        canvas.fillRect(0, y, width, AVAILABILITY_HEIGHT, plannerBackground(color(BACKGROUND_CONTENT)));
         WarPlannerSnapshot snapshot = manager.snapshot();
         RosterMember caller = snapshot == null ? null : snapshot.caller();
         Duration remaining = manager.ownAvailabilityRemaining();
@@ -153,7 +200,8 @@ public final class WarPlannerScreen extends Screen {
                 ? "Available for " + formatDuration(remaining)
                 : "Unavailable";
         text(canvas, "Your status", PADDING, y + 13, 10, color(TEXT_MUTED), false);
-        text(canvas, status, PADDING, y + 31, 14,
+        String roleLabel = caller == null ? "No composition role" : compositionLabel(caller.compositionRoles());
+        text(canvas, truncate(status + " · " + roleLabel, 42), PADDING, y + 31, 14,
                 color(remaining.isZero() ? TEXT_SECONDARY : CONTROL_SUCCESS), false);
 
         float x = Math.max(155, width - 360);
@@ -163,6 +211,56 @@ public final class WarPlannerScreen extends Screen {
         button(canvas, x + 192, y + 13, 76, BUTTON_HEIGHT, "Unavailable", true, manager.isMutating());
     }
 
+    private DisplayControls renderDisplayControls(UiCanvas canvas, float width, float height) {
+        DisplayControls controls = displayControls(width, manager.canManage());
+        float y = height - 34;
+        canvas.fillRoundedRect(
+                controls.opacityX(), y, controls.opacityWidth(), 24, 4, plannerBackground(color(BACKGROUND_CONTENT)));
+        int opacity = backgroundOpacityPercent();
+        float labelWidth = controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? 45 : 65;
+        text(
+                canvas,
+                (controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? "BG " : "Opacity ") + opacity + "%",
+                controls.opacityX() + 5,
+                y + 12,
+                9,
+                color(TEXT_SECONDARY),
+                false);
+        float trackX = controls.opacityX() + labelWidth;
+        float trackY = y + 10;
+        float trackWidth = controls.opacityWidth() - labelWidth - 7;
+        canvas.fillRect(trackX, trackY, trackWidth, 4, color(CONTROL_INPUT_SECONDARY));
+        float fillWidth = trackWidth * opacity / 100f;
+        canvas.fillRect(trackX, trackY, fillWidth, 4, color(ACCENT_PRIMARY));
+        canvas.fillCircle(trackX + fillWidth, trackY + 2, 4, color(TEXT_PRIMARY));
+
+        button(
+                canvas,
+                controls.resourceX(),
+                y + 1,
+                controls.resourceWidth(),
+                BUTTON_HEIGHT,
+                controls.resourceWidth() < RESOURCE_CONTROL_WIDTH
+                        ? resourceColorsEnabled() ? "Res ✓" : "Resources"
+                        : resourceColorsEnabled() ? "Resources ✓" : "Resource colors",
+                false,
+                false);
+        if (manager.canManage()) {
+            button(
+                    canvas,
+                    controls.lockX(),
+                    y + 1,
+                    controls.lockWidth(),
+                    BUTTON_HEIGHT,
+                    controls.lockWidth() < LOCK_CONTROL_WIDTH
+                            ? territoriesLocked() ? "Locked ✓" : "Lock terrs"
+                            : territoriesLocked() ? "Territories locked" : "Lock territories",
+                    false,
+                    false);
+        }
+        return controls;
+    }
+
     private void renderTabs(UiCanvas canvas, float width) {
         float y = HEADER_HEIGHT + AVAILABILITY_HEIGHT;
         float tabWidth = tabWidth(width, manager.canManage());
@@ -170,7 +268,7 @@ public final class WarPlannerScreen extends Screen {
         for (Tab candidate : Tab.values()) {
             float x = PADDING + tabWidth * index++;
             canvas.fillRect(x, y, tabWidth - 4, TAB_HEIGHT,
-                    color(candidate == tab ? ACCENT_PRIMARY_DARK : CONTROL_INPUT));
+                    plannerBackground(color(candidate == tab ? ACCENT_PRIMARY_DARK : CONTROL_INPUT)));
             text(canvas, candidate.label, x + (tabWidth - 4) / 2, y + TAB_HEIGHT / 2, 12,
                     color(TEXT_PRIMARY), true);
         }
@@ -199,9 +297,7 @@ public final class WarPlannerScreen extends Screen {
     }
 
     private void renderRoster(UiCanvas canvas, WarPlannerSnapshot snapshot, float width, float top, float bottom) {
-        List<RosterMember> roster = snapshot.onlineRoster().stream()
-                .sorted(Comparator.comparing(RosterMember::displayName, String.CASE_INSENSITIVE_ORDER))
-                .toList();
+        List<RosterMember> roster = sortedWarRoster(snapshot);
         if (roster.isEmpty()) {
             text(canvas, "No Sequoia members are online.", PADDING, top + 22, 13, color(TEXT_MUTED), false);
             return;
@@ -214,21 +310,27 @@ public final class WarPlannerScreen extends Screen {
                     && snapshot.self().playerUuid() != null
                     && snapshot.self().playerUuid().equalsIgnoreCase(member.playerUuid());
             canvas.fillRect(PADDING, y + 2, width - PADDING * 2, ROW_HEIGHT - 4,
-                    color(caller ? ACCENT_PRIMARY_DARK : index % 2 == 0 ? BACKGROUND_CONTENT : BACKGROUND_CONTENT_FOCUSED));
+                    plannerBackground(color(
+                            caller
+                                    ? ACCENT_PRIMARY_DARK
+                                    : index % 2 == 0 ? BACKGROUND_CONTENT : BACKGROUND_CONTENT_FOCUSED)));
             text(canvas, truncate(member.displayName() + (caller ? " · You" : ""), 22),
                     PADDING + 8, y + 13, 13, color(TEXT_PRIMARY), false);
-            String discord = member.discordUsername() == null ? "Discord unlinked" : "@" + member.discordUsername();
             float detailX = renderCompositionIcons(canvas, member.compositionRoles(), PADDING + 8, y + 20);
-            int detailCharacters = availableCharacters(detailX, width - 190, 10, 44);
-            text(canvas, truncate(compositionLabel(member.compositionRoles()) + " · " + discord, detailCharacters),
+            float pingX = rosterPingButtonX(width);
+            float statusX = pingX - 116;
+            int detailCharacters = availableCharacters(detailX, statusX - 6, 10, 28);
+            text(canvas, truncate(compositionLabel(member.compositionRoles()), detailCharacters),
                     detailX + iconTextGap(member.compositionRoles()), y + 28, 10, color(TEXT_MUTED), false);
             String assignment = member.teamId() == null ? "No team" : teamName(snapshot, member.teamId());
-            text(canvas, truncate(assignment, 28), width - 184, y + 13, 11, color(TEXT_SECONDARY), false);
+            text(canvas, truncate(assignment, 18), statusX, y + 13, 11, color(TEXT_SECONDARY), false);
             Duration remaining = member.available()
                     ? WarPlannerManager.remainingUntil(member.availableUntil(), manager.serverNow())
                     : Duration.ZERO;
-            text(canvas, remaining.isZero() ? "Unavailable" : formatDuration(remaining), width - 184, y + 28, 10,
+            text(canvas, remaining.isZero() ? "Unavailable" : formatDuration(remaining), statusX, y + 28, 10,
                     color(remaining.isZero() ? TEXT_MUTED : CONTROL_SUCCESS), false);
+            button(canvas, pingX, y + 8, 100, BUTTON_HEIGHT, "Ping war chat", false,
+                    manager.isMutating() || !canPingPlayer(snapshot, member));
         }
     }
 
@@ -236,9 +338,6 @@ public final class WarPlannerScreen extends Screen {
         float supportWidth = Math.min(214, Math.max(176, width * .28f));
         float cardsRight = width - supportWidth - PADDING * 2;
         float cardWidth = cardsRight - PADDING;
-        int memberColumns = teamMemberGridColumns(cardWidth);
-        float cardHeight = teamCardHeight(cardWidth);
-        float cardStep = cardHeight + TEAM_CARD_GAP;
         renderSupportBoard(canvas, snapshot, cardsRight + PADDING, top, supportWidth, bottom);
         if (snapshot.teams().isEmpty()) {
             String message = manager.canManage()
@@ -250,49 +349,49 @@ public final class WarPlannerScreen extends Screen {
         int start = Math.min(scrollRows, Math.max(0, snapshot.teams().size() - 1));
         float y = top;
         RosterMember caller = snapshot.caller();
-        for (int index = start; index < snapshot.teams().size() && y + cardHeight <= bottom;
-                index++, y += cardStep) {
+        for (int index = start; index < snapshot.teams().size() && y + TEAM_CARD_HEIGHT <= bottom;
+                index++, y += TEAM_CARD_STEP) {
             Team team = snapshot.teams().get(index);
             boolean ownTeam = caller != null && caller.teamId() != null && caller.teamId() == team.id();
-            canvas.fillRoundedRect(PADDING, y + 1, cardWidth, cardHeight - 2, 4,
-                    color(ownTeam ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT));
-            float actionsLeft = manager.canManage() ? cardsRight - 104 : cardsRight;
+            canvas.fillRoundedRect(PADDING, y + 1, cardWidth, TEAM_CARD_HEIGHT - 2, 4,
+                    plannerBackground(color(ownTeam ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT)));
+            float selfActionX = teamSelfActionX(cardsRight, manager.canManage());
+            float actionsLeft = caller != null ? selfActionX : manager.canManage() ? cardsRight - 132 : cardsRight;
             String title = team.name() + (ownTeam ? " · Your team" : "") + " · " + team.members().size() + "/5";
             text(canvas, truncate(title, availableCharacters(PADDING + 8, actionsLeft - 6, 13, 32)),
                     PADDING + 8, y + 13, 13, color(TEXT_PRIMARY), false);
             List<TeamMember> members = team.members().stream()
                     .sorted(Comparator.comparingInt(TeamMember::position))
                     .toList();
-            float memberGap = 4;
-            float memberAreaWidth = cardWidth - 14;
-            float memberWidth = (memberAreaWidth - memberGap * (memberColumns - 1)) / memberColumns;
-            for (int memberIndex = 0; memberIndex < members.size(); memberIndex++) {
-                TeamMember member = members.get(memberIndex);
-                int row = memberIndex / memberColumns;
-                int column = memberIndex % memberColumns;
-                float memberX = PADDING + 7 + column * (memberWidth + memberGap);
-                float memberY = y + TEAM_MEMBER_FIRST_BASELINE + row * TEAM_MEMBER_ROW_HEIGHT;
-                canvas.fillRoundedRect(memberX, memberY - 7, memberWidth, 15, 3, color(CONTROL_INPUT));
+            float memberY = y + 31;
+            for (TeamMember member : members) {
                 String displayName = member.minecraftUsername() == null ? member.playerUuid() : member.minecraftUsername();
                 List<WarCompositionRole> roles = teamMemberRoles(snapshot, member.playerUuid());
-                float iconWidth = roles.size() * (COMPOSITION_ICON_SIZE + COMPOSITION_ICON_GAP);
-                float rolesX = memberX + memberWidth - iconWidth - 3;
-                String offlineSuffix = isOnline(snapshot, member.playerUuid()) ? "" : " · off";
-                text(canvas,
-                        truncate(displayName + offlineSuffix,
-                                availableCharacters(memberX + 5, rolesX - 4, 10, 18)),
-                        memberX + 5,
-                        memberY,
-                        10,
-                        color(TEXT_SECONDARY),
-                        false);
+                float iconWidth = roles.size() * COMPOSITION_ICON_SIZE
+                        + Math.max(0, roles.size() - 1) * COMPOSITION_ICON_GAP;
+                float textX = PADDING + 12;
+                float rightEdge = cardsRight - 8;
+                String memberLabel = truncate(
+                        displayName,
+                        availableCharacters(textX, rightEdge - iconWidth - 4, 10, 24));
+                float labelWidth = UiRenderer.measureText(
+                                memberLabel, SeqClient.getFontManager().getSelectedFont(), 10)
+                        .width();
+                float rolesX = compactRoleX(textX, labelWidth, rightEdge, iconWidth);
+                text(canvas, memberLabel, textX, memberY, 10, color(TEXT_SECONDARY), false);
                 renderCompositionIcons(canvas, roles, rolesX, memberY - COMPOSITION_ICON_SIZE / 2);
+                memberY += TEAM_MEMBER_ROW_STEP;
             }
             if (manager.canManage()) {
-                button(canvas, cardsRight - 104, y + TEAM_ACTION_TOP, 42, BUTTON_HEIGHT, "Edit", false, manager.isMutating());
+                button(canvas, cardsRight - 132, y + TEAM_ACTION_TOP, 52, BUTTON_HEIGHT, "Edit", false, manager.isMutating());
                 boolean confirming = pendingDeleteTeamId != null && pendingDeleteTeamId == team.id();
-                button(canvas, cardsRight - 58, y + TEAM_ACTION_TOP, 54, BUTTON_HEIGHT,
+                button(canvas, cardsRight - 74, y + TEAM_ACTION_TOP, 70, BUTTON_HEIGHT,
                         confirming ? "Confirm" : "Delete", true, manager.isMutating());
+            }
+            if (caller != null) {
+                button(canvas, selfActionX, y + TEAM_ACTION_TOP, TEAM_SELF_ACTION_WIDTH, BUTTON_HEIGHT,
+                        teamMembershipActionLabel(snapshot, team), false,
+                        manager.isMutating() || !canChangeOwnTeam(snapshot, team));
             }
         }
     }
@@ -324,7 +423,7 @@ public final class WarPlannerScreen extends Screen {
     private void renderZoneCard(
             UiCanvas canvas, WarPlannerSnapshot snapshot, Zone zone, float x, float y, float cardWidth) {
         Color zoneColor = parseColor(zone.color(), color(ACCENT_PRIMARY));
-        canvas.fillRoundedRect(x, y, cardWidth, ZONE_CARD_HEIGHT, 5, color(BACKGROUND_CONTENT));
+        canvas.fillRoundedRect(x, y, cardWidth, ZONE_CARD_HEIGHT, 5, plannerBackground(color(BACKGROUND_CONTENT)));
         canvas.strokeRect(x, y, cardWidth, ZONE_CARD_HEIGHT, 1, new Color(
                 zoneColor.getRed(), zoneColor.getGreen(), zoneColor.getBlue(), 150));
         canvas.fillRect(x + 7, y + 8, 6, 22, zoneColor);
@@ -367,14 +466,16 @@ public final class WarPlannerScreen extends Screen {
             float width,
             float height,
             Color zoneColor) {
-        canvas.fillRoundedRect(x, y, width, height, 3, color(CONTROL_INPUT));
-        List<GuildTerritory> mapTerritories = territoryIndex.territories();
+        canvas.fillRoundedRect(x, y, width, height, 3, plannerBackground(color(CONTROL_INPUT)));
+        List<GuildTerritory> allMapTerritories = territoryIndex.territories();
+        List<GuildTerritory> mapTerritories = visibleMapTerritories(
+                allMapTerritories, snapshot, manager.canManage() && territoriesLocked());
         if (mapTerritories.isEmpty()) {
             text(canvas, "Map unavailable", x + width / 2, y + height / 2, 9, color(TEXT_MUTED), true);
             return;
         }
         Map<String, GuildTerritory> byName = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        mapTerritories.forEach(territory -> byName.put(territory.name(), territory));
+        allMapTerritories.forEach(territory -> byName.put(territory.name(), territory));
         List<GuildTerritory> selectedTerritories = resolveTerritories(zone.territories(), byName);
         MapBounds fitted = zonePreviewBounds(selectedTerritories);
         float scale = (float) Math.min(
@@ -392,67 +493,52 @@ public final class WarPlannerScreen extends Screen {
             float mapY = previewY(imageBounds.minZ(), fitted, offsetY, scale);
             float mapWidth = (float) ((imageBounds.maxX() - imageBounds.minX()) * scale);
             float mapHeight = (float) ((imageBounds.maxZ() - imageBounds.minZ()) * scale);
-            canvas.drawImage(mapImage, mapX, mapY, mapWidth, mapHeight, .72f);
+            canvas.drawImage(mapImage, mapX, mapY, mapWidth, mapHeight, .9f * backgroundOpacityPercent() / 100f);
             Color tint = color(BACKGROUND_BODY_OPAQUE);
             canvas.fillRect(x, y, width, height,
-                    new Color(tint.getRed(), tint.getGreen(), tint.getBlue(), 58));
+                    plannerBackground(new Color(tint.getRed(), tint.getGreen(), tint.getBlue(), 24)));
         }
         Map<String, WarPlannerSnapshot.TerritoryDetails> details = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         snapshot.territoryDetails().forEach(detail -> details.put(detail.name(), detail));
-        Set<String> drawnConnections = new java.util.HashSet<>();
-        Color connectionColor = color(CONTROL_BORDER);
-        connectionColor = new Color(
-                connectionColor.getRed(), connectionColor.getGreen(), connectionColor.getBlue(), 75);
-        for (GuildTerritory territory : mapTerritories) {
-            WarPlannerSnapshot.TerritoryDetails detail = details.get(territory.name());
-            if (detail == null) continue;
-            for (String linkedName : detail.connections()) {
-                GuildTerritory linked = byName.get(linkedName);
-                if (linked == null) continue;
-                String key = territory.name().compareToIgnoreCase(linkedName) < 0
-                        ? territory.name() + "\n" + linkedName : linkedName + "\n" + territory.name();
-                if (!drawnConnections.add(key)) continue;
-                canvas.strokeLine(
-                        previewX(territory.centerX(), fitted, offsetX, scale),
-                        previewY(territory.centerZ(), fitted, offsetY, scale),
-                        previewX(linked.centerX(), fitted, offsetX, scale),
-                        previewY(linked.centerZ(), fitted, offsetY, scale),
-                        .45f,
-                        connectionColor);
-            }
+        if (resourceColorsEnabled()) {
+            drawPreviewResources(canvas, mapTerritories, details, fitted, offsetX, offsetY, scale);
         }
         Color mapColor = color(TEXT_MUTED);
-        drawPreviewTerritories(
+        drawPreviewOutlines(
                 canvas,
                 mapTerritories,
                 fitted,
                 offsetX,
                 offsetY,
                 scale,
-                new Color(mapColor.getRed(), mapColor.getGreen(), mapColor.getBlue(), 38),
-                new Color(mapColor.getRed(), mapColor.getGreen(), mapColor.getBlue(), 85));
+                new Color(mapColor.getRed(), mapColor.getGreen(), mapColor.getBlue(), 72),
+                .55f,
+                0);
         for (Zone otherZone : snapshot.zones()) {
             if (otherZone.id() == zone.id()) continue;
             Color otherColor = parseColor(otherZone.color(), color(ACCENT_PRIMARY));
-            drawPreviewTerritories(
+            drawPreviewOutlines(
                     canvas,
                     resolveTerritories(otherZone.territories(), byName),
                     fitted,
                     offsetX,
                     offsetY,
                     scale,
-                    new Color(otherColor.getRed(), otherColor.getGreen(), otherColor.getBlue(), 55),
-                    new Color(otherColor.getRed(), otherColor.getGreen(), otherColor.getBlue(), 90));
+                    new Color(otherColor.getRed(), otherColor.getGreen(), otherColor.getBlue(), 185),
+                    1.1f,
+                    .5f);
         }
-        drawPreviewTerritories(
+        drawPreviewOutlines(
                 canvas,
                 selectedTerritories,
                 fitted,
                 offsetX,
                 offsetY,
                 scale,
-                new Color(zoneColor.getRed(), zoneColor.getGreen(), zoneColor.getBlue(), 180),
-                zoneColor);
+                zoneColor,
+                1.8f,
+                1);
+        drawPreviewConnections(canvas, mapTerritories, byName, details, fitted, offsetX, offsetY, scale);
         canvas.resetScissor();
     }
 
@@ -461,29 +547,106 @@ public final class WarPlannerScreen extends Screen {
         return names.stream().map(territoriesByName::get).filter(java.util.Objects::nonNull).toList();
     }
 
-    private static void drawPreviewTerritories(
+    static List<GuildTerritory> visibleMapTerritories(
+            List<GuildTerritory> territories, WarPlannerSnapshot snapshot, boolean locked) {
+        Set<String> visible = visibleTerritoryNames(
+                snapshot,
+                territories.stream().map(GuildTerritory::name).collect(java.util.stream.Collectors.toSet()),
+                locked);
+        return territories.stream()
+                .filter(territory -> visible.contains(territory.name()))
+                .toList();
+    }
+
+    static Set<String> visibleTerritoryNames(WarPlannerSnapshot snapshot, Set<String> territories, boolean locked) {
+        if (!locked || snapshot == null) return Set.copyOf(territories);
+        Set<String> zoned = snapshot.zones().stream()
+                .flatMap(zone -> zone.territories().stream())
+                .map(name -> name.toLowerCase(Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet());
+        return territories.stream()
+                .filter(name -> zoned.contains(name.toLowerCase(Locale.ROOT)))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    private static void drawPreviewResources(
             UiCanvas canvas,
             List<GuildTerritory> territories,
+            Map<String, WarPlannerSnapshot.TerritoryDetails> details,
             MapBounds fitted,
             float offsetX,
             float offsetY,
-            float scale,
-            Color fill,
-            Color stroke) {
+            float scale) {
         for (GuildTerritory territory : territories) {
             MapBounds bounds = territory.bounds();
             float territoryX = previewX(bounds.minX(), fitted, offsetX, scale);
             float territoryY = previewY(bounds.minZ(), fitted, offsetY, scale);
             float territoryWidth = Math.max(2, (float) ((bounds.maxX() - bounds.minX()) * scale));
             float territoryHeight = Math.max(2, (float) ((bounds.maxZ() - bounds.minZ()) * scale));
-            canvas.fillRect(territoryX, territoryY, territoryWidth, territoryHeight, fill);
-            canvas.strokeRect(territoryX, territoryY, territoryWidth, territoryHeight, .55f, stroke);
+            WarTerritoryPickerScreen.renderResourceFill(
+                    canvas, territoryX, territoryY, territoryWidth, territoryHeight, details.get(territory.name()));
+        }
+    }
+
+    private static void drawPreviewOutlines(
+            UiCanvas canvas,
+            List<GuildTerritory> territories,
+            MapBounds fitted,
+            float offsetX,
+            float offsetY,
+            float scale,
+            Color stroke,
+            float strokeWidth,
+            float outset) {
+        for (GuildTerritory territory : territories) {
+            MapBounds bounds = territory.bounds();
+            float territoryX = previewX(bounds.minX(), fitted, offsetX, scale) - outset;
+            float territoryY = previewY(bounds.minZ(), fitted, offsetY, scale) - outset;
+            float territoryWidth = Math.max(2, (float) ((bounds.maxX() - bounds.minX()) * scale)) + outset * 2;
+            float territoryHeight = Math.max(2, (float) ((bounds.maxZ() - bounds.minZ()) * scale)) + outset * 2;
+            canvas.strokeRect(territoryX, territoryY, territoryWidth, territoryHeight, strokeWidth, stroke);
+        }
+    }
+
+    private static void drawPreviewConnections(
+            UiCanvas canvas,
+            List<GuildTerritory> territories,
+            Map<String, GuildTerritory> territoriesByName,
+            Map<String, WarPlannerSnapshot.TerritoryDetails> details,
+            MapBounds fitted,
+            float offsetX,
+            float offsetY,
+            float scale) {
+        Set<String> drawnConnections = new java.util.HashSet<>();
+        Color foreground = color(TEXT_PRIMARY);
+        for (GuildTerritory territory : territories) {
+            WarPlannerSnapshot.TerritoryDetails detail = details.get(territory.name());
+            if (detail == null) continue;
+            for (String linkedName : detail.connections()) {
+                GuildTerritory linked = territoriesByName.get(linkedName);
+                if (linked == null) continue;
+                String key = territory.name().compareToIgnoreCase(linkedName) < 0
+                        ? territory.name() + "\n" + linkedName : linkedName + "\n" + territory.name();
+                if (!drawnConnections.add(key)) continue;
+                float startX = previewX(territory.centerX(), fitted, offsetX, scale);
+                float startY = previewY(territory.centerZ(), fitted, offsetY, scale);
+                float endX = previewX(linked.centerX(), fitted, offsetX, scale);
+                float endY = previewY(linked.centerZ(), fitted, offsetY, scale);
+                canvas.strokeLine(startX, startY, endX, endY, 1.6f, alpha(color(BACKGROUND_BODY_OPAQUE), 210));
+                canvas.strokeLine(startX, startY, endX, endY, .75f, alpha(foreground, 235));
+            }
         }
     }
 
     private void renderSupportBoard(
             UiCanvas canvas, WarPlannerSnapshot snapshot, float x, float top, float panelWidth, float bottom) {
-        canvas.fillRoundedRect(x, top + 2, panelWidth, Math.min(bottom - top - 4, 168), 5, color(BACKGROUND_CONTENT));
+        canvas.fillRoundedRect(
+                x,
+                top + 2,
+                panelWidth,
+                Math.min(bottom - top - 4, 168),
+                5,
+                plannerBackground(color(BACKGROUND_CONTENT)));
         text(canvas, "Shared support", x + 10, top + 17, 13, color(ACCENT_PRIMARY), false);
         text(canvas, "Click to cycle · may join party", x + 10, top + 31, 9, color(TEXT_MUTED), false);
         String[] codes = {"LEAD", "ECO_1", "ECO_2", "ECO_3"};
@@ -512,8 +675,8 @@ public final class WarPlannerScreen extends Screen {
         float h = Math.min(390, height - 44);
         float x = (width - w) / 2;
         float y = (height - h) / 2;
-        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
-        canvas.fillRoundedRect(x, y, w, h, 7, color(BACKGROUND_BODY_OPAQUE));
+        canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
+        canvas.fillRoundedRect(x, y, w, h, 7, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
         text(canvas, "Assign shared " + label, x + 14, y + 21, 16, color(ACCENT_PRIMARY), false);
         text(canvas, "Support members can also belong to any party.", x + 14, y + 39, 10, color(TEXT_MUTED), false);
@@ -531,7 +694,7 @@ public final class WarPlannerScreen extends Screen {
             RosterMember candidate = candidates.get(index);
             boolean selected = samePlayer(selectedUuid, candidate.playerUuid());
             canvas.fillRoundedRect(x + 12, rowY + 2, w - 24, 25, 3,
-                    color(selected ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT));
+                    plannerBackground(color(selected ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT)));
             text(canvas, truncate(candidate.displayName(), 28), x + 18, rowY + 14, 11, color(TEXT_PRIMARY), false);
             text(canvas, candidate.online() ? "Online" : "Offline · currently assigned", x + w - 150, rowY + 14,
                     9, color(candidate.online() ? CONTROL_SUCCESS : TEXT_MUTED), false);
@@ -539,6 +702,41 @@ public final class WarPlannerScreen extends Screen {
         canvas.resetScissor();
         button(canvas, x + 12, y + h - 32, 72, BUTTON_HEIGHT, "Clear slot", true, supportEditorSaving);
         button(canvas, x + w - 80, y + h - 32, 68, BUTTON_HEIGHT, "Cancel", false, supportEditorSaving);
+    }
+
+    private void renderRoleEditor(UiCanvas canvas, float width, float height) {
+        float w = Math.min(420, width - PADDING * 2);
+        float h = 176;
+        float x = (width - w) / 2;
+        float y = (height - h) / 2;
+        canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
+        canvas.fillRoundedRect(x, y, w, h, 7, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
+        canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
+        text(canvas, "Your Discord war roles", x + 14, y + 22, 16, color(ACCENT_PRIMARY), false);
+        text(canvas, "Only Solo, DPS, and Tank are changed. Other Discord roles stay untouched.",
+                x + 14, y + 43, 9, color(TEXT_MUTED), false);
+
+        float optionY = y + 62;
+        float optionGap = 8;
+        float optionWidth = (w - 28 - optionGap * 2) / 3;
+        WarCompositionRole[] roles = WarCompositionRole.values();
+        for (int index = 0; index < roles.length; index++) {
+            WarCompositionRole role = roles[index];
+            float optionX = x + 14 + index * (optionWidth + optionGap);
+            boolean selected = selectedCompositionRoles.contains(role);
+            canvas.fillRoundedRect(optionX, optionY, optionWidth, 42, 4,
+                    plannerBackground(color(selected ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT)));
+            canvas.strokeRect(optionX, optionY, optionWidth, 42, 1,
+                    color(selected ? ACCENT_PRIMARY : CONTROL_BORDER));
+            renderCompositionIcons(canvas, List.of(role), optionX + 10, optionY + 8);
+            text(canvas, (selected ? "✓ " : "") + role.label(), optionX + 30, optionY + 15, 11,
+                    color(selected ? TEXT_PRIMARY : TEXT_SECONDARY), false);
+            text(canvas, selected ? "Selected" : "Not selected", optionX + 10, optionY + 32, 8,
+                    color(TEXT_MUTED), false);
+        }
+        button(canvas, x + w - 154, y + h - 34, 66, BUTTON_HEIGHT, "Cancel", false, roleEditorSaving);
+        button(canvas, x + w - 80, y + h - 34, 66, BUTTON_HEIGHT,
+                roleEditorSaving ? "Saving…" : "Save", false, roleEditorSaving);
     }
 
     private void renderTeamEditor(UiCanvas canvas, float width, float height) {
@@ -550,8 +748,8 @@ public final class WarPlannerScreen extends Screen {
         float y = 46;
         float w = width - x * 2;
         float h = height - 70;
-        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
-        canvas.fillRoundedRect(x, y, w, h, 7, color(BACKGROUND_BODY_OPAQUE));
+        canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
+        canvas.fillRoundedRect(x, y, w, h, 7, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
         text(canvas, editingTeamId == null ? "Create war team" : "Edit war team", x + 12, y + 20, 16,
                 color(ACCENT_PRIMARY), false);
@@ -582,14 +780,17 @@ public final class WarPlannerScreen extends Screen {
             RosterMember member = eligible.get(index);
             TeamMemberDraft selected = teamMember(member.playerUuid());
             canvas.fillRect(x + 12, rowY + 2, w - 24, 24,
-                    color(selected == null ? BACKGROUND_CONTENT : ACCENT_PRIMARY_DARK));
+                    plannerBackground(color(selected == null ? BACKGROUND_CONTENT : ACCENT_PRIMARY_DARK)));
             String memberLabel = member.displayName() + (member.online() ? "" : " · Offline");
             text(canvas, truncate(memberLabel, w >= 360 ? 24 : 14), x + 18, rowY + 14, 11,
                     color(TEXT_PRIMARY), false);
             float dutyX = x + w - 92;
             float rolesX = Math.max(x + 104, dutyX - 52);
             renderCompositionIcons(canvas, member.compositionRoles(), rolesX, rowY + 8);
-            text(canvas, selected == null ? "Off" : "In party", x + w - 92, rowY + 14, 10,
+            String assignment = selected != null
+                    ? "In party"
+                    : member.teamId() != null ? "Move here" : "Add";
+            text(canvas, assignment, x + w - 92, rowY + 14, 10,
                     color(selected == null ? TEXT_MUTED : TEXT_PRIMARY), false);
         }
         canvas.resetScissor();
@@ -626,19 +827,53 @@ public final class WarPlannerScreen extends Screen {
         if (click.button() != 0) {
             return super.mouseClicked(click, outsideScreen);
         }
-        float mx = MinecraftUiRenderer.mouseX(click.x());
+        PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
+        float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
         float my = MinecraftUiRenderer.mouseY(click.y());
-        float width = MinecraftUiRenderer.screenWidth();
+        float width = viewport.width();
         float height = MinecraftUiRenderer.screenHeight();
 
+        if (roleEditorOpen) {
+            return clickRoleEditor(mx, my, width, height);
+        }
         if (teamEditorOpen) {
             return clickTeamEditor(mx, my, width, height);
         }
         if (editingSupportSlot != null) {
             return clickSupportEditor(mx, my, width, height);
         }
+        DisplayControls controls = displayControls(width, manager.canManage());
+        float controlsY = height - 34;
+        if (hit(mx, my, controls.resourceX(), controlsY + 1, controls.resourceWidth(), BUTTON_HEIGHT)) {
+            SeqClient.getWarPlannerResourceColorsSetting()
+                    .setValue(!resourceColorsEnabled());
+            SeqClient.getConfigManager().save();
+            return true;
+        }
+        if (manager.canManage()
+                && hit(mx, my, controls.lockX(), controlsY + 1, controls.lockWidth(), BUTTON_HEIGHT)) {
+            SeqClient.getWarPlannerLockTerritoriesSetting()
+                    .setValue(!territoriesLocked());
+            SeqClient.getConfigManager().save();
+            return true;
+        }
+        if (hit(
+                mx,
+                my,
+                controls.opacityX() + (controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? 40 : 58),
+                controlsY,
+                controls.opacityWidth() - (controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? 40 : 58),
+                24)) {
+            draggingBackgroundOpacity = true;
+            updateBackgroundOpacity(mx, controls);
+            return true;
+        }
         if (hit(mx, my, width - 82, 8, 70, BUTTON_HEIGHT)) {
             showResult(manager.refreshNow());
+            return true;
+        }
+        if (hit(mx, my, width - 158, 8, 70, BUTTON_HEIGHT)) {
+            beginRoleEdit();
             return true;
         }
         float availabilityY = HEADER_HEIGHT + 13;
@@ -692,20 +927,47 @@ public final class WarPlannerScreen extends Screen {
         if (tab == Tab.ZONES) {
             return clickZoneContent(snapshot, mx, my, width);
         }
+        if (tab == Tab.ROSTER) {
+            int row = scrollRows + Math.max(0, (int) ((my - contentTop()) / ROW_HEIGHT));
+            List<RosterMember> roster = sortedWarRoster(snapshot);
+            if (row < roster.size()) {
+                RosterMember member = roster.get(row);
+                float rowY = contentTop() + (row - scrollRows) * ROW_HEIGHT;
+                if (hit(mx, my, rosterPingButtonX(width), rowY + 8, 100, BUTTON_HEIGHT)
+                        && canPingPlayer(snapshot, member)
+                        && !manager.isMutating()) {
+                    showResult(manager.pingPlayer(member.playerUuid()));
+                    return true;
+                }
+            }
+            return false;
+        }
         float supportWidth = Math.min(214, Math.max(176, width * .28f));
         float cardsRight = width - supportWidth - PADDING * 2;
         float itemHeight = tab == Tab.TEAMS
-                ? teamCardHeight(cardsRight - PADDING) + TEAM_CARD_GAP
+                ? TEAM_CARD_STEP
                 : ROW_HEIGHT;
         int row = scrollRows + Math.max(0, (int) ((my - contentTop()) / itemHeight));
         float rowY = contentTop() + (row - scrollRows) * itemHeight;
-        if (tab == Tab.TEAMS && manager.canManage() && row < snapshot.teams().size()) {
+        if (tab == Tab.TEAMS && row < snapshot.teams().size()) {
             Team team = snapshot.teams().get(row);
-            if (hit(mx, my, cardsRight - 104, rowY + TEAM_ACTION_TOP, 42, BUTTON_HEIGHT)) {
+            RosterMember caller = snapshot.caller();
+            float selfActionX = teamSelfActionX(cardsRight, manager.canManage());
+            if (caller != null
+                    && hit(mx, my, selfActionX, rowY + TEAM_ACTION_TOP, TEAM_SELF_ACTION_WIDTH, BUTTON_HEIGHT)) {
+                if (canChangeOwnTeam(snapshot, team) && !manager.isMutating()) {
+                    boolean ownTeam = caller.teamId() != null && caller.teamId() == team.id();
+                    showResult(ownTeam ? manager.leaveTeam() : manager.joinTeam(team.id()));
+                }
+                return true;
+            }
+            if (manager.canManage()
+                    && hit(mx, my, cardsRight - 132, rowY + TEAM_ACTION_TOP, 52, BUTTON_HEIGHT)) {
                 beginTeamEdit(team);
                 return true;
             }
-            if (hit(mx, my, cardsRight - 58, rowY + TEAM_ACTION_TOP, 54, BUTTON_HEIGHT)) {
+            if (manager.canManage()
+                    && hit(mx, my, cardsRight - 74, rowY + TEAM_ACTION_TOP, 70, BUTTON_HEIGHT)) {
                 if (pendingDeleteTeamId != null && pendingDeleteTeamId == team.id()) {
                     showResult(manager.deleteTeam(team.id()));
                     pendingDeleteTeamId = null;
@@ -750,6 +1012,27 @@ public final class WarPlannerScreen extends Screen {
         }
         SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, zone, true));
         return true;
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
+        if (draggingBackgroundOpacity && click.button() == 0) {
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
+            float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
+            updateBackgroundOpacity(mx, displayControls(viewport.width(), manager.canManage()));
+            return true;
+        }
+        return super.mouseDragged(click, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(@NotNull MouseButtonEvent click) {
+        if (click.button() == 0 && draggingBackgroundOpacity) {
+            draggingBackgroundOpacity = false;
+            SeqClient.getConfigManager().save();
+            return true;
+        }
+        return super.mouseReleased(click);
     }
 
     private boolean clickTeamEditor(float mx, float my, float width, float height) {
@@ -831,12 +1114,43 @@ public final class WarPlannerScreen extends Screen {
         return true;
     }
 
+    private boolean clickRoleEditor(float mx, float my, float width, float height) {
+        if (roleEditorSaving) return true;
+        float w = Math.min(420, width - PADDING * 2);
+        float h = 176;
+        float x = (width - w) / 2;
+        float y = (height - h) / 2;
+        if (hit(mx, my, x + w - 154, y + h - 34, 66, BUTTON_HEIGHT)) {
+            closeRoleEditor();
+            return true;
+        }
+        if (hit(mx, my, x + w - 80, y + h - 34, 66, BUTTON_HEIGHT)) {
+            saveCompositionRoles();
+            return true;
+        }
+        float optionY = y + 62;
+        float optionGap = 8;
+        float optionWidth = (w - 28 - optionGap * 2) / 3;
+        WarCompositionRole[] roles = WarCompositionRole.values();
+        for (int index = 0; index < roles.length; index++) {
+            float optionX = x + 14 + index * (optionWidth + optionGap);
+            if (hit(mx, my, optionX, optionY, optionWidth, 42)) {
+                WarCompositionRole role = roles[index];
+                if (!selectedCompositionRoles.remove(role)) selectedCompositionRoles.add(role);
+                return true;
+            }
+        }
+        return true;
+    }
+
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         int delta = scrollY > 0 ? -1 : 1;
         WarPlannerSnapshot snapshot = manager.snapshot();
         if (snapshot == null) return true;
-        if (teamEditorOpen) {
+        if (roleEditorOpen) {
+            return true;
+        } else if (teamEditorOpen) {
             editorScrollRows = clampRows(editorScrollRows + delta, editableRoster(snapshot).size());
         } else if (editingSupportSlot != null) {
             supportEditorScrollRows = clampRows(
@@ -845,7 +1159,8 @@ public final class WarPlannerScreen extends Screen {
             int size = switch (tab) {
                 case ROSTER -> snapshot.onlineRoster().size();
                 case TEAMS -> snapshot.teams().size();
-                case ZONES -> zoneGridRows(snapshot.zones().size(), MinecraftUiRenderer.screenWidth());
+                case ZONES -> zoneGridRows(
+                        snapshot.zones().size(), plannerViewport(MinecraftUiRenderer.screenWidth()).width());
             };
             scrollRows = clampRows(scrollRows + delta, size);
         }
@@ -1028,6 +1343,49 @@ public final class WarPlannerScreen extends Screen {
         supportEditorSaving = false;
     }
 
+    private void beginRoleEdit() {
+        WarPlannerSnapshot snapshot = manager.snapshot();
+        RosterMember caller = snapshot == null ? null : snapshot.caller();
+        if (snapshot == null
+                || !snapshot.discordRolesAvailable()
+                || caller == null
+                || caller.discordId() == null
+                || caller.discordId().isBlank()
+                || manager.isMutating()) {
+            flashMessage = caller != null && (caller.discordId() == null || caller.discordId().isBlank())
+                    ? "Link and verify your Discord account before editing war roles."
+                    : "Discord roles are temporarily unavailable.";
+            return;
+        }
+        selectedCompositionRoles.clear();
+        selectedCompositionRoles.addAll(caller.compositionRoles());
+        roleEditorOpen = true;
+        roleEditorSaving = false;
+        flashMessage = null;
+    }
+
+    private void closeRoleEditor() {
+        roleEditorOpen = false;
+        roleEditorSaving = false;
+        selectedCompositionRoles.clear();
+    }
+
+    private void saveCompositionRoles() {
+        roleEditorSaving = true;
+        manager.updateCompositionRoles(WarCompositionRole.ordered(List.copyOf(selectedCompositionRoles)))
+                .whenComplete((result, error) -> SeqClient.mc.execute(() -> {
+                    roleEditorSaving = false;
+                    if (error != null || result == null || !result.success()) {
+                        flashMessage = error != null
+                                ? "War planner request failed."
+                                : result == null ? "No response." : result.message();
+                        return;
+                    }
+                    flashMessage = result.message();
+                    closeRoleEditor();
+                }));
+    }
+
     private TeamMemberDraft teamMember(String playerUuid) {
         return teamMembers.stream()
                 .filter(member -> member.playerUuid().equalsIgnoreCase(playerUuid))
@@ -1122,14 +1480,6 @@ public final class WarPlannerScreen extends Screen {
         return Math.max(1, Math.min(maximum, (int) ((right - left) / approximateCharacterWidth)));
     }
 
-    private static boolean isOnline(WarPlannerSnapshot snapshot, String playerUuid) {
-        return snapshot.roster().stream()
-                .filter(member -> samePlayer(member.playerUuid(), playerUuid))
-                .map(RosterMember::online)
-                .findFirst()
-                .orElse(false);
-    }
-
     private static RosterMember rosterMember(WarPlannerSnapshot snapshot, String playerUuid) {
         return snapshot.roster().stream()
                 .filter(member -> samePlayer(member.playerUuid(), playerUuid))
@@ -1139,7 +1489,107 @@ public final class WarPlannerScreen extends Screen {
 
     static List<WarCompositionRole> teamMemberRoles(WarPlannerSnapshot snapshot, String playerUuid) {
         RosterMember member = rosterMember(snapshot, playerUuid);
-        return member == null ? List.of(WarCompositionRole.SOLO) : member.compositionRoles();
+        return member == null ? List.of() : member.compositionRoles();
+    }
+
+    static boolean canChangeOwnTeam(WarPlannerSnapshot snapshot, Team team) {
+        RosterMember caller = snapshot == null ? null : snapshot.caller();
+        if (caller == null || team == null) return false;
+        if (caller.teamId() != null && caller.teamId() == team.id()) return true;
+        return team.members().size() < 5;
+    }
+
+    static String teamMembershipActionLabel(WarPlannerSnapshot snapshot, Team team) {
+        RosterMember caller = snapshot == null ? null : snapshot.caller();
+        if (caller == null || team == null) return "Join";
+        if (caller.teamId() != null && caller.teamId() == team.id()) return "Leave";
+        return caller.teamId() == null ? "Join" : "Switch";
+    }
+
+    static float teamSelfActionX(float cardsRight, boolean canManage) {
+        return cardsRight - (canManage ? 204 : 72);
+    }
+
+    static List<RosterMember> sortedWarRoster(WarPlannerSnapshot snapshot) {
+        return snapshot.onlineRoster().stream()
+                .sorted(Comparator.comparing(RosterMember::available)
+                        .reversed()
+                        .thenComparing(
+                                Comparator.comparingInt((RosterMember member) -> member.compositionRoles().size())
+                                        .reversed())
+                        .thenComparing(RosterMember::displayName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    static boolean canPingPlayer(WarPlannerSnapshot snapshot, RosterMember member) {
+        return snapshot != null
+                && snapshot.self() != null
+                && member != null
+                && member.discordId() != null
+                && !member.discordId().isBlank()
+                && !samePlayer(snapshot.self().playerUuid(), member.playerUuid());
+    }
+
+    static float rosterPingButtonX(float width) {
+        return width - 112;
+    }
+
+    static PlannerViewport plannerViewport(float screenWidth) {
+        float width = Math.max(1, Math.min(MAX_CONTENT_WIDTH, screenWidth));
+        return new PlannerViewport(Math.max(0, (screenWidth - width) / 2), width);
+    }
+
+    static DisplayControls displayControls(float width, boolean canManage) {
+        boolean compact = width < 420;
+        float opacityWidth = compact ? 100 : OPACITY_CONTROL_WIDTH;
+        float resourceWidth = compact ? 82 : RESOURCE_CONTROL_WIDTH;
+        float lockWidth = compact ? 94 : LOCK_CONTROL_WIDTH;
+        float right = width - PADDING;
+        float lockX = canManage ? right - lockWidth : right;
+        float resourceRight = canManage ? lockX - DISPLAY_CONTROL_GAP : right;
+        float resourceX = resourceRight - resourceWidth;
+        float opacityX = resourceX - DISPLAY_CONTROL_GAP - opacityWidth;
+        return new DisplayControls(opacityX, opacityWidth, resourceX, resourceWidth, lockX, lockWidth);
+    }
+
+    static int backgroundOpacityPercent() {
+        return SeqClient.getWarPlannerBackgroundOpacitySetting() == null
+                ? 100
+                : SeqClient.getWarPlannerBackgroundOpacitySetting().getValue();
+    }
+
+    static boolean resourceColorsEnabled() {
+        return SeqClient.getWarPlannerResourceColorsSetting() != null
+                && SeqClient.getWarPlannerResourceColorsSetting().getValue();
+    }
+
+    static boolean territoriesLocked() {
+        return SeqClient.getWarPlannerLockTerritoriesSetting() != null
+                && SeqClient.getWarPlannerLockTerritoriesSetting().getValue();
+    }
+
+    static Color plannerBackground(Color source) {
+        int alpha = opacityAlpha(source.getAlpha(), backgroundOpacityPercent());
+        return new Color(source.getRed(), source.getGreen(), source.getBlue(), alpha);
+    }
+
+    static int opacityAlpha(int sourceAlpha, int opacityPercent) {
+        return Math.round(Math.max(0, Math.min(255, sourceAlpha))
+                * Math.max(0, Math.min(100, opacityPercent))
+                / 100f);
+    }
+
+    private static void updateBackgroundOpacity(float mouseX, DisplayControls controls) {
+        if (SeqClient.getWarPlannerBackgroundOpacitySetting() == null) return;
+        SeqClient.getWarPlannerBackgroundOpacitySetting().setValue(opacityPercentForMouse(mouseX, controls));
+    }
+
+    static int opacityPercentForMouse(float mouseX, DisplayControls controls) {
+        float labelWidth = controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? 45 : 65;
+        float trackX = controls.opacityX() + labelWidth;
+        float trackWidth = controls.opacityWidth() - labelWidth - 7;
+        float ratio = Math.max(0, Math.min(1, (mouseX - trackX) / trackWidth));
+        return Math.round(ratio * 100);
     }
 
     static WarTeamType defaultTeamType(WarPlannerSnapshot snapshot) {
@@ -1178,23 +1628,16 @@ public final class WarPlannerScreen extends Screen {
         return teamType.label();
     }
 
-    static int teamMemberGridColumns(float cardWidth) {
-        if (cardWidth >= 320) return 3;
-        if (cardWidth >= 220) return 2;
-        return 1;
+    static float teamCardHeight() {
+        return TEAM_CARD_HEIGHT;
     }
 
-    static float teamCardHeight(float cardWidth) {
-        int rows = (5 + teamMemberGridColumns(cardWidth) - 1) / teamMemberGridColumns(cardWidth);
-        return Math.max(66, 49 + (rows - 1) * TEAM_MEMBER_ROW_HEIGHT);
+    static float teamMemberRowStep() {
+        return TEAM_MEMBER_ROW_STEP;
     }
 
-    static float teamActionBottomOffset() {
-        return TEAM_ACTION_TOP + BUTTON_HEIGHT;
-    }
-
-    static float teamMemberContentTopOffset() {
-        return TEAM_MEMBER_FIRST_BASELINE - COMPOSITION_ICON_SIZE / 2;
+    static float compactRoleX(float textX, float textWidth, float rightEdge, float iconWidth) {
+        return Math.min(textX + textWidth + 4, rightEdge - iconWidth);
     }
 
     static int zoneGridColumns(float width) {
@@ -1268,6 +1711,10 @@ public final class WarPlannerScreen extends Screen {
         }
     }
 
+    private static Color alpha(Color source, int alpha) {
+        return new Color(source.getRed(), source.getGreen(), source.getBlue(), alpha);
+    }
+
     private static float contentTop() {
         return HEADER_HEIGHT + AVAILABILITY_HEIGHT + TAB_HEIGHT + 8;
     }
@@ -1313,6 +1760,20 @@ public final class WarPlannerScreen extends Screen {
 
         Tab(String label) {
             this.label = label;
+        }
+    }
+
+    record PlannerViewport(float x, float width) {}
+
+    record DisplayControls(
+            float opacityX,
+            float opacityWidth,
+            float resourceX,
+            float resourceWidth,
+            float lockX,
+            float lockWidth) {
+        float left() {
+            return opacityX;
         }
     }
 }

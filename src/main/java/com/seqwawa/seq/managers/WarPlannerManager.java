@@ -6,6 +6,7 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
+import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.RosterMember;
 import com.seqwawa.seq.network.ApiClient;
@@ -14,6 +15,7 @@ import com.seqwawa.seq.network.WynncraftServerPolicy;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
@@ -39,11 +41,19 @@ public final class WarPlannerManager {
 
         CompletableFuture<WarPlannerSnapshot> clearAvailability();
 
+        CompletableFuture<WarPlannerSnapshot> updateCompositionRoles(List<WarCompositionRole> roles);
+
+        CompletableFuture<WarPlannerSnapshot> pingPlayer(String playerUuid);
+
         CompletableFuture<WarPlannerSnapshot> createTeam(TeamDraft draft);
 
         CompletableFuture<WarPlannerSnapshot> updateTeam(long id, TeamDraft draft);
 
         CompletableFuture<WarPlannerSnapshot> deleteTeam(long id);
+
+        CompletableFuture<WarPlannerSnapshot> joinTeam(long id);
+
+        CompletableFuture<WarPlannerSnapshot> leaveTeam();
 
         CompletableFuture<WarPlannerSnapshot> updateSupport(SupportDraft draft);
 
@@ -161,6 +171,20 @@ public final class WarPlannerManager {
         return mutate(gateway::clearAvailability, "Availability cleared.");
     }
 
+    public CompletableFuture<ActionResult> updateCompositionRoles(List<WarCompositionRole> roles) {
+        if (roles == null || roles.stream().anyMatch(Objects::isNull)) {
+            return CompletableFuture.completedFuture(new ActionResult(false, "Choose valid war roles."));
+        }
+        return mutate(() -> gateway.updateCompositionRoles(roles), "Discord war roles updated.");
+    }
+
+    public CompletableFuture<ActionResult> pingPlayer(String playerUuid) {
+        if (playerUuid == null || playerUuid.isBlank()) {
+            return CompletableFuture.completedFuture(new ActionResult(false, "Choose a player to ping."));
+        }
+        return mutate(() -> gateway.pingPlayer(playerUuid), "Ping sent in war chat.");
+    }
+
     public CompletableFuture<ActionResult> saveTeam(Long id, TeamDraft draft) {
         if (!canManage()) {
             return managementDenied();
@@ -179,6 +203,16 @@ public final class WarPlannerManager {
             return managementDenied();
         }
         return mutate(() -> gateway.deleteTeam(id), "War team deleted.");
+    }
+
+    public CompletableFuture<ActionResult> joinTeam(long id) {
+        RosterMember caller = snapshot == null ? null : snapshot.caller();
+        boolean switching = caller != null && caller.teamId() != null && caller.teamId() != id;
+        return mutate(() -> gateway.joinTeam(id), switching ? "Switched war teams." : "Joined war team.");
+    }
+
+    public CompletableFuture<ActionResult> leaveTeam() {
+        return mutate(gateway::leaveTeam, "Left war team.");
     }
 
     public CompletableFuture<ActionResult> saveZone(Long id, ZoneDraft draft) {
@@ -368,6 +402,16 @@ public final class WarPlannerManager {
         }
 
         @Override
+        public CompletableFuture<WarPlannerSnapshot> updateCompositionRoles(List<WarCompositionRole> roles) {
+            return api.updateWarPlannerCompositionRoles(roles);
+        }
+
+        @Override
+        public CompletableFuture<WarPlannerSnapshot> pingPlayer(String playerUuid) {
+            return api.pingWarPlannerPlayer(playerUuid);
+        }
+
+        @Override
         public CompletableFuture<WarPlannerSnapshot> createTeam(TeamDraft draft) {
             return api.createWarPlannerTeam(draft);
         }
@@ -380,6 +424,16 @@ public final class WarPlannerManager {
         @Override
         public CompletableFuture<WarPlannerSnapshot> deleteTeam(long id) {
             return api.deleteWarPlannerTeam(id);
+        }
+
+        @Override
+        public CompletableFuture<WarPlannerSnapshot> joinTeam(long id) {
+            return api.joinWarPlannerTeam(id);
+        }
+
+        @Override
+        public CompletableFuture<WarPlannerSnapshot> leaveTeam() {
+            return api.leaveWarPlannerTeam();
         }
 
         @Override

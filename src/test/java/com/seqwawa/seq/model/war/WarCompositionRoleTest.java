@@ -15,8 +15,8 @@ class WarCompositionRoleTest {
                         WarCompositionRole.DPS,
                         WarCompositionRole.SOLO,
                         WarCompositionRole.DPS)));
-        assertEquals(List.of(WarCompositionRole.SOLO), WarCompositionRole.ordered(null));
-        assertEquals(List.of(WarCompositionRole.SOLO), WarCompositionRole.ordered(List.of()));
+        assertEquals(List.of(), WarCompositionRole.ordered(null));
+        assertEquals(List.of(), WarCompositionRole.ordered(List.of()));
     }
 
     @Test

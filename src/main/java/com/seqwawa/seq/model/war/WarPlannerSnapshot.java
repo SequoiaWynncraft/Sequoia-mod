@@ -17,7 +17,7 @@ public record WarPlannerSnapshot(
         List<String> territories,
         @SerializedName("territory_details") List<TerritoryDetails> territoryDetails) {
 
-    public static final int SUPPORTED_SCHEMA_VERSION = 2;
+    public static final int SUPPORTED_SCHEMA_VERSION = 3;
 
     public WarPlannerSnapshot {
         roster = roster == null ? List.of() : List.copyOf(roster);
@@ -54,13 +54,10 @@ public record WarPlannerSnapshot(
         return roster.stream().filter(RosterMember::online).toList();
     }
 
-    /**
-     * Online unassigned members are eligible for a new assignment. Members of the team being edited remain visible
-     * even when offline so editing cannot silently remove them.
-     */
+    /** Managers may move any online member. Current members stay visible while editing even when offline. */
     public List<RosterMember> teamCandidates(Long editingTeamId) {
         return roster.stream()
-                .filter(member -> (member.online() && member.teamId() == null)
+                .filter(member -> member.online()
                         || (editingTeamId != null
                                 && member.teamId() != null
                                 && member.teamId().longValue() == editingTeamId.longValue()))

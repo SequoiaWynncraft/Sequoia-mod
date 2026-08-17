@@ -237,6 +237,15 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting notifyTrackedWorldEventsSetting;
 
     @Getter
+    public static Setting.BooleanSetting warPlannerResourceColorsSetting;
+
+    @Getter
+    public static Setting.IntSetting warPlannerBackgroundOpacitySetting;
+
+    @Getter
+    public static Setting.BooleanSetting warPlannerLockTerritoriesSetting;
+
+    @Getter
     public static WynnPartySyncManager wynnPartySyncManager;
 
     @Getter
@@ -815,6 +824,26 @@ public class SeqClient implements ClientModInitializer {
         showPartyHealthBarsSetting = new Setting.BooleanSetting("show_party_healthbars", "raids", true);
         notifyTrackedWorldEventsSetting =
                 new Setting.BooleanSetting("notify_tracked_world_events", "world_events", false);
+        warPlannerResourceColorsSetting =
+                new Setting.BooleanSetting("resource_colors", "war_planner", false);
+        warPlannerBackgroundOpacitySetting =
+                new Setting.IntSetting("background_opacity_percent", "war_planner", 100, 0, 100, 5);
+        warPlannerLockTerritoriesSetting =
+                new Setting.BooleanSetting("lock_territories", "war_planner", false);
+        warPlannerResourceColorsSetting.setPresentation(
+                "Color by resource type",
+                "Fill map territories using their resource production colors.",
+                "War planner display");
+        warPlannerBackgroundOpacitySetting.setPresentation(
+                "Background opacity",
+                "Adjust war-planner panels so the in-game chat remains visible behind them.",
+                "War planner display");
+        warPlannerLockTerritoriesSetting.setPresentation(
+                "Lock territories",
+                "Manager-only view that hides territories not assigned to a zone.",
+                "War planner display");
+        warPlannerLockTerritoriesSetting.setVisibilityCondition(
+                () -> warPlannerManager != null && warPlannerManager.canManage());
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(colorDiscordBridgeSetting);
@@ -858,6 +887,9 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(showOwnLeaderboardBadgeSetting);
         getConfigManager().register(showPartyHealthBarsSetting);
         getConfigManager().register(notifyTrackedWorldEventsSetting);
+        getConfigManager().register(warPlannerResourceColorsSetting);
+        getConfigManager().register(warPlannerBackgroundOpacitySetting);
+        getConfigManager().register(warPlannerLockTerritoriesSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.

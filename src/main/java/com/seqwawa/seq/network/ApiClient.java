@@ -27,6 +27,7 @@ import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.RankProfilesResponse;
 import com.seqwawa.seq.model.WynnClassType;
+import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
@@ -239,6 +240,21 @@ public class ApiClient {
         return deleteTyped("/war-planner/availability/me", WarPlannerSnapshot.class);
     }
 
+    public CompletableFuture<WarPlannerSnapshot> updateWarPlannerCompositionRoles(
+            List<WarCompositionRole> roles) {
+        return put(
+                "/war-planner/composition-roles/me",
+                buildWarCompositionRolesPayload(roles),
+                WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> pingWarPlannerPlayer(String playerUuid) {
+        if (playerUuid == null || playerUuid.isBlank()) {
+            throw new IllegalArgumentException("Player UUID is required.");
+        }
+        return post("/war-planner/players/" + playerUuid + "/ping", new JsonObject(), WarPlannerSnapshot.class);
+    }
+
     public CompletableFuture<WarPlannerSnapshot> createWarPlannerTeam(TeamDraft draft) {
         return post("/war-planner/teams", buildWarTeamPayload(draft, false), WarPlannerSnapshot.class);
     }
@@ -252,6 +268,14 @@ public class ApiClient {
 
     public CompletableFuture<WarPlannerSnapshot> deleteWarPlannerTeam(long id) {
         return deleteTyped("/war-planner/teams/" + id, WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> joinWarPlannerTeam(long id) {
+        return put("/war-planner/teams/" + id + "/members/me", new JsonObject(), WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> leaveWarPlannerTeam() {
+        return deleteTyped("/war-planner/teams/members/me", WarPlannerSnapshot.class);
     }
 
     public CompletableFuture<WarPlannerSnapshot> updateWarPlannerSupport(SupportDraft draft) {
@@ -296,6 +320,17 @@ public class ApiClient {
         }
         JsonObject body = new JsonObject();
         body.addProperty("duration_minutes", durationMinutes);
+        return body;
+    }
+
+    static JsonObject buildWarCompositionRolesPayload(List<WarCompositionRole> roles) {
+        if (roles == null || roles.stream().anyMatch(java.util.Objects::isNull)) {
+            throw new IllegalArgumentException("Composition roles are required.");
+        }
+        JsonObject body = new JsonObject();
+        JsonArray roleValues = new JsonArray();
+        WarCompositionRole.ordered(roles).forEach(role -> roleValues.add(role.name()));
+        body.add("roles", roleValues);
         return body;
     }
 
