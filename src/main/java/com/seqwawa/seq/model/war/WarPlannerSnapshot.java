@@ -7,6 +7,7 @@ import java.util.List;
 /** Immutable, server-authoritative view of the Seq war planner. */
 public record WarPlannerSnapshot(
         @SerializedName("schema_version") int schemaVersion,
+        long revision,
         @SerializedName("server_time") Instant serverTime,
         Self self,
         @SerializedName("discord_roles_available") boolean discordRolesAvailable,
@@ -19,6 +20,32 @@ public record WarPlannerSnapshot(
 
     public static final int SUPPORTED_SCHEMA_VERSION = 3;
 
+    /** Compatibility constructor for tests and legacy callers created before snapshot revisions. */
+    public WarPlannerSnapshot(
+            int schemaVersion,
+            Instant serverTime,
+            Self self,
+            boolean discordRolesAvailable,
+            List<RosterMember> roster,
+            List<Team> teams,
+            SupportBoard support,
+            List<Zone> zones,
+            List<String> territories,
+            List<TerritoryDetails> territoryDetails) {
+        this(
+                schemaVersion,
+                0L,
+                serverTime,
+                self,
+                discordRolesAvailable,
+                roster,
+                teams,
+                support,
+                zones,
+                territories,
+                territoryDetails);
+    }
+
     public WarPlannerSnapshot {
         roster = roster == null ? List.of() : List.copyOf(roster);
         teams = teams == null ? List.of() : List.copyOf(teams);
@@ -30,6 +57,22 @@ public record WarPlannerSnapshot(
 
     public boolean isSupported() {
         return schemaVersion == SUPPORTED_SCHEMA_VERSION;
+    }
+
+    public WarPlannerSnapshot withCanManage(boolean canManage) {
+        Self updatedSelf = self == null ? null : new Self(self.playerUuid(), canManage);
+        return new WarPlannerSnapshot(
+                schemaVersion,
+                revision,
+                serverTime,
+                updatedSelf,
+                discordRolesAvailable,
+                roster,
+                teams,
+                support,
+                zones,
+                territories,
+                territoryDetails);
     }
 
     public RosterMember caller() {
@@ -105,16 +148,28 @@ public record WarPlannerSnapshot(
     public record Team(
             long id,
             String name,
+            @SerializedName("team_type") WarTeamType teamType,
             Long version,
             @SerializedName("composition_targets") WarCompositionTargets compositionTargets,
             List<TeamMember> members) {
         public Team {
+            teamType = teamType == null ? WarTeamType.fromTeamName(name) : teamType;
             compositionTargets = compositionTargets == null ? WarCompositionTargets.NONE : compositionTargets;
             members = members == null ? List.of() : List.copyOf(members);
         }
 
+        /** Compatibility constructor for snapshots that predate an explicit team type. */
+        public Team(
+                long id,
+                String name,
+                Long version,
+                WarCompositionTargets compositionTargets,
+                List<TeamMember> members) {
+            this(id, name, WarTeamType.fromTeamName(name), version, compositionTargets, members);
+        }
+
         public Team(long id, String name, Long version, List<TeamMember> members) {
-            this(id, name, version, WarCompositionTargets.NONE, members);
+            this(id, name, WarTeamType.fromTeamName(name), version, WarCompositionTargets.NONE, members);
         }
     }
 

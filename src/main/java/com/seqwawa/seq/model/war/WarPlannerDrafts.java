@@ -20,8 +20,8 @@ public final class WarPlannerDrafts {
             WarCompositionTargets compositionTargets,
             List<TeamMemberDraft> members) {
         public TeamDraft {
-            if (teamType == null) {
-                throw new IllegalArgumentException("A team type is required.");
+            if (teamType == null || !teamType.editable()) {
+                throw new IllegalArgumentException("Choose a supported team type before saving.");
             }
             if (version != null && version <= 0) {
                 throw new IllegalArgumentException("Team version must be positive.");
@@ -39,6 +39,24 @@ public final class WarPlannerDrafts {
 
         public TeamDraft(WarTeamType teamType, Long version, List<TeamMemberDraft> members) {
             this(teamType, version, WarCompositionTargets.NONE, members);
+        }
+    }
+
+    /** Versioned, atomic manager move. A null side represents the unassigned roster. */
+    public record TeamMemberMoveDraft(
+            Long sourceTeamId,
+            Long sourceVersion,
+            Long targetTeamId,
+            Long targetVersion) {
+        public TeamMemberMoveDraft {
+            validateVersionPair("source", sourceTeamId, sourceVersion);
+            validateVersionPair("target", targetTeamId, targetVersion);
+            if (sourceTeamId == null && targetTeamId == null) {
+                throw new IllegalArgumentException("A team move needs a source or target team.");
+            }
+            if (sourceTeamId != null && sourceTeamId.equals(targetTeamId)) {
+                throw new IllegalArgumentException("The source and target team must be different.");
+            }
         }
     }
 
@@ -100,5 +118,17 @@ public final class WarPlannerDrafts {
             throw new IllegalArgumentException("Zone color must use #RRGGBB.");
         }
         return normalized;
+    }
+
+    private static void validateVersionPair(String side, Long teamId, Long version) {
+        if (teamId == null) {
+            if (version != null) {
+                throw new IllegalArgumentException("An unassigned " + side + " cannot have a team version.");
+            }
+            return;
+        }
+        if (version == null || version <= 0) {
+            throw new IllegalArgumentException("The " + side + " team version must be positive.");
+        }
     }
 }

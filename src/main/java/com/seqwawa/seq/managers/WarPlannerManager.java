@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import com.seqwawa.seq.model.war.WarCompositionRole;
@@ -49,7 +50,9 @@ public final class WarPlannerManager {
 
         CompletableFuture<WarPlannerSnapshot> updateTeam(long id, TeamDraft draft);
 
-        CompletableFuture<WarPlannerSnapshot> deleteTeam(long id);
+        CompletableFuture<WarPlannerSnapshot> deleteTeam(long id, long version);
+
+        CompletableFuture<WarPlannerSnapshot> moveTeamMember(String playerUuid, TeamMemberMoveDraft draft);
 
         CompletableFuture<WarPlannerSnapshot> joinTeam(long id);
 
@@ -61,10 +64,16 @@ public final class WarPlannerManager {
 
         CompletableFuture<WarPlannerSnapshot> updateZone(long id, ZoneDraft draft);
 
-        CompletableFuture<WarPlannerSnapshot> deleteZone(long id);
+        CompletableFuture<WarPlannerSnapshot> deleteZone(long id, long version);
     }
 
-    public record ActionResult(boolean success, String message) {}
+    public record ActionResult(boolean success, String code, String message) {
+        public ActionResult(boolean success, String message) {
+            this(success, null, message);
+        }
+    }
+
+    record ApiErrorDetails(String code, String message) {}
 
     private final Gateway gateway;
     private final Clock clock;
@@ -195,14 +204,32 @@ public final class WarPlannerManager {
     }
 
     public CompletableFuture<ActionResult> saveSupport(SupportDraft draft) {
-        return mutate(() -> gateway.updateSupport(draft), "Support board updated.");
-    }
-
-    public CompletableFuture<ActionResult> deleteTeam(long id) {
         if (!canManage()) {
             return managementDenied();
         }
-        return mutate(() -> gateway.deleteTeam(id), "War team deleted.");
+        return mutate(() -> gateway.updateSupport(draft), "Support board updated.");
+    }
+
+    public CompletableFuture<ActionResult> deleteTeam(long id, Long version) {
+        if (!canManage()) {
+            return managementDenied();
+        }
+        if (version == null || version <= 0) {
+            return CompletableFuture.completedFuture(
+                    new ActionResult(false, "invalid_version", "Reload the team before deleting it."));
+        }
+        return mutate(() -> gateway.deleteTeam(id, version), "War team deleted.");
+    }
+
+    public CompletableFuture<ActionResult> moveTeamMember(String playerUuid, TeamMemberMoveDraft draft) {
+        if (!canManage()) {
+            return managementDenied();
+        }
+        if (playerUuid == null || playerUuid.isBlank() || draft == null) {
+            return CompletableFuture.completedFuture(
+                    new ActionResult(false, "invalid_team_move", "Choose a player and destination team."));
+        }
+        return mutate(() -> gateway.moveTeamMember(playerUuid, draft), "War team assignment updated.");
     }
 
     public CompletableFuture<ActionResult> joinTeam(long id) {
@@ -224,16 +251,23 @@ public final class WarPlannerManager {
                 id == null ? "Territory zone created." : "Territory zone updated.");
     }
 
-    public CompletableFuture<ActionResult> deleteZone(long id) {
+    public CompletableFuture<ActionResult> deleteZone(long id, Long version) {
         if (!canManage()) {
             return managementDenied();
         }
-        return mutate(() -> gateway.deleteZone(id), "Territory zone deleted.");
+        if (version == null || version <= 0) {
+            return CompletableFuture.completedFuture(
+                    new ActionResult(false, "invalid_version", "Reload the zone before deleting it."));
+        }
+        return mutate(() -> gateway.deleteZone(id, version), "Territory zone deleted.");
     }
 
     private static CompletableFuture<ActionResult> managementDenied() {
         return CompletableFuture.completedFuture(
-                new ActionResult(false, "You do not have permission to manage war teams or zones."));
+                new ActionResult(
+                        false,
+                        "war_manager_required",
+                        "You do not have permission to manage war teams or zones."));
     }
 
     public synchronized void reset() {
@@ -327,25 +361,58 @@ public final class WarPlannerManager {
                     : new IllegalStateException("Unsupported war planner schema " + received.schemaVersion() + ".");
         }
         int status = cause instanceof ApiException apiException ? apiException.getStatusCode() : 0;
-        String message = userMessage(cause);
+        ApiErrorDetails apiError = apiError(cause);
+        String code = apiError.code();
+        String message = apiError.message();
         lastError = message;
-        consecutiveFailures++;
         if (incompatibleSchema) {
             snapshot = null;
         }
-        if (status == 401 || status == 403) {
+
+        boolean managerRequired = mutation
+                && snapshot != null
+                && "war_manager_required".equals(code);
+        boolean guildAuthorizationUnverifiable = "guild_roster_unavailable".equals(code);
+        boolean clearsSensitiveData = status == 401
+                || status == 403 && !managerRequired
+                || status == 426
+                || "not_in_guild".equals(code)
+                || isAuthenticationError(code);
+        boolean recoverableMutationError = mutation
+                && snapshot != null
+                && (status == 400 || status == 404 || status == 409 || status == 422 || status == 429);
+
+        if (managerRequired) {
+            snapshot = snapshot.withCanManage(false);
+            state = State.READY;
+            consecutiveFailures = 0;
+            nextPollAtMillis = 0;
+        } else if (guildAuthorizationUnverifiable) {
+            snapshot = null;
+            state = State.OFFLINE;
+            consecutiveFailures++;
+            long backoff = Math.min(MAX_BACKOFF_MS, 5_000L << Math.min(5, consecutiveFailures - 1));
+            nextPollAtMillis = clock.millis() + backoff;
+        } else if (clearsSensitiveData) {
             snapshot = null;
             state = State.FORBIDDEN;
+            consecutiveFailures = 0;
             nextPollAtMillis = clock.millis() + FORBIDDEN_RETRY_MS;
-        } else if (status == 409 && mutation && snapshot != null) {
+        } else if (recoverableMutationError) {
             state = State.READY;
-            nextPollAtMillis = 0;
+            consecutiveFailures = 0;
+            if (status == 404 || status == 409) {
+                nextPollAtMillis = 0;
+            } else if (status == 429) {
+                nextPollAtMillis = Math.max(nextPollAtMillis, clock.millis() + 5_000L);
+            }
         } else {
             state = State.OFFLINE;
+            consecutiveFailures++;
             long backoff = Math.min(MAX_BACKOFF_MS, 5_000L << Math.min(5, consecutiveFailures - 1));
             nextPollAtMillis = clock.millis() + backoff;
         }
-        result.complete(new ActionResult(false, message));
+        result.complete(new ActionResult(false, code, message));
     }
 
     static Throwable unwrap(Throwable throwable) {
@@ -359,30 +426,57 @@ public final class WarPlannerManager {
         return current;
     }
 
-    static String userMessage(Throwable throwable) {
+    static ApiErrorDetails apiError(Throwable throwable) {
         if (throwable instanceof ApiException apiException) {
+            String code = null;
+            String message = null;
             try {
                 JsonObject body = JsonParser.parseString(apiException.getResponseBody()).getAsJsonObject();
-                if (body.has("message") && !body.get("message").isJsonNull()) {
-                    return body.get("message").getAsString();
-                }
                 if (body.has("code") && !body.get("code").isJsonNull()) {
-                    return body.get("code").getAsString().replace('_', ' ');
+                    code = body.get("code").getAsString();
+                } else if (body.has("error") && !body.get("error").isJsonNull()) {
+                    code = body.get("error").getAsString();
+                }
+                if (body.has("message") && !body.get("message").isJsonNull()) {
+                    message = body.get("message").getAsString();
                 }
             } catch (RuntimeException ignored) {
                 // Fall through to status-specific text.
             }
-            return switch (apiException.getStatusCode()) {
-                case 401 -> "Connect your Minecraft account to use the war planner.";
-                case 403 -> "The war planner is available to Sequoia members only.";
-                case 409 -> "The planner changed on the server. Refresh and try again.";
-                case 422 -> "The team or zone contains invalid data.";
-                case 429 -> "Too many requests. Please wait before trying again.";
-                default -> "War planner request failed (HTTP " + apiException.getStatusCode() + ").";
-            };
+            if (message == null || message.isBlank()) {
+                message = code == null || code.isBlank()
+                        ? switch (apiException.getStatusCode()) {
+                            case 400 -> "The war planner request was invalid.";
+                            case 401 -> "Connect your Minecraft account to use the war planner.";
+                            case 403 -> "The war planner is available to Sequoia members only.";
+                            case 404 -> "That war planner item no longer exists.";
+                            case 409 -> "The planner changed on the server. Refresh and try again.";
+                            case 422 -> "The team or zone contains invalid data.";
+                            case 426 -> "Update the Sequoia mod to use the war planner.";
+                            case 429 -> "Too many requests. Please wait before trying again.";
+                            default -> "War planner request failed (HTTP " + apiException.getStatusCode() + ").";
+                        }
+                        : code.replace('_', ' ');
+            }
+            return new ApiErrorDetails(code, message);
         }
         String message = throwable == null ? null : throwable.getMessage();
-        return message == null || message.isBlank() ? "Could not reach the war planner." : message;
+        return new ApiErrorDetails(
+                null,
+                message == null || message.isBlank() ? "Could not reach the war planner." : message);
+    }
+
+    static String userMessage(Throwable throwable) {
+        return apiError(throwable).message();
+    }
+
+    private static boolean isAuthenticationError(String code) {
+        if (code == null) return false;
+        return code.equals("unauthorized")
+                || code.equals("authentication_required")
+                || code.equals("token_invalid")
+                || code.equals("token_expired")
+                || code.equals("invalid_token");
     }
 
     private record ApiGateway(ApiClient api) implements Gateway {
@@ -422,8 +516,14 @@ public final class WarPlannerManager {
         }
 
         @Override
-        public CompletableFuture<WarPlannerSnapshot> deleteTeam(long id) {
-            return api.deleteWarPlannerTeam(id);
+        public CompletableFuture<WarPlannerSnapshot> deleteTeam(long id, long version) {
+            return api.deleteWarPlannerTeam(id, version);
+        }
+
+        @Override
+        public CompletableFuture<WarPlannerSnapshot> moveTeamMember(
+                String playerUuid, TeamMemberMoveDraft draft) {
+            return api.moveWarPlannerTeamMember(playerUuid, draft);
         }
 
         @Override
@@ -452,8 +552,8 @@ public final class WarPlannerManager {
         }
 
         @Override
-        public CompletableFuture<WarPlannerSnapshot> deleteZone(long id) {
-            return api.deleteWarPlannerZone(id);
+        public CompletableFuture<WarPlannerSnapshot> deleteZone(long id, long version) {
+            return api.deleteWarPlannerZone(id, version);
         }
     }
 }

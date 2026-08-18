@@ -8,6 +8,7 @@ import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarCompositionTargets;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportSlotDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
@@ -179,6 +180,30 @@ class ApiClientTest {
         assertFalse(payload.getAsJsonArray("members").get(0).getAsJsonObject().has("composition_roles"));
         assertFalse(ApiClient.buildWarTeamPayload(new TeamDraft(WarTeamType.FFA, null, draft.members()), false)
                 .has("version"));
+    }
+
+    @Test
+    void warTeamMemberMovePayloadKeepsNullableSidesAndBothVersions() {
+        JsonObject betweenTeams = ApiClient.buildWarTeamMemberMovePayload(
+                new TeamMemberMoveDraft(7L, 3L, 9L, 5L));
+        JsonObject fromRoster = ApiClient.buildWarTeamMemberMovePayload(
+                new TeamMemberMoveDraft(null, null, 9L, 5L));
+
+        assertEquals(7L, betweenTeams.get("source_team_id").getAsLong());
+        assertEquals(3L, betweenTeams.get("source_version").getAsLong());
+        assertEquals(9L, betweenTeams.get("target_team_id").getAsLong());
+        assertEquals(5L, betweenTeams.get("target_version").getAsLong());
+        assertTrue(fromRoster.get("source_team_id").isJsonNull());
+        assertTrue(fromRoster.get("source_version").isJsonNull());
+        assertEquals(9L, fromRoster.get("target_team_id").getAsLong());
+    }
+
+    @Test
+    void warPlannerDeletesCarryTheDisplayedVersion() {
+        assertEquals("/war-planner/teams/7?version=3", ApiClient.versionedWarPlannerPath("/war-planner/teams/7", 3));
+        assertEquals("/war-planner/zones/9?version=5", ApiClient.versionedWarPlannerPath("/war-planner/zones/9", 5));
+        assertThrows(IllegalArgumentException.class,
+                () -> ApiClient.versionedWarPlannerPath("/war-planner/teams/7", 0));
     }
 
     @Test

@@ -7,17 +7,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.seqwawa.seq.map.GuildTerritory;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapBounds;
+import com.seqwawa.seq.map.MapViewport;
 import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarCompositionTargets;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.model.war.WarTeamType;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class WarPlannerScreenTest {
     @Test
     void wideScreensUseACenteredCappedPlannerViewport() {
         assertEquals(new WarPlannerScreen.PlannerViewport(510, 900), WarPlannerScreen.plannerViewport(1920));
+        assertEquals(new WarPlannerScreen.PlannerViewport(620, 680), WarPlannerScreen.plannerViewport(1920, 680));
+        assertEquals(new WarPlannerScreen.PlannerViewport(570, 780), WarPlannerScreen.plannerViewport(1920, 780));
         assertEquals(new WarPlannerScreen.PlannerViewport(0, 640), WarPlannerScreen.plannerViewport(640));
     }
 
@@ -49,15 +54,77 @@ class WarPlannerScreenTest {
     }
 
     @Test
-    void zonesUseTwoColumnPreviewsWhenSpaceAllows() {
-        assertEquals(1, WarPlannerScreen.zoneGridColumns(640));
-        assertEquals(2, WarPlannerScreen.zoneGridColumns(900));
-        assertEquals(3, WarPlannerScreen.zoneGridRows(5, 900));
+    void availabilityControlsStayInsideCompactScreens() {
+        WarPlannerScreen.AvailabilityLayout compact = WarPlannerScreen.availabilityLayout(320);
+        WarPlannerScreen.AvailabilityLayout wide = WarPlannerScreen.availabilityLayout(680);
+
+        assertTrue(compact.compact());
+        assertTrue(compact.buttonX(3) + compact.buttonWidth(3) <= 320 - 12);
+        assertFalse(wide.compact());
+        assertEquals(320, wide.x());
+        assertEquals(76, wide.buttonWidth(3));
+    }
+
+    @Test
+    void warMapKeepsOneCanvasAndACompactSidebar() {
+        assertEquals(220, WarPlannerScreen.warMapSidebarWidth(900));
+        assertEquals(160, WarPlannerScreen.warMapSidebarWidth(640));
+        assertEquals(150, WarPlannerScreen.warMapSidebarWidth(320));
+        assertEquals(4, WarPlannerScreen.warMapVisibleZoneRows(320));
+    }
+
+    @Test
+    void warMapLayoutKeepsMapAndSidebarSeparateOnNarrowScreens() {
+        WarPlannerScreen.WarMapLayout layout = WarPlannerScreen.warMapLayout(320, 110, 430);
+
+        assertEquals(12, layout.mapX());
+        assertEquals(138, layout.mapWidth());
+        assertEquals(158, layout.sidebarX());
+        assertTrue(layout.mapX() + layout.mapWidth() < layout.sidebarX());
+    }
+
+    @Test
+    void hiddenZoneLayersAreExcludedWithoutChangingTheSnapshot() {
+        WarPlannerSnapshot.Zone north = new WarPlannerSnapshot.Zone(
+                1, "North", "#55B8C5", List.of(), 1L, List.of("A"));
+        WarPlannerSnapshot.Zone south = new WarPlannerSnapshot.Zone(
+                2, "South", "#E05A65", List.of(), 1L, List.of("B"));
+
+        assertEquals(List.of(north), WarPlannerScreen.visibleZones(List.of(north, south), java.util.Set.of(2L)));
+        assertEquals(List.of(north, south), WarPlannerScreen.visibleZones(List.of(north, south), java.util.Set.of()));
+    }
+
+    @Test
+    void fittedWarMapViewportCentersAndFitsRequestedBounds() {
+        WarPlannerScreen.WarMapLayout layout = new WarPlannerScreen.WarMapLayout(12, 100, 400, 300, 420, 180);
+        MapViewport viewport = WarPlannerScreen.fittedWarMapViewport(
+                new MapBounds(-1000, -3000, 1000, -2000), layout);
+
+        assertEquals(0, viewport.centerX());
+        assertEquals(-2500, viewport.centerZ());
+        assertEquals(.195, viewport.pixelsPerBlock(), .0001);
+        assertTrue(viewport.visibleBounds().minX() <= -1000);
+        assertTrue(viewport.visibleBounds().maxX() >= 1000);
+    }
+
+    @Test
+    void lockedMapAddsOnlyDirectConnectionNeighborsAsGreyContext() {
+        GuildTerritory a = GuildTerritory.fromCorners("A", 0, 0, 10, 10);
+        GuildTerritory b = GuildTerritory.fromCorners("B", 20, 0, 30, 10);
+        GuildTerritory c = GuildTerritory.fromCorners("C", 40, 0, 50, 10);
+        Map<String, WarPlannerSnapshot.TerritoryDetails> details = Map.of(
+                "A", new WarPlannerSnapshot.TerritoryDetails("A", List.of("B"), List.of()),
+                "B", new WarPlannerSnapshot.TerritoryDetails("B", List.of("A", "C"), List.of()));
+
+        assertEquals(
+                List.of(b),
+                WarPlannerScreen.oneHopContextTerritories(List.of(a, b, c), List.of(a), details));
     }
 
     @Test
     void teamTypePreviewUsesIndependentAutomaticSequencesAndUniqueHq() {
-        assertEquals(3, WarTeamType.values().length);
+        assertEquals(4, WarTeamType.values().length);
+        assertEquals(3, WarTeamType.editableValues().size());
         WarPlannerSnapshot snapshot = snapshot(
                 List.of(new WarPlannerSnapshot.Team(1, "HQ Team", 1L, List.of()),
                         new WarPlannerSnapshot.Team(2, "VLow Munch 2", 1L, List.of()),
@@ -70,12 +137,74 @@ class WarPlannerScreenTest {
         assertFalse(WarPlannerScreen.teamTypeSelectable(snapshot, WarTeamType.HQ, null));
         assertTrue(WarPlannerScreen.teamTypeSelectable(snapshot, WarTeamType.HQ, 1L));
         assertEquals("HQ Team", WarPlannerScreen.automaticTeamName(snapshot, WarTeamType.HQ, 1L));
+        assertFalse(WarPlannerScreen.teamTypeSelectable(snapshot, WarTeamType.UNKNOWN, null));
     }
 
     @Test
-    void teamMembersUseTheDenseVerticalStack() {
-        assertEquals(88, WarPlannerScreen.teamCardHeight());
+    void explicitTeamTypeDoesNotDependOnItsDisplayName() {
+        WarPlannerSnapshot.Team team = new WarPlannerSnapshot.Team(
+                7, "Alpha", WarTeamType.FFA, 3L, WarCompositionTargets.NONE, List.of());
+
+        assertEquals(WarTeamType.FFA, team.teamType());
+        assertEquals("Alpha", WarPlannerScreen.automaticTeamName(snapshot(List.of(team), List.of()), WarTeamType.FFA, 7L));
+    }
+
+    @Test
+    void teamEditorBaseRejectsARefreshThatChangesVersionTypeOrMembers() {
+        WarPlannerSnapshot.Team original = new WarPlannerSnapshot.Team(
+                7,
+                "FFA 1",
+                WarTeamType.FFA,
+                3L,
+                WarCompositionTargets.NONE,
+                List.of(new WarPlannerSnapshot.TeamMember("a", "A", 0)));
+        WarPlannerScreen.TeamEditorBase base = WarPlannerScreen.TeamEditorBase.from(original);
+
+        assertTrue(base.matches(original));
+        assertFalse(base.matches(new WarPlannerSnapshot.Team(
+                7, "FFA 1", WarTeamType.FFA, 4L, WarCompositionTargets.NONE, original.members())));
+        assertFalse(base.matches(new WarPlannerSnapshot.Team(
+                7, "VLow Munch 1", WarTeamType.VLOW_MUNCH, 3L, WarCompositionTargets.NONE, original.members())));
+        assertFalse(base.matches(new WarPlannerSnapshot.Team(
+                7,
+                "FFA 1",
+                WarTeamType.FFA,
+                3L,
+                WarCompositionTargets.NONE,
+                List.of(new WarPlannerSnapshot.TeamMember("b", "B", 0)))));
+    }
+
+    @Test
+    void dragMoveHelperCarriesCapturedSourceAndCurrentTargetVersions() {
+        WarPlannerSnapshot.Team target = new WarPlannerSnapshot.Team(
+                9, "FFA 2", WarTeamType.FFA, 5L, WarCompositionTargets.NONE, List.of());
+
+        TeamMemberMoveDraft betweenTeams = WarPlannerScreen.teamMemberMoveDraft(7L, 3L, target);
+        TeamMemberMoveDraft toRoster = WarPlannerScreen.teamMemberMoveDraft(7L, 3L, null);
+
+        assertEquals(7L, betweenTeams.sourceTeamId());
+        assertEquals(3L, betweenTeams.sourceVersion());
+        assertEquals(9L, betweenTeams.targetTeamId());
+        assertEquals(5L, betweenTeams.targetVersion());
+        assertEquals(null, toRoster.targetTeamId());
+        assertEquals(null, toRoster.targetVersion());
+    }
+
+    @Test
+    void teamCardsGrowOnlyWithTheirDenseVerticalMemberStack() {
+        assertEquals(48, WarPlannerScreen.teamCardHeight(0));
+        assertEquals(48, WarPlannerScreen.teamCardHeight(1));
+        assertEquals(56, WarPlannerScreen.teamCardHeight(2));
+        assertEquals(89, WarPlannerScreen.teamCardHeight(5));
         assertEquals(11, WarPlannerScreen.teamMemberRowStep());
+    }
+
+    @Test
+    void teamSidebarAndEditorStayCompactOnWideScreens() {
+        assertEquals(214, WarPlannerScreen.teamSidebarWidth(780));
+        assertEquals(179.2f, WarPlannerScreen.teamSidebarWidth(640), .01f);
+        assertEquals(560, WarPlannerScreen.teamEditorWidth(780));
+        assertEquals(496, WarPlannerScreen.teamEditorWidth(520));
     }
 
     @Test
@@ -234,24 +363,12 @@ class WarPlannerScreenTest {
     }
 
     @Test
-    void lockedManagerZoneViewOffersASeparateOverviewBeforeTheGrid() {
-        WarPlannerSnapshot base = snapshot(List.of(), List.of());
-        WarPlannerSnapshot withZone = new WarPlannerSnapshot(
-                3,
-                base.serverTime(),
-                base.self(),
-                base.discordRolesAvailable(),
-                base.roster(),
-                base.teams(),
-                base.support(),
-                List.of(new WarPlannerSnapshot.Zone(1, "North", "#55B8C5", List.of(), 1L, List.of("Zoned"))),
-                List.of("Zoned"),
-                List.of());
-
-        assertTrue(WarPlannerScreen.zoneOverviewAvailable(withZone, true, true));
-        assertFalse(WarPlannerScreen.zoneOverviewAvailable(withZone, false, true));
-        assertEquals(134, WarPlannerScreen.zoneGridTop(100, true));
-        assertEquals(100, WarPlannerScreen.zoneGridTop(100, false));
+    void warMapSidebarRowsScaleWithAvailableHeight() {
+        assertEquals(1, WarPlannerScreen.warMapVisibleZoneRows(100));
+        assertEquals(4, WarPlannerScreen.warMapVisibleZoneRows(320));
+        assertEquals(6, WarPlannerScreen.warMapVisibleZoneRows(480));
+        assertEquals(6, WarPlannerScreen.warMapScrollStart(99, 10, 4));
+        assertEquals(0, WarPlannerScreen.warMapScrollStart(2, 3, 4));
     }
 
     private static WarPlannerSnapshot snapshot(

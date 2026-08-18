@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
@@ -114,6 +116,8 @@ class WarPlannerManagerTest {
                 WarTeamType.VLOW_MUNCH, null, List.of(new TeamMemberDraft("self")))).join();
 
         assertFalse(result.success());
+        assertEquals("war_manager_required", result.code());
+        assertFalse(manager.saveSupport(new SupportDraft(1L, List.of())).join().success());
         assertEquals(1, gateway.calls);
     }
 
@@ -165,6 +169,130 @@ class WarPlannerManagerTest {
         assertEquals(2, gateway.calls);
     }
 
+    @Test
+    void managerRequiredMutationDowngradesCachedSnapshotToViewOnly() {
+        FakeGateway gateway = new FakeGateway();
+        WarPlannerManager manager = manager(gateway);
+        manager.tick(true, true);
+        gateway.next.complete(snapshot(3, true));
+        gateway.next = new CompletableFuture<>();
+
+        CompletableFuture<WarPlannerManager.ActionResult> result = manager.deleteTeam(7L, 3L);
+        gateway.next.completeExceptionally(new ApiClient.ApiException(
+                403,
+                "{\"code\":\"war_manager_required\",\"message\":\"Managers only\"}"));
+
+        assertFalse(result.join().success());
+        assertEquals("war_manager_required", result.join().code());
+        assertEquals(WarPlannerManager.State.READY, manager.state());
+        assertTrue(manager.isAuthorized());
+        assertFalse(manager.canManage());
+        assertEquals("self", manager.snapshot().self().playerUuid());
+    }
+
+    @Test
+    void expectedMutationErrorsRetainReadySnapshot() {
+        for (int status : List.of(400, 404, 409, 422, 429)) {
+            FakeGateway gateway = new FakeGateway();
+            WarPlannerManager manager = manager(gateway);
+            manager.tick(true, true);
+            WarPlannerSnapshot cached = snapshot(3, true);
+            gateway.next.complete(cached);
+            gateway.next = new CompletableFuture<>();
+
+            CompletableFuture<WarPlannerManager.ActionResult> result = manager.setAvailability(30);
+            gateway.next.completeExceptionally(new ApiClient.ApiException(
+                    status,
+                    "{\"code\":\"expected_mutation_error\",\"message\":\"Try again\"}"));
+
+            assertFalse(result.join().success(), "status " + status);
+            assertEquals("expected_mutation_error", result.join().code());
+            assertEquals(WarPlannerManager.State.READY, manager.state(), "status " + status);
+            assertSame(cached, manager.snapshot(), "status " + status);
+        }
+    }
+
+    @Test
+    void authenticationGuildAndUpgradeErrorsClearSensitiveSnapshot() {
+        Object[][] failures = {
+            {401, "token_invalid"},
+            {422, "not_in_guild"},
+            {426, "upgrade_required"}
+        };
+        for (Object[] failure : failures) {
+            FakeGateway gateway = new FakeGateway();
+            WarPlannerManager manager = manager(gateway);
+            manager.tick(true, true);
+            gateway.next.complete(snapshot(3, true));
+            gateway.next = new CompletableFuture<>();
+
+            CompletableFuture<WarPlannerManager.ActionResult> result = manager.setAvailability(30);
+            int status = (int) failure[0];
+            String code = (String) failure[1];
+            gateway.next.completeExceptionally(new ApiClient.ApiException(
+                    status,
+                    "{\"code\":\"" + code + "\",\"message\":\"Access changed\"}"));
+
+            assertFalse(result.join().success());
+            assertEquals(code, result.join().code());
+            assertEquals(WarPlannerManager.State.FORBIDDEN, manager.state());
+            assertNull(manager.snapshot());
+            assertFalse(manager.isAuthorized());
+        }
+    }
+
+    @Test
+    void staleGuildAuthorizationDependencyClearsSensitiveSnapshotButUsesOfflineRetry() {
+        FakeGateway gateway = new FakeGateway();
+        WarPlannerManager manager = manager(gateway);
+        manager.tick(true, true);
+        gateway.next.complete(snapshot(3, true));
+        gateway.next = new CompletableFuture<>();
+
+        CompletableFuture<WarPlannerManager.ActionResult> result = manager.refreshNow();
+        gateway.next.completeExceptionally(new ApiClient.ApiException(
+                503,
+                "{\"code\":\"guild_roster_unavailable\",\"message\":\"Roster unavailable\",\"retryable\":true}"));
+
+        assertFalse(result.join().success());
+        assertEquals("guild_roster_unavailable", result.join().code());
+        assertEquals(WarPlannerManager.State.OFFLINE, manager.state());
+        assertNull(manager.snapshot());
+        assertFalse(manager.isAuthorized());
+    }
+
+    @Test
+    void moveAndDeleteDispatchCapturedVersionsThroughGateway() {
+        FakeGateway gateway = new FakeGateway();
+        WarPlannerManager manager = manager(gateway);
+        manager.tick(true, true);
+        gateway.next.complete(snapshot(3, true));
+        gateway.next = new CompletableFuture<>();
+        TeamMemberMoveDraft move = new TeamMemberMoveDraft(1L, 2L, 3L, 4L);
+
+        CompletableFuture<WarPlannerManager.ActionResult> moveResult = manager.moveTeamMember("player", move);
+        assertEquals("player", gateway.movedPlayerUuid);
+        assertSame(move, gateway.moveDraft);
+        gateway.next.complete(snapshot(3, true));
+        assertTrue(moveResult.join().success());
+
+        gateway.next = new CompletableFuture<>();
+        CompletableFuture<WarPlannerManager.ActionResult> deleteResult = manager.deleteZone(9L, 6L);
+        assertEquals(6L, gateway.deleteVersion);
+        gateway.next.complete(snapshot(3, true));
+        assertTrue(deleteResult.join().success());
+    }
+
+    @Test
+    void parsesBackendErrorCodeSeparatelyFromItsMessage() {
+        WarPlannerManager.ApiErrorDetails details = WarPlannerManager.apiError(new ApiClient.ApiException(
+                409,
+                "{\"code\":\"stale_version\",\"message\":\"Reload this team\"}"));
+
+        assertEquals("stale_version", details.code());
+        assertEquals("Reload this team", details.message());
+    }
+
     private static WarPlannerManager manager(FakeGateway gateway) {
         return new WarPlannerManager(gateway, Clock.fixed(NOW, ZoneOffset.UTC));
     }
@@ -189,6 +317,9 @@ class WarPlannerManagerTest {
     private static final class FakeGateway implements WarPlannerManager.Gateway {
         private CompletableFuture<WarPlannerSnapshot> next = new CompletableFuture<>();
         private int calls;
+        private String movedPlayerUuid;
+        private TeamMemberMoveDraft moveDraft;
+        private long deleteVersion;
 
         private CompletableFuture<WarPlannerSnapshot> call() {
             calls++;
@@ -202,12 +333,24 @@ class WarPlannerManagerTest {
         @Override public CompletableFuture<WarPlannerSnapshot> pingPlayer(String playerUuid) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> createTeam(TeamDraft draft) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> updateTeam(long id, TeamDraft draft) { return call(); }
-        @Override public CompletableFuture<WarPlannerSnapshot> deleteTeam(long id) { return call(); }
+        @Override public CompletableFuture<WarPlannerSnapshot> deleteTeam(long id, long version) {
+            deleteVersion = version;
+            return call();
+        }
+        @Override public CompletableFuture<WarPlannerSnapshot> moveTeamMember(
+                String playerUuid, TeamMemberMoveDraft draft) {
+            movedPlayerUuid = playerUuid;
+            moveDraft = draft;
+            return call();
+        }
         @Override public CompletableFuture<WarPlannerSnapshot> joinTeam(long id) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> leaveTeam() { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> updateSupport(com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft draft) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> createZone(ZoneDraft draft) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> updateZone(long id, ZoneDraft draft) { return call(); }
-        @Override public CompletableFuture<WarPlannerSnapshot> deleteZone(long id) { return call(); }
+        @Override public CompletableFuture<WarPlannerSnapshot> deleteZone(long id, long version) {
+            deleteVersion = version;
+            return call();
+        }
     }
 }

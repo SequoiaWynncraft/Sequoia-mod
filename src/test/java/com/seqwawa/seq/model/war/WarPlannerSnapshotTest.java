@@ -20,6 +20,7 @@ class WarPlannerSnapshotTest {
         String json = """
                 {
                   "schema_version": 3,
+                  "revision": 41,
                   "server_time": "2026-08-16T12:00:00Z",
                   "self": {"player_uuid": "self", "can_manage": true},
                   "discord_roles_available": true,
@@ -30,7 +31,7 @@ class WarPlannerSnapshotTest {
                     "online": true, "available": true,
                     "available_until": "2026-08-16T13:00:00Z", "team_id": 12
                   }],
-                  "teams": [{"id": 12, "name": "Alpha", "version": 3,
+                  "teams": [{"id": 12, "name": "Alpha", "team_type": "FFA", "version": 3,
                     "composition_targets": {"solo": 1, "dps": 3, "tank": 1},
                     "members": [{"player_uuid": "self", "minecraft_username": "Player",
                       "position": 0}]}],
@@ -49,6 +50,7 @@ class WarPlannerSnapshotTest {
         WarPlannerSnapshot snapshot = GSON.fromJson(json, WarPlannerSnapshot.class);
 
         assertTrue(snapshot.isSupported());
+        assertEquals(41L, snapshot.revision());
         assertTrue(snapshot.self().canManage());
         assertEquals(12L, snapshot.roster().getFirst().teamId());
         assertTrue(snapshot.roster().getFirst().online());
@@ -56,6 +58,7 @@ class WarPlannerSnapshotTest {
                 java.util.List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS, WarCompositionRole.TANK),
                 snapshot.roster().getFirst().compositionRoles());
         assertEquals(12L, snapshot.teams().getFirst().id());
+        assertEquals(WarTeamType.FFA, snapshot.teams().getFirst().teamType());
         assertEquals(new WarCompositionTargets(1, 3, 1), snapshot.teams().getFirst().compositionTargets());
         assertEquals(8L, snapshot.zones().getFirst().id());
         assertEquals(java.util.List.of(12L), snapshot.zones().getFirst().assignedTeamIds());
@@ -71,6 +74,23 @@ class WarPlannerSnapshotTest {
                 WarPlannerSnapshot.class);
 
         assertEquals(WarCompositionTargets.NONE, snapshot.teams().getFirst().compositionTargets());
+    }
+
+    @Test
+    void missingTeamTypeUsesSafeLegacyInferenceWithoutDefaultingUnknownNamesToVlow() {
+        WarPlannerSnapshot snapshot = GSON.fromJson(
+                """
+                {"schema_version":3,"teams":[
+                  {"id":1,"name":"Alpha","version":1,"members":[]},
+                  {"id":2,"name":"VLow Munch 2","version":1,"members":[]},
+                  {"id":3,"name":"Unexpected","team_type":"NEW_KIND","version":1,"members":[]}
+                ]}
+                """,
+                WarPlannerSnapshot.class);
+
+        assertEquals(WarTeamType.UNKNOWN, snapshot.teams().get(0).teamType());
+        assertEquals(WarTeamType.VLOW_MUNCH, snapshot.teams().get(1).teamType());
+        assertEquals(WarTeamType.UNKNOWN, snapshot.teams().get(2).teamType());
     }
 
     @Test

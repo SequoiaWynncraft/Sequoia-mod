@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,9 @@ class WarPlannerDraftsTest {
         assertEquals(WarTeamType.HQ, WarTeamType.fromTeamName("HQ Team"));
         assertEquals(WarTeamType.VLOW_MUNCH, WarTeamType.fromTeamName("VLow Munch 3"));
         assertEquals(WarTeamType.FFA, WarTeamType.fromTeamName("FFA 7"));
+        assertEquals(WarTeamType.UNKNOWN, WarTeamType.fromTeamName("Alpha"));
+        assertThrows(IllegalArgumentException.class,
+                () -> new TeamDraft(WarTeamType.UNKNOWN, null, List.of(member("a"))));
     }
 
     @Test
@@ -58,5 +62,20 @@ class WarPlannerDraftsTest {
 
         assertEquals(new WarCompositionTargets(1, 3, 1), draft.compositionTargets());
         assertThrows(IllegalArgumentException.class, () -> new WarCompositionTargets(0, 6, 0));
+    }
+
+    @Test
+    void teamMemberMovesRequireVersionForEveryConcreteSide() {
+        TeamMemberMoveDraft betweenTeams = new TeamMemberMoveDraft(1L, 2L, 3L, 4L);
+        TeamMemberMoveDraft fromRoster = new TeamMemberMoveDraft(null, null, 3L, 4L);
+        TeamMemberMoveDraft toRoster = new TeamMemberMoveDraft(1L, 2L, null, null);
+
+        assertEquals(2L, betweenTeams.sourceVersion());
+        assertEquals(3L, fromRoster.targetTeamId());
+        assertEquals(1L, toRoster.sourceTeamId());
+        assertThrows(IllegalArgumentException.class, () -> new TeamMemberMoveDraft(1L, null, 3L, 4L));
+        assertThrows(IllegalArgumentException.class, () -> new TeamMemberMoveDraft(null, 2L, 3L, 4L));
+        assertThrows(IllegalArgumentException.class, () -> new TeamMemberMoveDraft(null, null, null, null));
+        assertThrows(IllegalArgumentException.class, () -> new TeamMemberMoveDraft(1L, 2L, 1L, 2L));
     }
 }

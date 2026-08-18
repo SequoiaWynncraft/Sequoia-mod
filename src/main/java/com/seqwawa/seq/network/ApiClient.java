@@ -30,6 +30,7 @@ import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
@@ -266,8 +267,20 @@ public class ApiClient {
                 WarPlannerSnapshot.class);
     }
 
-    public CompletableFuture<WarPlannerSnapshot> deleteWarPlannerTeam(long id) {
-        return deleteTyped("/war-planner/teams/" + id, WarPlannerSnapshot.class);
+    public CompletableFuture<WarPlannerSnapshot> deleteWarPlannerTeam(long id, long version) {
+        return deleteTyped(versionedWarPlannerPath("/war-planner/teams/" + id, version), WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> moveWarPlannerTeamMember(
+            String playerUuid, TeamMemberMoveDraft draft) {
+        if (playerUuid == null || playerUuid.isBlank()) {
+            throw new IllegalArgumentException("Player UUID is required.");
+        }
+        String encodedPlayerUuid = URLEncoder.encode(playerUuid, StandardCharsets.UTF_8);
+        return put(
+                "/war-planner/teams/members/" + encodedPlayerUuid,
+                buildWarTeamMemberMovePayload(draft),
+                WarPlannerSnapshot.class);
     }
 
     public CompletableFuture<WarPlannerSnapshot> joinWarPlannerTeam(long id) {
@@ -310,8 +323,8 @@ public class ApiClient {
                 WarPlannerSnapshot.class);
     }
 
-    public CompletableFuture<WarPlannerSnapshot> deleteWarPlannerZone(long id) {
-        return deleteTyped("/war-planner/zones/" + id, WarPlannerSnapshot.class);
+    public CompletableFuture<WarPlannerSnapshot> deleteWarPlannerZone(long id, long version) {
+        return deleteTyped(versionedWarPlannerPath("/war-planner/zones/" + id, version), WarPlannerSnapshot.class);
     }
 
     static JsonObject buildWarAvailabilityPayload(int durationMinutes) {
@@ -359,6 +372,33 @@ public class ApiClient {
         }
         body.add("members", members);
         return body;
+    }
+
+    static JsonObject buildWarTeamMemberMovePayload(TeamMemberMoveDraft draft) {
+        if (draft == null) {
+            throw new IllegalArgumentException("Team member move is required.");
+        }
+        JsonObject body = new JsonObject();
+        addNullableLong(body, "source_team_id", draft.sourceTeamId());
+        addNullableLong(body, "source_version", draft.sourceVersion());
+        addNullableLong(body, "target_team_id", draft.targetTeamId());
+        addNullableLong(body, "target_version", draft.targetVersion());
+        return body;
+    }
+
+    static String versionedWarPlannerPath(String path, long version) {
+        if (version <= 0) {
+            throw new IllegalArgumentException("A positive version is required for deletion.");
+        }
+        return path + "?version=" + version;
+    }
+
+    private static void addNullableLong(JsonObject body, String property, Long value) {
+        if (value == null) {
+            body.add(property, JsonNull.INSTANCE);
+        } else {
+            body.addProperty(property, value);
+        }
     }
 
     static JsonObject buildWarZonePayload(ZoneDraft draft, boolean includeVersion) {
