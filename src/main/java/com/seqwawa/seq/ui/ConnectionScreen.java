@@ -90,7 +90,8 @@ public class ConnectionScreen extends Screen {
         drawSidebarButton(canvas, fontName, btnX, btnY + step * 2, btnW, "Settings", false);
         drawSidebarButton(canvas, fontName, btnX, btnY + step * 3, btnW, "Map", false);
         drawSidebarButton(canvas, fontName, btnX, btnY + step * 4, btnW, "Ingredients", false);
-        drawSidebarButton(canvas, fontName, btnX, btnY + step * 5, btnW, "Github", false);
+        drawSidebarButton(canvas, fontName, btnX, btnY + step * 5, btnW, "Achievements", false);
+        drawSidebarButton(canvas, fontName, btnX, btnY + step * 6, btnW, "Github", false);
     }
 
     private void renderHeader(UiCanvas canvas, String fontName, float panelX, float panelWidth) {
@@ -249,6 +250,10 @@ public class ConnectionScreen extends Screen {
             return true;
         }
         if (isHovered(mx, my, btnX, btnY + step * 5, btnW, SIDEBAR_BUTTON_HEIGHT)) {
+            SeqClient.mc.setScreen(new AchievementsScreen(this));
+            return true;
+        }
+        if (isHovered(mx, my, btnX, btnY + step * 6, btnW, SIDEBAR_BUTTON_HEIGHT)) {
             openGithub();
             return true;
         }

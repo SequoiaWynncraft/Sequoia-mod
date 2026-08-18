@@ -38,6 +38,15 @@ control:
   warning: [250, 210, 128, 255]
   success: [126, 222, 184, 255]
 
+achievement:
+  bronze: [230, 150, 120, 255]
+  silver: [244, 226, 240, 255]
+  gold: [255, 214, 128, 255]
+  platinum: [186, 245, 232, 255]
+  diamond: [178, 200, 255, 255]
+  obsidian: [206, 140, 255, 255]
+  mythril: [255, 245, 255, 255]
+
 status:
   success_background: [36, 112, 89, 235]
   success_border: [126, 222, 184, 255]

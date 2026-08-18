@@ -21,6 +21,7 @@ import java.util.concurrent.Executors;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.CreateInviteResponse;
+import com.seqwawa.seq.model.GuildRaidProgress;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyRegion;
@@ -43,6 +44,7 @@ public class ApiClient {
                     + WynncraftServerPolicy.MAIN_SERVER_ONLY_MESSAGE
                     + "\"}";
     private static final String DEFAULT_ASPECT_REQUEST_REASON = "No reason provided.";
+    private static final String ACHIEVEMENTS_PATH = "/achievements/progress";
 
     private static ApiClient instance;
 
@@ -211,6 +213,10 @@ public class ApiClient {
         JsonObject body = new JsonObject();
         body.addProperty("role", role.name());
         return patch("/party-finder/members/me/role", body, Listing.class);
+    }
+
+    public CompletableFuture<GuildRaidProgress> getGuildRaidProgress() {
+        return get(ACHIEVEMENTS_PATH, GuildRaidProgress.class);
     }
 
     public CompletableFuture<RankProfilesResponse> getRecognizedRankProfiles() {

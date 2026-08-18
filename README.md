@@ -24,6 +24,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Party finder commands and UI
 - Raid tracking and announcements
 - Per-player raid gambit counts parsed natively from the raid-start roster
+- Sequoia achievements: your graid counts from the Sequoia backend, ranked from Bronze to Mythril
 - Interactive world map with gathering nodes analysis and active world events
 - Guild-specific settings and status screens
 
@@ -116,6 +117,24 @@ Navigation and map mode controls remain pinned in the left sidebar. Its map, ana
 Gathering analysis supports three scopes: all bundled gathering nodes, nodes inside any guild territory, or nodes inside the selected territory. Resource, profession, cluster, and score controls continue to refine the active scope.
 
 The Events view shows runs currently visible through the Wynncraft API. Choose All or Tracked to filter the markers, click a marker for event details, and use Track Event or the searchable tracking dropdown to manage persistent tracking. The management list can be limited to Tracked Only for quick removal. Tracked-event detection messages can be enabled in the World Events settings category.
+
+## Achievements
+
+Open **Achievements** from the main Sequoia screen (`/seq`, or `O`) or from any Sequoia sidebar.
+
+One line per guild raid with your completions, the tier you are on and how far you are from the next
+one, plus a combined line for every graid together. Tiers are named after the metal you earn, from
+Bronze up to Mythril, and each has its own colour. The combined line asks for twice as many runs as a
+single raid.
+
+The counts come from the Sequoia backend, which tallies the raid announcements the mod already sends,
+so your numbers follow you across accounts and machines. The mod turns those counts into tiers. It
+loads them when the game starts and refreshes a few seconds after every raid you finish, so the screen
+is filled in before you open it. When the backend cannot be reached it says so instead of showing
+zeroes.
+
+The metals are theme colours (`achievement.bronze` through `achievement.mythril`), so a personal theme
+can restyle all of them. See [`docs/theme-template.theme.yml`](docs/theme-template.theme.yml).
 
 ## Settings
 

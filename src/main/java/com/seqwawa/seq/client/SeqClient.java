@@ -30,6 +30,7 @@ import com.seqwawa.seq.managers.ChatManager;
 import com.seqwawa.seq.managers.ChatRegexFilterManager;
 import com.seqwawa.seq.managers.FontManager;
 import com.seqwawa.seq.managers.GameManager;
+import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
@@ -413,6 +414,7 @@ public class SeqClient implements ClientModInitializer {
             }
             // One poll feeds both the badge and the rank indexes.
             RankProfileRoster.getInstance().tick();
+            GuildRaidProgressService.getInstance().tick();
             if (seqBadgeNametagRenderer != null) {
                 seqBadgeNametagRenderer.tick();
             }

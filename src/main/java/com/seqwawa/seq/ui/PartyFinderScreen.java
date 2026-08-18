@@ -479,6 +479,14 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 btnX,
                 btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5,
                 btnW,
+                "Achievements",
+                false);
+        drawSidebarButton(
+                canvas,
+                fontName,
+                btnX,
+                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 6,
+                btnW,
                 "Github",
                 false);
     }
@@ -2089,6 +2097,16 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 my,
                 btnX,
                 btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5,
+                btnW,
+                SIDEBAR_BUTTON_HEIGHT)) {
+            SeqClient.mc.setScreen(new AchievementsScreen(this));
+            return true;
+        }
+        if (isHovered(
+                mx,
+                my,
+                btnX,
+                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 6,
                 btnW,
                 SIDEBAR_BUTTON_HEIGHT)) {
             try {

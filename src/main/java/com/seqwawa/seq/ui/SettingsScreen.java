@@ -219,6 +219,8 @@ public class SettingsScreen extends Screen {
             drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
                     btnW, "Ingredients", false);
             drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5,
+                    btnW, "Achievements", false);
+            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 6,
                     btnW, "Github", false);
 
             renderPrincessPrompt(canvas, fontName, screenHeight, System.currentTimeMillis());
@@ -544,8 +546,14 @@ public class SettingsScreen extends Screen {
                 SeqClient.mc.setScreen(new IngredientGuideScreen(this));
                 return true;
             }
-            // Github
+            // Achievements
             if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5, btnW,
+                    SIDEBAR_BUTTON_HEIGHT)) {
+                SeqClient.mc.setScreen(new AchievementsScreen(this));
+                return true;
+            }
+            // Github
+            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 6, btnW,
                     SIDEBAR_BUTTON_HEIGHT)) {
                 try {
                     java.net.URI uri = java.net.URI.create(GITHUB_URL);

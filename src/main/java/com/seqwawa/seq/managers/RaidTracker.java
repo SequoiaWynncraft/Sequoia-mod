@@ -135,17 +135,20 @@ public class RaidTracker {
         finishLocalCompletion(
                 completion,
                 PrincessRaidCelebration::triggerIfEnabled,
-                RaidGambitRosterTracker::reset);
+                RaidGambitRosterTracker::reset,
+                () -> GuildRaidProgressService.getInstance().onLocalRaidCompleted());
     }
 
     static void finishLocalCompletion(
             ResolvedRaidCompletion completion,
             Runnable completionEffect,
-            Runnable gambitResetEffect) {
+            Runnable gambitResetEffect,
+            Runnable progressRefreshEffect) {
         if (completion.localCompletion()) {
             RaidPartySnapshotTracker.onRaidCompleted();
             gambitResetEffect.run();
             completionEffect.run();
+            progressRefreshEffect.run();
         }
     }
 
