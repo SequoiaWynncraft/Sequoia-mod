@@ -8,6 +8,7 @@ import com.seqwawa.seq.map.GuildTerritory;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.model.war.WarCompositionRole;
+import com.seqwawa.seq.model.war.WarCompositionTargets;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.model.war.WarTeamType;
 import java.util.List;
@@ -94,6 +95,46 @@ class WarPlannerScreenTest {
                 List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS),
                 WarPlannerScreen.teamMemberRoles(snapshot, "member"));
         assertEquals(List.of(), WarPlannerScreen.teamMemberRoles(snapshot, "missing"));
+    }
+
+    @Test
+    void compositionTargetsReportOnlyMissingCapabilities() {
+        WarPlannerSnapshot.RosterMember dps = new WarPlannerSnapshot.RosterMember(
+                "dps", "Dps", null, null, List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS),
+                true, false, null, 1L);
+        WarPlannerSnapshot.RosterMember tank = new WarPlannerSnapshot.RosterMember(
+                "tank", "Tank", null, null, List.of(WarCompositionRole.TANK),
+                true, false, null, 1L);
+        WarPlannerSnapshot.Team team = new WarPlannerSnapshot.Team(
+                1,
+                "HQ Team",
+                1L,
+                new WarCompositionTargets(1, 2, 1),
+                List.of(
+                        new WarPlannerSnapshot.TeamMember("dps", "Dps", 0),
+                        new WarPlannerSnapshot.TeamMember("tank", "Tank", 1)));
+        WarPlannerSnapshot snapshot = snapshot(List.of(team), List.of(dps, tank));
+
+        assertEquals(1, WarPlannerScreen.teamCompositionCount(snapshot, team, WarCompositionRole.DPS));
+        assertEquals("Need D1", WarPlannerScreen.compositionTargetStatus(snapshot, team));
+    }
+
+    @Test
+    void unassignedDragPoolContainsOnlyOnlineUnassignedMembers() {
+        WarPlannerSnapshot.RosterMember free = rosterMember(
+                "free", "Free", List.of(WarCompositionRole.DPS), true);
+        WarPlannerSnapshot.RosterMember assigned = new WarPlannerSnapshot.RosterMember(
+                "assigned", "Assigned", null, null, List.of(WarCompositionRole.TANK),
+                true, true, null, 1L);
+        WarPlannerSnapshot.RosterMember offline = new WarPlannerSnapshot.RosterMember(
+                "offline", "Offline", null, null, List.of(WarCompositionRole.SOLO),
+                false, true, null, null);
+
+        assertEquals(
+                List.of("free"),
+                WarPlannerScreen.unassignedOnlineRoster(snapshot(List.of(), List.of(offline, assigned, free))).stream()
+                        .map(WarPlannerSnapshot.RosterMember::playerUuid)
+                        .toList());
     }
 
     @Test

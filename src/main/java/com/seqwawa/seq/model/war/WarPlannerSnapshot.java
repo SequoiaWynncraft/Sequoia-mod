@@ -102,9 +102,19 @@ public record WarPlannerSnapshot(
         }
     }
 
-    public record Team(long id, String name, Long version, List<TeamMember> members) {
+    public record Team(
+            long id,
+            String name,
+            Long version,
+            @SerializedName("composition_targets") WarCompositionTargets compositionTargets,
+            List<TeamMember> members) {
         public Team {
+            compositionTargets = compositionTargets == null ? WarCompositionTargets.NONE : compositionTargets;
             members = members == null ? List.of() : List.copyOf(members);
+        }
+
+        public Team(long id, String name, Long version, List<TeamMember> members) {
+            this(id, name, version, WarCompositionTargets.NONE, members);
         }
     }
 

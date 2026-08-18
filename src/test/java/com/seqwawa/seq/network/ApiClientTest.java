@@ -5,6 +5,7 @@ import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.war.WarCompositionRole;
+import com.seqwawa.seq.model.war.WarCompositionTargets;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
@@ -159,6 +160,7 @@ class ApiClientTest {
         TeamDraft draft = new TeamDraft(
                 WarTeamType.FFA,
                 7L,
+                new WarCompositionTargets(1, 3, 1),
                 List.of(
                         new TeamMemberDraft("leader-uuid"),
                         new TeamMemberDraft("eco-uuid")));
@@ -168,6 +170,9 @@ class ApiClientTest {
         assertEquals("FFA", payload.get("team_type").getAsString());
         assertFalse(payload.has("name"));
         assertEquals(7L, payload.get("version").getAsLong());
+        assertEquals(1, payload.getAsJsonObject("composition_targets").get("solo").getAsInt());
+        assertEquals(3, payload.getAsJsonObject("composition_targets").get("dps").getAsInt());
+        assertEquals(1, payload.getAsJsonObject("composition_targets").get("tank").getAsInt());
         assertEquals("leader-uuid", payload.getAsJsonArray("members")
                 .get(0).getAsJsonObject().get("player_uuid").getAsString());
         assertFalse(payload.getAsJsonArray("members").get(0).getAsJsonObject().has("role"));

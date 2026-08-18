@@ -31,6 +31,7 @@ class WarPlannerSnapshotTest {
                     "available_until": "2026-08-16T13:00:00Z", "team_id": 12
                   }],
                   "teams": [{"id": 12, "name": "Alpha", "version": 3,
+                    "composition_targets": {"solo": 1, "dps": 3, "tank": 1},
                     "members": [{"player_uuid": "self", "minecraft_username": "Player",
                       "position": 0}]}],
                   "support": {"version": 1, "slots": [
@@ -55,11 +56,21 @@ class WarPlannerSnapshotTest {
                 java.util.List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS, WarCompositionRole.TANK),
                 snapshot.roster().getFirst().compositionRoles());
         assertEquals(12L, snapshot.teams().getFirst().id());
+        assertEquals(new WarCompositionTargets(1, 3, 1), snapshot.teams().getFirst().compositionTargets());
         assertEquals(8L, snapshot.zones().getFirst().id());
         assertEquals(java.util.List.of(12L), snapshot.zones().getFirst().assignedTeamIds());
         assertEquals("#AABBCC", snapshot.zones().getFirst().color());
         assertEquals("self", snapshot.support().slots().getFirst().playerUuid());
         assertEquals(java.util.List.of("Ragni Main Entrance"), snapshot.territoryDetails().getFirst().connections());
+    }
+
+    @Test
+    void missingCompositionTargetsDefaultToNoTarget() {
+        WarPlannerSnapshot snapshot = GSON.fromJson(
+                "{\"schema_version\":3,\"teams\":[{\"id\":1,\"name\":\"FFA 1\",\"version\":1,\"members\":[]}]}",
+                WarPlannerSnapshot.class);
+
+        assertEquals(WarCompositionTargets.NONE, snapshot.teams().getFirst().compositionTargets());
     }
 
     @Test

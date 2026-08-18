@@ -340,6 +340,11 @@ public class ApiClient {
         }
         JsonObject body = new JsonObject();
         body.addProperty("team_type", draft.teamType().name());
+        JsonObject targets = new JsonObject();
+        targets.addProperty("solo", draft.compositionTargets().solo());
+        targets.addProperty("dps", draft.compositionTargets().dps());
+        targets.addProperty("tank", draft.compositionTargets().tank());
+        body.add("composition_targets", targets);
         if (includeVersion) {
             if (draft.version() == null || draft.version() <= 0) {
                 throw new IllegalArgumentException("Team version is required for updates.");

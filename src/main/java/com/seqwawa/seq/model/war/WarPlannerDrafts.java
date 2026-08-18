@@ -14,7 +14,11 @@ public final class WarPlannerDrafts {
         }
     }
 
-    public record TeamDraft(WarTeamType teamType, Long version, List<TeamMemberDraft> members) {
+    public record TeamDraft(
+            WarTeamType teamType,
+            Long version,
+            WarCompositionTargets compositionTargets,
+            List<TeamMemberDraft> members) {
         public TeamDraft {
             if (teamType == null) {
                 throw new IllegalArgumentException("A team type is required.");
@@ -22,6 +26,7 @@ public final class WarPlannerDrafts {
             if (version != null && version <= 0) {
                 throw new IllegalArgumentException("Team version must be positive.");
             }
+            compositionTargets = compositionTargets == null ? WarCompositionTargets.NONE : compositionTargets;
             members = members == null ? List.of() : List.copyOf(members);
             if (members.isEmpty() || members.size() > 5) {
                 throw new IllegalArgumentException("A war team must contain 1 to 5 people.");
@@ -30,6 +35,10 @@ public final class WarPlannerDrafts {
             if (distinct != members.size()) {
                 throw new IllegalArgumentException("A person can only occupy one slot in a team.");
             }
+        }
+
+        public TeamDraft(WarTeamType teamType, Long version, List<TeamMemberDraft> members) {
+            this(teamType, version, WarCompositionTargets.NONE, members);
         }
     }
 

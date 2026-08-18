@@ -47,4 +47,16 @@ class WarPlannerDraftsTest {
         assertThrows(IllegalArgumentException.class, () -> new ZoneDraft(
                 "North", "#AABBCC", List.of(7L), -1L, List.of("Ragni")));
     }
+
+    @Test
+    void compositionTargetsAreBoundedAndPreservedInDrafts() {
+        TeamDraft draft = new TeamDraft(
+                WarTeamType.FFA,
+                2L,
+                new WarCompositionTargets(1, 3, 1),
+                List.of(member("leader")));
+
+        assertEquals(new WarCompositionTargets(1, 3, 1), draft.compositionTargets());
+        assertThrows(IllegalArgumentException.class, () -> new WarCompositionTargets(0, 6, 0));
+    }
 }

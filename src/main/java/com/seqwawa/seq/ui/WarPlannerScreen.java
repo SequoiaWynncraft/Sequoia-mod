@@ -13,6 +13,7 @@ import com.seqwawa.seq.map.GuildTerritoryService;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.model.war.WarCompositionRole;
+import com.seqwawa.seq.model.war.WarCompositionTargets;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
@@ -57,6 +58,8 @@ public final class WarPlannerScreen extends Screen {
     private static final float TEAM_MEMBER_ROW_STEP = 11;
     private static final float TEAM_ACTION_TOP = 8;
     private static final float TEAM_SELF_ACTION_WIDTH = 68;
+    private static final float UNASSIGNED_POOL_TOP = 176;
+    private static final float UNASSIGNED_ROW_HEIGHT = 20;
     private static final float ZONE_CARD_HEIGHT = 132;
     private static final float ZONE_CARD_GAP = 8;
     private static final float ZONE_OVERVIEW_BAR_HEIGHT = 34;
@@ -85,6 +88,7 @@ public final class WarPlannerScreen extends Screen {
     private Long editingTeamId;
     private boolean teamEditorOpen;
     private WarTeamType teamType = WarTeamType.VLOW_MUNCH;
+    private WarCompositionTargets teamTargets = WarCompositionTargets.NONE;
     private boolean teamTypeMenuOpen;
     private final List<TeamMemberDraft> teamMembers = new ArrayList<>();
     private boolean teamEditorSaving;
@@ -95,6 +99,8 @@ public final class WarPlannerScreen extends Screen {
     private int supportEditorScrollRows;
     private boolean supportEditorSaving;
     private boolean draggingBackgroundOpacity;
+    private MemberDrag memberDrag;
+    private int unassignedScrollRows;
     private boolean roleEditorOpen;
     private boolean roleEditorSaving;
     private final EnumSet<WarCompositionRole> selectedCompositionRoles =
@@ -347,6 +353,9 @@ public final class WarPlannerScreen extends Screen {
         float cardsRight = width - supportWidth - PADDING * 2;
         float cardWidth = cardsRight - PADDING;
         renderSupportBoard(canvas, snapshot, cardsRight + PADDING, top, supportWidth, bottom);
+        if (manager.canManage()) {
+            renderUnassignedPool(canvas, snapshot, cardsRight + PADDING, top, supportWidth, bottom);
+        }
         if (snapshot.teams().isEmpty()) {
             String message = manager.canManage()
                     ? "No war teams yet. Use New team to create one."
@@ -361,11 +370,17 @@ public final class WarPlannerScreen extends Screen {
                 index++, y += TEAM_CARD_STEP) {
             Team team = snapshot.teams().get(index);
             boolean ownTeam = caller != null && caller.teamId() != null && caller.teamId() == team.id();
+            boolean dropTarget = memberDrag != null
+                    && memberDrag.active()
+                    && hit(nvgMouseX, nvgMouseY, PADDING, y + 1, cardWidth, TEAM_CARD_HEIGHT - 2);
             canvas.fillRoundedRect(PADDING, y + 1, cardWidth, TEAM_CARD_HEIGHT - 2, 4,
-                    plannerBackground(color(ownTeam ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT)));
+                    plannerBackground(color(dropTarget
+                            ? CONTROL_INPUT_HOVER
+                            : ownTeam ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT)));
             float selfActionX = teamSelfActionX(cardsRight, manager.canManage());
             float actionsLeft = caller != null ? selfActionX : manager.canManage() ? cardsRight - 132 : cardsRight;
-            String title = team.name() + (ownTeam ? " · Your team" : "") + " · " + team.members().size() + "/5";
+            String title = team.name() + (ownTeam ? " · Your team" : "") + " · " + team.members().size() + "/5"
+                    + " · " + compositionTargetStatus(snapshot, team);
             text(canvas, truncate(title, availableCharacters(PADDING + 8, actionsLeft - 6, 13, 32)),
                     PADDING + 8, y + 13, 13, color(TEXT_PRIMARY), false);
             List<TeamMember> members = team.members().stream()
@@ -401,6 +416,13 @@ public final class WarPlannerScreen extends Screen {
                         teamMembershipActionLabel(snapshot, team), false,
                         manager.isMutating() || !canChangeOwnTeam(snapshot, team));
             }
+        }
+        if (memberDrag != null && memberDrag.active()) {
+            RosterMember member = rosterMember(snapshot, memberDrag.playerUuid());
+            String label = member == null ? memberDrag.playerUuid() : member.displayName();
+            canvas.fillRoundedRect(nvgMouseX + 8, nvgMouseY - 10, Math.max(74, label.length() * 6 + 16), 20, 4,
+                    color(ACCENT_PRIMARY_DARK));
+            text(canvas, truncate(label, 22), nvgMouseX + 16, nvgMouseY, 10, color(TEXT_PRIMARY), false);
         }
     }
 
@@ -685,6 +707,36 @@ public final class WarPlannerScreen extends Screen {
         }
     }
 
+    private void renderUnassignedPool(
+            UiCanvas canvas, WarPlannerSnapshot snapshot, float x, float top, float panelWidth, float bottom) {
+        float poolY = top + UNASSIGNED_POOL_TOP;
+        if (poolY + 34 >= bottom) return;
+        boolean dropTarget = memberDrag != null
+                && memberDrag.active()
+                && hit(nvgMouseX, nvgMouseY, x, poolY, panelWidth, bottom - poolY);
+        canvas.fillRoundedRect(x, poolY, panelWidth, bottom - poolY, 5,
+                plannerBackground(color(dropTarget ? CONTROL_INPUT_HOVER : BACKGROUND_CONTENT)));
+        text(canvas, "Unassigned", x + 10, poolY + 16, 12, color(ACCENT_PRIMARY), false);
+        text(canvas, "Drag online players into a team", x + 10, poolY + 29, 9, color(TEXT_MUTED), false);
+        List<RosterMember> members = unassignedOnlineRoster(snapshot);
+        float rowsTop = poolY + 36;
+        int visibleRows = Math.max(0, (int) ((bottom - rowsTop - 4) / UNASSIGNED_ROW_HEIGHT));
+        int start = Math.min(unassignedScrollRows, Math.max(0, members.size() - 1));
+        for (int index = start; index < members.size() && index - start < visibleRows; index++) {
+            float rowY = rowsTop + (index - start) * UNASSIGNED_ROW_HEIGHT;
+            RosterMember member = members.get(index);
+            boolean hovered = memberDrag == null && hit(nvgMouseX, nvgMouseY, x + 6, rowY, panelWidth - 12, 18);
+            canvas.fillRoundedRect(x + 6, rowY, panelWidth - 12, 18, 3,
+                    plannerBackground(color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT)));
+            text(canvas, truncate(member.displayName(), 19), x + 12, rowY + 9, 10, color(TEXT_SECONDARY), false);
+            renderCompositionIcons(canvas, member.compositionRoles(), x + panelWidth - 54, rowY + 3);
+        }
+        if (members.size() > visibleRows && visibleRows > 0) {
+            text(canvas, (start + 1) + "–" + Math.min(members.size(), start + visibleRows) + "/" + members.size(),
+                    x + panelWidth - 34, poolY + 16, 8, color(TEXT_MUTED), true);
+        }
+    }
+
     private void renderSupportEditor(UiCanvas canvas, float width, float height) {
         WarPlannerSnapshot snapshot = manager.snapshot();
         if (snapshot == null || editingSupportSlot == null) return;
@@ -782,14 +834,15 @@ public final class WarPlannerScreen extends Screen {
         String automaticName = automaticTeamName(snapshot, teamType, editingTeamId);
         text(canvas, "Creates " + automaticName, x + w - 188, fieldY + 12, 9, color(TEXT_MUTED), false);
         text(canvas, teamTypeMenuOpen ? "▲" : "▼", x + w - 24, fieldY + 12, 8, color(TEXT_SECONDARY), true);
-        text(canvas, "Click a player to add/remove. Capabilities: Solo wand · DPS relik · Tank spear", x + 12, fieldY + 38, 10,
+        renderCompositionTargetControls(canvas, x, fieldY + 32, w);
+        text(canvas, "Targets warn about missing capabilities; they do not block saving.", x + 12, fieldY + 64, 9,
                 color(TEXT_MUTED), false);
 
         if (flashMessage != null && !flashMessage.isBlank()) {
-            text(canvas, truncate(flashMessage, 58), x + 12, fieldY + 53, 9, color(CONTROL_WARNING), false);
+            text(canvas, truncate(flashMessage, 58), x + 12, fieldY + 78, 9, color(CONTROL_WARNING), false);
         }
         List<RosterMember> eligible = editableRoster(snapshot);
-        float listTop = fieldY + 64;
+        float listTop = fieldY + 90;
         float listBottom = y + h - 42;
         canvas.scissor(x + 8, listTop, w - 16, Math.max(0, listBottom - listTop));
         int start = Math.min(editorScrollRows, Math.max(0, eligible.size() - 1));
@@ -818,6 +871,20 @@ public final class WarPlannerScreen extends Screen {
                 teamEditorSaving ? "Saving…" : "Save", false, teamEditorSaving);
         if (teamTypeMenuOpen) {
             renderTeamTypeMenu(canvas, snapshot, x + 12, fieldY + 25, w - 24);
+        }
+    }
+
+    private void renderCompositionTargetControls(UiCanvas canvas, float x, float y, float width) {
+        text(canvas, "Comp", x + 12, y + 11, 9, color(TEXT_MUTED), false);
+        float controlWidth = Math.min(92, Math.max(70, (width - 68) / 3));
+        for (int index = 0; index < WarCompositionRole.values().length; index++) {
+            WarCompositionRole role = WarCompositionRole.values()[index];
+            float controlX = x + 55 + index * controlWidth;
+            renderCompositionIcons(canvas, List.of(role), controlX, y + 5);
+            button(canvas, controlX + 17, y, 18, BUTTON_HEIGHT, "−", false, teamEditorSaving);
+            text(canvas, Integer.toString(teamTargets.target(role)), controlX + 43, y + 11, 10,
+                    color(TEXT_PRIMARY), true);
+            button(canvas, controlX + 51, y, 18, BUTTON_HEIGHT, "+", false, teamEditorSaving);
         }
     }
 
@@ -941,6 +1008,16 @@ public final class WarPlannerScreen extends Screen {
                     return true;
                 }
             }
+            if (!manager.isMutating()) {
+                MemberDrag candidate = teamMemberDragAt(snapshot, mx, my, width);
+                if (candidate == null) {
+                    candidate = unassignedMemberDragAt(snapshot, mx, my, width, height);
+                }
+                if (candidate != null) {
+                    memberDrag = new MemberDrag(candidate.playerUuid(), candidate.sourceTeamId(), mx, my, false);
+                    return true;
+                }
+            }
         }
         if (tab == Tab.ZONES) {
             return clickZoneContent(snapshot, mx, my, width);
@@ -1047,6 +1124,17 @@ public final class WarPlannerScreen extends Screen {
             updateBackgroundOpacity(mx, displayControls(viewport.width(), manager.canManage()));
             return true;
         }
+        if (memberDrag != null && click.button() == 0) {
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
+            float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
+            float my = MinecraftUiRenderer.mouseY(click.y());
+            if (!memberDrag.active()
+                    && Math.hypot(mx - memberDrag.startX(), my - memberDrag.startY()) >= 4) {
+                memberDrag = new MemberDrag(
+                        memberDrag.playerUuid(), memberDrag.sourceTeamId(), memberDrag.startX(), memberDrag.startY(), true);
+            }
+            return true;
+        }
         return super.mouseDragged(click, deltaX, deltaY);
     }
 
@@ -1055,6 +1143,17 @@ public final class WarPlannerScreen extends Screen {
         if (click.button() == 0 && draggingBackgroundOpacity) {
             draggingBackgroundOpacity = false;
             SeqClient.getConfigManager().save();
+            return true;
+        }
+        if (click.button() == 0 && memberDrag != null) {
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
+            float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
+            float my = MinecraftUiRenderer.mouseY(click.y());
+            MemberDrag completed = memberDrag;
+            memberDrag = null;
+            if (completed.active()) {
+                dropTeamMember(completed, mx, my, viewport.width(), MinecraftUiRenderer.screenHeight());
+            }
             return true;
         }
         return super.mouseReleased(click);
@@ -1098,7 +1197,21 @@ public final class WarPlannerScreen extends Screen {
             saveTeam();
             return true;
         }
-        float listTop = fieldY + 64;
+        float targetY = fieldY + 32;
+        float controlWidth = Math.min(92, Math.max(70, (w - 68) / 3));
+        for (int index = 0; index < WarCompositionRole.values().length; index++) {
+            WarCompositionRole role = WarCompositionRole.values()[index];
+            float controlX = x + 55 + index * controlWidth;
+            if (hit(mx, my, controlX + 17, targetY, 18, BUTTON_HEIGHT)) {
+                teamTargets = teamTargets.with(role, Math.max(0, teamTargets.target(role) - 1));
+                return true;
+            }
+            if (hit(mx, my, controlX + 51, targetY, 18, BUTTON_HEIGHT)) {
+                teamTargets = teamTargets.with(role, Math.min(5, teamTargets.target(role) + 1));
+                return true;
+            }
+        }
+        float listTop = fieldY + 90;
         float listBottom = y + h - 42;
         if (my >= listTop && my <= listBottom) {
             List<RosterMember> eligible = editableRoster(snapshot);
@@ -1181,6 +1294,19 @@ public final class WarPlannerScreen extends Screen {
             supportEditorScrollRows = clampRows(
                     supportEditorScrollRows + delta, supportCandidates(snapshot, editingSupportSlot).size());
         } else {
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
+            float localMouseX = MinecraftUiRenderer.mouseX(mouseX) - viewport.x();
+            float localMouseY = MinecraftUiRenderer.mouseY(mouseY);
+            float supportWidth = Math.min(214, Math.max(176, viewport.width() * .28f));
+            float supportX = viewport.width() - supportWidth - PADDING;
+            if (tab == Tab.TEAMS
+                    && manager.canManage()
+                    && localMouseX >= supportX
+                    && localMouseY >= contentTop() + UNASSIGNED_POOL_TOP) {
+                unassignedScrollRows = clampRows(
+                        unassignedScrollRows + delta, unassignedOnlineRoster(snapshot).size());
+                return true;
+            }
             int size = switch (tab) {
                 case ROSTER -> snapshot.visibleRoster().size();
                 case TEAMS -> snapshot.teams().size();
@@ -1233,6 +1359,7 @@ public final class WarPlannerScreen extends Screen {
         teamType = team == null
                 ? defaultTeamType(manager.snapshot())
                 : WarTeamType.fromTeamName(team.name());
+        teamTargets = team == null ? WarCompositionTargets.NONE : team.compositionTargets();
         if (team == null) {
             RosterMember caller = manager.snapshot() == null ? null : manager.snapshot().caller();
             RosterMember initialLeader = caller != null && caller.online() && caller.teamId() == null
@@ -1269,6 +1396,7 @@ public final class WarPlannerScreen extends Screen {
         teamEditorOpen = false;
         editingTeamId = null;
         teamType = WarTeamType.VLOW_MUNCH;
+        teamTargets = WarCompositionTargets.NONE;
         teamTypeMenuOpen = false;
         teamMembers.clear();
         editorScrollRows = 0;
@@ -1284,7 +1412,7 @@ public final class WarPlannerScreen extends Screen {
                     .map(Team::version)
                     .findFirst()
                     .orElse(null);
-            TeamDraft draft = new TeamDraft(teamType, version, teamMembers);
+            TeamDraft draft = new TeamDraft(teamType, version, teamTargets, teamMembers);
             Long id = editingTeamId;
             teamEditorSaving = true;
             manager.saveTeam(id, draft).whenComplete((result, error) -> SeqClient.mc.execute(() -> {
@@ -1424,6 +1552,119 @@ public final class WarPlannerScreen extends Screen {
                 .toList();
     }
 
+    private MemberDrag teamMemberDragAt(
+            WarPlannerSnapshot snapshot, float mouseX, float mouseY, float width) {
+        float supportWidth = Math.min(214, Math.max(176, width * .28f));
+        float cardsRight = width - supportWidth - PADDING * 2;
+        if (mouseX < PADDING || mouseX > cardsRight - 6) return null;
+        int start = Math.min(scrollRows, Math.max(0, snapshot.teams().size() - 1));
+        float teamY = contentTop();
+        for (int index = start; index < snapshot.teams().size(); index++, teamY += TEAM_CARD_STEP) {
+            Team team = snapshot.teams().get(index);
+            List<TeamMember> members = team.members().stream()
+                    .sorted(Comparator.comparingInt(TeamMember::position))
+                    .toList();
+            for (int memberIndex = 0; memberIndex < members.size(); memberIndex++) {
+                float memberY = teamY + 31 + memberIndex * TEAM_MEMBER_ROW_STEP;
+                if (hit(mouseX, mouseY, PADDING + 8, memberY - 6, cardsRight - PADDING - 16, 11)) {
+                    return new MemberDrag(
+                            members.get(memberIndex).playerUuid(), team.id(), mouseX, mouseY, false);
+                }
+            }
+        }
+        return null;
+    }
+
+    private MemberDrag unassignedMemberDragAt(
+            WarPlannerSnapshot snapshot, float mouseX, float mouseY, float width, float height) {
+        float supportWidth = Math.min(214, Math.max(176, width * .28f));
+        float supportX = width - supportWidth - PADDING;
+        float rowsTop = contentTop() + UNASSIGNED_POOL_TOP + 36;
+        float bottom = height - 42;
+        if (!hit(mouseX, mouseY, supportX + 6, rowsTop, supportWidth - 12, Math.max(0, bottom - rowsTop))) {
+            return null;
+        }
+        int row = unassignedScrollRows + (int) ((mouseY - rowsTop) / UNASSIGNED_ROW_HEIGHT);
+        List<RosterMember> members = unassignedOnlineRoster(snapshot);
+        if (row < 0 || row >= members.size()) return null;
+        return new MemberDrag(members.get(row).playerUuid(), null, mouseX, mouseY, false);
+    }
+
+    private void dropTeamMember(MemberDrag drag, float mouseX, float mouseY, float width, float height) {
+        WarPlannerSnapshot snapshot = manager.snapshot();
+        if (snapshot == null || manager.isMutating()) return;
+        Team target = teamAt(snapshot, mouseX, mouseY, width);
+        if (target != null) {
+            if (drag.sourceTeamId() != null && drag.sourceTeamId() == target.id()) return;
+            if (target.members().size() >= 5) {
+                flashMessage = target.name() + " is full.";
+                return;
+            }
+            ArrayList<TeamMemberDraft> members = target.members().stream()
+                    .sorted(Comparator.comparingInt(TeamMember::position))
+                    .map(member -> new TeamMemberDraft(member.playerUuid()))
+                    .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+            if (members.stream().noneMatch(member -> samePlayer(member.playerUuid(), drag.playerUuid()))) {
+                members.add(new TeamMemberDraft(drag.playerUuid()));
+            }
+            showResult(manager.saveTeam(
+                    target.id(),
+                    new TeamDraft(
+                            WarTeamType.fromTeamName(target.name()),
+                            target.version(),
+                            target.compositionTargets(),
+                            members)));
+            return;
+        }
+
+        float supportWidth = Math.min(214, Math.max(176, width * .28f));
+        float supportX = width - supportWidth - PADDING;
+        float poolY = contentTop() + UNASSIGNED_POOL_TOP;
+        if (drag.sourceTeamId() == null
+                || !hit(mouseX, mouseY, supportX, poolY, supportWidth, Math.max(0, height - 42 - poolY))) {
+            return;
+        }
+        Team source = snapshot.team(drag.sourceTeamId());
+        if (source == null) return;
+        if (source.members().size() <= 1) {
+            flashMessage = "Use Delete team to remove its last member.";
+            return;
+        }
+        List<TeamMemberDraft> remaining = source.members().stream()
+                .sorted(Comparator.comparingInt(TeamMember::position))
+                .filter(member -> !samePlayer(member.playerUuid(), drag.playerUuid()))
+                .map(member -> new TeamMemberDraft(member.playerUuid()))
+                .toList();
+        showResult(manager.saveTeam(
+                source.id(),
+                new TeamDraft(
+                        WarTeamType.fromTeamName(source.name()),
+                        source.version(),
+                        source.compositionTargets(),
+                        remaining)));
+    }
+
+    private Team teamAt(WarPlannerSnapshot snapshot, float mouseX, float mouseY, float width) {
+        float supportWidth = Math.min(214, Math.max(176, width * .28f));
+        float cardsRight = width - supportWidth - PADDING * 2;
+        if (mouseX < PADDING || mouseX > cardsRight - PADDING || mouseY < contentTop()) return null;
+        int visibleRow = (int) ((mouseY - contentTop()) / TEAM_CARD_STEP);
+        float rowY = contentTop() + visibleRow * TEAM_CARD_STEP;
+        if (visibleRow < 0 || !hit(mouseX, mouseY, PADDING, rowY + 1, cardsRight - PADDING, TEAM_CARD_HEIGHT - 2)) {
+            return null;
+        }
+        int index = scrollRows + visibleRow;
+        return index < snapshot.teams().size() ? snapshot.teams().get(index) : null;
+    }
+
+    static List<RosterMember> unassignedOnlineRoster(WarPlannerSnapshot snapshot) {
+        return snapshot.roster().stream()
+                .filter(RosterMember::online)
+                .filter(member -> member.teamId() == null)
+                .sorted(Comparator.comparing(RosterMember::displayName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
     private boolean setAvailability(int minutes) {
         showResult(manager.setAvailability(minutes));
         return true;
@@ -1515,6 +1756,22 @@ public final class WarPlannerScreen extends Screen {
     static List<WarCompositionRole> teamMemberRoles(WarPlannerSnapshot snapshot, String playerUuid) {
         RosterMember member = rosterMember(snapshot, playerUuid);
         return member == null ? List.of() : member.compositionRoles();
+    }
+
+    static int teamCompositionCount(WarPlannerSnapshot snapshot, Team team, WarCompositionRole role) {
+        return (int) team.members().stream()
+                .filter(member -> teamMemberRoles(snapshot, member.playerUuid()).contains(role))
+                .count();
+    }
+
+    static String compositionTargetStatus(WarPlannerSnapshot snapshot, Team team) {
+        if (!team.compositionTargets().configured()) return "No comp target";
+        ArrayList<String> shortages = new ArrayList<>();
+        for (WarCompositionRole role : WarCompositionRole.values()) {
+            int missing = team.compositionTargets().target(role) - teamCompositionCount(snapshot, team, role);
+            if (missing > 0) shortages.add(role.name().substring(0, 1) + missing);
+        }
+        return shortages.isEmpty() ? "Comp ready" : "Need " + String.join("/", shortages);
     }
 
     static boolean canChangeOwnTeam(WarPlannerSnapshot snapshot, Team team) {
@@ -1813,4 +2070,6 @@ public final class WarPlannerScreen extends Screen {
             return opacityX;
         }
     }
+
+    private record MemberDrag(String playerUuid, Long sourceTeamId, float startX, float startY, boolean active) {}
 }
