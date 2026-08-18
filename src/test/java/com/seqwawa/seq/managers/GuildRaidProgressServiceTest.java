@@ -162,6 +162,72 @@ class GuildRaidProgressServiceTest {
         assertEquals(1, calls.get());
     }
 
+    @Test
+    void aFinishedRaidIsDroppedWhileTheBackendIsGone() {
+        GuildRaidProgressService service = service();
+        service.tick();
+
+        connected.set(false);
+        service.onLocalRaidCompleted();
+
+        assertEquals(1, calls.get());
+    }
+
+    @Test
+    void switchingAccountForgetsTheProgressOfThePreviousOne() {
+        GuildRaidProgressService service = service();
+        service.tick();
+        assertEquals(512, service.progress().count(SeqRaid.TNA));
+
+        service.reset();
+
+        assertEquals(State.LOADING, service.state());
+        assertEquals(0, service.progress().totalCount());
+    }
+
+    @Test
+    void switchingAccountReadsAgainWithoutWaitingForTheInterval() {
+        GuildRaidProgressService service = service();
+        service.tick();
+
+        service.reset();
+        answer.set(CompletableFuture.completedFuture(progress(7)));
+        service.tick();
+
+        assertEquals(2, calls.get());
+        assertEquals(7, service.progress().count(SeqRaid.TNA));
+    }
+
+    @Test
+    void aReadStartedByThePreviousAccountIsThrownAway() {
+        CompletableFuture<GuildRaidProgress> pending = new CompletableFuture<>();
+        answer.set(pending);
+        GuildRaidProgressService service = service();
+        service.tick();
+
+        service.reset();
+        pending.complete(progress(512));
+
+        assertEquals(State.LOADING, service.state());
+        assertEquals(0, service.progress().totalCount());
+    }
+
+    @Test
+    void aReadStartedByThePreviousAccountDoesNotBlockTheNextOne() {
+        CompletableFuture<GuildRaidProgress> pending = new CompletableFuture<>();
+        answer.set(pending);
+        GuildRaidProgressService service = service();
+        service.tick();
+
+        service.reset();
+        pending.complete(progress(512));
+        answer.set(CompletableFuture.completedFuture(progress(7)));
+        service.tick();
+
+        assertEquals(State.READY, service.state());
+        assertEquals(7, service.progress().count(SeqRaid.TNA));
+    }
+
     private GuildRaidProgressService service() {
         return new GuildRaidProgressService(
                 () -> {

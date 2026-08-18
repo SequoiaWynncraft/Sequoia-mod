@@ -35,6 +35,7 @@ import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.managers.BombShareManager;
 import com.seqwawa.seq.managers.DiscordRankChatDecorator;
 import com.seqwawa.seq.managers.DiscordRankService;
+import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyFinderManager;
@@ -117,6 +118,7 @@ public class SeqCommand {
                                                 .executes(ctx -> {
                                                         ConnectionManager.getInstance().disconnect();
                                                         SeqClient.getConfigManager().clearToken();
+                                                        GuildRaidProgressService.getInstance().reset();
                                                         sendFeedback(ctx.getSource(), "Logged out and token cleared.");
                                                         return 1;
                                                 }))

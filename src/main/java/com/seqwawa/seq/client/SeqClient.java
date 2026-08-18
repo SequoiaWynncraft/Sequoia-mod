@@ -363,6 +363,7 @@ public class SeqClient implements ClientModInitializer {
                         serverScope,
                         notifyTrackedWorldEventsSetting != null && notifyTrackedWorldEventsSetting.getValue());
             }
+            GuildRaidProgressService.getInstance().tick();
             if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
                 RadianceCheckerClient.reset();
                 ConnectionManager.disconnectForBlockedServer();
@@ -414,7 +415,6 @@ public class SeqClient implements ClientModInitializer {
             }
             // One poll feeds both the badge and the rank indexes.
             RankProfileRoster.getInstance().tick();
-            GuildRaidProgressService.getInstance().tick();
             if (seqBadgeNametagRenderer != null) {
                 seqBadgeNametagRenderer.tick();
             }
@@ -483,6 +483,7 @@ public class SeqClient implements ClientModInitializer {
             wynnPartySyncManager.reset();
         }
         RaidPartySnapshotTracker.reset();
+        GuildRaidProgressService.getInstance().reset();
         if (guildWarTracker != null) {
             guildWarTracker.reset();
         }

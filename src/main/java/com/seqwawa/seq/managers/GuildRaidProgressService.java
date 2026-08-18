@@ -35,6 +35,7 @@ public final class GuildRaidProgressService {
     private volatile State state = State.LOADING;
     private volatile boolean loading;
     private volatile long lastAttemptAtMs;
+    private volatile int generation;
 
     GuildRaidProgressService(
             Supplier<CompletableFuture<GuildRaidProgress>> fetcher,
@@ -66,6 +67,14 @@ public final class GuildRaidProgressService {
         return state;
     }
 
+    public synchronized void reset() {
+        generation++;
+        loading = false;
+        lastAttemptAtMs = 0;
+        progress = GuildRaidProgress.EMPTY;
+        state = State.LOADING;
+    }
+
     public synchronized void tick() {
         if (connected.getAsBoolean()) {
             requestRefresh();
@@ -87,6 +96,9 @@ public final class GuildRaidProgressService {
     }
 
     boolean forceRefresh() {
+        if (!connected.getAsBoolean()) {
+            return false;
+        }
         return start(clock.getAsLong());
     }
 
@@ -99,7 +111,8 @@ public final class GuildRaidProgressService {
         if (state != State.READY) {
             state = State.LOADING;
         }
-        fetcher.get().whenComplete(this::accept);
+        int startedFor = generation;
+        fetcher.get().whenComplete((fetched, failure) -> accept(startedFor, fetched, failure));
         return true;
     }
 
@@ -107,7 +120,10 @@ public final class GuildRaidProgressService {
         CompletableFuture.delayedExecutor(RAID_SETTLE_DELAY_MS, TimeUnit.MILLISECONDS).execute(action);
     }
 
-    private synchronized void accept(GuildRaidProgress fetched, Throwable failure) {
+    private synchronized void accept(int startedFor, GuildRaidProgress fetched, Throwable failure) {
+        if (startedFor != generation) {
+            return;
+        }
         loading = false;
         if (fetched == null) {
             if (state != State.READY) {
