@@ -112,7 +112,11 @@ public final class GuildRaidProgressService {
             state = State.LOADING;
         }
         int startedFor = generation;
-        fetcher.get().whenComplete((fetched, failure) -> accept(startedFor, fetched, failure));
+        try {
+            fetcher.get().whenComplete((fetched, failure) -> accept(startedFor, fetched, failure));
+        } catch (RuntimeException failure) {
+            accept(startedFor, null, failure);
+        }
         return true;
     }
 

@@ -21,6 +21,7 @@ class GuildRaidProgressServiceTest {
     private final AtomicLong now = new AtomicLong(1_000_000);
     private final AtomicInteger calls = new AtomicInteger();
     private final AtomicBoolean connected = new AtomicBoolean(true);
+    private final AtomicBoolean unreachable = new AtomicBoolean();
     private final AtomicReference<CompletableFuture<GuildRaidProgress>> answer =
             new AtomicReference<>(CompletableFuture.completedFuture(progress(512)));
 
@@ -228,10 +229,52 @@ class GuildRaidProgressServiceTest {
         assertEquals(7, service.progress().count(SeqRaid.TNA));
     }
 
+    @Test
+    void aReadThatBlowsUpOnTheSpotLeavesTheScreenUnavailable() {
+        unreachable.set(true);
+        GuildRaidProgressService service = service();
+
+        service.tick();
+
+        assertEquals(1, calls.get());
+        assertEquals(State.UNAVAILABLE, service.state());
+    }
+
+    @Test
+    void aReadThatBlowsUpOnTheSpotDoesNotWedgeTheNextOne() {
+        unreachable.set(true);
+        GuildRaidProgressService service = service();
+        service.tick();
+
+        unreachable.set(false);
+        now.addAndGet(GuildRaidProgressService.REFRESH_INTERVAL_MS);
+        service.tick();
+
+        assertEquals(2, calls.get());
+        assertEquals(State.READY, service.state());
+        assertEquals(512, service.progress().count(SeqRaid.TNA));
+    }
+
+    @Test
+    void aReadThatBlowsUpOnTheSpotStillLetsARaidRetry() {
+        unreachable.set(true);
+        GuildRaidProgressService service = service();
+        service.tick();
+
+        unreachable.set(false);
+        service.onLocalRaidCompleted();
+
+        assertEquals(2, calls.get());
+        assertEquals(State.READY, service.state());
+    }
+
     private GuildRaidProgressService service() {
         return new GuildRaidProgressService(
                 () -> {
                     calls.incrementAndGet();
+                    if (unreachable.get()) {
+                        throw new IllegalStateException("no http client yet");
+                    }
                     return answer.get();
                 },
                 now::get,
