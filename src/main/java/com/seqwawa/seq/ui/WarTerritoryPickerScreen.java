@@ -59,6 +59,7 @@ public final class WarTerritoryPickerScreen extends Screen {
     private final WarPlannerManager manager = SeqClient.getWarPlannerManager();
     private final Zone original;
     private final boolean readOnly;
+    private final boolean overview;
     private final GuildTerritoryService territoryService = GuildTerritoryService.getInstance();
     private final GatheringMapImageService mapImageService = GatheringMapImageService.getInstance();
 
@@ -72,6 +73,7 @@ public final class WarTerritoryPickerScreen extends Screen {
     private String message;
     private boolean saving;
     private int teamScrollRows;
+    private int overviewScrollRows;
 
     private float nvgMouseX;
     private float nvgMouseY;
@@ -85,21 +87,32 @@ public final class WarTerritoryPickerScreen extends Screen {
     private UiImage mapImage;
     private long loadedImageVersion = -1;
     public WarTerritoryPickerScreen(Screen parent, Zone original) {
-        this(parent, original, false);
+        this(parent, original, false, false);
     }
 
     public WarTerritoryPickerScreen(Screen parent, Zone original, boolean readOnly) {
+        this(parent, original, readOnly, false);
+    }
+
+    public static WarTerritoryPickerScreen overview(Screen parent) {
+        return new WarTerritoryPickerScreen(parent, null, true, true);
+    }
+
+    private WarTerritoryPickerScreen(Screen parent, Zone original, boolean readOnly, boolean overview) {
         super(Component.literal("War territory zone"));
         this.parent = parent;
         this.original = original;
         this.readOnly = readOnly;
-        this.zoneName = original == null ? "New zone" : original.name();
+        this.overview = overview;
+        this.zoneName = overview ? "All zones" : original == null ? "New zone" : original.name();
         Color initialColor = parseColor(original == null ? "#55B8C5" : original.color(), new Color(0x55B8C5));
         this.zoneColorSetting = new Setting.ColorSetting("zone_color", "war_planner", initialColor.getRGB());
         this.zoneColorSetting.setPresentation("Zone color", null, null);
         this.zoneColorWidget = new ColorWidget(zoneColorSetting, null);
         if (original != null) assignedTeamIds.addAll(original.assignedTeamIds());
-        this.selection = WarZoneSelection.of(original == null ? List.of() : original.territories());
+        this.selection = WarZoneSelection.of(overview
+                ? overviewTerritoryNames(manager == null ? null : manager.snapshot())
+                : original == null ? List.of() : original.territories());
         territoryService.loadBundledTerritories();
         territoryIndex = territoryService.index();
         mapImageService.requestLoad();
@@ -120,6 +133,13 @@ public final class WarTerritoryPickerScreen extends Screen {
         UiRenderer.renderScreen(this, this::renderPicker);
     }
 
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        if (WarPlannerScreen.shouldBlurBackground(WarPlannerScreen.backgroundOpacityPercent())) {
+            super.renderBackground(graphics, mouseX, mouseY, partialTick);
+        }
+    }
+
     private void renderPicker(UiCanvas canvas) {
         float width = canvas.metrics().width();
         float height = canvas.metrics().height();
@@ -127,7 +147,7 @@ public final class WarTerritoryPickerScreen extends Screen {
             InitialViewport initial = initialViewport(
                     territoryIndex,
                     selection.names(),
-                    readOnly && original != null,
+                    overview || readOnly && original != null,
                     Math.max(1, width - SIDEBAR_WIDTH),
                     Math.max(1, height - HEADER_HEIGHT));
             centerX = initial.centerX();
@@ -148,7 +168,9 @@ public final class WarTerritoryPickerScreen extends Screen {
         if (controls.resourceX() > SIDEBAR_WIDTH + 150) {
             text(
                     canvas,
-                    original == null
+                    overview
+                            ? "All territory zones"
+                            : original == null
                             ? "Create territory zone"
                             : readOnly ? "View territory zone" : "Edit territory zone",
                     SIDEBAR_WIDTH + 12,
@@ -208,6 +230,8 @@ public final class WarTerritoryPickerScreen extends Screen {
         MapBounds visible = viewport.visibleBounds();
         Color selectedColor = new Color(zoneColorSetting.getValue());
         Map<String, WarPlannerSnapshot.TerritoryDetails> details = territoryDetails();
+        WarPlannerSnapshot snapshot = manager.snapshot();
+        Map<String, Zone> zonesByTerritory = overview ? zonesByTerritory(snapshot) : Map.of();
         for (GuildTerritory territory : territoryIndex.territories()) {
             if (!allowed.contains(territory.name()) || !intersects(visible, territory.bounds())) continue;
             MapBounds bounds = territory.bounds();
@@ -223,7 +247,11 @@ public final class WarTerritoryPickerScreen extends Screen {
             if (hovered) {
                 canvas.fillRect(x, y, w, h, alpha(color(MAP_TERRITORY), 42));
             }
-            if (selected) {
+            Zone overviewZone = zonesByTerritory.get(territory.name().toLowerCase(Locale.ROOT));
+            if (overviewZone != null) {
+                Color zoneColor = parseColor(overviewZone.color(), color(ACCENT_PRIMARY));
+                canvas.strokeRect(x - 1, y - 1, w + 2, h + 2, 2.2f, alpha(zoneColor, 255));
+            } else if (selected) {
                 canvas.strokeRect(x - 1, y - 1, w + 2, h + 2, 2.2f, alpha(selectedColor, 255));
             } else {
                 canvas.strokeRect(x, y, w, h, hovered ? 1.7f : .7f,
@@ -234,23 +262,33 @@ public final class WarTerritoryPickerScreen extends Screen {
         canvas.resetScissor();
         if (hoveredTerritory != null) {
             WarPlannerSnapshot.TerritoryDetails detail = details.get(hoveredTerritory.name());
+            Zone hoveredZone = zonesByTerritory.get(hoveredTerritory.name().toLowerCase(Locale.ROOT));
             String resourceText = detail == null || detail.resources().isEmpty()
                     ? "Base emerald income" : String.join(" · ", detail.resources());
             float tooltipWidth = Math.min(260, Math.max(150, 14 + resourceText.length() * 6));
+            float tooltipHeight = hoveredZone == null ? 36 : 49;
             canvas.fillRoundedRect(
                     nvgMouseX + 10,
                     nvgMouseY + 10,
                     tooltipWidth,
-                    36,
+                    tooltipHeight,
                     4,
                     WarPlannerScreen.plannerBackground(color(BACKGROUND_POPUP)));
             text(canvas, hoveredTerritory.name(), nvgMouseX + 17, nvgMouseY + 21, 10, color(TEXT_PRIMARY), false);
             text(canvas, resourceText, nvgMouseX + 17, nvgMouseY + 36, 9, color(TEXT_MUTED), false);
+            if (hoveredZone != null) {
+                text(canvas, hoveredZone.name(), nvgMouseX + 17, nvgMouseY + 48, 9,
+                        parseColor(hoveredZone.color(), color(ACCENT_PRIMARY)), false);
+            }
         }
     }
 
     private void renderSidebar(UiCanvas canvas, float height) {
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, height, WarPlannerScreen.plannerBackground(color(MAP_SIDEBAR)));
+        if (overview) {
+            renderOverviewSidebar(canvas, height);
+            return;
+        }
         text(canvas, "Territory zone", PADDING, 20, 17, color(ACCENT_PRIMARY), false);
         float y = 46;
         label(canvas, "Name", y);
@@ -309,6 +347,31 @@ public final class WarTerritoryPickerScreen extends Screen {
             button(canvas, SIDEBAR_WIDTH - PADDING - 92, height - 38, 92, BUTTON_HEIGHT,
                     saving ? "Saving…" : "Save zone", false, saving);
         }
+    }
+
+    private void renderOverviewSidebar(UiCanvas canvas, float height) {
+        text(canvas, "Zone overview", PADDING, 20, 17, color(ACCENT_PRIMARY), false);
+        text(canvas, "All territory groups on one map", PADDING, 42, 9, color(MAP_SUBTEXT), false);
+        WarPlannerSnapshot snapshot = manager.snapshot();
+        List<Zone> zones = snapshot == null ? List.of() : snapshot.zones();
+        int visibleRows = overviewVisibleRows(height);
+        int start = Math.min(overviewScrollRows, Math.max(0, zones.size() - 1));
+        float y = 66;
+        for (int index = start; index < zones.size() && index < start + visibleRows; index++, y += 30) {
+            Zone zone = zones.get(index);
+            Color zoneColor = parseColor(zone.color(), color(ACCENT_PRIMARY));
+            canvas.fillRoundedRect(PADDING, y, SIDEBAR_WIDTH - PADDING * 2, 24, 3,
+                    WarPlannerScreen.plannerBackground(color(BACKGROUND_CONTENT)));
+            canvas.fillRect(PADDING + 5, y + 4, 5, 16, zoneColor);
+            text(canvas, truncate(zone.name(), 22), PADDING + 17, y + 9, 11, color(TEXT_PRIMARY), false);
+            text(canvas, zone.territories().size() + " terrs", PADDING + 17, y + 19, 8, color(MAP_SUBTEXT), false);
+        }
+        if (zones.size() > visibleRows) {
+            text(canvas, (start + 1) + "–" + Math.min(start + visibleRows, zones.size()) + " of " + zones.size()
+                            + " · scroll",
+                    PADDING, height - 58, 8, color(MAP_SUBTEXT), false);
+        }
+        button(canvas, PADDING, height - 38, 78, BUTTON_HEIGHT, "Back", false, false);
     }
 
     @Override
@@ -441,6 +504,14 @@ public final class WarTerritoryPickerScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         float mx = MinecraftUiRenderer.mouseX(mouseX);
         float my = MinecraftUiRenderer.mouseY(mouseY);
+        if (overview && mx < SIDEBAR_WIDTH) {
+            WarPlannerSnapshot snapshot = manager.snapshot();
+            int size = snapshot == null ? 0 : snapshot.zones().size();
+            int visibleRows = overviewVisibleRows(MinecraftUiRenderer.screenHeight());
+            int delta = scrollY > 0 ? -1 : 1;
+            overviewScrollRows = Math.max(0, Math.min(overviewScrollRows + delta, Math.max(0, size - visibleRows)));
+            return true;
+        }
         SidebarLayout layout = sidebarLayout(MinecraftUiRenderer.screenHeight());
         int visibleTeamRows = layout.visibleTeamRows();
         if (mx < SIDEBAR_WIDTH
@@ -548,6 +619,12 @@ public final class WarTerritoryPickerScreen extends Screen {
     private Set<String> allowedTerritories() {
         WarPlannerSnapshot snapshot = manager.snapshot();
         if (snapshot == null) return Set.of();
+        if (overview) {
+            return WarPlannerScreen.visibleTerritoryNames(
+                    snapshot,
+                    new HashSet<>(snapshot.territories()),
+                    manager.canManage() && WarPlannerScreen.territoriesLocked());
+        }
         Set<String> visibleTerritories = new HashSet<>(WarPlannerScreen.visibleTerritoryNames(
                 snapshot,
                 new HashSet<>(snapshot.territories()),
@@ -562,6 +639,22 @@ public final class WarTerritoryPickerScreen extends Screen {
             }
         }
         return allowed;
+    }
+
+    static List<String> overviewTerritoryNames(WarPlannerSnapshot snapshot) {
+        if (snapshot == null) return List.of();
+        return snapshot.zones().stream().flatMap(zone -> zone.territories().stream()).distinct().toList();
+    }
+
+    static Map<String, Zone> zonesByTerritory(WarPlannerSnapshot snapshot) {
+        if (snapshot == null) return Map.of();
+        Map<String, Zone> result = new HashMap<>();
+        for (Zone zone : snapshot.zones()) {
+            for (String territory : zone.territories()) {
+                result.put(territory.toLowerCase(Locale.ROOT), zone);
+            }
+        }
+        return Map.copyOf(result);
     }
 
     private Map<String, WarPlannerSnapshot.TerritoryDetails> territoryDetails() {
@@ -658,6 +751,10 @@ public final class WarTerritoryPickerScreen extends Screen {
 
     static int visibleTeamRows(float height, float colorWidgetHeight) {
         return Math.max(1, Math.min(4, (int) ((height - 318 - Math.max(0, colorWidgetHeight - 42)) / 24)));
+    }
+
+    static int overviewVisibleRows(float height) {
+        return Math.max(1, (int) ((height - 130) / 30));
     }
 
     private SidebarLayout sidebarLayout(float height) {

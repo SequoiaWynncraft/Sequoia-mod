@@ -54,6 +54,15 @@ public record WarPlannerSnapshot(
         return roster.stream().filter(RosterMember::online).toList();
     }
 
+    /** Online roster plus the authenticated caller, whose cached Wynn presence may lag behind the open client. */
+    public List<RosterMember> visibleRoster() {
+        String callerUuid = self == null ? null : self.playerUuid();
+        return roster.stream()
+                .filter(member -> member.online()
+                        || callerUuid != null && callerUuid.equalsIgnoreCase(member.playerUuid()))
+                .toList();
+    }
+
     /** Managers may move any online member. Current members stay visible while editing even when offline. */
     public List<RosterMember> teamCandidates(Long editingTeamId) {
         return roster.stream()

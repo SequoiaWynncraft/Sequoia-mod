@@ -116,4 +116,25 @@ class WarPlannerSnapshotTest {
                 java.util.List.of("online-free", "online-other", "offline-current", "online-current"),
                 snapshot.teamCandidates(7L).stream().map(WarPlannerSnapshot.RosterMember::playerUuid).toList());
     }
+
+    @Test
+    void visibleRosterAlwaysKeepsTheAuthenticatedCaller() {
+        String json = """
+                {
+                  "schema_version": 3,
+                  "self": {"player_uuid": "self", "can_manage": false},
+                  "roster": [
+                    {"player_uuid": "self", "online": false},
+                    {"player_uuid": "online", "online": true},
+                    {"player_uuid": "offline", "online": false}
+                  ]
+                }
+                """;
+
+        WarPlannerSnapshot snapshot = GSON.fromJson(json, WarPlannerSnapshot.class);
+
+        assertEquals(
+                java.util.List.of("self", "online"),
+                snapshot.visibleRoster().stream().map(WarPlannerSnapshot.RosterMember::playerUuid).toList());
+    }
 }

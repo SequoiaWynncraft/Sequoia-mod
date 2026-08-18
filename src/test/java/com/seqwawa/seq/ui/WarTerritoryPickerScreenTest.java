@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.seqwawa.seq.map.GuildTerritory;
 import com.seqwawa.seq.map.GuildTerritoryIndex;
+import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -38,5 +39,30 @@ class WarTerritoryPickerScreenTest {
         assertEquals(148, controls.resourceX());
         assertEquals(224, controls.lockX());
         assertEquals(310, controls.lockX() + controls.lockWidth());
+    }
+
+    @Test
+    void overviewMapsEveryTerritoryToItsZoneAndSupportsScrollingLegends() {
+        WarPlannerSnapshot.Zone north =
+                new WarPlannerSnapshot.Zone(1, "North", "#55B8C5", List.of(), 1L, List.of("Ragni", "Detlas"));
+        WarPlannerSnapshot.Zone south =
+                new WarPlannerSnapshot.Zone(2, "South", "#AA7744", List.of(), 1L, List.of("Almuj"));
+        WarPlannerSnapshot snapshot = new WarPlannerSnapshot(
+                3,
+                null,
+                new WarPlannerSnapshot.Self("self", true),
+                true,
+                List.of(),
+                List.of(),
+                new WarPlannerSnapshot.SupportBoard(1L, List.of()),
+                List.of(north, south),
+                List.of("Ragni", "Detlas", "Almuj"),
+                List.of());
+
+        assertEquals(List.of("Ragni", "Detlas", "Almuj"),
+                WarTerritoryPickerScreen.overviewTerritoryNames(snapshot));
+        assertEquals(north, WarTerritoryPickerScreen.zonesByTerritory(snapshot).get("ragni"));
+        assertEquals(south, WarTerritoryPickerScreen.zonesByTerritory(snapshot).get("almuj"));
+        assertEquals(3, WarTerritoryPickerScreen.overviewVisibleRows(220));
     }
 }

@@ -59,6 +59,7 @@ public final class WarPlannerScreen extends Screen {
     private static final float TEAM_SELF_ACTION_WIDTH = 68;
     private static final float ZONE_CARD_HEIGHT = 132;
     private static final float ZONE_CARD_GAP = 8;
+    private static final float ZONE_OVERVIEW_BAR_HEIGHT = 34;
     private static final float BUTTON_HEIGHT = 22;
     private static final float MANAGER_ACTION_WIDTH = 92;
     private static final float MAX_CONTENT_WIDTH = 900;
@@ -121,6 +122,13 @@ public final class WarPlannerScreen extends Screen {
         nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
         nvgMouseY = MinecraftUiRenderer.mouseY(mouseY);
         UiRenderer.renderScreen(this, this::renderPlanner);
+    }
+
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        if (shouldBlurBackground(backgroundOpacityPercent())) {
+            super.renderBackground(graphics, mouseX, mouseY, partialTick);
+        }
     }
 
     private void renderPlanner(UiCanvas canvas) {
@@ -404,6 +412,16 @@ public final class WarPlannerScreen extends Screen {
             text(canvas, message, PADDING, top + 22, 13, color(TEXT_MUTED), false);
             return;
         }
+        boolean overviewAvailable = zoneOverviewAvailable(snapshot, manager.canManage(), territoriesLocked());
+        float gridTop = zoneGridTop(top, overviewAvailable);
+        if (overviewAvailable) {
+            canvas.fillRoundedRect(PADDING, top + 3, width - PADDING * 2, 27, 4,
+                    plannerBackground(color(BACKGROUND_CONTENT)));
+            text(canvas, width >= 560 ? "Territories locked · compare every zone on one map" : "Locked zones",
+                    PADDING + 8, top + 16, 10,
+                    color(TEXT_SECONDARY), false);
+            button(canvas, width - 140, top + 5, 128, BUTTON_HEIGHT, "Open map overview", false, false);
+        }
         int columns = zoneGridColumns(width);
         int start = Math.min(scrollRows * columns, Math.max(0, snapshot.zones().size() - 1));
         float cardWidth = zoneCardWidth(width, columns);
@@ -412,7 +430,7 @@ public final class WarPlannerScreen extends Screen {
             int row = visibleIndex / columns;
             int column = visibleIndex % columns;
             float x = PADDING + column * (cardWidth + ZONE_CARD_GAP);
-            float y = top + row * (ZONE_CARD_HEIGHT + ZONE_CARD_GAP);
+            float y = gridTop + row * (ZONE_CARD_HEIGHT + ZONE_CARD_GAP);
             if (y + ZONE_CARD_HEIGHT > bottom) {
                 break;
             }
@@ -981,13 +999,20 @@ public final class WarPlannerScreen extends Screen {
     }
 
     private boolean clickZoneContent(WarPlannerSnapshot snapshot, float mx, float my, float width) {
+        boolean overviewAvailable = zoneOverviewAvailable(snapshot, manager.canManage(), territoriesLocked());
+        float gridTop = zoneGridTop(contentTop(), overviewAvailable);
+        if (overviewAvailable && hit(mx, my, width - 140, contentTop() + 5, 128, BUTTON_HEIGHT)) {
+            SeqClient.mc.setScreen(WarTerritoryPickerScreen.overview(this));
+            return true;
+        }
+        if (my < gridTop) return false;
         int columns = zoneGridColumns(width);
         float cardWidth = zoneCardWidth(width, columns);
-        int visibleRow = (int) ((my - contentTop()) / (ZONE_CARD_HEIGHT + ZONE_CARD_GAP));
+        int visibleRow = (int) ((my - gridTop) / (ZONE_CARD_HEIGHT + ZONE_CARD_GAP));
         int column = (int) ((mx - PADDING) / (cardWidth + ZONE_CARD_GAP));
         if (visibleRow < 0 || column < 0 || column >= columns) return false;
         float cardX = PADDING + column * (cardWidth + ZONE_CARD_GAP);
-        float cardY = contentTop() + visibleRow * (ZONE_CARD_HEIGHT + ZONE_CARD_GAP);
+        float cardY = gridTop + visibleRow * (ZONE_CARD_HEIGHT + ZONE_CARD_GAP);
         if (!hit(mx, my, cardX, cardY, cardWidth, ZONE_CARD_HEIGHT)) return false;
         int index = (scrollRows + visibleRow) * columns + column;
         if (index < 0 || index >= snapshot.zones().size()) return false;
@@ -1157,7 +1182,7 @@ public final class WarPlannerScreen extends Screen {
                     supportEditorScrollRows + delta, supportCandidates(snapshot, editingSupportSlot).size());
         } else {
             int size = switch (tab) {
-                case ROSTER -> snapshot.onlineRoster().size();
+                case ROSTER -> snapshot.visibleRoster().size();
                 case TEAMS -> snapshot.teams().size();
                 case ZONES -> zoneGridRows(
                         snapshot.zones().size(), plannerViewport(MinecraftUiRenderer.screenWidth()).width());
@@ -1511,7 +1536,7 @@ public final class WarPlannerScreen extends Screen {
     }
 
     static List<RosterMember> sortedWarRoster(WarPlannerSnapshot snapshot) {
-        return snapshot.onlineRoster().stream()
+        return snapshot.visibleRoster().stream()
                 .sorted(Comparator.comparing(RosterMember::available)
                         .reversed()
                         .thenComparing(
@@ -1577,6 +1602,10 @@ public final class WarPlannerScreen extends Screen {
         return Math.round(Math.max(0, Math.min(255, sourceAlpha))
                 * Math.max(0, Math.min(100, opacityPercent))
                 / 100f);
+    }
+
+    static boolean shouldBlurBackground(int opacityPercent) {
+        return opacityPercent >= 100;
     }
 
     private static void updateBackgroundOpacity(float mouseX, DisplayControls controls) {
@@ -1647,6 +1676,14 @@ public final class WarPlannerScreen extends Screen {
     static int zoneGridRows(int zoneCount, float width) {
         int columns = zoneGridColumns(width);
         return Math.max(0, (zoneCount + columns - 1) / columns);
+    }
+
+    static boolean zoneOverviewAvailable(WarPlannerSnapshot snapshot, boolean canManage, boolean locked) {
+        return snapshot != null && canManage && locked && !snapshot.zones().isEmpty();
+    }
+
+    static float zoneGridTop(float contentTop, boolean overviewAvailable) {
+        return contentTop + (overviewAvailable ? ZONE_OVERVIEW_BAR_HEIGHT : 0);
     }
 
     private static float zoneCardWidth(float width, int columns) {

@@ -41,6 +41,8 @@ class WarPlannerScreenTest {
         assertEquals(0, WarPlannerScreen.opacityPercentForMouse(manager.opacityX() + 65, manager));
         assertEquals(100, WarPlannerScreen.opacityPercentForMouse(manager.opacityX() + 125, manager));
         assertEquals(100, WarPlannerScreen.opacityAlpha(200, 50));
+        assertFalse(WarPlannerScreen.shouldBlurBackground(95));
+        assertTrue(WarPlannerScreen.shouldBlurBackground(100));
         assertTrue(narrowManager.opacityX() >= 12);
         assertTrue(narrowManager.lockX() + narrowManager.lockWidth() <= 308);
     }
@@ -82,7 +84,7 @@ class WarPlannerScreenTest {
     }
 
     @Test
-    void teamMemberRolesComeFromTheRosterAndDefaultToSolo() {
+    void teamMemberRolesComeFromTheRosterAndDefaultToEmpty() {
         WarPlannerSnapshot.RosterMember member = new WarPlannerSnapshot.RosterMember(
                 "member", "Member", null, null, List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS),
                 true, false, null, 1L);
@@ -190,10 +192,31 @@ class WarPlannerScreenTest {
                         withZone, java.util.Set.of("Zoned", "Free"), true));
     }
 
+    @Test
+    void lockedManagerZoneViewOffersASeparateOverviewBeforeTheGrid() {
+        WarPlannerSnapshot base = snapshot(List.of(), List.of());
+        WarPlannerSnapshot withZone = new WarPlannerSnapshot(
+                3,
+                base.serverTime(),
+                base.self(),
+                base.discordRolesAvailable(),
+                base.roster(),
+                base.teams(),
+                base.support(),
+                List.of(new WarPlannerSnapshot.Zone(1, "North", "#55B8C5", List.of(), 1L, List.of("Zoned"))),
+                List.of("Zoned"),
+                List.of());
+
+        assertTrue(WarPlannerScreen.zoneOverviewAvailable(withZone, true, true));
+        assertFalse(WarPlannerScreen.zoneOverviewAvailable(withZone, false, true));
+        assertEquals(134, WarPlannerScreen.zoneGridTop(100, true));
+        assertEquals(100, WarPlannerScreen.zoneGridTop(100, false));
+    }
+
     private static WarPlannerSnapshot snapshot(
             List<WarPlannerSnapshot.Team> teams, List<WarPlannerSnapshot.RosterMember> roster) {
         return new WarPlannerSnapshot(
-                2,
+                3,
                 null,
                 new WarPlannerSnapshot.Self("self", true),
                 true,
