@@ -140,6 +140,9 @@ public final class WarPlannerScreen extends Screen {
         super(Component.literal("War Planner"));
         this.parent = parent;
         this.manager = SeqClient.getWarPlannerManager();
+        this.hiddenZoneIds.addAll(SeqClient.getConfigManager().hiddenWarPlannerZoneIds());
+        this.hiddenZoneCategoryIds.addAll(
+                SeqClient.getConfigManager().hiddenWarPlannerZoneCategoryIds());
         GuildTerritoryService.getInstance().loadBundledTerritories();
         this.territoryIndex = GuildTerritoryService.getInstance().index();
         mapImageService.requestLoad();
@@ -1645,11 +1648,15 @@ public final class WarPlannerScreen extends Screen {
     }
 
     private void toggleZoneDisplay(long zoneId) {
-        if (!hiddenZoneIds.remove(zoneId)) hiddenZoneIds.add(zoneId);
+        boolean hidden = !hiddenZoneIds.remove(zoneId);
+        if (hidden) hiddenZoneIds.add(zoneId);
+        SeqClient.getConfigManager().setWarPlannerZoneHidden(zoneId, hidden);
     }
 
     private void toggleZoneCategoryDisplay(Long categoryId) {
-        if (!hiddenZoneCategoryIds.remove(categoryId)) hiddenZoneCategoryIds.add(categoryId);
+        boolean hidden = !hiddenZoneCategoryIds.remove(categoryId);
+        if (hidden) hiddenZoneCategoryIds.add(categoryId);
+        SeqClient.getConfigManager().setWarPlannerZoneCategoryHidden(categoryId, hidden);
     }
 
     private void toggleZoneCategoryFold(Long categoryId) {

@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -35,6 +36,9 @@ public class ConfigManager {
     private static final String STARTUP_VIDEO_WIDTH_KEY = "_startup_video_width";
     private static final String STARTUP_VIDEO_HEIGHT_KEY = "_startup_video_height";
     private static final String TRACKED_WORLD_EVENTS_KEY = "_tracked_world_events";
+    private static final String WAR_PLANNER_HIDDEN_ZONE_IDS_KEY = "_war_planner_hidden_zone_ids";
+    private static final String WAR_PLANNER_HIDDEN_ZONE_CATEGORY_IDS_KEY =
+            "_war_planner_hidden_zone_category_ids";
     private static final Pattern MINECRAFT_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private final Path configPath;
@@ -43,6 +47,8 @@ public class ConfigManager {
     private final Map<Setting<?>, List<String>> legacySettingKeys = new IdentityHashMap<>();
     private final Set<String> ignoredBridgeUsers = new LinkedHashSet<>();
     private final Set<String> trackedWorldEventIds = new LinkedHashSet<>();
+    private final Set<Long> hiddenWarPlannerZoneIds = new LinkedHashSet<>();
+    private final Set<Long> hiddenWarPlannerZoneCategoryIds = new LinkedHashSet<>();
     private String authToken;
     private Instant authTokenExpiresAt;
     private String minecraftUuid;
@@ -214,6 +220,36 @@ public class ConfigManager {
         return changed;
     }
 
+    public Set<Long> hiddenWarPlannerZoneIds() {
+        return Set.copyOf(hiddenWarPlannerZoneIds);
+    }
+
+    public Set<Long> hiddenWarPlannerZoneCategoryIds() {
+        return Collections.unmodifiableSet(new LinkedHashSet<>(hiddenWarPlannerZoneCategoryIds));
+    }
+
+    public void setWarPlannerZoneHidden(long zoneId, boolean hidden) {
+        if (zoneId <= 0) {
+            return;
+        }
+        boolean changed = hidden ? hiddenWarPlannerZoneIds.add(zoneId) : hiddenWarPlannerZoneIds.remove(zoneId);
+        if (changed) {
+            save();
+        }
+    }
+
+    public void setWarPlannerZoneCategoryHidden(Long categoryId, boolean hidden) {
+        if (categoryId != null && categoryId <= 0) {
+            return;
+        }
+        boolean changed = hidden
+                ? hiddenWarPlannerZoneCategoryIds.add(categoryId)
+                : hiddenWarPlannerZoneCategoryIds.remove(categoryId);
+        if (changed) {
+            save();
+        }
+    }
+
     public void setBombSharePromptSeen(boolean bombSharePromptSeen) {
         this.bombSharePromptSeen = bombSharePromptSeen;
         save();
@@ -275,6 +311,8 @@ public class ConfigManager {
                 }
                 root.add(TRACKED_WORLD_EVENTS_KEY, trackedEvents);
             }
+            writeLongSet(root, WAR_PLANNER_HIDDEN_ZONE_IDS_KEY, hiddenWarPlannerZoneIds);
+            writeLongSet(root, WAR_PLANNER_HIDDEN_ZONE_CATEGORY_IDS_KEY, hiddenWarPlannerZoneCategoryIds);
             root.addProperty(BOMB_SHARE_PROMPT_SEEN_KEY, bombSharePromptSeen);
             if (startupVideoX != null
                     && startupVideoY != null
@@ -333,6 +371,12 @@ public class ConfigManager {
                     }
                 }
             }
+            readLongSet(root, WAR_PLANNER_HIDDEN_ZONE_IDS_KEY, hiddenWarPlannerZoneIds, false);
+            readLongSet(
+                    root,
+                    WAR_PLANNER_HIDDEN_ZONE_CATEGORY_IDS_KEY,
+                    hiddenWarPlannerZoneCategoryIds,
+                    true);
             if (root != null
                     && root.has(BOMB_SHARE_PROMPT_SEEN_KEY)
                     && root.get(BOMB_SHARE_PROMPT_SEEN_KEY).isJsonPrimitive()) {
@@ -388,6 +432,47 @@ public class ConfigManager {
         }
         String normalized = internalName.trim();
         return normalized.isEmpty() ? null : normalized;
+    }
+
+    private static void writeLongSet(JsonObject root, String key, Set<Long> values) {
+        if (values.isEmpty()) {
+            return;
+        }
+        JsonArray array = new JsonArray();
+        for (Long value : values) {
+            if (value == null) {
+                array.add(JsonNull.INSTANCE);
+            } else {
+                array.add(value);
+            }
+        }
+        root.add(key, array);
+    }
+
+    private static void readLongSet(
+            JsonObject root, String key, Set<Long> destination, boolean allowNull) {
+        destination.clear();
+        if (root == null || !root.has(key) || !root.get(key).isJsonArray()) {
+            return;
+        }
+        for (JsonElement element : root.getAsJsonArray(key)) {
+            if (element == null || element.isJsonNull()) {
+                if (allowNull) {
+                    destination.add(null);
+                }
+                continue;
+            }
+            if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isNumber()) {
+                continue;
+            }
+            try {
+                long value = element.getAsLong();
+                if (value > 0) {
+                    destination.add(value);
+                }
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     private static boolean removePersistedAuthSession(JsonObject root) {

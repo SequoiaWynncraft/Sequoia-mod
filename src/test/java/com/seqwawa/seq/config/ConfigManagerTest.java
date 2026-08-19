@@ -106,6 +106,52 @@ class ConfigManagerTest {
     }
 
     @Test
+    void persistsWarPlannerZoneVisibilityIncludingUncategorizedZones() {
+        Path configPath = tempDir.resolve("config").resolve("sequoia.json");
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+
+        manager.setWarPlannerZoneHidden(11, true);
+        manager.setWarPlannerZoneCategoryHidden(5L, true);
+        manager.setWarPlannerZoneCategoryHidden(null, true);
+
+        ConfigManager reloaded = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        reloaded.load();
+
+        assertEquals(Set.of(11L), reloaded.hiddenWarPlannerZoneIds());
+        assertTrue(reloaded.hiddenWarPlannerZoneCategoryIds().contains(5L));
+        assertTrue(reloaded.hiddenWarPlannerZoneCategoryIds().contains(null));
+
+        reloaded.setWarPlannerZoneHidden(11, false);
+        reloaded.setWarPlannerZoneCategoryHidden(5L, false);
+        reloaded.setWarPlannerZoneCategoryHidden(null, false);
+
+        ConfigManager shownAgain = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        shownAgain.load();
+        assertTrue(shownAgain.hiddenWarPlannerZoneIds().isEmpty());
+        assertTrue(shownAgain.hiddenWarPlannerZoneCategoryIds().isEmpty());
+    }
+
+    @Test
+    void ignoresMalformedWarPlannerVisibilityEntries() throws Exception {
+        Path configPath = tempDir.resolve("config").resolve("sequoia.json");
+        Files.createDirectories(configPath.getParent());
+        Files.writeString(configPath, """
+                {
+                  "_war_planner_hidden_zone_ids": [3, -1, "4", null, {}],
+                  "_war_planner_hidden_zone_category_ids": [7, 0, "8", null, []]
+                }
+                """);
+
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        manager.load();
+
+        assertEquals(Set.of(3L), manager.hiddenWarPlannerZoneIds());
+        assertEquals(2, manager.hiddenWarPlannerZoneCategoryIds().size());
+        assertTrue(manager.hiddenWarPlannerZoneCategoryIds().contains(7L));
+        assertTrue(manager.hiddenWarPlannerZoneCategoryIds().contains(null));
+    }
+
+    @Test
     void persistsUiSizeSetting() {
         Path configPath = tempDir.resolve("config").resolve("sequoia.json");
         Setting.IntSetting setting = new Setting.IntSetting("ui_size_percent", "ui", 100, 75, 150, 5)
