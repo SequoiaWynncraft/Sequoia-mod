@@ -434,7 +434,7 @@ public class SettingsScreen extends Screen {
             return;
         }
 
-        float progress = princessPromptProgress(nowMs);
+        float progress = princessPrompt.slideProgress(nowMs);
         if (progress <= 0f) {
             return;
         }
@@ -486,10 +486,6 @@ public class SettingsScreen extends Screen {
         return screenHeight + (visibleY - screenHeight) * progress;
     }
 
-    private float princessPromptProgress(long nowMs) {
-        return PrincessMode.isEnabled() ? 1f : princessPrompt.slideProgress(nowMs);
-    }
-
     private static boolean princessPromptAllowed() {
         return SeqClient.getEasterEggsSetting() != null && SeqClient.getEasterEggsSetting().getValue();
     }
@@ -535,19 +531,6 @@ public class SettingsScreen extends Screen {
             float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
             float btnStartY = 50;
 
-            if (princessPromptAllowed()) {
-                long nowMs = System.currentTimeMillis();
-                float progress = princessPromptProgress(nowMs);
-                float promptY = princessPromptY(screenHeight, progress);
-                if (progress > 0f && isHovered(mx, my, btnX, promptY, btnW, PRINCESS_PROMPT_HEIGHT)) {
-                    boolean enabled = PrincessMode.toggle();
-                    if (enabled && SeqClient.getPrincessRaidStatsManager() != null) {
-                        SeqClient.getPrincessRaidStatsManager().refresh();
-                    }
-                    return true;
-                }
-            }
-
             float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
             var destinations = SequoiaSidebarNavigation.destinations();
             for (int row = 0; row < destinations.size(); row++) {
@@ -559,6 +542,21 @@ public class SettingsScreen extends Screen {
                     SequoiaSidebarNavigation.open(destination, this);
                 }
                 return true;
+            }
+
+            // The easter-egg prompt can slide across the navigation on very short
+            // layouts. Navigation always wins when their hitboxes overlap.
+            if (princessPromptAllowed()) {
+                long nowMs = System.currentTimeMillis();
+                float progress = princessPrompt.slideProgress(nowMs);
+                float promptY = princessPromptY(screenHeight, progress);
+                if (progress > 0f && isHovered(mx, my, btnX, promptY, btnW, PRINCESS_PROMPT_HEIGHT)) {
+                    boolean enabled = PrincessMode.toggle();
+                    if (enabled && SeqClient.getPrincessRaidStatsManager() != null) {
+                        SeqClient.getPrincessRaidStatsManager().refresh();
+                    }
+                    return true;
+                }
             }
 
             // Search bar click
