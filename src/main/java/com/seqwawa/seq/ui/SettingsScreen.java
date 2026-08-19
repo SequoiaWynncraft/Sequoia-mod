@@ -80,6 +80,9 @@ public class SettingsScreen extends Screen {
         super(Component.literal("Settings"));
         this.parent = parent;
         buildWidgets();
+        if (PrincessMode.isEnabled() && SeqClient.getPrincessRaidStatsManager() != null) {
+            SeqClient.getPrincessRaidStatsManager().refresh();
+        }
     }
 
     @Override
@@ -218,6 +221,24 @@ public class SettingsScreen extends Screen {
                         btnW,
                         destination.label(),
                         destination == SequoiaSidebarNavigation.Destination.SETTINGS);
+            }
+
+            if (princessLeaderboardVisible()) {
+                float leaderboardY = btnStartY + step * destinations.size();
+                float availableHeight = princessPromptY(screenHeight, 1f)
+                        - SIDEBAR_BUTTON_SPACING
+                        - leaderboardY;
+                float leaderboardHeight = Math.min(PrincessLeaderboardPanel.HEIGHT, availableHeight);
+                if (leaderboardHeight >= PrincessLeaderboardPanel.MIN_HEIGHT) {
+                    PrincessLeaderboardPanel.render(
+                            canvas,
+                            fontName,
+                            btnX,
+                            leaderboardY,
+                            btnW,
+                            leaderboardHeight,
+                            SeqClient.getPrincessRaidStatsManager().snapshot());
+                }
             }
 
             renderPrincessPrompt(canvas, fontName, screenHeight, System.currentTimeMillis());
@@ -380,6 +401,7 @@ public class SettingsScreen extends Screen {
             }
 
             maxScroll = Math.max(0, cursorY + scrollOffset - contentY - contentHeight);
+            scrollOffset = Math.min(scrollOffset, maxScroll);
 
             canvas.restore();
 
@@ -390,7 +412,7 @@ public class SettingsScreen extends Screen {
                 canvas.fillRect(scrollbarX, contentY, 4, scrollbarHeight, color(CONTROL_TRACK));
 
                 float thumbRatio = contentHeight / (contentHeight + maxScroll);
-                float thumbHeight = Math.max(20, scrollbarHeight * thumbRatio);
+                float thumbHeight = Math.min(scrollbarHeight, Math.max(20, scrollbarHeight * thumbRatio));
                 float thumbY = contentY + (scrollOffset / maxScroll) * (scrollbarHeight - thumbHeight);
                 canvas.fillRect(scrollbarX, thumbY, 4, thumbHeight, color(CONTROL_THUMB));
             }
@@ -468,6 +490,10 @@ public class SettingsScreen extends Screen {
         return SeqClient.getEasterEggsSetting() != null && SeqClient.getEasterEggsSetting().getValue();
     }
 
+    private static boolean princessLeaderboardVisible() {
+        return PrincessMode.isEnabled() && SeqClient.getPrincessRaidStatsManager() != null;
+    }
+
     private static void drawText(
             UiCanvas canvas,
             String font,
@@ -505,16 +531,6 @@ public class SettingsScreen extends Screen {
             float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
             float btnStartY = 50;
 
-            if (princessPromptAllowed()) {
-                long nowMs = System.currentTimeMillis();
-                float progress = princessPrompt.slideProgress(nowMs);
-                float promptY = princessPromptY(screenHeight, progress);
-                if (progress > 0f && isHovered(mx, my, btnX, promptY, btnW, PRINCESS_PROMPT_HEIGHT)) {
-                    PrincessMode.toggle();
-                    return true;
-                }
-            }
-
             float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
             var destinations = SequoiaSidebarNavigation.destinations();
             for (int row = 0; row < destinations.size(); row++) {
@@ -526,6 +542,21 @@ public class SettingsScreen extends Screen {
                     SequoiaSidebarNavigation.open(destination, this);
                 }
                 return true;
+            }
+
+            // The easter-egg prompt can slide across the navigation on very short
+            // layouts. Navigation always wins when their hitboxes overlap.
+            if (princessPromptAllowed()) {
+                long nowMs = System.currentTimeMillis();
+                float progress = princessPrompt.slideProgress(nowMs);
+                float promptY = princessPromptY(screenHeight, progress);
+                if (progress > 0f && isHovered(mx, my, btnX, promptY, btnW, PRINCESS_PROMPT_HEIGHT)) {
+                    boolean enabled = PrincessMode.toggle();
+                    if (enabled && SeqClient.getPrincessRaidStatsManager() != null) {
+                        SeqClient.getPrincessRaidStatsManager().refresh();
+                    }
+                    return true;
+                }
             }
 
             // Search bar click
@@ -648,8 +679,13 @@ public class SettingsScreen extends Screen {
             float screenHeight = MinecraftUiRenderer.screenHeight();
             float contentHeight = screenHeight - HEADER_HEIGHT;
             float thumbRatio = contentHeight / (contentHeight + maxScroll);
-            float thumbHeight = Math.max(20, contentHeight * thumbRatio);
+            float thumbHeight = Math.min(contentHeight, Math.max(20, contentHeight * thumbRatio));
             float scrollRange = contentHeight - thumbHeight;
+
+            if (scrollRange <= 0) {
+                scrollOffset = 0;
+                return true;
+            }
 
             float delta = my - scrollbarDragStart;
             scrollOffset = scrollOffsetDragStart + (delta / scrollRange) * maxScroll;

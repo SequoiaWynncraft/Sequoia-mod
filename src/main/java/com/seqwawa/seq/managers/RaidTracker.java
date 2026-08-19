@@ -81,7 +81,11 @@ public class RaidTracker {
         Map<String, Integer> gambitCounts = resolved.localCompletion()
                 ? RaidGambitRosterTracker.snapshotForParty(resolved.partyMembers())
                 : Map.of();
-        finishLocalCompletion(resolved);
+        boolean princessAtCompletion = PrincessMode.isEnabled();
+        finishLocalCompletion(
+                resolved,
+                () -> recordPrincessCompletion(completion.raidName(), princessAtCompletion),
+                RaidGambitRosterTracker::reset);
 
         if (!ConnectionManager.isConnected()) {
             SeqClient.LOGGER.warn(
@@ -131,13 +135,6 @@ public class RaidTracker {
         return new ResolvedRaidCompletion(partyMembers, localCompletion);
     }
 
-    static void finishLocalCompletion(ResolvedRaidCompletion completion) {
-        finishLocalCompletion(
-                completion,
-                PrincessRaidCelebration::triggerIfEnabled,
-                RaidGambitRosterTracker::reset);
-    }
-
     static void finishLocalCompletion(
             ResolvedRaidCompletion completion,
             Runnable completionEffect,
@@ -146,6 +143,27 @@ public class RaidTracker {
             RaidPartySnapshotTracker.onRaidCompleted();
             gambitResetEffect.run();
             completionEffect.run();
+        }
+    }
+
+    private static void recordPrincessCompletion(String raidName, boolean princessAtCompletion) {
+        if (!princessAtCompletion) {
+            return;
+        }
+        PrincessRaidStatsManager manager = SeqClient.getPrincessRaidStatsManager();
+        if (manager == null) {
+            PrincessRaidCelebration.triggerIfEnabled();
+            return;
+        }
+        PrincessRaidStatsManager.Completion completion = manager.recordCompletion(raidName);
+        if (completion != null) {
+            PrincessRaidCelebration.triggerIfEnabled(completion.eventId(), completion.displayedRaidCount());
+            completion.confirmedRaidCount().thenAccept(count -> {
+                if (SeqClient.mc != null) {
+                    SeqClient.mc.execute(
+                            () -> PrincessRaidCelebration.updateRaidCount(completion.eventId(), count));
+                }
+            });
         }
     }
 
