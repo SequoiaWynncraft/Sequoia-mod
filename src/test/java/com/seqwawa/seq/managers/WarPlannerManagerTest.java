@@ -20,6 +20,7 @@ import com.seqwawa.seq.network.ApiClient;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -311,6 +312,45 @@ class WarPlannerManagerTest {
         assertEquals("Reload this team", details.message());
     }
 
+    @Test
+    void resumesPollingOnlyAfterTheReadyInterval() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        WarPlannerManager manager = new WarPlannerManager(gateway, clock);
+        manager.tick(true, true);
+        gateway.next.complete(snapshot(3, true));
+        gateway.next = new CompletableFuture<>();
+
+        clock.advance(Duration.ofSeconds(44));
+        manager.tick(true, true);
+        assertEquals(1, gateway.calls);
+
+        clock.advance(Duration.ofSeconds(1));
+        manager.tick(true, true);
+        assertEquals(2, gateway.calls);
+    }
+
+    @Test
+    void retryBackoffDoublesAndCapsAtTwoMinutes() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        WarPlannerManager manager = new WarPlannerManager(gateway, clock);
+        manager.tick(true, true);
+        long[] expectedBackoffSeconds = {5, 10, 20, 40, 80, 120};
+
+        for (int failure = 0; failure < expectedBackoffSeconds.length; failure++) {
+            gateway.next.completeExceptionally(new IllegalStateException("offline"));
+            gateway.next = new CompletableFuture<>();
+            clock.advance(Duration.ofSeconds(expectedBackoffSeconds[failure] - 1));
+            manager.tick(true, true);
+            assertEquals(failure + 1, gateway.calls);
+
+            clock.advance(Duration.ofSeconds(1));
+            manager.tick(true, true);
+            assertEquals(failure + 2, gateway.calls);
+        }
+    }
+
     private static WarPlannerManager manager(FakeGateway gateway) {
         return new WarPlannerManager(gateway, Clock.fixed(NOW, ZoneOffset.UTC));
     }
@@ -330,6 +370,39 @@ class WarPlannerManagerTest {
                 List.of(),
                 List.of("Ragni"),
                 List.of());
+    }
+
+    private static final class MutableClock extends Clock {
+        private Instant now;
+        private final ZoneId zone;
+
+        private MutableClock(Instant now) {
+            this(now, ZoneOffset.UTC);
+        }
+
+        private MutableClock(Instant now, ZoneId zone) {
+            this.now = now;
+            this.zone = zone;
+        }
+
+        void advance(Duration duration) {
+            now = now.plus(duration);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return zone;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return new MutableClock(now, zone);
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
+        }
     }
 
     private static final class FakeGateway implements WarPlannerManager.Gateway {

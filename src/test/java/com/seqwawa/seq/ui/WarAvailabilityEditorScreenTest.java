@@ -35,6 +35,8 @@ class WarAvailabilityEditorScreenTest {
 
     @Test
     void rejectsMissingUnitsAndDurationsAboveOneDay() {
+        assertEquals(1440, WarAvailabilityEditorScreen.parseDurationMinutes("24h"));
+        assertEquals(1440, WarAvailabilityEditorScreen.parseDurationMinutes("1440m"));
         assertThrows(IllegalArgumentException.class, () -> WarAvailabilityEditorScreen.parseDurationMinutes("60"));
         assertThrows(IllegalArgumentException.class, () -> WarAvailabilityEditorScreen.parseDurationMinutes("25h"));
         assertThrows(IllegalArgumentException.class, () -> WarAvailabilityEditorScreen.parseDurationMinutes("1441m"));

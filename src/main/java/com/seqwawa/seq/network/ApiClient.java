@@ -255,7 +255,11 @@ public class ApiClient {
         if (playerUuid == null || playerUuid.isBlank()) {
             throw new IllegalArgumentException("Player UUID is required.");
         }
-        return post("/war-planner/players/" + playerUuid + "/ping", new JsonObject(), WarPlannerSnapshot.class);
+        String encodedPlayerUuid = URLEncoder.encode(playerUuid, StandardCharsets.UTF_8);
+        return post(
+                "/war-planner/players/" + encodedPlayerUuid + "/ping",
+                new JsonObject(),
+                WarPlannerSnapshot.class);
     }
 
     public CompletableFuture<WarPlannerSnapshot> createWarPlannerTeam(TeamDraft draft) {

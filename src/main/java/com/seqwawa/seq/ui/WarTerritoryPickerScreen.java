@@ -43,13 +43,14 @@ import com.seqwawa.seq.utils.rendering.UiRenderer;
 import com.seqwawa.seq.ui.widget.ColorWidget;
 import java.awt.Color;
 import java.nio.ByteBuffer;
-import java.util.HashSet;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
@@ -94,6 +95,9 @@ public final class WarTerritoryPickerScreen extends Screen {
     private GuildTerritory hoveredTerritory;
     private UiImage mapImage;
     private long loadedImageVersion = -1;
+    private WarPlannerSnapshot cachedTerritorySnapshot;
+    private TerritoryAccess cachedTerritoryAccess = TerritoryAccess.empty();
+    private Map<String, WarPlannerSnapshot.TerritoryDetails> cachedTerritoryDetails = Map.of();
 
     public WarTerritoryPickerScreen(Screen parent, Zone original) {
         this(parent, original, false);
@@ -188,7 +192,7 @@ public final class WarTerritoryPickerScreen extends Screen {
                 false,
                 false,
                 isKeyboardTarget(RESOURCE_COLORS));
-        if (manager.canManage()) {
+        if (canManage()) {
             button(
                     canvas,
                     layout.lockToggle(),
@@ -217,7 +221,6 @@ public final class WarTerritoryPickerScreen extends Screen {
                 WarPlannerScreen.plannerBackground(color(MAP_TINT)));
 
         TerritoryAccess access = territoryAccess();
-        Set<String> visibleTerritories = access.visibleNames();
         hoveredTerritory = !draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY)
                 ? territoryIndex.territoryAt(viewport.screenToWorldX(nvgMouseX), viewport.screenToWorldZ(nvgMouseY))
                 : null;
@@ -238,7 +241,7 @@ public final class WarTerritoryPickerScreen extends Screen {
                 renderResourceFill(canvas, x, y, w, h, details.get(territory.name()));
             }
         }
-        drawConnections(canvas, viewport, details, visibleTerritories);
+        drawConnections(canvas, viewport, details, access);
         for (GuildTerritory territory : territoryIndex.territories()) {
             if (!access.isVisible(territory.name()) || !intersects(visible, territory.bounds())) continue;
             MapBounds bounds = territory.bounds();
@@ -312,7 +315,7 @@ public final class WarTerritoryPickerScreen extends Screen {
                     alpha(color(ACCENT_DISABLED), 95));
         }
         label(canvas, "Party assignments · click to toggle", layout.teamsLabelY());
-        WarPlannerSnapshot snapshot = manager.snapshot();
+        WarPlannerSnapshot snapshot = plannerSnapshot();
         int visibleTeamRows = layout.visibleTeamRows();
         if (snapshot != null) {
             int shown = 0;
@@ -382,7 +385,7 @@ public final class WarTerritoryPickerScreen extends Screen {
             return true;
         }
         if (click.button() == 0
-                && manager.canManage()
+                && canManage()
                 && layout.lockToggle().contains(mx, my)) {
             focus = Focus.NONE;
             setKeyboardTarget(ControlTarget.named(LOCK_MAIN_MAP));
@@ -408,7 +411,7 @@ public final class WarTerritoryPickerScreen extends Screen {
                 replaceZoneNameOnType = false;
                 return true;
             }
-            WarPlannerSnapshot snapshot = manager.snapshot();
+            WarPlannerSnapshot snapshot = plannerSnapshot();
             if (!saving && snapshot != null) {
                 int visibleTeamRows = layout.visibleTeamRows();
                 int start = WarTerritoryPickerPolicy.scrollStart(
@@ -499,7 +502,7 @@ public final class WarTerritoryPickerScreen extends Screen {
         PickerControlLayout layout = currentControlLayout();
         int visibleTeamRows = layout.visibleTeamRows();
         if (layout.teamScroll().contains(mx, my)) {
-            WarPlannerSnapshot snapshot = manager.snapshot();
+            WarPlannerSnapshot snapshot = plannerSnapshot();
             int size = snapshot == null ? 0 : snapshot.teams().size();
             int delta = scrollY > 0 ? -1 : 1;
             teamScrollRows = WarTerritoryPickerPolicy.scrollStart(
@@ -526,11 +529,11 @@ public final class WarTerritoryPickerScreen extends Screen {
                 zoneColorWidget.mouseClicked(-1, -1, 0);
             }
             focus = Focus.NONE;
-            WarPlannerSnapshot snapshot = manager.snapshot();
+            WarPlannerSnapshot snapshot = plannerSnapshot();
             int teamCount = snapshot == null ? 0 : snapshot.teams().size();
             boolean backwards = (event.modifiers() & GLFW.GLFW_MOD_SHIFT) != 0;
             setKeyboardTarget(WarTerritoryPickerPolicy.nextKeyboardTarget(
-                    keyboardTarget, backwards, manager.canManage(), teamCount, saving));
+                    keyboardTarget, backwards, canManage(), teamCount, saving));
             return true;
         }
         if (!saving && zoneColorWidget.keyPressed(event)) {
@@ -586,7 +589,7 @@ public final class WarTerritoryPickerScreen extends Screen {
             return true;
         }
         if (kind == LOCK_MAIN_MAP) {
-            if (manager.canManage()) toggleMainMapLock();
+            if (canManage()) toggleMainMapLock();
             return true;
         }
         if (kind == CANCEL) {
@@ -599,7 +602,7 @@ public final class WarTerritoryPickerScreen extends Screen {
             return true;
         }
         if (kind == TEAM) {
-            WarPlannerSnapshot snapshot = manager.snapshot();
+            WarPlannerSnapshot snapshot = plannerSnapshot();
             int index = keyboardTarget.teamIndex();
             if (snapshot != null && index >= 0 && index < snapshot.teams().size()) {
                 long teamId = snapshot.teams().get(index).id();
@@ -621,7 +624,7 @@ public final class WarTerritoryPickerScreen extends Screen {
     private void setKeyboardTarget(ControlTarget target) {
         keyboardTarget = target;
         if (target == null || target.kind() != TEAM) return;
-        WarPlannerSnapshot snapshot = manager.snapshot();
+        WarPlannerSnapshot snapshot = plannerSnapshot();
         if (snapshot == null || snapshot.teams().isEmpty()) return;
         int visibleRows = currentControlLayout().visibleTeamRows();
         if (target.teamIndex() < teamScrollRows) {
@@ -709,16 +712,29 @@ public final class WarTerritoryPickerScreen extends Screen {
     }
 
     private TerritoryAccess territoryAccess() {
-        return WarTerritoryPickerPolicy.territoryAccess(
-                manager.snapshot(), original == null ? null : original.id());
+        refreshTerritoryCache();
+        return cachedTerritoryAccess;
     }
 
     private Map<String, WarPlannerSnapshot.TerritoryDetails> territoryDetails() {
-        WarPlannerSnapshot snapshot = manager.snapshot();
-        if (snapshot == null) return Map.of();
-        Map<String, WarPlannerSnapshot.TerritoryDetails> result = new HashMap<>();
-        snapshot.territoryDetails().forEach(detail -> result.put(detail.name(), detail));
-        return result;
+        refreshTerritoryCache();
+        return cachedTerritoryDetails;
+    }
+
+    private void refreshTerritoryCache() {
+        WarPlannerSnapshot snapshot = plannerSnapshot();
+        if (snapshot == cachedTerritorySnapshot) return;
+        cachedTerritorySnapshot = snapshot;
+        cachedTerritoryAccess = WarTerritoryPickerPolicy.territoryAccess(
+                snapshot, original == null ? null : original.id());
+        if (snapshot == null) {
+            cachedTerritoryDetails = Map.of();
+            return;
+        }
+        TreeMap<String, WarPlannerSnapshot.TerritoryDetails> details =
+                new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        snapshot.territoryDetails().forEach(detail -> details.put(detail.name(), detail));
+        cachedTerritoryDetails = Collections.unmodifiableMap(details);
     }
 
     private static float centerScreenX(MapViewport viewport, GuildTerritory territory) {
@@ -733,15 +749,15 @@ public final class WarTerritoryPickerScreen extends Screen {
             UiCanvas canvas,
             MapViewport viewport,
             Map<String, WarPlannerSnapshot.TerritoryDetails> details,
-            Set<String> visibleTerritories) {
+            TerritoryAccess access) {
         Set<String> drawnConnections = new HashSet<>();
         for (GuildTerritory territory : territoryIndex.territories()) {
-            if (!visibleTerritories.contains(territory.name())) continue;
+            if (!access.isVisible(territory.name())) continue;
             WarPlannerSnapshot.TerritoryDetails detail = details.get(territory.name());
             if (detail == null) continue;
             for (String linkedName : detail.connections()) {
                 GuildTerritory linked = territoryIndex.territory(linkedName);
-                if (linked == null || !visibleTerritories.contains(linked.name())) continue;
+                if (linked == null || !access.isVisible(linked.name())) continue;
                 String key = territory.name().compareToIgnoreCase(linkedName) < 0
                         ? territory.name() + "\n" + linkedName : linkedName + "\n" + territory.name();
                 if (!drawnConnections.add(key)) continue;
@@ -802,7 +818,21 @@ public final class WarTerritoryPickerScreen extends Screen {
     }
 
     private PickerControlLayout controlLayout(float width, float height) {
-        return PickerControlLayout.create(width, height, zoneColorWidget.getHeight(), manager.canManage());
+        PickerControlLayout layout = PickerControlLayout.create(
+                width, height, zoneColorWidget.getHeight(), canManage());
+        if (layout.controlsOverlapFooter()) {
+            zoneColorWidget.collapse();
+            layout = PickerControlLayout.create(width, height, zoneColorWidget.getHeight(), canManage());
+        }
+        return layout;
+    }
+
+    private WarPlannerSnapshot plannerSnapshot() {
+        return manager == null ? null : manager.snapshot();
+    }
+
+    private boolean canManage() {
+        return manager != null && manager.canManage();
     }
 
     static int visibleTeamRows(float height) {

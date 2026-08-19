@@ -405,9 +405,10 @@ public final class WarPlannerScreen extends Screen {
         int start = Math.min(scrollRows, Math.max(0, snapshot.teams().size() - 1));
         float y = top;
         RosterMember caller = snapshot.caller();
+        TeamActionLayout actions = teamActionLayout(cardsRight, manager.canManage(), caller != null);
         for (int index = start; index < snapshot.teams().size(); index++) {
             Team team = snapshot.teams().get(index);
-            float cardHeight = teamCardHeight(team.members().size());
+            float cardHeight = teamCardHeight(team.members().size(), actions);
             if (y + cardHeight > bottom) break;
             boolean ownTeam = caller != null && caller.teamId() != null && caller.teamId() == team.id();
             boolean dropTarget = memberDrag != null
@@ -417,26 +418,25 @@ public final class WarPlannerScreen extends Screen {
                     plannerBackground(color(dropTarget
                             ? CONTROL_INPUT_HOVER
                             : ownTeam ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT)));
-            float selfActionX = teamSelfActionX(cardsRight, manager.canManage());
-            float actionsLeft = caller != null ? selfActionX : manager.canManage() ? cardsRight - 132 : cardsRight;
             String targetSuffix = team.compositionTargets().configured()
                     ? " · " + compositionTargetStatus(snapshot, team)
                     : "";
             String title = team.name() + (ownTeam ? " · Your team" : "") + " · " + team.members().size() + "/5"
                     + targetSuffix;
-            text(canvas, truncate(title, availableCharacters(PADDING + 8, actionsLeft - 6, 13, 32)),
+            text(canvas, truncate(title, availableCharacters(PADDING + 8, actions.titleRight(), 13, 32)),
                     PADDING + 8, y + 13, 13, color(TEXT_PRIMARY), false);
             List<TeamMember> members = team.members().stream()
                     .sorted(Comparator.comparingInt(TeamMember::position))
                     .toList();
-            float memberY = y + 31;
-            for (TeamMember member : members) {
+            float memberY = y + actions.memberTop();
+            for (int memberIndex = 0; memberIndex < members.size(); memberIndex++) {
+                TeamMember member = members.get(memberIndex);
                 String displayName = member.minecraftUsername() == null ? member.playerUuid() : member.minecraftUsername();
                 List<WarCompositionRole> roles = teamMemberRoles(snapshot, member.playerUuid());
                 float iconWidth = roles.size() * COMPOSITION_ICON_SIZE
                         + Math.max(0, roles.size() - 1) * COMPOSITION_ICON_GAP;
                 float textX = PADDING + 12;
-                float rightEdge = member.position() == 0 ? actionsLeft - 6 : cardsRight - 8;
+                float rightEdge = memberIndex == 0 ? actions.firstMemberRight() : cardsRight - 8;
                 String memberLabel = truncate(
                         displayName,
                         availableCharacters(textX, rightEdge - iconWidth - 4, 10, 24));
@@ -449,13 +449,14 @@ public final class WarPlannerScreen extends Screen {
                 memberY += TEAM_MEMBER_ROW_STEP;
             }
             if (manager.canManage()) {
-                button(canvas, cardsRight - 132, y + TEAM_ACTION_TOP, 52, BUTTON_HEIGHT, "Edit", false, manager.isMutating());
+                button(canvas, actions.editX(), y + actions.managerY(), actions.editWidth(), BUTTON_HEIGHT,
+                        "Edit", false, manager.isMutating());
                 boolean confirming = pendingDeleteTeam != null && pendingDeleteTeam.id() == team.id();
-                button(canvas, cardsRight - 74, y + TEAM_ACTION_TOP, 70, BUTTON_HEIGHT,
+                button(canvas, actions.deleteX(), y + actions.managerY(), actions.deleteWidth(), BUTTON_HEIGHT,
                         confirming ? "Confirm" : "Delete", true, manager.isMutating());
             }
             if (caller != null) {
-                button(canvas, selfActionX, y + TEAM_ACTION_TOP, TEAM_SELF_ACTION_WIDTH, BUTTON_HEIGHT,
+                button(canvas, actions.selfX(), y + actions.selfY(), actions.selfWidth(), BUTTON_HEIGHT,
                         teamMembershipActionLabel(snapshot, team), false,
                         manager.isMutating() || !canChangeOwnTeam(snapshot, team));
             }
@@ -1513,16 +1514,16 @@ public final class WarPlannerScreen extends Screen {
             return false;
         }
         if (tab == Tab.TEAMS) {
-            TeamPlacement placement = teamPlacementAt(snapshot, my);
+            TeamPlacement placement = teamPlacementAt(snapshot, my, width);
             if (placement == null) return false;
             float supportWidth = teamSidebarWidth(width);
             float cardsRight = width - supportWidth - PADDING * 2;
             Team team = placement.team();
             float rowY = placement.y();
             RosterMember caller = snapshot.caller();
-            float selfActionX = teamSelfActionX(cardsRight, manager.canManage());
+            TeamActionLayout actions = teamActionLayout(cardsRight, manager.canManage(), caller != null);
             if (caller != null
-                    && hit(mx, my, selfActionX, rowY + TEAM_ACTION_TOP, TEAM_SELF_ACTION_WIDTH, BUTTON_HEIGHT)) {
+                    && hit(mx, my, actions.selfX(), rowY + actions.selfY(), actions.selfWidth(), BUTTON_HEIGHT)) {
                 if (canChangeOwnTeam(snapshot, team) && !manager.isMutating()) {
                     boolean ownTeam = caller.teamId() != null && caller.teamId() == team.id();
                     showResult(ownTeam ? manager.leaveTeam() : manager.joinTeam(team.id()));
@@ -1530,12 +1531,12 @@ public final class WarPlannerScreen extends Screen {
                 return true;
             }
             if (manager.canManage()
-                    && hit(mx, my, cardsRight - 132, rowY + TEAM_ACTION_TOP, 52, BUTTON_HEIGHT)) {
+                    && hit(mx, my, actions.editX(), rowY + actions.managerY(), actions.editWidth(), BUTTON_HEIGHT)) {
                 beginTeamEdit(team);
                 return true;
             }
             if (manager.canManage()
-                    && hit(mx, my, cardsRight - 74, rowY + TEAM_ACTION_TOP, 70, BUTTON_HEIGHT)) {
+                    && hit(mx, my, actions.deleteX(), rowY + actions.managerY(), actions.deleteWidth(), BUTTON_HEIGHT)) {
                 if (pendingDeleteTeam != null && pendingDeleteTeam.id() == team.id()) {
                     showResult(manager.deleteTeam(team.id(), pendingDeleteTeam.version()));
                     pendingDeleteTeam = null;
@@ -2199,17 +2200,15 @@ public final class WarPlannerScreen extends Screen {
         int start = Math.min(scrollRows, Math.max(0, snapshot.teams().size() - 1));
         float teamY = contentTop();
         RosterMember caller = snapshot.caller();
-        float actionsLeft = caller != null
-                ? teamSelfActionX(cardsRight, manager.canManage())
-                : manager.canManage() ? cardsRight - 132 : cardsRight;
+        TeamActionLayout actions = teamActionLayout(cardsRight, manager.canManage(), caller != null);
         for (int index = start; index < snapshot.teams().size(); index++) {
             Team team = snapshot.teams().get(index);
             List<TeamMember> members = team.members().stream()
                     .sorted(Comparator.comparingInt(TeamMember::position))
                     .toList();
             for (int memberIndex = 0; memberIndex < members.size(); memberIndex++) {
-                float memberY = teamY + 31 + memberIndex * TEAM_MEMBER_ROW_STEP;
-                float memberRight = memberIndex == 0 ? actionsLeft - 6 : cardsRight - 6;
+                float memberY = teamY + actions.memberTop() + memberIndex * TEAM_MEMBER_ROW_STEP;
+                float memberRight = memberIndex == 0 ? actions.firstMemberRight() : cardsRight - 6;
                 if (hit(mouseX, mouseY, PADDING + 8, memberY - 6, memberRight - PADDING - 8, 11)) {
                     return new MemberDrag(
                             members.get(memberIndex).playerUuid(),
@@ -2220,7 +2219,7 @@ public final class WarPlannerScreen extends Screen {
                             false);
                 }
             }
-            teamY += teamCardHeight(team.members().size()) + 4;
+            teamY += teamCardHeight(team.members().size(), actions) + 4;
         }
         return null;
     }
@@ -2278,7 +2277,7 @@ public final class WarPlannerScreen extends Screen {
         float supportWidth = teamSidebarWidth(width);
         float cardsRight = width - supportWidth - PADDING * 2;
         if (mouseX < PADDING || mouseX > cardsRight - PADDING || mouseY < contentTop()) return null;
-        TeamPlacement placement = teamPlacementAt(snapshot, mouseY);
+        TeamPlacement placement = teamPlacementAt(snapshot, mouseY, width);
         return placement != null
                         && hit(mouseX, mouseY, PADDING, placement.y() + 1,
                                 cardsRight - PADDING, placement.height() - 2)
@@ -2286,12 +2285,15 @@ public final class WarPlannerScreen extends Screen {
                 : null;
     }
 
-    private TeamPlacement teamPlacementAt(WarPlannerSnapshot snapshot, float mouseY) {
+    private TeamPlacement teamPlacementAt(WarPlannerSnapshot snapshot, float mouseY, float width) {
         int start = Math.min(scrollRows, Math.max(0, snapshot.teams().size() - 1));
         float y = contentTop();
+        float supportWidth = teamSidebarWidth(width);
+        float cardsRight = width - supportWidth - PADDING * 2;
+        TeamActionLayout actions = teamActionLayout(cardsRight, manager.canManage(), snapshot.caller() != null);
         for (int index = start; index < snapshot.teams().size(); index++) {
             Team team = snapshot.teams().get(index);
-            float height = teamCardHeight(team.members().size());
+            float height = teamCardHeight(team.members().size(), actions);
             if (mouseY >= y && mouseY <= y + height) return new TeamPlacement(team, y, height);
             y += height + 4;
         }
@@ -2431,6 +2433,50 @@ public final class WarPlannerScreen extends Screen {
 
     static float teamSelfActionX(float cardsRight, boolean canManage) {
         return cardsRight - (canManage ? 204 : 72);
+    }
+
+    static TeamActionLayout teamActionLayout(float cardsRight, boolean canManage, boolean hasCaller) {
+        float firstWideAction = hasCaller
+                ? teamSelfActionX(cardsRight, canManage)
+                : canManage ? cardsRight - 132 : cardsRight;
+        boolean compact = firstWideAction < PADDING + 4;
+        if (!compact) {
+            return new TeamActionLayout(
+                    cardsRight - 132,
+                    canManage ? 52 : 0,
+                    cardsRight - 74,
+                    canManage ? 70 : 0,
+                    teamSelfActionX(cardsRight, canManage),
+                    hasCaller ? TEAM_SELF_ACTION_WIDTH : 0,
+                    TEAM_ACTION_TOP,
+                    TEAM_ACTION_TOP,
+                    31,
+                    Math.max(PADDING + 8, firstWideAction - 6),
+                    Math.max(PADDING + 8, firstWideAction - 6),
+                    0);
+        }
+
+        float innerLeft = PADDING + 4;
+        float innerRight = Math.max(innerLeft + 1, cardsRight - 4);
+        float availableWidth = innerRight - innerLeft;
+        float managerGap = 4;
+        float managerWidth = Math.max(1, (availableWidth - managerGap) / 2);
+        float managerY = 28;
+        float selfY = canManage ? 54 : 28;
+        float memberTop = canManage && hasCaller ? 84 : 58;
+        return new TeamActionLayout(
+                innerLeft,
+                canManage ? managerWidth : 0,
+                innerLeft + managerWidth + managerGap,
+                canManage ? managerWidth : 0,
+                innerLeft,
+                hasCaller ? availableWidth : 0,
+                managerY,
+                selfY,
+                memberTop,
+                cardsRight - 6,
+                cardsRight - 8,
+                memberTop - 31);
     }
 
     static List<RosterMember> sortedWarRoster(WarPlannerSnapshot snapshot) {
@@ -2596,6 +2642,10 @@ public final class WarPlannerScreen extends Screen {
 
     static float teamCardHeight(int memberCount) {
         return Math.max(48, 34 + Math.max(0, Math.min(5, memberCount)) * TEAM_MEMBER_ROW_STEP);
+    }
+
+    static float teamCardHeight(int memberCount, TeamActionLayout actions) {
+        return teamCardHeight(memberCount) + (actions == null ? 0 : actions.extraHeight());
     }
 
     static float teamMemberRowStep() {
@@ -2771,6 +2821,20 @@ public final class WarPlannerScreen extends Screen {
             return index >= 3 ? actionButtonWidth : regularButtonWidth;
         }
     }
+
+    record TeamActionLayout(
+            float editX,
+            float editWidth,
+            float deleteX,
+            float deleteWidth,
+            float selfX,
+            float selfWidth,
+            float managerY,
+            float selfY,
+            float memberTop,
+            float titleRight,
+            float firstMemberRight,
+            float extraHeight) {}
 
     record WarMapLayout(
             float mapX, float mapY, float mapWidth, float mapHeight, float sidebarX, float sidebarWidth) {

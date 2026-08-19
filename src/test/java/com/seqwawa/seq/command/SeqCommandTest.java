@@ -41,6 +41,17 @@ class SeqCommandTest {
     }
 
     @Test
+    void registersSettingsScreenCommand() {
+        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+
+        SeqCommand.registerCommands(dispatcher, null);
+
+        var settings = dispatcher.getRoot().getChild("seq").getChild("settings");
+        assertNotNull(settings);
+        assertNotNull(settings.getCommand());
+    }
+
+    @Test
     void warSubtreeExistsButFailsClosedBeforeAuthorizedSnapshot() {
         CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
         var previous = SeqClient.warPlannerManager;

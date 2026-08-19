@@ -19,6 +19,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -143,6 +144,8 @@ class ApiClientTest {
         JsonObject payload = ApiClient.buildWarAvailabilityPayload(90);
 
         assertEquals(90, payload.get("duration_minutes").getAsInt());
+        assertDoesNotThrow(() -> ApiClient.buildWarAvailabilityPayload(1));
+        assertDoesNotThrow(() -> ApiClient.buildWarAvailabilityPayload(1440));
         assertThrows(IllegalArgumentException.class, () -> ApiClient.buildWarAvailabilityPayload(0));
         assertThrows(IllegalArgumentException.class, () -> ApiClient.buildWarAvailabilityPayload(1441));
     }
@@ -154,6 +157,7 @@ class ApiClientTest {
 
         assertEquals("SOLO", payload.getAsJsonArray("roles").get(0).getAsString());
         assertEquals("TANK", payload.getAsJsonArray("roles").get(1).getAsString());
+        assertEquals(2, payload.getAsJsonArray("roles").size());
         assertTrue(ApiClient.buildWarCompositionRolesPayload(List.of()).getAsJsonArray("roles").isEmpty());
         assertThrows(IllegalArgumentException.class, () -> ApiClient.buildWarCompositionRolesPayload(null));
     }
@@ -216,6 +220,7 @@ class ApiClientTest {
                 new ZoneDraft("North", "#AABBCC", List.of(), null, List.of("Ragni")), false);
 
         assertEquals(42L, assigned.getAsJsonArray("assigned_team_ids").get(0).getAsLong());
+        assertEquals("#AABBCC", assigned.get("color").getAsString());
         assertEquals(3L, assigned.get("version").getAsLong());
         assertEquals("Ragni", assigned.getAsJsonArray("territories").get(0).getAsString());
         assertTrue(unassigned.getAsJsonArray("assigned_team_ids").isEmpty());
@@ -260,12 +265,14 @@ class ApiClientTest {
                 4L,
                 List.of(
                         new SupportSlotDraft("LEAD", "lead-uuid"),
-                        new SupportSlotDraft("ECO_1", "eco-uuid"))));
+                        new SupportSlotDraft("ECO_1", "eco-uuid"),
+                        new SupportSlotDraft("ECO_2", null))));
 
         assertEquals(4L, payload.get("version").getAsLong());
         assertEquals("LEAD", payload.getAsJsonArray("slots").get(0).getAsJsonObject().get("code").getAsString());
         assertEquals(
                 "eco-uuid",
                 payload.getAsJsonArray("slots").get(1).getAsJsonObject().get("player_uuid").getAsString());
+        assertTrue(payload.getAsJsonArray("slots").get(2).getAsJsonObject().get("player_uuid").isJsonNull());
     }
 }

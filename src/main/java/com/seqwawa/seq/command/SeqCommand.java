@@ -137,6 +137,11 @@ public class SeqCommand {
                                 .then(buildBadgeCommand("badge"))
                                 .then(buildRankCommand("ranks"))
                                 .then(buildRankCommand("rank"))
+                                .then(ClientCommandManager.literal("settings")
+                                                .executes(ctx -> {
+                                                        SeqClient.openSettingsScreen();
+                                                        return 1;
+                                                }))
                                 .then(buildMapCommand())
                                 .then(buildWarCommand())
                                 .then(ClientCommandManager.literal("ingredients")
@@ -354,46 +359,46 @@ public class SeqCommand {
         }
 
         private static int openWarPlanner(CommandContext<FabricClientCommandSource> ctx) {
-                if (!isWarPlannerAuthorized()) {
-                        sendFeedback(ctx.getSource(), "War planner access is limited to authorized Sequoia members.");
-                        return 0;
-                }
+                if (authorizedWarPlannerManager(ctx) == null) return 0;
                 SeqClient.openWarPlannerScreen();
                 return 1;
         }
 
         private static int setWarAvailability(CommandContext<FabricClientCommandSource> ctx) {
-                WarPlannerManager manager = SeqClient.getWarPlannerManager();
-                if (manager == null || !manager.isAuthorized()) {
-                        sendFeedback(ctx.getSource(), "War planner access is limited to authorized Sequoia members.");
-                        return 0;
-                }
+                WarPlannerManager manager = authorizedWarPlannerManager(ctx);
+                if (manager == null) return 0;
                 int minutes = IntegerArgumentType.getInteger(ctx, "minutes");
                 relayWarPlannerResult(ctx, manager.setAvailability(minutes));
                 return 1;
         }
 
         private static int clearWarAvailability(CommandContext<FabricClientCommandSource> ctx) {
+                WarPlannerManager manager = authorizedWarPlannerManager(ctx);
+                if (manager == null) return 0;
+                relayWarPlannerResult(ctx, manager.clearAvailability());
+                return 1;
+        }
+
+        private static WarPlannerManager authorizedWarPlannerManager(
+                        CommandContext<FabricClientCommandSource> ctx) {
                 WarPlannerManager manager = SeqClient.getWarPlannerManager();
                 if (manager == null || !manager.isAuthorized()) {
                         sendFeedback(ctx.getSource(), "War planner access is limited to authorized Sequoia members.");
-                        return 0;
+                        return null;
                 }
-                relayWarPlannerResult(ctx, manager.clearAvailability());
-                return 1;
+                return manager;
         }
 
         private static void relayWarPlannerResult(
                         CommandContext<FabricClientCommandSource> ctx,
                         CompletableFuture<WarPlannerManager.ActionResult> future) {
-                FabricClientCommandSource source = ctx.getSource();
-                future.whenComplete((result, error) -> SeqClient.mc.execute(() -> {
+                future.whenComplete((result, error) -> {
                         if (error != null) {
-                                source.sendFeedback(NotificationAccessor.prefixed("War planner request failed."));
+                                sendFeedback(ctx.getSource(), "War planner request failed.");
                         } else if (result != null && result.message() != null && !result.message().isBlank()) {
-                                source.sendFeedback(NotificationAccessor.prefixed(result.message()));
+                                sendFeedback(ctx.getSource(), result.message());
                         }
-                }));
+                });
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildIgnoreCommand() {

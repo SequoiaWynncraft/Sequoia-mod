@@ -59,9 +59,6 @@ public class SettingsScreen extends Screen {
     private static final float SEARCH_FONT_SIZE = 12;
     private static final float SCROLL_SPEED = 12;
 
-    // Colors
-    private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
-
     private final Screen parent;
     private final LinkedHashMap<String, List<SettingWidget<?>>> categories = new LinkedHashMap<>();
     private final Set<String> collapsedCategories = new HashSet<>();
@@ -209,17 +206,19 @@ public class SettingsScreen extends Screen {
             float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
             float btnStartY = 50;
 
-            drawSidebarButton(canvas, fontName, btnX, btnStartY, btnW, "Partyfinder", false);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING), btnW,
-                    "Connection", false);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
-                    btnW, "Settings", true);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
-                    btnW, "Map", false);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
-                    btnW, "Ingredients", false);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5,
-                    btnW, "Github", false);
+            float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
+            var destinations = SequoiaSidebarNavigation.destinations();
+            for (int row = 0; row < destinations.size(); row++) {
+                var destination = destinations.get(row);
+                drawSidebarButton(
+                        canvas,
+                        fontName,
+                        btnX,
+                        btnStartY + step * row,
+                        btnW,
+                        destination.label(),
+                        destination == SequoiaSidebarNavigation.Destination.SETTINGS);
+            }
 
             renderPrincessPrompt(canvas, fontName, screenHeight, System.currentTimeMillis());
 
@@ -516,41 +515,15 @@ public class SettingsScreen extends Screen {
                 }
             }
 
-            // Partyfinder
-            if (isHovered(mx, my, btnX, btnStartY, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-                SeqClient.mc.setScreen(new PartyFinderScreen(this));
-                return true;
-            }
-            // Connection
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING), btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                SeqClient.mc.setScreen(new ConnectionScreen(this));
-                return true;
-            }
-            // Settings (already here)
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2, btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                return true;
-            }
-            // Map
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3, btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                SeqClient.mc.setScreen(new WorldMapScreen(this));
-                return true;
-            }
-            // Ingredients
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4, btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                SeqClient.mc.setScreen(new IngredientGuideScreen(this));
-                return true;
-            }
-            // Github
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5, btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                try {
-                    java.net.URI uri = java.net.URI.create(GITHUB_URL);
-                    java.awt.Desktop.getDesktop().browse(uri);
-                } catch (Exception ignored) {
+            float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
+            var destinations = SequoiaSidebarNavigation.destinations();
+            for (int row = 0; row < destinations.size(); row++) {
+                if (!isHovered(mx, my, btnX, btnStartY + step * row, btnW, SIDEBAR_BUTTON_HEIGHT)) {
+                    continue;
+                }
+                var destination = destinations.get(row);
+                if (destination != SequoiaSidebarNavigation.Destination.SETTINGS) {
+                    SequoiaSidebarNavigation.open(destination, this);
                 }
                 return true;
             }

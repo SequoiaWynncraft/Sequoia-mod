@@ -41,6 +41,24 @@ class WarTerritoryPickerScreenTest {
     }
 
     @Test
+    void shortScreenDetectsExpandedPaletteOverlapBeforeRenderingControls() {
+        assertTrue(PickerControlLayout.create(800, 342, 146, true).controlsOverlapFooter());
+        assertFalse(PickerControlLayout.create(800, 342, 42, true).controlsOverlapFooter());
+        assertFalse(PickerControlLayout.create(800, 480, 146, true).controlsOverlapFooter());
+    }
+
+    @Test
+    void veryShortScreenPlacesClearCancelAndSaveInOneNonOverlappingFooter() {
+        PickerControlLayout layout = PickerControlLayout.create(800, 280, 42, true);
+
+        assertEquals(layout.clear().y(), layout.cancel().y());
+        assertEquals(layout.cancel().y(), layout.save().y());
+        assertTrue(layout.clear().x() + layout.clear().width() < layout.cancel().x());
+        assertTrue(layout.cancel().x() + layout.cancel().width() < layout.save().x());
+        assertTrue(layout.save().x() + layout.save().width() <= 226);
+    }
+
+    @Test
     void partyAssignmentLabelsMakeTheToggleStateExplicit() {
         assertEquals("Assigned · HQ Team", WarTerritoryPickerScreen.teamAssignmentLabel("HQ Team", true));
         assertEquals("Unassigned · FFA 1", WarTerritoryPickerScreen.teamAssignmentLabel("FFA 1", false));

@@ -148,6 +148,10 @@ final class WarZoneCategoryEditorScreen extends Screen {
 
     private void save() {
         if (saving) return;
+        if (manager == null || !manager.isAuthorized() || !manager.canManage()) {
+            message = "War planner management access is no longer available.";
+            return;
+        }
         try {
             ZoneCategoryDraft draft = new ZoneCategoryDraft(
                     name, original == null ? null : original.version());

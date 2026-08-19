@@ -420,7 +420,7 @@ public final class WarPlannerManager {
                 && "war_manager_required".equals(code);
         boolean guildAuthorizationUnverifiable = "guild_roster_unavailable".equals(code);
         boolean clearsSensitiveData = status == 401
-                || status == 403 && !managerRequired
+                || (status == 403 && !managerRequired)
                 || status == 426
                 || "not_in_guild".equals(code)
                 || isAuthenticationError(code);

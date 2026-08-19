@@ -60,6 +60,7 @@ import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.ui.PrincessRaidCelebration;
 import com.seqwawa.seq.ui.SequoiaScreen;
+import com.seqwawa.seq.ui.SettingsScreen;
 import com.seqwawa.seq.ui.WorldMapScreen;
 import com.seqwawa.seq.ui.WarPlannerScreen;
 import com.seqwawa.seq.update.UpdateManager;
@@ -640,6 +641,10 @@ public class SeqClient implements ClientModInitializer {
 
     public static void openPartyFinderScreen() {
         mc.execute(() -> mc.setScreen(new PartyFinderScreen(mc.screen)));
+    }
+
+    public static void openSettingsScreen() {
+        mc.execute(() -> mc.setScreen(new SettingsScreen(mc.screen)));
     }
 
     public static void openWarPlannerScreen() {

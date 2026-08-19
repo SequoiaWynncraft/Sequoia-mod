@@ -222,6 +222,21 @@ class WarPlannerScreenTest {
     }
 
     @Test
+    void narrowManagerTeamActionsStackInsideTheCard() {
+        float cardsRight = 120;
+        WarPlannerScreen.TeamActionLayout actions =
+                WarPlannerScreen.teamActionLayout(cardsRight, true, true);
+
+        assertTrue(actions.editX() >= 12);
+        assertTrue(actions.deleteX() + actions.deleteWidth() <= cardsRight);
+        assertTrue(actions.selfX() >= 12);
+        assertTrue(actions.selfX() + actions.selfWidth() <= cardsRight);
+        assertTrue(actions.selfY() > actions.managerY());
+        assertTrue(actions.memberTop() > actions.selfY() + 22);
+        assertEquals(101, WarPlannerScreen.teamCardHeight(1, actions));
+    }
+
+    @Test
     void teamSidebarAndEditorStayCompactOnWideScreens() {
         assertEquals(214, WarPlannerScreen.teamSidebarWidth(780));
         assertEquals(179.2f, WarPlannerScreen.teamSidebarWidth(640), .01f);

@@ -144,6 +144,10 @@ final class WarAvailabilityEditorScreen extends Screen {
 
     private void save() {
         if (saving) return;
+        if (manager == null || !manager.isAuthorized()) {
+            message = "War planner access is no longer available.";
+            return;
+        }
         final int minutes;
         try {
             minutes = parseDurationMinutes(duration);

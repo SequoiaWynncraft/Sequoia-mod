@@ -60,6 +60,15 @@ record PickerControlLayout(
                     TEAM_ROW_HEIGHT));
         }
         float selectionLabelY = teamsLabelY + 20 + visibleTeamRows * TEAM_ROW_STEP;
+        float footerY = safeHeight - 38;
+        Bounds clear = new Bounds(PADDING, selectionLabelY + 45, 68, BUTTON_HEIGHT);
+        Bounds cancel = new Bounds(PADDING, footerY, 78, BUTTON_HEIGHT);
+        Bounds save = new Bounds(SIDEBAR_WIDTH - PADDING - 92, footerY, 92, BUTTON_HEIGHT);
+        if (clear.y() + clear.height() > footerY - 6) {
+            clear = new Bounds(PADDING, footerY, 58, BUTTON_HEIGHT);
+            cancel = new Bounds(72, footerY, 66, BUTTON_HEIGHT);
+            save = new Bounds(142, footerY, 84, BUTTON_HEIGHT);
+        }
 
         return new PickerControlLayout(
                 new Bounds(0, 0, SIDEBAR_WIDTH, safeHeight),
@@ -77,9 +86,9 @@ record PickerControlLayout(
                 teamRows,
                 new Bounds(0, teamsLabelY, SIDEBAR_WIDTH, 20 + visibleTeamRows * TEAM_ROW_STEP),
                 selectionLabelY,
-                new Bounds(PADDING, selectionLabelY + 45, 68, BUTTON_HEIGHT),
-                new Bounds(PADDING, safeHeight - 38, 78, BUTTON_HEIGHT),
-                new Bounds(SIDEBAR_WIDTH - PADDING - 92, safeHeight - 38, 92, BUTTON_HEIGHT));
+                clear,
+                cancel,
+                save);
     }
 
     static int visibleTeamRows(float height, float colorWidgetHeight) {
@@ -89,6 +98,10 @@ record PickerControlLayout(
 
     int visibleTeamRows() {
         return teamRows.size();
+    }
+
+    boolean controlsOverlapFooter() {
+        return selectionLabelY + 39 > cancel.y() - 6;
     }
 
     Bounds teamRow(int visibleRow) {
