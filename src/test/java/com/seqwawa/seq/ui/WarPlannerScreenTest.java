@@ -346,6 +346,70 @@ class WarPlannerScreenTest {
     }
 
     @Test
+    void teamEditorListsEveryPlayerOnlineFirstThenRoleCountThenName() {
+        WarPlannerSnapshot.RosterMember flexible = new WarPlannerSnapshot.RosterMember(
+                "flexible", "Zulu", null, null, List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS),
+                true, false, null, null);
+        WarPlannerSnapshot.RosterMember alpha = new WarPlannerSnapshot.RosterMember(
+                "alpha", "Alpha", null, null, List.of(WarCompositionRole.TANK),
+                true, false, null, null);
+        WarPlannerSnapshot.RosterMember bravo = new WarPlannerSnapshot.RosterMember(
+                "bravo", "bravo", null, null, List.of(WarCompositionRole.SOLO),
+                true, true, null, 1L);
+        WarPlannerSnapshot.RosterMember onlineWithoutRoles = new WarPlannerSnapshot.RosterMember(
+                "online-empty", "Cedar", null, null, List.of(),
+                true, false, null, null);
+        WarPlannerSnapshot.RosterMember offlineFlexible = new WarPlannerSnapshot.RosterMember(
+                "offline-flexible", "Delta", null, null,
+                List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS, WarCompositionRole.TANK),
+                false, true, null, 2L);
+        WarPlannerSnapshot.RosterMember offlineWithoutRoles = new WarPlannerSnapshot.RosterMember(
+                "offline-empty", "Echo", null, null, List.of(),
+                false, false, null, null);
+
+        List<String> ordered = WarPlannerScreen.teamEditorRoster(
+                        snapshot(List.of(), List.of(
+                                offlineWithoutRoles,
+                                bravo,
+                                offlineFlexible,
+                                onlineWithoutRoles,
+                                flexible,
+                                alpha)),
+                        "")
+                .stream()
+                .map(WarPlannerSnapshot.RosterMember::playerUuid)
+                .toList();
+
+        assertEquals(
+                List.of("flexible", "alpha", "bravo", "online-empty", "offline-flexible", "offline-empty"),
+                ordered);
+    }
+
+    @Test
+    void teamEditorSearchIsTrimmedCaseInsensitiveAndKeepsRosterOrdering() {
+        WarPlannerSnapshot.RosterMember online = new WarPlannerSnapshot.RosterMember(
+                "online-sage", "sagebrush", null, null, List.of(WarCompositionRole.DPS),
+                true, false, null, null);
+        WarPlannerSnapshot.RosterMember offline = new WarPlannerSnapshot.RosterMember(
+                "royal-id", "RoyalSage", null, "DiscordAlias", List.of(WarCompositionRole.SOLO),
+                false, false, null, null);
+        WarPlannerSnapshot.RosterMember other = new WarPlannerSnapshot.RosterMember(
+                "other", "Other", null, null, List.of(),
+                true, false, null, null);
+        WarPlannerSnapshot snapshot = snapshot(List.of(), List.of(offline, other, online));
+
+        assertEquals(
+                List.of("online-sage", "royal-id"),
+                WarPlannerScreen.teamEditorRoster(snapshot, "  SaGe ").stream()
+                        .map(WarPlannerSnapshot.RosterMember::playerUuid)
+                        .toList());
+        assertEquals(List.of(offline), WarPlannerScreen.teamEditorRoster(snapshot, "discordalias"));
+        assertEquals(List.of(offline), WarPlannerScreen.teamEditorRoster(snapshot, "ROYAL-ID"));
+        assertEquals(3, WarPlannerScreen.teamEditorRoster(snapshot, "   ").size());
+        assertTrue(WarPlannerScreen.teamEditorRoster(snapshot, "missing").isEmpty());
+    }
+
+    @Test
     void pingRequiresAConnectedDiscordAccountAndCannotTargetSelf() {
         WarPlannerSnapshot.RosterMember linked = new WarPlannerSnapshot.RosterMember(
                 "linked", "Linked", "123", null, List.of(WarCompositionRole.SOLO), true, true, null, null);
