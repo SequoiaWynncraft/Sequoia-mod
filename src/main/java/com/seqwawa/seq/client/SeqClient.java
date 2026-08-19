@@ -41,6 +41,7 @@ import com.seqwawa.seq.managers.RankProfileRoster;
 import com.seqwawa.seq.managers.PartyHealthCache;
 import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.PrincessMode;
+import com.seqwawa.seq.managers.PrincessRaidStatsManager;
 import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
@@ -92,6 +93,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static WarPlannerManager warPlannerManager;
+
+    @Getter
+    public static PrincessRaidStatsManager princessRaidStatsManager;
 
     @Getter
     public static MinecraftAuthService authService;
@@ -297,6 +301,7 @@ public class SeqClient implements ClientModInitializer {
         gameManager = new GameManager();
         partyFinderManager = new PartyFinderManager();
         warPlannerManager = new WarPlannerManager();
+        princessRaidStatsManager = new PrincessRaidStatsManager();
         wynnPartySyncManager = new WynnPartySyncManager();
         guildWarTracker = GuildWarTrackers.createIfAvailable();
         guildStorageTracker = GuildStorageTracker.getInstance();
@@ -518,6 +523,9 @@ public class SeqClient implements ClientModInitializer {
         }
         if (warPlannerManager != null) {
             warPlannerManager.reset();
+        }
+        if (princessRaidStatsManager != null) {
+            princessRaidStatsManager.reset();
         }
         return true;
     }

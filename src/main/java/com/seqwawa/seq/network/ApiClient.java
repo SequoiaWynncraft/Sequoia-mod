@@ -25,6 +25,7 @@ import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
+import com.seqwawa.seq.model.PrincessRaidStats;
 import com.seqwawa.seq.model.RankProfilesResponse;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.model.war.WarCompositionRole;
@@ -224,6 +225,32 @@ public class ApiClient {
 
     public CompletableFuture<RankProfilesResponse> getRecognizedRankProfiles() {
         return get(authBaseUrl, "/v1/rank-profiles?scope=recognized", RankProfilesResponse.class, false);
+    }
+
+    // ── Princess mode ──
+
+    public CompletableFuture<PrincessRaidStats> getPrincessRaidLeaderboard() {
+        return get("/princess-mode/leaderboard", PrincessRaidStats.class);
+    }
+
+    public CompletableFuture<PrincessRaidStats> recordPrincessRaid(UUID eventId, String raidName) {
+        return post(
+                "/princess-mode/completions",
+                buildPrincessRaidCompletionPayload(eventId, raidName),
+                PrincessRaidStats.class);
+    }
+
+    static JsonObject buildPrincessRaidCompletionPayload(UUID eventId, String raidName) {
+        if (eventId == null) {
+            throw new IllegalArgumentException("Princess raid event id is required.");
+        }
+        if (raidName == null || raidName.isBlank()) {
+            throw new IllegalArgumentException("Princess raid name is required.");
+        }
+        JsonObject body = new JsonObject();
+        body.addProperty("event_id", eventId.toString());
+        body.addProperty("raid_name", raidName.trim());
+        return body;
     }
 
     // ── War Planner ──

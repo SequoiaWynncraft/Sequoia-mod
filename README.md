@@ -25,6 +25,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Seq-only war planner with timed availability, exclusive 1–5 player parties, a shared Lead + three Eco board, and collaborative territory zones
 - Raid tracking and announcements
 - Per-player raid gambit counts parsed natively from the raid-start roster
+- A playful Princess-mode graid count, compact leaderboard, and numbered raid celebration
 - Interactive world map with gathering nodes analysis and active world events
 - Guild-specific settings and status screens
 

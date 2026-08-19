@@ -16,6 +16,7 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneCategoryDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import com.seqwawa.seq.model.war.WarTeamType;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -25,6 +26,32 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ApiClientTest {
+
+    @Test
+    void princessRaidPayloadContainsOnlyEventIdentityAndRaidName() {
+        UUID eventId = UUID.fromString("c15bd497-9db5-441f-9678-c2aa25dd15b6");
+
+        JsonObject payload = ApiClient.buildPrincessRaidCompletionPayload(eventId, " The Nameless Anomaly ");
+
+        assertEquals(eventId.toString(), payload.get("event_id").getAsString());
+        assertEquals("The Nameless Anomaly", payload.get("raid_name").getAsString());
+        assertEquals(2, payload.size());
+        assertFalse(payload.has("username"));
+        assertFalse(payload.has("player_uuid"));
+        assertFalse(payload.has("raid_count"));
+    }
+
+    @Test
+    void princessRaidPayloadRejectsMissingIdentityOrRaid() {
+        UUID eventId = UUID.fromString("c15bd497-9db5-441f-9678-c2aa25dd15b6");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ApiClient.buildPrincessRaidCompletionPayload(null, "The Nameless Anomaly"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ApiClient.buildPrincessRaidCompletionPayload(eventId, " "));
+    }
 
     @Test
     void resolveAuthBaseUrlStripsApiSuffix() {

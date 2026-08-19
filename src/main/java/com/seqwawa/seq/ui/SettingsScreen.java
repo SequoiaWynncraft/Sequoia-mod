@@ -80,6 +80,9 @@ public class SettingsScreen extends Screen {
         super(Component.literal("Settings"));
         this.parent = parent;
         buildWidgets();
+        if (PrincessMode.isEnabled() && SeqClient.getPrincessRaidStatsManager() != null) {
+            SeqClient.getPrincessRaidStatsManager().refresh();
+        }
     }
 
     @Override
@@ -308,6 +311,20 @@ public class SettingsScreen extends Screen {
             float cursorY = contentY - scrollOffset + PADDING;
             float widgetWidth = contentWidth - PADDING * 2 - 6;
 
+            if (princessLeaderboardVisible()) {
+                float leaderboardWidth = Math.min(
+                        PrincessLeaderboardPanel.WIDTH,
+                        Math.max(0, contentWidth - PADDING * 2 - 6));
+                PrincessLeaderboardPanel.render(
+                        canvas,
+                        fontName,
+                        contentX + contentWidth - leaderboardWidth - PADDING - 6,
+                        cursorY,
+                        leaderboardWidth,
+                        SeqClient.getPrincessRaidStatsManager().snapshot());
+                cursorY += PrincessLeaderboardPanel.HEIGHT + PADDING;
+            }
+
             int settingIndex = 0;
             for (Map.Entry<String, List<SettingWidget<?>>> entry : categories.entrySet()) {
                 String category = entry.getKey();
@@ -380,6 +397,7 @@ public class SettingsScreen extends Screen {
             }
 
             maxScroll = Math.max(0, cursorY + scrollOffset - contentY - contentHeight);
+            scrollOffset = Math.min(scrollOffset, maxScroll);
 
             canvas.restore();
 
@@ -390,7 +408,7 @@ public class SettingsScreen extends Screen {
                 canvas.fillRect(scrollbarX, contentY, 4, scrollbarHeight, color(CONTROL_TRACK));
 
                 float thumbRatio = contentHeight / (contentHeight + maxScroll);
-                float thumbHeight = Math.max(20, scrollbarHeight * thumbRatio);
+                float thumbHeight = Math.min(scrollbarHeight, Math.max(20, scrollbarHeight * thumbRatio));
                 float thumbY = contentY + (scrollOffset / maxScroll) * (scrollbarHeight - thumbHeight);
                 canvas.fillRect(scrollbarX, thumbY, 4, thumbHeight, color(CONTROL_THUMB));
             }
@@ -412,7 +430,7 @@ public class SettingsScreen extends Screen {
             return;
         }
 
-        float progress = princessPrompt.slideProgress(nowMs);
+        float progress = princessPromptProgress(nowMs);
         if (progress <= 0f) {
             return;
         }
@@ -464,8 +482,16 @@ public class SettingsScreen extends Screen {
         return screenHeight + (visibleY - screenHeight) * progress;
     }
 
+    private float princessPromptProgress(long nowMs) {
+        return PrincessMode.isEnabled() ? 1f : princessPrompt.slideProgress(nowMs);
+    }
+
     private static boolean princessPromptAllowed() {
         return SeqClient.getEasterEggsSetting() != null && SeqClient.getEasterEggsSetting().getValue();
+    }
+
+    private static boolean princessLeaderboardVisible() {
+        return PrincessMode.isEnabled() && SeqClient.getPrincessRaidStatsManager() != null;
     }
 
     private static void drawText(
@@ -507,10 +533,14 @@ public class SettingsScreen extends Screen {
 
             if (princessPromptAllowed()) {
                 long nowMs = System.currentTimeMillis();
-                float progress = princessPrompt.slideProgress(nowMs);
+                float progress = princessPromptProgress(nowMs);
                 float promptY = princessPromptY(screenHeight, progress);
                 if (progress > 0f && isHovered(mx, my, btnX, promptY, btnW, PRINCESS_PROMPT_HEIGHT)) {
-                    PrincessMode.toggle();
+                    boolean enabled = PrincessMode.toggle();
+                    if (enabled && SeqClient.getPrincessRaidStatsManager() != null) {
+                        scrollOffset = 0;
+                        SeqClient.getPrincessRaidStatsManager().refresh();
+                    }
                     return true;
                 }
             }
@@ -568,6 +598,10 @@ public class SettingsScreen extends Screen {
         float contentWidth = panelWidth;
         float widgetWidth = contentWidth - PADDING * 2 - 6;
         float cursorY = contentY - scrollOffset + PADDING;
+
+        if (princessLeaderboardVisible()) {
+            cursorY += PrincessLeaderboardPanel.HEIGHT + PADDING;
+        }
 
         for (Map.Entry<String, List<SettingWidget<?>>> entry : categories.entrySet()) {
             String category = entry.getKey();
@@ -648,8 +682,13 @@ public class SettingsScreen extends Screen {
             float screenHeight = MinecraftUiRenderer.screenHeight();
             float contentHeight = screenHeight - HEADER_HEIGHT;
             float thumbRatio = contentHeight / (contentHeight + maxScroll);
-            float thumbHeight = Math.max(20, contentHeight * thumbRatio);
+            float thumbHeight = Math.min(contentHeight, Math.max(20, contentHeight * thumbRatio));
             float scrollRange = contentHeight - thumbHeight;
+
+            if (scrollRange <= 0) {
+                scrollOffset = 0;
+                return true;
+            }
 
             float delta = my - scrollbarDragStart;
             scrollOffset = scrollOffsetDragStart + (delta / scrollRange) * maxScroll;
