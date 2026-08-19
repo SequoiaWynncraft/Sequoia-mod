@@ -156,11 +156,56 @@ class GuildRaidProgressServiceTest {
     @Test
     void aFinishedRaidPushesTheNextScheduledReadBack() {
         GuildRaidProgressService service = service();
+        service.tick();
         service.onLocalRaidCompleted();
 
         service.tick();
 
+        assertEquals(2, calls.get());
+    }
+
+    @Test
+    void aNewSessionForgetsWhatThePreviousOneLoaded() {
+        GuildRaidProgressService service = service();
+        service.tick();
+        assertEquals(512, service.progress().count(SeqRaid.TNA));
+
+        connected.set(false);
+        service.tick();
+        connected.set(true);
+        answer.set(CompletableFuture.completedFuture(progress(7)));
+        service.tick();
+
+        assertEquals(2, calls.get());
+        assertEquals(7, service.progress().count(SeqRaid.TNA));
+    }
+
+    @Test
+    void aReadStartedByThePreviousSessionIsThrownAway() {
+        CompletableFuture<GuildRaidProgress> pending = new CompletableFuture<>();
+        answer.set(pending);
+        GuildRaidProgressService service = service();
+        service.tick();
+
+        connected.set(false);
+        service.tick();
+        connected.set(true);
+        answer.set(CompletableFuture.completedFuture(progress(7)));
+        service.tick();
+        pending.complete(progress(512));
+
+        assertEquals(7, service.progress().count(SeqRaid.TNA));
+    }
+
+    @Test
+    void aSteadyConnectionIsNotTreatedAsANewSession() {
+        GuildRaidProgressService service = service();
+        service.tick();
+        service.tick();
+        service.tick();
+
         assertEquals(1, calls.get());
+        assertEquals(512, service.progress().count(SeqRaid.TNA));
     }
 
     @Test

@@ -36,6 +36,7 @@ public final class GuildRaidProgressService {
     private volatile boolean loading;
     private volatile long lastAttemptAtMs;
     private volatile int generation;
+    private volatile boolean wasConnected;
 
     GuildRaidProgressService(
             Supplier<CompletableFuture<GuildRaidProgress>> fetcher,
@@ -76,7 +77,13 @@ public final class GuildRaidProgressService {
     }
 
     public synchronized void tick() {
-        if (connected.getAsBoolean()) {
+        boolean online = connected.getAsBoolean();
+        if (online && !wasConnected) {
+            reset();
+        }
+        wasConnected = online;
+
+        if (online) {
             requestRefresh();
         } else if (state == State.LOADING && !loading) {
             state = State.UNAVAILABLE;
