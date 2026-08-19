@@ -22,6 +22,20 @@ class PrincessLeaderboardPanelTest {
     }
 
     @Test
+    void reducesRowsToFitShortSidebars() {
+        List<PrincessRaidStats.LeaderboardEntry> entries = java.util.stream.IntStream.rangeClosed(1, 5)
+                .mapToObj(rank -> new PrincessRaidStats.LeaderboardEntry(rank, "Player" + rank, 20 - rank))
+                .toList();
+        var snapshot = new PrincessRaidStatsManager.Snapshot(
+                PrincessRaidStatsManager.State.READY, true, 12, 6, entries);
+
+        assertEquals(5, PrincessLeaderboardPanel.visibleEntries(snapshot, 116).size());
+        assertEquals(4, PrincessLeaderboardPanel.visibleEntries(snapshot, 102).size());
+        assertEquals(2, PrincessLeaderboardPanel.visibleEntries(snapshot, 74).size());
+        assertEquals(0, PrincessLeaderboardPanel.visibleEntries(snapshot, 59).size());
+    }
+
+    @Test
     void distinguishesUnknownAndConfirmedZeroCounts() {
         var loading = new PrincessRaidStatsManager.Snapshot(
                 PrincessRaidStatsManager.State.LOADING, false, 0, null, List.of());

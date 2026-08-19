@@ -223,6 +223,24 @@ public class SettingsScreen extends Screen {
                         destination == SequoiaSidebarNavigation.Destination.SETTINGS);
             }
 
+            if (princessLeaderboardVisible()) {
+                float leaderboardY = btnStartY + step * destinations.size();
+                float availableHeight = princessPromptY(screenHeight, 1f)
+                        - SIDEBAR_BUTTON_SPACING
+                        - leaderboardY;
+                float leaderboardHeight = Math.min(PrincessLeaderboardPanel.HEIGHT, availableHeight);
+                if (leaderboardHeight >= PrincessLeaderboardPanel.MIN_HEIGHT) {
+                    PrincessLeaderboardPanel.render(
+                            canvas,
+                            fontName,
+                            btnX,
+                            leaderboardY,
+                            btnW,
+                            leaderboardHeight,
+                            SeqClient.getPrincessRaidStatsManager().snapshot());
+                }
+            }
+
             renderPrincessPrompt(canvas, fontName, screenHeight, System.currentTimeMillis());
 
             // === Main Content Panel (fills rest of screen) ===
@@ -310,20 +328,6 @@ public class SettingsScreen extends Screen {
 
             float cursorY = contentY - scrollOffset + PADDING;
             float widgetWidth = contentWidth - PADDING * 2 - 6;
-
-            if (princessLeaderboardVisible()) {
-                float leaderboardWidth = Math.min(
-                        PrincessLeaderboardPanel.WIDTH,
-                        Math.max(0, contentWidth - PADDING * 2 - 6));
-                PrincessLeaderboardPanel.render(
-                        canvas,
-                        fontName,
-                        contentX + contentWidth - leaderboardWidth - PADDING - 6,
-                        cursorY,
-                        leaderboardWidth,
-                        SeqClient.getPrincessRaidStatsManager().snapshot());
-                cursorY += PrincessLeaderboardPanel.HEIGHT + PADDING;
-            }
 
             int settingIndex = 0;
             for (Map.Entry<String, List<SettingWidget<?>>> entry : categories.entrySet()) {
@@ -538,7 +542,6 @@ public class SettingsScreen extends Screen {
                 if (progress > 0f && isHovered(mx, my, btnX, promptY, btnW, PRINCESS_PROMPT_HEIGHT)) {
                     boolean enabled = PrincessMode.toggle();
                     if (enabled && SeqClient.getPrincessRaidStatsManager() != null) {
-                        scrollOffset = 0;
                         SeqClient.getPrincessRaidStatsManager().refresh();
                     }
                     return true;
@@ -598,10 +601,6 @@ public class SettingsScreen extends Screen {
         float contentWidth = panelWidth;
         float widgetWidth = contentWidth - PADDING * 2 - 6;
         float cursorY = contentY - scrollOffset + PADDING;
-
-        if (princessLeaderboardVisible()) {
-            cursorY += PrincessLeaderboardPanel.HEIGHT + PADDING;
-        }
 
         for (Map.Entry<String, List<SettingWidget<?>>> entry : categories.entrySet()) {
             String category = entry.getKey();

@@ -17,87 +17,117 @@ import java.util.List;
 
 /** Compact Princess-mode leaderboard card used by the settings easter egg. */
 final class PrincessLeaderboardPanel {
-    static final float WIDTH = 206;
     static final float HEIGHT = 116;
+    static final float MIN_HEIGHT = 60;
     private static final int MAX_ROWS = 5;
+    private static final float FIRST_ROW_Y = 39;
+    private static final float ROW_SPACING = 14;
 
     private PrincessLeaderboardPanel() {}
 
-    static void render(UiCanvas canvas, String font, float x, float y, float width, Snapshot snapshot) {
-        canvas.fillRect(x, y, width, HEIGHT, color(BACKGROUND_POPUP));
-        canvas.strokeRect(x, y, width, HEIGHT, 1, color(CONTROL_BORDER));
-        draw(
-                canvas,
-                font,
-                12,
-                color(ACCENT_PRIMARY),
-                UiCanvas.HorizontalAlign.LEFT,
-                x + 8,
-                y + 14,
-                "Princess graids");
-        draw(
-                canvas,
-                font,
-                10,
-                snapshot.countKnown() ? color(TEXT_PRIMARY) : color(TEXT_MUTED),
-                UiCanvas.HorizontalAlign.RIGHT,
-                x + width - 8,
-                y + 14,
-                ownSummary(snapshot, width < 175));
-        canvas.fillRect(x + 7, y + 26, width - 14, 1, color(ACCENT_DIVIDER));
+    static void render(
+            UiCanvas canvas,
+            String font,
+            float x,
+            float y,
+            float width,
+            float height,
+            Snapshot snapshot) {
+        if (width <= 0 || height < MIN_HEIGHT) {
+            return;
+        }
 
-        List<LeaderboardEntry> entries = visibleEntries(snapshot);
-        if (entries.isEmpty()) {
+        canvas.fillRect(x, y, width, height, color(BACKGROUND_POPUP));
+        canvas.strokeRect(x, y, width, height, 1, color(CONTROL_BORDER));
+        canvas.save();
+        canvas.scissor(x, y, width, height);
+        try {
             draw(
                     canvas,
                     font,
                     10,
-                    color(TEXT_MUTED),
-                    UiCanvas.HorizontalAlign.CENTER,
-                    x + width / 2f,
-                    y + 58,
-                    emptyMessage(snapshot));
-        } else {
-            float rowY = y + 39;
-            for (LeaderboardEntry entry : entries) {
-                draw(
-                        canvas,
-                        font,
-                        10,
-                        color(TEXT_PRIMARY),
-                        UiCanvas.HorizontalAlign.LEFT,
-                        x + 8,
-                        rowY,
-                        entryLabel(entry, width));
-                draw(
-                        canvas,
-                        font,
-                        10,
-                        color(ACCENT_PRIMARY),
-                        UiCanvas.HorizontalAlign.RIGHT,
-                        x + width - 8,
-                        rowY,
-                        Long.toString(entry.raidCount()));
-                rowY += 14;
-            }
-        }
-
-        String status = statusLine(snapshot);
-        if (status != null) {
+                    color(ACCENT_PRIMARY),
+                    UiCanvas.HorizontalAlign.LEFT,
+                    x + 7,
+                    y + 14,
+                    width < 150 ? "Princess LB" : "Princess graids");
             draw(
                     canvas,
                     font,
-                    8,
-                    color(TEXT_DISABLED),
-                    UiCanvas.HorizontalAlign.CENTER,
-                    x + width / 2f,
-                    y + HEIGHT - 7,
-                    status);
+                    width < 150 ? 9 : 10,
+                    snapshot.countKnown() ? color(TEXT_PRIMARY) : color(TEXT_MUTED),
+                    UiCanvas.HorizontalAlign.RIGHT,
+                    x + width - 7,
+                    y + 14,
+                    ownSummary(snapshot, width < 175));
+            canvas.fillRect(x + 6, y + 26, width - 12, 1, color(ACCENT_DIVIDER));
+
+            List<LeaderboardEntry> entries = visibleEntries(snapshot, height);
+            if (entries.isEmpty()) {
+                draw(
+                        canvas,
+                        font,
+                        width < 150 ? 8 : 10,
+                        color(TEXT_MUTED),
+                        UiCanvas.HorizontalAlign.CENTER,
+                        x + width / 2f,
+                        emptyMessageY(y, height),
+                        emptyMessage(snapshot));
+            } else {
+                float rowY = y + FIRST_ROW_Y;
+                for (LeaderboardEntry entry : entries) {
+                    draw(
+                            canvas,
+                            font,
+                            width < 150 ? 9 : 10,
+                            color(TEXT_PRIMARY),
+                            UiCanvas.HorizontalAlign.LEFT,
+                            x + 7,
+                            rowY,
+                            entryLabel(entry, width));
+                    draw(
+                            canvas,
+                            font,
+                            width < 150 ? 9 : 10,
+                            color(ACCENT_PRIMARY),
+                            UiCanvas.HorizontalAlign.RIGHT,
+                            x + width - 7,
+                            rowY,
+                            Long.toString(entry.raidCount()));
+                    rowY += ROW_SPACING;
+                }
+            }
+
+            String status = statusLine(snapshot);
+            if (status != null) {
+                draw(
+                        canvas,
+                        font,
+                        width < 150 ? 7 : 8,
+                        color(TEXT_DISABLED),
+                        UiCanvas.HorizontalAlign.CENTER,
+                        x + width / 2f,
+                        y + height - 7,
+                        status);
+            }
+        } finally {
+            canvas.restore();
         }
     }
 
     static List<LeaderboardEntry> visibleEntries(Snapshot snapshot) {
-        return snapshot.leaderboard().stream().limit(MAX_ROWS).toList();
+        return visibleEntries(snapshot, HEIGHT);
+    }
+
+    static List<LeaderboardEntry> visibleEntries(Snapshot snapshot, float height) {
+        return snapshot.leaderboard().stream().limit(visibleRowCount(height)).toList();
+    }
+
+    static int visibleRowCount(float height) {
+        if (height < MIN_HEIGHT) {
+            return 0;
+        }
+        return Math.clamp((int) Math.floor((height - 46) / ROW_SPACING), 1, MAX_ROWS);
     }
 
     static String entryLabel(LeaderboardEntry entry, float width) {
@@ -134,6 +164,10 @@ final class PrincessLeaderboardPanel {
             return "Refreshing…";
         }
         return snapshot.state() == State.UNAVAILABLE ? "Princess stats unavailable" : null;
+    }
+
+    private static float emptyMessageY(float y, float height) {
+        return y + 27 + (height - 41) / 2f;
     }
 
     private static void draw(
