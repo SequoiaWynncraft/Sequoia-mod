@@ -7,6 +7,8 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneCategoryDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.RosterMember;
@@ -65,6 +67,14 @@ public final class WarPlannerManager {
         CompletableFuture<WarPlannerSnapshot> updateZone(long id, ZoneDraft draft);
 
         CompletableFuture<WarPlannerSnapshot> deleteZone(long id, long version);
+
+        CompletableFuture<WarPlannerSnapshot> moveZone(long id, ZonePlacementDraft draft);
+
+        CompletableFuture<WarPlannerSnapshot> createZoneCategory(ZoneCategoryDraft draft);
+
+        CompletableFuture<WarPlannerSnapshot> updateZoneCategory(long id, ZoneCategoryDraft draft);
+
+        CompletableFuture<WarPlannerSnapshot> deleteZoneCategory(long id, long version);
 
         CompletableFuture<WarPlannerSnapshot> setHqTerritory(String territory, long version);
     }
@@ -262,6 +272,27 @@ public final class WarPlannerManager {
                     new ActionResult(false, "invalid_version", "Reload the zone before deleting it."));
         }
         return mutate(() -> gateway.deleteZone(id, version), "Territory zone deleted.");
+    }
+
+    public CompletableFuture<ActionResult> moveZone(long id, ZonePlacementDraft draft) {
+        if (!canManage()) return managementDenied();
+        return mutate(() -> gateway.moveZone(id, draft), "Territory zone moved.");
+    }
+
+    public CompletableFuture<ActionResult> saveZoneCategory(Long id, ZoneCategoryDraft draft) {
+        if (!canManage()) return managementDenied();
+        return mutate(
+                () -> id == null ? gateway.createZoneCategory(draft) : gateway.updateZoneCategory(id, draft),
+                id == null ? "Zone category created." : "Zone category renamed.");
+    }
+
+    public CompletableFuture<ActionResult> deleteZoneCategory(long id, Long version) {
+        if (!canManage()) return managementDenied();
+        if (version == null || version <= 0) {
+            return CompletableFuture.completedFuture(
+                    new ActionResult(false, "invalid_version", "Reload the category before deleting it."));
+        }
+        return mutate(() -> gateway.deleteZoneCategory(id, version), "Zone category deleted.");
     }
 
     public CompletableFuture<ActionResult> setHqTerritory(String territory, long version) {
@@ -569,6 +600,26 @@ public final class WarPlannerManager {
         @Override
         public CompletableFuture<WarPlannerSnapshot> deleteZone(long id, long version) {
             return api.deleteWarPlannerZone(id, version);
+        }
+
+        @Override
+        public CompletableFuture<WarPlannerSnapshot> moveZone(long id, ZonePlacementDraft draft) {
+            return api.moveWarPlannerZone(id, draft);
+        }
+
+        @Override
+        public CompletableFuture<WarPlannerSnapshot> createZoneCategory(ZoneCategoryDraft draft) {
+            return api.createWarPlannerZoneCategory(draft);
+        }
+
+        @Override
+        public CompletableFuture<WarPlannerSnapshot> updateZoneCategory(long id, ZoneCategoryDraft draft) {
+            return api.updateWarPlannerZoneCategory(id, draft);
+        }
+
+        @Override
+        public CompletableFuture<WarPlannerSnapshot> deleteZoneCategory(long id, long version) {
+            return api.deleteWarPlannerZoneCategory(id, version);
         }
 
         @Override

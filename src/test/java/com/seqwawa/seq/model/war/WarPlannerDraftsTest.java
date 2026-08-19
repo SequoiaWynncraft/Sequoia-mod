@@ -7,6 +7,8 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneCategoryDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -50,6 +52,9 @@ class WarPlannerDraftsTest {
                 WarTeamType.HQ, 0L, List.of(member("leader"))));
         assertThrows(IllegalArgumentException.class, () -> new ZoneDraft(
                 "North", "#AABBCC", List.of(7L), -1L, List.of("Ragni")));
+        assertThrows(IllegalArgumentException.class, () -> new ZoneCategoryDraft("Frontline", 0L));
+        assertThrows(IllegalArgumentException.class, () -> new ZonePlacementDraft(4L, -1, 2L));
+        assertThrows(IllegalArgumentException.class, () -> new ZonePlacementDraft(null, 0, 0L));
     }
 
     @Test

@@ -39,7 +39,9 @@ class WarPlannerSnapshotTest {
                     {"code":"LEAD","player_uuid":"self","minecraft_username":"Player"}
                   ]},
                   "zones": [{"id": 8, "name": "North", "color": "#AABBCC",
-                    "assigned_team_ids": [12], "version": 4, "territories": ["Ragni"]}],
+                    "assigned_team_ids": [12], "version": 4, "territories": ["Ragni"],
+                    "category_id": 5, "position": 2}],
+                  "zone_categories": [{"id":5,"name":"Frontline","position":0,"version":3}],
                   "hq_territory": "Ragni",
                   "map_version": 6,
                   "territories": ["Ragni", "Detlas"],
@@ -65,6 +67,9 @@ class WarPlannerSnapshotTest {
         assertEquals(8L, snapshot.zones().getFirst().id());
         assertEquals(java.util.List.of(12L), snapshot.zones().getFirst().assignedTeamIds());
         assertEquals("#AABBCC", snapshot.zones().getFirst().color());
+        assertEquals(5L, snapshot.zones().getFirst().categoryId());
+        assertEquals(2, snapshot.zones().getFirst().position());
+        assertEquals("Frontline", snapshot.zoneCategories().getFirst().name());
         assertEquals("Ragni", snapshot.hqTerritory());
         assertEquals(6, snapshot.mapVersion());
         assertEquals("self", snapshot.support().slots().getFirst().playerUuid());

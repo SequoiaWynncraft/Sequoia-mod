@@ -11,6 +11,8 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneCategoryDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.model.war.WarTeamType;
@@ -367,6 +369,19 @@ class WarPlannerManagerTest {
         @Override public CompletableFuture<WarPlannerSnapshot> createZone(ZoneDraft draft) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> updateZone(long id, ZoneDraft draft) { return call(); }
         @Override public CompletableFuture<WarPlannerSnapshot> deleteZone(long id, long version) {
+            deleteVersion = version;
+            return call();
+        }
+        @Override public CompletableFuture<WarPlannerSnapshot> moveZone(long id, ZonePlacementDraft draft) {
+            return call();
+        }
+        @Override public CompletableFuture<WarPlannerSnapshot> createZoneCategory(ZoneCategoryDraft draft) {
+            return call();
+        }
+        @Override public CompletableFuture<WarPlannerSnapshot> updateZoneCategory(long id, ZoneCategoryDraft draft) {
+            return call();
+        }
+        @Override public CompletableFuture<WarPlannerSnapshot> deleteZoneCategory(long id, long version) {
             deleteVersion = version;
             return call();
         }

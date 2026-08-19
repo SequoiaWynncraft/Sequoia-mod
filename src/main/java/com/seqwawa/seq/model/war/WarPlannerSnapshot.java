@@ -18,7 +18,8 @@ public record WarPlannerSnapshot(
         List<String> territories,
         @SerializedName("territory_details") List<TerritoryDetails> territoryDetails,
         @SerializedName("hq_territory") String hqTerritory,
-        @SerializedName("map_version") long mapVersion) {
+        @SerializedName("map_version") long mapVersion,
+        @SerializedName("zone_categories") List<ZoneCategory> zoneCategories) {
 
     public static final int SUPPORTED_SCHEMA_VERSION = 3;
 
@@ -47,7 +48,8 @@ public record WarPlannerSnapshot(
                 territories,
                 territoryDetails,
                 null,
-                1L);
+                1L,
+                List.of());
     }
 
     public WarPlannerSnapshot(
@@ -75,7 +77,8 @@ public record WarPlannerSnapshot(
                 territories,
                 territoryDetails,
                 null,
-                1L);
+                1L,
+                List.of());
     }
 
     public WarPlannerSnapshot(
@@ -104,7 +107,40 @@ public record WarPlannerSnapshot(
                 territories,
                 territoryDetails,
                 hqTerritory,
-                1L);
+                1L,
+                List.of());
+    }
+
+    /** Compatibility constructor for snapshots created before zone categories. */
+    public WarPlannerSnapshot(
+            int schemaVersion,
+            long revision,
+            Instant serverTime,
+            Self self,
+            boolean discordRolesAvailable,
+            List<RosterMember> roster,
+            List<Team> teams,
+            SupportBoard support,
+            List<Zone> zones,
+            List<String> territories,
+            List<TerritoryDetails> territoryDetails,
+            String hqTerritory,
+            long mapVersion) {
+        this(
+                schemaVersion,
+                revision,
+                serverTime,
+                self,
+                discordRolesAvailable,
+                roster,
+                teams,
+                support,
+                zones,
+                territories,
+                territoryDetails,
+                hqTerritory,
+                mapVersion,
+                List.of());
     }
 
     public WarPlannerSnapshot {
@@ -114,6 +150,7 @@ public record WarPlannerSnapshot(
         zones = zones == null ? List.of() : List.copyOf(zones);
         territories = territories == null ? List.of() : List.copyOf(territories);
         territoryDetails = territoryDetails == null ? List.of() : List.copyOf(territoryDetails);
+        zoneCategories = zoneCategories == null ? List.of() : List.copyOf(zoneCategories);
         mapVersion = Math.max(1L, mapVersion);
     }
 
@@ -136,7 +173,8 @@ public record WarPlannerSnapshot(
                 territories,
                 territoryDetails,
                 hqTerritory,
-                mapVersion);
+                mapVersion,
+                zoneCategories);
     }
 
     public RosterMember caller() {
@@ -259,12 +297,26 @@ public record WarPlannerSnapshot(
             String color,
             @SerializedName("assigned_team_ids") List<Long> assignedTeamIds,
             Long version,
-            List<String> territories) {
+            List<String> territories,
+            @SerializedName("category_id") Long categoryId,
+            int position) {
         public Zone {
             assignedTeamIds = assignedTeamIds == null ? List.of() : List.copyOf(assignedTeamIds);
             territories = territories == null ? List.of() : List.copyOf(territories);
         }
+
+        public Zone(
+                long id,
+                String name,
+                String color,
+                List<Long> assignedTeamIds,
+                Long version,
+                List<String> territories) {
+            this(id, name, color, assignedTeamIds, version, territories, null, 0);
+        }
     }
+
+    public record ZoneCategory(long id, String name, int position, Long version) {}
 
     public record TerritoryDetails(String name, List<String> connections, List<String> resources) {
         public TerritoryDetails {

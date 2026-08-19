@@ -33,6 +33,8 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneCategoryDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.network.auth.MinecraftAuthChallengeResponse;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteRequest;
@@ -327,6 +329,33 @@ public class ApiClient {
         return deleteTyped(versionedWarPlannerPath("/war-planner/zones/" + id, version), WarPlannerSnapshot.class);
     }
 
+    public CompletableFuture<WarPlannerSnapshot> moveWarPlannerZone(long id, ZonePlacementDraft draft) {
+        return put(
+                "/war-planner/zones/" + id + "/placement",
+                buildWarZonePlacementPayload(draft),
+                WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> createWarPlannerZoneCategory(ZoneCategoryDraft draft) {
+        return post(
+                "/war-planner/zone-categories",
+                buildWarZoneCategoryPayload(draft, false),
+                WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> updateWarPlannerZoneCategory(long id, ZoneCategoryDraft draft) {
+        return put(
+                "/war-planner/zone-categories/" + id,
+                buildWarZoneCategoryPayload(draft, true),
+                WarPlannerSnapshot.class);
+    }
+
+    public CompletableFuture<WarPlannerSnapshot> deleteWarPlannerZoneCategory(long id, long version) {
+        return deleteTyped(
+                versionedWarPlannerPath("/war-planner/zone-categories/" + id, version),
+                WarPlannerSnapshot.class);
+    }
+
     public CompletableFuture<WarPlannerSnapshot> setWarPlannerHqTerritory(String territory, long version) {
         return put(
                 "/war-planner/map/hq-territory",
@@ -345,6 +374,28 @@ public class ApiClient {
             body.addProperty("territory", territory);
         }
         body.addProperty("version", version);
+        return body;
+    }
+
+    static JsonObject buildWarZonePlacementPayload(ZonePlacementDraft draft) {
+        if (draft == null) throw new IllegalArgumentException("Zone placement draft is required.");
+        JsonObject body = new JsonObject();
+        addNullableLong(body, "category_id", draft.categoryId());
+        body.addProperty("position", draft.position());
+        body.addProperty("version", draft.version());
+        return body;
+    }
+
+    static JsonObject buildWarZoneCategoryPayload(ZoneCategoryDraft draft, boolean includeVersion) {
+        if (draft == null) throw new IllegalArgumentException("Zone category draft is required.");
+        JsonObject body = new JsonObject();
+        body.addProperty("name", draft.name());
+        if (includeVersion) {
+            if (draft.version() == null || draft.version() <= 0) {
+                throw new IllegalArgumentException("Zone category version is required for updates.");
+            }
+            body.addProperty("version", draft.version());
+        }
         return body;
     }
 

@@ -20,12 +20,14 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportSlotDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.RosterMember;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.Team;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.TeamMember;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.SupportSlot;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.Zone;
+import com.seqwawa.seq.model.war.WarPlannerSnapshot.ZoneCategory;
 import com.seqwawa.seq.model.war.WarTeamType;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
@@ -67,6 +69,9 @@ public final class WarPlannerScreen extends Screen {
     private static final float WAR_MAP_SIDEBAR_GAP = 8;
     private static final float WAR_MAP_ZONE_ROW_HEIGHT = 62;
     private static final float WAR_MAP_ZONE_ROW_STEP = 66;
+    private static final float WAR_MAP_CATEGORY_ROW_HEIGHT = 26;
+    private static final float WAR_MAP_CATEGORY_ROW_STEP = 30;
+    private static final float WAR_MAP_SIDEBAR_CONTENT_TOP = 54;
     private static final double WAR_MAP_MIN_ZOOM = .015;
     private static final double WAR_MAP_MAX_ZOOM = 1.8;
     private static final float BUTTON_HEIGHT = 22;
@@ -76,6 +81,8 @@ public final class WarPlannerScreen extends Screen {
     private static final float MAX_ZONES_WIDTH = 900;
     private static final float COMPOSITION_ICON_SIZE = 12;
     private static final float COMPOSITION_ICON_GAP = 3;
+    private static final float HQ_ICON_WIDTH = 24;
+    private static final float HQ_ICON_HEIGHT = 19.5f;
     private static final float DISPLAY_CONTROL_GAP = 6;
     private static final float OPACITY_CONTROL_WIDTH = 132;
     private static final float RESOURCE_CONTROL_WIDTH = 104;
@@ -104,6 +111,7 @@ public final class WarPlannerScreen extends Screen {
     private int editorScrollRows;
     private PendingDelete pendingDeleteTeam;
     private PendingDelete pendingDeleteZone;
+    private PendingDelete pendingDeleteZoneCategory;
     private Integer editingSupportSlot;
     private int supportEditorScrollRows;
     private boolean supportEditorSaving;
@@ -116,8 +124,10 @@ public final class WarPlannerScreen extends Screen {
     private float fittedWarMapWidth = -1;
     private float fittedWarMapHeight = -1;
     private final Set<Long> hiddenZoneIds = new java.util.HashSet<>();
+    private final Set<Long> hiddenZoneCategoryIds = new java.util.HashSet<>();
     private GuildTerritory hoveredWarMapTerritory;
     private MemberDrag memberDrag;
+    private ZoneDrag zoneDrag;
     private int unassignedScrollRows;
     private boolean roleEditorOpen;
     private boolean roleEditorSaving;
@@ -473,7 +483,8 @@ public final class WarPlannerScreen extends Screen {
         canvas.fillRoundedRect(x, y, width, height, 3, plannerBackground(color(CONTROL_INPUT)));
         List<GuildTerritory> allMapTerritories = territoryIndex.territories();
         boolean locked = manager.canManage() && territoriesLocked();
-        List<Zone> displayedZones = visibleZones(snapshot.zones(), hiddenZoneIds);
+        List<Zone> displayedZones = visibleZones(
+                snapshot.zones(), hiddenZoneIds, hiddenZoneCategoryIds);
         List<GuildTerritory> coreTerritories = visibleMapTerritories(
                 allMapTerritories, displayedZones, locked);
         if (coreTerritories.isEmpty()) {
@@ -585,17 +596,39 @@ public final class WarPlannerScreen extends Screen {
                     hqColor,
                     2.6f,
                     2);
-            text(canvas, "HQ", previewX(hqTerritory.centerX(), coordinateBounds, offsetX, scale),
-                    previewY(hqTerritory.centerZ(), coordinateBounds, offsetY, scale),
-                    10, hqColor, true);
         }
         if (hoveredWarMapTerritory != null) {
             drawTerritoryName(canvas, hoveredWarMapTerritory, coordinateBounds, offsetX, offsetY, scale, layout);
+        }
+        if (hqTerritory != null && displayedNames.contains(hqTerritory.name().toLowerCase(Locale.ROOT))) {
+            drawHqIcon(canvas, hqTerritory, coordinateBounds, offsetX, offsetY, scale);
         }
         canvas.resetScissor();
         if (!locked) {
             button(canvas, layout.mapX() + 6, layout.mapY() + 6, 44, BUTTON_HEIGHT, "Fit", false, false);
         }
+    }
+
+    private static void drawHqIcon(
+            UiCanvas canvas,
+            GuildTerritory territory,
+            MapBounds coordinateBounds,
+            float offsetX,
+            float offsetY,
+            float scale) {
+        AssetManager.Asset asset = SeqClient.assetManager == null
+                ? null
+                : SeqClient.assetManager.getAsset("hq_icon");
+        if (asset == null || asset.getImage() == null) return;
+        float centerX = previewX(territory.centerX(), coordinateBounds, offsetX, scale);
+        float centerY = previewY(territory.centerZ(), coordinateBounds, offsetY, scale);
+        canvas.drawImage(
+                asset.getImage(),
+                centerX - HQ_ICON_WIDTH / 2,
+                centerY - HQ_ICON_HEIGHT / 2,
+                HQ_ICON_WIDTH,
+                HQ_ICON_HEIGHT,
+                1f);
     }
 
     private MapViewport warMapViewport(
@@ -674,55 +707,95 @@ public final class WarPlannerScreen extends Screen {
             UiCanvas canvas, WarPlannerSnapshot snapshot, float x, float top, float width, float bottom) {
         canvas.fillRoundedRect(x, top, width, bottom - top, 5, plannerBackground(color(BACKGROUND_CONTENT)));
         text(canvas, "Zones", x + 10, top + 16, 13, color(ACCENT_PRIMARY), false);
-        if (!territoriesLocked()) {
-            text(canvas, "Drag map · scroll to zoom", x + 10, top + 30, 8, color(TEXT_MUTED), false);
-        }
         if (manager.canManage()) {
-            button(canvas, x + width - 72, top + 7, 62, BUTTON_HEIGHT, "New zone", false, manager.isMutating());
+            float actionWidth = (width - 18) / 2;
+            button(canvas, x + 6, top + 27, actionWidth, 20, "+ Category", false, manager.isMutating());
+            button(canvas, x + 12 + actionWidth, top + 27, actionWidth, 20, "+ Zone", false, manager.isMutating());
+        } else {
+            text(canvas, "Click visibility controls", x + 10, top + 36, 8, color(TEXT_MUTED), false);
         }
-        if (snapshot.zones().isEmpty()) {
+        List<ZoneSidebarEntry> entries = zoneSidebarEntries(snapshot);
+        if (entries.isEmpty()) {
             text(canvas, manager.canManage() ? "Create a zone to begin." : "No zones configured.",
-                    x + 10, top + 58, 10, color(TEXT_MUTED), false);
+                    x + 10, top + 70, 10, color(TEXT_MUTED), false);
             return;
         }
-        int visibleRows = warMapVisibleZoneRows(bottom - top);
-        int start = warMapScrollStart(scrollRows, snapshot.zones().size(), visibleRows);
-        float rowY = top + 40;
-        for (int index = start; index < snapshot.zones().size() && index - start < visibleRows; index++) {
-            Zone zone = snapshot.zones().get(index);
-            boolean displayed = !hiddenZoneIds.contains(zone.id());
-            Color zoneColor = parseColor(zone.color(), color(ACCENT_PRIMARY));
-            canvas.fillRoundedRect(x + 6, rowY, width - 12, WAR_MAP_ZONE_ROW_HEIGHT, 4,
-                    plannerBackground(color(BACKGROUND_CONTENT_FOCUSED)));
-            canvas.fillRect(x + 11, rowY + 7, 5, 24, displayed ? zoneColor : alpha(zoneColor, 70));
-            text(canvas, truncate(zone.name(), 22), x + 22, rowY + 13, 11,
-                    color(displayed ? TEXT_PRIMARY : TEXT_MUTED), false);
-            String assigned = zone.assignedTeamIds().isEmpty()
-                    ? "No parties"
-                    : zone.assignedTeamIds().stream()
-                            .map(id -> teamName(snapshot, id))
-                            .reduce((left, right) -> left + " + " + right)
-                            .orElse("No parties");
-            text(canvas, truncate(zone.territories().size() + " terrs · " + assigned, 29),
-                    x + 22, rowY + 29, 9, color(TEXT_MUTED), false);
-            if (manager.canManage()) {
-                float actionWidth = (width - 32) / 3;
-                button(canvas, x + 12, rowY + 35, actionWidth, BUTTON_HEIGHT, "Edit", false, manager.isMutating());
-                button(canvas, x + 16 + actionWidth, rowY + 35, actionWidth, BUTTON_HEIGHT,
-                        displayed ? "Hide" : "Show", false, false);
-                boolean confirming = pendingDeleteZone != null && pendingDeleteZone.id() == zone.id();
-                button(canvas, x + 20 + actionWidth * 2, rowY + 35, actionWidth, BUTTON_HEIGHT,
-                        confirming ? "Sure?" : "Delete", true, manager.isMutating());
+        float availableHeight = bottom - (top + WAR_MAP_SIDEBAR_CONTENT_TOP) - 14;
+        int start = zoneSidebarScrollStart(scrollRows, entries, availableHeight);
+        float rowY = top + WAR_MAP_SIDEBAR_CONTENT_TOP;
+        int renderedThrough = start;
+        for (int index = start; index < entries.size(); index++) {
+            ZoneSidebarEntry entry = entries.get(index);
+            float rowHeight = entry.height();
+            if (rowY + rowHeight > bottom - 13 && index > start) break;
+            if (entry.categoryHeader()) {
+                renderZoneCategoryRow(canvas, entry, x, rowY, width);
             } else {
-                button(canvas, x + 22, rowY + 35, 56, BUTTON_HEIGHT,
-                        displayed ? "Hide" : "Show", false, false);
+                renderZoneRow(canvas, snapshot, entry.zone(), x, rowY, width);
             }
-            rowY += WAR_MAP_ZONE_ROW_STEP;
+            rowY += entry.step();
+            renderedThrough = index + 1;
         }
-        if (snapshot.zones().size() > visibleRows) {
-            text(canvas, (start + 1) + "–" + Math.min(snapshot.zones().size(), start + visibleRows)
-                            + "/" + snapshot.zones().size() + " · scroll",
-                    x + width / 2, bottom - 9, 8, color(TEXT_MUTED), true);
+        if (start > 0 || renderedThrough < entries.size()) {
+            text(canvas, (start + 1) + "–" + renderedThrough + "/" + entries.size() + " · scroll",
+                    x + width / 2, bottom - 7, 8, color(TEXT_MUTED), true);
+        }
+        if (zoneDrag != null && zoneDrag.active()) {
+            canvas.fillRoundedRect(nvgMouseX + 8, nvgMouseY - 10, 100, 20, 4, color(ACCENT_PRIMARY_DARK));
+            text(canvas, truncate(zoneDrag.zoneName(), 15), nvgMouseX + 16, nvgMouseY,
+                    10, color(TEXT_PRIMARY), false);
+        }
+    }
+
+    private void renderZoneCategoryRow(
+            UiCanvas canvas, ZoneSidebarEntry entry, float x, float rowY, float width) {
+        boolean displayed = !hiddenZoneCategoryIds.contains(entry.categoryId());
+        canvas.fillRoundedRect(x + 6, rowY, width - 12, WAR_MAP_CATEGORY_ROW_HEIGHT, 4,
+                plannerBackground(color(CONTROL_INPUT)));
+        float controlsWidth = manager.canManage() && entry.category() != null ? 74 : 42;
+        text(canvas, truncate(entry.label(), availableCharacters(x + 14, x + width - controlsWidth - 8, 10, 22)),
+                x + 14, rowY + WAR_MAP_CATEGORY_ROW_HEIGHT / 2, 10,
+                color(displayed ? TEXT_PRIMARY : TEXT_MUTED), false);
+        if (manager.canManage() && entry.category() != null) {
+            button(canvas, x + width - 70, rowY + 3, 38, 20, displayed ? "Hide" : "Show", false, false);
+            boolean confirming = pendingDeleteZoneCategory != null
+                    && pendingDeleteZoneCategory.id() == entry.category().id();
+            button(canvas, x + width - 28, rowY + 3, 22, 20, confirming ? "?" : "X", true,
+                    manager.isMutating());
+        } else {
+            button(canvas, x + width - 48, rowY + 3, 42, 20, displayed ? "Hide" : "Show", false, false);
+        }
+    }
+
+    private void renderZoneRow(
+            UiCanvas canvas, WarPlannerSnapshot snapshot, Zone zone, float x, float rowY, float width) {
+        boolean categoryDisplayed = !containsCategory(hiddenZoneCategoryIds, zone.categoryId());
+        boolean displayed = categoryDisplayed && !hiddenZoneIds.contains(zone.id());
+        Color zoneColor = parseColor(zone.color(), color(ACCENT_PRIMARY));
+        canvas.fillRoundedRect(x + 6, rowY, width - 12, WAR_MAP_ZONE_ROW_HEIGHT, 4,
+                plannerBackground(color(BACKGROUND_CONTENT_FOCUSED)));
+        canvas.fillRect(x + 11, rowY + 7, 5, 24, displayed ? zoneColor : alpha(zoneColor, 70));
+        text(canvas, truncate(zone.name(), 22), x + 22, rowY + 13, 11,
+                color(displayed ? TEXT_PRIMARY : TEXT_MUTED), false);
+        String assigned = zone.assignedTeamIds().isEmpty()
+                ? "No parties"
+                : zone.assignedTeamIds().stream()
+                        .map(id -> teamName(snapshot, id))
+                        .reduce((left, right) -> left + " + " + right)
+                        .orElse("No parties");
+        text(canvas, truncate(zone.territories().size() + " terrs · " + assigned, 29),
+                x + 22, rowY + 29, 9, color(TEXT_MUTED), false);
+        if (manager.canManage()) {
+            float actionWidth = (width - 32) / 3;
+            button(canvas, x + 12, rowY + 35, actionWidth, BUTTON_HEIGHT, "Edit", false, manager.isMutating());
+            button(canvas, x + 16 + actionWidth, rowY + 35, actionWidth, BUTTON_HEIGHT,
+                    categoryDisplayed ? displayed ? "Hide" : "Show" : "Group off", false, !categoryDisplayed);
+            boolean confirming = pendingDeleteZone != null && pendingDeleteZone.id() == zone.id();
+            button(canvas, x + 20 + actionWidth * 2, rowY + 35, actionWidth, BUTTON_HEIGHT,
+                    confirming ? "Sure?" : "Delete", true, manager.isMutating());
+        } else {
+            button(canvas, x + 22, rowY + 35, 56, BUTTON_HEIGHT,
+                    categoryDisplayed ? displayed ? "Hide" : "Show" : "Group off", false, !categoryDisplayed);
         }
     }
 
@@ -765,9 +838,80 @@ public final class WarPlannerScreen extends Screen {
     }
 
     static List<Zone> visibleZones(List<Zone> zones, Set<Long> hiddenZoneIds) {
+        return visibleZones(zones, hiddenZoneIds, Set.of());
+    }
+
+    static List<Zone> visibleZones(
+            List<Zone> zones, Set<Long> hiddenZoneIds, Set<Long> hiddenZoneCategoryIds) {
         if (zones == null || zones.isEmpty()) return List.of();
-        if (hiddenZoneIds == null || hiddenZoneIds.isEmpty()) return List.copyOf(zones);
-        return zones.stream().filter(zone -> !hiddenZoneIds.contains(zone.id())).toList();
+        Set<Long> hiddenZones = hiddenZoneIds == null ? Set.of() : hiddenZoneIds;
+        Set<Long> hiddenCategories = hiddenZoneCategoryIds == null ? Set.of() : hiddenZoneCategoryIds;
+        return zones.stream()
+                .filter(zone -> !hiddenZones.contains(zone.id()))
+                .filter(zone -> !containsCategory(hiddenCategories, zone.categoryId()))
+                .toList();
+    }
+
+    private static boolean containsCategory(Set<Long> categoryIds, Long categoryId) {
+        if (categoryIds == null || categoryIds.isEmpty()) return false;
+        return categoryId == null
+                ? categoryIds.stream().anyMatch(java.util.Objects::isNull)
+                : categoryIds.contains(categoryId);
+    }
+
+    static List<ZoneSidebarEntry> zoneSidebarEntries(WarPlannerSnapshot snapshot) {
+        if (snapshot == null) return List.of();
+        ArrayList<ZoneSidebarEntry> entries = new ArrayList<>();
+        List<ZoneCategory> categories = snapshot.zoneCategories().stream()
+                .sorted(Comparator.comparingInt(ZoneCategory::position).thenComparingLong(ZoneCategory::id))
+                .toList();
+        for (ZoneCategory category : categories) {
+            entries.add(ZoneSidebarEntry.category(category));
+            snapshot.zones().stream()
+                    .filter(zone -> java.util.Objects.equals(zone.categoryId(), category.id()))
+                    .sorted(Comparator.comparingInt(Zone::position).thenComparingLong(Zone::id))
+                    .map(zone -> ZoneSidebarEntry.zone(category.id(), zone))
+                    .forEach(entries::add);
+        }
+        List<Zone> uncategorized = snapshot.zones().stream()
+                .filter(zone -> zone.categoryId() == null
+                        || categories.stream().noneMatch(category -> category.id() == zone.categoryId()))
+                .sorted(Comparator.comparingInt(Zone::position).thenComparingLong(Zone::id))
+                .toList();
+        if (!uncategorized.isEmpty()) {
+            entries.add(ZoneSidebarEntry.uncategorized());
+            uncategorized.stream().map(zone -> ZoneSidebarEntry.zone(null, zone)).forEach(entries::add);
+        }
+        return List.copyOf(entries);
+    }
+
+    static int zoneSidebarScrollStart(int requested, List<ZoneSidebarEntry> entries, float availableHeight) {
+        if (entries == null || entries.isEmpty()) return 0;
+        float tailHeight = 0;
+        int latestUsefulStart = entries.size() - 1;
+        for (int index = entries.size() - 1; index >= 0; index--) {
+            tailHeight += entries.get(index).step();
+            latestUsefulStart = index;
+            if (tailHeight >= availableHeight) break;
+        }
+        return Math.max(0, Math.min(requested, latestUsefulStart));
+    }
+
+    private static ZoneSidebarPlacement zoneSidebarPlacementAt(
+            WarPlannerSnapshot snapshot, int requestedScroll, float top, float bottom, float my) {
+        List<ZoneSidebarEntry> entries = zoneSidebarEntries(snapshot);
+        float availableHeight = bottom - (top + WAR_MAP_SIDEBAR_CONTENT_TOP) - 14;
+        int start = zoneSidebarScrollStart(requestedScroll, entries, availableHeight);
+        float rowY = top + WAR_MAP_SIDEBAR_CONTENT_TOP;
+        for (int index = start; index < entries.size(); index++) {
+            ZoneSidebarEntry entry = entries.get(index);
+            if (rowY + entry.height() > bottom - 13 && index > start) break;
+            if (my >= rowY && my <= rowY + entry.height()) {
+                return new ZoneSidebarPlacement(entry, rowY, index);
+            }
+            rowY += entry.step();
+        }
+        return null;
     }
 
     private static void drawPreviewResources(
@@ -1224,6 +1368,7 @@ public final class WarPlannerScreen extends Screen {
                 scrollRows = 0;
                 pendingDeleteTeam = null;
                 pendingDeleteZone = null;
+                pendingDeleteZoneCategory = null;
                 return true;
             }
         }
@@ -1240,15 +1385,21 @@ public final class WarPlannerScreen extends Screen {
             WarPlannerSnapshot snapshot, float mx, float my, float width, float height) {
         float top = contentTop();
         WarMapLayout layout = warMapLayout(width, top, height - 42);
-        int visibleRows = warMapVisibleZoneRows(layout.mapHeight());
-        int visibleRow = (int) ((my - (top + 40)) / WAR_MAP_ZONE_ROW_STEP);
-        int index = warMapScrollStart(scrollRows, snapshot.zones().size(), visibleRows) + visibleRow;
-        if (visibleRow < 0 || visibleRow >= visibleRows || index < 0 || index >= snapshot.zones().size()) {
-            return false;
+        ZoneSidebarPlacement placement = zoneSidebarPlacementAt(snapshot, scrollRows, top, height - 42, my);
+        if (placement == null) return false;
+        ZoneSidebarEntry entry = placement.entry();
+        if (entry.categoryHeader()) {
+            if (!manager.canManage()
+                    || entry.category() == null
+                    || !hit(mx, my, layout.sidebarX() + 10, placement.y(), layout.sidebarWidth() - 84,
+                            WAR_MAP_CATEGORY_ROW_HEIGHT)) {
+                return false;
+            }
+            SeqClient.mc.setScreen(new WarZoneCategoryEditorScreen(this, entry.category()));
+            return true;
         }
-        float rowY = top + 40 + visibleRow * WAR_MAP_ZONE_ROW_STEP;
-        if (!hit(mx, my, layout.sidebarX() + 18, rowY + 3, layout.sidebarWidth() - 30, 22)) return false;
-        SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, snapshot.zones().get(index), true));
+        if (!hit(mx, my, layout.sidebarX() + 18, placement.y() + 3, layout.sidebarWidth() - 30, 22)) return false;
+        SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, entry.zone(), true));
         return true;
     }
 
@@ -1259,7 +1410,9 @@ public final class WarPlannerScreen extends Screen {
         boolean locked = manager.canManage() && territoriesLocked();
         List<GuildTerritory> allTerritories = territoryIndex.territories();
         List<GuildTerritory> coreTerritories = visibleMapTerritories(
-                allTerritories, visibleZones(snapshot.zones(), hiddenZoneIds), locked);
+                allTerritories,
+                visibleZones(snapshot.zones(), hiddenZoneIds, hiddenZoneCategoryIds),
+                locked);
         Map<String, WarPlannerSnapshot.TerritoryDetails> details = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         snapshot.territoryDetails().forEach(detail -> details.put(detail.name(), detail));
         ArrayList<GuildTerritory> displayedTerritories = new ArrayList<>(coreTerritories);
@@ -1386,23 +1539,52 @@ public final class WarPlannerScreen extends Screen {
         }
         float sidebarWidth = layout.sidebarWidth();
         float sidebarX = layout.sidebarX();
-        if (manager.canManage()
-                && hit(mx, my, sidebarX + sidebarWidth - 72, top + 7, 62, BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, null));
+        if (manager.canManage()) {
+            float headerActionWidth = (sidebarWidth - 18) / 2;
+            if (hit(mx, my, sidebarX + 6, top + 27, headerActionWidth, 20)) {
+                SeqClient.mc.setScreen(new WarZoneCategoryEditorScreen(this, null));
+                return true;
+            }
+            if (hit(mx, my, sidebarX + 12 + headerActionWidth, top + 27, headerActionWidth, 20)) {
+                SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, null));
+                return true;
+            }
+        }
+        ZoneSidebarPlacement placement = zoneSidebarPlacementAt(
+                snapshot, scrollRows, top, MinecraftUiRenderer.screenHeight() - 42, my);
+        if (placement == null) return false;
+        ZoneSidebarEntry entry = placement.entry();
+        float rowY = placement.y();
+        if (!hit(mx, my, sidebarX + 6, rowY, sidebarWidth - 12, entry.height())) return false;
+        if (entry.categoryHeader()) {
+            float toggleX = manager.canManage() && entry.category() != null
+                    ? sidebarX + sidebarWidth - 70
+                    : sidebarX + sidebarWidth - 48;
+            float toggleWidth = manager.canManage() && entry.category() != null ? 38 : 42;
+            if (hit(mx, my, toggleX, rowY + 3, toggleWidth, 20)) {
+                toggleZoneCategoryDisplay(entry.categoryId());
+                return true;
+            }
+            if (manager.canManage()
+                    && entry.category() != null
+                    && hit(mx, my, sidebarX + sidebarWidth - 28, rowY + 3, 22, 20)) {
+                if (pendingDeleteZoneCategory != null
+                        && pendingDeleteZoneCategory.id() == entry.category().id()) {
+                    showResult(manager.deleteZoneCategory(
+                            entry.category().id(), pendingDeleteZoneCategory.version()));
+                    pendingDeleteZoneCategory = null;
+                } else {
+                    pendingDeleteZoneCategory =
+                            new PendingDelete(entry.category().id(), entry.category().version());
+                }
+                return true;
+            }
             return true;
         }
-        int visibleRows = warMapVisibleZoneRows(MinecraftUiRenderer.screenHeight() - 42 - top);
-        int visibleRow = (int) ((my - (top + 40)) / WAR_MAP_ZONE_ROW_STEP);
-        int index = warMapScrollStart(scrollRows, snapshot.zones().size(), visibleRows) + visibleRow;
-        if (visibleRow < 0 || visibleRow >= visibleRows || index < 0 || index >= snapshot.zones().size()) {
-            return false;
-        }
-        float rowY = top + 40 + visibleRow * WAR_MAP_ZONE_ROW_STEP;
-        if (!hit(mx, my, sidebarX + 6, rowY, sidebarWidth - 12, WAR_MAP_ZONE_ROW_HEIGHT)) return false;
-        Zone zone = snapshot.zones().get(index);
+        Zone zone = entry.zone();
         if (!manager.canManage()) {
             if (hit(mx, my, sidebarX + 22, rowY + 35, 56, BUTTON_HEIGHT)) {
-                toggleZoneDisplay(zone.id());
+                if (!containsCategory(hiddenZoneCategoryIds, zone.categoryId())) toggleZoneDisplay(zone.id());
                 return true;
             }
             return false;
@@ -1413,7 +1595,7 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         if (hit(mx, my, sidebarX + 16 + actionWidth, rowY + 35, actionWidth, BUTTON_HEIGHT)) {
-            toggleZoneDisplay(zone.id());
+            if (!containsCategory(hiddenZoneCategoryIds, zone.categoryId())) toggleZoneDisplay(zone.id());
             return true;
         }
         if (hit(mx, my, sidebarX + 20 + actionWidth * 2, rowY + 35, actionWidth, BUTTON_HEIGHT)) {
@@ -1425,11 +1607,19 @@ public final class WarPlannerScreen extends Screen {
             }
             return true;
         }
-        return false;
+        if (!manager.isMutating() && hit(mx, my, sidebarX + 10, rowY + 2, sidebarWidth - 20, 30)) {
+            zoneDrag = new ZoneDrag(zone.id(), zone.name(), zone.version(), mx, my, false);
+            return true;
+        }
+        return true;
     }
 
     private void toggleZoneDisplay(long zoneId) {
         if (!hiddenZoneIds.remove(zoneId)) hiddenZoneIds.add(zoneId);
+    }
+
+    private void toggleZoneCategoryDisplay(Long categoryId) {
+        if (!hiddenZoneCategoryIds.remove(categoryId)) hiddenZoneCategoryIds.add(categoryId);
     }
 
     @Override
@@ -1461,6 +1651,17 @@ public final class WarPlannerScreen extends Screen {
             }
             return true;
         }
+        if (zoneDrag != null && click.button() == 0) {
+            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
+            float my = MinecraftUiRenderer.mouseY(click.y());
+            if (!zoneDrag.active() && Math.hypot(mx - zoneDrag.startX(), my - zoneDrag.startY()) >= 4) {
+                zoneDrag = new ZoneDrag(
+                        zoneDrag.zoneId(), zoneDrag.zoneName(), zoneDrag.version(),
+                        zoneDrag.startX(), zoneDrag.startY(), true);
+            }
+            return true;
+        }
         return super.mouseDragged(click, deltaX, deltaY);
     }
 
@@ -1486,7 +1687,48 @@ public final class WarPlannerScreen extends Screen {
             }
             return true;
         }
+        if (click.button() == 0 && zoneDrag != null) {
+            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
+            float my = MinecraftUiRenderer.mouseY(click.y());
+            ZoneDrag completed = zoneDrag;
+            zoneDrag = null;
+            if (completed.active()) dropZone(completed, mx, my, viewport.width(), MinecraftUiRenderer.screenHeight());
+            return true;
+        }
         return super.mouseReleased(click);
+    }
+
+    private void dropZone(ZoneDrag drag, float mx, float my, float width, float height) {
+        WarPlannerSnapshot snapshot = manager.snapshot();
+        if (snapshot == null || manager.isMutating()) return;
+        WarMapLayout layout = warMapLayout(width, contentTop(), height - 42);
+        if (!layout.containsSidebar(mx, my)) return;
+        ZoneSidebarPlacement placement = zoneSidebarPlacementAt(snapshot, scrollRows, contentTop(), height - 42, my);
+        if (placement == null) return;
+        ZoneDropTarget target = zoneDropTarget(snapshot, placement, my, drag.zoneId());
+        if (target == null) return;
+        showResult(manager.moveZone(
+                drag.zoneId(), new ZonePlacementDraft(target.categoryId(), target.position(), drag.version())));
+    }
+
+    static ZoneDropTarget zoneDropTarget(
+            WarPlannerSnapshot snapshot, ZoneSidebarPlacement placement, float mouseY, long draggedZoneId) {
+        if (snapshot == null || placement == null) return null;
+        ZoneSidebarEntry entry = placement.entry();
+        if (entry.categoryHeader()) return new ZoneDropTarget(entry.categoryId(), 0);
+        if (entry.zone().id() == draggedZoneId) return null;
+        List<Zone> targetZones = snapshot.zones().stream()
+                .filter(zone -> zone.id() != draggedZoneId)
+                .filter(zone -> java.util.Objects.equals(zone.categoryId(), entry.categoryId()))
+                .sorted(Comparator.comparingInt(Zone::position).thenComparingLong(Zone::id))
+                .toList();
+        int targetIndex = targetZones.indexOf(entry.zone());
+        if (targetIndex < 0) return null;
+        int position = mouseY < placement.y() + placement.entry().height() / 2
+                ? targetIndex
+                : targetIndex + 1;
+        return new ZoneDropTarget(entry.categoryId(), position);
     }
 
     private boolean clickTeamEditor(float mx, float my, float width, float height) {
@@ -1656,8 +1898,9 @@ public final class WarPlannerScreen extends Screen {
                     return true;
                 }
                 if (layout.containsSidebar(localMouseX, localMouseY)) {
-                    int visibleRows = warMapVisibleZoneRows(layout.mapHeight());
-                    scrollRows = warMapScrollStart(scrollRows + delta, snapshot.zones().size(), visibleRows);
+                    List<ZoneSidebarEntry> entries = zoneSidebarEntries(snapshot);
+                    float availableHeight = layout.mapHeight() - WAR_MAP_SIDEBAR_CONTENT_TOP - 14;
+                    scrollRows = zoneSidebarScrollStart(scrollRows + delta, entries, availableHeight);
                 }
                 return true;
             }
@@ -2535,6 +2778,38 @@ public final class WarPlannerScreen extends Screen {
             float startX,
             float startY,
             boolean active) {}
+
+    record ZoneSidebarEntry(Long categoryId, ZoneCategory category, Zone zone, String label) {
+        static ZoneSidebarEntry category(ZoneCategory category) {
+            return new ZoneSidebarEntry(category.id(), category, null, category.name());
+        }
+
+        static ZoneSidebarEntry uncategorized() {
+            return new ZoneSidebarEntry(null, null, null, "Uncategorized");
+        }
+
+        static ZoneSidebarEntry zone(Long categoryId, Zone zone) {
+            return new ZoneSidebarEntry(categoryId, null, zone, zone.name());
+        }
+
+        boolean categoryHeader() {
+            return zone == null;
+        }
+
+        float height() {
+            return categoryHeader() ? WAR_MAP_CATEGORY_ROW_HEIGHT : WAR_MAP_ZONE_ROW_HEIGHT;
+        }
+
+        float step() {
+            return categoryHeader() ? WAR_MAP_CATEGORY_ROW_STEP : WAR_MAP_ZONE_ROW_STEP;
+        }
+    }
+
+    record ZoneSidebarPlacement(ZoneSidebarEntry entry, float y, int index) {}
+
+    record ZoneDropTarget(Long categoryId, int position) {}
+
+    private record ZoneDrag(long zoneId, String zoneName, Long version, float startX, float startY, boolean active) {}
 
     private record TeamPlacement(Team team, float y, float height) {}
 }

@@ -12,6 +12,8 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportSlotDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneCategoryDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import com.seqwawa.seq.model.war.WarTeamType;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -230,6 +232,26 @@ class ApiClientTest {
         assertTrue(cleared.get("territory").isJsonNull());
         assertEquals(8, cleared.get("version").getAsLong());
         assertThrows(IllegalArgumentException.class, () -> ApiClient.buildWarHqTerritoryPayload("Detlas", 0));
+    }
+
+    @Test
+    void warZoneCategoryAndPlacementPayloadsKeepVersionsAndNullableCategory() {
+        JsonObject created = ApiClient.buildWarZoneCategoryPayload(
+                new ZoneCategoryDraft("Frontline", null), false);
+        JsonObject renamed = ApiClient.buildWarZoneCategoryPayload(
+                new ZoneCategoryDraft("North front", 3L), true);
+        JsonObject categorized = ApiClient.buildWarZonePlacementPayload(
+                new ZonePlacementDraft(4L, 1, 7L));
+        JsonObject uncategorized = ApiClient.buildWarZonePlacementPayload(
+                new ZonePlacementDraft(null, 0, 8L));
+
+        assertEquals("Frontline", created.get("name").getAsString());
+        assertFalse(created.has("version"));
+        assertEquals(3L, renamed.get("version").getAsLong());
+        assertEquals(4L, categorized.get("category_id").getAsLong());
+        assertEquals(1, categorized.get("position").getAsInt());
+        assertEquals(7L, categorized.get("version").getAsLong());
+        assertTrue(uncategorized.get("category_id").isJsonNull());
     }
 
     @Test

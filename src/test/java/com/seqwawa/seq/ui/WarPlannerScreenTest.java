@@ -383,6 +383,65 @@ class WarPlannerScreenTest {
         assertEquals(0, WarPlannerScreen.warMapScrollStart(2, 3, 4));
     }
 
+    @Test
+    void zoneSidebarGroupsOrderedZonesAndKeepsIndividualAndCategoryVisibilityIndependent() {
+        WarPlannerSnapshot.ZoneCategory front = new WarPlannerSnapshot.ZoneCategory(5, "Front", 0, 1L);
+        WarPlannerSnapshot.ZoneCategory back = new WarPlannerSnapshot.ZoneCategory(6, "Back", 1, 1L);
+        WarPlannerSnapshot.Zone north = new WarPlannerSnapshot.Zone(
+                11, "North", "#112233", List.of(), 1L, List.of("A"), 5L, 1);
+        WarPlannerSnapshot.Zone center = new WarPlannerSnapshot.Zone(
+                10, "Center", "#223344", List.of(), 1L, List.of("B"), 5L, 0);
+        WarPlannerSnapshot.Zone loose = new WarPlannerSnapshot.Zone(
+                12, "Loose", "#334455", List.of(), 1L, List.of("C"), null, 0);
+        WarPlannerSnapshot snapshot = categorizedSnapshot(List.of(north, loose, center), List.of(back, front));
+
+        List<WarPlannerScreen.ZoneSidebarEntry> entries = WarPlannerScreen.zoneSidebarEntries(snapshot);
+
+        assertEquals(List.of("Front", "Center", "North", "Back", "Uncategorized", "Loose"),
+                entries.stream().map(WarPlannerScreen.ZoneSidebarEntry::label).toList());
+        assertEquals(List.of(loose), WarPlannerScreen.visibleZones(snapshot.zones(), java.util.Set.of(10L), java.util.Set.of(5L)));
+    }
+
+    @Test
+    void zoneDropTargetsSupportCategoryHeadersAndBeforeOrAfterZoneRows() {
+        WarPlannerSnapshot.ZoneCategory front = new WarPlannerSnapshot.ZoneCategory(5, "Front", 0, 1L);
+        WarPlannerSnapshot.Zone first = new WarPlannerSnapshot.Zone(
+                10, "First", "#112233", List.of(), 2L, List.of("A"), 5L, 0);
+        WarPlannerSnapshot.Zone second = new WarPlannerSnapshot.Zone(
+                11, "Second", "#223344", List.of(), 3L, List.of("B"), 5L, 1);
+        WarPlannerSnapshot snapshot = categorizedSnapshot(List.of(first, second), List.of(front));
+        WarPlannerScreen.ZoneSidebarPlacement header = new WarPlannerScreen.ZoneSidebarPlacement(
+                WarPlannerScreen.ZoneSidebarEntry.category(front), 50, 0);
+        WarPlannerScreen.ZoneSidebarPlacement secondRow = new WarPlannerScreen.ZoneSidebarPlacement(
+                WarPlannerScreen.ZoneSidebarEntry.zone(5L, second), 100, 2);
+
+        assertEquals(new WarPlannerScreen.ZoneDropTarget(5L, 0),
+                WarPlannerScreen.zoneDropTarget(snapshot, header, 55, 10));
+        assertEquals(new WarPlannerScreen.ZoneDropTarget(5L, 0),
+                WarPlannerScreen.zoneDropTarget(snapshot, secondRow, 110, 10));
+        assertEquals(new WarPlannerScreen.ZoneDropTarget(5L, 1),
+                WarPlannerScreen.zoneDropTarget(snapshot, secondRow, 150, 10));
+    }
+
+    private static WarPlannerSnapshot categorizedSnapshot(
+            List<WarPlannerSnapshot.Zone> zones, List<WarPlannerSnapshot.ZoneCategory> categories) {
+        return new WarPlannerSnapshot(
+                3,
+                1L,
+                null,
+                new WarPlannerSnapshot.Self("self", true),
+                true,
+                List.of(),
+                List.of(),
+                new WarPlannerSnapshot.SupportBoard(1L, List.of()),
+                zones,
+                List.of("A", "B", "C"),
+                List.of(),
+                null,
+                1L,
+                categories);
+    }
+
     private static WarPlannerSnapshot snapshot(
             List<WarPlannerSnapshot.Team> teams, List<WarPlannerSnapshot.RosterMember> roster) {
         return new WarPlannerSnapshot(

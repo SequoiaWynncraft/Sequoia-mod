@@ -98,6 +98,24 @@ public final class WarPlannerDrafts {
         }
     }
 
+    public record ZoneCategoryDraft(String name, Long version) {
+        public ZoneCategoryDraft {
+            name = requireName(name, "Zone category");
+            if (version != null && version <= 0) {
+                throw new IllegalArgumentException("Zone category version must be positive.");
+            }
+        }
+    }
+
+    public record ZonePlacementDraft(Long categoryId, int position, Long version) {
+        public ZonePlacementDraft {
+            if (position < 0) throw new IllegalArgumentException("Zone position cannot be negative.");
+            if (version == null || version <= 0) {
+                throw new IllegalArgumentException("Zone version must be positive.");
+            }
+        }
+    }
+
     private static String requireName(String value, String kind) {
         String normalized = value == null ? "" : value.trim();
         if (normalized.isEmpty()) {
