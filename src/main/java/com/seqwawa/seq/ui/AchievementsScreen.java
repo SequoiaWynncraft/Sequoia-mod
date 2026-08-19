@@ -94,16 +94,27 @@ public final class AchievementsScreen extends Screen {
     static List<Row> buildRows(GuildRaidProgress progress) {
         List<Row> rows = new ArrayList<>(SeqRaid.values().length + 1);
         for (SeqRaid raid : SeqRaid.values()) {
-            rows.add(row(raid.displayName(), raid.assetKey(), progress.count(raid), SeqTier.SINGLE_RAID, false));
+            rows.add(row(
+                    raid.displayName(),
+                    raid.assetKey(),
+                    progress.count(raid),
+                    progress.tier(raid),
+                    SeqTier.SINGLE_RAID,
+                    false));
         }
-        rows.add(row("All Guild Raids", "icon", progress.totalCount(), SeqTier.ALL_RAIDS, true));
+        rows.add(row(
+                "All Guild Raids",
+                "icon",
+                progress.totalCount(),
+                progress.totalTier(),
+                SeqTier.ALL_RAIDS,
+                true));
         return List.copyOf(rows);
     }
 
-    private static Row row(String name, String icon, int count, int scale, boolean total) {
+    private static Row row(String name, String icon, int count, SeqTier tier, int scale, boolean total) {
         SeqTier next = SeqTier.next(count, scale);
-        return new Row(
-                name, icon, count, SeqTier.reached(count, scale), next == null ? 0 : next.threshold(scale), next, total);
+        return new Row(name, icon, count, tier, next == null ? 0 : next.threshold(scale), next, total);
     }
 
     @Override

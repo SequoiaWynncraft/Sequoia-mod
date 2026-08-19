@@ -1,15 +1,16 @@
 package com.seqwawa.seq.model;
 
 import java.util.List;
+import java.util.Locale;
 
 public enum SeqTier {
     BRONZE("Bronze", 25),
     SILVER("Silver", 50),
     GOLD("Gold", 100),
-    PLATINUM("Platinum", 250),
-    DIAMOND("Diamond", 500),
-    OBSIDIAN("Obsidian", 1000),
-    MYTHRIL("Mythril", 2500);
+    PLATINUM("Platinum", 500),
+    DIAMOND("Diamond", 1_000),
+    OBSIDIAN("Obsidian", 2_500),
+    MYTHRIL("Mythril", 5_000);
 
     public static final int SINGLE_RAID = 1;
     public static final int ALL_RAIDS = 2;
@@ -36,16 +37,6 @@ public enum SeqTier {
         return ORDERED;
     }
 
-    public static SeqTier reached(int count, int scale) {
-        SeqTier reached = null;
-        for (SeqTier tier : ORDERED) {
-            if (count >= tier.threshold(scale)) {
-                reached = tier;
-            }
-        }
-        return reached;
-    }
-
     public static SeqTier next(int count, int scale) {
         for (SeqTier tier : ORDERED) {
             if (count < tier.threshold(scale)) {
@@ -53,5 +44,16 @@ public enum SeqTier {
             }
         }
         return null;
+    }
+
+    public static SeqTier fromKey(String key) {
+        if (key == null || key.isBlank()) {
+            return null;
+        }
+        try {
+            return valueOf(key.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 }

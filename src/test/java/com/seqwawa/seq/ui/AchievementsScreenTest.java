@@ -12,6 +12,7 @@ import com.seqwawa.seq.model.SeqTier;
 import com.seqwawa.seq.ui.AchievementsScreen.Row;
 import com.seqwawa.seq.ui.theme.UiColor;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -30,11 +31,24 @@ class AchievementsScreenTest {
     }
 
     @Test
-    void anEmptyRaidAimsAtBronze() {
-        Row notg = rows(GuildRaidProgress.EMPTY).getFirst();
+    void theRankIsWhateverTheBackendSaidItWas() {
+        Row tna = row(progress(entry("TNA", 19, "platinum")), "The Nameless Anomaly");
 
-        assertNull(notg.tier());
-        assertEquals(0, notg.count());
+        assertEquals(SeqTier.PLATINUM, tna.tier());
+    }
+
+    @Test
+    void anUnrankedRaidStaysUnrankedEvenPastAThreshold() {
+        Row tna = row(progress(entry("TNA", 400, null)), "The Nameless Anomaly");
+
+        assertNull(tna.tier());
+        assertEquals(400, tna.count());
+    }
+
+    @Test
+    void anEmptyRaidAimsAtBronze() {
+        Row notg = AchievementsScreen.buildRows(GuildRaidProgress.EMPTY).getFirst();
+
         assertEquals(SeqTier.BRONZE, notg.nextTier());
         assertEquals(25, notg.nextAt());
         assertEquals(0f, AchievementsScreen.progressRatio(notg));
@@ -42,36 +56,35 @@ class AchievementsScreenTest {
 
     @Test
     void theBarTracksTheCountAgainstTheNextThreshold() {
-        Row tna = row(rows(progress(Map.of("TNA", 19))), "The Nameless Anomaly");
+        Row tna = row(progress(entry("TNA", 19, null)), "The Nameless Anomaly");
 
-        assertNull(tna.tier());
-        assertEquals(19, tna.count());
         assertEquals(25, tna.nextAt());
         assertEquals(19f / 25f, AchievementsScreen.progressRatio(tna), 0.0001f);
     }
 
     @Test
-    void rankingUpMovesTheTargetToTheNextTier() {
-        Row tna = row(rows(progress(Map.of("TNA", 60))), "The Nameless Anomaly");
+    void theTargetFollowsTheCountUpTheLadder() {
+        Row tna = row(progress(entry("TNA", 120, "gold")), "The Nameless Anomaly");
 
-        assertEquals(SeqTier.SILVER, tna.tier());
-        assertEquals(SeqTier.GOLD, tna.nextTier());
-        assertEquals(100, tna.nextAt());
+        assertEquals(SeqTier.GOLD, tna.tier());
+        assertEquals(SeqTier.PLATINUM, tna.nextTier());
+        assertEquals(500, tna.nextAt());
     }
 
     @Test
     void theCombinedRowUsesTheDoubledLadder() {
-        Row all = rows(progress(Map.of("TNA", 19, "TCC", 12))).getLast();
+        List<Row> rows = AchievementsScreen.buildRows(
+                progress(entry("TNA", 19, null), entry("TCC", 12, null), entry("total", 31, null)));
+        Row all = rows.getLast();
 
         assertEquals(31, all.count());
-        assertNull(all.tier());
         assertEquals(SeqTier.BRONZE, all.nextTier());
         assertEquals(50, all.nextAt());
     }
 
     @Test
-    void theTopTierFillsTheBarAndDropsTheTarget() {
-        Row tna = row(rows(progress(Map.of("TNA", 4000))), "The Nameless Anomaly");
+    void theTopOfTheLadderFillsTheBarAndDropsTheTarget() {
+        Row tna = row(progress(entry("TNA", 5_000, "mythril")), "The Nameless Anomaly");
 
         assertEquals(SeqTier.MYTHRIL, tna.tier());
         assertNull(tna.nextTier());
@@ -97,17 +110,23 @@ class AchievementsScreenTest {
         assertEquals("10,000", AchievementsScreen.formatCount(10_000));
     }
 
-    private static GuildRaidProgress progress(Map<String, Integer> counts) {
-        return new GuildRaidProgress(
-                1, counts.entrySet().stream().collect(java.util.stream.Collectors.toMap(
-                        Map.Entry::getKey, entry -> new Entry(entry.getValue()))));
+    private static Map.Entry<String, Entry> entry(String key, int count, String tier) {
+        return Map.entry(key, new Entry(count, tier == null ? "" : tier));
     }
 
-    private static List<Row> rows(GuildRaidProgress progress) {
-        return AchievementsScreen.buildRows(progress);
+    @SafeVarargs
+    private static GuildRaidProgress progress(Map.Entry<String, Entry>... entries) {
+        Map<String, Entry> map = new LinkedHashMap<>();
+        for (Map.Entry<String, Entry> entry : entries) {
+            map.put(entry.getKey(), entry.getValue());
+        }
+        return new GuildRaidProgress(1, map);
     }
 
-    private static Row row(List<Row> rows, String name) {
-        return rows.stream().filter(row -> row.name().equals(name)).findFirst().orElseThrow();
+    private static Row row(GuildRaidProgress progress, String name) {
+        return AchievementsScreen.buildRows(progress).stream()
+                .filter(candidate -> candidate.name().equals(name))
+                .findFirst()
+                .orElseThrow();
     }
 }

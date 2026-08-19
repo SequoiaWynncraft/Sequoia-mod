@@ -1,6 +1,7 @@
 package com.seqwawa.seq.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.google.gson.Gson;
 import com.seqwawa.seq.model.GuildRaidProgress.Entry;
@@ -30,12 +31,41 @@ class GuildRaidProgressTest {
     }
 
     @Test
+    void theTierComesStraightFromTheBackend() {
+        GuildRaidProgress progress = GSON.fromJson(
+                "{\"schema_version\":1,\"progress\":{\"TNA\":{\"count\":19,\"tier\":\"platinum\"},"
+                        + "\"total\":{\"count\":19,\"tier\":\"gold\"}}}",
+                GuildRaidProgress.class);
+
+        assertEquals(SeqTier.PLATINUM, progress.tier(SeqRaid.TNA));
+        assertEquals(SeqTier.GOLD, progress.totalTier());
+    }
+
+    @Test
+    void aNullTierReadsAsUnranked() {
+        GuildRaidProgress progress = GSON.fromJson(BACKEND_PAYLOAD, GuildRaidProgress.class);
+
+        assertNull(progress.tier(SeqRaid.TNA));
+        assertNull(progress.totalTier());
+    }
+
+    @Test
+    void aTierTheModDoesNotKnowReadsAsUnranked() {
+        GuildRaidProgress progress = GSON.fromJson(
+                "{\"schema_version\":1,\"progress\":{\"TNA\":{\"count\":19,\"tier\":\"titanium\"}}}",
+                GuildRaidProgress.class);
+
+        assertNull(progress.tier(SeqRaid.TNA));
+    }
+
+    @Test
     void whateverElseTheBackendSendsIsIgnored() {
         GuildRaidProgress progress = GSON.fromJson(
                 "{\"schema_version\":2,\"progress\":{\"TNA\":{\"count\":19,\"tier\":\"bronze\",\"streak\":3}}}",
                 GuildRaidProgress.class);
 
         assertEquals(19, progress.count(SeqRaid.TNA));
+        assertEquals(SeqTier.BRONZE, progress.tier(SeqRaid.TNA));
     }
 
     @Test
@@ -57,11 +87,14 @@ class GuildRaidProgressTest {
     @Test
     void raidKeysAreReadWhateverTheirCase() {
         GuildRaidProgress progress = GSON.fromJson(
-                "{\"schema_version\":1,\"progress\":{\"tna\":{\"count\":19},\"Total\":{\"count\":42}}}",
+                "{\"schema_version\":1,\"progress\":{\"tna\":{\"count\":19,\"tier\":\"bronze\"},"
+                        + "\"Total\":{\"count\":42,\"tier\":\"silver\"}}}",
                 GuildRaidProgress.class);
 
         assertEquals(19, progress.count(SeqRaid.TNA));
+        assertEquals(SeqTier.BRONZE, progress.tier(SeqRaid.TNA));
         assertEquals(42, progress.totalCount());
+        assertEquals(SeqTier.SILVER, progress.totalTier());
     }
 
     @Test
