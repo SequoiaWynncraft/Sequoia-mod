@@ -29,6 +29,7 @@ import com.seqwawa.seq.model.war.WarPlannerSnapshot.SupportSlot;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.Zone;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.ZoneCategory;
 import com.seqwawa.seq.model.war.WarTeamType;
+import com.seqwawa.seq.utils.TextInputHelper;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiImage;
@@ -46,9 +47,12 @@ import java.util.Set;
 import java.util.TreeMap;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
+import org.lwjgl.glfw.GLFW;
 
 /** Seq-only war management overlay. Authorization is supplied solely by the protected snapshot. */
 public final class WarPlannerScreen extends Screen {
@@ -82,6 +86,10 @@ public final class WarPlannerScreen extends Screen {
     private static final float MAX_ZONES_WIDTH = 900;
     private static final float COMPOSITION_ICON_SIZE = 12;
     private static final float COMPOSITION_ICON_GAP = 3;
+    private static final float TEAM_EDITOR_SEARCH_HEIGHT = 22;
+    private static final float TEAM_EDITOR_SEARCH_OFFSET = 90;
+    private static final float TEAM_EDITOR_LIST_OFFSET = 118;
+    private static final int TEAM_EDITOR_SEARCH_MAX_LENGTH = 64;
     private static final float HQ_ICON_WIDTH = 24;
     private static final float HQ_ICON_HEIGHT = 19.5f;
     private static final float DISPLAY_CONTROL_GAP = 6;
@@ -110,6 +118,8 @@ public final class WarPlannerScreen extends Screen {
     private final List<TeamMemberDraft> teamMembers = new ArrayList<>();
     private boolean teamEditorSaving;
     private int editorScrollRows;
+    private String teamEditorSearchQuery = "";
+    private boolean teamEditorSearchFocused;
     private PendingDelete pendingDeleteTeam;
     private PendingDelete pendingDeleteZone;
     private PendingDelete pendingDeleteZoneCategory;
@@ -1223,12 +1233,47 @@ public final class WarPlannerScreen extends Screen {
         if (flashMessage != null && !flashMessage.isBlank()) {
             text(canvas, truncate(flashMessage, 58), x + 12, fieldY + 78, 9, color(CONTROL_WARNING), false);
         }
-        List<RosterMember> eligible = editableRoster(snapshot);
-        float listTop = fieldY + 90;
+        float searchY = fieldY + TEAM_EDITOR_SEARCH_OFFSET;
+        boolean searchHovered = hit(
+                nvgMouseX, nvgMouseY, x + 12, searchY, w - 24, TEAM_EDITOR_SEARCH_HEIGHT);
+        canvas.fillRect(
+                x + 12,
+                searchY,
+                w - 24,
+                TEAM_EDITOR_SEARCH_HEIGHT,
+                color(teamEditorSearchFocused || searchHovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
+        canvas.strokeRect(
+                x + 12,
+                searchY,
+                w - 24,
+                TEAM_EDITOR_SEARCH_HEIGHT,
+                1,
+                color(teamEditorSearchFocused ? CONTROL_BORDER : CONTROL_INPUT_SECONDARY));
+        String searchText = teamEditorSearchQuery.isEmpty() ? "Search all players…" : teamEditorSearchQuery;
+        if (teamEditorSearchFocused && (System.currentTimeMillis() / 500) % 2 == 0) {
+            searchText += "|";
+        }
+        canvas.save();
+        canvas.scissor(x + 18, searchY, w - 36, TEAM_EDITOR_SEARCH_HEIGHT);
+        text(
+                canvas,
+                searchText,
+                x + 18,
+                searchY + TEAM_EDITOR_SEARCH_HEIGHT / 2,
+                10,
+                color(teamEditorSearchQuery.isEmpty() ? TEXT_MUTED : TEXT_PRIMARY),
+                false);
+        canvas.restore();
+
+        List<RosterMember> eligible = teamEditorRoster(snapshot, teamEditorSearchQuery);
+        float listTop = fieldY + TEAM_EDITOR_LIST_OFFSET;
         float listBottom = y + h - 42;
         canvas.scissor(x + 8, listTop, w - 16, Math.max(0, listBottom - listTop));
         int start = Math.min(editorScrollRows, Math.max(0, eligible.size() - 1));
         float rowY = listTop;
+        if (eligible.isEmpty()) {
+            text(canvas, "No players match this search.", x + 18, rowY + 14, 10, color(TEXT_MUTED), false);
+        }
         for (int index = start; index < eligible.size() && rowY + 28 <= listBottom; index++, rowY += 28) {
             RosterMember member = eligible.get(index);
             TeamMemberDraft selected = teamMember(member.playerUuid());
@@ -1787,6 +1832,11 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         float fieldY = y + 34;
+        float searchY = fieldY + TEAM_EDITOR_SEARCH_OFFSET;
+        boolean searchClicked = hit(mx, my, x + 12, searchY, w - 24, TEAM_EDITOR_SEARCH_HEIGHT);
+        if (!searchClicked || teamTypeMenuOpen) {
+            teamEditorSearchFocused = false;
+        }
         if (hit(mx, my, x + 12, fieldY, w - 24, 24)) {
             teamTypeMenuOpen = !teamTypeMenuOpen;
             return true;
@@ -1826,10 +1876,15 @@ public final class WarPlannerScreen extends Screen {
                 return true;
             }
         }
-        float listTop = fieldY + 90;
+        if (searchClicked) {
+            teamEditorSearchFocused = true;
+            return true;
+        }
+
+        float listTop = fieldY + TEAM_EDITOR_LIST_OFFSET;
         float listBottom = y + h - 42;
         if (my >= listTop && my <= listBottom) {
-            List<RosterMember> eligible = editableRoster(snapshot);
+            List<RosterMember> eligible = teamEditorRoster(snapshot, teamEditorSearchQuery);
             int row = editorScrollRows + (int) ((my - listTop) / 28);
             if (row >= 0 && row < eligible.size()) {
                 cycleTeamMember(eligible.get(row));
@@ -1897,6 +1952,40 @@ public final class WarPlannerScreen extends Screen {
     }
 
     @Override
+    public boolean keyPressed(@NotNull KeyEvent keyEvent) {
+        if (teamEditorOpen && teamEditorSearchFocused) {
+            int key = keyEvent.key();
+            if (key == GLFW.GLFW_KEY_ESCAPE || key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
+                teamEditorSearchFocused = false;
+                return true;
+            }
+            if (key == GLFW.GLFW_KEY_BACKSPACE) {
+                if (!teamEditorSearchQuery.isEmpty()) {
+                    teamEditorSearchQuery = teamEditorSearchQuery.substring(0, teamEditorSearchQuery.length() - 1);
+                    editorScrollRows = 0;
+                }
+                return true;
+            }
+            return true;
+        }
+        return super.keyPressed(keyEvent);
+    }
+
+    @Override
+    public boolean charTyped(@NotNull CharacterEvent characterEvent) {
+        if (teamEditorOpen && teamEditorSearchFocused) {
+            String typedText = TextInputHelper.getTypedText(characterEvent);
+            if (typedText != null
+                    && teamEditorSearchQuery.length() + typedText.length() <= TEAM_EDITOR_SEARCH_MAX_LENGTH) {
+                teamEditorSearchQuery += typedText;
+                editorScrollRows = 0;
+            }
+            return true;
+        }
+        return super.charTyped(characterEvent);
+    }
+
+    @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         int delta = scrollY > 0 ? -1 : 1;
         WarPlannerSnapshot snapshot = manager.snapshot();
@@ -1904,7 +1993,8 @@ public final class WarPlannerScreen extends Screen {
         if (roleEditorOpen) {
             return true;
         } else if (teamEditorOpen) {
-            editorScrollRows = clampRows(editorScrollRows + delta, editableRoster(snapshot).size());
+            editorScrollRows = clampRows(
+                    editorScrollRows + delta, teamEditorRoster(snapshot, teamEditorSearchQuery).size());
         } else if (editingSupportSlot != null) {
             supportEditorScrollRows = clampRows(
                     supportEditorScrollRows + delta, supportCandidates(snapshot, editingSupportSlot).size());
@@ -2044,6 +2134,8 @@ public final class WarPlannerScreen extends Screen {
         teamTypeMenuOpen = false;
         teamMembers.clear();
         editorScrollRows = 0;
+        teamEditorSearchQuery = "";
+        teamEditorSearchFocused = false;
         teamEditorSaving = false;
     }
 
@@ -2193,10 +2285,33 @@ public final class WarPlannerScreen extends Screen {
                 .orElse(null);
     }
 
-    private List<RosterMember> editableRoster(WarPlannerSnapshot snapshot) {
-        return snapshot.teamCandidates(editingTeamId).stream()
-                .sorted(Comparator.comparing(RosterMember::displayName, String.CASE_INSENSITIVE_ORDER))
+    static List<RosterMember> teamEditorRoster(WarPlannerSnapshot snapshot, String searchQuery) {
+        if (snapshot == null) {
+            return List.of();
+        }
+        String query = searchQuery == null ? "" : searchQuery.strip().toLowerCase(Locale.ROOT);
+        return snapshot.roster().stream()
+                .filter(member -> query.isEmpty() || teamEditorSearchText(member).contains(query))
+                .sorted(Comparator.<RosterMember>comparingInt(member -> member.online() ? 0 : 1)
+                        .thenComparing(Comparator.comparingInt(
+                                        (RosterMember member) -> member.compositionRoles().size())
+                                .reversed())
+                        .thenComparing(RosterMember::displayName, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(RosterMember::displayName)
+                        .thenComparing(
+                                member -> member.playerUuid() == null ? "" : member.playerUuid(),
+                                String.CASE_INSENSITIVE_ORDER))
                 .toList();
+    }
+
+    private static String teamEditorSearchText(RosterMember member) {
+        return String.join(
+                        "\n",
+                        member.displayName(),
+                        member.minecraftUsername() == null ? "" : member.minecraftUsername(),
+                        member.discordUsername() == null ? "" : member.discordUsername(),
+                        member.playerUuid() == null ? "" : member.playerUuid())
+                .toLowerCase(Locale.ROOT);
     }
 
     private MemberDrag teamMemberDragAt(
