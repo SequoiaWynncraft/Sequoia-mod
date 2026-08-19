@@ -23,8 +23,6 @@ public class SequoiaScreen extends Screen {
     private static final float TITLE_FONT_SIZE = 24;
     private static final float BUTTON_FONT_SIZE = 14;
 
-    private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
-
     private float nvgMouseX;
     private float nvgMouseY;
 
@@ -48,7 +46,9 @@ public class SequoiaScreen extends Screen {
 
             // Title
             String fontName = SeqClient.getFontManager().getSelectedFont();
-            float titleY = screenHeight * 0.3f;
+            var destinations = SequoiaSidebarNavigation.destinations();
+            MenuLayout menu = menuLayout(screenHeight, destinations.size());
+            float titleY = menu.titleY();
             canvas.drawText("Sequoia", screenWidth / 2f, titleY, new UiCanvas.TextStyle(
                     fontName,
                     TITLE_FONT_SIZE,
@@ -57,15 +57,11 @@ public class SequoiaScreen extends Screen {
                     UiCanvas.VerticalAlign.MIDDLE));
 
             // Buttons
-            float startY = titleY + 40;
             float centerX = screenWidth / 2f - BUTTON_WIDTH / 2f;
 
-            drawButton(canvas, centerX, startY, "Partyfinder");
-            drawButton(canvas, centerX, startY + BUTTON_HEIGHT + BUTTON_SPACING, "Connection");
-            drawButton(canvas, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 2, "Settings");
-            drawButton(canvas, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 3, "Map");
-            drawButton(canvas, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 4, "Ingredients");
-            drawButton(canvas, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 5, "Github");
+            for (int row = 0; row < destinations.size(); row++) {
+                drawButton(canvas, centerX, menu.buttonY(row), destinations.get(row).label());
+            }
         });
     }
 
@@ -94,25 +90,14 @@ public class SequoiaScreen extends Screen {
             float screenWidth = MinecraftUiRenderer.screenWidth();
             float screenHeight = MinecraftUiRenderer.screenHeight();
 
-            float titleY = screenHeight * 0.3f;
-            float startY = titleY + 40;
+            var destinations = SequoiaSidebarNavigation.destinations();
+            MenuLayout menu = menuLayout(screenHeight, destinations.size());
             float centerX = screenWidth / 2f - BUTTON_WIDTH / 2f;
 
-            if (isInButton(mx, my, centerX, startY)) {
-                SeqClient.mc.setScreen(new PartyFinderScreen(this));
-            } else if (isInButton(mx, my, centerX, startY + BUTTON_HEIGHT + BUTTON_SPACING)) {
-                SeqClient.mc.setScreen(new ConnectionScreen(this));
-            } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 2)) {
-                SeqClient.mc.setScreen(new SettingsScreen(this));
-            } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 3)) {
-                SeqClient.mc.setScreen(new WorldMapScreen(this));
-            } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 4)) {
-                SeqClient.mc.setScreen(new IngredientGuideScreen(this));
-            } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 5)) {
-                try {
-                    java.net.URI uri = java.net.URI.create(GITHUB_URL);
-                    java.awt.Desktop.getDesktop().browse(uri);
-                } catch (Exception ignored) {
+            for (int row = 0; row < destinations.size(); row++) {
+                if (isInButton(mx, my, centerX, menu.buttonY(row))) {
+                    SequoiaSidebarNavigation.open(destinations.get(row), this);
+                    return true;
                 }
             }
         }
@@ -123,9 +108,33 @@ public class SequoiaScreen extends Screen {
         return mx >= bx && mx <= bx + BUTTON_WIDTH && my >= by && my <= by + BUTTON_HEIGHT;
     }
 
+    static MenuLayout menuLayout(float screenHeight, int rowCount) {
+        int rows = Math.max(1, rowCount);
+        float bottomPadding = 12;
+        float minimumStartY = 48;
+        float availableHeight = Math.max(BUTTON_HEIGHT, screenHeight - minimumStartY - bottomPadding);
+        float rowStep = rows == 1
+                ? BUTTON_HEIGHT
+                : Math.min(BUTTON_HEIGHT + BUTTON_SPACING,
+                        Math.max(BUTTON_HEIGHT + 2, (availableHeight - BUTTON_HEIGHT) / (rows - 1)));
+        float blockHeight = BUTTON_HEIGHT + rowStep * (rows - 1);
+        float startY = Math.max(8, Math.min(screenHeight * .3f + 40, screenHeight - bottomPadding - blockHeight));
+        float titleY = Math.max(18, Math.min(screenHeight * .3f, startY - 28));
+        return new MenuLayout(titleY, startY, rowStep, rows);
+    }
+
     @Override
     public boolean isPauseScreen() {
         return false;
     }
 
+    record MenuLayout(float titleY, float startY, float rowStep, int rowCount) {
+        float buttonY(int row) {
+            return startY + rowStep * row;
+        }
+
+        float bottom() {
+            return buttonY(rowCount - 1) + BUTTON_HEIGHT;
+        }
+    }
 }

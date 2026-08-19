@@ -51,6 +51,14 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
         this.height = COLLAPSED_HEIGHT;
     }
 
+    /** Closes the expanded palette when a containing screen cannot safely fit it. */
+    public void collapse() {
+        expanded = false;
+        draggingSaturationValue = false;
+        draggingHue = false;
+        height = COLLAPSED_HEIGHT;
+    }
+
     @Override
     public void render(UiCanvas canvas, float mouseX, float mouseY) {
         cursorBlink++;

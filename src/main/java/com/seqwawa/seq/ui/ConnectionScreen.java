@@ -40,8 +40,6 @@ public class ConnectionScreen extends Screen {
     private static final float NOTE_OFFSET = 22;
     private static final float AUTH_BUTTON_WIDTH = 118;
 
-    private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
-
     private float nvgMouseX;
     private float nvgMouseY;
 
@@ -85,12 +83,18 @@ public class ConnectionScreen extends Screen {
         float btnY = 50;
         float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
 
-        drawSidebarButton(canvas, fontName, btnX, btnY, btnW, "Partyfinder", false);
-        drawSidebarButton(canvas, fontName, btnX, btnY + step, btnW, "Connection", true);
-        drawSidebarButton(canvas, fontName, btnX, btnY + step * 2, btnW, "Settings", false);
-        drawSidebarButton(canvas, fontName, btnX, btnY + step * 3, btnW, "Map", false);
-        drawSidebarButton(canvas, fontName, btnX, btnY + step * 4, btnW, "Ingredients", false);
-        drawSidebarButton(canvas, fontName, btnX, btnY + step * 5, btnW, "Github", false);
+        var destinations = SequoiaSidebarNavigation.destinations();
+        for (int row = 0; row < destinations.size(); row++) {
+            var destination = destinations.get(row);
+            drawSidebarButton(
+                    canvas,
+                    fontName,
+                    btnX,
+                    btnY + step * row,
+                    btnW,
+                    destination.label(),
+                    destination == SequoiaSidebarNavigation.Destination.CONNECTION);
+        }
     }
 
     private void renderHeader(UiCanvas canvas, String fontName, float panelX, float panelWidth) {
@@ -229,27 +233,15 @@ public class ConnectionScreen extends Screen {
         float btnY = 50;
         float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
 
-        if (isHovered(mx, my, btnX, btnY, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new PartyFinderScreen(this));
-            return true;
-        }
-        if (isHovered(mx, my, btnX, btnY + step, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-            return true;
-        }
-        if (isHovered(mx, my, btnX, btnY + step * 2, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new SettingsScreen(this));
-            return true;
-        }
-        if (isHovered(mx, my, btnX, btnY + step * 3, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new WorldMapScreen(this));
-            return true;
-        }
-        if (isHovered(mx, my, btnX, btnY + step * 4, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new IngredientGuideScreen(this));
-            return true;
-        }
-        if (isHovered(mx, my, btnX, btnY + step * 5, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-            openGithub();
+        var destinations = SequoiaSidebarNavigation.destinations();
+        for (int row = 0; row < destinations.size(); row++) {
+            if (!isHovered(mx, my, btnX, btnY + step * row, btnW, SIDEBAR_BUTTON_HEIGHT)) {
+                continue;
+            }
+            var destination = destinations.get(row);
+            if (destination != SequoiaSidebarNavigation.Destination.CONNECTION) {
+                SequoiaSidebarNavigation.open(destination, this);
+            }
             return true;
         }
 
@@ -307,13 +299,6 @@ public class ConnectionScreen extends Screen {
             String text) {
         canvas.drawText(text, x, y, new UiCanvas.TextStyle(
                 font, size, color, horizontalAlign, UiCanvas.VerticalAlign.MIDDLE));
-    }
-
-    private void openGithub() {
-        try {
-            java.awt.Desktop.getDesktop().browse(java.net.URI.create(GITHUB_URL));
-        } catch (Exception ignored) {
-        }
     }
 
     private boolean isHovered(float mx, float my, float bx, float by, float bw, float bh) {

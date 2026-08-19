@@ -128,7 +128,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float MODAL_LABEL_SIZE = 12;
     private static final float TAG_CHIP_FONT_SIZE = 11;
 
-    private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
     private static final String GAZ_EARS_ASSET = "gaz_ears";
     private static final String GAZ_EARS_UUID = "66efb975-31b4-499e-9b46-a34980edd8ee";
     private static final String LEA_UUID = "7792daec-00d8-49ce-b44e-fe97c5ec4e75";
@@ -435,47 +434,19 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
         float btnY = 50;
 
-        drawSidebarButton(canvas, fontName, btnX, btnY, btnW, "Partyfinder", true);
-        drawSidebarButton(
-                canvas,
-                fontName,
-                btnX,
-                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING),
-                btnW,
-                "Connection",
-                false);
-        drawSidebarButton(
-                canvas,
-                fontName,
-                btnX,
-                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
-                btnW,
-                "Settings",
-                false);
-        drawSidebarButton(
-                canvas,
-                fontName,
-                btnX,
-                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
-                btnW,
-                "Map",
-                false);
-        drawSidebarButton(
-                canvas,
-                fontName,
-                btnX,
-                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
-                btnW,
-                "Ingredients",
-                false);
-        drawSidebarButton(
-                canvas,
-                fontName,
-                btnX,
-                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5,
-                btnW,
-                "Github",
-                false);
+        float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
+        var destinations = SequoiaSidebarNavigation.destinations();
+        for (int row = 0; row < destinations.size(); row++) {
+            var destination = destinations.get(row);
+            drawSidebarButton(
+                    canvas,
+                    fontName,
+                    btnX,
+                    btnY + step * row,
+                    btnW,
+                    destination.label(),
+                    destination == SequoiaSidebarNavigation.Destination.PARTY_FINDER);
+        }
     }
 
     private void drawSidebarButton(
@@ -2170,57 +2141,15 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
         float btnStartY = 50;
 
-        if (isHovered(mx, my, btnX, btnStartY, btnW, SIDEBAR_BUTTON_HEIGHT)) return true;
-        if (isHovered(
-                mx,
-                my,
-                btnX,
-                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING),
-                btnW,
-                SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new ConnectionScreen(this));
-            return true;
-        }
-        if (isHovered(
-                mx,
-                my,
-                btnX,
-                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
-                btnW,
-                SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new SettingsScreen(this));
-            return true;
-        }
-        if (isHovered(
-                mx,
-                my,
-                btnX,
-                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
-                btnW,
-                SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new WorldMapScreen(this));
-            return true;
-        }
-        if (isHovered(
-                mx,
-                my,
-                btnX,
-                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
-                btnW,
-                SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new IngredientGuideScreen(this));
-            return true;
-        }
-        if (isHovered(
-                mx,
-                my,
-                btnX,
-                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5,
-                btnW,
-                SIDEBAR_BUTTON_HEIGHT)) {
-            try {
-                java.awt.Desktop.getDesktop().browse(java.net.URI.create(GITHUB_URL));
-            } catch (Exception ignored) {
+        float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
+        var destinations = SequoiaSidebarNavigation.destinations();
+        for (int row = 0; row < destinations.size(); row++) {
+            if (!isHovered(mx, my, btnX, btnStartY + step * row, btnW, SIDEBAR_BUTTON_HEIGHT)) {
+                continue;
+            }
+            var destination = destinations.get(row);
+            if (destination != SequoiaSidebarNavigation.Destination.PARTY_FINDER) {
+                SequoiaSidebarNavigation.open(destination, this);
             }
             return true;
         }

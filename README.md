@@ -22,6 +22,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Clickable world names in chat, so a called-out world is one click away
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
+- Seq-only war planner with timed availability, exclusive 1–5 player parties, a shared Lead + three Eco board, and collaborative territory zones
 - Raid tracking and announcements
 - Per-player raid gambit counts parsed natively from the raid-start roster
 - Interactive world map with gathering nodes analysis and active world events
@@ -54,6 +55,9 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq`: open the main Sequoia screen
 - `/seq p`: open the Sequoia party finder UI
 - `/seq map`: open the Sequoia world map
+- `/seq war`: open the Seq-only war planner after the backend authorizes the current member
+- `/seq war available <minutes>`: advertise war availability for 1–1440 minutes
+- `/seq war unavailable`: clear your war availability
 - `/seq connect`: connect to the backend
 - `/seq status`: show connection state
 - `/seq logout`: clear the current backend session
@@ -81,6 +85,9 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq map minSamples <count>`
 - `/seq map reset`
 - `/seq map debug`
+- `/seq war`
+- `/seq war available <minutes>`
+- `/seq war unavailable`
 - `/seq party`
 - `/seq p`
 - `/seq party list`
@@ -107,6 +114,25 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq party game invite-all`
 
 </details>
+
+## War planner
+
+The planner uses backend schema v2: party membership is separate from the
+shared Lead/Eco support slots, so support players may also join a party. The
+zone map provides palette colors, multi-party assignment, territory routes,
+responsive full-map zone previews, and production-based resource coloring. Stored
+resources do not affect color. Ordinary 9k emerald income is treated as the
+baseline; territories with 18k base emerald production are highlighted as
+emerald generators.
+
+The War Planner entry and `/seq war` command only appear after the protected backend snapshot confirms that the
+current account is a Sequoia member. Members can advertise timed availability and see their own team immediately;
+authorized managers can atomically create or edit parties of one to five people, while one shared Lead and three Eco
+slots remain independent of party membership. Managers choose `HQ Team`, `VLow Munch`, or `FFA` from the team editor;
+the backend keeps HQ unique and assigns the numeric VLow/FFA suffixes. Compact team cards show each member's
+Solo/DPS/Tank capabilities without colliding with manager actions. The Zones view assigns named, colored groups of
+territories to teams and previews each zone against the complete territory map.
+Composition capabilities, eligibility, team exclusivity, versions, and all mutations remain server-authoritative.
 
 ## World map
 
