@@ -71,7 +71,8 @@ public final class WarPlannerScreen extends Screen {
     private static final float WAR_MAP_ZONE_ROW_STEP = 66;
     private static final float WAR_MAP_CATEGORY_ROW_HEIGHT = 26;
     private static final float WAR_MAP_CATEGORY_ROW_STEP = 30;
-    private static final float WAR_MAP_SIDEBAR_CONTENT_TOP = 54;
+    private static final float WAR_MAP_SIDEBAR_CONTENT_TOP = 34;
+    private static final float WAR_MAP_SIDEBAR_BOTTOM_PADDING = 6;
     private static final double WAR_MAP_MIN_ZOOM = .015;
     private static final double WAR_MAP_MAX_ZOOM = 1.8;
     private static final float BUTTON_HEIGHT = 22;
@@ -125,6 +126,7 @@ public final class WarPlannerScreen extends Screen {
     private float fittedWarMapHeight = -1;
     private final Set<Long> hiddenZoneIds = new java.util.HashSet<>();
     private final Set<Long> hiddenZoneCategoryIds = new java.util.HashSet<>();
+    private final Set<Long> collapsedZoneCategoryIds = new java.util.HashSet<>();
     private GuildTerritory hoveredWarMapTerritory;
     private MemberDrag memberDrag;
     private ZoneDrag zoneDrag;
@@ -254,11 +256,11 @@ public final class WarPlannerScreen extends Screen {
         }
 
         String[] labels = layout.compact()
-                ? new String[] {"30m", "1h", "2h", "Off"}
-                : new String[] {"30 min", "1 hour", "2 hours", "Unavailable"};
+                ? new String[] {"30m", "1h", "2h", "Custom", "Off"}
+                : new String[] {"30 min", "1 hour", "2 hours", "Custom", "Unavailable"};
         for (int index = 0; index < labels.length; index++) {
             button(canvas, layout.buttonX(index), y + layout.y(), layout.buttonWidth(index), BUTTON_HEIGHT,
-                    labels[index], index == 3, manager.isMutating());
+                    labels[index], index == 4, manager.isMutating());
         }
     }
 
@@ -706,39 +708,34 @@ public final class WarPlannerScreen extends Screen {
     private void renderWarMapSidebar(
             UiCanvas canvas, WarPlannerSnapshot snapshot, float x, float top, float width, float bottom) {
         canvas.fillRoundedRect(x, top, width, bottom - top, 5, plannerBackground(color(BACKGROUND_CONTENT)));
-        text(canvas, "Zones", x + 10, top + 16, 13, color(ACCENT_PRIMARY), false);
         if (manager.canManage()) {
             float actionWidth = (width - 18) / 2;
-            button(canvas, x + 6, top + 27, actionWidth, 20, "+ Category", false, manager.isMutating());
-            button(canvas, x + 12 + actionWidth, top + 27, actionWidth, 20, "+ Zone", false, manager.isMutating());
+            button(canvas, x + 6, top + 7, actionWidth, 20, "+ Category", false, manager.isMutating());
+            button(canvas, x + 12 + actionWidth, top + 7, actionWidth, 20, "+ Zone", false, manager.isMutating());
         } else {
-            text(canvas, "Click visibility controls", x + 10, top + 36, 8, color(TEXT_MUTED), false);
+            text(canvas, "Click visibility controls", x + 10, top + 16, 8, color(TEXT_MUTED), false);
         }
-        List<ZoneSidebarEntry> entries = zoneSidebarEntries(snapshot);
+        List<ZoneSidebarEntry> entries = zoneSidebarEntries(snapshot, collapsedZoneCategoryIds);
         if (entries.isEmpty()) {
             text(canvas, manager.canManage() ? "Create a zone to begin." : "No zones configured.",
-                    x + 10, top + 70, 10, color(TEXT_MUTED), false);
+                    x + 10, top + 50, 10, color(TEXT_MUTED), false);
             return;
         }
-        float availableHeight = bottom - (top + WAR_MAP_SIDEBAR_CONTENT_TOP) - 14;
+        float availableHeight = bottom
+                - (top + WAR_MAP_SIDEBAR_CONTENT_TOP)
+                - WAR_MAP_SIDEBAR_BOTTOM_PADDING;
         int start = zoneSidebarScrollStart(scrollRows, entries, availableHeight);
         float rowY = top + WAR_MAP_SIDEBAR_CONTENT_TOP;
-        int renderedThrough = start;
         for (int index = start; index < entries.size(); index++) {
             ZoneSidebarEntry entry = entries.get(index);
             float rowHeight = entry.height();
-            if (rowY + rowHeight > bottom - 13 && index > start) break;
+            if (rowY + rowHeight > bottom - WAR_MAP_SIDEBAR_BOTTOM_PADDING && index > start) break;
             if (entry.categoryHeader()) {
                 renderZoneCategoryRow(canvas, entry, x, rowY, width);
             } else {
                 renderZoneRow(canvas, snapshot, entry.zone(), x, rowY, width);
             }
             rowY += entry.step();
-            renderedThrough = index + 1;
-        }
-        if (start > 0 || renderedThrough < entries.size()) {
-            text(canvas, (start + 1) + "–" + renderedThrough + "/" + entries.size() + " · scroll",
-                    x + width / 2, bottom - 7, 8, color(TEXT_MUTED), true);
         }
         if (zoneDrag != null && zoneDrag.active()) {
             canvas.fillRoundedRect(nvgMouseX + 8, nvgMouseY - 10, 100, 20, 4, color(ACCENT_PRIMARY_DARK));
@@ -750,11 +747,14 @@ public final class WarPlannerScreen extends Screen {
     private void renderZoneCategoryRow(
             UiCanvas canvas, ZoneSidebarEntry entry, float x, float rowY, float width) {
         boolean displayed = !hiddenZoneCategoryIds.contains(entry.categoryId());
+        boolean collapsed = containsCategory(collapsedZoneCategoryIds, entry.categoryId());
         canvas.fillRoundedRect(x + 6, rowY, width - 12, WAR_MAP_CATEGORY_ROW_HEIGHT, 4,
                 plannerBackground(color(CONTROL_INPUT)));
         float controlsWidth = manager.canManage() && entry.category() != null ? 74 : 42;
-        text(canvas, truncate(entry.label(), availableCharacters(x + 14, x + width - controlsWidth - 8, 10, 22)),
-                x + 14, rowY + WAR_MAP_CATEGORY_ROW_HEIGHT / 2, 10,
+        text(canvas, collapsed ? "▶" : "▼", x + 15, rowY + WAR_MAP_CATEGORY_ROW_HEIGHT / 2, 8,
+                color(TEXT_SECONDARY), true);
+        text(canvas, truncate(entry.label(), availableCharacters(x + 25, x + width - controlsWidth - 8, 10, 22)),
+                x + 25, rowY + WAR_MAP_CATEGORY_ROW_HEIGHT / 2, 10,
                 color(displayed ? TEXT_PRIMARY : TEXT_MUTED), false);
         if (manager.canManage() && entry.category() != null) {
             button(canvas, x + width - 70, rowY + 3, 38, 20, displayed ? "Hide" : "Show", false, false);
@@ -860,18 +860,26 @@ public final class WarPlannerScreen extends Screen {
     }
 
     static List<ZoneSidebarEntry> zoneSidebarEntries(WarPlannerSnapshot snapshot) {
+        return zoneSidebarEntries(snapshot, Set.of());
+    }
+
+    static List<ZoneSidebarEntry> zoneSidebarEntries(
+            WarPlannerSnapshot snapshot, Set<Long> collapsedCategoryIds) {
         if (snapshot == null) return List.of();
+        Set<Long> collapsed = collapsedCategoryIds == null ? Set.of() : collapsedCategoryIds;
         ArrayList<ZoneSidebarEntry> entries = new ArrayList<>();
         List<ZoneCategory> categories = snapshot.zoneCategories().stream()
                 .sorted(Comparator.comparingInt(ZoneCategory::position).thenComparingLong(ZoneCategory::id))
                 .toList();
         for (ZoneCategory category : categories) {
             entries.add(ZoneSidebarEntry.category(category));
-            snapshot.zones().stream()
-                    .filter(zone -> java.util.Objects.equals(zone.categoryId(), category.id()))
-                    .sorted(Comparator.comparingInt(Zone::position).thenComparingLong(Zone::id))
-                    .map(zone -> ZoneSidebarEntry.zone(category.id(), zone))
-                    .forEach(entries::add);
+            if (!containsCategory(collapsed, category.id())) {
+                snapshot.zones().stream()
+                        .filter(zone -> java.util.Objects.equals(zone.categoryId(), category.id()))
+                        .sorted(Comparator.comparingInt(Zone::position).thenComparingLong(Zone::id))
+                        .map(zone -> ZoneSidebarEntry.zone(category.id(), zone))
+                        .forEach(entries::add);
+            }
         }
         List<Zone> uncategorized = snapshot.zones().stream()
                 .filter(zone -> zone.categoryId() == null
@@ -880,32 +888,42 @@ public final class WarPlannerScreen extends Screen {
                 .toList();
         if (!uncategorized.isEmpty()) {
             entries.add(ZoneSidebarEntry.uncategorized());
-            uncategorized.stream().map(zone -> ZoneSidebarEntry.zone(null, zone)).forEach(entries::add);
+            if (!containsCategory(collapsed, null)) {
+                uncategorized.stream().map(zone -> ZoneSidebarEntry.zone(null, zone)).forEach(entries::add);
+            }
         }
         return List.copyOf(entries);
     }
 
     static int zoneSidebarScrollStart(int requested, List<ZoneSidebarEntry> entries, float availableHeight) {
         if (entries == null || entries.isEmpty()) return 0;
-        float tailHeight = 0;
         int latestUsefulStart = entries.size() - 1;
-        for (int index = entries.size() - 1; index >= 0; index--) {
-            tailHeight += entries.get(index).step();
+        float tailHeight = entries.get(latestUsefulStart).height();
+        for (int index = latestUsefulStart - 1; index >= 0; index--) {
+            float candidateHeight = entries.get(index).step() + tailHeight;
+            if (candidateHeight > availableHeight) break;
+            tailHeight = candidateHeight;
             latestUsefulStart = index;
-            if (tailHeight >= availableHeight) break;
         }
         return Math.max(0, Math.min(requested, latestUsefulStart));
     }
 
     private static ZoneSidebarPlacement zoneSidebarPlacementAt(
-            WarPlannerSnapshot snapshot, int requestedScroll, float top, float bottom, float my) {
-        List<ZoneSidebarEntry> entries = zoneSidebarEntries(snapshot);
-        float availableHeight = bottom - (top + WAR_MAP_SIDEBAR_CONTENT_TOP) - 14;
+            WarPlannerSnapshot snapshot,
+            Set<Long> collapsedCategoryIds,
+            int requestedScroll,
+            float top,
+            float bottom,
+            float my) {
+        List<ZoneSidebarEntry> entries = zoneSidebarEntries(snapshot, collapsedCategoryIds);
+        float availableHeight = bottom
+                - (top + WAR_MAP_SIDEBAR_CONTENT_TOP)
+                - WAR_MAP_SIDEBAR_BOTTOM_PADDING;
         int start = zoneSidebarScrollStart(requestedScroll, entries, availableHeight);
         float rowY = top + WAR_MAP_SIDEBAR_CONTENT_TOP;
         for (int index = start; index < entries.size(); index++) {
             ZoneSidebarEntry entry = entries.get(index);
-            if (rowY + entry.height() > bottom - 13 && index > start) break;
+            if (rowY + entry.height() > bottom - WAR_MAP_SIDEBAR_BOTTOM_PADDING && index > start) break;
             if (my >= rowY && my <= rowY + entry.height()) {
                 return new ZoneSidebarPlacement(entry, rowY, index);
             }
@@ -1356,6 +1374,10 @@ public final class WarPlannerScreen extends Screen {
             return setAvailability(120);
         }
         if (hit(mx, my, availability.buttonX(3), availabilityY, availability.buttonWidth(3), BUTTON_HEIGHT)) {
+            SeqClient.mc.setScreen(new WarAvailabilityEditorScreen(this));
+            return true;
+        }
+        if (hit(mx, my, availability.buttonX(4), availabilityY, availability.buttonWidth(4), BUTTON_HEIGHT)) {
             showResult(manager.clearAvailability());
             return true;
         }
@@ -1385,7 +1407,8 @@ public final class WarPlannerScreen extends Screen {
             WarPlannerSnapshot snapshot, float mx, float my, float width, float height) {
         float top = contentTop();
         WarMapLayout layout = warMapLayout(width, top, height - 42);
-        ZoneSidebarPlacement placement = zoneSidebarPlacementAt(snapshot, scrollRows, top, height - 42, my);
+        ZoneSidebarPlacement placement = zoneSidebarPlacementAt(
+                snapshot, collapsedZoneCategoryIds, scrollRows, top, height - 42, my);
         if (placement == null) return false;
         ZoneSidebarEntry entry = placement.entry();
         if (entry.categoryHeader()) {
@@ -1541,17 +1564,22 @@ public final class WarPlannerScreen extends Screen {
         float sidebarX = layout.sidebarX();
         if (manager.canManage()) {
             float headerActionWidth = (sidebarWidth - 18) / 2;
-            if (hit(mx, my, sidebarX + 6, top + 27, headerActionWidth, 20)) {
+            if (hit(mx, my, sidebarX + 6, top + 7, headerActionWidth, 20)) {
                 SeqClient.mc.setScreen(new WarZoneCategoryEditorScreen(this, null));
                 return true;
             }
-            if (hit(mx, my, sidebarX + 12 + headerActionWidth, top + 27, headerActionWidth, 20)) {
+            if (hit(mx, my, sidebarX + 12 + headerActionWidth, top + 7, headerActionWidth, 20)) {
                 SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, null));
                 return true;
             }
         }
         ZoneSidebarPlacement placement = zoneSidebarPlacementAt(
-                snapshot, scrollRows, top, MinecraftUiRenderer.screenHeight() - 42, my);
+                snapshot,
+                collapsedZoneCategoryIds,
+                scrollRows,
+                top,
+                MinecraftUiRenderer.screenHeight() - 42,
+                my);
         if (placement == null) return false;
         ZoneSidebarEntry entry = placement.entry();
         float rowY = placement.y();
@@ -1579,6 +1607,7 @@ public final class WarPlannerScreen extends Screen {
                 }
                 return true;
             }
+            toggleZoneCategoryFold(entry.categoryId());
             return true;
         }
         Zone zone = entry.zone();
@@ -1620,6 +1649,10 @@ public final class WarPlannerScreen extends Screen {
 
     private void toggleZoneCategoryDisplay(Long categoryId) {
         if (!hiddenZoneCategoryIds.remove(categoryId)) hiddenZoneCategoryIds.add(categoryId);
+    }
+
+    private void toggleZoneCategoryFold(Long categoryId) {
+        if (!collapsedZoneCategoryIds.remove(categoryId)) collapsedZoneCategoryIds.add(categoryId);
     }
 
     @Override
@@ -1704,7 +1737,8 @@ public final class WarPlannerScreen extends Screen {
         if (snapshot == null || manager.isMutating()) return;
         WarMapLayout layout = warMapLayout(width, contentTop(), height - 42);
         if (!layout.containsSidebar(mx, my)) return;
-        ZoneSidebarPlacement placement = zoneSidebarPlacementAt(snapshot, scrollRows, contentTop(), height - 42, my);
+        ZoneSidebarPlacement placement = zoneSidebarPlacementAt(
+                snapshot, collapsedZoneCategoryIds, scrollRows, contentTop(), height - 42, my);
         if (placement == null) return;
         ZoneDropTarget target = zoneDropTarget(snapshot, placement, my, drag.zoneId());
         if (target == null) return;
@@ -1898,8 +1932,10 @@ public final class WarPlannerScreen extends Screen {
                     return true;
                 }
                 if (layout.containsSidebar(localMouseX, localMouseY)) {
-                    List<ZoneSidebarEntry> entries = zoneSidebarEntries(snapshot);
-                    float availableHeight = layout.mapHeight() - WAR_MAP_SIDEBAR_CONTENT_TOP - 14;
+                    List<ZoneSidebarEntry> entries = zoneSidebarEntries(snapshot, collapsedZoneCategoryIds);
+                    float availableHeight = layout.mapHeight()
+                            - WAR_MAP_SIDEBAR_CONTENT_TOP
+                            - WAR_MAP_SIDEBAR_BOTTOM_PADDING;
                     scrollRows = zoneSidebarScrollStart(scrollRows + delta, entries, availableHeight);
                 }
                 return true;
@@ -2448,9 +2484,9 @@ public final class WarPlannerScreen extends Screen {
     }
 
     static AvailabilityLayout availabilityLayout(float width) {
-        if (width >= 460) return new AvailabilityLayout(Math.max(155, width - 360), 13, 58, 76, 6, false);
+        if (width >= 520) return new AvailabilityLayout(Math.max(155, width - 360), 13, 58, 76, 6, false);
         float gap = 4;
-        float buttonWidth = Math.max(1, (width - PADDING * 2 - gap * 3) / 4);
+        float buttonWidth = Math.max(1, (width - PADDING * 2 - gap * 4) / 5);
         return new AvailabilityLayout(PADDING, 23, buttonWidth, buttonWidth, gap, true);
     }
 
@@ -2637,11 +2673,13 @@ public final class WarPlannerScreen extends Screen {
         return team == null ? "Team #" + id : team.name();
     }
 
-    private static String formatDuration(Duration duration) {
+    static String formatDuration(Duration duration) {
         long seconds = Math.max(0, duration.getSeconds());
-        long hours = seconds / 3600;
-        long minutes = (seconds % 3600 + 59) / 60;
-        return hours > 0 ? hours + "h " + minutes + "m" : Math.max(1, minutes) + "m";
+        long totalMinutes = Math.max(1, (seconds + 59) / 60);
+        long hours = totalMinutes / 60;
+        long minutes = totalMinutes % 60;
+        if (hours == 0) return minutes + "m";
+        return minutes == 0 ? hours + "h" : hours + "h " + minutes + "m";
     }
 
     private static Color parseColor(String value, Color fallback) {
@@ -2719,13 +2757,18 @@ public final class WarPlannerScreen extends Screen {
     }
 
     record AvailabilityLayout(
-            float x, float y, float regularButtonWidth, float lastButtonWidth, float gap, boolean compact) {
+            float x, float y, float regularButtonWidth, float actionButtonWidth, float gap, boolean compact) {
         float buttonX(int index) {
-            return x + index * (regularButtonWidth + gap);
+            int regularButtonsBefore = Math.min(index, 3);
+            int actionButtonsBefore = Math.max(0, index - 3);
+            return x
+                    + regularButtonsBefore * regularButtonWidth
+                    + actionButtonsBefore * actionButtonWidth
+                    + index * gap;
         }
 
         float buttonWidth(int index) {
-            return index == 3 ? lastButtonWidth : regularButtonWidth;
+            return index >= 3 ? actionButtonWidth : regularButtonWidth;
         }
     }
 

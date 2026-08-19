@@ -14,11 +14,20 @@ import com.seqwawa.seq.model.war.WarCompositionTargets;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.model.war.WarTeamType;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class WarPlannerScreenTest {
+    @Test
+    void availabilityCountdownCarriesRoundedMinutesIntoWholeHours() {
+        assertEquals("30m", WarPlannerScreen.formatDuration(Duration.ofMinutes(30)));
+        assertEquals("1h", WarPlannerScreen.formatDuration(Duration.ofSeconds(3_599)));
+        assertEquals("2h", WarPlannerScreen.formatDuration(Duration.ofSeconds(7_199)));
+        assertEquals("1h 1m", WarPlannerScreen.formatDuration(Duration.ofMinutes(61)));
+    }
+
     @Test
     void wideScreensUseACenteredCappedPlannerViewport() {
         assertEquals(new WarPlannerScreen.PlannerViewport(510, 900), WarPlannerScreen.plannerViewport(1920));
@@ -60,10 +69,11 @@ class WarPlannerScreenTest {
         WarPlannerScreen.AvailabilityLayout wide = WarPlannerScreen.availabilityLayout(680);
 
         assertTrue(compact.compact());
-        assertTrue(compact.buttonX(3) + compact.buttonWidth(3) <= 320 - 12);
+        assertTrue(compact.buttonX(4) + compact.buttonWidth(4) <= 320 - 12);
         assertFalse(wide.compact());
         assertEquals(320, wide.x());
         assertEquals(76, wide.buttonWidth(3));
+        assertTrue(wide.buttonX(4) + wide.buttonWidth(4) <= 680 - 10);
     }
 
     @Test
@@ -400,6 +410,44 @@ class WarPlannerScreenTest {
         assertEquals(List.of("Front", "Center", "North", "Back", "Uncategorized", "Loose"),
                 entries.stream().map(WarPlannerScreen.ZoneSidebarEntry::label).toList());
         assertEquals(List.of(loose), WarPlannerScreen.visibleZones(snapshot.zones(), java.util.Set.of(10L), java.util.Set.of(5L)));
+    }
+
+    @Test
+    void foldedZoneCategoriesKeepHeadersAndHideOnlyTheirSidebarRows() {
+        WarPlannerSnapshot.ZoneCategory front = new WarPlannerSnapshot.ZoneCategory(5, "Front", 0, 1L);
+        WarPlannerSnapshot.ZoneCategory back = new WarPlannerSnapshot.ZoneCategory(6, "Back", 1, 1L);
+        WarPlannerSnapshot.Zone north = new WarPlannerSnapshot.Zone(
+                11, "North", "#112233", List.of(), 1L, List.of("A"), 5L, 0);
+        WarPlannerSnapshot.Zone south = new WarPlannerSnapshot.Zone(
+                12, "South", "#223344", List.of(), 1L, List.of("B"), 6L, 0);
+        WarPlannerSnapshot.Zone loose = new WarPlannerSnapshot.Zone(
+                13, "Loose", "#334455", List.of(), 1L, List.of("C"), null, 0);
+        WarPlannerSnapshot snapshot = categorizedSnapshot(List.of(north, south, loose), List.of(front, back));
+        java.util.HashSet<Long> folded = new java.util.HashSet<>();
+        folded.add(5L);
+        folded.add(null);
+
+        assertEquals(
+                List.of("Front", "Back", "South", "Uncategorized"),
+                WarPlannerScreen.zoneSidebarEntries(snapshot, folded).stream()
+                        .map(WarPlannerScreen.ZoneSidebarEntry::label)
+                        .toList());
+    }
+
+    @Test
+    void zoneSidebarCanScrollFarEnoughToRenderTheLastRow() {
+        WarPlannerSnapshot.ZoneCategory front = new WarPlannerSnapshot.ZoneCategory(5, "Front", 0, 1L);
+        WarPlannerSnapshot.Zone first = new WarPlannerSnapshot.Zone(
+                10, "First", "#112233", List.of(), 2L, List.of("A"), 5L, 0);
+        WarPlannerSnapshot.Zone last = new WarPlannerSnapshot.Zone(
+                11, "Last", "#223344", List.of(), 3L, List.of("B"), 5L, 1);
+        List<WarPlannerScreen.ZoneSidebarEntry> entries = List.of(
+                WarPlannerScreen.ZoneSidebarEntry.category(front),
+                WarPlannerScreen.ZoneSidebarEntry.zone(5L, first),
+                WarPlannerScreen.ZoneSidebarEntry.zone(5L, last));
+
+        assertEquals(2, WarPlannerScreen.zoneSidebarScrollStart(99, entries, 96));
+        assertEquals(1, WarPlannerScreen.zoneSidebarScrollStart(99, entries, 128));
     }
 
     @Test
