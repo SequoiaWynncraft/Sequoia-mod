@@ -116,6 +116,7 @@ public final class WarPlannerScreen extends Screen {
     private float fittedWarMapWidth = -1;
     private float fittedWarMapHeight = -1;
     private final Set<Long> hiddenZoneIds = new java.util.HashSet<>();
+    private GuildTerritory hoveredWarMapTerritory;
     private MemberDrag memberDrag;
     private int unassignedScrollRows;
     private boolean roleEditorOpen;
@@ -468,6 +469,7 @@ public final class WarPlannerScreen extends Screen {
         float y = layout.mapY();
         float width = layout.mapWidth();
         float height = layout.mapHeight();
+        hoveredWarMapTerritory = null;
         canvas.fillRoundedRect(x, y, width, height, 3, plannerBackground(color(CONTROL_INPUT)));
         List<GuildTerritory> allMapTerritories = territoryIndex.territories();
         boolean locked = manager.canManage() && territoriesLocked();
@@ -488,6 +490,12 @@ public final class WarPlannerScreen extends Screen {
         ArrayList<GuildTerritory> displayedTerritories = new ArrayList<>(coreTerritories);
         displayedTerritories.addAll(contextTerritories);
         MapViewport viewport = warMapViewport(layout, displayedTerritories, locked);
+        Set<String> displayedNames = displayedTerritories.stream()
+                .map(GuildTerritory::name)
+                .map(name -> name.toLowerCase(Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet());
+        hoveredWarMapTerritory = territoryAt(
+                territoryIndex, viewport, displayedNames, nvgMouseX, nvgMouseY);
         MapBounds coordinateBounds = mapImageBounds();
         float scale = (float) viewport.pixelsPerBlock();
         float offsetX = viewport.worldToScreenX(coordinateBounds.minX());
@@ -507,6 +515,26 @@ public final class WarPlannerScreen extends Screen {
         }
         if (resourceColorsEnabled()) {
             drawPreviewResources(canvas, coreTerritories, details, coordinateBounds, offsetX, offsetY, scale);
+        }
+        drawPreviewConnections(
+                canvas,
+                coreTerritories,
+                byName,
+                details,
+                displayedNames,
+                coordinateBounds,
+                offsetX,
+                offsetY,
+                scale);
+        if (hoveredWarMapTerritory != null) {
+            drawPreviewFill(
+                    canvas,
+                    hoveredWarMapTerritory,
+                    coordinateBounds,
+                    offsetX,
+                    offsetY,
+                    scale,
+                    new Color(91, 195, 255, 82));
         }
         Color mapColor = color(TEXT_MUTED);
         drawPreviewOutlines(
@@ -544,20 +572,26 @@ public final class WarPlannerScreen extends Screen {
                     1.8f,
                     1);
         }
-        Set<String> displayedNames = displayedTerritories.stream()
-                .map(GuildTerritory::name)
-                .map(name -> name.toLowerCase(Locale.ROOT))
-                .collect(java.util.stream.Collectors.toSet());
-        drawPreviewConnections(
-                canvas,
-                coreTerritories,
-                byName,
-                details,
-                displayedNames,
-                coordinateBounds,
-                offsetX,
-                offsetY,
-                scale);
+        GuildTerritory hqTerritory = snapshot.hqTerritory() == null ? null : byName.get(snapshot.hqTerritory());
+        if (hqTerritory != null && displayedNames.contains(hqTerritory.name().toLowerCase(Locale.ROOT))) {
+            Color hqColor = new Color(255, 205, 74, 255);
+            drawPreviewOutlines(
+                    canvas,
+                    List.of(hqTerritory),
+                    coordinateBounds,
+                    offsetX,
+                    offsetY,
+                    scale,
+                    hqColor,
+                    2.6f,
+                    2);
+            text(canvas, "HQ", previewX(hqTerritory.centerX(), coordinateBounds, offsetX, scale),
+                    previewY(hqTerritory.centerZ(), coordinateBounds, offsetY, scale),
+                    10, hqColor, true);
+        }
+        if (hoveredWarMapTerritory != null) {
+            drawTerritoryName(canvas, hoveredWarMapTerritory, coordinateBounds, offsetX, offsetY, scale, layout);
+        }
         canvas.resetScissor();
         if (!locked) {
             button(canvas, layout.mapX() + 6, layout.mapY() + 6, 44, BUTTON_HEIGHT, "Fit", false, false);
@@ -753,6 +787,59 @@ public final class WarPlannerScreen extends Screen {
             WarTerritoryPickerScreen.renderResourceFill(
                     canvas, territoryX, territoryY, territoryWidth, territoryHeight, details.get(territory.name()));
         }
+    }
+
+    private static void drawPreviewFill(
+            UiCanvas canvas,
+            GuildTerritory territory,
+            MapBounds fitted,
+            float offsetX,
+            float offsetY,
+            float scale,
+            Color fill) {
+        MapBounds bounds = territory.bounds();
+        float territoryX = previewX(bounds.minX(), fitted, offsetX, scale);
+        float territoryY = previewY(bounds.minZ(), fitted, offsetY, scale);
+        float territoryWidth = Math.max(2, (float) ((bounds.maxX() - bounds.minX()) * scale));
+        float territoryHeight = Math.max(2, (float) ((bounds.maxZ() - bounds.minZ()) * scale));
+        canvas.fillRect(territoryX, territoryY, territoryWidth, territoryHeight, fill);
+    }
+
+    private static void drawTerritoryName(
+            UiCanvas canvas,
+            GuildTerritory territory,
+            MapBounds fitted,
+            float offsetX,
+            float offsetY,
+            float scale,
+            WarMapLayout layout) {
+        float labelWidth = Math.max(1,
+                Math.min(layout.mapWidth() - 12, Math.max(64, territory.name().length() * 6 + 14)));
+        float centerX = previewX(territory.centerX(), fitted, offsetX, scale);
+        float centerY = previewY(territory.centerZ(), fitted, offsetY, scale);
+        float labelX = Math.max(layout.mapX() + 6,
+                Math.min(centerX - labelWidth / 2, layout.mapX() + layout.mapWidth() - labelWidth - 6));
+        float labelY = Math.max(layout.mapY() + 34,
+                Math.min(centerY - 11, layout.mapY() + layout.mapHeight() - 25));
+        canvas.fillRoundedRect(labelX, labelY, labelWidth, 20, 4, new Color(22, 76, 105, 225));
+        text(canvas, truncate(territory.name(), 34), labelX + labelWidth / 2, labelY + 10,
+                9, new Color(190, 232, 255), true);
+    }
+
+    static GuildTerritory territoryAt(
+            GuildTerritoryIndex territoryIndex,
+            MapViewport viewport,
+            Set<String> displayedNames,
+            float mouseX,
+            float mouseY) {
+        if (territoryIndex == null || viewport == null || !viewport.isInsideScreen(mouseX, mouseY)) return null;
+        GuildTerritory territory = territoryIndex.territoryAt(
+                viewport.screenToWorldX(mouseX), viewport.screenToWorldZ(mouseY));
+        return territory != null
+                        && displayedNames != null
+                        && displayedNames.contains(territory.name().toLowerCase(Locale.ROOT))
+                ? territory
+                : null;
     }
 
     private static void drawPreviewOutlines(
@@ -1039,6 +1126,26 @@ public final class WarPlannerScreen extends Screen {
 
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
+        if (click.button() == 1) {
+            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
+            float my = MinecraftUiRenderer.mouseY(click.y());
+            WarPlannerSnapshot snapshot = manager == null ? null : manager.snapshot();
+            if (!roleEditorOpen
+                    && !teamEditorOpen
+                    && editingSupportSlot == null
+                    && tab == Tab.ZONES
+                    && manager != null
+                    && manager.canManage()
+                    && snapshot != null) {
+                float height = MinecraftUiRenderer.screenHeight();
+                if (rightClickZoneName(snapshot, mx, my, viewport.width(), height)
+                        || rightClickWarMapTerritory(snapshot, mx, my, viewport.width(), height)) {
+                    return true;
+                }
+            }
+            return super.mouseClicked(click, outsideScreen);
+        }
         if (click.button() != 0) {
             return super.mouseClicked(click, outsideScreen);
         }
@@ -1127,6 +1234,50 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         return clickContent(mx, my, width, height) || super.mouseClicked(click, outsideScreen);
+    }
+
+    private boolean rightClickZoneName(
+            WarPlannerSnapshot snapshot, float mx, float my, float width, float height) {
+        float top = contentTop();
+        WarMapLayout layout = warMapLayout(width, top, height - 42);
+        int visibleRows = warMapVisibleZoneRows(layout.mapHeight());
+        int visibleRow = (int) ((my - (top + 40)) / WAR_MAP_ZONE_ROW_STEP);
+        int index = warMapScrollStart(scrollRows, snapshot.zones().size(), visibleRows) + visibleRow;
+        if (visibleRow < 0 || visibleRow >= visibleRows || index < 0 || index >= snapshot.zones().size()) {
+            return false;
+        }
+        float rowY = top + 40 + visibleRow * WAR_MAP_ZONE_ROW_STEP;
+        if (!hit(mx, my, layout.sidebarX() + 18, rowY + 3, layout.sidebarWidth() - 30, 22)) return false;
+        SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, snapshot.zones().get(index), true));
+        return true;
+    }
+
+    private boolean rightClickWarMapTerritory(
+            WarPlannerSnapshot snapshot, float mx, float my, float width, float height) {
+        WarMapLayout layout = warMapLayout(width, contentTop(), height - 42);
+        if (!layout.containsMap(mx, my)) return false;
+        boolean locked = manager.canManage() && territoriesLocked();
+        List<GuildTerritory> allTerritories = territoryIndex.territories();
+        List<GuildTerritory> coreTerritories = visibleMapTerritories(
+                allTerritories, visibleZones(snapshot.zones(), hiddenZoneIds), locked);
+        Map<String, WarPlannerSnapshot.TerritoryDetails> details = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        snapshot.territoryDetails().forEach(detail -> details.put(detail.name(), detail));
+        ArrayList<GuildTerritory> displayedTerritories = new ArrayList<>(coreTerritories);
+        if (locked) {
+            displayedTerritories.addAll(oneHopContextTerritories(allTerritories, coreTerritories, details));
+        }
+        Set<String> displayedNames = displayedTerritories.stream()
+                .map(GuildTerritory::name)
+                .map(name -> name.toLowerCase(Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet());
+        GuildTerritory territory = territoryAt(
+                territoryIndex, warMapViewport(layout, displayedTerritories, locked), displayedNames, mx, my);
+        if (territory == null) return false;
+        if (!manager.isMutating()) {
+            String nextHq = territory.name().equalsIgnoreCase(snapshot.hqTerritory()) ? null : territory.name();
+            showResult(manager.setHqTerritory(nextHq, snapshot.mapVersion()));
+        }
+        return true;
     }
 
     private boolean clickContent(float mx, float my, float width, float height) {

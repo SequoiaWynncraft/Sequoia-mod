@@ -81,6 +81,7 @@ public final class WarTerritoryPickerScreen extends Screen {
     private boolean saving;
     private int teamScrollRows;
     private ControlTarget keyboardTarget;
+    private boolean replaceZoneNameOnType;
 
     private float nvgMouseX;
     private float nvgMouseY;
@@ -95,6 +96,10 @@ public final class WarTerritoryPickerScreen extends Screen {
     private long loadedImageVersion = -1;
 
     public WarTerritoryPickerScreen(Screen parent, Zone original) {
+        this(parent, original, false);
+    }
+
+    WarTerritoryPickerScreen(Screen parent, Zone original, boolean focusName) {
         super(Component.literal("War map zone"));
         this.parent = parent;
         this.original = original;
@@ -108,6 +113,11 @@ public final class WarTerritoryPickerScreen extends Screen {
         territoryService.loadBundledTerritories();
         territoryIndex = territoryService.index();
         mapImageService.requestLoad();
+        if (focusName) {
+            focus = Focus.NAME;
+            keyboardTarget = ControlTarget.named(NAME);
+            replaceZoneNameOnType = true;
+        }
     }
 
     @Override
@@ -217,6 +227,18 @@ public final class WarTerritoryPickerScreen extends Screen {
         MapBounds visible = viewport.visibleBounds();
         Color selectedColor = new Color(zoneColorSetting.getValue());
         Map<String, WarPlannerSnapshot.TerritoryDetails> details = territoryDetails();
+        if (WarPlannerScreen.resourceColorsEnabled()) {
+            for (GuildTerritory territory : territoryIndex.territories()) {
+                if (!access.isVisible(territory.name()) || !intersects(visible, territory.bounds())) continue;
+                MapBounds bounds = territory.bounds();
+                float x = viewport.worldToScreenX(bounds.minX());
+                float y = viewport.worldToScreenZ(bounds.minZ());
+                float w = viewport.worldToScreenX(bounds.maxX()) - x;
+                float h = viewport.worldToScreenZ(bounds.maxZ()) - y;
+                renderResourceFill(canvas, x, y, w, h, details.get(territory.name()));
+            }
+        }
+        drawConnections(canvas, viewport, details, visibleTerritories);
         for (GuildTerritory territory : territoryIndex.territories()) {
             if (!access.isVisible(territory.name()) || !intersects(visible, territory.bounds())) continue;
             MapBounds bounds = territory.bounds();
@@ -227,9 +249,6 @@ public final class WarTerritoryPickerScreen extends Screen {
             boolean selected = selection.contains(territory.name());
             boolean hovered = territory.equals(hoveredTerritory);
             Zone unavailableOwner = access.unavailableOwner(territory.name());
-            if (WarPlannerScreen.resourceColorsEnabled()) {
-                renderResourceFill(canvas, x, y, w, h, details.get(territory.name()));
-            }
             if (unavailableOwner != null) {
                 canvas.fillRect(x, y, w, h, alpha(color(BACKGROUND_BODY_OPAQUE), 135));
             }
@@ -246,7 +265,6 @@ public final class WarTerritoryPickerScreen extends Screen {
                         alpha(color(MAP_TERRITORY), hovered ? 245 : 100));
             }
         }
-        drawConnections(canvas, viewport, details, visibleTerritories);
         canvas.resetScissor();
         if (hoveredTerritory != null) {
             WarPlannerSnapshot.TerritoryDetails detail = details.get(hoveredTerritory.name());
@@ -387,6 +405,7 @@ public final class WarTerritoryPickerScreen extends Screen {
             if (!saving && layout.nameField().contains(mx, my)) {
                 setKeyboardTarget(ControlTarget.named(NAME));
                 focus = Focus.NAME;
+                replaceZoneNameOnType = false;
                 return true;
             }
             WarPlannerSnapshot snapshot = manager.snapshot();
@@ -524,7 +543,12 @@ public final class WarTerritoryPickerScreen extends Screen {
                 return true;
             }
             if (event.key() == GLFW.GLFW_KEY_BACKSPACE) {
-                if (focus == Focus.NAME && !zoneName.isEmpty()) zoneName = zoneName.substring(0, zoneName.length() - 1);
+                if (focus == Focus.NAME && replaceZoneNameOnType) {
+                    zoneName = "";
+                    replaceZoneNameOnType = false;
+                } else if (focus == Focus.NAME && !zoneName.isEmpty()) {
+                    zoneName = zoneName.substring(0, zoneName.length() - 1);
+                }
                 return true;
             }
             return true;
@@ -543,6 +567,10 @@ public final class WarTerritoryPickerScreen extends Screen {
         if (!saving && focus != Focus.NONE) {
             String typed = TextInputHelper.getTypedText(event);
             if (typed != null && typed.length() == 1 && !Character.isISOControl(typed.charAt(0))) {
+                if (focus == Focus.NAME && replaceZoneNameOnType) {
+                    zoneName = "";
+                    replaceZoneNameOnType = false;
+                }
                 if (focus == Focus.NAME && zoneName.length() < 64) zoneName += typed;
             }
             return true;

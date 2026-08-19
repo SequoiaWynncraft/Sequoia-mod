@@ -16,7 +16,9 @@ public record WarPlannerSnapshot(
         SupportBoard support,
         List<Zone> zones,
         List<String> territories,
-        @SerializedName("territory_details") List<TerritoryDetails> territoryDetails) {
+        @SerializedName("territory_details") List<TerritoryDetails> territoryDetails,
+        @SerializedName("hq_territory") String hqTerritory,
+        @SerializedName("map_version") long mapVersion) {
 
     public static final int SUPPORTED_SCHEMA_VERSION = 3;
 
@@ -43,7 +45,66 @@ public record WarPlannerSnapshot(
                 support,
                 zones,
                 territories,
-                territoryDetails);
+                territoryDetails,
+                null,
+                1L);
+    }
+
+    public WarPlannerSnapshot(
+            int schemaVersion,
+            long revision,
+            Instant serverTime,
+            Self self,
+            boolean discordRolesAvailable,
+            List<RosterMember> roster,
+            List<Team> teams,
+            SupportBoard support,
+            List<Zone> zones,
+            List<String> territories,
+            List<TerritoryDetails> territoryDetails) {
+        this(
+                schemaVersion,
+                revision,
+                serverTime,
+                self,
+                discordRolesAvailable,
+                roster,
+                teams,
+                support,
+                zones,
+                territories,
+                territoryDetails,
+                null,
+                1L);
+    }
+
+    public WarPlannerSnapshot(
+            int schemaVersion,
+            long revision,
+            Instant serverTime,
+            Self self,
+            boolean discordRolesAvailable,
+            List<RosterMember> roster,
+            List<Team> teams,
+            SupportBoard support,
+            List<Zone> zones,
+            List<String> territories,
+            List<TerritoryDetails> territoryDetails,
+            String hqTerritory) {
+        this(
+                schemaVersion,
+                revision,
+                serverTime,
+                self,
+                discordRolesAvailable,
+                roster,
+                teams,
+                support,
+                zones,
+                territories,
+                territoryDetails,
+                hqTerritory,
+                1L);
     }
 
     public WarPlannerSnapshot {
@@ -53,6 +114,7 @@ public record WarPlannerSnapshot(
         zones = zones == null ? List.of() : List.copyOf(zones);
         territories = territories == null ? List.of() : List.copyOf(territories);
         territoryDetails = territoryDetails == null ? List.of() : List.copyOf(territoryDetails);
+        mapVersion = Math.max(1L, mapVersion);
     }
 
     public boolean isSupported() {
@@ -72,7 +134,9 @@ public record WarPlannerSnapshot(
                 support,
                 zones,
                 territories,
-                territoryDetails);
+                territoryDetails,
+                hqTerritory,
+                mapVersion);
     }
 
     public RosterMember caller() {

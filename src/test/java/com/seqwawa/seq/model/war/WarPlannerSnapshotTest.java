@@ -40,6 +40,8 @@ class WarPlannerSnapshotTest {
                   ]},
                   "zones": [{"id": 8, "name": "North", "color": "#AABBCC",
                     "assigned_team_ids": [12], "version": 4, "territories": ["Ragni"]}],
+                  "hq_territory": "Ragni",
+                  "map_version": 6,
                   "territories": ["Ragni", "Detlas"],
                   "territory_details": [{
                     "name":"Ragni","connections":["Ragni Main Entrance"],"resources":["EMERALD","CROP"]
@@ -63,6 +65,8 @@ class WarPlannerSnapshotTest {
         assertEquals(8L, snapshot.zones().getFirst().id());
         assertEquals(java.util.List.of(12L), snapshot.zones().getFirst().assignedTeamIds());
         assertEquals("#AABBCC", snapshot.zones().getFirst().color());
+        assertEquals("Ragni", snapshot.hqTerritory());
+        assertEquals(6, snapshot.mapVersion());
         assertEquals("self", snapshot.support().slots().getFirst().playerUuid());
         assertEquals(java.util.List.of("Ragni Main Entrance"), snapshot.territoryDetails().getFirst().connections());
     }

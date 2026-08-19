@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.map.GuildTerritory;
+import com.seqwawa.seq.map.GuildTerritoryIndex;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapViewport;
@@ -119,6 +120,17 @@ class WarPlannerScreenTest {
         assertEquals(
                 List.of(b),
                 WarPlannerScreen.oneHopContextTerritories(List.of(a, b, c), List.of(a), details));
+    }
+
+    @Test
+    void mapHoverHitTestingOnlyReturnsDisplayedTerritories() {
+        GuildTerritory territory = GuildTerritory.fromCorners("Detlas", 0, 0, 10, 10);
+        GuildTerritoryIndex index = new GuildTerritoryIndex(List.of(territory));
+        MapViewport viewport = new MapViewport(5, 5, 10, 0, 0, 100, 100);
+
+        assertEquals(territory, WarPlannerScreen.territoryAt(index, viewport, java.util.Set.of("detlas"), 50, 50));
+        assertEquals(null, WarPlannerScreen.territoryAt(index, viewport, java.util.Set.of(), 50, 50));
+        assertEquals(null, WarPlannerScreen.territoryAt(index, viewport, java.util.Set.of("detlas"), 150, 50));
     }
 
     @Test

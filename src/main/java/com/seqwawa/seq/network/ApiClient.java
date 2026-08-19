@@ -327,6 +327,27 @@ public class ApiClient {
         return deleteTyped(versionedWarPlannerPath("/war-planner/zones/" + id, version), WarPlannerSnapshot.class);
     }
 
+    public CompletableFuture<WarPlannerSnapshot> setWarPlannerHqTerritory(String territory, long version) {
+        return put(
+                "/war-planner/map/hq-territory",
+                buildWarHqTerritoryPayload(territory, version),
+                WarPlannerSnapshot.class);
+    }
+
+    static JsonObject buildWarHqTerritoryPayload(String territory, long version) {
+        if (version <= 0) {
+            throw new IllegalArgumentException("A positive map version is required.");
+        }
+        JsonObject body = new JsonObject();
+        if (territory == null) {
+            body.add("territory", JsonNull.INSTANCE);
+        } else {
+            body.addProperty("territory", territory);
+        }
+        body.addProperty("version", version);
+        return body;
+    }
+
     static JsonObject buildWarAvailabilityPayload(int durationMinutes) {
         if (durationMinutes < 1 || durationMinutes > 1440) {
             throw new IllegalArgumentException("Availability duration must be between 1 and 1440 minutes.");

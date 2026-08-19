@@ -221,6 +221,18 @@ class ApiClientTest {
     }
 
     @Test
+    void warHqTerritoryPayloadCanAtomicallyReplaceOrClearTheMarker() {
+        JsonObject assigned = ApiClient.buildWarHqTerritoryPayload("Detlas", 7);
+        JsonObject cleared = ApiClient.buildWarHqTerritoryPayload(null, 8);
+
+        assertEquals("Detlas", assigned.get("territory").getAsString());
+        assertEquals(7, assigned.get("version").getAsLong());
+        assertTrue(cleared.get("territory").isJsonNull());
+        assertEquals(8, cleared.get("version").getAsLong());
+        assertThrows(IllegalArgumentException.class, () -> ApiClient.buildWarHqTerritoryPayload("Detlas", 0));
+    }
+
+    @Test
     void warSupportPayloadKeepsTheFourSharedSlotsSeparateFromParties() {
         JsonObject payload = ApiClient.buildWarSupportPayload(new SupportDraft(
                 4L,
