@@ -8,16 +8,16 @@ import net.minecraft.client.gui.screens.Screen;
 final class SequoiaSidebarNavigation {
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
     private static final List<Destination> STANDARD_DESTINATIONS = List.of(
-            Destination.CONNECTION,
             Destination.ACHIEVEMENTS,
+            Destination.CONNECTION,
             Destination.GITHUB,
             Destination.INGREDIENTS,
             Destination.MAP,
             Destination.PARTY_FINDER,
             Destination.SETTINGS);
     private static final List<Destination> WAR_DESTINATIONS = List.of(
-            Destination.CONNECTION,
             Destination.ACHIEVEMENTS,
+            Destination.CONNECTION,
             Destination.GITHUB,
             Destination.INGREDIENTS,
             Destination.MAP,

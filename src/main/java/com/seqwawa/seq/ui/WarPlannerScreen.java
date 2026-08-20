@@ -256,7 +256,7 @@ public final class WarPlannerScreen extends Screen {
         String status = caller != null && caller.available() && !remaining.isZero()
                 ? "Available for " + formatDuration(remaining)
                 : "Unavailable";
-        String roleLabel = caller == null ? "No composition role" : compositionLabel(caller.compositionRoles());
+        String roleLabel = caller == null ? "No role" : compositionLabel(caller.compositionRoles());
         AvailabilityLayout layout = availabilityLayout(width);
         if (layout.compact()) {
             text(canvas, truncate(status + " · " + roleLabel, availableCharacters(PADDING, width - PADDING, 10, 48)),
@@ -2499,7 +2499,7 @@ public final class WarPlannerScreen extends Screen {
         return WarCompositionRole.ordered(roles).stream()
                 .map(WarCompositionRole::label)
                 .reduce((left, right) -> left + "/" + right)
-                .orElse("No composition role");
+                .orElse("No role");
     }
 
     private static boolean samePlayer(String left, String right) {
