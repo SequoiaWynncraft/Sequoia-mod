@@ -9,7 +9,9 @@ import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.client.renderer.state.CameraRenderState;
 import net.minecraft.world.entity.Avatar;
 import net.minecraft.world.entity.EntityAttachment;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
+import com.seqwawa.seq.managers.GuildRankNametagDecorator;
 import com.seqwawa.seq.managers.PartyHealthBarRenderer;
 import com.seqwawa.seq.managers.VanillaSeqBadgeNametagRenderer;
 import com.seqwawa.seq.render.SeqAvatarRenderStateExtension;
@@ -33,6 +35,13 @@ public abstract class AvatarRendererMixin {
         extension.seq$setLocalPlayer(minecraft.player != null
                 && (player == minecraft.player
                         || Objects.equals(player.getUUID(), minecraft.player.getUUID())));
+
+        // The nametag is rewritten where it is submitted, which knows nothing of the
+        // entity behind it; publish who is being drawn while that is still known.
+        if (player instanceof Player profiled && profiled.getGameProfile() != null) {
+            GuildRankNametagDecorator.rememberRenderedPlayer(
+                    profiled.getUUID(), profiled.getGameProfile().name(), state.nameTag);
+        }
 
         Vec3 attachment = player.getAttachments()
                 .getNullable(EntityAttachment.NAME_TAG, 0, player.getYRot(partialTick));
