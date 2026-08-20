@@ -22,9 +22,11 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Clickable world names in chat, so a called-out world is one click away
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
+- Seq-only war planner with timed availability, exclusive 1–5 player parties, a shared Lead + three Eco board, and collaborative territory zones
 - Raid tracking and announcements
 - Per-player raid gambit counts parsed natively from the raid-start roster
-- Sequoia achievements: your graid counts, ranked from Bronze to Mythril
+- Sequoia achievements: guild-raid completion counts ranked from Bronze to Mythril
+- A playful Princess-mode guild-raid count, compact leaderboard, and numbered raid celebration
 - Interactive world map with gathering nodes analysis and active world events
 - Guild-specific settings and status screens
 
@@ -55,6 +57,9 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq`: open the main Sequoia screen
 - `/seq p`: open the Sequoia party finder UI
 - `/seq map`: open the Sequoia world map
+- `/seq war`: open the Seq-only war planner after the backend authorizes the current member
+- `/seq war available <minutes>`: advertise war availability for 1–1440 minutes
+- `/seq war unavailable`: clear your war availability
 - `/seq connect`: connect to the backend
 - `/seq status`: show connection state
 - `/seq logout`: clear the current backend session
@@ -82,6 +87,9 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq map minSamples <count>`
 - `/seq map reset`
 - `/seq map debug`
+- `/seq war`
+- `/seq war available <minutes>`
+- `/seq war unavailable`
 - `/seq party`
 - `/seq p`
 - `/seq party list`
@@ -102,11 +110,31 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq party role <role>`
 - `/seq party kick <username>`
 - `/seq party promote <username>`
+- `/seq party scan`
 - `/seq party game create`
 - `/seq party game invite <username>`
 - `/seq party game invite-all`
 
 </details>
+
+## War planner
+
+The planner uses backend schema v2: party membership is separate from the
+shared Lead/Eco support slots, so support players may also join a party. The
+zone map provides palette colors, multi-party assignment, territory routes,
+responsive full-map zone previews, and production-based resource coloring. Stored
+resources do not affect color. Ordinary 9k emerald income is treated as the
+baseline; territories with 18k base emerald production are highlighted as
+emerald generators.
+
+The War Planner entry and `/seq war` command only appear after the protected backend snapshot confirms that the
+current account is a Sequoia member. Members can advertise timed availability and see their own team immediately;
+authorized managers can atomically create or edit parties of one to five people, while one shared Lead and three Eco
+slots remain independent of party membership. Managers choose `HQ Team`, `VLow Munch`, or `FFA` from the team editor;
+the backend keeps HQ unique and assigns the numeric VLow/FFA suffixes. Compact team cards show each member's
+Solo/DPS/Tank capabilities without colliding with manager actions. The Zones view assigns named, colored groups of
+territories to teams and previews each zone against the complete territory map.
+Composition capabilities, eligibility, team exclusivity, versions, and all mutations remain server-authoritative.
 
 ## World map
 
@@ -122,19 +150,20 @@ The Events view shows runs currently visible through the Wynncraft API. Choose A
 
 Open **Achievements** from the main Sequoia screen (`/seq`, or `O`) or from any Sequoia sidebar.
 
-One line per guild raid with your completions, the tier you are on and how far you are from the next
-one, plus a combined line for every graid together. Tiers are named after the metal you earn, from
-Bronze up to Mythril, and each has its own colour. The combined line asks for twice as many runs as a
-single raid.
+The screen shows one line per guild raid with the authenticated Minecraft account's completions,
+current tier, and progress toward the next tier, plus a combined line for all guild raids. Tiers run
+from Bronze to Mythril, each with its own theme colour; combined tiers require twice as many runs as
+a single-raid tier.
 
-Counts and tiers both come from the Sequoia backend, which tallies the raid announcements the mod
-already sends, so your numbers follow you across accounts and machines. The mod only keeps the
-thresholds it needs to show how far the next tier is. It loads everything when the game starts and
-refreshes a few seconds after every raid you finish, so the screen is filled in before you open it.
-When the backend cannot be reached it says so instead of showing zeroes.
+Counts and current tiers come from the Sequoia backend. Progress follows the same Minecraft account
+across machines; linked alternate accounts retain separate totals. The backend counts recorded raid
+announcements from 14 August 2026 at 18:12:02 UTC onward. The mod keeps the thresholds needed to show
+the next target, polls periodically, and refreshes shortly after a locally detected completion. If
+there is no cached result and the backend is unavailable, the screen reports that state rather than
+presenting missing data as zero completions.
 
-The metals are theme colours (`achievement.bronze` through `achievement.mythril`), so a personal theme
-can restyle all of them. See [`docs/theme-template.theme.yml`](docs/theme-template.theme.yml).
+Tier colours use the `achievement.bronze` through `achievement.mythril` theme keys. See
+[`docs/theme-template.theme.yml`](docs/theme-template.theme.yml) for the complete palette schema.
 
 ## Settings
 

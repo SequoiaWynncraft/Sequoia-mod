@@ -9,6 +9,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.User;
 import net.minecraft.server.Services;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.BuildConfig;
 
@@ -16,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
@@ -41,6 +43,7 @@ public class MinecraftAuthService {
     private volatile AuthException lastError;
 
     private volatile CompletableFuture<StoredAuthSession> inFlightAuthentication;
+    private long authenticationGeneration;
 
     public static synchronized MinecraftAuthService getInstance() {
         if (instance == null) {
@@ -71,11 +74,12 @@ public class MinecraftAuthService {
             }
 
             setState(AuthState.REQUESTING_CHALLENGE, null);
+            long startedFor = authenticationGeneration;
             CompletableFuture<StoredAuthSession> future = ApiClient.getInstance()
                     .requestMinecraftAuthChallenge()
                     .thenApply(MinecraftAuthService::validateChallenge)
-                    .thenCompose(this::authenticateMinecraftSession)
-                    .thenApply(this::storeSession)
+                    .thenCompose(challenge -> authenticateMinecraftSession(startedFor, challenge))
+                    .thenApply(response -> storeSession(startedFor, response))
                     .handle((session, throwable) -> {
                         if (throwable != null) {
                             throw new CompletionException(mapException(throwable));
@@ -83,13 +87,18 @@ public class MinecraftAuthService {
                         return session;
                     })
                     .whenComplete((session, throwable) -> {
+                        AuthException authException = throwable == null ? null : mapException(throwable);
                         synchronized (MinecraftAuthService.this) {
+                            if (!isCurrentAuthenticationAttempt(startedFor, authenticationGeneration)) {
+                                return;
+                            }
                             inFlightAuthentication = null;
+                            setState(
+                                    authException == null ? AuthState.AUTHENTICATED : AuthState.FAILED,
+                                    authException);
                         }
 
-                        if (throwable != null) {
-                            AuthException authException = mapException(throwable);
-                            setState(AuthState.FAILED, authException);
+                        if (authException != null) {
                             SeqClient.LOGGER.warn(
                                     "[Auth] Minecraft authentication failed code={} message={}",
                                     authException.getStableCode(),
@@ -98,7 +107,6 @@ public class MinecraftAuthService {
                             return;
                         }
 
-                        setState(AuthState.AUTHENTICATED, null);
                         SeqClient.LOGGER.info(
                                 "[Auth] Authenticated Minecraft account username='{}' expiresAt={}",
                                 session.minecraftUsername(),
@@ -128,11 +136,11 @@ public class MinecraftAuthService {
     }
 
     private CompletableFuture<MinecraftAuthCompleteResponse> authenticateMinecraftSession(
-            MinecraftAuthChallengeResponse challenge) {
+            long startedFor, MinecraftAuthChallengeResponse challenge) {
         return CompletableFuture
                 .supplyAsync(
                         () -> {
-                            setState(AuthState.JOINING_MINECRAFT_SESSION, null);
+                            advanceAuthentication(startedFor, AuthState.JOINING_MINECRAFT_SESSION);
                             User user = requireLoggedInUser();
                             try {
                                 resolveSessionService().joinServer(
@@ -147,13 +155,21 @@ public class MinecraftAuthService {
                             }
                         },
                         executor)
-                .thenCompose(username -> completeAuthentication(challenge.challengeId(), username));
+                .thenCompose(username -> completeAuthentication(startedFor, challenge.challengeId(), username));
     }
 
-    private CompletableFuture<MinecraftAuthCompleteResponse> completeAuthentication(String challengeId, String username) {
-        setState(AuthState.COMPLETING_BACKEND_AUTH, null);
+    private CompletableFuture<MinecraftAuthCompleteResponse> completeAuthentication(
+            long startedFor, String challengeId, String username) {
+        advanceAuthentication(startedFor, AuthState.COMPLETING_BACKEND_AUTH);
         return ApiClient.getInstance()
                 .completeMinecraftAuthentication(new MinecraftAuthCompleteRequest(challengeId, username));
+    }
+
+    private synchronized void advanceAuthentication(long startedFor, AuthState nextState) {
+        if (!isCurrentAuthenticationAttempt(startedFor, authenticationGeneration)) {
+            throw new CancellationException("Authentication attempt was superseded.");
+        }
+        setState(nextState, null);
     }
 
     private User requireLoggedInUser() {
@@ -209,13 +225,23 @@ public class MinecraftAuthService {
     }
 
     public void clearSession() {
-        SeqClient.getConfigManager().clearAuthSession();
-        setState(AuthState.IDLE, null);
+        synchronized (this) {
+            authenticationGeneration++;
+            inFlightAuthentication = null;
+            SeqClient.getConfigManager().clearAuthSession();
+            setState(AuthState.IDLE, null);
+        }
+        GuildRaidProgressService.getInstance().reset();
     }
 
     public void invalidateSession(AuthErrorCode code, String message) {
-        SeqClient.getConfigManager().clearAuthSession();
-        setState(AuthState.FAILED, new AuthException(code, message, true));
+        synchronized (this) {
+            authenticationGeneration++;
+            inFlightAuthentication = null;
+            SeqClient.getConfigManager().clearAuthSession();
+            setState(AuthState.FAILED, new AuthException(code, message, true));
+        }
+        GuildRaidProgressService.getInstance().reset();
     }
 
     public void clearSessionIfNotActiveProfile(UUID activeProfileId) {
@@ -276,10 +302,17 @@ public class MinecraftAuthService {
         return response;
     }
 
-    private StoredAuthSession storeSession(MinecraftAuthCompleteResponse response) {
+    private synchronized StoredAuthSession storeSession(long startedFor, MinecraftAuthCompleteResponse response) {
+        if (!isCurrentAuthenticationAttempt(startedFor, authenticationGeneration)) {
+            throw new CancellationException("Authentication attempt was superseded.");
+        }
         StoredAuthSession session = toStoredSession(unwrapCompleteResponse(response));
         SeqClient.getConfigManager().setAuthSession(session);
         return session;
+    }
+
+    static boolean isCurrentAuthenticationAttempt(long startedFor, long currentGeneration) {
+        return startedFor == currentGeneration;
     }
 
     private void ensureSecureTransport() {

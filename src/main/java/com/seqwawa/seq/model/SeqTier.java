@@ -38,7 +38,13 @@ public enum SeqTier {
     }
 
     public static SeqTier next(int count, int scale) {
-        for (SeqTier tier : ORDERED) {
+        return next(count, null, scale);
+    }
+
+    public static SeqTier next(int count, SeqTier currentTier, int scale) {
+        int start = currentTier == null ? 0 : currentTier.ordinal() + 1;
+        for (int index = start; index < ORDERED.size(); index++) {
+            SeqTier tier = ORDERED.get(index);
             if (count < tier.threshold(scale)) {
                 return tier;
             }

@@ -42,6 +42,13 @@ class SeqTierTest {
     }
 
     @Test
+    void anAuthoritativeCurrentTierSetsTheMinimumNextTier() {
+        assertEquals(SeqTier.DIAMOND, SeqTier.next(19, SeqTier.PLATINUM, SINGLE_RAID));
+        assertEquals(SeqTier.DIAMOND, SeqTier.next(800, SeqTier.GOLD, SINGLE_RAID));
+        assertNull(SeqTier.next(19, SeqTier.MYTHRIL, SINGLE_RAID));
+    }
+
+    @Test
     void thresholdsOnlyEverGoUp() {
         int previous = 0;
         for (SeqTier tier : SeqTier.ordered()) {

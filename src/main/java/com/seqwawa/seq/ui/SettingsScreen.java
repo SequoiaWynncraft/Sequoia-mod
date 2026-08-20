@@ -59,9 +59,6 @@ public class SettingsScreen extends Screen {
     private static final float SEARCH_FONT_SIZE = 12;
     private static final float SCROLL_SPEED = 12;
 
-    // Colors
-    private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
-
     private final Screen parent;
     private final LinkedHashMap<String, List<SettingWidget<?>>> categories = new LinkedHashMap<>();
     private final Set<String> collapsedCategories = new HashSet<>();
@@ -83,6 +80,9 @@ public class SettingsScreen extends Screen {
         super(Component.literal("Settings"));
         this.parent = parent;
         buildWidgets();
+        if (PrincessMode.isEnabled() && SeqClient.getPrincessRaidStatsManager() != null) {
+            SeqClient.getPrincessRaidStatsManager().refresh();
+        }
     }
 
     @Override
@@ -207,23 +207,48 @@ public class SettingsScreen extends Screen {
             // Sidebar buttons
             float btnX = SIDEBAR_PADDING;
             float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-            float btnStartY = 50;
 
-            drawSidebarButton(canvas, fontName, btnX, btnStartY, btnW, "Partyfinder", false);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING), btnW,
-                    "Connection", false);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
-                    btnW, "Settings", true);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
-                    btnW, "Map", false);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
-                    btnW, "Ingredients", false);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5,
-                    btnW, "Achievements", false);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 6,
-                    btnW, "Github", false);
+            var destinations = SequoiaSidebarNavigation.destinations();
+            var sidebarLayout = SequoiaSidebarNavigation.sidebarLayout(
+                    screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
+            for (int row = 0; row < destinations.size(); row++) {
+                var destination = destinations.get(row);
+                drawSidebarButton(
+                        canvas,
+                        fontName,
+                        btnX,
+                        sidebarLayout.buttonY(row),
+                        btnW,
+                        sidebarLayout.buttonHeight(),
+                        destination.label(),
+                        destination == SequoiaSidebarNavigation.Destination.SETTINGS);
+            }
 
-            renderPrincessPrompt(canvas, fontName, screenHeight, System.currentTimeMillis());
+            boolean princessPromptFits = princessPromptFits(screenHeight, sidebarLayout.bottom());
+            if (princessLeaderboardVisible()) {
+                float leaderboardY = sidebarLayout.bottom() + SIDEBAR_BUTTON_SPACING;
+                float availableBottom = princessPromptFits
+                        ? princessPromptY(screenHeight, 1f)
+                        : screenHeight - SIDEBAR_PADDING;
+                float availableHeight = availableBottom
+                        - SIDEBAR_BUTTON_SPACING
+                        - leaderboardY;
+                float leaderboardHeight = Math.min(PrincessLeaderboardPanel.HEIGHT, availableHeight);
+                if (leaderboardHeight >= PrincessLeaderboardPanel.MIN_HEIGHT) {
+                    PrincessLeaderboardPanel.render(
+                            canvas,
+                            fontName,
+                            btnX,
+                            leaderboardY,
+                            btnW,
+                            leaderboardHeight,
+                            SeqClient.getPrincessRaidStatsManager().snapshot());
+                }
+            }
+
+            if (princessPromptFits) {
+                renderPrincessPrompt(canvas, fontName, screenHeight, System.currentTimeMillis());
+            }
 
             // === Main Content Panel (fills rest of screen) ===
             float panelX = SIDEBAR_WIDTH;
@@ -383,6 +408,7 @@ public class SettingsScreen extends Screen {
             }
 
             maxScroll = Math.max(0, cursorY + scrollOffset - contentY - contentHeight);
+            scrollOffset = Math.min(scrollOffset, maxScroll);
 
             canvas.restore();
 
@@ -393,7 +419,7 @@ public class SettingsScreen extends Screen {
                 canvas.fillRect(scrollbarX, contentY, 4, scrollbarHeight, color(CONTROL_TRACK));
 
                 float thumbRatio = contentHeight / (contentHeight + maxScroll);
-                float thumbHeight = Math.max(20, scrollbarHeight * thumbRatio);
+                float thumbHeight = Math.min(scrollbarHeight, Math.max(20, scrollbarHeight * thumbRatio));
                 float thumbY = contentY + (scrollOffset / maxScroll) * (scrollbarHeight - thumbHeight);
                 canvas.fillRect(scrollbarX, thumbY, 4, thumbHeight, color(CONTROL_THUMB));
             }
@@ -401,13 +427,13 @@ public class SettingsScreen extends Screen {
     }
 
     private void drawSidebarButton(
-            UiCanvas canvas, String fontName, float x, float y, float w, String label, boolean active) {
-        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
+            UiCanvas canvas, String fontName, float x, float y, float w, float h, String label, boolean active) {
+        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
 
         Color bgColor = active ? color(ACCENT_PRIMARY_DARK_HOVER, 120) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
-        canvas.fillRect(x, y, w, SIDEBAR_BUTTON_HEIGHT, bgColor);
-        drawText(canvas, fontName, SIDEBAR_BUTTON_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
-                x + w / 2f, y + SIDEBAR_BUTTON_HEIGHT / 2f, label);
+        canvas.fillRect(x, y, w, h, bgColor);
+        drawText(canvas, fontName, Math.min(SIDEBAR_BUTTON_SIZE, Math.max(8, h - 2)), color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
+                x + w / 2f, y + h / 2f, label);
     }
 
     private void renderPrincessPrompt(UiCanvas canvas, String fontName, float screenHeight, long nowMs) {
@@ -467,8 +493,16 @@ public class SettingsScreen extends Screen {
         return screenHeight + (visibleY - screenHeight) * progress;
     }
 
+    static boolean princessPromptFits(float screenHeight, float navigationBottom) {
+        return princessPromptY(screenHeight, 1f) >= navigationBottom + SIDEBAR_BUTTON_SPACING;
+    }
+
     private static boolean princessPromptAllowed() {
         return SeqClient.getEasterEggsSetting() != null && SeqClient.getEasterEggsSetting().getValue();
+    }
+
+    private static boolean princessLeaderboardVisible() {
+        return PrincessMode.isEnabled() && SeqClient.getPrincessRaidStatsManager() != null;
     }
 
     private static void drawText(
@@ -506,61 +540,32 @@ public class SettingsScreen extends Screen {
             // Sidebar button clicks
             float btnX = SIDEBAR_PADDING;
             float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-            float btnStartY = 50;
 
-            if (princessPromptAllowed()) {
+            var destinations = SequoiaSidebarNavigation.destinations();
+            var sidebarLayout = SequoiaSidebarNavigation.sidebarLayout(
+                    screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
+            for (int row = 0; row < destinations.size(); row++) {
+                if (!isHovered(mx, my, btnX, sidebarLayout.buttonY(row), btnW, sidebarLayout.buttonHeight())) {
+                    continue;
+                }
+                var destination = destinations.get(row);
+                if (destination != SequoiaSidebarNavigation.Destination.SETTINGS) {
+                    SequoiaSidebarNavigation.open(destination, this);
+                }
+                return true;
+            }
+
+            if (princessPromptAllowed() && princessPromptFits(screenHeight, sidebarLayout.bottom())) {
                 long nowMs = System.currentTimeMillis();
                 float progress = princessPrompt.slideProgress(nowMs);
                 float promptY = princessPromptY(screenHeight, progress);
                 if (progress > 0f && isHovered(mx, my, btnX, promptY, btnW, PRINCESS_PROMPT_HEIGHT)) {
-                    PrincessMode.toggle();
+                    boolean enabled = PrincessMode.toggle();
+                    if (enabled && SeqClient.getPrincessRaidStatsManager() != null) {
+                        SeqClient.getPrincessRaidStatsManager().refresh();
+                    }
                     return true;
                 }
-            }
-
-            // Partyfinder
-            if (isHovered(mx, my, btnX, btnStartY, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-                SeqClient.mc.setScreen(new PartyFinderScreen(this));
-                return true;
-            }
-            // Connection
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING), btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                SeqClient.mc.setScreen(new ConnectionScreen(this));
-                return true;
-            }
-            // Settings (already here)
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2, btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                return true;
-            }
-            // Map
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3, btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                SeqClient.mc.setScreen(new WorldMapScreen(this));
-                return true;
-            }
-            // Ingredients
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4, btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                SeqClient.mc.setScreen(new IngredientGuideScreen(this));
-                return true;
-            }
-            // Achievements
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5, btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                SeqClient.mc.setScreen(new AchievementsScreen(this));
-                return true;
-            }
-            // Github
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 6, btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                try {
-                    java.net.URI uri = java.net.URI.create(GITHUB_URL);
-                    java.awt.Desktop.getDesktop().browse(uri);
-                } catch (Exception ignored) {
-                }
-                return true;
             }
 
             // Search bar click
@@ -683,8 +688,13 @@ public class SettingsScreen extends Screen {
             float screenHeight = MinecraftUiRenderer.screenHeight();
             float contentHeight = screenHeight - HEADER_HEIGHT;
             float thumbRatio = contentHeight / (contentHeight + maxScroll);
-            float thumbHeight = Math.max(20, contentHeight * thumbRatio);
+            float thumbHeight = Math.min(contentHeight, Math.max(20, contentHeight * thumbRatio));
             float scrollRange = contentHeight - thumbHeight;
+
+            if (scrollRange <= 0) {
+                scrollOffset = 0;
+                return true;
+            }
 
             float delta = my - scrollbarDragStart;
             scrollOffset = scrollOffsetDragStart + (delta / scrollRange) * maxScroll;

@@ -397,6 +397,38 @@ class ChatManagerTest {
     }
 
     @Test
+    void rankedBridgeSenderOmitsTheRoleLabelAlreadyShownInThePill() {
+        RankPresentation treant = new RankPresentation(
+                new DiscordRank("rank.treant", "Treant", 80), ColorRamp.of(0x55AA55));
+
+        MutableComponent line = ChatManager.bridgeSenderLine(
+                new ConnectionManager.DiscordChatMessage("Treant OwORawr", "wharffff"),
+                "Replying to a3pki/rice field worker: wharffff",
+                treant);
+
+        assertTrue(line.getString().endsWith(" OwORawr: Replying to a3pki/rice field worker: wharffff"));
+        assertFalse(line.getString().contains(" Treant OwORawr:"));
+        assertEquals(
+                "OwORawr",
+                ComponentTextEditor.flatten(line).stream()
+                        .filter(fragment -> "OwORawr".equals(fragment.text()))
+                        .findFirst()
+                        .orElseThrow()
+                        .style()
+                        .getInsertion());
+    }
+
+    @Test
+    void bridgeDisplayNameOnlyRemovesACompleteMatchingRankPrefix() {
+        RankPresentation treant = new RankPresentation(
+                new DiscordRank("rank.treant", "Treant", 80), ColorRamp.of(0x55AA55));
+
+        assertEquals("OwORawr", ChatManager.bridgeDisplayName("treant OwORawr", treant));
+        assertEquals("Treantor", ChatManager.bridgeDisplayName("Treantor", treant));
+        assertEquals("Treant", ChatManager.bridgeDisplayName("Treant", treant));
+    }
+
+    @Test
     void rankedBridgeUsernameReturnsToWhiteWhenRoleColoringIsDisabled() {
         Setting.BooleanSetting previous = SeqClient.colorUsernamesSetting;
         try {

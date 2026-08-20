@@ -34,6 +34,7 @@ public final class GuildRaidProgressService {
     private volatile GuildRaidProgress progress = GuildRaidProgress.EMPTY;
     private volatile State state = State.LOADING;
     private volatile boolean loading;
+    private volatile boolean forcedRefreshPending;
     private volatile long lastAttemptAtMs;
     private volatile int generation;
     private volatile boolean wasConnected;
@@ -47,6 +48,7 @@ public final class GuildRaidProgressService {
         this.clock = clock;
         this.connected = connected;
         this.raidDelay = raidDelay;
+        this.wasConnected = connected.getAsBoolean();
     }
 
     public static synchronized GuildRaidProgressService getInstance() {
@@ -71,19 +73,28 @@ public final class GuildRaidProgressService {
     public synchronized void reset() {
         generation++;
         loading = false;
+        forcedRefreshPending = false;
         lastAttemptAtMs = 0;
         progress = GuildRaidProgress.EMPTY;
         state = State.LOADING;
     }
 
-    public synchronized void tick() {
+    public void tick() {
+        tick(true);
+    }
+
+    public synchronized void tick(boolean allowRefresh) {
         boolean online = connected.getAsBoolean();
         if (online && !wasConnected) {
             reset();
+        } else if (!online && wasConnected) {
+            generation++;
+            loading = false;
+            forcedRefreshPending = false;
         }
         wasConnected = online;
 
-        if (online) {
+        if (online && allowRefresh) {
             requestRefresh();
         } else if (state == State.LOADING && !loading) {
             state = State.UNAVAILABLE;
@@ -91,7 +102,8 @@ public final class GuildRaidProgressService {
     }
 
     public void onLocalRaidCompleted() {
-        raidDelay.accept(this::forceRefresh);
+        int scheduledFor = generation;
+        raidDelay.accept(() -> forceRefresh(scheduledFor));
     }
 
     public synchronized boolean requestRefresh() {
@@ -102,9 +114,16 @@ public final class GuildRaidProgressService {
         return start(now);
     }
 
-    boolean forceRefresh() {
+    private synchronized boolean forceRefresh(int scheduledFor) {
+        if (scheduledFor != generation) {
+            return false;
+        }
         if (!connected.getAsBoolean()) {
             return false;
+        }
+        if (loading) {
+            forcedRefreshPending = true;
+            return true;
         }
         return start(clock.getAsLong());
     }
@@ -140,13 +159,25 @@ public final class GuildRaidProgressService {
             if (state != State.READY) {
                 state = State.UNAVAILABLE;
             }
-            SeqClient.LOGGER.warn("[Achievements] Could not read the graid progress", failure);
+            SeqClient.LOGGER.warn("[Achievements] Could not read guild raid progress", failure);
+            runPendingForceRefresh();
             return;
         }
         if (!fetched.equals(progress)) {
-            SeqClient.LOGGER.info("[Achievements] Graid progress updated, {} completions", fetched.totalCount());
+            SeqClient.LOGGER.info("[Achievements] Guild raid progress updated, {} completions", fetched.totalCount());
         }
         progress = fetched;
         state = State.READY;
+        runPendingForceRefresh();
+    }
+
+    private void runPendingForceRefresh() {
+        if (!forcedRefreshPending) {
+            return;
+        }
+        forcedRefreshPending = false;
+        if (connected.getAsBoolean()) {
+            start(clock.getAsLong());
+        }
     }
 }

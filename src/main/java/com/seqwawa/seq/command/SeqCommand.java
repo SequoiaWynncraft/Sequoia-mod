@@ -35,13 +35,13 @@ import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.managers.BombShareManager;
 import com.seqwawa.seq.managers.DiscordRankChatDecorator;
 import com.seqwawa.seq.managers.DiscordRankService;
-import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
 import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.PartyListing;
 import com.seqwawa.seq.managers.RankProfileRoster;
 import com.seqwawa.seq.managers.TreasuryOutManager;
+import com.seqwawa.seq.managers.WarPlannerManager;
 import com.seqwawa.seq.map.GatheringClusterCache;
 import com.seqwawa.seq.map.GatheringMapImageService;
 import com.seqwawa.seq.map.WorldMapSettings;
@@ -117,8 +117,10 @@ public class SeqCommand {
                                 .then(ClientCommandManager.literal("logout")
                                                 .executes(ctx -> {
                                                         ConnectionManager.getInstance().disconnect();
-                                                        SeqClient.getConfigManager().clearToken();
-                                                        GuildRaidProgressService.getInstance().reset();
+                                                        SeqClient.getAuthService().clearSession();
+                                                        if (SeqClient.getWarPlannerManager() != null) {
+                                                                SeqClient.getWarPlannerManager().reset();
+                                                        }
                                                         sendFeedback(ctx.getSource(), "Logged out and token cleared.");
                                                         return 1;
                                                 }))
@@ -135,7 +137,13 @@ public class SeqCommand {
                                 .then(buildBadgeCommand("badge"))
                                 .then(buildRankCommand("ranks"))
                                 .then(buildRankCommand("rank"))
+                                .then(ClientCommandManager.literal("settings")
+                                                .executes(ctx -> {
+                                                        SeqClient.openSettingsScreen();
+                                                        return 1;
+                                                }))
                                 .then(buildMapCommand())
+                                .then(buildWarCommand())
                                 .then(ClientCommandManager.literal("ingredients")
                                                 .executes(SeqCommand::openIngredientGuideScreen))
                                 .then(ClientCommandManager.literal("ingredient")
@@ -325,7 +333,72 @@ public class SeqCommand {
                                                 .executes(ctx -> relayCommandResult(
                                                                 ctx,
                                                                 SeqClient.getPartyFinderManager()
-                                                                                .inviteAllCurrentMembersFromCommand())));
+                                                                                .inviteAllCurrentMembersFromCommand())))
+                                .then(ClientCommandManager.literal("scan")
+                                                .executes(ctx -> relayCommandResult(
+                                                                ctx,
+                                                                SeqClient.getPartyFinderManager()
+                                                                                .scanCurrentWynnPartyFromCommand())));
+        }
+
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildWarCommand() {
+                return ClientCommandManager.literal("war")
+                                .requires(source -> isWarPlannerAuthorized())
+                                .executes(SeqCommand::openWarPlanner)
+                                .then(ClientCommandManager.literal("available")
+                                                .then(ClientCommandManager.argument(
+                                                                "minutes", IntegerArgumentType.integer(1, 1440))
+                                                                .executes(SeqCommand::setWarAvailability)))
+                                .then(ClientCommandManager.literal("unavailable")
+                                                .executes(SeqCommand::clearWarAvailability));
+        }
+
+        private static boolean isWarPlannerAuthorized() {
+                WarPlannerManager manager = SeqClient.getWarPlannerManager();
+                return manager != null && manager.isAuthorized();
+        }
+
+        private static int openWarPlanner(CommandContext<FabricClientCommandSource> ctx) {
+                if (authorizedWarPlannerManager(ctx) == null) return 0;
+                SeqClient.openWarPlannerScreen();
+                return 1;
+        }
+
+        private static int setWarAvailability(CommandContext<FabricClientCommandSource> ctx) {
+                WarPlannerManager manager = authorizedWarPlannerManager(ctx);
+                if (manager == null) return 0;
+                int minutes = IntegerArgumentType.getInteger(ctx, "minutes");
+                relayWarPlannerResult(ctx, manager.setAvailability(minutes));
+                return 1;
+        }
+
+        private static int clearWarAvailability(CommandContext<FabricClientCommandSource> ctx) {
+                WarPlannerManager manager = authorizedWarPlannerManager(ctx);
+                if (manager == null) return 0;
+                relayWarPlannerResult(ctx, manager.clearAvailability());
+                return 1;
+        }
+
+        private static WarPlannerManager authorizedWarPlannerManager(
+                        CommandContext<FabricClientCommandSource> ctx) {
+                WarPlannerManager manager = SeqClient.getWarPlannerManager();
+                if (manager == null || !manager.isAuthorized()) {
+                        sendFeedback(ctx.getSource(), "War planner access is limited to authorized Sequoia members.");
+                        return null;
+                }
+                return manager;
+        }
+
+        private static void relayWarPlannerResult(
+                        CommandContext<FabricClientCommandSource> ctx,
+                        CompletableFuture<WarPlannerManager.ActionResult> future) {
+                future.whenComplete((result, error) -> {
+                        if (error != null) {
+                                sendFeedback(ctx.getSource(), "War planner request failed.");
+                        } else if (result != null && result.message() != null && !result.message().isBlank()) {
+                                sendFeedback(ctx.getSource(), result.message());
+                        }
+                });
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildIgnoreCommand() {

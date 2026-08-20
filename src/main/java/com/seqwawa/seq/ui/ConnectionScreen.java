@@ -40,8 +40,6 @@ public class ConnectionScreen extends Screen {
     private static final float NOTE_OFFSET = 22;
     private static final float AUTH_BUTTON_WIDTH = 118;
 
-    private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
-
     private float nvgMouseX;
     private float nvgMouseY;
 
@@ -82,16 +80,22 @@ public class ConnectionScreen extends Screen {
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-        float btnY = 50;
-        float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
 
-        drawSidebarButton(canvas, fontName, btnX, btnY, btnW, "Partyfinder", false);
-        drawSidebarButton(canvas, fontName, btnX, btnY + step, btnW, "Connection", true);
-        drawSidebarButton(canvas, fontName, btnX, btnY + step * 2, btnW, "Settings", false);
-        drawSidebarButton(canvas, fontName, btnX, btnY + step * 3, btnW, "Map", false);
-        drawSidebarButton(canvas, fontName, btnX, btnY + step * 4, btnW, "Ingredients", false);
-        drawSidebarButton(canvas, fontName, btnX, btnY + step * 5, btnW, "Achievements", false);
-        drawSidebarButton(canvas, fontName, btnX, btnY + step * 6, btnW, "Github", false);
+        var destinations = SequoiaSidebarNavigation.destinations();
+        var layout = SequoiaSidebarNavigation.sidebarLayout(
+                screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
+        for (int row = 0; row < destinations.size(); row++) {
+            var destination = destinations.get(row);
+            drawSidebarButton(
+                    canvas,
+                    fontName,
+                    btnX,
+                    layout.buttonY(row),
+                    btnW,
+                    layout.buttonHeight(),
+                    destination.label(),
+                    destination == SequoiaSidebarNavigation.Destination.CONNECTION);
+        }
     }
 
     private void renderHeader(UiCanvas canvas, String fontName, float panelX, float panelWidth) {
@@ -200,12 +204,12 @@ public class ConnectionScreen extends Screen {
     }
 
     private void drawSidebarButton(
-            UiCanvas canvas, String fontName, float x, float y, float w, String label, boolean active) {
-        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
+            UiCanvas canvas, String fontName, float x, float y, float w, float h, String label, boolean active) {
+        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
         Color bgColor = active ? color(ACCENT_PRIMARY_DARK_HOVER, 120) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
-        canvas.fillRect(x, y, w, SIDEBAR_BUTTON_HEIGHT, bgColor);
-        drawText(canvas, fontName, SIDEBAR_BUTTON_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
-                x + w / 2f, y + SIDEBAR_BUTTON_HEIGHT / 2f, label);
+        canvas.fillRect(x, y, w, h, bgColor);
+        drawText(canvas, fontName, Math.min(SIDEBAR_BUTTON_SIZE, Math.max(8, h - 2)), color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
+                x + w / 2f, y + h / 2f, label);
     }
 
     private void drawActionButton(
@@ -224,37 +228,22 @@ public class ConnectionScreen extends Screen {
 
         float mx = MinecraftUiRenderer.mouseX(click.x());
         float my = MinecraftUiRenderer.mouseY(click.y());
+        float screenHeight = MinecraftUiRenderer.screenHeight();
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-        float btnY = 50;
-        float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
 
-        if (isHovered(mx, my, btnX, btnY, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new PartyFinderScreen(this));
-            return true;
-        }
-        if (isHovered(mx, my, btnX, btnY + step, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-            return true;
-        }
-        if (isHovered(mx, my, btnX, btnY + step * 2, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new SettingsScreen(this));
-            return true;
-        }
-        if (isHovered(mx, my, btnX, btnY + step * 3, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new WorldMapScreen(this));
-            return true;
-        }
-        if (isHovered(mx, my, btnX, btnY + step * 4, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new IngredientGuideScreen(this));
-            return true;
-        }
-        if (isHovered(mx, my, btnX, btnY + step * 5, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new AchievementsScreen(this));
-            return true;
-        }
-        if (isHovered(mx, my, btnX, btnY + step * 6, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-            openGithub();
+        var destinations = SequoiaSidebarNavigation.destinations();
+        var layout = SequoiaSidebarNavigation.sidebarLayout(
+                screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
+        for (int row = 0; row < destinations.size(); row++) {
+            if (!isHovered(mx, my, btnX, layout.buttonY(row), btnW, layout.buttonHeight())) {
+                continue;
+            }
+            var destination = destinations.get(row);
+            if (destination != SequoiaSidebarNavigation.Destination.CONNECTION) {
+                SequoiaSidebarNavigation.open(destination, this);
+            }
             return true;
         }
 
@@ -312,13 +301,6 @@ public class ConnectionScreen extends Screen {
             String text) {
         canvas.drawText(text, x, y, new UiCanvas.TextStyle(
                 font, size, color, horizontalAlign, UiCanvas.VerticalAlign.MIDDLE));
-    }
-
-    private void openGithub() {
-        try {
-            java.awt.Desktop.getDesktop().browse(java.net.URI.create(GITHUB_URL));
-        } catch (Exception ignored) {
-        }
     }
 
     private boolean isHovered(float mx, float my, float bx, float by, float bw, float bh) {

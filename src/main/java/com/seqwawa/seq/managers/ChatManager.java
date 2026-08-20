@@ -764,12 +764,13 @@ public class ChatManager {
         line.append(DiscordRankChatDecorator.rankPill(
                         rank, null, DiscordRankChatDecorator.discordChatTextColor()))
                 .append(Component.literal(" "));
+        String displayName = bridgeDisplayName(msg.username(), rank);
         // Same shift-click insertion Wynncraft puts on in-game names, so a bridged
         // sender links to their profile just like a guild one.
         line.append(DiscordRankChatDecorator.colouredName(
-                msg.username(),
+                displayName,
                 rank,
-                Style.EMPTY.withColor(ChatFormatting.WHITE).withInsertion(msg.username())));
+                Style.EMPTY.withColor(ChatFormatting.WHITE).withInsertion(displayName)));
         MutableComponent insignia = DiscordRankChatDecorator.bridgeInsignia(msg.username(), msg.discordId());
         if (insignia != null) {
             line.append(insignia);
@@ -777,6 +778,28 @@ public class ChatManager {
         TextColor textColor = DiscordRankChatDecorator.discordChatTextColor();
         return line.append(Component.literal(": ").withStyle(style -> style.withColor(textColor)))
                 .append(Component.literal(text).withStyle(style -> style.withColor(textColor)));
+    }
+
+    /**
+     * Discord nicknames may include the member's progression role, for example
+     * {@code Treant OwORawr}. The bridge already draws that role in the pill, so omit
+     * the matching leading label from the visible sender name.
+     */
+    static String bridgeDisplayName(String senderName, RankPresentation rank) {
+        if (senderName == null || rank == null) {
+            return senderName;
+        }
+
+        String trimmedName = senderName.strip();
+        String rankLabel = rank.label().strip();
+        if (trimmedName.length() <= rankLabel.length()
+                || !trimmedName.regionMatches(true, 0, rankLabel, 0, rankLabel.length())
+                || !Character.isWhitespace(trimmedName.charAt(rankLabel.length()))) {
+            return senderName;
+        }
+
+        String withoutRank = trimmedName.substring(rankLabel.length()).stripLeading();
+        return withoutRank.isBlank() ? senderName : withoutRank;
     }
 
     static MutableComponent bridgeContinuationLine(String text, boolean colored) {

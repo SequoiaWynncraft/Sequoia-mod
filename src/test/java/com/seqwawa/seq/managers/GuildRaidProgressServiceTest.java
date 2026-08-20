@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
 class GuildRaidProgressServiceTest {
@@ -92,6 +93,18 @@ class GuildRaidProgressServiceTest {
     }
 
     @Test
+    void firstTickDoesNotDiscardARefreshThatAlreadyCompleted() {
+        GuildRaidProgressService service = service();
+        service.requestRefresh();
+
+        service.tick();
+
+        assertEquals(1, calls.get());
+        assertEquals(State.READY, service.state());
+        assertEquals(512, service.progress().count(SeqRaid.TNA));
+    }
+
+    @Test
     void tickingKeepsTheProgressFresh() {
         GuildRaidProgressService service = service();
 
@@ -113,6 +126,19 @@ class GuildRaidProgressServiceTest {
 
         assertEquals(0, calls.get());
         assertEquals(State.UNAVAILABLE, service.state());
+    }
+
+    @Test
+    void aDisallowedScopeDoesNotConsumeTheRefreshInterval() {
+        GuildRaidProgressService service = service();
+
+        service.tick(false);
+        assertEquals(0, calls.get());
+        assertEquals(State.UNAVAILABLE, service.state());
+
+        service.tick();
+        assertEquals(1, calls.get());
+        assertEquals(State.READY, service.state());
     }
 
     @Test
@@ -148,6 +174,23 @@ class GuildRaidProgressServiceTest {
 
         answer.set(CompletableFuture.completedFuture(progress(513)));
         service.onLocalRaidCompleted();
+
+        assertEquals(2, calls.get());
+        assertEquals(513, service.progress().count(SeqRaid.TNA));
+    }
+
+    @Test
+    void aFinishedRaidQueuesARefreshBehindAnInFlightRead() {
+        CompletableFuture<GuildRaidProgress> pending = new CompletableFuture<>();
+        answer.set(pending);
+        GuildRaidProgressService service = service();
+        service.tick();
+
+        answer.set(CompletableFuture.completedFuture(progress(513)));
+        service.onLocalRaidCompleted();
+        assertEquals(1, calls.get());
+
+        pending.complete(progress(512));
 
         assertEquals(2, calls.get());
         assertEquals(513, service.progress().count(SeqRaid.TNA));
@@ -198,6 +241,21 @@ class GuildRaidProgressServiceTest {
     }
 
     @Test
+    void aReadCannotPublishAfterTheConnectionIsLost() {
+        CompletableFuture<GuildRaidProgress> pending = new CompletableFuture<>();
+        answer.set(pending);
+        GuildRaidProgressService service = service();
+        service.tick();
+
+        connected.set(false);
+        service.tick();
+        pending.complete(progress(512));
+
+        assertEquals(State.UNAVAILABLE, service.state());
+        assertEquals(0, service.progress().totalCount());
+    }
+
+    @Test
     void aSteadyConnectionIsNotTreatedAsANewSession() {
         GuildRaidProgressService service = service();
         service.tick();
@@ -217,6 +275,19 @@ class GuildRaidProgressServiceTest {
         service.onLocalRaidCompleted();
 
         assertEquals(1, calls.get());
+    }
+
+    @Test
+    void aDelayedRaidRefreshCannotCrossAnAccountReset() {
+        AtomicReference<Runnable> delayedRefresh = new AtomicReference<>();
+        GuildRaidProgressService service = service(delayedRefresh::set);
+
+        service.onLocalRaidCompleted();
+        service.reset();
+        delayedRefresh.get().run();
+
+        assertEquals(0, calls.get());
+        assertEquals(State.LOADING, service.state());
     }
 
     @Test
@@ -314,6 +385,10 @@ class GuildRaidProgressServiceTest {
     }
 
     private GuildRaidProgressService service() {
+        return service(Runnable::run);
+    }
+
+    private GuildRaidProgressService service(Consumer<Runnable> raidDelay) {
         return new GuildRaidProgressService(
                 () -> {
                     calls.incrementAndGet();
@@ -324,7 +399,7 @@ class GuildRaidProgressServiceTest {
                 },
                 now::get,
                 connected::get,
-                Runnable::run);
+                raidDelay);
     }
 
     private static GuildRaidProgress progress(int tnaCount) {

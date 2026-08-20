@@ -42,6 +42,7 @@ import com.seqwawa.seq.managers.RankProfileRoster;
 import com.seqwawa.seq.managers.PartyHealthCache;
 import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.PrincessMode;
+import com.seqwawa.seq.managers.PrincessRaidStatsManager;
 import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
@@ -49,6 +50,7 @@ import com.seqwawa.seq.managers.ThemeManager;
 import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.managers.WorldEventManager;
+import com.seqwawa.seq.managers.WarPlannerManager;
 import com.seqwawa.seq.map.IngredientWaypointRenderer;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
@@ -60,7 +62,9 @@ import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.ui.PrincessRaidCelebration;
 import com.seqwawa.seq.ui.SequoiaScreen;
+import com.seqwawa.seq.ui.SettingsScreen;
 import com.seqwawa.seq.ui.WorldMapScreen;
+import com.seqwawa.seq.ui.WarPlannerScreen;
 import com.seqwawa.seq.update.UpdateManager;
 import com.seqwawa.seq.utils.WynnClassCache;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
@@ -87,6 +91,12 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static PartyFinderManager partyFinderManager;
+
+    @Getter
+    public static WarPlannerManager warPlannerManager;
+
+    @Getter
+    public static PrincessRaidStatsManager princessRaidStatsManager;
 
     @Getter
     public static MinecraftAuthService authService;
@@ -138,6 +148,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static Setting.BooleanSetting colorUsernamesSetting;
+
+    @Getter
+    public static Setting.BooleanSetting colorPartyChatSetting;
 
     @Getter
     public static Setting.BooleanSetting animateRankGradientsSetting;
@@ -230,6 +243,15 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting notifyTrackedWorldEventsSetting;
 
     @Getter
+    public static Setting.BooleanSetting warPlannerResourceColorsSetting;
+
+    @Getter
+    public static Setting.IntSetting warPlannerBackgroundOpacitySetting;
+
+    @Getter
+    public static Setting.BooleanSetting warPlannerLockTerritoriesSetting;
+
+    @Getter
     public static WynnPartySyncManager wynnPartySyncManager;
 
     @Getter
@@ -279,6 +301,8 @@ public class SeqClient implements ClientModInitializer {
         fontManager = new FontManager();
         gameManager = new GameManager();
         partyFinderManager = new PartyFinderManager();
+        warPlannerManager = new WarPlannerManager();
+        princessRaidStatsManager = new PrincessRaidStatsManager();
         wynnPartySyncManager = new WynnPartySyncManager();
         guildWarTracker = GuildWarTrackers.createIfAvailable();
         guildStorageTracker = GuildStorageTracker.getInstance();
@@ -357,13 +381,13 @@ public class SeqClient implements ClientModInitializer {
             String currentHost = WynncraftServerPolicy.currentNormalizedHost();
             WynncraftServerPolicy.Scope previousServerScope = lastServerScope;
             logServerScopeChange(serverScope, currentHost);
+            boolean minecraftAccountChanged = handleMinecraftAccountChange();
             if (worldEventManager != null) {
                 worldEventManager.tick(
                         client,
                         serverScope,
                         notifyTrackedWorldEventsSetting != null && notifyTrackedWorldEventsSetting.getValue());
             }
-            GuildRaidProgressService.getInstance().tick();
             if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
                 RadianceCheckerClient.reset();
                 ConnectionManager.disconnectForBlockedServer();
@@ -379,20 +403,33 @@ public class SeqClient implements ClientModInitializer {
                 if (guildStorageTracker != null) {
                     guildStorageTracker.reset();
                 }
+                if (warPlannerManager != null) {
+                    warPlannerManager.reset();
+                }
+                GuildRaidProgressService.getInstance().tick(false);
                 return;
             }
             if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
                 RadianceCheckerClient.reset();
                 RaidPartySnapshotTracker.onServerUnavailable();
                 ConnectionManager.flushPendingOutbound();
+                if (warPlannerManager != null) {
+                    warPlannerManager.reset();
+                }
+                GuildRaidProgressService.getInstance().tick(false);
                 return;
             }
 
-            if (handleMinecraftAccountChange()) {
+            GuildRaidProgressService.getInstance().tick();
+            if (minecraftAccountChanged) {
                 return;
             }
 
             maybeRecoverProductionConnection(serverScope, previousServerScope, currentHost);
+
+            if (warPlannerManager != null) {
+                warPlannerManager.tick();
+            }
 
             if (partyFinderManager != null) {
                 partyFinderManager.tickOpenPartyAnnouncements();
@@ -474,7 +511,7 @@ public class SeqClient implements ClientModInitializer {
         if (!preserveOperatorSession) {
             ConnectionManager.resetForAccountChange();
             if (authService != null) {
-                authService.clearSessionIfNotActiveProfile(currentProfileId);
+                authService.clearSession();
             }
         }
         wasInPartyFinder = false;
@@ -489,6 +526,12 @@ public class SeqClient implements ClientModInitializer {
         }
         if (guildStorageTracker != null) {
             guildStorageTracker.reset();
+        }
+        if (warPlannerManager != null) {
+            warPlannerManager.reset();
+        }
+        if (princessRaidStatsManager != null) {
+            princessRaidStatsManager.reset();
         }
         return true;
     }
@@ -614,6 +657,18 @@ public class SeqClient implements ClientModInitializer {
         mc.execute(() -> mc.setScreen(new PartyFinderScreen(mc.screen)));
     }
 
+    public static void openSettingsScreen() {
+        mc.execute(() -> mc.setScreen(new SettingsScreen(mc.screen)));
+    }
+
+    public static void openWarPlannerScreen() {
+        WarPlannerManager manager = getWarPlannerManager();
+        if (manager == null || !manager.isAuthorized()) {
+            return;
+        }
+        mc.execute(() -> mc.setScreen(new WarPlannerScreen(mc.screen)));
+    }
+
     public static void openWorldMapScreen() {
         mc.execute(() -> mc.setScreen(new WorldMapScreen(mc.screen)));
     }
@@ -647,6 +702,7 @@ public class SeqClient implements ClientModInitializer {
                         .withValueOverride(PrincessMode::paletteColorOverride);
         colorRankPillsSetting = new Setting.BooleanSetting("color_rank_pills", "chat", true);
         colorUsernamesSetting = new Setting.BooleanSetting("color_usernames", "chat", true);
+        colorPartyChatSetting = new Setting.BooleanSetting("color_party_chat", "chat", true);
         showRankPillGradientsSetting = new Setting.BooleanSetting("show_rank_pill_gradients", "chat", true);
         showUsernameGradientsSetting = new Setting.BooleanSetting("show_username_gradients", "chat", true);
         // Off by default: moving colour draws the eye away from what is being said, and
@@ -713,6 +769,11 @@ public class SeqClient implements ClientModInitializer {
                 "Use each member's Discord role color on guild, party and Discord bridge names.",
                 "Usernames");
         colorUsernamesSetting.setParentSetting(showDiscordRanksSetting);
+        colorPartyChatSetting.setPresentation(
+                "Color party chat",
+                "Apply Sequoia member colors to player names in Wynncraft party chat.",
+                "Usernames");
+        colorPartyChatSetting.setParentSetting(colorUsernamesSetting);
         showUsernameGradientsSetting.setPresentation(
                 "Use gradients",
                 "Show the complete gradient or holographic role palette on usernames.",
@@ -782,6 +843,26 @@ public class SeqClient implements ClientModInitializer {
         showPartyHealthBarsSetting = new Setting.BooleanSetting("show_party_healthbars", "raids", true);
         notifyTrackedWorldEventsSetting =
                 new Setting.BooleanSetting("notify_tracked_world_events", "world_events", false);
+        warPlannerResourceColorsSetting =
+                new Setting.BooleanSetting("resource_colors", "war_planner", false);
+        warPlannerBackgroundOpacitySetting =
+                new Setting.IntSetting("background_opacity_percent", "war_planner", 100, 0, 100, 5);
+        warPlannerLockTerritoriesSetting =
+                new Setting.BooleanSetting("lock_territories", "war_planner", false);
+        warPlannerResourceColorsSetting.setPresentation(
+                "Color by resource type",
+                "Fill map territories using their resource production colors.",
+                "War planner display");
+        warPlannerBackgroundOpacitySetting.setPresentation(
+                "Background opacity",
+                "Adjust war-planner panels so the in-game chat remains visible behind them.",
+                "War planner display");
+        warPlannerLockTerritoriesSetting.setPresentation(
+                "Lock territories",
+                "Manager-only view that hides territories not assigned to a zone.",
+                "War planner display");
+        warPlannerLockTerritoriesSetting.setVisibilityCondition(
+                () -> warPlannerManager != null && warPlannerManager.canManage());
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(colorDiscordBridgeSetting);
@@ -794,6 +875,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().registerWithLegacyKeys(showRankPillGradientsSetting, "chat.show_rank_gradients");
         getConfigManager().register(animateRankGradientsSetting);
         getConfigManager().register(colorUsernamesSetting);
+        getConfigManager().register(colorPartyChatSetting);
         getConfigManager().registerWithLegacyKeys(showUsernameGradientsSetting, "chat.show_rank_gradients");
         getConfigManager().register(animateUsernameGradientsSetting);
         getConfigManager().register(profileOnShiftClickSetting);
@@ -824,6 +906,9 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(showOwnLeaderboardBadgeSetting);
         getConfigManager().register(showPartyHealthBarsSetting);
         getConfigManager().register(notifyTrackedWorldEventsSetting);
+        getConfigManager().register(warPlannerResourceColorsSetting);
+        getConfigManager().register(warPlannerBackgroundOpacitySetting);
+        getConfigManager().register(warPlannerLockTerritoriesSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.

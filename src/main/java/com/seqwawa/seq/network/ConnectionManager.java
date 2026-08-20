@@ -98,6 +98,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private volatile int authAttempt;
     private volatile long nextPrivilegedSendAtMs;
     private volatile boolean connectInProgress;
+    private long connectionAttemptGeneration;
     private volatile boolean userInitiatedConnectFlow;
     private volatile boolean treasuryOnlyConnection;
     private final TreasurySessionAuthenticator treasurySessionAuthenticator;
@@ -180,6 +181,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
         WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
         if (serverScope != WynncraftServerPolicy.Scope.MAIN) {
+            invalidateConnectionAttempt();
             connectInProgress = false;
             finishConnectFlow();
             if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
@@ -240,6 +242,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         boolean open = isOpen();
         boolean hadConnectionState = hasConnectionState();
         boolean hadAutoReconnect = autoReconnect;
+        invalidateConnectionAttempt();
         if (!hadConnectionState && !hadAutoReconnect) {
             connectInProgress = false;
             treasurySessionAuthenticator.reset();
@@ -291,6 +294,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     @Override
     public void onOpen(ServerHandshake handshake) {
+        if (instance != this || !connectInProgress) {
+            SeqClient.LOGGER.info("[WebSocket] Closing a superseded websocket connection");
+            connectInProgress = false;
+            close();
+            return;
+        }
         SeqClient.LOGGER.info(
                 "[WebSocket] onOpen configuredUrl={} clientUri={} status={} message='{}'",
                 BuildConfig.WS_URL,
@@ -327,6 +336,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     @Override
     public void onMessage(String message) {
+        if (instance != this) {
+            SeqClient.LOGGER.debug("[WebSocket] Ignoring message from a superseded websocket connection");
+            return;
+        }
         SeqClient.LOGGER.debug("[WebSocket] onMessage raw={} chars", message != null ? message.length() : -1);
         handleMessage(message);
     }
@@ -347,6 +360,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         memberFeaturesDisabled = false;
         treasurySessionAuthenticator.reset();
         connectedSince = null;
+        if (instance != this) {
+            SeqClient.LOGGER.debug("[WebSocket] Ignoring close from a superseded websocket connection");
+            return;
+        }
         instance = null;
         handleWebSocketAuthRejection(code, reason);
         boolean shouldReconnect = autoReconnect && shouldReconnectAfterClose(code, remote);
@@ -373,6 +390,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 authenticated,
                 ex != null ? ex.getMessage() : "null",
                 ex);
+        if (instance != this) {
+            SeqClient.LOGGER.debug("[WebSocket] Ignoring error from a superseded websocket connection");
+            return;
+        }
         connectInProgress = false;
         authenticated = false;
         treasurySessionAuthenticator.reset();
@@ -576,10 +597,13 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         if (!canAttemptAuthNow()) {
             return;
         }
-        connectInProgress = true;
+        long connectionAttempt = beginConnectionAttempt();
         SeqClient.getAuthService()
                 .ensureValidToken(forceTokenRefresh)
                 .whenComplete((token, throwable) -> Minecraft.getInstance().execute(() -> {
+                    if (!isCurrentConnectionAttempt(connectionAttempt)) {
+                        return;
+                    }
                     if (throwable != null) {
                         connectInProgress = false;
                         AuthException authException = unwrapAuthException(throwable);
@@ -624,6 +648,25 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         scheduleReconnect();
                     }
                 }));
+    }
+
+    private synchronized long beginConnectionAttempt() {
+        connectInProgress = true;
+        return ++connectionAttemptGeneration;
+    }
+
+    private synchronized void invalidateConnectionAttempt() {
+        connectionAttemptGeneration++;
+    }
+
+    private synchronized boolean isCurrentConnectionAttempt(long startedFor) {
+        return shouldContinueAuthenticatedConnection(
+                startedFor, connectionAttemptGeneration, connectInProgress, instance == this);
+    }
+
+    static boolean shouldContinueAuthenticatedConnection(
+            long startedFor, long currentGeneration, boolean connectInProgress, boolean activeInstance) {
+        return startedFor == currentGeneration && connectInProgress && activeInstance;
     }
 
     private void prepareTreasuryOnlyConnection() {

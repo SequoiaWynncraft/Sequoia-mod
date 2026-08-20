@@ -30,6 +30,7 @@ public class PartyMember {
     public final String className;
     public final boolean isLeader;
     public final boolean isReserved;
+    public final boolean isObserved;
     /** Display-friendly party role (e.g. "DPS", "Healer", "Tank", "Other"). */
     public final String role;
     public final String playerUUID;
@@ -39,6 +40,7 @@ public class PartyMember {
         this.name = PlayerNameCache.resolve(member.playerUUID());
         this.isLeader = member.playerUUID().equals(leaderUUID);
         this.isReserved = false;
+        this.isObserved = false;
 
         // Party role — display-friendly text
         this.role = formatRole(member.role());
@@ -50,10 +52,14 @@ public class PartyMember {
     }
 
     private PartyMember(ReservedSlot reservedSlot) {
-        this.playerUUID = null;
-        this.name = RESERVED_LABEL;
+        this.playerUUID = reservedSlot != null ? reservedSlot.playerUUID() : null;
+        String observedUsername = reservedSlot != null ? reservedSlot.observedUsername() : null;
+        this.name = observedUsername != null && !observedUsername.isBlank()
+                ? observedUsername
+                : (playerUUID != null && !playerUUID.isBlank() ? PlayerNameCache.resolve(playerUUID) : RESERVED_LABEL);
         this.isLeader = false;
-        this.isReserved = true;
+        this.isObserved = reservedSlot != null && reservedSlot.isObservedWynnMember();
+        this.isReserved = !isObserved;
         this.role = formatRole(reservedSlot != null ? reservedSlot.role() : null);
         this.className = null;
     }
@@ -63,8 +69,8 @@ public class PartyMember {
     }
 
     public String displayName() {
-        if (isReserved) {
-            return RESERVED_LABEL;
+        if (isReserved || isObserved) {
+            return name;
         }
         return PlayerNameCache.resolve(playerUUID);
     }

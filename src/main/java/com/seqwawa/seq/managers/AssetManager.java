@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.nio.ByteBuffer;
 import java.util.Enumeration;
+import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import javax.imageio.ImageIO;
 import lombok.Getter;
@@ -35,6 +36,7 @@ public class AssetManager {
         "starup.png",
         "cross.png",
         "gaz_ears.png",
+        "textures/map/HQ_icon.png",
     };
 
     @Getter
@@ -47,7 +49,9 @@ public class AssetManager {
     public void getAssets() {
         try {
             for (String file : ASSET_FILES) {
-                String assetName = file.split("\\.")[0];
+                int nameStart = file.lastIndexOf('/') + 1;
+                int extensionStart = file.lastIndexOf('.');
+                String assetName = file.substring(nameStart, extensionStart).toLowerCase(Locale.ROOT);
 
                 String path = "assets/seq/" + file;
                 URL resource = AssetManager.class.getClassLoader().getResource(path);

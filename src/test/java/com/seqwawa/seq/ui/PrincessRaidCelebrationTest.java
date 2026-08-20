@@ -35,4 +35,11 @@ class PrincessRaidCelebrationTest {
         assertFalse(PrincessRaidCelebration.frameAt(PrincessRaidCelebration.DURATION_MS).active());
         assertFalse(PrincessRaidCelebration.frameAt(-1).active());
     }
+
+    @Test
+    void formatsPendingSingularAndPluralRoyalCounts() {
+        assertEquals("Counting Princess graids…", PrincessRaidCelebration.raidCountText(0));
+        assertEquals("1 Princess graid", PrincessRaidCelebration.raidCountText(1));
+        assertEquals("42 Princess graids", PrincessRaidCelebration.raidCountText(42));
+    }
 }

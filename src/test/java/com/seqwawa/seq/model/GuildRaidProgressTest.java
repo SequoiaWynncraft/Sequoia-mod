@@ -106,6 +106,14 @@ class GuildRaidProgressTest {
     }
 
     @Test
+    void aNegativeBackendTotalFallsBackToTheRaidSum() {
+        GuildRaidProgress progress = new GuildRaidProgress(
+                1, Map.of("TNA", new Entry(19), "TCC", new Entry(3), "TOTAL", new Entry(-1)));
+
+        assertEquals(22, progress.totalCount());
+    }
+
+    @Test
     void missingSectionsDoNotBlowUp() {
         GuildRaidProgress progress = GSON.fromJson("{\"schema_version\":1}", GuildRaidProgress.class);
 

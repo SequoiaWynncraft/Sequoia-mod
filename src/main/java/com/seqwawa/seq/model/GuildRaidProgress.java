@@ -38,8 +38,8 @@ public record GuildRaidProgress(
 
     public int totalCount() {
         Entry total = progress.get(TOTAL_KEY);
-        if (total != null) {
-            return count(total);
+        if (total != null && total.count() >= 0) {
+            return total.count();
         }
         int sum = 0;
         for (SeqRaid raid : SeqRaid.values()) {

@@ -41,7 +41,10 @@ import java.util.List;
 import java.util.Locale;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
+import org.jetbrains.annotations.NotNull;
+import org.lwjgl.glfw.GLFW;
 
 public final class AchievementsScreen extends Screen {
 
@@ -89,6 +92,10 @@ public final class AchievementsScreen extends Screen {
         state = service.state();
         shown = service.progress();
         rows = buildRows(shown);
+        if (state != State.READY) {
+            scrollOffset = 0;
+            maxScroll = 0;
+        }
     }
 
     static List<Row> buildRows(GuildRaidProgress progress) {
@@ -96,6 +103,7 @@ public final class AchievementsScreen extends Screen {
         for (SeqRaid raid : SeqRaid.values()) {
             rows.add(row(
                     raid.displayName(),
+                    raid.code(),
                     raid.assetKey(),
                     progress.count(raid),
                     progress.tier(raid),
@@ -104,6 +112,7 @@ public final class AchievementsScreen extends Screen {
         }
         rows.add(row(
                 "All Guild Raids",
+                "All Raids",
                 "icon",
                 progress.totalCount(),
                 progress.totalTier(),
@@ -112,16 +121,18 @@ public final class AchievementsScreen extends Screen {
         return List.copyOf(rows);
     }
 
-    private static Row row(String name, String icon, int count, SeqTier tier, int scale, boolean total) {
-        SeqTier next = SeqTier.next(count, scale);
-        return new Row(name, icon, count, tier, next == null ? 0 : next.threshold(scale), next, total);
+    private static Row row(
+            String name, String compactName, String icon, int count, SeqTier tier, int scale, boolean total) {
+        SeqTier next = SeqTier.next(count, tier, scale);
+        return new Row(name, compactName, icon, count, tier, next == null ? 0 : next.threshold(scale), next, total);
     }
 
     @Override
     public void render(GuiGraphics guiGraphics, int pointerX, int pointerY, float partialTick) {
         super.render(guiGraphics, pointerX, pointerY, partialTick);
-        if (state != service.state() || shown != service.progress()) {
+        if (state != service.state() || !shown.equals(service.progress())) {
             refresh();
+            triggerImmediateNarration(true);
         }
         UiRenderer.renderScreen(this, this::renderScreen);
     }
@@ -129,11 +140,12 @@ public final class AchievementsScreen extends Screen {
     private void renderScreen(UiCanvas canvas) {
         float width = canvas.metrics().width();
         float height = canvas.metrics().height();
-        float panelWidth = Math.min(PANEL_MAX_WIDTH, Math.max(260, width - MARGIN * 2));
-        float panelX = (width - panelWidth) / 2f;
-        float panelY = HEADER_HEIGHT + MARGIN;
-        float available = Math.max(STATUS_PANEL_HEIGHT, height - panelY - MARGIN);
-        float panelHeight = Math.min(available, state == State.READY ? contentHeight() : STATUS_PANEL_HEIGHT);
+        PanelLayout panel = panelLayout(
+                width, height, state == State.READY ? contentHeight() : STATUS_PANEL_HEIGHT);
+        float panelWidth = panel.width();
+        float panelX = panel.x();
+        float panelY = panel.y();
+        float panelHeight = panel.height();
 
         canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY, 210));
         canvas.fillRect(0, 0, width, HEADER_HEIGHT, color(BACKGROUND_HEADER, 248));
@@ -156,7 +168,7 @@ public final class AchievementsScreen extends Screen {
         float rowX = panelX + 10;
         float rowWidth = panelWidth - 20;
         float rowY = panelY + PANEL_PADDING - scrollOffset;
-        float counterWidth = counterColumnWidth(rows);
+        float counterWidth = Math.min(counterColumnWidth(rows), Math.max(40, rowWidth * 0.48f));
 
         canvas.scissor(panelX, panelY, panelWidth, panelHeight);
         for (Row row : rows) {
@@ -181,14 +193,43 @@ public final class AchievementsScreen extends Screen {
         return height;
     }
 
+    static PanelLayout panelLayout(float screenWidth, float screenHeight, float desiredHeight) {
+        float panelWidth = Math.max(0, Math.min(PANEL_MAX_WIDTH, screenWidth - MARGIN * 2));
+        float panelX = (screenWidth - panelWidth) / 2f;
+        float panelY = HEADER_HEIGHT + MARGIN;
+        float availableHeight = Math.max(0, screenHeight - panelY - MARGIN);
+        float panelHeight = Math.min(availableHeight, Math.max(0, desiredHeight));
+        return new PanelLayout(panelX, panelY, panelWidth, panelHeight);
+    }
+
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset - (float) scrollY * SCROLL_SPEED));
+        scrollBy((float) -scrollY * SCROLL_SPEED);
         return true;
     }
 
+    @Override
+    public boolean keyPressed(@NotNull KeyEvent event) {
+        switch (event.key()) {
+            case GLFW.GLFW_KEY_UP -> scrollBy(-SCROLL_SPEED);
+            case GLFW.GLFW_KEY_DOWN -> scrollBy(SCROLL_SPEED);
+            case GLFW.GLFW_KEY_PAGE_UP -> scrollBy(-(ROW_HEIGHT + ROW_GAP) * 4);
+            case GLFW.GLFW_KEY_PAGE_DOWN -> scrollBy((ROW_HEIGHT + ROW_GAP) * 4);
+            case GLFW.GLFW_KEY_HOME -> scrollOffset = 0;
+            case GLFW.GLFW_KEY_END -> scrollOffset = maxScroll;
+            default -> {
+                return super.keyPressed(event);
+            }
+        }
+        return true;
+    }
+
+    private void scrollBy(float amount) {
+        scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset + amount));
+    }
+
     private String statusLine() {
-        return state == State.LOADING ? "Loading your graids..." : "Progress unavailable right now";
+        return state == State.LOADING ? "Loading your guild raids..." : "Progress unavailable right now";
     }
 
     private static void renderRow(UiCanvas canvas, Row row, float x, float y, float width, float counterWidth) {
@@ -206,7 +247,12 @@ public final class AchievementsScreen extends Screen {
         String target = target(row);
         float targetWidth = target.isEmpty() ? 0 : measure(target, COUNT_SIZE);
 
-        text(canvas, row.name(), textX, topLine, NAME_SIZE, color(TEXT_PRIMARY), LEFT);
+        float nameWidth = Math.max(0, textRight - counterWidth - 8 - textX);
+        String displayedName = measure(row.name(), NAME_SIZE) <= nameWidth ? row.name() : row.compactName();
+        canvas.save();
+        canvas.scissor(textX, y, nameWidth, ROW_HEIGHT / 2f);
+        text(canvas, displayedName, textX, topLine, NAME_SIZE, color(TEXT_PRIMARY), LEFT);
+        canvas.restore();
         if (!target.isEmpty()) {
             text(canvas, target, textRight, topLine, COUNT_SIZE, color(TEXT_MUTED), RIGHT);
         }
@@ -314,6 +360,23 @@ public final class AchievementsScreen extends Screen {
     }
 
     @Override
+    public Component getNarrationMessage() {
+        StringBuilder narration = new StringBuilder("Sequoia Achievements. ");
+        if (state != State.READY) {
+            return Component.literal(narration.append(statusLine()).toString());
+        }
+        for (Row row : rows) {
+            narration.append(row.name()).append(": ").append(formatCount(row.count())).append(" completions, ");
+            narration.append(row.tier() == null ? "unranked" : row.tier().label());
+            if (row.nextAt() > 0) {
+                narration.append(", next tier at ").append(formatCount(row.nextAt()));
+            }
+            narration.append(". ");
+        }
+        return Component.literal(narration.toString());
+    }
+
+    @Override
     public void onClose() {
         SeqClient.mc.setScreen(parent);
     }
@@ -353,5 +416,23 @@ public final class AchievementsScreen extends Screen {
                 base.getAlpha());
     }
 
-    record Row(String name, String icon, int count, SeqTier tier, int nextAt, SeqTier nextTier, boolean total) {}
+    record Row(
+            String name,
+            String compactName,
+            String icon,
+            int count,
+            SeqTier tier,
+            int nextAt,
+            SeqTier nextTier,
+            boolean total) {}
+
+    record PanelLayout(float x, float y, float width, float height) {
+        float right() {
+            return x + width;
+        }
+
+        float bottom() {
+            return y + height;
+        }
+    }
 }

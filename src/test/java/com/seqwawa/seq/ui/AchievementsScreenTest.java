@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 class AchievementsScreenTest {
 
     @Test
-    void oneRowPerGraidThenTheCombinedOne() {
+    void oneRowPerGuildRaidThenTheCombinedOne() {
         List<Row> rows = AchievementsScreen.buildRows(GuildRaidProgress.EMPTY);
 
         assertEquals(SeqRaid.values().length + 1, rows.size());
@@ -35,6 +35,8 @@ class AchievementsScreenTest {
         Row tna = row(progress(entry("TNA", 19, "platinum")), "The Nameless Anomaly");
 
         assertEquals(SeqTier.PLATINUM, tna.tier());
+        assertEquals(SeqTier.DIAMOND, tna.nextTier());
+        assertEquals(1_000, tna.nextAt());
     }
 
     @Test
@@ -43,6 +45,8 @@ class AchievementsScreenTest {
 
         assertNull(tna.tier());
         assertEquals(400, tna.count());
+        assertEquals(SeqTier.PLATINUM, tna.nextTier());
+        assertEquals(500, tna.nextAt());
     }
 
     @Test
@@ -108,6 +112,16 @@ class AchievementsScreenTest {
         assertEquals("999", AchievementsScreen.formatCount(999));
         assertEquals("2,500", AchievementsScreen.formatCount(2500));
         assertEquals("10,000", AchievementsScreen.formatCount(10_000));
+    }
+
+    @Test
+    void compactViewportKeepsThePanelInsideItsMargins() {
+        AchievementsScreen.PanelLayout panel = AchievementsScreen.panelLayout(284.7f, 160, 345);
+
+        assertTrue(panel.x() >= 14);
+        assertTrue(panel.right() <= 284.7f - 14);
+        assertTrue(panel.y() >= 0);
+        assertTrue(panel.bottom() <= 160 - 14);
     }
 
     private static Map.Entry<String, Entry> entry(String key, int count, String tier) {
