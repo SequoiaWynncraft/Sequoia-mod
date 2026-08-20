@@ -432,35 +432,36 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-        float btnY = 50;
 
-        float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
         var destinations = SequoiaSidebarNavigation.destinations();
+        var layout = SequoiaSidebarNavigation.sidebarLayout(
+                screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
         for (int row = 0; row < destinations.size(); row++) {
             var destination = destinations.get(row);
             drawSidebarButton(
                     canvas,
                     fontName,
                     btnX,
-                    btnY + step * row,
+                    layout.buttonY(row),
                     btnW,
+                    layout.buttonHeight(),
                     destination.label(),
                     destination == SequoiaSidebarNavigation.Destination.PARTY_FINDER);
         }
     }
 
     private void drawSidebarButton(
-            UiCanvas canvas, String fontName, float x, float y, float w, String label, boolean active) {
-        boolean hovered = isHovered(uiMouseX, uiMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
+            UiCanvas canvas, String fontName, float x, float y, float w, float h, String label, boolean active) {
+        boolean hovered = isHovered(uiMouseX, uiMouseY, x, y, w, h);
         Color bg = active ? color(ACCENT_PRIMARY_DARK) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
-        canvas.fillRect(x, y, w, SIDEBAR_BUTTON_HEIGHT, bg);
+        canvas.fillRect(x, y, w, h, bg);
         drawText(
                 canvas,
                 fontName,
-                SIDEBAR_BUTTON_SIZE,
+                Math.min(SIDEBAR_BUTTON_SIZE, Math.max(8, h - 2)),
                 color(TEXT_PRIMARY),
                 x + w / 2f,
-                y + SIDEBAR_BUTTON_HEIGHT / 2f,
+                y + h / 2f,
                 label,
                 UiCanvas.HorizontalAlign.CENTER);
     }
@@ -2139,12 +2140,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         // ── Sidebar ──
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-        float btnStartY = 50;
 
-        float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
         var destinations = SequoiaSidebarNavigation.destinations();
+        var layout = SequoiaSidebarNavigation.sidebarLayout(
+                screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
         for (int row = 0; row < destinations.size(); row++) {
-            if (!isHovered(mx, my, btnX, btnStartY + step * row, btnW, SIDEBAR_BUTTON_HEIGHT)) {
+            if (!isHovered(mx, my, btnX, layout.buttonY(row), btnW, layout.buttonHeight())) {
                 continue;
             }
             var destination = destinations.get(row);

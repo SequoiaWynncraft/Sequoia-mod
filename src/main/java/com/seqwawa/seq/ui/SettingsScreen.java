@@ -207,25 +207,30 @@ public class SettingsScreen extends Screen {
             // Sidebar buttons
             float btnX = SIDEBAR_PADDING;
             float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-            float btnStartY = 50;
 
-            float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
             var destinations = SequoiaSidebarNavigation.destinations();
+            var sidebarLayout = SequoiaSidebarNavigation.sidebarLayout(
+                    screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
             for (int row = 0; row < destinations.size(); row++) {
                 var destination = destinations.get(row);
                 drawSidebarButton(
                         canvas,
                         fontName,
                         btnX,
-                        btnStartY + step * row,
+                        sidebarLayout.buttonY(row),
                         btnW,
+                        sidebarLayout.buttonHeight(),
                         destination.label(),
                         destination == SequoiaSidebarNavigation.Destination.SETTINGS);
             }
 
+            boolean princessPromptFits = princessPromptFits(screenHeight, sidebarLayout.bottom());
             if (princessLeaderboardVisible()) {
-                float leaderboardY = btnStartY + step * destinations.size();
-                float availableHeight = princessPromptY(screenHeight, 1f)
+                float leaderboardY = sidebarLayout.bottom() + SIDEBAR_BUTTON_SPACING;
+                float availableBottom = princessPromptFits
+                        ? princessPromptY(screenHeight, 1f)
+                        : screenHeight - SIDEBAR_PADDING;
+                float availableHeight = availableBottom
                         - SIDEBAR_BUTTON_SPACING
                         - leaderboardY;
                 float leaderboardHeight = Math.min(PrincessLeaderboardPanel.HEIGHT, availableHeight);
@@ -241,7 +246,9 @@ public class SettingsScreen extends Screen {
                 }
             }
 
-            renderPrincessPrompt(canvas, fontName, screenHeight, System.currentTimeMillis());
+            if (princessPromptFits) {
+                renderPrincessPrompt(canvas, fontName, screenHeight, System.currentTimeMillis());
+            }
 
             // === Main Content Panel (fills rest of screen) ===
             float panelX = SIDEBAR_WIDTH;
@@ -420,13 +427,13 @@ public class SettingsScreen extends Screen {
     }
 
     private void drawSidebarButton(
-            UiCanvas canvas, String fontName, float x, float y, float w, String label, boolean active) {
-        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
+            UiCanvas canvas, String fontName, float x, float y, float w, float h, String label, boolean active) {
+        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
 
         Color bgColor = active ? color(ACCENT_PRIMARY_DARK_HOVER, 120) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
-        canvas.fillRect(x, y, w, SIDEBAR_BUTTON_HEIGHT, bgColor);
-        drawText(canvas, fontName, SIDEBAR_BUTTON_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
-                x + w / 2f, y + SIDEBAR_BUTTON_HEIGHT / 2f, label);
+        canvas.fillRect(x, y, w, h, bgColor);
+        drawText(canvas, fontName, Math.min(SIDEBAR_BUTTON_SIZE, Math.max(8, h - 2)), color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
+                x + w / 2f, y + h / 2f, label);
     }
 
     private void renderPrincessPrompt(UiCanvas canvas, String fontName, float screenHeight, long nowMs) {
@@ -486,6 +493,10 @@ public class SettingsScreen extends Screen {
         return screenHeight + (visibleY - screenHeight) * progress;
     }
 
+    static boolean princessPromptFits(float screenHeight, float navigationBottom) {
+        return princessPromptY(screenHeight, 1f) >= navigationBottom + SIDEBAR_BUTTON_SPACING;
+    }
+
     private static boolean princessPromptAllowed() {
         return SeqClient.getEasterEggsSetting() != null && SeqClient.getEasterEggsSetting().getValue();
     }
@@ -529,12 +540,12 @@ public class SettingsScreen extends Screen {
             // Sidebar button clicks
             float btnX = SIDEBAR_PADDING;
             float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-            float btnStartY = 50;
 
-            float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
             var destinations = SequoiaSidebarNavigation.destinations();
+            var sidebarLayout = SequoiaSidebarNavigation.sidebarLayout(
+                    screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
             for (int row = 0; row < destinations.size(); row++) {
-                if (!isHovered(mx, my, btnX, btnStartY + step * row, btnW, SIDEBAR_BUTTON_HEIGHT)) {
+                if (!isHovered(mx, my, btnX, sidebarLayout.buttonY(row), btnW, sidebarLayout.buttonHeight())) {
                     continue;
                 }
                 var destination = destinations.get(row);
@@ -544,9 +555,7 @@ public class SettingsScreen extends Screen {
                 return true;
             }
 
-            // The easter-egg prompt can slide across the navigation on very short
-            // layouts. Navigation always wins when their hitboxes overlap.
-            if (princessPromptAllowed()) {
+            if (princessPromptAllowed() && princessPromptFits(screenHeight, sidebarLayout.bottom())) {
                 long nowMs = System.currentTimeMillis();
                 float progress = princessPrompt.slideProgress(nowMs);
                 float promptY = princessPromptY(screenHeight, progress);

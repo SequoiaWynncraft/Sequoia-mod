@@ -117,7 +117,7 @@ public class SeqCommand {
                                 .then(ClientCommandManager.literal("logout")
                                                 .executes(ctx -> {
                                                         ConnectionManager.getInstance().disconnect();
-                                                        SeqClient.getConfigManager().clearToken();
+                                                        SeqClient.getAuthService().clearSession();
                                                         if (SeqClient.getWarPlannerManager() != null) {
                                                                 SeqClient.getWarPlannerManager().reset();
                                                         }

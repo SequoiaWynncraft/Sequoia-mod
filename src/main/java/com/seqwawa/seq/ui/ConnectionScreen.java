@@ -80,18 +80,19 @@ public class ConnectionScreen extends Screen {
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-        float btnY = 50;
-        float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
 
         var destinations = SequoiaSidebarNavigation.destinations();
+        var layout = SequoiaSidebarNavigation.sidebarLayout(
+                screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
         for (int row = 0; row < destinations.size(); row++) {
             var destination = destinations.get(row);
             drawSidebarButton(
                     canvas,
                     fontName,
                     btnX,
-                    btnY + step * row,
+                    layout.buttonY(row),
                     btnW,
+                    layout.buttonHeight(),
                     destination.label(),
                     destination == SequoiaSidebarNavigation.Destination.CONNECTION);
         }
@@ -203,12 +204,12 @@ public class ConnectionScreen extends Screen {
     }
 
     private void drawSidebarButton(
-            UiCanvas canvas, String fontName, float x, float y, float w, String label, boolean active) {
-        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
+            UiCanvas canvas, String fontName, float x, float y, float w, float h, String label, boolean active) {
+        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
         Color bgColor = active ? color(ACCENT_PRIMARY_DARK_HOVER, 120) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
-        canvas.fillRect(x, y, w, SIDEBAR_BUTTON_HEIGHT, bgColor);
-        drawText(canvas, fontName, SIDEBAR_BUTTON_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
-                x + w / 2f, y + SIDEBAR_BUTTON_HEIGHT / 2f, label);
+        canvas.fillRect(x, y, w, h, bgColor);
+        drawText(canvas, fontName, Math.min(SIDEBAR_BUTTON_SIZE, Math.max(8, h - 2)), color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
+                x + w / 2f, y + h / 2f, label);
     }
 
     private void drawActionButton(
@@ -227,15 +228,16 @@ public class ConnectionScreen extends Screen {
 
         float mx = MinecraftUiRenderer.mouseX(click.x());
         float my = MinecraftUiRenderer.mouseY(click.y());
+        float screenHeight = MinecraftUiRenderer.screenHeight();
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-        float btnY = 50;
-        float step = SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING;
 
         var destinations = SequoiaSidebarNavigation.destinations();
+        var layout = SequoiaSidebarNavigation.sidebarLayout(
+                screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
         for (int row = 0; row < destinations.size(); row++) {
-            if (!isHovered(mx, my, btnX, btnY + step * row, btnW, SIDEBAR_BUTTON_HEIGHT)) {
+            if (!isHovered(mx, my, btnX, layout.buttonY(row), btnW, layout.buttonHeight())) {
                 continue;
             }
             var destination = destinations.get(row);

@@ -25,7 +25,8 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Seq-only war planner with timed availability, exclusive 1–5 player parties, a shared Lead + three Eco board, and collaborative territory zones
 - Raid tracking and announcements
 - Per-player raid gambit counts parsed natively from the raid-start roster
-- A playful Princess-mode graid count, compact leaderboard, and numbered raid celebration
+- Sequoia achievements: guild-raid completion counts ranked from Bronze to Mythril
+- A playful Princess-mode guild-raid count, compact leaderboard, and numbered raid celebration
 - Interactive world map with gathering nodes analysis and active world events
 - Guild-specific settings and status screens
 
@@ -144,6 +145,25 @@ Navigation and map mode controls remain pinned in the left sidebar. Its map, ana
 Gathering analysis supports three scopes: all bundled gathering nodes, nodes inside any guild territory, or nodes inside the selected territory. Resource, profession, cluster, and score controls continue to refine the active scope.
 
 The Events view shows runs currently visible through the Wynncraft API. Choose All or Tracked to filter the markers, click a marker for event details, and use Track Event or the searchable tracking dropdown to manage persistent tracking. The management list can be limited to Tracked Only for quick removal. Tracked-event detection messages can be enabled in the World Events settings category.
+
+## Achievements
+
+Open **Achievements** from the main Sequoia screen (`/seq`, or `O`) or from any Sequoia sidebar.
+
+The screen shows one line per guild raid with the authenticated Minecraft account's completions,
+current tier, and progress toward the next tier, plus a combined line for all guild raids. Tiers run
+from Bronze to Mythril, each with its own theme colour; combined tiers require twice as many runs as
+a single-raid tier.
+
+Counts and current tiers come from the Sequoia backend. Progress follows the same Minecraft account
+across machines; linked alternate accounts retain separate totals. The backend counts recorded raid
+announcements from 14 August 2026 at 18:12:02 UTC onward. The mod keeps the thresholds needed to show
+the next target, polls periodically, and refreshes shortly after a locally detected completion. If
+there is no cached result and the backend is unavailable, the screen reports that state rather than
+presenting missing data as zero completions.
+
+Tier colours use the `achievement.bronze` through `achievement.mythril` theme keys. See
+[`docs/theme-template.theme.yml`](docs/theme-template.theme.yml) for the complete palette schema.
 
 ## Settings
 

@@ -17,6 +17,8 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import com.seqwawa.seq.model.war.WarTeamType;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -77,6 +79,22 @@ class ApiClientTest {
                 new ApiClient.ApiException(500, "{\"message\":\"internal error\"}");
 
         assertEquals(false, ApiClient.shouldRetryAuthAtAlternateBase(exception));
+    }
+
+    @Test
+    void achievementRequestWaitsForAValidToken() {
+        CompletableFuture<String> token = new CompletableFuture<>();
+        AtomicBoolean requested = new AtomicBoolean();
+        CompletableFuture<String> result = ApiClient.afterValidToken(token, () -> {
+            requested.set(true);
+            return CompletableFuture.completedFuture("progress");
+        });
+
+        assertFalse(requested.get());
+        token.complete("refreshed-token");
+
+        assertTrue(requested.get());
+        assertEquals("progress", result.join());
     }
 
     @Test

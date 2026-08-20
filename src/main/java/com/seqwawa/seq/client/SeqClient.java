@@ -30,6 +30,7 @@ import com.seqwawa.seq.managers.ChatManager;
 import com.seqwawa.seq.managers.ChatRegexFilterManager;
 import com.seqwawa.seq.managers.FontManager;
 import com.seqwawa.seq.managers.GameManager;
+import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
@@ -380,6 +381,7 @@ public class SeqClient implements ClientModInitializer {
             String currentHost = WynncraftServerPolicy.currentNormalizedHost();
             WynncraftServerPolicy.Scope previousServerScope = lastServerScope;
             logServerScopeChange(serverScope, currentHost);
+            boolean minecraftAccountChanged = handleMinecraftAccountChange();
             if (worldEventManager != null) {
                 worldEventManager.tick(
                         client,
@@ -404,6 +406,7 @@ public class SeqClient implements ClientModInitializer {
                 if (warPlannerManager != null) {
                     warPlannerManager.reset();
                 }
+                GuildRaidProgressService.getInstance().tick(false);
                 return;
             }
             if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
@@ -413,10 +416,12 @@ public class SeqClient implements ClientModInitializer {
                 if (warPlannerManager != null) {
                     warPlannerManager.reset();
                 }
+                GuildRaidProgressService.getInstance().tick(false);
                 return;
             }
 
-            if (handleMinecraftAccountChange()) {
+            GuildRaidProgressService.getInstance().tick();
+            if (minecraftAccountChanged) {
                 return;
             }
 
@@ -506,7 +511,7 @@ public class SeqClient implements ClientModInitializer {
         if (!preserveOperatorSession) {
             ConnectionManager.resetForAccountChange();
             if (authService != null) {
-                authService.clearSessionIfNotActiveProfile(currentProfileId);
+                authService.clearSession();
             }
         }
         wasInPartyFinder = false;
@@ -515,6 +520,7 @@ public class SeqClient implements ClientModInitializer {
             wynnPartySyncManager.reset();
         }
         RaidPartySnapshotTracker.reset();
+        GuildRaidProgressService.getInstance().reset();
         if (guildWarTracker != null) {
             guildWarTracker.reset();
         }

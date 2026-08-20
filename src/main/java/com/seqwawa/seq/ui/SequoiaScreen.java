@@ -60,22 +60,22 @@ public class SequoiaScreen extends Screen {
             float centerX = screenWidth / 2f - BUTTON_WIDTH / 2f;
 
             for (int row = 0; row < destinations.size(); row++) {
-                drawButton(canvas, centerX, menu.buttonY(row), destinations.get(row).label());
+                drawButton(canvas, centerX, menu.buttonY(row), menu.buttonHeight(), destinations.get(row).label());
             }
         });
     }
 
-    private void drawButton(UiCanvas canvas, float x, float y, String label) {
+    private void drawButton(UiCanvas canvas, float x, float y, float height, String label) {
         boolean hovered = nvgMouseX >= x && nvgMouseX <= x + BUTTON_WIDTH
-                && nvgMouseY >= y && nvgMouseY <= y + BUTTON_HEIGHT;
+                && nvgMouseY >= y && nvgMouseY <= y + height;
 
         Color bgColor = hovered ? color(CONTROL_INPUT_HOVER) : color(BACKGROUND_POPUP, 200);
-        canvas.fillRect(x, y, BUTTON_WIDTH, BUTTON_HEIGHT, bgColor);
+        canvas.fillRect(x, y, BUTTON_WIDTH, height, bgColor);
 
         String fontName = SeqClient.getFontManager().getSelectedFont();
-        canvas.drawText(label, x + BUTTON_WIDTH / 2f, y + BUTTON_HEIGHT / 2f, new UiCanvas.TextStyle(
+        canvas.drawText(label, x + BUTTON_WIDTH / 2f, y + height / 2f, new UiCanvas.TextStyle(
                 fontName,
-                BUTTON_FONT_SIZE,
+                Math.min(BUTTON_FONT_SIZE, Math.max(8, height - 2)),
                 color(TEXT_PRIMARY),
                 UiCanvas.HorizontalAlign.CENTER,
                 UiCanvas.VerticalAlign.MIDDLE));
@@ -95,7 +95,7 @@ public class SequoiaScreen extends Screen {
             float centerX = screenWidth / 2f - BUTTON_WIDTH / 2f;
 
             for (int row = 0; row < destinations.size(); row++) {
-                if (isInButton(mx, my, centerX, menu.buttonY(row))) {
+                if (isInButton(mx, my, centerX, menu.buttonY(row), menu.buttonHeight())) {
                     SequoiaSidebarNavigation.open(destinations.get(row), this);
                     return true;
                 }
@@ -104,23 +104,38 @@ public class SequoiaScreen extends Screen {
         return super.mouseClicked(click, outsideScreen);
     }
 
-    private boolean isInButton(float mx, float my, float bx, float by) {
-        return mx >= bx && mx <= bx + BUTTON_WIDTH && my >= by && my <= by + BUTTON_HEIGHT;
+    private boolean isInButton(float mx, float my, float bx, float by, float buttonHeight) {
+        return mx >= bx && mx <= bx + BUTTON_WIDTH && my >= by && my <= by + buttonHeight;
     }
 
     static MenuLayout menuLayout(float screenHeight, int rowCount) {
         int rows = Math.max(1, rowCount);
         float bottomPadding = 12;
-        float minimumStartY = 48;
+        float minimumStartY = 34;
         float availableHeight = Math.max(BUTTON_HEIGHT, screenHeight - minimumStartY - bottomPadding);
-        float rowStep = rows == 1
-                ? BUTTON_HEIGHT
-                : Math.min(BUTTON_HEIGHT + BUTTON_SPACING,
-                        Math.max(BUTTON_HEIGHT + 2, (availableHeight - BUTTON_HEIGHT) / (rows - 1)));
-        float blockHeight = BUTTON_HEIGHT + rowStep * (rows - 1);
+        float normalBlockHeight = BUTTON_HEIGHT * rows + BUTTON_SPACING * (rows - 1);
+        float buttonHeight;
+        float rowStep;
+        if (normalBlockHeight <= availableHeight) {
+            buttonHeight = BUTTON_HEIGHT;
+            rowStep = BUTTON_HEIGHT + BUTTON_SPACING;
+        } else {
+            float minimumButtonHeight = 10;
+            float minimumSpacing = 1;
+            buttonHeight = Math.max(
+                    minimumButtonHeight,
+                    Math.min(BUTTON_HEIGHT, (availableHeight - minimumSpacing * (rows - 1)) / rows));
+            float spacing = rows == 1
+                    ? 0
+                    : Math.max(
+                            minimumSpacing,
+                            Math.min(BUTTON_SPACING, (availableHeight - buttonHeight * rows) / (rows - 1)));
+            rowStep = buttonHeight + spacing;
+        }
+        float blockHeight = buttonHeight + rowStep * (rows - 1);
         float startY = Math.max(8, Math.min(screenHeight * .3f + 40, screenHeight - bottomPadding - blockHeight));
         float titleY = Math.max(18, Math.min(screenHeight * .3f, startY - 28));
-        return new MenuLayout(titleY, startY, rowStep, rows);
+        return new MenuLayout(titleY, startY, rowStep, buttonHeight, rows);
     }
 
     @Override
@@ -128,13 +143,13 @@ public class SequoiaScreen extends Screen {
         return false;
     }
 
-    record MenuLayout(float titleY, float startY, float rowStep, int rowCount) {
+    record MenuLayout(float titleY, float startY, float rowStep, float buttonHeight, int rowCount) {
         float buttonY(int row) {
             return startY + rowStep * row;
         }
 
         float bottom() {
-            return buttonY(rowCount - 1) + BUTTON_HEIGHT;
+            return buttonY(rowCount - 1) + buttonHeight;
         }
     }
 }

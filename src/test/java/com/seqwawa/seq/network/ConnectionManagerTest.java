@@ -75,6 +75,14 @@ class ConnectionManagerTest {
     }
 
     @Test
+    void supersededAuthenticationCannotStartAWebsocket() {
+        assertTrue(ConnectionManager.shouldContinueAuthenticatedConnection(4, 4, true, true));
+        assertFalse(ConnectionManager.shouldContinueAuthenticatedConnection(4, 5, true, true));
+        assertFalse(ConnectionManager.shouldContinueAuthenticatedConnection(4, 4, false, true));
+        assertFalse(ConnectionManager.shouldContinueAuthenticatedConnection(4, 4, true, false));
+    }
+
+    @Test
     void treasuryOnlyConnectionIsSelectedOnlyForCinfrascitizen() {
         assertTrue(ConnectionManager.shouldUseTreasuryOnlyConnection("cinfrascitizen"));
         assertTrue(ConnectionManager.shouldUseTreasuryOnlyConnection("CinfrasCitizen"));

@@ -24,7 +24,7 @@ public final class ThemeReader {
     private static final int MAX_THEME_CODE_POINTS = 256 * 1024;
     private static final Pattern THEME_NAME = Pattern.compile("^[a-z0-9][a-z0-9_-]{0,63}$");
     private static final Set<String> ROOT_KEYS = Set.of(
-            "name", "palette", "background", "accent", "text", "control", "status", "map");
+            "name", "palette", "background", "accent", "text", "control", "status", "achievement", "map");
     private static final Map<String, UiColor> COLORS_BY_PATH = colorsByPath();
     private static final Map<String, Set<String>> KEYS_BY_GROUP = keysByGroup();
     private static final LoadSettings LOAD_SETTINGS = LoadSettings.builder()

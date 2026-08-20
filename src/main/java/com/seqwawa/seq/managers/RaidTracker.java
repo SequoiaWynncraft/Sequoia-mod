@@ -85,7 +85,8 @@ public class RaidTracker {
         finishLocalCompletion(
                 resolved,
                 () -> recordPrincessCompletion(completion.raidName(), princessAtCompletion),
-                RaidGambitRosterTracker::reset);
+                RaidGambitRosterTracker::reset,
+                () -> GuildRaidProgressService.getInstance().onLocalRaidCompleted());
 
         if (!ConnectionManager.isConnected()) {
             SeqClient.LOGGER.warn(
@@ -138,11 +139,13 @@ public class RaidTracker {
     static void finishLocalCompletion(
             ResolvedRaidCompletion completion,
             Runnable completionEffect,
-            Runnable gambitResetEffect) {
+            Runnable gambitResetEffect,
+            Runnable progressRefreshEffect) {
         if (completion.localCompletion()) {
             RaidPartySnapshotTracker.onRaidCompleted();
             gambitResetEffect.run();
             completionEffect.run();
+            progressRefreshEffect.run();
         }
     }
 
