@@ -13,6 +13,7 @@ import com.seqwawa.seq.managers.PrincessRaidStatsManager.Snapshot;
 import com.seqwawa.seq.managers.PrincessRaidStatsManager.State;
 import com.seqwawa.seq.model.PrincessRaidStats.LeaderboardEntry;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
+import com.seqwawa.seq.utils.rendering.UiRenderer;
 import java.util.List;
 
 /** Compact Princess-mode leaderboard card used by the settings easter egg. */
@@ -22,6 +23,7 @@ final class PrincessLeaderboardPanel {
     private static final int MAX_ROWS = 5;
     private static final float FIRST_ROW_Y = 39;
     private static final float ROW_SPACING = 14;
+    private static final float ROW_TEXT_GAP = 4;
 
     private PrincessLeaderboardPanel() {}
 
@@ -76,24 +78,31 @@ final class PrincessLeaderboardPanel {
             } else {
                 float rowY = y + FIRST_ROW_Y;
                 for (LeaderboardEntry entry : entries) {
+                    String label = entryLabel(entry);
+                    String count = Long.toString(entry.raidCount());
+                    float preferredFontSize = width < 150 ? 9 : 10;
+                    float measuredWidth = UiRenderer.measureText(label, font, preferredFontSize).width()
+                            + UiRenderer.measureText(count, font, preferredFontSize).width();
+                    float rowFontSize = fittedRowFontSize(
+                            preferredFontSize, width - 14 - ROW_TEXT_GAP, measuredWidth);
                     draw(
                             canvas,
                             font,
-                            width < 150 ? 9 : 10,
+                            rowFontSize,
                             color(TEXT_PRIMARY),
                             UiCanvas.HorizontalAlign.LEFT,
                             x + 7,
                             rowY,
-                            entryLabel(entry, width));
+                            label);
                     draw(
                             canvas,
                             font,
-                            width < 150 ? 9 : 10,
+                            rowFontSize,
                             color(ACCENT_PRIMARY),
                             UiCanvas.HorizontalAlign.RIGHT,
                             x + width - 7,
                             rowY,
-                            Long.toString(entry.raidCount()));
+                            count);
                     rowY += ROW_SPACING;
                 }
             }
@@ -130,13 +139,15 @@ final class PrincessLeaderboardPanel {
         return Math.clamp((int) Math.floor((height - 46) / ROW_SPACING), 1, MAX_ROWS);
     }
 
-    static String entryLabel(LeaderboardEntry entry, float width) {
-        String username = entry.minecraftUsername();
-        int maximumLength = Math.clamp((int) ((width - 75) / 6), 3, 16);
-        if (username.length() > maximumLength) {
-            username = username.substring(0, maximumLength) + "…";
+    static String entryLabel(LeaderboardEntry entry) {
+        return entry.rank() + ".  " + entry.minecraftUsername();
+    }
+
+    static float fittedRowFontSize(float preferredSize, float availableWidth, float measuredWidth) {
+        if (measuredWidth <= 0 || measuredWidth <= availableWidth) {
+            return preferredSize;
         }
-        return entry.rank() + ".  " + username;
+        return Math.max(1, preferredSize * Math.max(0, availableWidth) / measuredWidth);
     }
 
     static String ownSummary(Snapshot snapshot) {
