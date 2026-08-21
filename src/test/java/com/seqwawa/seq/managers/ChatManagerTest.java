@@ -238,14 +238,11 @@ class ChatManagerTest {
     }
 
     @Test
-    void parsesTargetFirstGuildRemoval() {
-        ChatManager.ParsedGuildMembershipEvent parsed = ChatManager.parseGuildMembershipEvent(
-                Component.literal("NewMember has been kicked from the guild by GaztheCat."), "Observer");
-
-        assertNotNull(parsed);
-        assertEquals("removed", parsed.action());
-        assertEquals("GaztheCat", parsed.actor());
-        assertEquals("NewMember", parsed.target());
+    void ignoresGuildMemberKicksAndRemovals() {
+        assertNull(ChatManager.parseGuildMembershipEvent(
+                Component.literal("NewMember has been kicked from the guild by GaztheCat."), "Observer"));
+        assertNull(ChatManager.parseGuildMembershipEvent(
+                Component.literal("GaztheCat removed NewMember from the guild."), "Observer"));
     }
 
     @Test
@@ -269,7 +266,7 @@ class ChatManagerTest {
                 "GaztheCat");
 
         assertNotNull(parsed);
-        assertEquals("removed", parsed.action());
+        assertEquals("uninvited", parsed.action());
         assertEquals("GaztheCat", parsed.actor());
         assertEquals("NewMember", parsed.target());
     }
