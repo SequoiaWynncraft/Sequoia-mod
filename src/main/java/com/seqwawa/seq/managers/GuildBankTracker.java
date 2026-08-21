@@ -7,6 +7,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.minecraft.network.chat.Component;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 
@@ -15,6 +16,7 @@ import com.seqwawa.seq.utils.PacketTextNormalizer;
  * backend over WebSocket.
  */
 public final class GuildBankTracker {
+    private static final String BACKEND_GUILD_NAME = "Sequoia";
     private static final Pattern GUILD_BANK_PATTERN = Pattern.compile(
             "^(.+?)\\s+(deposited|withdrew)\\s+(.+?)\\s+(to|from)\\s+the Guild Bank\\s+\\((.+)\\)$",
             Pattern.CASE_INSENSITIVE);
@@ -43,6 +45,9 @@ public final class GuildBankTracker {
         if (event == null) {
             return;
         }
+        if (!shouldForwardForLocalGuild()) {
+            return;
+        }
         if (isDuplicate(event.rawMessage(), Instant.now())) {
             SeqClient.LOGGER.debug("[GuildBank] Duplicate guild-bank message suppressed: {}", event.rawMessage());
             return;
@@ -55,6 +60,29 @@ public final class GuildBankTracker {
                 event.charges(),
                 event.accessTier(),
                 event.rawMessage());
+    }
+
+    private static boolean shouldForwardForLocalGuild() {
+        WynntilsGuildRankAccess.GuildMembership membership =
+                WynntilsGuildRankAccess.guildMembership(BACKEND_GUILD_NAME);
+        boolean shouldForward = shouldForwardForGuild(membership);
+        if (!shouldForward) {
+            SeqClient.LOGGER.debug(
+                    "[GuildBank] Dropping guild-bank event: local Wynntils guild='{}' expected='{}'",
+                    membership == null ? null : membership.currentGuildName(),
+                    BACKEND_GUILD_NAME);
+        }
+        return shouldForward;
+    }
+
+    static boolean shouldForwardForGuild(WynntilsGuildRankAccess.GuildMembership membership) {
+        // Wynntils is optional, so only a positively identified different guild is
+        // rejected here. The backend still authorizes every forwarded event.
+        if (membership == null || !membership.available()) {
+            return true;
+        }
+        String currentGuildName = membership.currentGuildName();
+        return currentGuildName == null || currentGuildName.isBlank() || membership.inExpectedGuild();
     }
 
     GuildBankEvent parseEvent(Component message) {
