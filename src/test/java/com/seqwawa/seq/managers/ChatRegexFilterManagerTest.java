@@ -24,7 +24,8 @@ class ChatRegexFilterManagerTest {
                         "enable_regex_filters",
                         "economy",
                         "economy_resource_alerts_only",
-                        "guild_bank"),
+                        "guild_bank",
+                        "remove_the_cat"),
                 manager.settings().stream().map(setting -> setting.getName()).toList());
     }
 
@@ -156,6 +157,37 @@ class ChatRegexFilterManagerTest {
 
         assertFalse(manager.shouldFilter("NAGISX: I deposited 3x Cinnabar Gem"));
         assertFalse(manager.shouldFilter("The Guild Bank is open to everyone"));
+    }
+
+    @Test
+    void removeTheCatFiltersOnlyMessagesAuthoredByA3pki() {
+        boolean[] easterEggsEnabled = {true};
+        ChatRegexFilterManager manager = new ChatRegexFilterManager(() -> easterEggsEnabled[0]);
+        manager.enabledSetting().setValue(true);
+        Setting.BooleanSetting removeTheCat = manager.builtInFilters().stream()
+                .filter(filter -> filter.id().equals("remove_the_cat"))
+                .findFirst()
+                .orElseThrow()
+                .enabledSetting();
+
+        assertEquals("remove the cat", removeTheCat.getDisplayName());
+        assertFalse(manager.shouldFilter(guildMessage("a3pki", "meow")));
+
+        removeTheCat.setValue(true);
+        assertTrue(manager.shouldFilter(guildMessage("a3pki", "meow")));
+        assertTrue(manager.shouldFilter(guildMessage("A3PKI", "meow")));
+        assertFalse(manager.shouldFilter(guildMessage("SomeoneElse", "a3pki said meow")));
+        assertFalse(manager.shouldFilter(Component.empty()
+                .append(Component.literal("SomeoneElse").withStyle(Style.EMPTY.withInsertion("SomeoneElse")))
+                .append(Component.literal(": ask "))
+                .append(Component.literal("a3pki").withStyle(Style.EMPTY.withInsertion("a3pki")))));
+        assertFalse(manager.shouldFilter(Component.empty()
+                .append(Component.literal("a3pki").withStyle(Style.EMPTY.withInsertion("a3pki")))
+                .append(Component.literal(" applied the loadout :void: on Royal Gate"))));
+
+        easterEggsEnabled[0] = false;
+        assertFalse(removeTheCat.isVisible());
+        assertFalse(manager.shouldFilter(guildMessage("a3pki", "meow")));
     }
 
     @Test

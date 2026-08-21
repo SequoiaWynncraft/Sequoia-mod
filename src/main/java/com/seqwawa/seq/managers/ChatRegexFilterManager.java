@@ -18,6 +18,7 @@ import net.minecraft.network.chat.Component;
  */
 public final class ChatRegexFilterManager {
     private static final String SETTINGS_CATEGORY = "chat_filters";
+    private static final String CAT_USERNAME = "a3pki";
     private static final String GAZ_USERNAME = "gazthecat";
     private static final Pattern ECONOMY_ACTIVITY_PATTERN = Pattern.compile(
             "^(?:"
@@ -43,6 +44,8 @@ public final class ChatRegexFilterManager {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern CHECK_DMS_PATTERN =
             Pattern.compile("\\bcheck(?:\\s+your)?\\s+d\\s*m\\s*s?\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CHAT_AUTHOR_PATTERN = Pattern.compile(
+            "^\\s*(?:<\\d+>\\s*)?(?<author>[a-zA-Z0-9_][a-zA-Z0-9_ ]*[a-zA-Z0-9_]|[a-zA-Z0-9_]{3,16})\\s*:");
 
     private final Setting.BooleanSetting enabledSetting =
             new Setting.BooleanSetting("enable_regex_filters", SETTINGS_CATEGORY, false);
@@ -68,6 +71,10 @@ public final class ChatRegexFilterManager {
         economyAlertsOnlySetting =
                 new Setting.BooleanSetting("economy_resource_alerts_only", SETTINGS_CATEGORY, false);
         economyAlertsOnlySetting.setVisibilityCondition(economySetting::getValue);
+        Setting.BooleanSetting removeTheCatSetting =
+                new Setting.BooleanSetting("remove_the_cat", SETTINGS_CATEGORY, false);
+        removeTheCatSetting.setPresentation("remove the cat", null, null);
+        removeTheCatSetting.setVisibilityCondition(easterEggsEnabled);
         builtInFilters = List.of(
                 new BuiltInFilter(
                         "economy",
@@ -76,7 +83,11 @@ public final class ChatRegexFilterManager {
                 new BuiltInFilter(
                         "guild_bank",
                         new Setting.BooleanSetting("guild_bank", SETTINGS_CATEGORY, false),
-                        (message, normalized) -> GUILD_BANK_PATTERN.matcher(normalized).matches()));
+                        (message, normalized) -> GUILD_BANK_PATTERN.matcher(normalized).matches()),
+                new BuiltInFilter(
+                        "remove_the_cat",
+                        removeTheCatSetting,
+                        (message, normalized) -> easterEggsEnabled.getAsBoolean() && isMessageFromCat(message)));
     }
 
     public List<Setting<?>> settings() {
@@ -151,6 +162,24 @@ public final class ChatRegexFilterManager {
         return parsed != null
                 && GAZ_USERNAME.equals(parsed.username().toLowerCase(Locale.ROOT))
                 && CHECK_DMS_PATTERN.matcher(normalizeGazReminder(parsed.message())).find();
+    }
+
+    private static boolean isMessageFromCat(Component message) {
+        PacketNameResolver resolver = PacketNameResolver.from(message);
+        var matcher = CHAT_AUTHOR_PATTERN.matcher(resolver.text());
+        if (!matcher.find()) {
+            return false;
+        }
+
+        String displayedName = matcher.group("author");
+        if (CAT_USERNAME.equalsIgnoreCase(displayedName.trim())) {
+            return true;
+        }
+
+        String username = resolver.resolveMetadataUsername(matcher.start("author"), matcher.end("author"));
+        return CAT_USERNAME.equalsIgnoreCase(username)
+                && resolver.hasUsernameMetadataThroughout(
+                        CAT_USERNAME, matcher.start("author"), matcher.end("author"));
     }
 
     private static String normalizeGazReminder(String message) {
