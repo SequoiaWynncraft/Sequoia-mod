@@ -410,19 +410,44 @@ class WarPlannerScreenTest {
     }
 
     @Test
-    void pingRequiresAConnectedDiscordAccountAndCannotTargetSelf() {
+    void warPingCandidatesRequireManagerAccessOnlinePresenceDiscordAndANonSelfTarget() {
         WarPlannerSnapshot.RosterMember linked = new WarPlannerSnapshot.RosterMember(
-                "linked", "Linked", "123", null, List.of(WarCompositionRole.SOLO), true, true, null, null);
+                "linked", "Zulu", "123", "DiscordAlias", List.of(WarCompositionRole.SOLO),
+                true, true, null, null);
+        WarPlannerSnapshot.RosterMember linkedFirst = new WarPlannerSnapshot.RosterMember(
+                "linked-first", "Alpha", "234", null, List.of(WarCompositionRole.DPS),
+                true, true, null, null);
+        WarPlannerSnapshot.RosterMember offline = new WarPlannerSnapshot.RosterMember(
+                "offline", "Offline", "345", null, List.of(WarCompositionRole.SOLO),
+                false, true, null, null);
         WarPlannerSnapshot.RosterMember unlinked = rosterMember(
                 "unlinked", "Unlinked", List.of(WarCompositionRole.SOLO), true);
         WarPlannerSnapshot.RosterMember self = new WarPlannerSnapshot.RosterMember(
                 "self", "Self", "456", null, List.of(WarCompositionRole.SOLO), true, true, null, null);
-        WarPlannerSnapshot snapshot = snapshot(List.of(), List.of(linked, unlinked, self));
+        WarPlannerSnapshot snapshot = snapshot(
+                List.of(), List.of(linked, offline, unlinked, self, linkedFirst));
 
         assertTrue(WarPlannerScreen.canPingPlayer(snapshot, linked));
+        assertFalse(WarPlannerScreen.canPingPlayer(snapshot, offline));
         assertFalse(WarPlannerScreen.canPingPlayer(snapshot, unlinked));
         assertFalse(WarPlannerScreen.canPingPlayer(snapshot, self));
-        assertEquals(308, WarPlannerScreen.rosterPingButtonX(420));
+        assertFalse(WarPlannerScreen.canPingPlayer(snapshot.withCanManage(false), linked));
+        assertEquals(
+                List.of("linked-first", "linked"),
+                WarPlannerScreen.pingCandidates(snapshot, "").stream()
+                        .map(WarPlannerSnapshot.RosterMember::playerUuid)
+                        .toList());
+        assertEquals(List.of(linked), WarPlannerScreen.pingCandidates(snapshot, "discordalias"));
+        assertTrue(WarPlannerScreen.pingCandidates(snapshot, "missing").isEmpty());
+        assertTrue(WarPlannerScreen.pingCandidates(snapshot.withCanManage(false), "").isEmpty());
+    }
+
+    @Test
+    void warPingCannotClickAPartiallyClippedPickerRow() {
+        assertTrue(WarPlannerScreen.warPingRowFullyVisible(100, 130));
+        assertFalse(WarPlannerScreen.warPingRowFullyVisible(100, 129));
+        assertEquals(1, WarPlannerScreen.warPingScrollStart(19, 2));
+        assertEquals(0, WarPlannerScreen.warPingScrollStart(19, 0));
     }
 
     @Test
