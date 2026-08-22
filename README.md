@@ -65,6 +65,7 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq logout`: clear the current backend session
 - `/seq request aspects`: request aspects from the guild reward queue
 - `/seq request tome <reason>`: request a tome from the guild reward queue
+- `/allyraids [minutes]`: show recent shared raids with current allies (Sequoia members only)
 - `/seq ignore <IGN>`: hide incoming Discord bridge messages from a Minecraft username
 - `/seq unignore <IGN>`: show incoming Discord bridge messages from that username again
 
@@ -79,6 +80,8 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq logout`
 - `/seq request aspects`
 - `/seq request tome <reason>`
+- `/allyraids [minutes]`
+- `/seq allyraids [minutes]`
 - `/seq ignore <IGN>`
 - `/seq unignore <IGN>`
 - `/seq map`

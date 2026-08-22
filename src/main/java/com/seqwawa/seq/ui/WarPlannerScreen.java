@@ -145,6 +145,11 @@ public final class WarPlannerScreen extends Screen {
     private boolean roleEditorSaving;
     private final EnumSet<WarCompositionRole> selectedCompositionRoles =
             EnumSet.noneOf(WarCompositionRole.class);
+    private boolean warPingPickerOpen;
+    private boolean warPingSending;
+    private int warPingScrollRows;
+    private String warPingSearchQuery = "";
+    private boolean warPingSearchFocused;
 
     public WarPlannerScreen(Screen parent) {
         super(Component.literal("War Planner"));
@@ -162,6 +167,8 @@ public final class WarPlannerScreen extends Screen {
     public void tick() {
         if (manager == null || manager.state() == WarPlannerManager.State.FORBIDDEN || manager.snapshot() == null) {
             SeqClient.mc.setScreen(parent);
+        } else if (warPingPickerOpen && !manager.canManage()) {
+            closeWarPingPicker();
         }
     }
 
@@ -234,7 +241,9 @@ public final class WarPlannerScreen extends Screen {
                         color(TEXT_PRIMARY), false);
             }
 
-            if (roleEditorOpen) {
+            if (warPingPickerOpen) {
+                renderWarPingPicker(canvas, width, height);
+            } else if (roleEditorOpen) {
                 renderRoleEditor(canvas, width, height);
             } else if (teamEditorOpen) {
                 renderTeamEditor(canvas, width, height);
@@ -338,9 +347,15 @@ public final class WarPlannerScreen extends Screen {
             text(canvas, candidate.label, x + (tabWidth - 4) / 2, y + TAB_HEIGHT / 2, 12,
                     color(TEXT_PRIMARY), true);
         }
-        if (manager.canManage() && tab == Tab.TEAMS) {
-            button(canvas, width - 92, y + 1, 80, BUTTON_HEIGHT,
-                    "New team", false, manager.isMutating());
+        if (manager.canManage()) {
+            if (tab == Tab.ROSTER) {
+                boolean noTargets = pingCandidates(manager.snapshot(), "").isEmpty();
+                button(canvas, width - 92, y + 1, 80, BUTTON_HEIGHT,
+                        "War ping", false, manager.isMutating() || noTargets);
+            } else if (tab == Tab.TEAMS) {
+                button(canvas, width - 92, y + 1, 80, BUTTON_HEIGHT,
+                        "New team", false, manager.isMutating());
+            }
         }
     }
 
@@ -383,8 +398,7 @@ public final class WarPlannerScreen extends Screen {
             text(canvas, truncate(member.displayName() + (caller ? " · You" : ""), 22),
                     PADDING + 8, y + 13, 13, color(TEXT_PRIMARY), false);
             float detailX = renderCompositionIcons(canvas, member.compositionRoles(), PADDING + 8, y + 20);
-            float pingX = rosterPingButtonX(width);
-            float statusX = pingX - 116;
+            float statusX = width - 128;
             int detailCharacters = availableCharacters(detailX, statusX - 6, 10, 28);
             text(canvas, truncate(compositionLabel(member.compositionRoles()), detailCharacters),
                     detailX + iconTextGap(member.compositionRoles()), y + 28, 10, color(TEXT_MUTED), false);
@@ -395,9 +409,64 @@ public final class WarPlannerScreen extends Screen {
                     : Duration.ZERO;
             text(canvas, remaining.isZero() ? "Unavailable" : formatDuration(remaining), statusX, y + 28, 10,
                     color(remaining.isZero() ? TEXT_MUTED : CONTROL_SUCCESS), false);
-            button(canvas, pingX, y + 8, 100, BUTTON_HEIGHT, "Ping war chat", false,
-                    manager.isMutating() || !canPingPlayer(snapshot, member));
         }
+    }
+
+    private void renderWarPingPicker(UiCanvas canvas, float width, float height) {
+        WarPlannerSnapshot snapshot = manager.snapshot();
+        if (snapshot == null || !manager.canManage()) return;
+        float w = Math.min(460, width - PADDING * 2);
+        float h = Math.min(390, height - 44);
+        float x = (width - w) / 2;
+        float y = (height - h) / 2;
+        canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
+        canvas.fillRoundedRect(x, y, w, h, 7, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
+        canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
+        text(canvas, "War ping", x + 14, y + 21, 16, color(ACCENT_PRIMARY), false);
+        text(canvas, "Notify an online, Discord-linked member in war chat.",
+                x + 14, y + 39, 9, color(TEXT_MUTED), false);
+        button(canvas, x + w - 34, y + 9, 24, BUTTON_HEIGHT, "×", true, warPingSending);
+
+        float searchY = y + 52;
+        boolean searchHovered = hit(nvgMouseX, nvgMouseY, x + 12, searchY, w - 24, TEAM_EDITOR_SEARCH_HEIGHT);
+        canvas.fillRect(x + 12, searchY, w - 24, TEAM_EDITOR_SEARCH_HEIGHT,
+                color(warPingSearchFocused || searchHovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
+        canvas.strokeRect(x + 12, searchY, w - 24, TEAM_EDITOR_SEARCH_HEIGHT, 1,
+                color(warPingSearchFocused ? CONTROL_BORDER : CONTROL_INPUT_SECONDARY));
+        String searchText = warPingSearchQuery.isEmpty() ? "Search online members…" : warPingSearchQuery;
+        if (warPingSearchFocused && (System.currentTimeMillis() / 500) % 2 == 0) searchText += "|";
+        canvas.save();
+        canvas.scissor(x + 18, searchY, w - 36, TEAM_EDITOR_SEARCH_HEIGHT);
+        text(canvas, searchText, x + 18, searchY + TEAM_EDITOR_SEARCH_HEIGHT / 2, 10,
+                color(warPingSearchQuery.isEmpty() ? TEXT_MUTED : TEXT_PRIMARY), false);
+        canvas.restore();
+
+        List<RosterMember> candidates = pingCandidates(snapshot, warPingSearchQuery);
+        float listTop = searchY + 30;
+        float listBottom = y + h - 12;
+        canvas.scissor(x + 8, listTop, w - 16, Math.max(0, listBottom - listTop));
+        int start = warPingScrollStart(warPingScrollRows, candidates.size());
+        float rowY = listTop;
+        if (candidates.isEmpty()) {
+            text(canvas, warPingSearchQuery.isBlank()
+                            ? "No eligible online members."
+                            : "No eligible members match this search.",
+                    x + 18, rowY + 14, 10, color(TEXT_MUTED), false);
+        }
+        for (int index = start;
+                index < candidates.size() && warPingRowFullyVisible(rowY, listBottom);
+                index++, rowY += 30) {
+            RosterMember member = candidates.get(index);
+            canvas.fillRoundedRect(x + 12, rowY + 2, w - 24, 25, 3,
+                    plannerBackground(color(BACKGROUND_CONTENT)));
+            float actionX = x + w - 72;
+            int nameCharacters = availableCharacters(x + 18, actionX - 8, 11, 24);
+            text(canvas, truncate(member.displayName(), nameCharacters), x + 18, rowY + 14, 11,
+                    color(TEXT_PRIMARY), false);
+            button(canvas, actionX, rowY + 4, 54, BUTTON_HEIGHT, "Ping", false,
+                    warPingSending || manager.isMutating());
+        }
+        canvas.resetScissor();
     }
 
     private void renderTeams(UiCanvas canvas, WarPlannerSnapshot snapshot, float width, float top, float bottom) {
@@ -1337,12 +1406,14 @@ public final class WarPlannerScreen extends Screen {
 
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
+        if (warPingPickerOpen && click.button() != 0) return true;
         if (click.button() == 1) {
             PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
             float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
             float my = MinecraftUiRenderer.mouseY(click.y());
             WarPlannerSnapshot snapshot = manager == null ? null : manager.snapshot();
-            if (!roleEditorOpen
+            if (!warPingPickerOpen
+                    && !roleEditorOpen
                     && !teamEditorOpen
                     && editingSupportSlot == null
                     && tab == Tab.ZONES
@@ -1366,6 +1437,9 @@ public final class WarPlannerScreen extends Screen {
         float width = viewport.width();
         float height = MinecraftUiRenderer.screenHeight();
 
+        if (warPingPickerOpen) {
+            return clickWarPingPicker(mx, my, width, height);
+        }
         if (roleEditorOpen) {
             return clickRoleEditor(mx, my, width, height);
         }
@@ -1443,11 +1517,15 @@ public final class WarPlannerScreen extends Screen {
                 return true;
             }
         }
-        if (manager.canManage()
-                && tab == Tab.TEAMS
-                && hit(mx, my, width - 92, tabsY + 1, 80, BUTTON_HEIGHT)) {
-            beginTeamEdit(null);
-            return true;
+        if (manager.canManage() && hit(mx, my, width - 92, tabsY + 1, 80, BUTTON_HEIGHT)) {
+            if (tab == Tab.ROSTER && !manager.isMutating() && !pingCandidates(manager.snapshot(), "").isEmpty()) {
+                beginWarPingPicker();
+                return true;
+            }
+            if (tab == Tab.TEAMS) {
+                beginTeamEdit(null);
+                return true;
+            }
         }
         return clickContent(mx, my, width, height) || super.mouseClicked(click, outsideScreen);
     }
@@ -1546,21 +1624,7 @@ public final class WarPlannerScreen extends Screen {
         if (tab == Tab.ZONES) {
             return clickZoneContent(snapshot, mx, my, width);
         }
-        if (tab == Tab.ROSTER) {
-            int row = scrollRows + Math.max(0, (int) ((my - contentTop()) / ROW_HEIGHT));
-            List<RosterMember> roster = sortedWarRoster(snapshot);
-            if (row < roster.size()) {
-                RosterMember member = roster.get(row);
-                float rowY = contentTop() + (row - scrollRows) * ROW_HEIGHT;
-                if (hit(mx, my, rosterPingButtonX(width), rowY + 8, 100, BUTTON_HEIGHT)
-                        && canPingPlayer(snapshot, member)
-                        && !manager.isMutating()) {
-                    showResult(manager.pingPlayer(member.playerUuid()));
-                    return true;
-                }
-            }
-            return false;
-        }
+        if (tab == Tab.ROSTER) return false;
         if (tab == Tab.TEAMS) {
             TeamPlacement placement = teamPlacementAt(snapshot, my, width);
             if (placement == null) return false;
@@ -1710,6 +1774,7 @@ public final class WarPlannerScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
+        if (warPingPickerOpen) return true;
         if (draggingBackgroundOpacity && click.button() == 0) {
             PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
             float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
@@ -1753,6 +1818,7 @@ public final class WarPlannerScreen extends Screen {
 
     @Override
     public boolean mouseReleased(@NotNull MouseButtonEvent click) {
+        if (warPingPickerOpen) return true;
         if (click.button() == 0 && draggingBackgroundOpacity) {
             draggingBackgroundOpacity = false;
             SeqClient.getConfigManager().save();
@@ -1894,6 +1960,44 @@ public final class WarPlannerScreen extends Screen {
         return true;
     }
 
+    private boolean clickWarPingPicker(float mx, float my, float width, float height) {
+        WarPlannerSnapshot snapshot = manager.snapshot();
+        if (snapshot == null || !manager.canManage()) {
+            closeWarPingPicker();
+            return true;
+        }
+        if (warPingSending) return true;
+        float w = Math.min(460, width - PADDING * 2);
+        float h = Math.min(390, height - 44);
+        float x = (width - w) / 2;
+        float y = (height - h) / 2;
+        if (hit(mx, my, x + w - 34, y + 9, 24, BUTTON_HEIGHT)) {
+            closeWarPingPicker();
+            return true;
+        }
+        float searchY = y + 52;
+        if (hit(mx, my, x + 12, searchY, w - 24, TEAM_EDITOR_SEARCH_HEIGHT)) {
+            warPingSearchFocused = true;
+            return true;
+        }
+        warPingSearchFocused = false;
+        float listTop = searchY + 30;
+        float listBottom = y + h - 12;
+        if (my >= listTop && my <= listBottom) {
+            List<RosterMember> candidates = pingCandidates(snapshot, warPingSearchQuery);
+            int start = warPingScrollStart(warPingScrollRows, candidates.size());
+            int row = start + (int) ((my - listTop) / 30);
+            float rowY = listTop + (row - start) * 30;
+            if (row >= 0
+                    && row < candidates.size()
+                    && warPingRowFullyVisible(rowY, listBottom)
+                    && hit(mx, my, x + w - 72, rowY + 4, 54, BUTTON_HEIGHT)) {
+                sendWarPing(candidates.get(row));
+            }
+        }
+        return true;
+    }
+
     private boolean clickSupportEditor(float mx, float my, float width, float height) {
         WarPlannerSnapshot snapshot = manager.snapshot();
         if (snapshot == null || editingSupportSlot == null || supportEditorSaving) return true;
@@ -1953,6 +2057,27 @@ public final class WarPlannerScreen extends Screen {
 
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
+        if (warPingPickerOpen) {
+            int key = keyEvent.key();
+            if (key == GLFW.GLFW_KEY_ESCAPE) {
+                closeWarPingPicker();
+                return true;
+            }
+            if (warPingSearchFocused) {
+                if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
+                    warPingSearchFocused = false;
+                    return true;
+                }
+                if (key == GLFW.GLFW_KEY_BACKSPACE) {
+                    if (!warPingSearchQuery.isEmpty()) {
+                        warPingSearchQuery = warPingSearchQuery.substring(0, warPingSearchQuery.length() - 1);
+                        warPingScrollRows = 0;
+                    }
+                    return true;
+                }
+                return true;
+            }
+        }
         if (teamEditorOpen && teamEditorSearchFocused) {
             int key = keyEvent.key();
             if (key == GLFW.GLFW_KEY_ESCAPE || key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
@@ -1973,6 +2098,15 @@ public final class WarPlannerScreen extends Screen {
 
     @Override
     public boolean charTyped(@NotNull CharacterEvent characterEvent) {
+        if (warPingPickerOpen && warPingSearchFocused) {
+            String typedText = TextInputHelper.getTypedText(characterEvent);
+            if (typedText != null
+                    && warPingSearchQuery.length() + typedText.length() <= TEAM_EDITOR_SEARCH_MAX_LENGTH) {
+                warPingSearchQuery += typedText;
+                warPingScrollRows = 0;
+            }
+            return true;
+        }
         if (teamEditorOpen && teamEditorSearchFocused) {
             String typedText = TextInputHelper.getTypedText(characterEvent);
             if (typedText != null
@@ -1990,7 +2124,10 @@ public final class WarPlannerScreen extends Screen {
         int delta = scrollY > 0 ? -1 : 1;
         WarPlannerSnapshot snapshot = manager.snapshot();
         if (snapshot == null) return true;
-        if (roleEditorOpen) {
+        if (warPingPickerOpen) {
+            warPingScrollRows = clampRows(
+                    warPingScrollRows + delta, pingCandidates(snapshot, warPingSearchQuery).size());
+        } else if (roleEditorOpen) {
             return true;
         } else if (teamEditorOpen) {
             editorScrollRows = clampRows(
@@ -2233,6 +2370,44 @@ public final class WarPlannerScreen extends Screen {
         editingSupportSlot = null;
         supportEditorScrollRows = 0;
         supportEditorSaving = false;
+    }
+
+    private void beginWarPingPicker() {
+        if (!manager.canManage() || manager.isMutating()) return;
+        draggingBackgroundOpacity = false;
+        draggingWarMap = false;
+        memberDrag = null;
+        zoneDrag = null;
+        warPingPickerOpen = true;
+        warPingSending = false;
+        warPingScrollRows = 0;
+        warPingSearchQuery = "";
+        warPingSearchFocused = true;
+        flashMessage = null;
+    }
+
+    private void closeWarPingPicker() {
+        warPingPickerOpen = false;
+        warPingSending = false;
+        warPingScrollRows = 0;
+        warPingSearchQuery = "";
+        warPingSearchFocused = false;
+    }
+
+    private void sendWarPing(RosterMember member) {
+        if (!canPingPlayer(manager.snapshot(), member) || manager.isMutating()) return;
+        warPingSending = true;
+        manager.pingPlayer(member.playerUuid()).whenComplete((result, error) -> SeqClient.mc.execute(() -> {
+            warPingSending = false;
+            if (error != null || result == null || !result.success()) {
+                flashMessage = error != null
+                        ? "War ping failed."
+                        : result == null ? "No response from the war planner." : result.message();
+                return;
+            }
+            closeWarPingPicker();
+            flashMessage = result.message();
+        }));
     }
 
     private void beginRoleEdit() {
@@ -2615,14 +2790,36 @@ public final class WarPlannerScreen extends Screen {
     static boolean canPingPlayer(WarPlannerSnapshot snapshot, RosterMember member) {
         return snapshot != null
                 && snapshot.self() != null
+                && snapshot.self().canManage()
+                && snapshot.self().playerUuid() != null
+                && !snapshot.self().playerUuid().isBlank()
                 && member != null
+                && member.online()
+                && member.playerUuid() != null
+                && !member.playerUuid().isBlank()
                 && member.discordId() != null
                 && !member.discordId().isBlank()
                 && !samePlayer(snapshot.self().playerUuid(), member.playerUuid());
     }
 
-    static float rosterPingButtonX(float width) {
-        return width - 112;
+    static List<RosterMember> pingCandidates(WarPlannerSnapshot snapshot, String searchQuery) {
+        if (snapshot == null) return List.of();
+        String query = searchQuery == null ? "" : searchQuery.strip().toLowerCase(Locale.ROOT);
+        return snapshot.visibleRoster().stream()
+                .filter(member -> canPingPlayer(snapshot, member))
+                .filter(member -> query.isEmpty() || teamEditorSearchText(member).contains(query))
+                .sorted(Comparator.comparing(RosterMember::displayName, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(RosterMember::displayName)
+                        .thenComparing(member -> member.playerUuid().toLowerCase(Locale.ROOT)))
+                .toList();
+    }
+
+    static boolean warPingRowFullyVisible(float rowY, float listBottom) {
+        return rowY + 30 <= listBottom;
+    }
+
+    static int warPingScrollStart(int requested, int candidateCount) {
+        return clampRows(requested, candidateCount);
     }
 
     private PlannerViewport activePlannerViewport(float screenWidth) {

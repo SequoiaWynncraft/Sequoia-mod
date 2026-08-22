@@ -41,6 +41,17 @@ class SeqCommandTest {
     }
 
     @Test
+    void registersAllyRaidCommandAndSeqAlias() {
+        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+
+        SeqCommand.registerCommands(dispatcher, null);
+
+        assertNotNull(dispatcher.getRoot().getChild("allyraids"));
+        assertNotNull(dispatcher.getRoot().getChild("allyraids").getChild("cutoff"));
+        assertNotNull(dispatcher.getRoot().getChild("seq").getChild("allyraids"));
+    }
+
+    @Test
     void registersSettingsScreenCommand() {
         CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
 

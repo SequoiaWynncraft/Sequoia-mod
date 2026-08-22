@@ -3,6 +3,7 @@ package com.seqwawa.seq.managers;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
 import java.time.Instant;
@@ -64,6 +65,14 @@ class WynnPartySyncManagerTest {
 
         assertEquals(List.of("cela41", "tungtung", "tungtungtung", "sahur"), memberUsernames(manager));
         assertEquals(false, WynnPartySyncManager.shouldDeferOverCapacitySnapshot(memberUsernames(manager).size(), 4));
+    }
+
+    @Test
+    void inactiveSnapshotIsSentOnlyForTheListingWhereItWasObserved() {
+        assertTrue(WynnPartySyncManager.shouldSendSnapshotForListing(false, 42L, 42L));
+        assertFalse(WynnPartySyncManager.shouldSendSnapshotForListing(false, 41L, 42L));
+        assertFalse(WynnPartySyncManager.shouldSendSnapshotForListing(false, null, 42L));
+        assertTrue(WynnPartySyncManager.shouldSendSnapshotForListing(true, null, 42L));
     }
 
     @Test

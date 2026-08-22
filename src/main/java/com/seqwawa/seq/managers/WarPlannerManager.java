@@ -200,6 +200,9 @@ public final class WarPlannerManager {
     }
 
     public CompletableFuture<ActionResult> pingPlayer(String playerUuid) {
+        if (!canManage()) {
+            return managementDenied();
+        }
         if (playerUuid == null || playerUuid.isBlank()) {
             return CompletableFuture.completedFuture(new ActionResult(false, "Choose a player to ping."));
         }
@@ -313,7 +316,7 @@ public final class WarPlannerManager {
                 new ActionResult(
                         false,
                         "war_manager_required",
-                        "You do not have permission to manage war teams or zones."));
+                        "You do not have permission to use manager-only War Planner actions."));
     }
 
     public synchronized void reset() {

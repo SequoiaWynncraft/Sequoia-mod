@@ -125,15 +125,29 @@ class WarPlannerManagerTest {
     }
 
     @Test
-    void regularMemberCanDispatchWarChatPing() {
+    void regularMemberCannotDispatchWarChatPing() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
         manager.tick(true, true);
         gateway.next.complete(snapshot(3, false));
+
+        CompletableFuture<WarPlannerManager.ActionResult> result = manager.pingPlayer("target");
+
+        assertFalse(result.join().success());
+        assertEquals("war_manager_required", result.join().code());
+        assertEquals(1, gateway.calls);
+    }
+
+    @Test
+    void managerCanDispatchWarChatPing() {
+        FakeGateway gateway = new FakeGateway();
+        WarPlannerManager manager = manager(gateway);
+        manager.tick(true, true);
+        gateway.next.complete(snapshot(3, true));
         gateway.next = new CompletableFuture<>();
 
         CompletableFuture<WarPlannerManager.ActionResult> result = manager.pingPlayer("target");
-        gateway.next.complete(snapshot(3, false));
+        gateway.next.complete(snapshot(3, true));
 
         assertTrue(result.join().success());
         assertEquals(2, gateway.calls);

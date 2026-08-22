@@ -17,6 +17,10 @@ import com.mojang.brigadier.tree.LiteralCommandNode;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -46,6 +50,7 @@ import com.seqwawa.seq.map.GatheringClusterCache;
 import com.seqwawa.seq.map.GatheringMapImageService;
 import com.seqwawa.seq.map.WorldMapSettings;
 import com.seqwawa.seq.model.Activity;
+import com.seqwawa.seq.model.AllyRaidReport;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.network.ApiClient;
@@ -64,7 +69,10 @@ public class SeqCommand {
                         "50s",
                         "2stx5le",
                         "2stx5le+1stx5le+4stx4le");
-        private static final Set<String> CASE_INSENSITIVE_ROOTS = Set.of("seq", "e", "a");
+        private static final int DEFAULT_ALLY_RAID_CUTOFF_MINUTES = 30;
+        private static final DateTimeFormatter ALLY_RAID_TIME_FORMAT =
+                        DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault());
+        private static final Set<String> CASE_INSENSITIVE_ROOTS = Set.of("seq", "allyraids", "e", "a");
         private static volatile CommandNode<FabricClientCommandSource> commandRoot;
 
         public static void register() {
@@ -144,6 +152,7 @@ public class SeqCommand {
                                                 }))
                                 .then(buildMapCommand())
                                 .then(buildWarCommand())
+                                .then(buildAllyRaidsCommand("allyraids"))
                                 .then(ClientCommandManager.literal("ingredients")
                                                 .executes(SeqCommand::openIngredientGuideScreen))
                                 .then(ClientCommandManager.literal("ingredient")
@@ -152,6 +161,7 @@ public class SeqCommand {
                                 .then(buildPartyCommand("p"));
 
                 dispatcher.register(root);
+                dispatcher.register(buildAllyRaidsCommand("allyraids"));
                 dispatcher.register(buildEmeraldRewardCommand("e"));
                 dispatcher.register(ClientCommandManager.literal("a")
                                 .executes(ctx -> runQueuedGuildReward(
@@ -351,6 +361,91 @@ public class SeqCommand {
                                                                 .executes(SeqCommand::setWarAvailability)))
                                 .then(ClientCommandManager.literal("unavailable")
                                                 .executes(SeqCommand::clearWarAvailability));
+        }
+
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildAllyRaidsCommand(String literalName) {
+                return ClientCommandManager.literal(literalName)
+                                .executes(ctx -> runAllyRaids(ctx, DEFAULT_ALLY_RAID_CUTOFF_MINUTES))
+                                .then(ClientCommandManager.argument(
+                                                "cutoff", IntegerArgumentType.integer(20, 120))
+                                                .executes(ctx -> runAllyRaids(
+                                                                ctx,
+                                                                IntegerArgumentType.getInteger(ctx, "cutoff"))));
+        }
+
+        private static int runAllyRaids(CommandContext<FabricClientCommandSource> ctx, int cutoffMinutes) {
+                FabricClientCommandSource source = ctx.getSource();
+                ApiClient.getInstance().getAllyRaidReport(cutoffMinutes).whenComplete((report, error) -> {
+                        if (error != null) {
+                                sendFeedback(source, "Could not load ally raid coverage: "
+                                                + describeApiFailure(error, "Backend request failed."));
+                                return;
+                        }
+                        renderAllyRaidReport(source, report);
+                });
+                return 1;
+        }
+
+        private static void renderAllyRaidReport(
+                        FabricClientCommandSource source, AllyRaidReport report) {
+                sendFeedback(
+                                source,
+                                "Ally raid coverage | Cutoff " + report.cutoffMinutes() + "m | Recent "
+                                                + report.recent().size() + " | Permanent "
+                                                + report.protectedAllies().size() + " | Review "
+                                                + report.safeToReview().size());
+                renderAllyRaidSection(source, "Permanent allies / do not remove", report.protectedAllies(), report);
+                renderAllyRaidSection(source, "Raided recently", report.recent(), report);
+                renderAllyRaidSection(source, "Safe to unally review", report.safeToReview(), report);
+                if (!report.unavailable().isEmpty()) {
+                        renderAllyRaidSection(source, "Not assessed", report.unavailable(), report);
+                }
+                sendFeedback(source, "Mod reports only. Review before changing alliances.");
+        }
+
+        private static void renderAllyRaidSection(
+                        FabricClientCommandSource source,
+                        String title,
+                        List<AllyRaidReport.GuildActivity> activities,
+                        AllyRaidReport report) {
+                sendFeedback(source, title + " (" + activities.size() + ")");
+                if (activities.isEmpty()) {
+                        sendFeedback(source, "• None");
+                        return;
+                }
+                for (AllyRaidReport.GuildActivity activity : activities) {
+                        sendFeedback(source, "• " + formatAllyRaidActivity(activity, report.cutoffMinutes()));
+                }
+        }
+
+        private static String formatAllyRaidActivity(
+                        AllyRaidReport.GuildActivity activity, int cutoffMinutes) {
+                String guild = activity.guildName();
+                if (activity.guildPrefix() != null && !activity.guildPrefix().isBlank()) {
+                        guild += " [" + activity.guildPrefix() + "]";
+                }
+                if (!activity.rosterAvailable()) {
+                        return guild + ": roster unavailable";
+                }
+                if (activity.lastRaidedAt() == null) {
+                        return guild + ": no shared raid observed inside the " + cutoffMinutes + "m cutoff";
+                }
+                String runs = activity.raidCount() == 1 ? "1 observed run" : activity.raidCount() + " observed runs";
+                return guild + ": " + formatAllyRaidTime(activity.lastRaidedAt()) + " • " + runs;
+        }
+
+        private static String formatAllyRaidTime(Instant lastRaidedAt) {
+                Duration elapsed = Duration.between(lastRaidedAt, Instant.now());
+                if (elapsed.isNegative() || elapsed.toMinutes() < 1) {
+                        return "just now (" + ALLY_RAID_TIME_FORMAT.format(lastRaidedAt) + ")";
+                }
+                long minutes = elapsed.toMinutes();
+                String relative = minutes < 60
+                                ? minutes + "m ago"
+                                : minutes < 1_440
+                                                ? minutes / 60 + "h " + minutes % 60 + "m ago"
+                                                : minutes / 1_440 + "d ago";
+                return relative + " (" + ALLY_RAID_TIME_FORMAT.format(lastRaidedAt) + ")";
         }
 
         private static boolean isWarPlannerAuthorized() {

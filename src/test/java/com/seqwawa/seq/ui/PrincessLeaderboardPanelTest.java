@@ -49,10 +49,16 @@ class PrincessLeaderboardPanelTest {
     }
 
     @Test
-    void shortensLongUsernamesOnNarrowCards() {
+    void keepsFullUsernamesOnNarrowCards() {
         var entry = new PrincessRaidStats.LeaderboardEntry(1, "SixteenCharacter", 42);
 
-        assertEquals("1.  SixteenCh…", PrincessLeaderboardPanel.entryLabel(entry, 129));
+        assertEquals("1.  SixteenCharacter", PrincessLeaderboardPanel.entryLabel(entry));
+    }
+
+    @Test
+    void scalesRowsOnlyWhenTheirTextExceedsTheAvailableWidth() {
+        assertEquals(9, PrincessLeaderboardPanel.fittedRowFontSize(9, 100, 80));
+        assertEquals(7.2f, PrincessLeaderboardPanel.fittedRowFontSize(9, 80, 100), 0.001f);
     }
 
 }

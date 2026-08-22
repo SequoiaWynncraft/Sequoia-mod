@@ -91,13 +91,13 @@ public class ChatManager {
     private static final Pattern GUILD_MEMBERSHIP_ACTOR_FIRST_PATTERN = Pattern.compile(
             "^(?<actor>you|[a-zA-Z0-9_][a-zA-Z0-9_ ]{2,63}?)\\s+"
                     + "(?:have\\s+|has\\s+)?(?:successfully\\s+)?"
-                    + "(?<verb>invited|uninvited|kicked|removed)\\s+"
+                    + "(?<verb>invited|uninvited)\\s+"
                     + "(?<target>[a-zA-Z0-9_][a-zA-Z0-9_ ]{2,63}?)\\s+"
                     + "(?:(?:to\\s+(?:join\\s+)?|from\\s+)(?:(?:the|your)\\s+)?guild)[.!]?$",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern GUILD_MEMBERSHIP_TARGET_FIRST_PATTERN = Pattern.compile(
             "^(?<target>[a-zA-Z0-9_][a-zA-Z0-9_ ]{2,63}?)\\s+(?:was|has\\s+been)\\s+"
-                    + "(?<verb>invited|uninvited|kicked|removed)\\s+"
+                    + "(?<verb>invited|uninvited)\\s+"
                     + "(?:(?:to\\s+(?:join\\s+)?|from\\s+)(?:(?:the|your)\\s+)?guild)\\s+by\\s+"
                     + "(?<actor>[a-zA-Z0-9_][a-zA-Z0-9_ ]{2,63}?)[.!]?$",
             Pattern.CASE_INSENSITIVE);
@@ -449,7 +449,14 @@ public class ChatManager {
         if (!ChatIdentityResolver.isValidUsername(actor) || !ChatIdentityResolver.isValidUsername(target)) {
             return null;
         }
-        String action = "invited".equalsIgnoreCase(verb) ? "invited" : "removed";
+        String action;
+        if ("invited".equalsIgnoreCase(verb)) {
+            action = "invited";
+        } else if ("uninvited".equalsIgnoreCase(verb)) {
+            action = "uninvited";
+        } else {
+            return null;
+        }
         return new ParsedGuildMembershipEvent(action, actor, target);
     }
 

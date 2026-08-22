@@ -69,6 +69,30 @@ final class PacketNameResolver {
         return metadata.firstInsertionName();
     }
 
+    boolean hasUsernameMetadataThroughout(String username, int startInclusive, int endExclusive) {
+        if (username == null || username.isBlank()) {
+            return false;
+        }
+
+        boolean foundVisibleCharacter = false;
+        int cappedStart = Math.max(0, startInclusive);
+        int cappedEnd = Math.min(endExclusive, characters.size());
+        for (int index = cappedStart; index < cappedEnd; index++) {
+            MetaChar character = characters.get(index);
+            if (Character.isWhitespace(character.value())) {
+                continue;
+            }
+            foundVisibleCharacter = true;
+            String metadataUsername = character.hoverRealName() != null
+                    ? character.hoverRealName()
+                    : character.insertionName();
+            if (!username.equalsIgnoreCase(metadataUsername)) {
+                return false;
+            }
+        }
+        return foundVisibleCharacter;
+    }
+
     private NameMetadata metadataForRange(int startInclusive, int endExclusive) {
         LinkedHashSet<String> hoverRealNames = new LinkedHashSet<>();
         LinkedHashSet<String> insertionNames = new LinkedHashSet<>();
