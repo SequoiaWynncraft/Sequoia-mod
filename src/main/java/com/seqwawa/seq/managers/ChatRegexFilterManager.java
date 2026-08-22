@@ -73,7 +73,7 @@ public final class ChatRegexFilterManager {
         economyAlertsOnlySetting.setVisibilityCondition(economySetting::getValue);
         Setting.BooleanSetting removeTheCatSetting =
                 new Setting.BooleanSetting("remove_the_cat", SETTINGS_CATEGORY, false);
-        removeTheCatSetting.setPresentation("remove the cat", null, null);
+        removeTheCatSetting.setPresentation("Remove the cat", null, null);
         removeTheCatSetting.setVisibilityCondition(easterEggsEnabled);
         builtInFilters = List.of(
                 new BuiltInFilter(

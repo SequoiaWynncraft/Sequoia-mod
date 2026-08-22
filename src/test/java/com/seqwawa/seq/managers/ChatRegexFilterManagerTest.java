@@ -170,7 +170,7 @@ class ChatRegexFilterManagerTest {
                 .orElseThrow()
                 .enabledSetting();
 
-        assertEquals("remove the cat", removeTheCat.getDisplayName());
+        assertEquals("Remove the cat", removeTheCat.getDisplayName());
         assertFalse(manager.shouldFilter(guildMessage("a3pki", "meow")));
 
         removeTheCat.setValue(true);
