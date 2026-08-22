@@ -21,6 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.Activity;
+import com.seqwawa.seq.model.AllyRaidReport;
 import com.seqwawa.seq.model.CreateInviteResponse;
 import com.seqwawa.seq.model.GuildRaidProgress;
 import com.seqwawa.seq.model.Listing;
@@ -56,6 +57,7 @@ public class ApiClient {
                     + "\"}";
     private static final String DEFAULT_ASPECT_REQUEST_REASON = "No reason provided.";
     private static final String ACHIEVEMENTS_PATH = "/achievements/progress";
+    private static final String ALLY_RAIDS_PATH = "/ally-raids";
 
     private static ApiClient instance;
 
@@ -230,6 +232,12 @@ public class ApiClient {
         return afterValidToken(
                 SeqClient.getAuthService().ensureValidToken(false),
                 () -> get(ACHIEVEMENTS_PATH, GuildRaidProgress.class));
+    }
+
+    public CompletableFuture<AllyRaidReport> getAllyRaidReport(int cutoffMinutes) {
+        return afterValidToken(
+                SeqClient.getAuthService().ensureValidToken(false),
+                () -> get(ALLY_RAIDS_PATH + "?cutoff=" + cutoffMinutes, AllyRaidReport.class));
     }
 
     static <T> CompletableFuture<T> afterValidToken(
