@@ -55,17 +55,18 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static final long PRIVILEGED_SEND_THROTTLE_MS = 50;
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Pattern URL_PATTERN = Pattern.compile("^(https?://).+", Pattern.CASE_INSENSITIVE);
-    private static final Map<String, Integer> VERSION_REMINDER_INTERVALS = Map.of(
-            "bomb_share_request", 5,
-            "bomb_share_submit", 5,
-            "treasury_out", 1,
-            "guild_chat", 20,
-            "guild_membership_event", 5,
-            "guild_raid_announcement", 5,
-            "guild_bank_event", 10,
-            "guild_storage_snapshot", 10,
-            "guild_storage_reward", 10,
-            "guild_war_submission", 5);
+    private static final Map<String, Integer> VERSION_REMINDER_INTERVALS = Map.ofEntries(
+            Map.entry("bomb_share_request", 5),
+            Map.entry("bomb_share_submit", 5),
+            Map.entry("treasury_out", 1),
+            Map.entry("guild_chat", 20),
+            Map.entry("guild_membership_event", 5),
+            Map.entry("guild_raid_announcement", 5),
+            Map.entry("guild_bank_event", 10),
+            Map.entry("guild_storage_snapshot", 10),
+            Map.entry("guild_storage_reward", 10),
+            Map.entry("guild_war_queue", 5),
+            Map.entry("guild_war_submission", 5));
 
     private static ConnectionManager instance;
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -1421,7 +1422,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || submission.submittedAt() == null
                 || submission.submittedAt().isBlank()
                 || submission.defenseRating() == null
-                || submission.defenseRating().isBlank()) {
+                || submission.defenseRating().isBlank()
+                || submission.queueMinutes() < 1
+                || submission.queueMinutes() > 60) {
             SeqClient.LOGGER.warn("[WebSocket] sendGuildWarQueue dropped: invalid payload");
             return false;
         }
@@ -1458,9 +1461,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         msg.addProperty("defense_rating", submission.defenseRating());
         msg.addProperty("queue_minutes", submission.queueMinutes());
 
-        send("guild_war_queue", msg);
-
-        return true;
+        return send("guild_war_queue", msg);
     }
 
     public static void flushPendingOutbound() {
@@ -2229,6 +2230,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_bank_event".equals(type)
                 || "guild_storage_snapshot".equals(type)
                 || "guild_storage_reward".equals(type)
+                || "guild_war_queue".equals(type)
                 || "guild_war_submission".equals(type)
                 || "get_connected".equals(type);
     }
@@ -2245,6 +2247,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_bank_event".equals(type)
                 || "guild_storage_snapshot".equals(type)
                 || "guild_storage_reward".equals(type)
+                || "guild_war_queue".equals(type)
                 || "guild_war_submission".equals(type)
                 || "party_class_update".equals(type)
                 || "party_sync_snapshot".equals(type)
@@ -2261,6 +2264,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_alliance_update".equals(type)
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)
+                || "guild_war_queue".equals(type)
                 || "guild_war_submission".equals(type)
                 || "party_class_update".equals(type)
                 || "party_sync_snapshot".equals(type)
@@ -2415,7 +2419,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             case "guild_chat" -> "guild chat relays";
             case "guild_raid_announcement" -> "raid completion relays";
             case "guild_bank_event" -> "guild bank relays";
-            case "guild_war_submission" -> "guild war tracking";
+            case "guild_war_queue", "guild_war_submission" -> "guild war tracking";
             default -> "some Sequoia features";
         };
         String targetVersion = minimumSafeVersion != null && !minimumSafeVersion.isBlank()
