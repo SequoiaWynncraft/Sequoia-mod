@@ -14,11 +14,13 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.Activity;
 import com.seqwawa.seq.model.AllyRaidReport;
@@ -40,6 +42,7 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneCategoryDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
+import com.seqwawa.seq.model.war.WarTerritoryQueueFeed;
 import com.seqwawa.seq.network.auth.MinecraftAuthChallengeResponse;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteRequest;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteResponse;
@@ -58,6 +61,9 @@ public class ApiClient {
     private static final String DEFAULT_ASPECT_REQUEST_REASON = "No reason provided.";
     private static final String ACHIEVEMENTS_PATH = "/achievements/progress";
     private static final String ALLY_RAIDS_PATH = "/ally-raids";
+    private static final Pattern MINECRAFT_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
+    private static final Set<String> WAR_DEFENSE_RATINGS =
+            Set.of("Very Low", "Low", "Medium", "High", "Very High");
 
     private static ApiClient instance;
 
@@ -281,6 +287,42 @@ public class ApiClient {
         return get("/war-planner/snapshot", WarPlannerSnapshot.class);
     }
 
+    public CompletableFuture<WarTerritoryQueueFeed> getWarTerritoryQueues() {
+        return get("/war-planner/territory-queues", WarTerritoryQueueFeed.class);
+    }
+
+    public CompletableFuture<WarTerritoryQueueFeed> submitWarTerritoryQueueObservation(
+            String minecraftUsername, String nickname, String territory, String defenseRating) {
+        return submitWarTerritoryQueueObservation(
+                minecraftUsername, nickname, territory, defenseRating, null);
+    }
+
+    public CompletableFuture<WarTerritoryQueueFeed> submitWarTerritoryQueueObservation(
+            String minecraftUsername,
+            String nickname,
+            String territory,
+            String defenseRating,
+            Integer queueDurationSeconds) {
+        return post(
+                "/war-planner/territory-queues/observations",
+                buildWarTerritoryQueueObservationPayload(
+                        minecraftUsername, nickname, territory, defenseRating, queueDurationSeconds),
+                WarTerritoryQueueFeed.class);
+    }
+
+    public CompletableFuture<WarTerritoryQueueFeed> submitWarTerritoryQueueConfirmation(
+            String territory, int queueDurationSeconds) {
+        return submitWarTerritoryQueueObservation(null, null, territory, null, queueDurationSeconds);
+    }
+
+    public CompletableFuture<WarTerritoryQueueFeed> joinWarTerritoryQueue(long queueId) {
+        return put(warTerritoryQueueParticipantPath(queueId), new JsonObject(), WarTerritoryQueueFeed.class);
+    }
+
+    public CompletableFuture<WarTerritoryQueueFeed> leaveWarTerritoryQueue(long queueId) {
+        return deleteTyped(warTerritoryQueueParticipantPath(queueId), WarTerritoryQueueFeed.class);
+    }
+
     public CompletableFuture<WarPlannerSnapshot> setWarPlannerAvailability(int durationMinutes) {
         return put(
                 "/war-planner/availability/me",
@@ -459,6 +501,68 @@ public class ApiClient {
         JsonObject body = new JsonObject();
         body.addProperty("duration_minutes", durationMinutes);
         return body;
+    }
+
+    static JsonObject buildWarTerritoryQueueObservationPayload(
+            String minecraftUsername, String nickname, String territory, String defenseRating) {
+        return buildWarTerritoryQueueObservationPayload(
+                minecraftUsername, nickname, territory, defenseRating, null);
+    }
+
+    static JsonObject buildWarTerritoryQueueObservationPayload(
+            String minecraftUsername,
+            String nickname,
+            String territory,
+            String defenseRating,
+            Integer queueDurationSeconds) {
+        String normalizedUsername = minecraftUsername == null ? "" : minecraftUsername.trim();
+        String normalizedNickname = nickname == null ? null : nickname.trim();
+        if (normalizedNickname != null && normalizedNickname.isEmpty()) {
+            normalizedNickname = null;
+        }
+        if (normalizedNickname != null && normalizedNickname.length() > 64) {
+            throw new IllegalArgumentException("Nickname is too long.");
+        }
+        String normalizedTerritory = territory == null ? "" : territory.trim();
+        if (normalizedTerritory.isEmpty() || normalizedTerritory.length() > 128) {
+            throw new IllegalArgumentException("A valid territory is required.");
+        }
+        if (queueDurationSeconds != null && (queueDurationSeconds < 1 || queueDurationSeconds > 3_600)) {
+            throw new IllegalArgumentException("Queue duration must be between 1 and 3600 seconds.");
+        }
+        boolean provisional = minecraftUsername == null && normalizedNickname == null && defenseRating == null;
+        if (provisional && queueDurationSeconds == null) {
+            throw new IllegalArgumentException("A timer-only confirmation requires a queue duration.");
+        }
+        if (!provisional && !MINECRAFT_USERNAME_PATTERN.matcher(normalizedUsername).matches()) {
+            throw new IllegalArgumentException("A valid Minecraft username is required.");
+        }
+        if (!provisional && (defenseRating == null || !WAR_DEFENSE_RATINGS.contains(defenseRating))) {
+            throw new IllegalArgumentException("A valid defense rating is required.");
+        }
+
+        JsonObject body = new JsonObject();
+        if (!provisional) {
+            body.addProperty("minecraft_username", normalizedUsername);
+            if (normalizedNickname == null) {
+                body.add("nickname", JsonNull.INSTANCE);
+            } else {
+                body.addProperty("nickname", normalizedNickname);
+            }
+            body.addProperty("defense_rating", defenseRating);
+        }
+        body.addProperty("territory", normalizedTerritory);
+        if (queueDurationSeconds != null) {
+            body.addProperty("queue_duration_seconds", queueDurationSeconds);
+        }
+        return body;
+    }
+
+    static String warTerritoryQueueParticipantPath(long queueId) {
+        if (queueId <= 0) {
+            throw new IllegalArgumentException("A positive territory queue ID is required.");
+        }
+        return "/war-planner/territory-queues/" + queueId + "/participants/me";
     }
 
     static JsonObject buildWarCompositionRolesPayload(List<WarCompositionRole> roles) {
