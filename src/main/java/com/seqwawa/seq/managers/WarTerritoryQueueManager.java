@@ -812,7 +812,7 @@ public final class WarTerritoryQueueManager {
             default -> territory
                     + " started with nobody inside. Blame "
                     + players
-                    + " — apparently they queued for moral support.";
+                    + ", apparently they queued for moral support.";
         };
     }
 

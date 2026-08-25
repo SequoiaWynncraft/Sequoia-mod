@@ -435,7 +435,7 @@ class WarTerritoryQueueManagerTest {
     @Test
     void missedWarBlameRotationUsesAllSixQueueIdVariantsAndSingularPluralLoginVerbs() {
         List<String> expected = List.of(
-                "Territory-0 started with nobody inside. Blame Alpha — apparently they queued for moral support.",
+                "Territory-0 started with nobody inside. Blame Alpha, apparently they queued for moral support.",
                 "Territory-1 called. Alpha sent it straight to voicemail.",
                 "The war at Territory-2 began exactly as Alpha planned: without them.",
                 "Alpha chose peace. Unfortunately, they queued a war at Territory-3.",

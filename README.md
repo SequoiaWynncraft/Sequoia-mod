@@ -140,37 +140,6 @@ actions, dragging, and scrolling on the same visible layout. The Zones view assi
 territories to teams and previews each zone against the complete territory map.
 Composition capabilities, eligibility, team exclusivity, versions, and all mutations remain server-authoritative.
 
-The War Map is the planner's default view and uses a wider 1,200-pixel planner
-surface when screen space permits. Both the full and locked-territory views can
-be panned, zoomed around the pointer, and returned to their current bounds with
-Fit. While your timed war availability is
-active, the normal game HUD shows a compact top-right feed for reports such as
-`xiaolongbao: Alekin defense is Very High`. Each row includes the resolved
-Minecraft username/nickname, age, territory, queued/reported defense, remaining
-queue time, and participant count. A successful Wynncraft queue confirmation is
-shared immediately with its exact countdown, including seconds. Until a matching
-defense report identifies the queuer and tier, the entry displays `Unknown` and
-reserves its owner slot, leaving four joinable positions. The later report enriches
-that same queue without resetting its countdown or dropping players who already
-joined. Reports not accompanied by a matching server confirmation use a 15-minute
-compatibility fallback.
-
-Available members poll the shared territory queue feed every five seconds.
-When Wynncraft reports `Nobody logged in for the war.`, Sequoia briefly retains
-the expired queue and posts a local-only joke blaming its queued usernames.
-Canceled queues and ambiguous late messages are ignored instead of guessing.
-Minecraft usernames appear only over territories belonging to zones currently
-shown on the War Map and are fitted within the territory box when space permits.
-Those queued territory boxes pulse with the captured defense tier's Wynntils
-color, falling back to the latest chat-reported tier when no captured tier exists.
-Hovering a queued territory shows the full identity, defense readings, timing,
-party details, and the available membership action. Double-click a labeled
-territory to join its group, or double-click again to leave; the queuer remains
-its owner and counts toward the server-enforced five-player maximum. Hiding a
-zone removes its queue labels, dragging cancels a pending double-click, and ending
-availability immediately clears the local feed. If the backend is unavailable,
-queue updates pause and expire locally while the rest of the mod continues to
-work.
 
 ## World map
 
