@@ -51,6 +51,7 @@ import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.managers.WorldEventManager;
 import com.seqwawa.seq.managers.WarPlannerManager;
+import com.seqwawa.seq.managers.WarTerritoryQueueManager;
 import com.seqwawa.seq.map.IngredientWaypointRenderer;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
@@ -94,6 +95,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static WarPlannerManager warPlannerManager;
+
+    @Getter
+    public static WarTerritoryQueueManager warTerritoryQueueManager;
 
     @Getter
     public static PrincessRaidStatsManager princessRaidStatsManager;
@@ -249,6 +253,15 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.IntSetting warPlannerBackgroundOpacitySetting;
 
     @Getter
+    public static Setting.IntSetting warQueueHudTextSizeSetting;
+
+    @Getter
+    public static Setting.BooleanSetting warQueueHudOnlyOwnedOrJoinedSetting;
+
+    @Getter
+    public static Setting.IntSetting warQueueHudMaxRowsSetting;
+
+    @Getter
     public static Setting.BooleanSetting warPlannerLockTerritoriesSetting;
 
     @Getter
@@ -302,6 +315,7 @@ public class SeqClient implements ClientModInitializer {
         gameManager = new GameManager();
         partyFinderManager = new PartyFinderManager();
         warPlannerManager = new WarPlannerManager();
+        warTerritoryQueueManager = new WarTerritoryQueueManager();
         princessRaidStatsManager = new PrincessRaidStatsManager();
         wynnPartySyncManager = new WynnPartySyncManager();
         guildWarTracker = GuildWarTrackers.createIfAvailable();
@@ -406,6 +420,9 @@ public class SeqClient implements ClientModInitializer {
                 if (warPlannerManager != null) {
                     warPlannerManager.reset();
                 }
+                if (warTerritoryQueueManager != null) {
+                    warTerritoryQueueManager.reset();
+                }
                 GuildRaidProgressService.getInstance().tick(false);
                 return;
             }
@@ -415,6 +432,9 @@ public class SeqClient implements ClientModInitializer {
                 ConnectionManager.flushPendingOutbound();
                 if (warPlannerManager != null) {
                     warPlannerManager.reset();
+                }
+                if (warTerritoryQueueManager != null) {
+                    warTerritoryQueueManager.reset();
                 }
                 GuildRaidProgressService.getInstance().tick(false);
                 return;
@@ -429,6 +449,9 @@ public class SeqClient implements ClientModInitializer {
 
             if (warPlannerManager != null) {
                 warPlannerManager.tick();
+            }
+            if (warTerritoryQueueManager != null) {
+                warTerritoryQueueManager.tick();
             }
 
             if (partyFinderManager != null) {
@@ -529,6 +552,9 @@ public class SeqClient implements ClientModInitializer {
         }
         if (warPlannerManager != null) {
             warPlannerManager.reset();
+        }
+        if (warTerritoryQueueManager != null) {
+            warTerritoryQueueManager.reset();
         }
         if (princessRaidStatsManager != null) {
             princessRaidStatsManager.reset();
@@ -847,6 +873,12 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.BooleanSetting("resource_colors", "war_planner", false);
         warPlannerBackgroundOpacitySetting =
                 new Setting.IntSetting("background_opacity_percent", "war_planner", 100, 0, 100, 5);
+        warQueueHudTextSizeSetting =
+                new Setting.IntSetting("queue_hud_text_size", "war_planner", 9, 6, 18);
+        warQueueHudOnlyOwnedOrJoinedSetting =
+                new Setting.BooleanSetting("queue_hud_only_owned_or_joined", "war_planner", false);
+        warQueueHudMaxRowsSetting =
+                new Setting.IntSetting("queue_hud_max_rows", "war_planner", 6, 1, 20);
         warPlannerLockTerritoriesSetting =
                 new Setting.BooleanSetting("lock_territories", "war_planner", false);
         warPlannerResourceColorsSetting.setPresentation(
@@ -857,6 +889,18 @@ public class SeqClient implements ClientModInitializer {
                 "Background opacity",
                 "Adjust war-planner panels so the in-game chat remains visible behind them.",
                 "War planner display");
+        warQueueHudTextSizeSetting.setPresentation(
+                "Queue HUD text size",
+                "Adjust the territory queue text shown at the top right of the game HUD.",
+                "War queue HUD");
+        warQueueHudOnlyOwnedOrJoinedSetting.setPresentation(
+                "Only show my queues",
+                "Only show territories you queued or joined in the top-right queue HUD.",
+                "War queue HUD");
+        warQueueHudMaxRowsSetting.setPresentation(
+                "Maximum queue rows",
+                "Set how many territory queues can appear in the top-right HUD.",
+                "War queue HUD");
         warPlannerLockTerritoriesSetting.setPresentation(
                 "Lock territories",
                 "Manager-only view that hides territories not assigned to a zone.",
@@ -909,6 +953,9 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(warPlannerResourceColorsSetting);
         getConfigManager().register(warPlannerBackgroundOpacitySetting);
         getConfigManager().register(warPlannerLockTerritoriesSetting);
+        getConfigManager().register(warQueueHudOnlyOwnedOrJoinedSetting);
+        getConfigManager().register(warQueueHudMaxRowsSetting);
+        getConfigManager().register(warQueueHudTextSizeSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.

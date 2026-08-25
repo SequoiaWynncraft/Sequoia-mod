@@ -37,6 +37,9 @@ public class ClientPacketListenerMixin {
 
         Component content = packet.content();
         ChatManager.onSystemChat(content);
+        if (SeqClient.getWarTerritoryQueueManager() != null) {
+            SeqClient.getWarTerritoryQueueManager().onSystemChat(content);
+        }
         RaidTracker.onSystemChat(content);
         GuildStorageTracker.getInstance().onSystemChat(content);
         GuildBankTracker.getInstance().onSystemChat(content);
