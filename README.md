@@ -22,7 +22,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Clickable world names in chat, so a called-out world is one click away
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
-- Seq-only war planner with timed availability, exclusive 1–5 player parties, a shared Lead + three Eco board, and collaborative territory zones
+- Seq-only war planner with timed availability, shared five-player territory queues, exclusive 1–5 player parties, a shared Lead + three Eco board, and collaborative territory zones
 - Raid tracking and announcements
 - Per-player raid gambit counts parsed natively from the raid-start roster
 - Sequoia achievements: guild-raid completion counts ranked from Bronze to Mythril
@@ -122,7 +122,7 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 
 ## War planner
 
-The planner uses backend schema v2: party membership is separate from the
+The planner uses backend schema v3: party membership is separate from the
 shared Lead/Eco support slots, so support players may also join a party. The
 zone map provides palette colors, multi-party assignment, territory routes,
 responsive full-map zone previews, and production-based resource coloring. Stored
@@ -134,10 +134,43 @@ The War Planner entry and `/seq war` command only appear after the protected bac
 current account is a Sequoia member. Members can advertise timed availability and see their own team immediately;
 authorized managers can atomically create or edit parties of one to five people, while one shared Lead and three Eco
 slots remain independent of party membership. Managers choose `HQ Team`, `VLow Munch`, or `FFA` from the team editor;
-the backend keeps HQ unique and assigns the numeric VLow/FFA suffixes. Compact team cards show each member's
-Solo/DPS/Tank capabilities without colliding with manager actions. The Zones view assigns named, colored groups of
+the backend keeps HQ unique and assigns the numeric VLow/FFA suffixes. The Teams view adapts from full-width cards
+to a one-column rail and then a balanced two-column grid, while keeping shared support, presence, composition roles,
+actions, dragging, and scrolling on the same visible layout. The Zones view assigns named, colored groups of
 territories to teams and previews each zone against the complete territory map.
 Composition capabilities, eligibility, team exclusivity, versions, and all mutations remain server-authoritative.
+
+The War Map is the planner's default view and uses a wider 1,200-pixel planner
+surface when screen space permits. Both the full and locked-territory views can
+be panned, zoomed around the pointer, and returned to their current bounds with
+Fit. While your timed war availability is
+active, the normal game HUD shows a compact top-right feed for reports such as
+`xiaolongbao: Alekin defense is Very High`. Each row includes the resolved
+Minecraft username/nickname, age, territory, queued/reported defense, remaining
+queue time, and participant count. A successful Wynncraft queue confirmation is
+shared immediately with its exact countdown, including seconds. Until a matching
+defense report identifies the queuer and tier, the entry displays `Unknown` and
+reserves its owner slot, leaving four joinable positions. The later report enriches
+that same queue without resetting its countdown or dropping players who already
+joined. Reports not accompanied by a matching server confirmation use a 15-minute
+compatibility fallback.
+
+Available members poll the shared territory queue feed every five seconds.
+When Wynncraft reports `Nobody logged in for the war.`, Sequoia briefly retains
+the expired queue and posts a local-only joke blaming its queued usernames.
+Canceled queues and ambiguous late messages are ignored instead of guessing.
+Minecraft usernames appear only over territories belonging to zones currently
+shown on the War Map and are fitted within the territory box when space permits.
+Those queued territory boxes pulse with the captured defense tier's Wynntils
+color, falling back to the latest chat-reported tier when no captured tier exists.
+Hovering a queued territory shows the full identity, defense readings, timing,
+party details, and the available membership action. Double-click a labeled
+territory to join its group, or double-click again to leave; the queuer remains
+its owner and counts toward the server-enforced five-player maximum. Hiding a
+zone removes its queue labels, dragging cancels a pending double-click, and ending
+availability immediately clears the local feed. If the backend is unavailable,
+queue updates pause and expire locally while the rest of the mod continues to
+work.
 
 ## World map
 
@@ -180,6 +213,7 @@ The settings screen includes controls for:
 - Global Sequoia UI size
 - UI theme selection
 - Update checks on startup
+- War queue HUD text size, maximum rows, and an only-my-queues filter
 
 Sequoia includes Default and High Contrast themes. Open **Theme editor** from the Settings
 screen to copy a theme, edit its full RGBA palette, preview changes live, and save a personal
@@ -192,7 +226,7 @@ The complete supported schema is available in [`docs/theme-template.theme.yml`](
 1. Install Fabric for Minecraft `1.21.11`.
 2. Put the Sequoia mod jar in your Minecraft `mods` folder.
 3. Install Fabric API.
-4. Install [Wynntils](https://wynntils.com) for improved class detection.
+4. Optionally install [Wynntils](https://wynntils.com) for improved class detection. Sequoia does not bundle or require it.
 5. Start the game and press `O`, or run `/seq`.
 
 ## License
