@@ -151,6 +151,15 @@ class ApiClientTest {
     }
 
     @Test
+    void createListingPayloadDefaultsToOpenAdmission() {
+        JsonObject payload = ApiClient.buildCreateListingPayload(
+                List.of(11L), PartyRegion.NA, PartyRole.DPS, null, null, null, 0);
+
+        assertEquals(PartyJoinPolicy.OPEN, PartyJoinPolicy.DEFAULT_CREATE_POLICY);
+        assertEquals("OPEN", payload.get("joinPolicy").getAsString());
+    }
+
+    @Test
     void createListingPayloadRejectsNegativeReservedSlots() {
         assertThrows(
                 IllegalArgumentException.class,

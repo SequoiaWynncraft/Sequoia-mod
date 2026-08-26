@@ -258,7 +258,7 @@ public class PartyFinderManager implements NotificationAccessor {
                                         PartyRole.DPS,
                                         null,
                                         currentLeaderWorldName(),
-                                        PartyJoinPolicy.INVITE_ONLY,
+                                        PartyJoinPolicy.DEFAULT_CREATE_POLICY,
                                         0),
                         listing -> applyCreatedListingState(listing),
                         "Unable to create party",
@@ -1959,7 +1959,7 @@ public class PartyFinderManager implements NotificationAccessor {
         final PartyRegion selectedRegion = region != null ? region : PartyRegion.NA;
 
         PartyJoinPolicy selectedJoinPolicy =
-                joinPolicy != null ? joinPolicy : PartyJoinPolicy.INVITE_ONLY;
+                joinPolicy != null ? joinPolicy : PartyJoinPolicy.DEFAULT_CREATE_POLICY;
         createParty(
                 activityIds,
                 selectedRegion,

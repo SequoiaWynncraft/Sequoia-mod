@@ -162,7 +162,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private final Set<String> modalSelectedRaids = new LinkedHashSet<>();
     private int modalReservedSlots = 0;
     private PartyRegion modalSelectedRegion = PartyRegion.NA;
-    private PartyJoinPolicy modalJoinPolicy = PartyJoinPolicy.INVITE_ONLY;
+    private PartyJoinPolicy modalJoinPolicy = PartyJoinPolicy.DEFAULT_CREATE_POLICY;
     private boolean reservedSlotsFocused = false;
     private String reservedSlotsInput = "0";
     private long nextLoadingNameRefreshAtMs = 0L;
@@ -2323,7 +2323,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private void applyDefaultModalSelections() {
         modalSelectedRaids.clear();
         modalSelectedRegion = PartyRegion.NA;
-        modalJoinPolicy = PartyJoinPolicy.INVITE_ONLY;
+        modalJoinPolicy = PartyJoinPolicy.DEFAULT_CREATE_POLICY;
     }
 
     private Set<String> getCurrentListingRaidTags() {
@@ -2353,7 +2353,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 : PartyRegion.NA;
         modalJoinPolicy = party().getCurrentListing() != null
                 ? party().getCurrentListing().resolvedJoinPolicy()
-                : PartyJoinPolicy.INVITE_ONLY;
+                : PartyJoinPolicy.DEFAULT_CREATE_POLICY;
     }
 
     private static String joinPolicyLabel(PartyJoinPolicy joinPolicy) {

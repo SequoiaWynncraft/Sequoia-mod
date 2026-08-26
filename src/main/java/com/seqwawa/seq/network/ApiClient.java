@@ -166,7 +166,7 @@ public class ApiClient {
         body.addProperty("region", region.name());
         body.addProperty("role", role.name());
         body.addProperty(
-                "joinPolicy", (joinPolicy != null ? joinPolicy : PartyJoinPolicy.OPEN).name());
+                "joinPolicy", (joinPolicy != null ? joinPolicy : PartyJoinPolicy.DEFAULT_CREATE_POLICY).name());
         body.addProperty("reservedSlots", reservedSlots);
         if (note != null && !note.isBlank()) body.addProperty("note", note);
         if (world != null && !world.isBlank()) body.addProperty("world", world);
