@@ -2,11 +2,13 @@ package com.seqwawa.seq.mixins;
 
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundBossEventPacket;
 import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import com.seqwawa.seq.managers.ChatManager;
 import com.seqwawa.seq.managers.GuildBankTracker;
 import com.seqwawa.seq.managers.GuildStorageTracker;
+import com.seqwawa.seq.managers.MinecraftWarTowerTracker;
 import com.seqwawa.seq.managers.RaidTracker;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
@@ -25,6 +27,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(ClientPacketListener.class)
 public class ClientPacketListenerMixin {
+
+    @Inject(
+            method = "handleBossUpdate",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/network/protocol/PacketUtils;ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/network/PacketProcessor;)V",
+                    shift = At.Shift.AFTER))
+    private void seq$onHandleBossUpdate(ClientboundBossEventPacket packet, CallbackInfo ci) {
+        MinecraftWarTowerTracker.getInstance().onBossEvent(packet);
+    }
 
     @Inject(
             method = "handleSystemChat",

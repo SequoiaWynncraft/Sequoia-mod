@@ -6,13 +6,11 @@ import com.seqwawa.seq.model.WarTowerUpdate;
 import com.seqwawa.seq.model.WynnClassType;
 import com.wynntils.core.WynntilsMod;
 import com.wynntils.core.components.Models;
-import com.wynntils.handlers.bossbar.TrackedBar;
 import com.wynntils.models.character.event.CharacterDeathEvent;
 import com.wynntils.models.war.type.WarBattleInfo;
 import com.wynntils.models.war.type.WarTowerState;
 import com.wynntils.utils.type.RangedValue;
 
-import java.lang.reflect.Field;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
@@ -40,8 +38,9 @@ import com.seqwawa.seq.utils.PacketTextNormalizer;
 import com.seqwawa.seq.utils.WynnClassCache;
 
 /**
- * Tracks active guild wars via Wynntils tower state and relays one structured
- * summary when the war completes, disappears, or the local player dies.
+ * Tracks active guild-war lifecycle via Wynntils, reads live tower metrics from
+ * vanilla boss-event packets, and relays one structured legacy summary when the
+ * war completes, disappears, or the local player dies.
  */
 public final class GuildWarTracker implements GuildWarTrackerHandle {
     private static final double TRACKING_RADIUS_SQ = 120 * 120;
@@ -57,7 +56,6 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     static final long STATUS_HEARTBEAT_MS = 7_000L;
     static final long TOWER_HEARTBEAT_MS = 4_000L;
     private static final long LIVE_SEND_RETRY_MS = 1_000L;
-    private static final long TEAM_DPS_WINDOW_SECONDS = 10L;
 
     private final WarInfoProvider warInfoProvider;
     private final PlayerContext playerContext;
@@ -244,6 +242,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     }
 
     public void reset() {
+        warInfoProvider.resetTowerMetrics();
         clearActiveWarContext();
         pendingQueueAttempt = null;
         observedPresenceKey = null;
@@ -485,7 +484,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             return;
         }
 
-        WarTowerUpdate update = buildTowerUpdate(info, warInfoProvider.towerHealthFraction(info));
+        WarTowerUpdate update = warInfoProvider.towerUpdate(info);
         if (update == null) {
             nextTowerHeartbeatAtMillis = now + LIVE_SEND_RETRY_MS;
             return;
@@ -519,37 +518,6 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             SeqClient.LOGGER.debug("Live war tower publisher failed; retrying on a later tick", exception);
             return false;
         }
-    }
-
-    static WarTowerUpdate buildTowerUpdate(WarBattleInfo info, Float preferredHealthFraction) {
-        if (info == null || info.getInitialState() == null || info.getCurrentState() == null) {
-            return null;
-        }
-        String territory = trimToNull(info.getTerritory());
-        if (territory == null) {
-            return null;
-        }
-
-        float health = towerHealthFraction(preferredHealthFraction, info);
-        long ehp = Math.max(0L, info.getTowerEffectiveHp());
-        long dps = Math.max(0L, info.getDps(TEAM_DPS_WINDOW_SECONDS));
-        return new WarTowerUpdate(territory, health, ehp, dps);
-    }
-
-    static float towerHealthFraction(Float preferredHealthFraction, WarBattleInfo info) {
-        if (preferredHealthFraction != null && Float.isFinite(preferredHealthFraction)) {
-            return Math.clamp(preferredHealthFraction, 0.0f, 1.0f);
-        }
-        if (info == null || info.getInitialState() == null || info.getCurrentState() == null) {
-            return 0.0f;
-        }
-        long initialHealth = info.getInitialState().health();
-        long currentHealth = info.getCurrentState().health();
-        if (initialHealth <= 0L) {
-            return currentHealth <= 0L ? 0.0f : 1.0f;
-        }
-        double ratio = (double) currentHealth / initialHealth;
-        return Double.isFinite(ratio) ? (float) Math.clamp(ratio, 0.0, 1.0) : 0.0f;
     }
 
     private void ensureDeathListenerRegistered() {
@@ -825,9 +793,11 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     interface WarInfoProvider {
         WarBattleInfo getCurrentWar();
 
-        default Float towerHealthFraction(WarBattleInfo info) {
+        default WarTowerUpdate towerUpdate(WarBattleInfo info) {
             return null;
         }
+
+        default void resetTowerMetrics() {}
     }
 
     interface PlayerContext {
@@ -968,48 +938,20 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     }
 
     private static final class RuntimeWarInfoProvider implements WarInfoProvider {
-        private Field warTowerBarField;
-
-        private RuntimeWarInfoProvider() {
-            warTowerBarField = findWarTowerBarField();
-        }
-
         @Override
         public WarBattleInfo getCurrentWar() {
             return Models.GuildWarTower.getWarBattleInfo().orElse(null);
         }
 
         @Override
-        public Float towerHealthFraction(WarBattleInfo info) {
-            if (warTowerBarField == null) {
-                return null;
-            }
-            try {
-                Object value = warTowerBarField.get(Models.GuildWarTower);
-                if (value instanceof TrackedBar bar && bar.isActive()) {
-                    float progress = bar.getTargetProgress();
-                    return Float.isFinite(progress) ? progress : null;
-                }
-            } catch (ReflectiveOperationException | RuntimeException exception) {
-                warTowerBarField = null;
-                SeqClient.LOGGER.debug(
-                        "[GuildWarTracker] Disabling exact Wynntils tower boss-bar reads after failure: {}",
-                        exception.toString());
-            }
-            return null;
+        public WarTowerUpdate towerUpdate(WarBattleInfo info) {
+            String territory = info == null ? null : trimToNull(info.getTerritory());
+            return MinecraftWarTowerTracker.getInstance().snapshot(territory);
         }
 
-        private static Field findWarTowerBarField() {
-            try {
-                Field field = Models.GuildWarTower.getClass().getDeclaredField("WarTowerBar");
-                field.setAccessible(true);
-                return field;
-            } catch (ReflectiveOperationException | RuntimeException exception) {
-                SeqClient.LOGGER.warn(
-                        "[GuildWarTracker] Exact tower boss-bar fill is unavailable; using tower health ratio. Cause: {}",
-                        exception.toString());
-                return null;
-            }
+        @Override
+        public void resetTowerMetrics() {
+            MinecraftWarTowerTracker.getInstance().reset();
         }
     }
 }

@@ -271,10 +271,10 @@ class GuildWarTrackerTest {
     }
 
     @Test
-    void towerUpdatesUsePreferredBossFillAndIndependentHeartbeat() {
+    void towerUpdatesUseDirectBossMetricsAndIndependentHeartbeat() {
         long sampledAt = System.currentTimeMillis();
         MutableWarInfoProvider warInfoProvider = new MutableWarInfoProvider();
-        warInfoProvider.healthFraction = 0.8731f;
+        warInfoProvider.towerUpdate = new WarTowerUpdate("Mangled Lake", 0.8731f, 400_000L, 20_000L);
         warInfoProvider.currentWar = war(
                 "Mangled Lake",
                 towerState(sampledAt - 5_000L, 450_000L),
@@ -290,11 +290,8 @@ class GuildWarTrackerTest {
         WarTowerUpdate first = publisher.towerUpdates.getFirst();
         assertEquals("Mangled Lake", first.territory());
         assertEquals(0.8731f, first.health());
-        assertEquals(warInfoProvider.currentWar.getCurrentState().effectiveHealth(), first.ehp());
-        long expectedDps = (warInfoProvider.currentWar.getInitialState().effectiveHealth()
-                        - warInfoProvider.currentWar.getCurrentState().effectiveHealth())
-                / 10L;
-        assertEquals(expectedDps, first.dps());
+        assertEquals(400_000L, first.ehp());
+        assertEquals(20_000L, first.dps());
 
         clock.advance(GuildWarTracker.TOWER_HEARTBEAT_MS - 1L);
         tracker.tick();
@@ -366,12 +363,27 @@ class GuildWarTrackerTest {
     }
 
     @Test
-    void towerHealthFallsBackToClampedStateRatio() {
-        WarBattleInfo halfHealth = war("Olux", towerState(1_000L, 400L), towerState(2_000L, 200L));
+    void missingDirectBossMetricsUsesBoundedRetryWithoutPublishingWynntilsFallback() {
+        MutableWarInfoProvider warInfoProvider = new MutableWarInfoProvider();
+        warInfoProvider.currentWar = war("Olux", towerState(1_000L, 400L), towerState(2_000L, 200L));
+        MutablePlayerContext player = new MutablePlayerContext();
+        player.classType = WynnClassType.MAGE;
+        CapturingPublisher publisher = new CapturingPublisher();
+        MutableClock clock = new MutableClock(47_000L);
+        GuildWarTracker tracker = newTracker(warInfoProvider, player, publisher, clock);
 
-        assertEquals(0.5f, GuildWarTracker.towerHealthFraction(Float.NaN, halfHealth));
-        assertEquals(1.0f, GuildWarTracker.towerHealthFraction(3.5f, halfHealth));
-        assertEquals(0.0f, GuildWarTracker.towerHealthFraction(-2.0f, halfHealth));
+        tracker.tick();
+        tracker.tick();
+        assertTrue(publisher.towerUpdates.isEmpty());
+
+        warInfoProvider.towerUpdate = new WarTowerUpdate("Olux", 0.5f, 266L, 13L);
+        clock.advance(999L);
+        tracker.tick();
+        assertTrue(publisher.towerUpdates.isEmpty());
+        clock.advance(1L);
+        tracker.tick();
+
+        assertEquals(warInfoProvider.towerUpdate, publisher.towerUpdates.getFirst());
     }
 
     @Test
@@ -454,6 +466,7 @@ class GuildWarTrackerTest {
     void newBattleIdForSameTerritoryForcesStatusAndTowerUpdates() {
         MutableWarInfoProvider warInfoProvider = new MutableWarInfoProvider();
         warInfoProvider.currentWar = war("Mangled Lake", towerState(1_000L, 500L), towerState(1_100L, 400L));
+        warInfoProvider.towerUpdate = new WarTowerUpdate("Mangled Lake", 0.8f, 533L, 10L);
         MutablePlayerContext player = new MutablePlayerContext();
         player.classType = WynnClassType.WARRIOR;
         CapturingPublisher publisher = new CapturingPublisher();
@@ -530,7 +543,7 @@ class GuildWarTrackerTest {
 
     private static final class MutableWarInfoProvider implements GuildWarTracker.WarInfoProvider {
         private WarBattleInfo currentWar;
-        private Float healthFraction;
+        private WarTowerUpdate towerUpdate;
 
         @Override
         public WarBattleInfo getCurrentWar() {
@@ -538,8 +551,8 @@ class GuildWarTrackerTest {
         }
 
         @Override
-        public Float towerHealthFraction(WarBattleInfo info) {
-            return healthFraction;
+        public WarTowerUpdate towerUpdate(WarBattleInfo info) {
+            return towerUpdate;
         }
     }
 
