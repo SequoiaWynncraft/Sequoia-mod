@@ -3,12 +3,10 @@ package com.seqwawa.seq.managers;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.WarTowerUpdate;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
-import java.util.ArrayDeque;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.LongSupplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.minecraft.network.chat.Component;
@@ -19,14 +17,12 @@ import net.minecraft.world.BossEvent;
  * Reads Wynncraft tower metrics directly from vanilla boss-event packets.
  *
  * <p>The tracker is client-thread confined. It stores only normalized scalar
- * values, caps both active bars and per-bar samples, and never retains packet,
- * component, player, level, or other Minecraft world objects.
+ * values, caps active bars, and never retains packet, component, player, level,
+ * or other Minecraft world objects.
  */
 public final class MinecraftWarTowerTracker {
     static final int MAX_TRACKED_BARS = 32;
-    static final int MAX_SAMPLES_PER_BAR = 256;
-    static final long DPS_WINDOW_MILLIS = 10_000L;
-    private static final long DPS_WINDOW_SECONDS = DPS_WINDOW_MILLIS / 1_000L;
+    private static final double LONG_UPPER_BOUND_EXCLUSIVE = 0x1.0p63;
 
     /**
      * Plain-text equivalent of Wynncraft's formatted tower bar. Icon glyphs are
@@ -41,20 +37,15 @@ public final class MinecraftWarTowerTracker {
                     + "\\((?<attackSpeed>\\d+(?:\\.\\d+)?)x\\)$",
             Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
 
-    private static final MinecraftWarTowerTracker INSTANCE =
-            new MinecraftWarTowerTracker(System::currentTimeMillis);
+    private static final MinecraftWarTowerTracker INSTANCE = new MinecraftWarTowerTracker();
 
-    private final LongSupplier clock;
     private final LinkedHashMap<UUID, TrackedBossBar> bars =
             new LinkedHashMap<>(MAX_TRACKED_BARS, 0.75f, true);
     private final ClientboundBossEventPacket.Handler packetHandler = new PacketHandler();
+    private long updateSequence;
 
     public static MinecraftWarTowerTracker getInstance() {
         return INSTANCE;
-    }
-
-    MinecraftWarTowerTracker(LongSupplier clock) {
-        this.clock = clock;
     }
 
     /** Called from the raw vanilla packet hook after client-thread confinement. */
@@ -81,7 +72,7 @@ public final class MinecraftWarTowerTracker {
             if (bar.tower == null || !bar.tower.territory().equalsIgnoreCase(expected)) {
                 continue;
             }
-            if (newest == null || bar.lastUpdatedAt > newest.lastUpdatedAt) {
+            if (newest == null || bar.lastUpdatedOrder > newest.lastUpdatedOrder) {
                 newest = bar;
             }
         }
@@ -89,18 +80,17 @@ public final class MinecraftWarTowerTracker {
             return null;
         }
 
-        long now = clock.getAsLong();
-        newest.pruneSamples(now);
         return new WarTowerUpdate(
                 newest.tower.territory(),
                 Math.clamp(newest.progress, 0.0f, 1.0f),
                 newest.tower.effectiveHealth(),
-                newest.rollingDps());
+                newest.tower.towerDps());
     }
 
     /** Clears all packet-derived state at a connection/world boundary. */
     public void reset() {
         bars.clear();
+        updateSequence = 0L;
     }
 
     void add(UUID id, Component name, float progress) {
@@ -124,7 +114,7 @@ public final class MinecraftWarTowerTracker {
         }
         TrackedBossBar bar = getOrCreate(id);
         bar.progress = progress;
-        bar.lastUpdatedAt = clock.getAsLong();
+        markUpdated(bar);
     }
 
     void updateName(UUID id, Component name) {
@@ -136,11 +126,6 @@ public final class MinecraftWarTowerTracker {
 
     int trackedBarCount() {
         return bars.size();
-    }
-
-    int sampleCount(UUID id) {
-        TrackedBossBar bar = bars.get(id);
-        return bar == null ? 0 : bar.samples.size();
     }
 
     static TowerTitle parseTowerTitle(String rawTitle) {
@@ -167,11 +152,22 @@ public final class MinecraftWarTowerTracker {
                 return null;
             }
 
+            // Match the backend war-log formulas: remaining EHP is floored like
+            // Wynntils, while expected outgoing tower DPS is rounded like %.0f.
             double effectiveHealth = health / (1.0 - defense / 100.0);
-            if (!Double.isFinite(effectiveHealth) || effectiveHealth > Long.MAX_VALUE) {
+            double towerDps = damageHigh * 5d / 6d * attackSpeed;
+            if (!isNonnegativeLongValue(effectiveHealth) || !isNonnegativeLongValue(towerDps)) {
                 return null;
             }
-            return new TowerTitle(territory, health, defense, (long) Math.floor(effectiveHealth));
+            return new TowerTitle(
+                    territory,
+                    health,
+                    defense,
+                    damageLow,
+                    damageHigh,
+                    attackSpeed,
+                    (long) Math.floor(effectiveHealth),
+                    Math.round(towerDps));
         } catch (NumberFormatException exception) {
             return null;
         }
@@ -179,18 +175,16 @@ public final class MinecraftWarTowerTracker {
 
     private void applyName(TrackedBossBar bar, Component name) {
         TowerTitle parsed = name == null ? null : parseTowerTitle(name.getString());
-        long now = clock.getAsLong();
-        bar.lastUpdatedAt = now;
+        markUpdated(bar);
         if (parsed == null) {
             bar.tower = null;
-            bar.samples.clear();
             return;
         }
-        if (bar.tower == null || !bar.tower.territory().equalsIgnoreCase(parsed.territory())) {
-            bar.samples.clear();
-        }
         bar.tower = parsed;
-        bar.addSample(now, parsed.effectiveHealth());
+    }
+
+    private void markUpdated(TrackedBossBar bar) {
+        bar.lastUpdatedOrder = ++updateSequence;
     }
 
     private TrackedBossBar getOrCreate(UUID id) {
@@ -229,54 +223,25 @@ public final class MinecraftWarTowerTracker {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    record TowerTitle(String territory, long health, double defense, long effectiveHealth) {}
-
-    private static final class TrackedBossBar {
-        private final ArrayDeque<Sample> samples = new ArrayDeque<>();
-        private float progress = Float.NaN;
-        private TowerTitle tower;
-        private long lastUpdatedAt;
-
-        private void addSample(long observedAt, long effectiveHealth) {
-            Sample last = samples.peekLast();
-            if (last != null && observedAt < last.observedAt()) {
-                samples.clear();
-                last = null;
-            }
-            if (last != null && observedAt == last.observedAt()) {
-                samples.removeLast();
-            }
-            samples.addLast(new Sample(observedAt, effectiveHealth));
-            pruneSamples(observedAt);
-            while (samples.size() > MAX_SAMPLES_PER_BAR) {
-                samples.removeFirst();
-            }
-        }
-
-        private void pruneSamples(long now) {
-            long cutoff = now - DPS_WINDOW_MILLIS;
-            while (!samples.isEmpty() && samples.peekFirst().observedAt() < cutoff) {
-                samples.removeFirst();
-            }
-        }
-
-        private long rollingDps() {
-            Sample first = samples.peekFirst();
-            Sample last = samples.peekLast();
-            if (first == null || last == null || first == last || first.effectiveHealth() <= last.effectiveHealth()) {
-                return 0L;
-            }
-            long damage;
-            try {
-                damage = Math.subtractExact(first.effectiveHealth(), last.effectiveHealth());
-            } catch (ArithmeticException exception) {
-                damage = Long.MAX_VALUE;
-            }
-            return damage / DPS_WINDOW_SECONDS;
-        }
+    private static boolean isNonnegativeLongValue(double value) {
+        return Double.isFinite(value) && value >= 0.0 && value < LONG_UPPER_BOUND_EXCLUSIVE;
     }
 
-    private record Sample(long observedAt, long effectiveHealth) {}
+    record TowerTitle(
+            String territory,
+            long health,
+            double defense,
+            long damageLow,
+            long damageHigh,
+            double attackSpeed,
+            long effectiveHealth,
+            long towerDps) {}
+
+    private static final class TrackedBossBar {
+        private float progress = Float.NaN;
+        private TowerTitle tower;
+        private long lastUpdatedOrder;
+    }
 
     private final class PacketHandler implements ClientboundBossEventPacket.Handler {
         @Override
