@@ -692,7 +692,11 @@ public class SeqClient implements ClientModInitializer {
         if (manager == null || !manager.isAuthorized()) {
             return;
         }
-        mc.execute(() -> mc.setScreen(new WarPlannerScreen(mc.screen)));
+        mc.execute(() -> {
+            WarPlannerScreen screen = new WarPlannerScreen(mc.screen);
+            mc.setScreen(screen);
+            screen.refreshPlanner();
+        });
     }
 
     public static void openWorldMapScreen() {

@@ -130,8 +130,9 @@ resources do not affect color. Ordinary 9k emerald income is treated as the
 baseline; territories with 18k base emerald production are highlighted as
 emerald generators.
 
-The War Planner entry and `/seq war` command only appear after the protected backend snapshot confirms that the
-current account is a Sequoia member. Members can advertise timed availability and see their own team immediately;
+The War Planner entry and `/seq war` command only appear after a compact protected backend access check confirms
+that the current account is a Sequoia member. The full planner snapshot is fetched only when the player opens or
+explicitly refreshes the screen. Members can advertise timed availability and see their own team immediately;
 authorized managers can atomically create or edit parties of one to five people, while one shared Lead and three Eco
 slots remain independent of party membership. Managers choose `HQ Team`, `VLow Munch`, or `FFA` from the team editor;
 the backend keeps HQ unique and assigns the numeric VLow/FFA suffixes. The Teams view adapts from full-width cards

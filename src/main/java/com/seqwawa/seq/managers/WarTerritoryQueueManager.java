@@ -4,7 +4,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.model.war.WarTerritoryQueueFeed;
 import com.seqwawa.seq.model.war.WarTerritoryQueueFeed.Participant;
 import com.seqwawa.seq.model.war.WarTerritoryQueueFeed.TerritoryQueue;
@@ -1169,8 +1168,7 @@ public final class WarTerritoryQueueManager {
         @Override
         public String playerUuid() {
             WarPlannerManager manager = SeqClient.getWarPlannerManager();
-            WarPlannerSnapshot snapshot = manager == null ? null : manager.snapshot();
-            return snapshot == null || snapshot.self() == null ? null : snapshot.self().playerUuid();
+            return manager == null ? null : manager.playerUuid();
         }
     }
 }

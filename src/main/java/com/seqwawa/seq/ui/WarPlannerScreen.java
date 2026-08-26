@@ -58,7 +58,7 @@ import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
 
-/** Seq-only war management overlay. Authorization is supplied solely by the protected snapshot. */
+/** Seq-only war management overlay. Authorization is supplied by protected backend responses. */
 public final class WarPlannerScreen extends Screen {
     private static final float PADDING = 12;
     private static final float HEADER_HEIGHT = 38;
@@ -188,10 +188,17 @@ public final class WarPlannerScreen extends Screen {
 
     @Override
     public void tick() {
-        if (manager == null || manager.state() == WarPlannerManager.State.FORBIDDEN || manager.snapshot() == null) {
+        if (manager == null || manager.state() == WarPlannerManager.State.FORBIDDEN) {
             SeqClient.mc.setScreen(parent);
         } else if (warPingPickerOpen && !manager.canManage()) {
             closeWarPingPicker();
+        }
+    }
+
+    /** Loads the large planner aggregate only after the player explicitly opens or refreshes this screen. */
+    public void refreshPlanner() {
+        if (manager != null) {
+            showResult(manager.refreshNow());
         }
     }
 
@@ -235,7 +242,7 @@ public final class WarPlannerScreen extends Screen {
                     && !caller.discordId().isBlank();
             button(canvas, width - 158, 8, 70, BUTTON_HEIGHT, "My roles", false,
                     manager.isMutating() || !rolesEditable);
-            button(canvas, width - 82, 8, 70, BUTTON_HEIGHT, "Refresh", false, manager.isMutating());
+            button(canvas, width - 82, 8, 70, BUTTON_HEIGHT, "Refresh", false, manager.isRequestInFlight());
 
             renderAvailability(canvas, width);
             renderTabs(canvas, width);
@@ -2064,7 +2071,9 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         if (hit(mx, my, width - 82, 8, 70, BUTTON_HEIGHT)) {
-            showResult(manager.refreshNow());
+            if (!manager.isRequestInFlight()) {
+                showResult(manager.refreshNow());
+            }
             return true;
         }
         if (hit(mx, my, width - 158, 8, 70, BUTTON_HEIGHT)) {
