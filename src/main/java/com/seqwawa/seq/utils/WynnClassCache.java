@@ -49,7 +49,12 @@ public class WynnClassCache {
     }
 
     public static WynnClassType resolveLocalClassType() {
-        String assetKey = resolveFromWynntils();
+        return parseClassType(resolveFromWynntils());
+    }
+
+    /** Maps canonical or reskinned Wynncraft class names without touching the optional Wynntils runtime. */
+    public static WynnClassType parseClassType(String rawValue) {
+        String assetKey = normalizeClassName(rawValue);
         if (assetKey == null) {
             return null;
         }

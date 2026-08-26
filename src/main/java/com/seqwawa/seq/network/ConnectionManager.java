@@ -25,6 +25,8 @@ import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 import com.seqwawa.seq.model.GuildWarQueueSubmission;
+import com.seqwawa.seq.model.WarStatusUpdate;
+import com.seqwawa.seq.model.WarTowerUpdate;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.User;
@@ -66,7 +68,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             Map.entry("guild_storage_snapshot", 10),
             Map.entry("guild_storage_reward", 10),
             Map.entry("guild_war_queue", 5),
-            Map.entry("guild_war_submission", 5));
+            Map.entry("guild_war_submission", 5),
+            Map.entry("war_status", 5),
+            Map.entry("war_tower_update", 5));
 
     private static ConnectionManager instance;
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -757,6 +761,31 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         if (submission.completedAt() != null && !submission.completedAt().isBlank()) {
             payload.addProperty("completed_at", submission.completedAt());
         }
+        return payload;
+    }
+
+    static JsonObject buildWarStatusPayload(WarStatusUpdate update) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("status", update.status().name());
+        if (update.classType() != null) {
+            payload.addProperty("class", update.classType().name());
+        }
+        if (update.territory() != null) {
+            payload.addProperty("territory", update.territory());
+        }
+        if (update.x() != null && update.z() != null) {
+            payload.addProperty("x", update.x());
+            payload.addProperty("z", update.z());
+        }
+        return payload;
+    }
+
+    static JsonObject buildWarTowerUpdatePayload(WarTowerUpdate update) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("territory", update.territory());
+        payload.addProperty("health", update.health());
+        payload.addProperty("ehp", update.ehp());
+        payload.addProperty("dps", update.dps());
         return payload;
     }
 
@@ -1464,6 +1493,40 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return send("guild_war_queue", msg);
     }
 
+    public boolean sendWarStatus(WarStatusUpdate update) {
+        if (update == null
+                || (update.status() != WarStatusUpdate.Status.REMOVE && update.classType() == null)
+                || !isReadyForLiveWarTelemetry()
+                || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
+            return false;
+        }
+        return send("war_status", buildWarStatusPayload(update));
+    }
+
+    public boolean sendWarTowerUpdate(WarTowerUpdate update) {
+        if (update == null
+                || update.territory() == null
+                || update.territory().isBlank()
+                || !Float.isFinite(update.health())
+                || update.health() < 0.0f
+                || update.health() > 1.0f
+                || update.ehp() < 0L
+                || update.dps() < 0L
+                || !isReadyForLiveWarTelemetry()
+                || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
+            return false;
+        }
+        return send("war_tower_update", buildWarTowerUpdatePayload(update));
+    }
+
+    private boolean isReadyForLiveWarTelemetry() {
+        return isOpen()
+                && authenticated
+                && !authFailed
+                && !notInGuild
+                && !memberFeaturesDisabled;
+    }
+
     public static void flushPendingOutbound() {
         if (instance == null) {
             return;
@@ -2074,6 +2137,13 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return instance != null && instance.isOpen() && instance.authenticated;
     }
 
+    public static boolean isLiveWarTelemetryReady() {
+        ConnectionManager current = instance;
+        return current != null
+                && current.isReadyForLiveWarTelemetry()
+                && WynncraftServerPolicy.currentScope() == WynncraftServerPolicy.Scope.MAIN;
+    }
+
     public static boolean isTreasuryOutConnected() {
         ConnectionManager current = instance;
         return current != null
@@ -2232,6 +2302,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_storage_reward".equals(type)
                 || "guild_war_queue".equals(type)
                 || "guild_war_submission".equals(type)
+                || "war_status".equals(type)
+                || "war_tower_update".equals(type)
                 || "get_connected".equals(type);
     }
 
@@ -2249,6 +2321,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_storage_reward".equals(type)
                 || "guild_war_queue".equals(type)
                 || "guild_war_submission".equals(type)
+                || "war_status".equals(type)
+                || "war_tower_update".equals(type)
                 || "party_class_update".equals(type)
                 || "party_sync_snapshot".equals(type)
                 || "party_sync_member_removed".equals(type)

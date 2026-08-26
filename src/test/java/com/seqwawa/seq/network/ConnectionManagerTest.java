@@ -3,9 +3,13 @@ package com.seqwawa.seq.network;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.model.GuildWarSubmission;
+import com.seqwawa.seq.model.WarStatusUpdate;
+import com.seqwawa.seq.model.WarTowerUpdate;
+import com.seqwawa.seq.model.WynnClassType;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -128,6 +132,52 @@ class ConnectionManagerTest {
     }
 
     @Test
+    void liveWarStatusPayloadUsesStatusBecauseTypeIsTheWebsocketDiscriminator() {
+        var world = ConnectionManager.buildWarStatusPayload(
+                WarStatusUpdate.world(WynnClassType.MAGE, -1517, -5130));
+        assertEquals("WORLD", world.get("status").getAsString());
+        assertEquals("MAGE", world.get("class").getAsString());
+        assertEquals(-1517, world.get("x").getAsInt());
+        assertEquals(-5130, world.get("z").getAsInt());
+        assertFalse(world.has("territory"));
+        assertFalse(world.has("type"));
+
+        var war = ConnectionManager.buildWarStatusPayload(
+                WarStatusUpdate.war(WynnClassType.WARRIOR, "Entrance to Olux"));
+        assertEquals("WAR", war.get("status").getAsString());
+        assertEquals("Entrance to Olux", war.get("territory").getAsString());
+        assertFalse(war.has("x"));
+        assertFalse(war.has("z"));
+
+        var remove = ConnectionManager.buildWarStatusPayload(WarStatusUpdate.remove());
+        assertEquals("REMOVE", remove.get("status").getAsString());
+        assertFalse(remove.has("class"));
+        assertFalse(remove.has("territory"));
+        assertFalse(remove.has("x"));
+        assertFalse(remove.has("z"));
+    }
+
+    @Test
+    void liveWarTowerPayloadPreservesLongMetrics() {
+        var payload = ConnectionManager.buildWarTowerUpdatePayload(
+                new WarTowerUpdate("Entrance to Olux", 0.8731f, 24_135_275L, 32_143L));
+
+        assertEquals("Entrance to Olux", payload.get("territory").getAsString());
+        assertEquals(0.8731f, payload.get("health").getAsFloat());
+        assertEquals(24_135_275L, payload.get("ehp").getAsLong());
+        assertEquals(32_143L, payload.get("dps").getAsLong());
+    }
+
+    @Test
+    void liveWarTowerModelRejectsInvalidMetrics() {
+        assertThrows(IllegalArgumentException.class, () -> new WarTowerUpdate("Olux", Float.NaN, 1L, 1L));
+        assertThrows(IllegalArgumentException.class, () -> new WarTowerUpdate("Olux", -0.1f, 1L, 1L));
+        assertThrows(IllegalArgumentException.class, () -> new WarTowerUpdate("Olux", 1.1f, 1L, 1L));
+        assertThrows(IllegalArgumentException.class, () -> new WarTowerUpdate("Olux", 0.5f, -1L, 1L));
+        assertThrows(IllegalArgumentException.class, () -> new WarTowerUpdate("Olux", 0.5f, 1L, -1L));
+    }
+
+    @Test
     void discordUsernamePresenceTreatsBlankValuesAsUnlinked() {
         assertTrue(ConnectionManager.hasDiscordUsername("SequoiaUser"));
         assertEquals(false, ConnectionManager.hasDiscordUsername(""));
@@ -192,6 +242,8 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_alliance_update"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_alliance_snapshot"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_membership_event"));
+        assertTrue(ConnectionManager.isAuthenticatedOutboundType("war_status"));
+        assertTrue(ConnectionManager.isAuthenticatedOutboundType("war_tower_update"));
     }
 
     @Test
@@ -199,6 +251,8 @@ class ConnectionManagerTest {
         assertFalse(ConnectionManager.isThrottleLimitedType("guild_storage_snapshot"));
         assertFalse(ConnectionManager.isThrottleLimitedType("guild_storage_reward"));
         assertTrue(ConnectionManager.isThrottleLimitedType("guild_chat"));
+        assertFalse(ConnectionManager.isThrottleLimitedType("war_status"));
+        assertFalse(ConnectionManager.isThrottleLimitedType("war_tower_update"));
     }
 
     @Test
@@ -230,6 +284,8 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_storage_snapshot"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_war_queue"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_war_submission"));
+        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("war_status"));
+        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("war_tower_update"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("get_connected"));
         assertFalse(ConnectionManager.isSequoiaMemberOnlyType("party_class_update"));
         assertFalse(ConnectionManager.isSequoiaMemberOnlyType("party_sync_snapshot"));

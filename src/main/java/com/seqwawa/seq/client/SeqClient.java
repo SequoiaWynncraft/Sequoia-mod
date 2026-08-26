@@ -430,6 +430,9 @@ public class SeqClient implements ClientModInitializer {
                 RadianceCheckerClient.reset();
                 RaidPartySnapshotTracker.onServerUnavailable();
                 ConnectionManager.flushPendingOutbound();
+                if (guildWarTracker != null) {
+                    guildWarTracker.reset();
+                }
                 if (warPlannerManager != null) {
                     warPlannerManager.reset();
                 }
