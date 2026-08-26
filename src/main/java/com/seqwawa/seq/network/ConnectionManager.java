@@ -20,6 +20,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -1500,7 +1501,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
             return false;
         }
-        return send("war_status", buildWarStatusPayload(update));
+        return tryLiveTelemetrySend(() -> send("war_status", buildWarStatusPayload(update)));
     }
 
     public boolean sendWarTowerUpdate(WarTowerUpdate update) {
@@ -1516,7 +1517,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
             return false;
         }
-        return send("war_tower_update", buildWarTowerUpdatePayload(update));
+        return tryLiveTelemetrySend(() -> send("war_tower_update", buildWarTowerUpdatePayload(update)));
+    }
+
+    static boolean tryLiveTelemetrySend(BooleanSupplier sendAction) {
+        try {
+            return sendAction.getAsBoolean();
+        } catch (RuntimeException exception) {
+            // The socket can close after the readiness check but before Java-WebSocket
+            // queues the frame. Treat that race like an ordinary failed send so the
+            // bounded tracker retry handles it on a later tick.
+            SeqClient.LOGGER.debug("[WebSocket] Live war telemetry send raced with connection closure", exception);
+            return false;
+        }
     }
 
     private boolean isReadyForLiveWarTelemetry() {
@@ -1988,12 +2001,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                             "[WebSocket] Backend error status={} code={} message={}", status, backendCode, error);
 
                     if ("mod_version_unsupported".equalsIgnoreCase(backendCode) || status == 426) {
-                        autoReconnect = false;
+                        if (shouldDisableReconnectForVersionRejection(capability)) {
+                            autoReconnect = false;
+                        }
                         maybeNotifyVersionRejection(capability, minimumSafeVersion, error);
                         return;
                     }
 
-                    if (status == 400 || normalized.contains("invalid auth request")) {
+                    if (isSessionAuthenticationError(status, capability, normalized)) {
                         authFailed = true;
                         authenticated = false;
                         registerAuthFailure();
@@ -2454,6 +2469,18 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 && normalizedMessage != null
                 && normalizedMessage.contains("sequoia")
                 && normalizedMessage.contains("member");
+    }
+
+    static boolean isSessionAuthenticationError(int status, String capability, String normalizedMessage) {
+        if (capability != null && !capability.isBlank()) {
+            return false;
+        }
+        return status == 400
+                || (normalizedMessage != null && normalizedMessage.contains("invalid auth request"));
+    }
+
+    static boolean shouldDisableReconnectForVersionRejection(String capability) {
+        return capability == null || capability.isBlank();
     }
 
     private static boolean isCapabilityAuthorizationReject(int status, String capability) {

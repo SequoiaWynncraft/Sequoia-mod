@@ -343,6 +343,29 @@ class GuildWarTrackerTest {
     }
 
     @Test
+    void publisherExceptionDoesNotEscapeClientTickAndUsesBoundedRetry() {
+        MutableWarInfoProvider warInfoProvider = new MutableWarInfoProvider();
+        MutablePlayerContext player = new MutablePlayerContext();
+        player.warModeActive = true;
+        player.classType = WynnClassType.MAGE;
+        CapturingPublisher publisher = new CapturingPublisher();
+        publisher.throwStatus = true;
+        MutableClock clock = new MutableClock(45_000L);
+        GuildWarTracker tracker = newTracker(warInfoProvider, player, publisher, clock);
+
+        tracker.tick();
+        assertEquals(1, publisher.statusAttempts.size());
+        tracker.tick();
+        assertEquals(1, publisher.statusAttempts.size());
+
+        publisher.throwStatus = false;
+        clock.advance(1_000L);
+        tracker.tick();
+        assertEquals(2, publisher.statusAttempts.size());
+        assertEquals(1, publisher.statusUpdates.size());
+    }
+
+    @Test
     void towerHealthFallsBackToClampedStateRatio() {
         WarBattleInfo halfHealth = war("Olux", towerState(1_000L, 400L), towerState(2_000L, 200L));
 
@@ -536,6 +559,7 @@ class GuildWarTrackerTest {
         private final ArrayList<WarTowerUpdate> towerUpdates = new ArrayList<>();
         private boolean ready = true;
         private boolean acceptStatus = true;
+        private boolean throwStatus;
 
         @Override
         public boolean publishWar(GuildWarSubmission submission) {
@@ -557,6 +581,9 @@ class GuildWarTrackerTest {
         @Override
         public boolean publishWarStatus(WarStatusUpdate update) {
             statusAttempts.add(update);
+            if (throwStatus) {
+                throw new IllegalStateException("socket closed");
+            }
             if (acceptStatus) {
                 statusUpdates.add(update);
             }

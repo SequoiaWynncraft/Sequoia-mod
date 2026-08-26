@@ -401,7 +401,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             if (ready
                     && now >= nextStatusHeartbeatAtMillis
                     && now >= nextStatusAttemptAtMillis) {
-                if (submissionPublisher.publishWarStatus(statusUpdate)) {
+                if (publishWarStatus(statusUpdate)) {
                     nextStatusHeartbeatAtMillis = now + STATUS_HEARTBEAT_MS;
                     nextStatusAttemptAtMillis = 0L;
                 } else {
@@ -434,7 +434,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             classType = lastObservedClass;
         }
         WarStatusUpdate removal = classType == null ? WarStatusUpdate.remove() : WarStatusUpdate.remove(classType);
-        if (submissionPublisher.publishWarStatus(removal)) {
+        if (publishWarStatus(removal)) {
             removalPending = false;
             nextStatusHeartbeatAtMillis = 0L;
             nextStatusAttemptAtMillis = 0L;
@@ -490,7 +490,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             nextTowerHeartbeatAtMillis = now + LIVE_SEND_RETRY_MS;
             return;
         }
-        if (submissionPublisher.publishWarTowerUpdate(update)) {
+        if (publishWarTowerUpdate(update)) {
             nextTowerHeartbeatAtMillis = now + TOWER_HEARTBEAT_MS;
         } else {
             nextTowerHeartbeatAtMillis = now + LIVE_SEND_RETRY_MS;
@@ -501,6 +501,24 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         observedTowerTerritory = null;
         observedTowerBattleId = null;
         nextTowerHeartbeatAtMillis = 0L;
+    }
+
+    private boolean publishWarStatus(WarStatusUpdate update) {
+        try {
+            return submissionPublisher.publishWarStatus(update);
+        } catch (RuntimeException exception) {
+            SeqClient.LOGGER.debug("Live war status publisher failed; retrying on a later tick", exception);
+            return false;
+        }
+    }
+
+    private boolean publishWarTowerUpdate(WarTowerUpdate update) {
+        try {
+            return submissionPublisher.publishWarTowerUpdate(update);
+        } catch (RuntimeException exception) {
+            SeqClient.LOGGER.debug("Live war tower publisher failed; retrying on a later tick", exception);
+            return false;
+        }
     }
 
     static WarTowerUpdate buildTowerUpdate(WarBattleInfo info, Float preferredHealthFraction) {

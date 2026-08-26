@@ -178,6 +178,14 @@ class ConnectionManagerTest {
     }
 
     @Test
+    void liveWarTelemetryTreatsSocketCloseRaceAsFailedSend() {
+        assertFalse(ConnectionManager.tryLiveTelemetrySend(() -> {
+            throw new IllegalStateException("socket closed");
+        }));
+        assertTrue(ConnectionManager.tryLiveTelemetrySend(() -> true));
+    }
+
+    @Test
     void discordUsernamePresenceTreatsBlankValuesAsUnlinked() {
         assertTrue(ConnectionManager.hasDiscordUsername("SequoiaUser"));
         assertEquals(false, ConnectionManager.hasDiscordUsername(""));
@@ -275,6 +283,27 @@ class ConnectionManagerTest {
                 "not_in_guild", "guild_chat", "guild chat sender is not in sequoia"));
         assertFalse(ConnectionManager.isSilentGuildChatMembershipReject(
                 "not_in_guild", "guild_bank_event", "this feature is limited to sequoia members"));
+    }
+
+    @Test
+    void capabilityValidationErrorDoesNotInvalidateAuthenticatedSession() {
+        assertFalse(ConnectionManager.isSessionAuthenticationError(
+                400, "war_status", "invalid war status payload"));
+        assertFalse(ConnectionManager.isSessionAuthenticationError(
+                400, "war_tower_update", "invalid war tower update payload"));
+
+        assertTrue(ConnectionManager.isSessionAuthenticationError(400, null, "invalid message format"));
+        assertTrue(ConnectionManager.isSessionAuthenticationError(
+                0, null, "invalid auth request"));
+    }
+
+    @Test
+    void capabilityVersionRejectionDoesNotDisableGlobalReconnect() {
+        assertFalse(ConnectionManager.shouldDisableReconnectForVersionRejection("war_status"));
+        assertFalse(ConnectionManager.shouldDisableReconnectForVersionRejection("war_tower_update"));
+
+        assertTrue(ConnectionManager.shouldDisableReconnectForVersionRejection(null));
+        assertTrue(ConnectionManager.shouldDisableReconnectForVersionRejection("   "));
     }
 
     @Test
