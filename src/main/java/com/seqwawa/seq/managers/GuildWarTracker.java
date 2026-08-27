@@ -1,5 +1,6 @@
 package com.seqwawa.seq.managers;
 
+import com.seqwawa.seq.model.GuildWarQueueCancellation;
 import com.seqwawa.seq.model.GuildWarQueueSubmission;
 import com.seqwawa.seq.model.WarStatusUpdate;
 import com.seqwawa.seq.model.WarTowerUpdate;
@@ -52,8 +53,14 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     private static final Pattern QUEUE_NAME = Pattern.compile("Attacking: (.+)");
     private static final Pattern QUEUE_DEFENSE = Pattern.compile(
             "Territory Defences: (Very Low|Low|Medium|High|Very High)");
+    private static final Pattern TERRITORY_CAPTURED_BY_GUILD = Pattern.compile(
+            "(?i)\\[[^\\]]{1,32}]\\s+captured\\s+the\\s+territory\\s+(.{1,128}?)\\.");
+    private static final Pattern ACTIVE_ATTACK_REFUNDED = Pattern.compile(
+            "(?i)Your\\s+active\\s+attack\\s+was\\s+cancell?ed\\s+and\\s+refunded\\s+to\\s+your"
+                    + "(?:\\s+headquarters?\\.)?");
     private static final Set<String> DEFENSE_LEVELS = Set.of("Very Low", "Low", "Medium", "High", "Very High");
     private static final long QUEUE_ATTEMPT_TIMEOUT_MS = 15_000L;
+    private static final long QUEUE_CANCELLATION_CHAT_WINDOW_MS = 10_000L;
     static final long STATUS_HEARTBEAT_MS = LiveWarTelemetryTracker.STATUS_HEARTBEAT_MS;
     static final long TOWER_HEARTBEAT_MS = LiveWarTelemetryTracker.TOWER_HEARTBEAT_MS;
 
@@ -69,6 +76,8 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     private int lastProcessedStateHash;
     private boolean wynnDeathListenerRegistered;
     private PendingQueueAttempt pendingQueueAttempt;
+    private String activeQueueTerritory;
+    private PendingQueueCancellation pendingQueueCancellation;
 
     public GuildWarTracker() {
         this(
@@ -83,6 +92,11 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
                     @Override
                     public boolean publishQueue(GuildWarQueueSubmission submission) {
                         return ConnectionManager.getInstance().sendGuildWarQueue(submission);
+                    }
+
+                    @Override
+                    public boolean publishQueueCancellation(GuildWarQueueCancellation cancellation) {
+                        return ConnectionManager.getInstance().sendGuildWarQueueCancellation(cancellation);
                     }
 
                     @Override
@@ -167,6 +181,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             liveTelemetryTracker.tick(null);
             clearActiveWarContext();
             pendingQueueAttempt = null;
+            pendingQueueCancellation = null;
             return;
         }
         WarBattleInfo info = warInfoProvider.getCurrentWar();
@@ -185,7 +200,38 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         }
 
         attemptQueueConfirmation(cleaned);
+        attemptQueueCancellation(cleaned);
         attemptTerritoryCapture(cleaned);
+    }
+
+    private void attemptQueueCancellation(String cleaned) {
+        if (!trackingEnabled.getAsBoolean()) {
+            pendingQueueCancellation = null;
+            return;
+        }
+
+        long now = clock.getAsLong();
+        if (pendingQueueCancellation != null && pendingQueueCancellation.expiresAtEpochMs() < now) {
+            pendingQueueCancellation = null;
+        }
+
+        Matcher capture = TERRITORY_CAPTURED_BY_GUILD.matcher(cleaned);
+        if (capture.find()) {
+            String territory = trimToNull(capture.group(1));
+            if (territory != null
+                    && (activeQueueTerritory == null || activeQueueTerritory.equalsIgnoreCase(territory))) {
+                pendingQueueCancellation =
+                        new PendingQueueCancellation(territory, now + QUEUE_CANCELLATION_CHAT_WINDOW_MS);
+            }
+        }
+
+        if (!ACTIVE_ATTACK_REFUNDED.matcher(cleaned).find() || pendingQueueCancellation == null) {
+            return;
+        }
+
+        PendingQueueCancellation cancellation = pendingQueueCancellation;
+        pendingQueueCancellation = null;
+        submitQueueCancellation(cancellation.territory());
     }
 
     private void attemptQueueConfirmation(String cleaned) {
@@ -210,6 +256,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
 
         PendingQueueAttempt confirmed = pendingQueueAttempt;
         pendingQueueAttempt = null;
+        pendingQueueCancellation = null;
         int queueMinutes = Math.max(1, (confirmation.durationSeconds() + 59) / 60);
         submitQueue(new QueueAttemptInfo(confirmed.territory(), confirmed.rating(), queueMinutes));
     }
@@ -277,6 +324,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         liveTelemetryTracker.reset();
         clearActiveWarContext();
         pendingQueueAttempt = null;
+        pendingQueueCancellation = null;
     }
 
     private void clearActiveWarContext() {
@@ -504,6 +552,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         );
 
         if (submissionPublisher.publishQueue(submission)) {
+            activeQueueTerritory = info.territory();
             return;
         }
 
@@ -513,6 +562,31 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
                 info.rating(),
                 info.queueMinutes()
         );
+    }
+
+    private void submitQueueCancellation(String territory) {
+        String localUuid = trimToNull(playerContext.localUuid());
+        String normalizedTerritory = trimToNull(territory);
+        if (localUuid == null || normalizedTerritory == null) {
+            return;
+        }
+
+        GuildWarQueueCancellation cancellation = new GuildWarQueueCancellation(
+                normalizedTerritory,
+                localUuid,
+                toRfc3339(clock.getAsLong()));
+        SeqClient.LOGGER.info(
+                "[GuildWarTracker] Submitting queue cancellation territory='{}' reason=captured_by_other_guild",
+                normalizedTerritory);
+        if (submissionPublisher.publishQueueCancellation(cancellation)) {
+            if (activeQueueTerritory != null && activeQueueTerritory.equalsIgnoreCase(normalizedTerritory)) {
+                activeQueueTerritory = null;
+            }
+            return;
+        }
+        SeqClient.LOGGER.warn(
+                "[GuildWarTracker] Submission failed queue cancellation territory='{}'",
+                normalizedTerritory);
     }
 
     private WarSummary buildSummary(WarBattleInfo info) {
@@ -704,6 +778,8 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         boolean publishWar(GuildWarSubmission submission);
         boolean publishQueue(GuildWarQueueSubmission submission);
 
+        boolean publishQueueCancellation(GuildWarQueueCancellation cancellation);
+
         default boolean liveTelemetryReady() {
             return true;
         }
@@ -720,6 +796,8 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     private record QueueAttemptInfo(String territory, String rating, int queueMinutes) {}
 
     private record PendingQueueAttempt(String territory, String rating, long expiresAtEpochMs) {}
+
+    private record PendingQueueCancellation(String territory, long expiresAtEpochMs) {}
 
     private record WarSummary(String territory, GuildWarSubmission.TowerStats stats) {}
 

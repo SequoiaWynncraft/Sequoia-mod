@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.model.GuildWarQueueCancellation;
 import com.seqwawa.seq.model.GuildWarQueueSubmission;
 import com.seqwawa.seq.model.WarStatusUpdate;
 import com.seqwawa.seq.model.WarTowerUpdate;
@@ -202,6 +203,52 @@ class GuildWarTrackerTest {
         tracker.onSystemChat(Component.literal("The war for Detlas will start in 1 minute."));
 
         assertTrue(publisher.queueSubmissions.isEmpty());
+    }
+
+    @Test
+    void capturedByAnotherGuildCancelsTheMatchingActiveQueue() {
+        MutableWarInfoProvider warInfoProvider = new MutableWarInfoProvider();
+        CapturingPublisher publisher = new CapturingPublisher();
+        GuildWarTracker tracker = newTracker(
+                warInfoProvider,
+                new FakePlayerContext("LocalUser", "uuid-queue", List.of()),
+                publisher);
+
+        tracker.rememberQueueAttempt("Ternaves Tunnel", "Very Low");
+        tracker.onSystemChat(Component.literal("The war for Ternaves Tunnel will start in 8 minutes."));
+        tracker.onSystemChat(Component.literal(
+                "[NewM] captured the territory Ternaves Tunnel.\n"
+                        + "Your active attack was canceled and refunded to your\n"
+                        + "headquarter."));
+
+        assertEquals(1, publisher.queueCancellations.size());
+        GuildWarQueueCancellation cancellation = publisher.queueCancellations.getFirst();
+        assertEquals("Ternaves Tunnel", cancellation.territory());
+        assertEquals("uuid-queue", cancellation.submittedBy());
+        assertEquals("2024-03-28T01:06:40Z", cancellation.submittedAt());
+    }
+
+    @Test
+    void wrappedCancellationChatIsCorrelatedButAnUnrelatedCaptureIsIgnored() {
+        MutableWarInfoProvider warInfoProvider = new MutableWarInfoProvider();
+        CapturingPublisher publisher = new CapturingPublisher();
+        GuildWarTracker tracker = newTracker(
+                warInfoProvider,
+                new FakePlayerContext("LocalUser", "uuid-queue", List.of()),
+                publisher);
+
+        tracker.rememberQueueAttempt("Ternaves Tunnel", "Low");
+        tracker.onSystemChat(Component.literal("The war for Ternaves Tunnel will start in 3 minutes."));
+
+        tracker.onSystemChat(Component.literal("[NewM] captured the territory Detlas Suburbs."));
+        tracker.onSystemChat(Component.literal("Your active attack was canceled and refunded to your"));
+        assertTrue(publisher.queueCancellations.isEmpty());
+
+        tracker.onSystemChat(Component.literal("[NewM] captured the territory Ternaves Tunnel."));
+        tracker.onSystemChat(Component.literal("Your active attack was canceled and refunded to your"));
+
+        assertEquals(1, publisher.queueCancellations.size());
+        assertEquals("Ternaves Tunnel", publisher.queueCancellations.getFirst().territory());
     }
 
     @Test
@@ -586,6 +633,7 @@ class GuildWarTrackerTest {
     private static final class CapturingPublisher implements GuildWarTracker.SubmissionPublisher {
         private final ArrayList<GuildWarSubmission> warSubmissions = new ArrayList<>();
         private final ArrayList<GuildWarQueueSubmission> queueSubmissions = new ArrayList<>();
+        private final ArrayList<GuildWarQueueCancellation> queueCancellations = new ArrayList<>();
         private final ArrayList<WarStatusUpdate> statusAttempts = new ArrayList<>();
         private final ArrayList<WarStatusUpdate> statusUpdates = new ArrayList<>();
         private final ArrayList<WarTowerUpdate> towerUpdates = new ArrayList<>();
@@ -602,6 +650,12 @@ class GuildWarTrackerTest {
         @Override
         public boolean publishQueue(GuildWarQueueSubmission submission) {
             queueSubmissions.add(submission);
+            return true;
+        }
+
+        @Override
+        public boolean publishQueueCancellation(GuildWarQueueCancellation cancellation) {
+            queueCancellations.add(cancellation);
             return true;
         }
 

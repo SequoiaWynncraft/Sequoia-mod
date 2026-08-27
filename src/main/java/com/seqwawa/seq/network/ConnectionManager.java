@@ -25,6 +25,7 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
+import com.seqwawa.seq.model.GuildWarQueueCancellation;
 import com.seqwawa.seq.model.GuildWarQueueSubmission;
 import com.seqwawa.seq.model.WarStatusUpdate;
 import com.seqwawa.seq.model.WarTowerUpdate;
@@ -69,6 +70,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             Map.entry("guild_storage_snapshot", 10),
             Map.entry("guild_storage_reward", 10),
             Map.entry("guild_war_queue", 5),
+            Map.entry("guild_war_queue_cancel", 5),
             Map.entry("guild_war_submission", 5),
             Map.entry("war_status", 5),
             Map.entry("war_tower_update", 5));
@@ -1494,6 +1496,48 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return send("guild_war_queue", msg);
     }
 
+    public boolean sendGuildWarQueueCancellation(GuildWarQueueCancellation cancellation) {
+        if (cancellation == null
+                || cancellation.territory() == null
+                || cancellation.territory().isBlank()
+                || cancellation.submittedBy() == null
+                || cancellation.submittedBy().isBlank()
+                || cancellation.submittedAt() == null
+                || cancellation.submittedAt().isBlank()) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarQueueCancellation dropped: invalid payload");
+            return false;
+        }
+
+        WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+        if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarQueueCancellation dropped outside main Wynncraft host");
+            return false;
+        }
+        if (memberFeaturesDisabled) {
+            SeqClient.LOGGER.debug("[WebSocket] Guild war queue cancellation disabled for non-member session");
+            return true;
+        }
+        if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
+            SeqClient.LOGGER.warn("[WebSocket] Queueing guild_war_queue_cancel until Wynncraft host is confirmed");
+            return false;
+        }
+        if (!authenticated || !isOpen() || authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildWarQueueCancellation dropped open={} authenticated={} authFailed={} notInGuild={}",
+                    isOpen(),
+                    authenticated,
+                    authFailed,
+                    notInGuild);
+            return false;
+        }
+
+        JsonObject msg = new JsonObject();
+        msg.addProperty("territory", cancellation.territory());
+        msg.addProperty("submitted_by", cancellation.submittedBy());
+        msg.addProperty("submitted_at", cancellation.submittedAt());
+        return send("guild_war_queue_cancel", msg);
+    }
+
     public boolean sendWarStatus(WarStatusUpdate update) {
         if (update == null
                 || (update.status() != WarStatusUpdate.Status.REMOVE && update.classType() == null)
@@ -2316,6 +2360,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_storage_snapshot".equals(type)
                 || "guild_storage_reward".equals(type)
                 || "guild_war_queue".equals(type)
+                || "guild_war_queue_cancel".equals(type)
                 || "guild_war_submission".equals(type)
                 || "war_status".equals(type)
                 || "war_tower_update".equals(type)
@@ -2335,6 +2380,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_storage_snapshot".equals(type)
                 || "guild_storage_reward".equals(type)
                 || "guild_war_queue".equals(type)
+                || "guild_war_queue_cancel".equals(type)
                 || "guild_war_submission".equals(type)
                 || "war_status".equals(type)
                 || "war_tower_update".equals(type)
@@ -2354,6 +2400,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)
                 || "guild_war_queue".equals(type)
+                || "guild_war_queue_cancel".equals(type)
                 || "guild_war_submission".equals(type)
                 || "party_class_update".equals(type)
                 || "party_sync_snapshot".equals(type)
@@ -2520,7 +2567,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             case "guild_chat" -> "guild chat relays";
             case "guild_raid_announcement" -> "raid completion relays";
             case "guild_bank_event" -> "guild bank relays";
-            case "guild_war_queue", "guild_war_submission" -> "guild war tracking";
+            case "guild_war_queue", "guild_war_queue_cancel", "guild_war_submission" -> "guild war tracking";
             default -> "some Sequoia features";
         };
         String targetVersion = minimumSafeVersion != null && !minimumSafeVersion.isBlank()

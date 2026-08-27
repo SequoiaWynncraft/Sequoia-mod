@@ -242,6 +242,7 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isServerScopedType("guild_storage_snapshot"));
         assertTrue(ConnectionManager.isServerScopedType("guild_storage_reward"));
         assertTrue(ConnectionManager.isServerScopedType("guild_war_queue"));
+        assertTrue(ConnectionManager.isServerScopedType("guild_war_queue_cancel"));
         assertTrue(ConnectionManager.isServerScopedType("guild_alliance_update"));
         assertTrue(ConnectionManager.isServerScopedType("guild_alliance_snapshot"));
         assertTrue(ConnectionManager.isServerScopedType("guild_membership_event"));
@@ -252,6 +253,7 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_membership_event"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("war_status"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("war_tower_update"));
+        assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_war_queue_cancel"));
     }
 
     @Test
@@ -312,6 +314,7 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_alliance_snapshot"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_storage_snapshot"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_war_queue"));
+        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_war_queue_cancel"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_war_submission"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("war_status"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("war_tower_update"));
@@ -330,6 +333,7 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_request"));
         assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_submit"));
         assertTrue(ConnectionManager.isThrottleLimitedType("guild_war_queue"));
+        assertTrue(ConnectionManager.isThrottleLimitedType("guild_war_queue_cancel"));
         assertFalse(ConnectionManager.isThrottleLimitedType("guild_alliance_snapshot"));
     }
 
