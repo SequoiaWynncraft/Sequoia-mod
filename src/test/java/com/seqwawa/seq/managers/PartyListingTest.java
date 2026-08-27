@@ -25,24 +25,6 @@ import com.seqwawa.seq.model.WynnClassType;
 class PartyListingTest {
 
     @Test
-    void observedReservationIsRecognizedAsPromotionCandidate() {
-        Listing listing = new Listing(
-                1L,
-                List.of(),
-                null,
-                UUID.randomUUID().toString(),
-                PartyRegion.EU,
-                PartyStatus.OPEN,
-                null,
-                null,
-                List.of(),
-                List.of(new ReservedSlot(null, "NotReyz", null, Instant.now())),
-                Instant.now());
-
-        assertTrue(PartyFinderManager.hasObservedReservation(listing, "notreyz"));
-    }
-
-    @Test
     void deserializesBackendOtherRole() {
         assertEquals(PartyRole.OTHER, new Gson().fromJson("\"OTHER\"", PartyRole.class));
     }

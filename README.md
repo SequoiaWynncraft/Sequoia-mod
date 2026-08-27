@@ -121,6 +121,13 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 
 </details>
 
+## Party finder
+
+`/seq party scan` imports the leader's current Wynn party into the active Sequoia listing. Scanned usernames that
+match verified linked players with Party Finder access become regular listing members, which enables role, kick, and
+leadership actions. Unlinked, ineligible, conflicting, or recently kicked players remain visible as observed
+username-only occupancy without receiving Sequoia member privileges.
+
 ## War planner
 
 The planner uses backend schema v3: party membership is separate from the
