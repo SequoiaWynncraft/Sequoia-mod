@@ -61,39 +61,43 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
 
     @Override
     public void render(UiCanvas canvas, float mouseX, float mouseY) {
+        boolean enabled = prepareEnabledState();
         cursorBlink++;
         String fontName = SeqClient.getFontManager().getSelectedFont();
 
+        drawParentGuide(canvas, enabled);
         drawText(
                 canvas,
                 fontName,
                 FONT_SIZE,
-                color(TEXT_SECONDARY),
+                enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
                 UiCanvas.HorizontalAlign.LEFT,
                 UiCanvas.VerticalAlign.TOP,
-                x + MARGIN,
+                indentedContentX(MARGIN),
                 y + 2,
                 getDisplayName());
 
-        drawHexInput(canvas, fontName);
-        drawSwatch(canvas);
+        drawHexInput(canvas, fontName, enabled);
+        drawSwatch(canvas, enabled);
         if (previewStateConsumer != null) {
-            drawPreviewButton(canvas, fontName);
+            drawPreviewButton(canvas, fontName, enabled);
         }
 
-        if (expanded) {
+        if (enabled && expanded) {
             drawColorPicker(canvas);
         }
     }
 
-    private void drawHexInput(UiCanvas canvas, String fontName) {
+    private void drawHexInput(UiCanvas canvas, String fontName, boolean enabled) {
         float boxX = hexBoxX();
         float boxY = controlY();
-        Color boxColor = editing ? color(CONTROL_INPUT_HOVER, 220) : color(CONTROL_INPUT, 200);
+        Color boxColor = !enabled
+                ? color(CONTROL_INPUT_SECONDARY, 120)
+                : editing ? color(CONTROL_INPUT_HOVER, 220) : color(CONTROL_INPUT, 200);
         canvas.fillRect(boxX, boxY, HEX_BOX_WIDTH, CONTROL_HEIGHT, boxColor);
 
         boolean validBuffer = Setting.ColorSetting.isValidHex(editBuffer);
-        if (editing || !validBuffer) {
+        if (enabled && (editing || !validBuffer)) {
             canvas.strokeRect(
                     boxX,
                     boxY,
@@ -110,7 +114,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                 canvas,
                 fontName,
                 FONT_SIZE,
-                color(TEXT_PRIMARY),
+                enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
                 UiCanvas.HorizontalAlign.LEFT,
                 UiCanvas.VerticalAlign.MIDDLE,
                 boxX + 5,
@@ -118,7 +122,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                 renderedValue);
         canvas.restore();
 
-        if (editing && (cursorBlink / 1000) % 2 == 0) {
+        if (enabled && editing && (cursorBlink / 1000) % 2 == 0) {
             float textWidth = UiRenderer.measureText("#" + editBuffer, fontName, FONT_SIZE).width();
             canvas.fillRect(
                     boxX + 5 + textWidth + 1,
@@ -129,21 +133,26 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
         }
     }
 
-    private void drawSwatch(UiCanvas canvas) {
+    private void drawSwatch(UiCanvas canvas, boolean enabled) {
         float swatchX = swatchX();
         float swatchY = controlY();
         Color selected = new Color(setting.getValue());
+        if (!enabled) {
+            selected = new Color(selected.getRed(), selected.getGreen(), selected.getBlue(), 90);
+        }
         canvas.fillRect(swatchX, swatchY, SWATCH_WIDTH, CONTROL_HEIGHT, selected);
         canvas.strokeRect(
                 swatchX,
                 swatchY,
                 SWATCH_WIDTH,
                 CONTROL_HEIGHT,
-                expanded ? 2 : 1,
-                expanded ? color(CONTROL_BORDER) : color(BACKGROUND_BODY_OPAQUE));
+                enabled && expanded ? 2 : 1,
+                !enabled
+                        ? color(TEXT_DISABLED, 120)
+                        : expanded ? color(CONTROL_BORDER) : color(BACKGROUND_BODY_OPAQUE));
     }
 
-    private void drawPreviewButton(UiCanvas canvas, String fontName) {
+    private void drawPreviewButton(UiCanvas canvas, String fontName, boolean enabled) {
         float buttonX = previewButtonX();
         float buttonY = controlY();
         canvas.fillRect(
@@ -151,7 +160,9 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                 buttonY,
                 PREVIEW_BUTTON_WIDTH,
                 CONTROL_HEIGHT,
-                previewActive
+                !enabled
+                        ? color(CONTROL_INPUT_SECONDARY, 120)
+                        : previewActive
                         ? color(ACCENT_PRIMARY_DARK_HOVER, 230)
                         : color(CONTROL_INPUT_HOVER, 220));
 
@@ -159,7 +170,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                 canvas,
                 fontName,
                 FONT_SIZE - 1,
-                color(TEXT_PRIMARY),
+                enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
                 UiCanvas.HorizontalAlign.CENTER,
                 UiCanvas.VerticalAlign.MIDDLE,
                 buttonX + PREVIEW_BUTTON_WIDTH / 2f,
@@ -257,6 +268,9 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
 
     @Override
     public boolean mouseClicked(float mouseX, float mouseY, int button) {
+        if (!prepareEnabledState()) {
+            return false;
+        }
         if (button == 1 && isHovered(mouseX, mouseY, swatchX(), controlY(), SWATCH_WIDTH, CONTROL_HEIGHT)) {
             editing = false;
             draggingSaturationValue = false;
@@ -332,6 +346,9 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
 
     @Override
     public boolean mouseReleased(float mouseX, float mouseY, int button) {
+        if (!prepareEnabledState()) {
+            return false;
+        }
         if (button != 0) {
             return false;
         }
@@ -343,6 +360,9 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
 
     @Override
     public boolean mouseDragged(float mouseX, float mouseY) {
+        if (!prepareEnabledState()) {
+            return false;
+        }
         if (draggingSaturationValue) {
             updateSaturationValue(mouseX, mouseY);
             return true;
@@ -356,6 +376,9 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
 
     @Override
     public boolean keyPressed(KeyEvent keyEvent) {
+        if (!prepareEnabledState()) {
+            return false;
+        }
         if (!editing) {
             return false;
         }
@@ -396,6 +419,9 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
 
     @Override
     public boolean charTyped(CharacterEvent characterEvent) {
+        if (!prepareEnabledState()) {
+            return false;
+        }
         if (!editing) {
             return false;
         }
@@ -481,7 +507,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
     }
 
     private float hexBoxX() {
-        return x + MARGIN;
+        return indentedContentX(MARGIN);
     }
 
     private float controlY() {
@@ -497,7 +523,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
     }
 
     private float pickerX() {
-        return x + MARGIN;
+        return indentedContentX(MARGIN);
     }
 
     private float pickerY() {
@@ -505,7 +531,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
     }
 
     private float pickerWidth() {
-        return Math.max(100, Math.min(240, width - MARGIN * 2));
+        return Math.max(100, Math.min(240, indentedContentWidth(MARGIN)));
     }
 
     private float hueBarY() {
@@ -514,5 +540,20 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
 
     private static float clamp01(float value) {
         return Math.max(0f, Math.min(1f, value));
+    }
+
+    private boolean prepareEnabledState() {
+        boolean enabled = isEnabled();
+        if (!enabled) {
+            editing = false;
+            expanded = false;
+            draggingSaturationValue = false;
+            draggingHue = false;
+            height = COLLAPSED_HEIGHT;
+            editBuffer = hexDigits(setting);
+            syncPickerFromSetting();
+            deactivatePreview();
+        }
+        return enabled;
     }
 }

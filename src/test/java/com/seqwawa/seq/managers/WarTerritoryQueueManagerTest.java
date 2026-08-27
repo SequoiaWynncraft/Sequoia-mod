@@ -111,6 +111,56 @@ class WarTerritoryQueueManagerTest {
     }
 
     @Test
+    void disabledQueueMissMessagesConsumeTheMissWithoutDisplayingOrReplayingBlame() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        availability.available = true;
+        List<String> messages = new ArrayList<>();
+        boolean[] messagesEnabled = {false};
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(
+                gateway, clock, availability, messages::add, () -> messagesEnabled[0]);
+        manager.tick();
+        gateway.fetchRequests.getFirst().complete(feed(
+                7,
+                NOW,
+                List.of(queue(
+                        41,
+                        "Sulphuric Hollow",
+                        "alpha-uuid",
+                        "Alpha",
+                        NOW.minusSeconds(25),
+                        NOW.plusSeconds(5),
+                        List.of(new Participant("alpha-uuid", "Alpha", 0))))));
+
+        clock.advance(Duration.ofSeconds(6));
+        manager.onSystemChat(Component.literal("Nobody logged in for the war."));
+        assertTrue(messages.isEmpty());
+
+        messagesEnabled[0] = true;
+        manager.onSystemChat(Component.literal("Nobody logged in for the war."));
+        assertTrue(messages.isEmpty(), "an ignored miss must not surface after the setting is enabled");
+
+        manager.tick();
+        gateway.fetchRequests.get(1).complete(feed(
+                8,
+                NOW.plusSeconds(6),
+                List.of(queue(
+                        42,
+                        "Detlas",
+                        "bravo-uuid",
+                        "Bravo",
+                        NOW.plusSeconds(6),
+                        NOW.plusSeconds(11),
+                        List.of(new Participant("bravo-uuid", "Bravo", 0))))));
+        clock.advance(Duration.ofSeconds(6));
+        manager.onSystemChat(Component.literal("Nobody logged in for the war."));
+
+        assertEquals(1, messages.size(), "new misses should use the setting's current value");
+        assertTrue(messages.getFirst().contains("Detlas"));
+    }
+
+    @Test
     void missedWarWindowIncludesTenSecondsAndExcludesElevenSeconds() {
         FakeAvailability availability = new FakeAvailability();
         availability.available = true;

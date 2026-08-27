@@ -102,6 +102,7 @@ public final class WarPlannerScreen extends Screen {
     private static final float LOCK_CONTROL_WIDTH = 110;
     private static final long WAR_QUEUE_DOUBLE_CLICK_MILLIS = 350;
     private static final float WAR_QUEUE_DOUBLE_CLICK_MOVE_TOLERANCE = 4;
+    private static final float WAR_QUEUE_FILTER_BUTTON_WIDTH = 78;
     private static final float WAR_QUEUE_MAP_MAX_FONT_SIZE = 8;
     private static final float WAR_QUEUE_MAP_MIN_FONT_SIZE = 5;
     private static final long WAR_QUEUE_PULSE_PERIOD_MILLIS = 1_600;
@@ -681,9 +682,8 @@ public final class WarPlannerScreen extends Screen {
         }
         Map<String, GuildTerritory> byName = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         allMapTerritories.forEach(territory -> byName.put(territory.name(), territory));
-        List<WarQueueMapMarker> queueMarkers = queueManager == null
-                ? List.of()
-                : warQueueMapMarkers(queueManager.activeQueues(), shownZoneTerritories, byName);
+        List<WarQueueMapMarker> queueMarkers = warQueueMapMarkers(
+                displayedWarQueues(), shownZoneTerritories, byName);
         Map<String, WarPlannerSnapshot.TerritoryDetails> details = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         snapshot.territoryDetails().forEach(detail -> details.put(detail.name(), detail));
         List<GuildTerritory> contextTerritories = locked
@@ -817,6 +817,19 @@ public final class WarPlannerScreen extends Screen {
         }
         canvas.resetScissor();
         button(canvas, layout.mapX() + 6, layout.mapY() + 6, 44, BUTTON_HEIGHT, "Fit", false, false);
+        WarQueueFilterBounds queueFilter = warQueueFilterBounds(layout);
+        if (queueFilter.visible()) {
+            boolean onlyMine = onlyMyWarQueuesEnabled();
+            button(
+                    canvas,
+                    queueFilter.x(),
+                    queueFilter.y(),
+                    queueFilter.width(),
+                    queueFilter.height(),
+                    onlyMine ? "My queues ✓" : "All queues",
+                    false,
+                    SeqClient.getWarQueueHudOnlyOwnedOrJoinedSetting() == null);
+        }
         return hoveredQueue;
     }
 
@@ -2255,6 +2268,18 @@ public final class WarPlannerScreen extends Screen {
                     locked);
             return true;
         }
+        WarQueueFilterBounds queueFilter = warQueueFilterBounds(layout);
+        if (queueFilter.visible()
+                && hit(mx, my, queueFilter.x(), queueFilter.y(), queueFilter.width(), queueFilter.height())) {
+            var setting = SeqClient.getWarQueueHudOnlyOwnedOrJoinedSetting();
+            if (setting != null) {
+                setting.setValue(!onlyMyWarQueuesEnabled());
+                SeqClient.getConfigManager().save();
+            }
+            pendingWarQueueClick = null;
+            draggingWarMap = false;
+            return true;
+        }
         if (layout.containsMap(mx, my)) {
             TerritoryQueue queue = warQueueAtMapPoint(snapshot, layout, locked, mx, my);
             long clickedAt = monotonicMillis();
@@ -2370,7 +2395,31 @@ public final class WarPlannerScreen extends Screen {
                 shownZoneTerritories,
                 mouseX,
                 mouseY);
-        return territory == null ? null : queueManager.queueForTerritory(territory.name()).orElse(null);
+        if (territory == null) return null;
+        return displayedWarQueues().stream()
+                .filter(queue -> territory.name().equalsIgnoreCase(queue.territory()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private List<TerritoryQueue> displayedWarQueues() {
+        return queueManager == null
+                ? List.of()
+                : warQueuesForMap(
+                        queueManager.activeQueues(),
+                        queueManager.localPlayerUuid(),
+                        onlyMyWarQueuesEnabled());
+    }
+
+    static List<TerritoryQueue> warQueuesForMap(
+            List<TerritoryQueue> queues, String localPlayerUuid, boolean onlyOwnedOrJoined) {
+        return WarTerritoryQueueHudRenderer.displayedQueues(
+                queues, localPlayerUuid, onlyOwnedOrJoined, Integer.MAX_VALUE);
+    }
+
+    static boolean onlyMyWarQueuesEnabled() {
+        return WarTerritoryQueueHudRenderer.onlyOwnedOrJoined(
+                SeqClient.getWarQueueHudOnlyOwnedOrJoinedSetting());
     }
 
     private void toggleZoneDisplay(long zoneId) {
@@ -3762,6 +3811,16 @@ public final class WarPlannerScreen extends Screen {
                 sidebarWidth);
     }
 
+    static WarQueueFilterBounds warQueueFilterBounds(WarMapLayout layout) {
+        float x = layout.mapX() + 54;
+        float right = layout.mapX() + layout.mapWidth() - 6;
+        return new WarQueueFilterBounds(
+                x,
+                layout.mapY() + 6,
+                Math.max(0, Math.min(WAR_QUEUE_FILTER_BUTTON_WIDTH, right - x)),
+                BUTTON_HEIGHT);
+    }
+
     static int warMapVisibleZoneRows(float height) {
         return Math.max(1, (int) ((height - 56) / WAR_MAP_ZONE_ROW_STEP));
     }
@@ -3990,6 +4049,12 @@ public final class WarPlannerScreen extends Screen {
 
         boolean containsSidebar(float x, float y) {
             return hit(x, y, sidebarX, mapY, sidebarWidth, mapHeight);
+        }
+    }
+
+    record WarQueueFilterBounds(float x, float y, float width, float height) {
+        boolean visible() {
+            return width > 0;
         }
     }
 

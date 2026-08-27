@@ -5,6 +5,7 @@ import com.collarmc.pounce.Preference;
 import com.collarmc.pounce.Subscribe;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.logging.LogUtils;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -259,6 +260,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static Setting.BooleanSetting warQueueHudOnlyOwnedOrJoinedSetting;
+
+    @Getter
+    public static Setting.BooleanSetting warQueueMissMessagesSetting;
 
     @Getter
     public static Setting.IntSetting warQueueHudMaxRowsSetting;
@@ -835,15 +839,15 @@ public class SeqClient implements ClientModInitializer {
         radianceCheckerSetting = new Setting.BooleanSetting("enable_radiance_visualiser", "raids", true);
         radianceMarkerColorSetting = new Setting.ColorSetting("radiance_marker_color", "raids", 0xFF0000)
                 .withValueOverride(PrincessMode::paletteColorOverride);
-        radianceMarkerColorSetting.setVisibilityCondition(() -> radianceCheckerSetting.getValue());
+        radianceMarkerColorSetting.setParentSetting(radianceCheckerSetting);
         halcyonRangeVisualiserSetting = new Setting.BooleanSetting("enable_halcyon_range_visualiser", "raids", true);
         halcyonRingColorSetting = new Setting.ColorSetting("halcyon_ring_color", "raids", 0x00FFFF)
                 .withValueOverride(PrincessMode::paletteColorOverride);
-        halcyonRingColorSetting.setVisibilityCondition(() -> halcyonRangeVisualiserSetting.getValue());
+        halcyonRingColorSetting.setParentSetting(halcyonRangeVisualiserSetting);
         lightRoomVisualiserSetting = new Setting.BooleanSetting("enable_light_room_visualiser", "raids", true);
         lightRoomRingColorSetting = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF)
                 .withValueOverride(PrincessMode::paletteColorOverride);
-        lightRoomRingColorSetting.setVisibilityCondition(() -> lightRoomVisualiserSetting.getValue());
+        lightRoomRingColorSetting.setParentSetting(lightRoomVisualiserSetting);
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
@@ -851,6 +855,8 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.IntSetting("guild_storage_emerald_threshold_percent", "guild_storage", 100, 0, 100);
         guildStorageAspectNotifyValueSetting =
                 new Setting.IntSetting("guild_storage_aspect_threshold_percent", "guild_storage", 100, 0, 100);
+        guildStorageEmeraldNotifyValueSetting.setParentSetting(trackGuildStorageSetting);
+        guildStorageAspectNotifyValueSetting.setParentSetting(trackGuildStorageSetting);
         easterEggsSetting = new Setting.BooleanSetting("enable_easter_eggs", "ui", true);
         startupVideoSetting = new Setting.BooleanSetting("startup_video", "ui", false);
         uiSizePercentSetting = new Setting.IntSetting("ui_size_percent", "ui", 100, 75, 150, 5)
@@ -864,6 +870,7 @@ public class SeqClient implements ClientModInitializer {
         announceOpenPartiesSetting = new Setting.BooleanSetting("announce_open_parties", "party_finder", true);
         announceOpenPartiesIntervalMinutesSetting =
                 new Setting.IntSetting("announce_open_parties_interval_minutes", "party_finder", 5, 1, 60);
+        announceOpenPartiesIntervalMinutesSetting.setParentSetting(announceOpenPartiesSetting);
         syncWynnPartySetting = new Setting.BooleanSetting("sync_with_wynn_party", "party_finder", true);
         receiveBombShareRequestsSetting = new Setting.BooleanSetting("receive_bomb_share_requests", "network", true);
         showRaidBadgesSetting =
@@ -883,10 +890,21 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.IntSetting("queue_hud_text_size", "war_planner", 9, 6, 18);
         warQueueHudOnlyOwnedOrJoinedSetting =
                 new Setting.BooleanSetting("queue_hud_only_owned_or_joined", "war_planner", false);
+        warQueueMissMessagesSetting =
+                new Setting.BooleanSetting("queue_miss_messages", "war_planner", false);
         warQueueHudMaxRowsSetting =
                 new Setting.IntSetting("queue_hud_max_rows", "war_planner", 6, 1, 20);
         warPlannerLockTerritoriesSetting =
                 new Setting.BooleanSetting("lock_territories", "war_planner", false);
+        List.of(
+                        warPlannerResourceColorsSetting,
+                        warPlannerBackgroundOpacitySetting,
+                        warQueueHudTextSizeSetting,
+                        warQueueHudOnlyOwnedOrJoinedSetting,
+                        warQueueMissMessagesSetting,
+                        warQueueHudMaxRowsSetting,
+                        warPlannerLockTerritoriesSetting)
+                .forEach(setting -> setting.setPresentationCategory("guild_wars"));
         warPlannerResourceColorsSetting.setPresentation(
                 "Color by resource type",
                 "Fill map territories using their resource production colors.",
@@ -901,8 +919,12 @@ public class SeqClient implements ClientModInitializer {
                 "War queue HUD");
         warQueueHudOnlyOwnedOrJoinedSetting.setPresentation(
                 "Only show my queues",
-                "Only show territories you queued or joined in the top-right queue HUD.",
+                "Only show territories you queued or joined on the war map and top-right queue HUD.",
                 "War queue HUD");
+        warQueueMissMessagesSetting.setPresentation(
+                "Queue miss messages",
+                "Show a blame message when nobody enters a queued territory war.",
+                "War queue messages");
         warQueueHudMaxRowsSetting.setPresentation(
                 "Maximum queue rows",
                 "Set how many territory queues can appear in the top-right HUD.",
@@ -962,6 +984,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(warQueueHudOnlyOwnedOrJoinedSetting);
         getConfigManager().register(warQueueHudMaxRowsSetting);
         getConfigManager().register(warQueueHudTextSizeSetting);
+        getConfigManager().register(warQueueMissMessagesSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.

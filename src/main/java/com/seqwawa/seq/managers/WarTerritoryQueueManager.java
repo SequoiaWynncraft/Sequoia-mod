@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -157,6 +158,7 @@ public final class WarTerritoryQueueManager {
     private final Clock clock;
     private final AvailabilityContext availabilityContext;
     private final Consumer<String> missedWarNotifier;
+    private final BooleanSupplier missedWarMessagesEnabled;
     private final ArrayDeque<PendingObservation> pendingObservations = new ArrayDeque<>();
     private final LinkedHashMap<String, Instant> recentObservations = new LinkedHashMap<>();
     private final LinkedHashMap<Long, TerritoryQueue> recentQueueSnapshots = new LinkedHashMap<>();
@@ -179,11 +181,13 @@ public final class WarTerritoryQueueManager {
                 new ApiGateway(ApiClient.getInstance()),
                 Clock.systemUTC(),
                 new RuntimeAvailabilityContext(),
-                NotificationAccessor::notifyPlayer);
+                NotificationAccessor::notifyPlayer,
+                () -> SeqClient.getWarQueueMissMessagesSetting() != null
+                        && SeqClient.getWarQueueMissMessagesSetting().getValue());
     }
 
     WarTerritoryQueueManager(Gateway gateway, Clock clock, AvailabilityContext availabilityContext) {
-        this(gateway, clock, availabilityContext, NotificationAccessor::notifyPlayer);
+        this(gateway, clock, availabilityContext, NotificationAccessor::notifyPlayer, () -> true);
     }
 
     WarTerritoryQueueManager(
@@ -191,10 +195,21 @@ public final class WarTerritoryQueueManager {
             Clock clock,
             AvailabilityContext availabilityContext,
             Consumer<String> missedWarNotifier) {
+        this(gateway, clock, availabilityContext, missedWarNotifier, () -> true);
+    }
+
+    WarTerritoryQueueManager(
+            Gateway gateway,
+            Clock clock,
+            AvailabilityContext availabilityContext,
+            Consumer<String> missedWarNotifier,
+            BooleanSupplier missedWarMessagesEnabled) {
         this.gateway = java.util.Objects.requireNonNull(gateway, "gateway");
         this.clock = java.util.Objects.requireNonNull(clock, "clock");
         this.availabilityContext = java.util.Objects.requireNonNull(availabilityContext, "availabilityContext");
         this.missedWarNotifier = java.util.Objects.requireNonNull(missedWarNotifier, "missedWarNotifier");
+        this.missedWarMessagesEnabled =
+                java.util.Objects.requireNonNull(missedWarMessagesEnabled, "missedWarMessagesEnabled");
     }
 
     public State state() {
@@ -743,9 +758,10 @@ public final class WarTerritoryQueueManager {
         recentQueueSnapshots.remove(matched.id());
         notifiedMissedWars.put(matched.id(), now);
         trimRecentQueueState();
-        String notification = formatMissedWarBlame(matched);
         try {
-            missedWarNotifier.accept(notification);
+            if (missedWarMessagesEnabled.getAsBoolean()) {
+                missedWarNotifier.accept(formatMissedWarBlame(matched));
+            }
         } catch (RuntimeException exception) {
             SeqClient.LOGGER.warn(
                     "[WarTerritoryQueue] Could not display missed-war notification for territory='{}'",

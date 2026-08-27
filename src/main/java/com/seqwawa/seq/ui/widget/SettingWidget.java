@@ -1,5 +1,8 @@
 package com.seqwawa.seq.ui.widget;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_DIVIDER;
+
 import lombok.Getter;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
@@ -11,6 +14,10 @@ import java.util.Locale;
 import java.util.Map;
 
 public abstract class SettingWidget<T extends Setting<?>> {
+    private static final float PARENT_INDENT_STEP = 14f;
+    private static final float PARENT_GUIDE_OFFSET = 7f;
+    private static final float PARENT_GUIDE_WIDTH = 2f;
+    private static final float PARENT_GUIDE_VERTICAL_MARGIN = 6f;
     private static final Map<String, String> DISPLAY_NAME_OVERRIDES = new HashMap<>();
     private static final Map<String, String> TOKEN_REPLACEMENTS = new HashMap<>();
 
@@ -124,7 +131,31 @@ public abstract class SettingWidget<T extends Setting<?>> {
     }
 
     protected float labelIndent() {
-        return setting.getIndentLevel() * 14f;
+        return setting.getIndentLevel() * PARENT_INDENT_STEP;
+    }
+
+    /** Left edge for labels and left-aligned controls inside a dependent row. */
+    protected float indentedContentX(float margin) {
+        return x + margin + labelIndent();
+    }
+
+    /** Width remaining after applying equal margins and the dependency indent. */
+    protected float indentedContentWidth(float margin) {
+        return Math.max(1f, width - margin * 2f - labelIndent());
+    }
+
+    /** Draws the same dependency guide used by nested Chat settings. */
+    protected void drawParentGuide(UiCanvas canvas, boolean enabled) {
+        float indent = labelIndent();
+        if (indent <= 0f) {
+            return;
+        }
+        canvas.fillRect(
+                x + indent - PARENT_GUIDE_OFFSET,
+                y + PARENT_GUIDE_VERTICAL_MARGIN,
+                PARENT_GUIDE_WIDTH,
+                Math.max(1f, height - PARENT_GUIDE_VERTICAL_MARGIN * 2f),
+                color(ACCENT_DIVIDER, enabled ? 170 : 80));
     }
 
     public static String toDisplayName(String rawName) {

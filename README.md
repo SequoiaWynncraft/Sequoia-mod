@@ -184,7 +184,11 @@ The settings screen includes controls for:
 - Global Sequoia UI size
 - UI theme selection
 - Update checks on startup
-- War queue HUD text size, maximum rows, and an only-my-queues filter
+- War queue HUD text size, maximum rows, and an only-my-queues filter shared with the war planner map
+- Optional queue-miss blame messages, disabled by default
+
+War tracking, planner display, and queue controls share one **Wars** category. Settings that depend on another
+control remain visible underneath it and are indented and disabled while their parent is off.
 
 Sequoia includes Default and High Contrast themes. Open **Theme editor** from the Settings
 screen to copy a theme, edit its full RGBA palette, preview changes live, and save a personal

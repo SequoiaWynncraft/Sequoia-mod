@@ -23,6 +23,7 @@ public abstract class Setting<T> {
     private String displayName;
     private String description;
     private String section;
+    private String presentationCategory;
     private Setting<?> parentSetting;
 
     protected Setting(String name, String category, T defaultValue) {
@@ -90,6 +91,19 @@ public abstract class Setting<T> {
         this.displayName = normalizePresentationText(displayName);
         this.description = normalizePresentationText(description);
         this.section = normalizePresentationText(section);
+    }
+
+    /**
+     * Places this setting in another settings-screen category without changing its
+     * persisted {@code category.name} config key.
+     */
+    public void setPresentationCategory(String presentationCategory) {
+        this.presentationCategory = normalizePresentationText(presentationCategory);
+    }
+
+    /** Category used to group this setting in the settings screen. */
+    public String getPresentationCategory() {
+        return presentationCategory == null ? category : presentationCategory;
     }
 
     private static String normalizePresentationText(String value) {

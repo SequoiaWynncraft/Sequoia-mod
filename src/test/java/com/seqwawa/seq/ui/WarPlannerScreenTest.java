@@ -93,11 +93,15 @@ class WarPlannerScreenTest {
     @Test
     void warMapLayoutKeepsMapAndSidebarSeparateOnNarrowScreens() {
         WarPlannerScreen.WarMapLayout layout = WarPlannerScreen.warMapLayout(320, 110, 430);
+        WarPlannerScreen.WarQueueFilterBounds queueFilter = WarPlannerScreen.warQueueFilterBounds(layout);
 
         assertEquals(12, layout.mapX());
         assertEquals(138, layout.mapWidth());
         assertEquals(158, layout.sidebarX());
         assertTrue(layout.mapX() + layout.mapWidth() < layout.sidebarX());
+        assertTrue(queueFilter.visible());
+        assertTrue(queueFilter.x() >= layout.mapX());
+        assertTrue(queueFilter.x() + queueFilter.width() <= layout.mapX() + layout.mapWidth());
     }
 
     @Test
@@ -274,6 +278,43 @@ class WarPlannerScreenTest {
         assertEquals(shown, WarPlannerScreen.warQueueForTerritory(markers, "ALEKIN"));
         assertEquals(null, WarPlannerScreen.warQueueForTerritory(markers, "Context Only"));
         assertEquals(List.of(), WarPlannerScreen.warQueueMapMarkers(null, Set.of("alekin"), Map.of()));
+    }
+
+    @Test
+    void warMapQueueFilterUsesTheHudOwnedOrJoinedRulesWithoutItsRowLimit() {
+        TerritoryQueue unrelated = territoryQueue(1, "Unrelated", "Very Low", null);
+        TerritoryQueue owned = new TerritoryQueue(
+                2,
+                "Owned",
+                "self",
+                "Self",
+                "Self",
+                "Low",
+                null,
+                Instant.EPOCH,
+                Instant.EPOCH.plusSeconds(60),
+                List.of(new Participant("other", "Other", 0)));
+        TerritoryQueue joined = new TerritoryQueue(
+                3,
+                "Joined",
+                "other",
+                "Other",
+                "Other",
+                "Medium",
+                null,
+                Instant.EPOCH,
+                Instant.EPOCH.plusSeconds(60),
+                List.of(new Participant("SELF", "Self", 0)));
+
+        assertEquals(
+                List.of(unrelated, owned, joined),
+                WarPlannerScreen.warQueuesForMap(List.of(unrelated, owned, joined), "self", false));
+        assertEquals(
+                List.of(owned, joined),
+                WarPlannerScreen.warQueuesForMap(List.of(unrelated, owned, joined), "self", true));
+        assertEquals(
+                List.of(),
+                WarPlannerScreen.warQueuesForMap(List.of(owned, joined), null, true));
     }
 
     @Test

@@ -28,9 +28,7 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
         float indent = labelIndent();
         float labelY = hasDescription() ? y + 12 : y + height / 2f;
 
-        if (indent > 0) {
-            canvas.fillRect(x + indent - 7, y + 6, 2, height - 12, color(ACCENT_DIVIDER, enabled ? 170 : 80));
-        }
+        drawParentGuide(canvas, enabled);
         canvas.drawText(
                 getDisplayName(),
                 x + 8 + indent,

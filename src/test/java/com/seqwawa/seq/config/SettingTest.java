@@ -13,6 +13,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SettingTest {
 
     @Test
+    void presentationCategoryCanMergeUiGroupsWithoutChangingPersistedCategory() {
+        Setting.BooleanSetting setting = new Setting.BooleanSetting("resource_colors", "war_planner", false);
+
+        assertEquals("war_planner", setting.getPresentationCategory());
+
+        setting.setPresentationCategory("guild_wars");
+
+        assertEquals("guild_wars", setting.getPresentationCategory());
+        assertEquals("war_planner", setting.getCategory());
+    }
+
+    @Test
     void presentationMetadataAndParentDepthDescribeGroupedSettings() {
         Setting.BooleanSetting parent = new Setting.BooleanSetting("parent", "chat", true);
         Setting.BooleanSetting child = new Setting.BooleanSetting("child", "chat", false);

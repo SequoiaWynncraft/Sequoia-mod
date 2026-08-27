@@ -22,17 +22,35 @@ public class EnumWidget extends SettingWidget<Setting.EnumSetting<?>> {
     @Override
     public void render(UiCanvas canvas, float mouseX, float mouseY) {
         String fontName = SeqClient.getFontManager().getSelectedFont();
+        boolean enabled = isEnabled();
 
-        canvas.drawText(getDisplayName(), x + 8, y + height / 2f,
-                textStyle(fontName, color(TEXT_SECONDARY), UiCanvas.HorizontalAlign.LEFT));
+        drawParentGuide(canvas, enabled);
+        canvas.drawText(
+                getDisplayName(),
+                indentedContentX(8),
+                y + height / 2f,
+                textStyle(
+                        fontName,
+                        enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                        UiCanvas.HorizontalAlign.LEFT));
 
         // Button
         float btnX = x + width - BUTTON_WIDTH - 8;
         float btnY = y + (height - BUTTON_HEIGHT) / 2f;
-        boolean hovered = isHovered(mouseX, mouseY, btnX, btnY, BUTTON_WIDTH, BUTTON_HEIGHT);
-        canvas.fillRect(btnX, btnY, BUTTON_WIDTH, BUTTON_HEIGHT, hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT_SECONDARY));
+        boolean hovered = enabled && isHovered(mouseX, mouseY, btnX, btnY, BUTTON_WIDTH, BUTTON_HEIGHT);
+        canvas.fillRect(
+                btnX,
+                btnY,
+                BUTTON_WIDTH,
+                BUTTON_HEIGHT,
+                !enabled
+                        ? color(CONTROL_INPUT_SECONDARY, 120)
+                        : hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT_SECONDARY));
         canvas.drawText(setting.getValue().name(), btnX + BUTTON_WIDTH / 2f, btnY + BUTTON_HEIGHT / 2f,
-                textStyle(fontName, color(ACCENT_PRIMARY), UiCanvas.HorizontalAlign.CENTER));
+                textStyle(
+                        fontName,
+                        enabled ? color(ACCENT_PRIMARY) : color(TEXT_DISABLED),
+                        UiCanvas.HorizontalAlign.CENTER));
     }
 
     private static UiCanvas.TextStyle textStyle(
@@ -44,7 +62,7 @@ public class EnumWidget extends SettingWidget<Setting.EnumSetting<?>> {
     @SuppressWarnings({ "unchecked", "rawtypes" })
     @Override
     public boolean mouseClicked(float mouseX, float mouseY, int button) {
-        if (button != 0)
+        if (!isEnabled() || button != 0)
             return false;
 
         float btnX = x + width - BUTTON_WIDTH - 8;

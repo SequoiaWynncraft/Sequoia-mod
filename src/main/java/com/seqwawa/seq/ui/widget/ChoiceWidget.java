@@ -4,6 +4,7 @@ import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY;
 import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_INPUT_HOVER;
 import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_INPUT_SECONDARY;
+import static com.seqwawa.seq.ui.theme.UiColor.TEXT_DISABLED;
 import static com.seqwawa.seq.ui.theme.UiColor.TEXT_SECONDARY;
 
 import com.seqwawa.seq.client.SeqClient;
@@ -25,31 +26,44 @@ public final class ChoiceWidget extends SettingWidget<Setting.ChoiceSetting> {
     @Override
     public void render(UiCanvas canvas, float mouseX, float mouseY) {
         String fontName = SeqClient.getFontManager().getSelectedFont();
-        canvas.drawText(getDisplayName(), x + 8, y + height / 2f,
-                textStyle(fontName, color(TEXT_SECONDARY), UiCanvas.HorizontalAlign.LEFT));
+        boolean enabled = isEnabled();
+        drawParentGuide(canvas, enabled);
+        canvas.drawText(
+                getDisplayName(),
+                indentedContentX(8),
+                y + height / 2f,
+                textStyle(
+                        fontName,
+                        enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                        UiCanvas.HorizontalAlign.LEFT));
 
         float buttonX = x + width - BUTTON_WIDTH - 8;
         float buttonY = y + (height - BUTTON_HEIGHT) / 2f;
-        boolean hovered = isHovered(mouseX, mouseY, buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT);
+        boolean hovered = enabled && isHovered(mouseX, mouseY, buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT);
         canvas.fillRect(
                 buttonX,
                 buttonY,
                 BUTTON_WIDTH,
                 BUTTON_HEIGHT,
-                hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT_SECONDARY));
+                !enabled
+                        ? color(CONTROL_INPUT_SECONDARY, 120)
+                        : hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT_SECONDARY));
         canvas.save();
         canvas.scissor(buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT);
         canvas.drawText(
                 "<  " + toDisplayName(setting.getValue()) + "  >",
                 buttonX + BUTTON_WIDTH / 2f,
                 buttonY + BUTTON_HEIGHT / 2f,
-                textStyle(fontName, color(ACCENT_PRIMARY), UiCanvas.HorizontalAlign.CENTER));
+                textStyle(
+                        fontName,
+                        enabled ? color(ACCENT_PRIMARY) : color(TEXT_DISABLED),
+                        UiCanvas.HorizontalAlign.CENTER));
         canvas.restore();
     }
 
     @Override
     public boolean mouseClicked(float mouseX, float mouseY, int button) {
-        if (button != 0) {
+        if (!isEnabled() || button != 0) {
             return false;
         }
         float buttonX = x + width - BUTTON_WIDTH - 8;
