@@ -923,6 +923,41 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void primaryColourHelperAvoidsWynncraftShaderMarkers() {
+        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x00F000, 0x72D400);
+
+        assertEquals(0x00F400, DiscordRankChatDecorator.colorFor(gradient).getValue());
+    }
+
+    @Test
+    void avoidsWynncraftShaderMarkersCrossedByAUsernameGradient() {
+        String username = "ABCDEFGHIJKLMNOPQR";
+        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x25FF00, 0x72D400);
+
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(
+                DiscordRankChatDecorator.colouredName(username, gradient, Style.EMPTY.withInsertion(username)));
+
+        assertEquals(username, fragments.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
+        assertEquals(0x49EC00, fragments.get(8).style().getColor().getValue());
+        assertEquals(0x4EEC00, fragments.get(9).style().getColor().getValue());
+        assertTrue(fragments.stream().allMatch(fragment -> username.equals(fragment.style().getInsertion())));
+    }
+
+    @Test
+    void avoidsMovementShadowMarkersCrossedByTheAlternateGreenGradient() {
+        String username = "ABCDEFGHIJKLMNOPQR";
+        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x40FF40, 0xC0E100);
+
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(
+                DiscordRankChatDecorator.colouredName(username, gradient, Style.EMPTY.withInsertion(username)));
+
+        assertEquals(username, fragments.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
+        assertEquals(0x9AEC13, fragments.get(12).style().getColor().getValue());
+        assertEquals(0xA2EC0F, fragments.get(13).style().getColor().getValue());
+        assertTrue(fragments.stream().allMatch(fragment -> username.equals(fragment.style().getInsertion())));
+    }
+
+    @Test
     void paintsTheGuildSpeakerAcrossTheirGradientAndKeepsInsertionStyling() {
         RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x123456, 0xFFFFFF);
         Component message = guildLine("RECRUITER", "ArcLeRetour", "ArcLeRetour", "hi");

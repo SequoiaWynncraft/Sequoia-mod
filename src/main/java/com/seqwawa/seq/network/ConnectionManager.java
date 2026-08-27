@@ -20,11 +20,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
+import com.seqwawa.seq.model.GuildWarQueueCancellation;
 import com.seqwawa.seq.model.GuildWarQueueSubmission;
+import com.seqwawa.seq.model.WarStatusUpdate;
+import com.seqwawa.seq.model.WarTowerUpdate;
 import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.User;
@@ -55,17 +59,21 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static final long PRIVILEGED_SEND_THROTTLE_MS = 50;
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Pattern URL_PATTERN = Pattern.compile("^(https?://).+", Pattern.CASE_INSENSITIVE);
-    private static final Map<String, Integer> VERSION_REMINDER_INTERVALS = Map.of(
-            "bomb_share_request", 5,
-            "bomb_share_submit", 5,
-            "treasury_out", 1,
-            "guild_chat", 20,
-            "guild_membership_event", 5,
-            "guild_raid_announcement", 5,
-            "guild_bank_event", 10,
-            "guild_storage_snapshot", 10,
-            "guild_storage_reward", 10,
-            "guild_war_submission", 5);
+    private static final Map<String, Integer> VERSION_REMINDER_INTERVALS = Map.ofEntries(
+            Map.entry("bomb_share_request", 5),
+            Map.entry("bomb_share_submit", 5),
+            Map.entry("treasury_out", 1),
+            Map.entry("guild_chat", 20),
+            Map.entry("guild_membership_event", 5),
+            Map.entry("guild_raid_announcement", 5),
+            Map.entry("guild_bank_event", 10),
+            Map.entry("guild_storage_snapshot", 10),
+            Map.entry("guild_storage_reward", 10),
+            Map.entry("guild_war_queue", 5),
+            Map.entry("guild_war_queue_cancel", 5),
+            Map.entry("guild_war_submission", 5),
+            Map.entry("war_status", 5),
+            Map.entry("war_tower_update", 5));
 
     private static ConnectionManager instance;
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -759,6 +767,31 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return payload;
     }
 
+    static JsonObject buildWarStatusPayload(WarStatusUpdate update) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("status", update.status().name());
+        if (update.classType() != null) {
+            payload.addProperty("class", update.classType().name());
+        }
+        if (update.territory() != null) {
+            payload.addProperty("territory", update.territory());
+        }
+        if (update.x() != null && update.z() != null) {
+            payload.addProperty("x", update.x());
+            payload.addProperty("z", update.z());
+        }
+        return payload;
+    }
+
+    static JsonObject buildWarTowerUpdatePayload(WarTowerUpdate update) {
+        JsonObject payload = new JsonObject();
+        payload.addProperty("territory", update.territory());
+        payload.addProperty("health", update.health());
+        payload.addProperty("ehp", update.ehp());
+        payload.addProperty("dps", update.dps());
+        return payload;
+    }
+
     static JsonObject buildBombShareRequestPayload(String canonicalKey, List<BombShareType> requestedTypes) {
         JsonObject payload = new JsonObject();
         payload.addProperty("canonical_key", canonicalKey);
@@ -1421,7 +1454,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || submission.submittedAt() == null
                 || submission.submittedAt().isBlank()
                 || submission.defenseRating() == null
-                || submission.defenseRating().isBlank()) {
+                || submission.defenseRating().isBlank()
+                || submission.queueMinutes() < 1
+                || submission.queueMinutes() > 60) {
             SeqClient.LOGGER.warn("[WebSocket] sendGuildWarQueue dropped: invalid payload");
             return false;
         }
@@ -1458,9 +1493,95 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         msg.addProperty("defense_rating", submission.defenseRating());
         msg.addProperty("queue_minutes", submission.queueMinutes());
 
-        send("guild_war_queue", msg);
+        return send("guild_war_queue", msg);
+    }
 
-        return true;
+    public boolean sendGuildWarQueueCancellation(GuildWarQueueCancellation cancellation) {
+        if (cancellation == null
+                || cancellation.territory() == null
+                || cancellation.territory().isBlank()
+                || cancellation.submittedBy() == null
+                || cancellation.submittedBy().isBlank()
+                || cancellation.submittedAt() == null
+                || cancellation.submittedAt().isBlank()) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarQueueCancellation dropped: invalid payload");
+            return false;
+        }
+
+        WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
+        if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
+            SeqClient.LOGGER.warn("[WebSocket] sendGuildWarQueueCancellation dropped outside main Wynncraft host");
+            return false;
+        }
+        if (memberFeaturesDisabled) {
+            SeqClient.LOGGER.debug("[WebSocket] Guild war queue cancellation disabled for non-member session");
+            return true;
+        }
+        if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
+            SeqClient.LOGGER.warn("[WebSocket] Queueing guild_war_queue_cancel until Wynncraft host is confirmed");
+            return false;
+        }
+        if (!authenticated || !isOpen() || authFailed || notInGuild) {
+            SeqClient.LOGGER.warn(
+                    "[WebSocket] sendGuildWarQueueCancellation dropped open={} authenticated={} authFailed={} notInGuild={}",
+                    isOpen(),
+                    authenticated,
+                    authFailed,
+                    notInGuild);
+            return false;
+        }
+
+        JsonObject msg = new JsonObject();
+        msg.addProperty("territory", cancellation.territory());
+        msg.addProperty("submitted_by", cancellation.submittedBy());
+        msg.addProperty("submitted_at", cancellation.submittedAt());
+        return send("guild_war_queue_cancel", msg);
+    }
+
+    public boolean sendWarStatus(WarStatusUpdate update) {
+        if (update == null
+                || (update.status() != WarStatusUpdate.Status.REMOVE && update.classType() == null)
+                || !isReadyForLiveWarTelemetry()
+                || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
+            return false;
+        }
+        return tryLiveTelemetrySend(() -> send("war_status", buildWarStatusPayload(update)));
+    }
+
+    public boolean sendWarTowerUpdate(WarTowerUpdate update) {
+        if (update == null
+                || update.territory() == null
+                || update.territory().isBlank()
+                || !Float.isFinite(update.health())
+                || update.health() < 0.0f
+                || update.health() > 1.0f
+                || update.ehp() < 0L
+                || update.dps() < 0L
+                || !isReadyForLiveWarTelemetry()
+                || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
+            return false;
+        }
+        return tryLiveTelemetrySend(() -> send("war_tower_update", buildWarTowerUpdatePayload(update)));
+    }
+
+    static boolean tryLiveTelemetrySend(BooleanSupplier sendAction) {
+        try {
+            return sendAction.getAsBoolean();
+        } catch (RuntimeException exception) {
+            // The socket can close after the readiness check but before Java-WebSocket
+            // queues the frame. Treat that race like an ordinary failed send so the
+            // bounded tracker retry handles it on a later tick.
+            SeqClient.LOGGER.debug("[WebSocket] Live war telemetry send raced with connection closure", exception);
+            return false;
+        }
+    }
+
+    private boolean isReadyForLiveWarTelemetry() {
+        return isOpen()
+                && authenticated
+                && !authFailed
+                && !notInGuild
+                && !memberFeaturesDisabled;
     }
 
     public static void flushPendingOutbound() {
@@ -1924,12 +2045,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                             "[WebSocket] Backend error status={} code={} message={}", status, backendCode, error);
 
                     if ("mod_version_unsupported".equalsIgnoreCase(backendCode) || status == 426) {
-                        autoReconnect = false;
+                        if (shouldDisableReconnectForVersionRejection(capability)) {
+                            autoReconnect = false;
+                        }
                         maybeNotifyVersionRejection(capability, minimumSafeVersion, error);
                         return;
                     }
 
-                    if (status == 400 || normalized.contains("invalid auth request")) {
+                    if (isSessionAuthenticationError(status, capability, normalized)) {
                         authFailed = true;
                         authenticated = false;
                         registerAuthFailure();
@@ -2071,6 +2194,13 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     public static boolean isConnected() {
         return instance != null && instance.isOpen() && instance.authenticated;
+    }
+
+    public static boolean isLiveWarTelemetryReady() {
+        ConnectionManager current = instance;
+        return current != null
+                && current.isReadyForLiveWarTelemetry()
+                && WynncraftServerPolicy.currentScope() == WynncraftServerPolicy.Scope.MAIN;
     }
 
     public static boolean isTreasuryOutConnected() {
@@ -2229,7 +2359,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_bank_event".equals(type)
                 || "guild_storage_snapshot".equals(type)
                 || "guild_storage_reward".equals(type)
+                || "guild_war_queue".equals(type)
+                || "guild_war_queue_cancel".equals(type)
                 || "guild_war_submission".equals(type)
+                || "war_status".equals(type)
+                || "war_tower_update".equals(type)
                 || "get_connected".equals(type);
     }
 
@@ -2245,7 +2379,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_bank_event".equals(type)
                 || "guild_storage_snapshot".equals(type)
                 || "guild_storage_reward".equals(type)
+                || "guild_war_queue".equals(type)
+                || "guild_war_queue_cancel".equals(type)
                 || "guild_war_submission".equals(type)
+                || "war_status".equals(type)
+                || "war_tower_update".equals(type)
                 || "party_class_update".equals(type)
                 || "party_sync_snapshot".equals(type)
                 || "party_sync_member_removed".equals(type)
@@ -2261,6 +2399,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "guild_alliance_update".equals(type)
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)
+                || "guild_war_queue".equals(type)
+                || "guild_war_queue_cancel".equals(type)
                 || "guild_war_submission".equals(type)
                 || "party_class_update".equals(type)
                 || "party_sync_snapshot".equals(type)
@@ -2378,6 +2518,18 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 && normalizedMessage.contains("member");
     }
 
+    static boolean isSessionAuthenticationError(int status, String capability, String normalizedMessage) {
+        if (capability != null && !capability.isBlank()) {
+            return false;
+        }
+        return status == 400
+                || (normalizedMessage != null && normalizedMessage.contains("invalid auth request"));
+    }
+
+    static boolean shouldDisableReconnectForVersionRejection(String capability) {
+        return capability == null || capability.isBlank();
+    }
+
     private static boolean isCapabilityAuthorizationReject(int status, String capability) {
         return status == 403 && capability != null && !capability.isBlank();
     }
@@ -2415,7 +2567,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             case "guild_chat" -> "guild chat relays";
             case "guild_raid_announcement" -> "raid completion relays";
             case "guild_bank_event" -> "guild bank relays";
-            case "guild_war_submission" -> "guild war tracking";
+            case "guild_war_queue", "guild_war_queue_cancel", "guild_war_submission" -> "guild war tracking";
             default -> "some Sequoia features";
         };
         String targetVersion = minimumSafeVersion != null && !minimumSafeVersion.isBlank()

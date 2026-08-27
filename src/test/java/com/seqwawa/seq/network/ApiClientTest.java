@@ -151,6 +151,15 @@ class ApiClientTest {
     }
 
     @Test
+    void createListingPayloadDefaultsToOpenAdmission() {
+        JsonObject payload = ApiClient.buildCreateListingPayload(
+                List.of(11L), PartyRegion.NA, PartyRole.DPS, null, null, null, 0);
+
+        assertEquals(PartyJoinPolicy.OPEN, PartyJoinPolicy.DEFAULT_CREATE_POLICY);
+        assertEquals("OPEN", payload.get("joinPolicy").getAsString());
+    }
+
+    @Test
     void createListingPayloadRejectsNegativeReservedSlots() {
         assertThrows(
                 IllegalArgumentException.class,
@@ -193,6 +202,107 @@ class ApiClientTest {
         assertDoesNotThrow(() -> ApiClient.buildWarAvailabilityPayload(1440));
         assertThrows(IllegalArgumentException.class, () -> ApiClient.buildWarAvailabilityPayload(0));
         assertThrows(IllegalArgumentException.class, () -> ApiClient.buildWarAvailabilityPayload(1441));
+    }
+
+    @Test
+    void warTerritoryQueueObservationPayloadMatchesSchemaV1Contract() {
+        JsonObject payload = ApiClient.buildWarTerritoryQueueObservationPayload(
+                " xiaolongbao ", " Soup Person ", " Alekin ", "Very High");
+
+        assertEquals(4, payload.size());
+        assertEquals("xiaolongbao", payload.get("minecraft_username").getAsString());
+        assertEquals("Soup Person", payload.get("nickname").getAsString());
+        assertEquals("Alekin", payload.get("territory").getAsString());
+        assertEquals("Very High", payload.get("defense_rating").getAsString());
+    }
+
+    @Test
+    void warTerritoryQueueObservationPayloadKeepsMissingNicknameExplicit() {
+        JsonObject payload = ApiClient.buildWarTerritoryQueueObservationPayload(
+                "xiaolongbao", null, "Alekin", "Low");
+
+        assertTrue(payload.has("nickname"));
+        assertTrue(payload.get("nickname").isJsonNull());
+    }
+
+    @Test
+    void warTerritoryQueueObservationPayloadCarriesOptionalAuthoritativeDuration() {
+        JsonObject payload = ApiClient.buildWarTerritoryQueueObservationPayload(
+                "xiaolongbao", null, "Sulphuric Hollow", "Very Low", 420);
+
+        assertEquals(5, payload.size());
+        assertEquals(420, payload.get("queue_duration_seconds").getAsInt());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ApiClient.buildWarTerritoryQueueObservationPayload(
+                        "xiaolongbao", null, "Sulphuric Hollow", "Very Low", 0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ApiClient.buildWarTerritoryQueueObservationPayload(
+                        "xiaolongbao", null, "Sulphuric Hollow", "Very Low", 3_601));
+    }
+
+    @Test
+    void warTerritoryQueueTimerOnlyPayloadOmitsUnresolvedIdentityAndDefense() {
+        JsonObject payload = ApiClient.buildWarTerritoryQueueObservationPayload(
+                null, null, " Sulphuric Hollow ", null, 420);
+
+        assertEquals(2, payload.size());
+        assertEquals("Sulphuric Hollow", payload.get("territory").getAsString());
+        assertEquals(420, payload.get("queue_duration_seconds").getAsInt());
+        assertFalse(payload.has("minecraft_username"));
+        assertFalse(payload.has("nickname"));
+        assertFalse(payload.has("defense_rating"));
+    }
+
+    @Test
+    void warTerritoryQueuePayloadRejectsInvalidPartialObservationShapes() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ApiClient.buildWarTerritoryQueueObservationPayload(
+                        null, null, "Alekin", "Low", 420));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ApiClient.buildWarTerritoryQueueObservationPayload(
+                        "xiaolongbao", null, "Alekin", null, 420));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ApiClient.buildWarTerritoryQueueObservationPayload(
+                        null, "Soup Person", "Alekin", null, 420));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ApiClient.buildWarTerritoryQueueObservationPayload(
+                        null, null, "Alekin", null, null));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ApiClient.buildWarTerritoryQueueObservationPayload(
+                        null, null, "Alekin", null, 0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ApiClient.buildWarTerritoryQueueObservationPayload(
+                        null, null, "Alekin", null, 3_601));
+    }
+
+    @Test
+    void warTerritoryQueueObservationPayloadRejectsInvalidUntrustedFields() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ApiClient.buildWarTerritoryQueueObservationPayload("bad name", null, "Alekin", "Low"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ApiClient.buildWarTerritoryQueueObservationPayload("xiaolongbao", null, " ", "Low"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ApiClient.buildWarTerritoryQueueObservationPayload(
+                        "xiaolongbao", null, "Alekin", "Extreme"));
+    }
+
+    @Test
+    void warTerritoryQueueParticipantPathTargetsAuthenticatedCallerForPutAndDelete() {
+        assertEquals(
+                "/war-planner/territory-queues/42/participants/me",
+                ApiClient.warTerritoryQueueParticipantPath(42));
+        assertThrows(IllegalArgumentException.class, () -> ApiClient.warTerritoryQueueParticipantPath(0));
     }
 
     @Test

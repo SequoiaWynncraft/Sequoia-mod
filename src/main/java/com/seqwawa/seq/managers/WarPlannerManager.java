@@ -10,6 +10,7 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneCategoryDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import com.seqwawa.seq.model.war.WarCompositionRole;
+import com.seqwawa.seq.model.war.WarPlannerAccess;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot.RosterMember;
 import com.seqwawa.seq.network.ApiClient;
@@ -25,7 +26,7 @@ import java.util.function.Supplier;
 
 /** Owns the immutable war-planner snapshot and keeps all network work off the render thread. */
 public final class WarPlannerManager {
-    private static final long READY_POLL_MS = Duration.ofSeconds(45).toMillis();
+    private static final long ACCESS_POLL_MS = Duration.ofSeconds(45).toMillis();
     private static final long FORBIDDEN_RETRY_MS = Duration.ofMinutes(5).toMillis();
     private static final long MAX_BACKOFF_MS = Duration.ofMinutes(2).toMillis();
 
@@ -38,6 +39,8 @@ public final class WarPlannerManager {
     }
 
     public interface Gateway {
+        CompletableFuture<WarPlannerAccess> access();
+
         CompletableFuture<WarPlannerSnapshot> snapshot();
 
         CompletableFuture<WarPlannerSnapshot> setAvailability(int durationMinutes);
@@ -92,11 +95,14 @@ public final class WarPlannerManager {
 
     private volatile State state = State.UNKNOWN;
     private volatile WarPlannerSnapshot snapshot;
+    private volatile WarPlannerAccess access;
     private volatile String lastError;
     private volatile boolean mutating;
     private volatile long serverOffsetMillis;
 
     private CompletableFuture<?> inFlight;
+    private CompletableFuture<ActionResult> queuedRefresh;
+    private boolean accessRequestInFlight;
     private long nextPollAtMillis;
     private int consecutiveFailures;
     private long generation;
@@ -126,14 +132,19 @@ public final class WarPlannerManager {
         return mutating;
     }
 
+    public synchronized boolean isRequestInFlight() {
+        return inFlight != null || queuedRefresh != null;
+    }
+
     /** Visibility deliberately depends on a successful authorized response, never local role inference. */
     public boolean isAuthorized() {
-        return snapshot != null && state != State.FORBIDDEN;
+        WarPlannerAccess current = access;
+        return current != null && current.isSupported() && state != State.FORBIDDEN;
     }
 
     public boolean canManage() {
         WarPlannerSnapshot current = snapshot;
-        return isAuthorized() && current.self() != null && current.self().canManage();
+        return isAuthorized() && current != null && current.self() != null && current.self().canManage();
     }
 
     public Instant serverNow() {
@@ -141,11 +152,13 @@ public final class WarPlannerManager {
     }
 
     public Duration ownAvailabilityRemaining() {
-        WarPlannerSnapshot current = snapshot;
-        RosterMember caller = current == null ? null : current.caller();
-        return caller == null || !caller.available()
-                ? Duration.ZERO
-                : remainingUntil(caller.availableUntil(), serverNow());
+        WarPlannerAccess current = access;
+        return current == null ? Duration.ZERO : remainingUntil(current.availableUntil(), serverNow());
+    }
+
+    public String playerUuid() {
+        WarPlannerAccess current = access;
+        return current == null ? null : current.playerUuid();
     }
 
     public static Duration remainingUntil(Instant until, Instant now) {
@@ -170,11 +183,17 @@ public final class WarPlannerManager {
         if (inFlight != null || clock.millis() < nextPollAtMillis) {
             return;
         }
-        startRefresh(false);
+        startAccessRefresh();
     }
 
     public synchronized CompletableFuture<ActionResult> refreshNow() {
         if (inFlight != null) {
+            if (accessRequestInFlight) {
+                if (queuedRefresh == null) {
+                    queuedRefresh = new CompletableFuture<>();
+                }
+                return queuedRefresh;
+            }
             return CompletableFuture.completedFuture(new ActionResult(false, "A war planner request is already running."));
         }
         return startRefresh(true);
@@ -320,21 +339,120 @@ public final class WarPlannerManager {
     }
 
     public synchronized void reset() {
-        if (state == State.UNKNOWN && snapshot == null && inFlight == null) {
+        if (state == State.UNKNOWN && snapshot == null && access == null && inFlight == null && queuedRefresh == null) {
             return;
         }
         generation++;
         if (inFlight != null) {
             inFlight.cancel(true);
         }
+        if (queuedRefresh != null) {
+            queuedRefresh.complete(new ActionResult(false, "The active Minecraft account changed."));
+        }
         inFlight = null;
+        queuedRefresh = null;
+        accessRequestInFlight = false;
         snapshot = null;
+        access = null;
         state = State.UNKNOWN;
         lastError = null;
         mutating = false;
         consecutiveFailures = 0;
         nextPollAtMillis = 0;
         serverOffsetMillis = 0;
+    }
+
+    private void startAccessRefresh() {
+        long requestGeneration = generation;
+        if (access == null) {
+            state = State.LOADING;
+        }
+        lastError = null;
+        CompletableFuture<WarPlannerAccess> request = gateway.access();
+        inFlight = request;
+        accessRequestInFlight = true;
+        request.whenComplete((received, error) -> completeAccessRequest(requestGeneration, received, error));
+    }
+
+    private synchronized void completeAccessRequest(
+            long requestGeneration, WarPlannerAccess received, Throwable error) {
+        if (requestGeneration != generation) {
+            return;
+        }
+        inFlight = null;
+        accessRequestInFlight = false;
+        Throwable cause = unwrap(error);
+        if (cause == null && received != null && received.isSupported()) {
+            access = received;
+            state = State.READY;
+            lastError = null;
+            consecutiveFailures = 0;
+            nextPollAtMillis = clock.millis() + ACCESS_POLL_MS;
+            serverOffsetMillis = received.serverTime() == null
+                    ? 0
+                    : Duration.between(clock.instant(), received.serverTime()).toMillis();
+            startQueuedRefreshAfterAccess();
+            return;
+        }
+
+        boolean incompatibleResponse = cause == null && (received == null || !received.isSupported());
+        if (cause == null) {
+            cause = received == null
+                    ? new IllegalStateException("The backend returned an empty war planner access response.")
+                    : new IllegalStateException("Unsupported war planner access schema " + received.schemaVersion() + ".");
+        }
+        int status = cause instanceof ApiException apiException ? apiException.getStatusCode() : 0;
+        ApiErrorDetails details = apiError(cause);
+        lastError = details.message();
+        boolean guildAuthorizationUnverifiable = "guild_roster_unavailable".equals(details.code());
+        boolean forbidden = status == 401
+                || status == 403
+                || status == 426
+                || "not_in_guild".equals(details.code())
+                || isAuthenticationError(details.code());
+        if (incompatibleResponse) {
+            access = null;
+            snapshot = null;
+        }
+        if (forbidden) {
+            access = null;
+            snapshot = null;
+            state = State.FORBIDDEN;
+            consecutiveFailures = 0;
+            nextPollAtMillis = clock.millis() + FORBIDDEN_RETRY_MS;
+        } else {
+            if (guildAuthorizationUnverifiable) {
+                access = null;
+                snapshot = null;
+            }
+            state = State.OFFLINE;
+            consecutiveFailures++;
+            long backoff = Math.min(MAX_BACKOFF_MS, 5_000L << Math.min(5, consecutiveFailures - 1));
+            nextPollAtMillis = clock.millis() + backoff;
+        }
+        startQueuedRefreshAfterAccess();
+    }
+
+    private void startQueuedRefreshAfterAccess() {
+        CompletableFuture<ActionResult> queued = queuedRefresh;
+        queuedRefresh = null;
+        if (queued == null) {
+            return;
+        }
+        if (!isAuthorized()) {
+            queued.complete(new ActionResult(
+                    false,
+                    "access_unavailable",
+                    lastError == null ? "War planner access could not be verified." : lastError));
+            return;
+        }
+        startRefresh(true).whenComplete((result, error) -> {
+            if (error != null) {
+                queued.completeExceptionally(error);
+            } else {
+                queued.complete(result);
+            }
+        });
     }
 
     private CompletableFuture<ActionResult> startRefresh(boolean userInitiated) {
@@ -346,6 +464,7 @@ public final class WarPlannerManager {
         CompletableFuture<ActionResult> result = new CompletableFuture<>();
         CompletableFuture<WarPlannerSnapshot> request = gateway.snapshot();
         inFlight = request;
+        accessRequestInFlight = false;
         request.whenComplete((received, error) -> completeRequest(
                 requestGeneration, received, error, false, userInitiated ? "War planner refreshed." : null, result));
         return result;
@@ -366,6 +485,7 @@ public final class WarPlannerManager {
             return CompletableFuture.completedFuture(new ActionResult(false, exception.getMessage()));
         }
         mutating = true;
+        accessRequestInFlight = false;
         lastError = null;
         long requestGeneration = generation;
         CompletableFuture<ActionResult> result = new CompletableFuture<>();
@@ -392,10 +512,11 @@ public final class WarPlannerManager {
         Throwable cause = unwrap(error);
         if (cause == null && received != null && received.isSupported()) {
             snapshot = received;
+            updateAccessFromSnapshot(received);
             state = State.READY;
             lastError = null;
             consecutiveFailures = 0;
-            nextPollAtMillis = clock.millis() + READY_POLL_MS;
+            nextPollAtMillis = clock.millis() + ACCESS_POLL_MS;
             serverOffsetMillis = received.serverTime() == null
                     ? 0
                     : Duration.between(clock.instant(), received.serverTime()).toMillis();
@@ -416,6 +537,7 @@ public final class WarPlannerManager {
         lastError = message;
         if (incompatibleSchema) {
             snapshot = null;
+            access = null;
         }
 
         boolean managerRequired = mutation
@@ -438,12 +560,14 @@ public final class WarPlannerManager {
             nextPollAtMillis = 0;
         } else if (guildAuthorizationUnverifiable) {
             snapshot = null;
+            access = null;
             state = State.OFFLINE;
             consecutiveFailures++;
             long backoff = Math.min(MAX_BACKOFF_MS, 5_000L << Math.min(5, consecutiveFailures - 1));
             nextPollAtMillis = clock.millis() + backoff;
         } else if (clearsSensitiveData) {
             snapshot = null;
+            access = null;
             state = State.FORBIDDEN;
             consecutiveFailures = 0;
             nextPollAtMillis = clock.millis() + FORBIDDEN_RETRY_MS;
@@ -462,6 +586,14 @@ public final class WarPlannerManager {
             nextPollAtMillis = clock.millis() + backoff;
         }
         result.complete(new ActionResult(false, code, message));
+    }
+
+    private void updateAccessFromSnapshot(WarPlannerSnapshot received) {
+        RosterMember caller = received.caller();
+        String playerUuid = received.self() == null ? null : received.self().playerUuid();
+        Instant availableUntil = caller != null && caller.available() ? caller.availableUntil() : null;
+        access = new WarPlannerAccess(
+                WarPlannerAccess.SUPPORTED_SCHEMA_VERSION, received.serverTime(), playerUuid, availableUntil);
     }
 
     static Throwable unwrap(Throwable throwable) {
@@ -529,6 +661,11 @@ public final class WarPlannerManager {
     }
 
     private record ApiGateway(ApiClient api) implements Gateway {
+        @Override
+        public CompletableFuture<WarPlannerAccess> access() {
+            return api.getWarPlannerAccess();
+        }
+
         @Override
         public CompletableFuture<WarPlannerSnapshot> snapshot() {
             return api.getWarPlannerSnapshot();

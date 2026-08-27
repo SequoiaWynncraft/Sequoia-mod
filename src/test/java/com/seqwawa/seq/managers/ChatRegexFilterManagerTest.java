@@ -18,6 +18,9 @@ class ChatRegexFilterManagerTest {
 
         assertFalse(manager.enabledSetting().getValue());
         assertFalse(manager.builtInFilters().getFirst().enabledSetting().getValue());
+        assertFalse(manager.builtInFilters().getFirst().enabledSetting().isEnabled());
+        assertEquals(1, manager.builtInFilters().getFirst().enabledSetting().getIndentLevel());
+        assertEquals(2, manager.economyAlertsOnlySetting().getIndentLevel());
         assertFalse(manager.shouldFilter(guildMessage("GaztheCat", "check your dms")));
         assertEquals(
                 List.of(
@@ -96,12 +99,14 @@ class ChatRegexFilterManagerTest {
         Setting.BooleanSetting economySetting =
                 manager.builtInFilters().getFirst().enabledSetting();
 
-        assertFalse(manager.economyAlertsOnlySetting().isVisible());
+        assertTrue(manager.economyAlertsOnlySetting().isVisible());
+        assertFalse(manager.economyAlertsOnlySetting().isEnabled());
 
         economySetting.setValue(true);
         manager.economyAlertsOnlySetting().setValue(true);
 
         assertTrue(manager.economyAlertsOnlySetting().isVisible());
+        assertTrue(manager.economyAlertsOnlySetting().isEnabled());
         assertTrue(manager.shouldFilter(
                 "󏿼󐀆 Territory Lake Rieke is using more resources than it can\n󏿼󐀆 store!"));
         assertTrue(manager.shouldFilter(

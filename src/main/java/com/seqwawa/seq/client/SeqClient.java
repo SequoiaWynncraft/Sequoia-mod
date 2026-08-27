@@ -5,6 +5,7 @@ import com.collarmc.pounce.Preference;
 import com.collarmc.pounce.Subscribe;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.logging.LogUtils;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -13,6 +14,7 @@ import lombok.Getter;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientWorldEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -38,6 +40,7 @@ import com.seqwawa.seq.managers.GuildWarTrackers;
 import com.seqwawa.seq.managers.DiscordRankService;
 import com.seqwawa.seq.managers.IngredientGuideManager;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
+import com.seqwawa.seq.managers.MinecraftWarTowerTracker;
 import com.seqwawa.seq.managers.RankProfileRoster;
 import com.seqwawa.seq.managers.PartyHealthCache;
 import com.seqwawa.seq.managers.PartyFinderManager;
@@ -51,6 +54,7 @@ import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.managers.WorldEventManager;
 import com.seqwawa.seq.managers.WarPlannerManager;
+import com.seqwawa.seq.managers.WarTerritoryQueueManager;
 import com.seqwawa.seq.map.IngredientWaypointRenderer;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
@@ -58,6 +62,7 @@ import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
+import com.seqwawa.seq.raids.tna.TnaRoomThreeHelper;
 import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.ui.PrincessRaidCelebration;
@@ -94,6 +99,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static WarPlannerManager warPlannerManager;
+
+    @Getter
+    public static WarTerritoryQueueManager warTerritoryQueueManager;
 
     @Getter
     public static PrincessRaidStatsManager princessRaidStatsManager;
@@ -228,6 +236,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.ColorSetting lightRoomRingColorSetting;
 
     @Getter
+    public static Setting.BooleanSetting tnaRoomThreeHelperSetting;
+
+    @Getter
     public static Setting.BooleanSetting showRaidBadgesSetting;
 
     @Getter
@@ -247,6 +258,18 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static Setting.IntSetting warPlannerBackgroundOpacitySetting;
+
+    @Getter
+    public static Setting.IntSetting warQueueHudTextSizeSetting;
+
+    @Getter
+    public static Setting.BooleanSetting warQueueHudOnlyOwnedOrJoinedSetting;
+
+    @Getter
+    public static Setting.BooleanSetting warQueueMissMessagesSetting;
+
+    @Getter
+    public static Setting.IntSetting warQueueHudMaxRowsSetting;
 
     @Getter
     public static Setting.BooleanSetting warPlannerLockTerritoriesSetting;
@@ -302,9 +325,10 @@ public class SeqClient implements ClientModInitializer {
         gameManager = new GameManager();
         partyFinderManager = new PartyFinderManager();
         warPlannerManager = new WarPlannerManager();
+        warTerritoryQueueManager = new WarTerritoryQueueManager();
         princessRaidStatsManager = new PrincessRaidStatsManager();
         wynnPartySyncManager = new WynnPartySyncManager();
-        guildWarTracker = GuildWarTrackers.createIfAvailable();
+        guildWarTracker = GuildWarTrackers.create();
         guildStorageTracker = GuildStorageTracker.getInstance();
         guildRewardAutomationManager = new GuildRewardAutomationManager();
         chatManager = new ChatManager();
@@ -330,7 +354,9 @@ public class SeqClient implements ClientModInitializer {
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
         IngredientWaypointRenderer.initialize();
+        TnaRoomThreeHelper.initialize();
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> MinecraftUiRenderer.shutdown());
+        ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> resetWarTrackingState());
         LightRoom.init();
 
         KeyMapping.Category category =
@@ -397,15 +423,11 @@ public class SeqClient implements ClientModInitializer {
                     wynnPartySyncManager.reset();
                 }
                 RaidPartySnapshotTracker.onServerUnavailable();
-                if (guildWarTracker != null) {
-                    guildWarTracker.reset();
-                }
+                resetWarTrackingState();
                 if (guildStorageTracker != null) {
                     guildStorageTracker.reset();
                 }
-                if (warPlannerManager != null) {
-                    warPlannerManager.reset();
-                }
+                resetWarPlanningState();
                 GuildRaidProgressService.getInstance().tick(false);
                 return;
             }
@@ -413,9 +435,8 @@ public class SeqClient implements ClientModInitializer {
                 RadianceCheckerClient.reset();
                 RaidPartySnapshotTracker.onServerUnavailable();
                 ConnectionManager.flushPendingOutbound();
-                if (warPlannerManager != null) {
-                    warPlannerManager.reset();
-                }
+                resetWarTrackingState();
+                resetWarPlanningState();
                 GuildRaidProgressService.getInstance().tick(false);
                 return;
             }
@@ -429,6 +450,9 @@ public class SeqClient implements ClientModInitializer {
 
             if (warPlannerManager != null) {
                 warPlannerManager.tick();
+            }
+            if (warTerritoryQueueManager != null) {
+                warTerritoryQueueManager.tick();
             }
 
             if (partyFinderManager != null) {
@@ -521,19 +545,32 @@ public class SeqClient implements ClientModInitializer {
         }
         RaidPartySnapshotTracker.reset();
         GuildRaidProgressService.getInstance().reset();
-        if (guildWarTracker != null) {
-            guildWarTracker.reset();
-        }
+        resetWarTrackingState();
         if (guildStorageTracker != null) {
             guildStorageTracker.reset();
         }
-        if (warPlannerManager != null) {
-            warPlannerManager.reset();
-        }
+        resetWarPlanningState();
         if (princessRaidStatsManager != null) {
             princessRaidStatsManager.reset();
         }
         return true;
+    }
+
+    private static void resetWarTrackingState() {
+        if (guildWarTracker != null) {
+            guildWarTracker.reset();
+        } else {
+            MinecraftWarTowerTracker.getInstance().reset();
+        }
+    }
+
+    private static void resetWarPlanningState() {
+        if (warPlannerManager != null) {
+            warPlannerManager.reset();
+        }
+        if (warTerritoryQueueManager != null) {
+            warTerritoryQueueManager.reset();
+        }
     }
 
     private static UUID currentMinecraftProfileId() {
@@ -666,7 +703,11 @@ public class SeqClient implements ClientModInitializer {
         if (manager == null || !manager.isAuthorized()) {
             return;
         }
-        mc.execute(() -> mc.setScreen(new WarPlannerScreen(mc.screen)));
+        mc.execute(() -> {
+            WarPlannerScreen screen = new WarPlannerScreen(mc.screen);
+            mc.setScreen(screen);
+            screen.refreshPlanner();
+        });
     }
 
     public static void openWorldMapScreen() {
@@ -803,15 +844,20 @@ public class SeqClient implements ClientModInitializer {
         radianceCheckerSetting = new Setting.BooleanSetting("enable_radiance_visualiser", "raids", true);
         radianceMarkerColorSetting = new Setting.ColorSetting("radiance_marker_color", "raids", 0xFF0000)
                 .withValueOverride(PrincessMode::paletteColorOverride);
-        radianceMarkerColorSetting.setVisibilityCondition(() -> radianceCheckerSetting.getValue());
+        radianceMarkerColorSetting.setParentSetting(radianceCheckerSetting);
         halcyonRangeVisualiserSetting = new Setting.BooleanSetting("enable_halcyon_range_visualiser", "raids", true);
         halcyonRingColorSetting = new Setting.ColorSetting("halcyon_ring_color", "raids", 0x00FFFF)
                 .withValueOverride(PrincessMode::paletteColorOverride);
-        halcyonRingColorSetting.setVisibilityCondition(() -> halcyonRangeVisualiserSetting.getValue());
+        halcyonRingColorSetting.setParentSetting(halcyonRangeVisualiserSetting);
         lightRoomVisualiserSetting = new Setting.BooleanSetting("enable_light_room_visualiser", "raids", true);
         lightRoomRingColorSetting = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF)
                 .withValueOverride(PrincessMode::paletteColorOverride);
-        lightRoomRingColorSetting.setVisibilityCondition(() -> lightRoomVisualiserSetting.getValue());
+        lightRoomRingColorSetting.setParentSetting(lightRoomVisualiserSetting);
+        tnaRoomThreeHelperSetting = new Setting.BooleanSetting("enable_tna_room_3_helper", "raids", true);
+        tnaRoomThreeHelperSetting.setPresentation(
+                "TNA room 3 aiming helper",
+                "Show standing and aiming markers during Challenge 2/4 in The Nameless Anomaly.",
+                "Raid helpers");
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
@@ -819,6 +865,8 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.IntSetting("guild_storage_emerald_threshold_percent", "guild_storage", 100, 0, 100);
         guildStorageAspectNotifyValueSetting =
                 new Setting.IntSetting("guild_storage_aspect_threshold_percent", "guild_storage", 100, 0, 100);
+        guildStorageEmeraldNotifyValueSetting.setParentSetting(trackGuildStorageSetting);
+        guildStorageAspectNotifyValueSetting.setParentSetting(trackGuildStorageSetting);
         easterEggsSetting = new Setting.BooleanSetting("enable_easter_eggs", "ui", true);
         startupVideoSetting = new Setting.BooleanSetting("startup_video", "ui", false);
         uiSizePercentSetting = new Setting.IntSetting("ui_size_percent", "ui", 100, 75, 150, 5)
@@ -832,6 +880,7 @@ public class SeqClient implements ClientModInitializer {
         announceOpenPartiesSetting = new Setting.BooleanSetting("announce_open_parties", "party_finder", true);
         announceOpenPartiesIntervalMinutesSetting =
                 new Setting.IntSetting("announce_open_parties_interval_minutes", "party_finder", 5, 1, 60);
+        announceOpenPartiesIntervalMinutesSetting.setParentSetting(announceOpenPartiesSetting);
         syncWynnPartySetting = new Setting.BooleanSetting("sync_with_wynn_party", "party_finder", true);
         receiveBombShareRequestsSetting = new Setting.BooleanSetting("receive_bomb_share_requests", "network", true);
         showRaidBadgesSetting =
@@ -847,8 +896,25 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.BooleanSetting("resource_colors", "war_planner", false);
         warPlannerBackgroundOpacitySetting =
                 new Setting.IntSetting("background_opacity_percent", "war_planner", 100, 0, 100, 5);
+        warQueueHudTextSizeSetting =
+                new Setting.IntSetting("queue_hud_text_size", "war_planner", 9, 6, 18);
+        warQueueHudOnlyOwnedOrJoinedSetting =
+                new Setting.BooleanSetting("queue_hud_only_owned_or_joined", "war_planner", false);
+        warQueueMissMessagesSetting =
+                new Setting.BooleanSetting("queue_miss_messages", "war_planner", false);
+        warQueueHudMaxRowsSetting =
+                new Setting.IntSetting("queue_hud_max_rows", "war_planner", 6, 1, 20);
         warPlannerLockTerritoriesSetting =
                 new Setting.BooleanSetting("lock_territories", "war_planner", false);
+        List.of(
+                        warPlannerResourceColorsSetting,
+                        warPlannerBackgroundOpacitySetting,
+                        warQueueHudTextSizeSetting,
+                        warQueueHudOnlyOwnedOrJoinedSetting,
+                        warQueueMissMessagesSetting,
+                        warQueueHudMaxRowsSetting,
+                        warPlannerLockTerritoriesSetting)
+                .forEach(setting -> setting.setPresentationCategory("guild_wars"));
         warPlannerResourceColorsSetting.setPresentation(
                 "Color by resource type",
                 "Fill map territories using their resource production colors.",
@@ -857,6 +923,22 @@ public class SeqClient implements ClientModInitializer {
                 "Background opacity",
                 "Adjust war-planner panels so the in-game chat remains visible behind them.",
                 "War planner display");
+        warQueueHudTextSizeSetting.setPresentation(
+                "Queue HUD text size",
+                "Adjust the territory queue text shown at the top right of the game HUD.",
+                "War queue HUD");
+        warQueueHudOnlyOwnedOrJoinedSetting.setPresentation(
+                "Only show my queues",
+                "Only show territories you queued or joined on the war map and top-right queue HUD.",
+                "War queue HUD");
+        warQueueMissMessagesSetting.setPresentation(
+                "Queue miss messages",
+                "Show a blame message when nobody enters a queued territory war.",
+                "War queue messages");
+        warQueueHudMaxRowsSetting.setPresentation(
+                "Maximum queue rows",
+                "Set how many territory queues can appear in the top-right HUD.",
+                "War queue HUD");
         warPlannerLockTerritoriesSetting.setPresentation(
                 "Lock territories",
                 "Manager-only view that hides territories not assigned to a zone.",
@@ -901,6 +983,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(halcyonRingColorSetting);
         getConfigManager().register(lightRoomVisualiserSetting);
         getConfigManager().register(lightRoomRingColorSetting);
+        getConfigManager().register(tnaRoomThreeHelperSetting);
         getConfigManager().register(showRaidBadgesSetting);
         getConfigManager().register(showInsigniaBadgesSetting);
         getConfigManager().register(showOwnLeaderboardBadgeSetting);
@@ -909,6 +992,10 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(warPlannerResourceColorsSetting);
         getConfigManager().register(warPlannerBackgroundOpacitySetting);
         getConfigManager().register(warPlannerLockTerritoriesSetting);
+        getConfigManager().register(warQueueHudOnlyOwnedOrJoinedSetting);
+        getConfigManager().register(warQueueHudMaxRowsSetting);
+        getConfigManager().register(warQueueHudTextSizeSetting);
+        getConfigManager().register(warQueueMissMessagesSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.

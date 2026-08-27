@@ -125,35 +125,56 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
     @Override
     public void render(UiCanvas canvas, float mouseX, float mouseY) {
+        boolean enabled = prepareEnabledState();
         cursorBlink++;
         String fontName = SeqClient.getFontManager().getSelectedFont();
 
-        canvas.drawText(getDisplayName(), x + 8, y + 2,
-                textStyle(fontName, color(TEXT_SECONDARY), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.TOP));
+        drawParentGuide(canvas, enabled);
+        canvas.drawText(
+                getDisplayName(),
+                indentedContentX(8),
+                y + 2,
+                textStyle(
+                        fontName,
+                        enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                        UiCanvas.HorizontalAlign.LEFT,
+                        UiCanvas.VerticalAlign.TOP));
 
         SliderLayout layout = layout();
 
         // Slider track
         float trackY = layout.sliderY() + (SLIDER_HEIGHT - 4) / 2f;
-        canvas.fillRect(layout.sliderX(), trackY, layout.sliderWidth(), 4, color(CONTROL_INPUT_SECONDARY));
+        canvas.fillRect(
+                layout.sliderX(),
+                trackY,
+                layout.sliderWidth(),
+                4,
+                enabled ? color(CONTROL_INPUT_SECONDARY) : color(CONTROL_INPUT_SECONDARY, 120));
 
         // Slider fill
         double value = getDoubleValue();
         float ratio = (float) ((value - min) / (max - min));
         ratio = Math.max(0, Math.min(1, ratio));
         float fillWidth = layout.sliderWidth() * ratio;
-        canvas.fillRect(layout.sliderX(), trackY, fillWidth, 4, color(ACCENT_PRIMARY));
+        canvas.fillRect(
+                layout.sliderX(),
+                trackY,
+                fillWidth,
+                4,
+                enabled ? color(ACCENT_PRIMARY) : color(CONTROL_INPUT_SECONDARY, 120));
 
         // Knob
         float knobX = layout.sliderX() + fillWidth;
         float knobY = layout.sliderY() + SLIDER_HEIGHT / 2f - KNOB_RADIUS / 2f;
         canvas.fillRect(knobX - KNOB_RADIUS, knobY - KNOB_RADIUS / 2, KNOB_RADIUS * 2, KNOB_RADIUS * 2,
-                color(TEXT_PRIMARY));
+                enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED));
 
         // Text box
-        Color boxBg = editing ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT, 200);
+        Color boxBg = !enabled
+                ? color(CONTROL_INPUT_SECONDARY, 120)
+                : editing ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT, 200);
         canvas.fillRect(layout.textBoxX(), layout.textBoxY(), TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, boxBg);
-        if (editing) {
+        if (enabled && editing) {
             canvas.strokeRect(layout.textBoxX(), layout.textBoxY(), TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, 1,
                     color(CONTROL_BORDER));
         }
@@ -161,10 +182,14 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         String displayText = editing ? editBuffer : formatValue(value);
         canvas.drawText(displayText, layout.textBoxX() + TEXT_BOX_WIDTH / 2f,
                 layout.textBoxY() + TEXT_BOX_HEIGHT / 2f,
-                textStyle(fontName, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER, UiCanvas.VerticalAlign.MIDDLE));
+                textStyle(
+                        fontName,
+                        enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
+                        UiCanvas.HorizontalAlign.CENTER,
+                        UiCanvas.VerticalAlign.MIDDLE));
 
         // Draw cursor separately so it doesn't affect text width
-        if (editing && (cursorBlink / 1000) % 2 == 0) {
+        if (enabled && editing && (cursorBlink / 1000) % 2 == 0) {
             float textW = UiRenderer.measureText(editBuffer, fontName, FONT_SIZE).width();
             float cursorX = layout.textBoxX() + (TEXT_BOX_WIDTH + textW) / 2f + 1;
             canvas.fillRect(cursorX, layout.textBoxY() + 3, 1, TEXT_BOX_HEIGHT - 6, color(TEXT_PRIMARY));
@@ -181,7 +206,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
     @Override
     public boolean mouseClicked(float mouseX, float mouseY, int button) {
-        if (button != 0)
+        if (!prepareEnabledState() || button != 0)
             return false;
 
         SliderLayout layout = layout();
@@ -213,6 +238,9 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
     @Override
     public boolean mouseReleased(float mouseX, float mouseY, int button) {
+        if (!prepareEnabledState()) {
+            return false;
+        }
         if (dragging) {
             dragging = false;
             return true;
@@ -222,6 +250,9 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
     @Override
     public boolean mouseDragged(float mouseX, float mouseY) {
+        if (!prepareEnabledState()) {
+            return false;
+        }
         if (dragging) {
             SliderLayout layout = layout();
             updateValueFromMouse(mouseX, layout.sliderX(), layout.sliderWidth());
@@ -231,8 +262,8 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
     }
 
     private SliderLayout layout() {
-        float sliderX = x + 8;
-        float fullSliderWidth = Math.max(1, width - TEXT_BOX_WIDTH - 24);
+        float sliderX = indentedContentX(8);
+        float fullSliderWidth = Math.max(1, width - TEXT_BOX_WIDTH - 24 - labelIndent());
         float sliderWidth = fullSliderWidth * sliderWidthRatio;
         float textBoxX = sliderWidthRatio < 1f
                 ? sliderX + sliderWidth + CONTROL_GAP
@@ -254,6 +285,9 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
     @Override
     public boolean keyPressed(KeyEvent keyEvent) {
+        if (!prepareEnabledState()) {
+            return false;
+        }
         int keyCode = keyEvent.key();
         if (!editing)
             return false;
@@ -276,6 +310,9 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
     @Override
     public boolean charTyped(CharacterEvent characterEvent) {
+        if (!prepareEnabledState()) {
+            return false;
+        }
         if (!editing) {
             return false;
         }
@@ -297,6 +334,16 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
             setManualValue(val);
         } catch (NumberFormatException ignored) {
         }
+    }
+
+    private boolean prepareEnabledState() {
+        boolean enabled = isEnabled();
+        if (!enabled) {
+            dragging = false;
+            editing = false;
+            editBuffer = formatValue(getDoubleValue());
+        }
+        return enabled;
     }
 
     private record SliderLayout(

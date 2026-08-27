@@ -14,9 +14,14 @@ import com.seqwawa.seq.model.war.WarCompositionTargets;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.model.war.WarTeamType;
+import com.seqwawa.seq.model.war.WarTerritoryQueueFeed.Participant;
+import com.seqwawa.seq.model.war.WarTerritoryQueueFeed.TerritoryQueue;
+import java.awt.Color;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class WarPlannerScreenTest {
@@ -30,7 +35,7 @@ class WarPlannerScreenTest {
 
     @Test
     void wideScreensUseACenteredCappedPlannerViewport() {
-        assertEquals(new WarPlannerScreen.PlannerViewport(510, 900), WarPlannerScreen.plannerViewport(1920));
+        assertEquals(new WarPlannerScreen.PlannerViewport(360, 1200), WarPlannerScreen.plannerViewport(1920));
         assertEquals(new WarPlannerScreen.PlannerViewport(620, 680), WarPlannerScreen.plannerViewport(1920, 680));
         assertEquals(new WarPlannerScreen.PlannerViewport(570, 780), WarPlannerScreen.plannerViewport(1920, 780));
         assertEquals(new WarPlannerScreen.PlannerViewport(0, 640), WarPlannerScreen.plannerViewport(640));
@@ -78,6 +83,7 @@ class WarPlannerScreenTest {
 
     @Test
     void warMapKeepsOneCanvasAndACompactSidebar() {
+        assertEquals(220, WarPlannerScreen.warMapSidebarWidth(1200));
         assertEquals(220, WarPlannerScreen.warMapSidebarWidth(900));
         assertEquals(160, WarPlannerScreen.warMapSidebarWidth(640));
         assertEquals(150, WarPlannerScreen.warMapSidebarWidth(320));
@@ -87,11 +93,31 @@ class WarPlannerScreenTest {
     @Test
     void warMapLayoutKeepsMapAndSidebarSeparateOnNarrowScreens() {
         WarPlannerScreen.WarMapLayout layout = WarPlannerScreen.warMapLayout(320, 110, 430);
+        WarPlannerScreen.WarQueueFilterBounds queueFilter = WarPlannerScreen.warQueueFilterBounds(layout);
 
         assertEquals(12, layout.mapX());
         assertEquals(138, layout.mapWidth());
         assertEquals(158, layout.sidebarX());
         assertTrue(layout.mapX() + layout.mapWidth() < layout.sidebarX());
+        assertTrue(queueFilter.visible());
+        assertTrue(queueFilter.x() >= layout.mapX());
+        assertTrue(queueFilter.x() + queueFilter.width() <= layout.mapX() + layout.mapWidth());
+    }
+
+    @Test
+    void wideWarMapLayoutGivesTheInteractiveCanvasMostOfThePlannerWidth() {
+        WarPlannerScreen.WarMapLayout layout = WarPlannerScreen.warMapLayout(1200, 110, 610);
+
+        assertEquals(12, layout.mapX());
+        assertEquals(948, layout.mapWidth());
+        assertEquals(500, layout.mapHeight());
+        assertEquals(968, layout.sidebarX());
+        assertEquals(220, layout.sidebarWidth());
+        assertTrue(layout.mapWidth() > layout.sidebarWidth() * 2);
+        assertTrue(layout.containsMap(layout.mapX() + layout.mapWidth() / 2, layout.mapY() + 1));
+        assertFalse(layout.containsMap(layout.sidebarX() + 1, layout.mapY() + 1));
+        assertTrue(layout.containsSidebar(layout.sidebarX() + 1, layout.mapY() + 1));
+        assertEquals(1200 - 12, layout.sidebarX() + layout.sidebarWidth());
     }
 
     @Test
@@ -106,6 +132,238 @@ class WarPlannerScreenTest {
     }
 
     @Test
+    void queueLabelsIncludeOnlyTerritoriesBelongingToCurrentlyShownZones() {
+        WarPlannerSnapshot.Zone shown = new WarPlannerSnapshot.Zone(
+                1, "Shown", "#55B8C5", List.of(), 1L, List.of("Alekin", "Shared Territory"));
+        WarPlannerSnapshot.Zone hidden = new WarPlannerSnapshot.Zone(
+                2, "Hidden", "#E05A65", List.of(), 1L, List.of("Context Only", "Shared Territory"));
+        WarPlannerSnapshot.Zone hiddenCategory = new WarPlannerSnapshot.Zone(
+                3, "Hidden category", "#E0A65A", List.of(), 1L, List.of("Unlocked Only"), 9L, 0);
+
+        List<WarPlannerSnapshot.Zone> displayed = WarPlannerScreen.visibleZones(
+                List.of(shown, hidden, hiddenCategory), Set.of(2L), Set.of(9L));
+        GuildTerritory alekin = GuildTerritory.fromCorners("Alekin", 0, 0, 10, 10);
+        GuildTerritory context = GuildTerritory.fromCorners("Context Only", 20, 0, 30, 10);
+        GuildTerritory unlocked = GuildTerritory.fromCorners("Unlocked Only", 40, 0, 50, 10);
+        List<GuildTerritory> allTerritories = List.of(alekin, context, unlocked);
+        Map<String, WarPlannerSnapshot.TerritoryDetails> details = Map.of(
+                "Alekin", new WarPlannerSnapshot.TerritoryDetails("Alekin", List.of("Context Only"), List.of()));
+        Set<String> labelTerritories = WarPlannerScreen.shownZoneTerritoryNames(displayed);
+
+        assertEquals(Set.of("alekin", "shared territory"), labelTerritories);
+        assertEquals(allTerritories, WarPlannerScreen.visibleMapTerritories(allTerritories, displayed, false));
+        assertEquals(
+                List.of(context),
+                WarPlannerScreen.oneHopContextTerritories(allTerritories, List.of(alekin), details));
+        assertFalse(labelTerritories.contains("context only"));
+        assertFalse(labelTerritories.contains("unlocked only"));
+    }
+
+    @Test
+    void queuedMapTerritoriesShowOnlyFittedMinecraftUsernamesAndExposeFullHoverDetails() {
+        Instant now = Instant.parse("2026-08-24T12:12:19Z");
+        TerritoryQueue queue = new TerritoryQueue(
+                7,
+                "Alekin",
+                "queuer-uuid",
+                "xiaolongbao",
+                "Soup Person",
+                "Very Low",
+                "Very High",
+                now.minusSeconds(12 * 60 + 19),
+                now.plusSeconds(160),
+                List.of(
+                        new Participant("one", "One", 0),
+                        new Participant("two", "Two", 1),
+                        new Participant("three", "Three", 2)));
+
+        assertEquals("xiaolongbao", WarPlannerScreen.warQueueMapUsername(queue));
+        assertEquals("xiao…", WarPlannerScreen.fitWarQueueText("xiaolongbao", 5, String::length));
+        assertEquals(
+                List.of("Party 5/5 ·", "One, Two,", "Three"),
+                WarPlannerScreen.wrapWarQueueText("Party 5/5 · One, Two, Three", 12, String::length));
+        assertEquals(
+                List.of(
+                        "xiaolongbao/Soup Person",
+                        "Alekin · Defense Very Low/Very High",
+                        "Queued 12m 19s ago · 02:40 remaining",
+                        "Party 3/5 · One, Two, Three"),
+                WarPlannerScreen.warQueueTooltipLines(queue, now));
+        assertEquals(
+                "You own this queue · owner remains joined",
+                WarPlannerScreen.warQueueActionHint(queue, "queuer-uuid"));
+        assertEquals("Double-click to leave", WarPlannerScreen.warQueueActionHint(queue, "two"));
+        assertEquals("Double-click to join", WarPlannerScreen.warQueueActionHint(queue, "other"));
+    }
+
+    @Test
+    void timerOnlyQueueUsesUnknownMapLabelTooltipAndReservedOwnerJoinCapacity() {
+        Instant now = Instant.parse("2026-08-24T12:12:19Z");
+        TerritoryQueue provisional = new TerritoryQueue(
+                8,
+                "Alekin",
+                null,
+                null,
+                null,
+                null,
+                null,
+                now.minusSeconds(19),
+                now.plusSeconds(101),
+                List.of());
+        GuildTerritory alekin = GuildTerritory.fromCorners("Alekin", 0, 0, 20, 10);
+
+        assertEquals("Unknown", WarPlannerScreen.warQueueMapUsername(provisional));
+        assertEquals(
+                List.of(
+                        "Unknown",
+                        "Alekin · Defense Unknown",
+                        "Queued 19s ago · 01:41 remaining",
+                        "Party 1/5"),
+                WarPlannerScreen.warQueueTooltipLines(provisional, now));
+        assertEquals("Double-click to join", WarPlannerScreen.warQueueActionHint(provisional, "self"));
+        assertEquals(
+                provisional,
+                WarPlannerScreen.warQueueForTerritory(
+                        WarPlannerScreen.warQueueMapMarkers(
+                                List.of(provisional), Set.of("alekin"), Map.of("Alekin", alekin)),
+                        "Alekin"));
+
+        TerritoryQueue full = new TerritoryQueue(
+                8,
+                "Alekin",
+                null,
+                null,
+                null,
+                null,
+                null,
+                provisional.queuedAt(),
+                provisional.expiresAt(),
+                List.of(
+                        new Participant("one", "One", 1),
+                        new Participant("two", "Two", 2),
+                        new Participant("three", "Three", 3),
+                        new Participant("four", "Four", 4)));
+        assertEquals("Party 5/5 · One, Two, Three, Four", WarPlannerScreen.warQueueTooltipLines(full, now).get(3));
+        assertEquals("Queue full", WarPlannerScreen.warQueueActionHint(full, "self"));
+        assertEquals("Double-click to leave", WarPlannerScreen.warQueueActionHint(full, "four"));
+    }
+
+    @Test
+    void queuedMapLabelBoundsRemainInsideTheProjectedTerritoryBox() {
+        GuildTerritory territory = GuildTerritory.fromCorners("Alekin", 0, 0, 20, 10);
+
+        WarPlannerScreen.WarQueueLabelBounds label = WarPlannerScreen.warQueueLabelBounds(
+                territory, new MapBounds(0, 0, 100, 100), 10, 20, 2, 25, 12);
+
+        assertEquals(new WarPlannerScreen.WarQueueLabelBounds(17.5f, 24, 25, 12), label);
+        assertTrue(label.x() >= 10 && label.x() + label.width() <= 50);
+        assertTrue(label.y() >= 20 && label.y() + label.height() <= 40);
+    }
+
+    @Test
+    void queuedMapMarkersIncludeOnlyShownTerritoriesAndDeduplicateCaseInsensitively() {
+        GuildTerritory alekin = GuildTerritory.fromCorners("Alekin", 0, 0, 20, 10);
+        GuildTerritory context = GuildTerritory.fromCorners("Context Only", 20, 0, 40, 10);
+        TerritoryQueue shown = territoryQueue(1, "alekin", "Very Low", null);
+        TerritoryQueue duplicate = territoryQueue(2, "ALEKIN", "High", null);
+        TerritoryQueue hidden = territoryQueue(3, "Context Only", "Medium", null);
+        TerritoryQueue missing = territoryQueue(4, "Unknown", "Low", null);
+
+        List<WarPlannerScreen.WarQueueMapMarker> markers = WarPlannerScreen.warQueueMapMarkers(
+                List.of(shown, duplicate, hidden, missing),
+                Set.of(" ALEKIN "),
+                Map.of("Alekin", alekin, "Context Only", context));
+
+        assertEquals(List.of(new WarPlannerScreen.WarQueueMapMarker(shown, alekin)), markers);
+        assertEquals(shown, WarPlannerScreen.warQueueForTerritory(markers, "ALEKIN"));
+        assertEquals(null, WarPlannerScreen.warQueueForTerritory(markers, "Context Only"));
+        assertEquals(List.of(), WarPlannerScreen.warQueueMapMarkers(null, Set.of("alekin"), Map.of()));
+    }
+
+    @Test
+    void warMapQueueFilterUsesTheHudOwnedOrJoinedRulesWithoutItsRowLimit() {
+        TerritoryQueue unrelated = territoryQueue(1, "Unrelated", "Very Low", null);
+        TerritoryQueue owned = new TerritoryQueue(
+                2,
+                "Owned",
+                "self",
+                "Self",
+                "Self",
+                "Low",
+                null,
+                Instant.EPOCH,
+                Instant.EPOCH.plusSeconds(60),
+                List.of(new Participant("other", "Other", 0)));
+        TerritoryQueue joined = new TerritoryQueue(
+                3,
+                "Joined",
+                "other",
+                "Other",
+                "Other",
+                "Medium",
+                null,
+                Instant.EPOCH,
+                Instant.EPOCH.plusSeconds(60),
+                List.of(new Participant("SELF", "Self", 0)));
+
+        assertEquals(
+                List.of(unrelated, owned, joined),
+                WarPlannerScreen.warQueuesForMap(List.of(unrelated, owned, joined), "self", false));
+        assertEquals(
+                List.of(owned, joined),
+                WarPlannerScreen.warQueuesForMap(List.of(unrelated, owned, joined), "self", true));
+        assertEquals(
+                List.of(),
+                WarPlannerScreen.warQueuesForMap(List.of(owned, joined), null, true));
+    }
+
+    @Test
+    void queuedTerritoryPulseUsesCapturedTierAndAStablePeriodicAlpha() {
+        TerritoryQueue exactQueue = territoryQueue(1, "Alekin", "Very Low", "Very High");
+        TerritoryQueue observedQueue = territoryQueue(2, "Detlas", null, "Very High");
+
+        assertEquals("Very Low", WarPlannerScreen.warQueuePulseDefense(exactQueue));
+        assertEquals("Very High", WarPlannerScreen.warQueuePulseDefense(observedQueue));
+        Color trough = WarPlannerScreen.warQueuePulseColor(exactQueue, 0);
+        Color peak = WarPlannerScreen.warQueuePulseColor(exactQueue, 800);
+        Color observed = WarPlannerScreen.warQueuePulseColor(observedQueue, 800);
+        assertEquals(new Color(0x00AA00), new Color(trough.getRed(), trough.getGreen(), trough.getBlue()));
+        assertEquals(new Color(0x00AA00), new Color(peak.getRed(), peak.getGreen(), peak.getBlue()));
+        assertEquals(
+                new Color(0xAA0000),
+                new Color(observed.getRed(), observed.getGreen(), observed.getBlue()));
+        assertEquals(36, trough.getAlpha());
+        assertEquals(96, peak.getAlpha());
+
+        assertEquals(36, WarPlannerScreen.warQueuePulseAlpha(0));
+        assertEquals(66, WarPlannerScreen.warQueuePulseAlpha(400));
+        assertEquals(96, WarPlannerScreen.warQueuePulseAlpha(800));
+        assertEquals(66, WarPlannerScreen.warQueuePulseAlpha(1_200));
+        assertEquals(36, WarPlannerScreen.warQueuePulseAlpha(1_600));
+        assertEquals(96, WarPlannerScreen.warQueuePulseAlpha(-800));
+        assertEquals(
+                WarPlannerScreen.warQueuePulseAlpha(137),
+                WarPlannerScreen.warQueuePulseAlpha(1_737));
+        for (long elapsed = -3_200; elapsed <= 3_200; elapsed += 37) {
+            int alpha = WarPlannerScreen.warQueuePulseAlpha(elapsed);
+            assertTrue(alpha >= 36 && alpha <= 96);
+        }
+    }
+
+    @Test
+    void queuedTerritoryDoubleClickRequiresSameQueueTimeWindowAndPointerLocation() {
+        WarPlannerScreen.PendingWarQueueClick first =
+                new WarPlannerScreen.PendingWarQueueClick(42, "Alekin", 100, 80, 1_000);
+
+        assertTrue(WarPlannerScreen.isWarQueueDoubleClick(first, 42, "alekin", 102, 81, 1_350));
+        assertFalse(WarPlannerScreen.isWarQueueDoubleClick(first, 42, "Alekin", 102, 81, 1_351));
+        assertFalse(WarPlannerScreen.isWarQueueDoubleClick(first, 43, "Alekin", 102, 81, 1_200));
+        assertFalse(WarPlannerScreen.isWarQueueDoubleClick(first, 42, "Lutho", 102, 81, 1_200));
+        assertFalse(WarPlannerScreen.isWarQueueDoubleClick(first, 42, "Alekin", 104, 80, 1_200));
+        assertTrue(WarPlannerScreen.warQueueClickMoved(first, 104, 80));
+    }
+
+    @Test
     void fittedWarMapViewportCentersAndFitsRequestedBounds() {
         WarPlannerScreen.WarMapLayout layout = new WarPlannerScreen.WarMapLayout(12, 100, 400, 300, 420, 180);
         MapViewport viewport = WarPlannerScreen.fittedWarMapViewport(
@@ -116,6 +374,76 @@ class WarPlannerScreenTest {
         assertEquals(.195, viewport.pixelsPerBlock(), .0001);
         assertTrue(viewport.visibleBounds().minX() <= -1000);
         assertTrue(viewport.visibleBounds().maxX() >= 1000);
+    }
+
+    @Test
+    void fittedViewportUsesWiderCanvasAndKeepsRequestedWorldBoundsInteractive() {
+        MapBounds requested = new MapBounds(-1500, -500, 1500, 500);
+        WarPlannerScreen.WarMapLayout narrowLayout = WarPlannerScreen.warMapLayout(320, 110, 430);
+        WarPlannerScreen.WarMapLayout wideLayout = WarPlannerScreen.warMapLayout(1200, 110, 610);
+
+        MapViewport narrow = WarPlannerScreen.fittedWarMapViewport(requested, narrowLayout);
+        MapViewport wide = WarPlannerScreen.fittedWarMapViewport(requested, wideLayout);
+
+        assertTrue(wide.pixelsPerBlock() > narrow.pixelsPerBlock());
+        assertEquals(wideLayout.mapX(), wide.screenX());
+        assertEquals(wideLayout.mapY(), wide.screenY());
+        assertEquals(wideLayout.mapWidth(), wide.screenWidth());
+        assertEquals(wideLayout.mapHeight(), wide.screenHeight());
+        for (double worldX : List.of(requested.minX(), requested.maxX())) {
+            float screenX = wide.worldToScreenX(worldX);
+            assertTrue(screenX >= wideLayout.mapX() && screenX <= wideLayout.mapX() + wideLayout.mapWidth());
+            assertEquals(worldX, wide.screenToWorldX(screenX), .001);
+        }
+        for (double worldZ : List.of(requested.minZ(), requested.maxZ())) {
+            float screenY = wide.worldToScreenZ(worldZ);
+            assertTrue(screenY >= wideLayout.mapY() && screenY <= wideLayout.mapY() + wideLayout.mapHeight());
+            assertEquals(worldZ, wide.screenToWorldZ(screenY), .001);
+        }
+        assertTrue(wide.isInsideScreen(wide.worldToScreenX(requested.minX()), wide.worldToScreenZ(requested.minZ())));
+        assertTrue(wide.isInsideScreen(wide.worldToScreenX(requested.maxX()), wide.worldToScreenZ(requested.maxZ())));
+    }
+
+    @Test
+    void warMapPanAndZoomPreserveScreenGeometryAndPointerAnchor() {
+        MapViewport before = new MapViewport(100, -200, 1, 12, 110, 948, 500);
+
+        MapViewport panned = WarPlannerScreen.panWarMapViewport(before, 20, -10);
+
+        assertEquals(80, panned.centerX());
+        assertEquals(-190, panned.centerZ());
+        assertEquals(before.pixelsPerBlock(), panned.pixelsPerBlock());
+        assertEquals(before.screenWidth(), panned.screenWidth());
+        assertEquals(before.screenHeight(), panned.screenHeight());
+
+        double pointerX = 300;
+        double pointerY = 240;
+        double anchorX = panned.screenToWorldX(pointerX);
+        double anchorZ = panned.screenToWorldZ(pointerY);
+        MapViewport zoomed = WarPlannerScreen.zoomWarMapViewport(panned, pointerX, pointerY, 1.15);
+
+        assertEquals(1.15, zoomed.pixelsPerBlock(), .0001);
+        assertEquals(anchorX, zoomed.screenToWorldX(pointerX), .0001);
+        assertEquals(anchorZ, zoomed.screenToWorldZ(pointerY), .0001);
+        assertEquals(1.8, WarPlannerScreen.zoomWarMapViewport(before, pointerX, pointerY, 100).pixelsPerBlock());
+        MapViewport nearMinimum = new MapViewport(0, 0, .016, 0, 0, 100, 100);
+        assertEquals(
+                .015,
+                WarPlannerScreen.zoomWarMapViewport(nearMinimum, 50, 50, .01).pixelsPerBlock());
+    }
+
+    @Test
+    void lockedWarMapKeepsManualCameraUntilModeOrViewportChanges() {
+        WarPlannerScreen.WarMapLayout layout = WarPlannerScreen.warMapLayout(1200, 110, 610);
+
+        assertFalse(WarPlannerScreen.shouldRefitWarMap(
+                true, layout.mapWidth(), layout.mapHeight(), true, layout, true));
+        assertTrue(WarPlannerScreen.shouldRefitWarMap(
+                false, layout.mapWidth(), layout.mapHeight(), true, layout, true));
+        assertTrue(WarPlannerScreen.shouldRefitWarMap(
+                true, layout.mapWidth(), layout.mapHeight(), false, layout, true));
+        assertTrue(WarPlannerScreen.shouldRefitWarMap(
+                true, layout.mapWidth() - 1, layout.mapHeight(), true, layout, true));
     }
 
     @Test
@@ -242,6 +570,91 @@ class WarPlannerScreenTest {
         assertEquals(179.2f, WarPlannerScreen.teamSidebarWidth(640), .01f);
         assertEquals(560, WarPlannerScreen.teamEditorWidth(780));
         assertEquals(496, WarPlannerScreen.teamEditorWidth(520));
+    }
+
+    @Test
+    void adaptiveTeamsLayoutUsesCompactRailAndGridBreakpoints() {
+        float top = 118;
+        float bottom = 600;
+
+        WarPlannerScreen.TeamsLayout compact = WarPlannerScreen.teamsLayout(519, top, bottom, 4);
+        WarPlannerScreen.TeamsLayout oneColumnAtBoundary =
+                WarPlannerScreen.teamsLayout(520, top, bottom, 4);
+        WarPlannerScreen.TeamsLayout oneColumnBelowGrid =
+                WarPlannerScreen.teamsLayout(899, top, bottom, 4);
+        WarPlannerScreen.TeamsLayout twoColumnsAtBoundary =
+                WarPlannerScreen.teamsLayout(900, top, bottom, 4);
+
+        assertTrue(compact.compactAuxiliary());
+        assertEquals(1, compact.columns());
+        assertFalse(oneColumnAtBoundary.compactAuxiliary());
+        assertEquals(1, oneColumnAtBoundary.columns());
+        assertFalse(oneColumnBelowGrid.compactAuxiliary());
+        assertEquals(1, oneColumnBelowGrid.columns());
+        assertFalse(twoColumnsAtBoundary.compactAuxiliary());
+        assertEquals(2, twoColumnsAtBoundary.columns());
+    }
+
+    @Test
+    void adaptiveTeamPlacementsStayVisibleAndUseSeparateGridColumns() {
+        List<WarPlannerSnapshot.Team> teams = teams(4);
+        WarPlannerScreen.TeamsLayout layout = WarPlannerScreen.teamsLayout(1_000, 118, 600, teams.size());
+
+        List<WarPlannerScreen.TeamPlacement> placements =
+                WarPlannerScreen.teamPlacements(teams, 0, layout, true, true);
+
+        assertEquals(4, placements.size());
+        assertTrue(placements.get(0).x() < placements.get(1).x());
+        assertEquals(placements.get(0).y(), placements.get(1).y(), .01f);
+        assertEquals(2, placements.stream().map(WarPlannerScreen.TeamPlacement::x).distinct().count());
+        for (WarPlannerScreen.TeamPlacement placement : placements) {
+            assertTrue(placement.x() >= layout.cardsX());
+            assertTrue(placement.x() + placement.width() <= layout.cardsX() + layout.cardsWidth() + .01f);
+            assertTrue(placement.y() >= layout.cardsTop());
+            assertTrue(placement.visibleHeight() > 0);
+            assertTrue(placement.visibleHeight() <= placement.height());
+            assertTrue(placement.y() + placement.visibleHeight() <= layout.cardsBottom() + .01f);
+        }
+    }
+
+    @Test
+    void teamGridScrollStartBackfillsTheLastFullRow() {
+        List<WarPlannerSnapshot.Team> teams = teams(5);
+        WarPlannerScreen.TeamsLayout layout = WarPlannerScreen.teamsLayout(1_000, 118, 600, teams.size());
+
+        assertEquals(3, WarPlannerScreen.teamScrollStart(4, teams.size(), 2));
+        assertEquals(
+                List.of(3, 4),
+                WarPlannerScreen.teamPlacements(teams, 4, layout, false, false).stream()
+                        .map(WarPlannerScreen.TeamPlacement::index)
+                        .toList());
+    }
+
+    @Test
+    void compactAndRailSupportPlacementsRemainInsideTheirPanels() {
+        WarPlannerScreen.TeamsLayout compact = WarPlannerScreen.teamsLayout(519, 118, 600, 4);
+        WarPlannerScreen.TeamsLayout rail = WarPlannerScreen.teamsLayout(640, 118, 600, 4);
+
+        assertTrue(compact.compactAuxiliary());
+        assertFalse(rail.compactAuxiliary());
+        assertSupportPlacementsInside(compact);
+        assertSupportPlacementsInside(rail);
+    }
+
+    @Test
+    void clippedTeamCardsDoNotExposeInvisibleActionsOrHitArea() {
+        List<WarPlannerSnapshot.Team> teams = teams(1);
+        WarPlannerScreen.TeamsLayout shortLayout =
+                WarPlannerScreen.teamsLayout(640, 118, 138, teams.size());
+
+        WarPlannerScreen.TeamPlacement placement =
+                WarPlannerScreen.teamPlacements(teams, 0, shortLayout, true, true).getFirst();
+
+        assertEquals(20, placement.visibleHeight());
+        assertFalse(placement.fullyShows(placement.actions().managerY(), 22));
+        assertFalse(placement.fullyShows(placement.actions().selfY(), 22));
+        assertTrue(placement.contains(placement.x() + 1, placement.y() + 19));
+        assertFalse(placement.contains(placement.x() + 1, placement.y() + 21));
     }
 
     @Test
@@ -456,6 +869,9 @@ class WarPlannerScreenTest {
         MapBounds fitted = WarPlannerScreen.zonePreviewBounds(List.of(selected));
 
         assertEquals(new MapBounds(-1180, -3180, -620, -2620), fitted);
+        assertEquals(fitted, WarPlannerScreen.warMapFitBounds(List.of(selected), true));
+        assertEquals(MapCalibration.fullBounds(), WarPlannerScreen.warMapFitBounds(List.of(selected), false));
+        assertEquals(MapCalibration.fullBounds(), WarPlannerScreen.warMapFitBounds(List.of(), true));
         assertEquals(MapCalibration.fullBounds(), WarPlannerScreen.mapImageBounds());
     }
 
@@ -607,6 +1023,39 @@ class WarPlannerScreenTest {
                 List.of(),
                 List.of(),
                 List.of());
+    }
+
+    private static TerritoryQueue territoryQueue(
+            long id, String territory, String queuedDefense, String reportedDefense) {
+        return new TerritoryQueue(
+                id,
+                territory,
+                "player-" + id,
+                "Player" + id,
+                null,
+                queuedDefense,
+                reportedDefense,
+                Instant.parse("2026-08-24T12:00:00Z"),
+                Instant.parse("2026-08-24T12:15:00Z"),
+                List.of());
+    }
+
+    private static List<WarPlannerSnapshot.Team> teams(int count) {
+        return java.util.stream.IntStream.range(0, count)
+                .mapToObj(index -> new WarPlannerSnapshot.Team(
+                        index + 1L, "Team " + (index + 1), 1L, List.of()))
+                .toList();
+    }
+
+    private static void assertSupportPlacementsInside(WarPlannerScreen.TeamsLayout layout) {
+        List<WarPlannerScreen.SupportPlacement> placements = WarPlannerScreen.supportPlacements(layout);
+        assertEquals(4, placements.size());
+        for (WarPlannerScreen.SupportPlacement placement : placements) {
+            assertTrue(placement.x() >= layout.supportX());
+            assertTrue(placement.x() + placement.width() <= layout.supportX() + layout.supportWidth() + .01f);
+            assertTrue(placement.y() >= layout.supportY());
+            assertTrue(placement.y() + placement.height() <= layout.supportY() + layout.supportHeight() + .01f);
+        }
     }
 
     private static WarPlannerSnapshot.RosterMember rosterMember(

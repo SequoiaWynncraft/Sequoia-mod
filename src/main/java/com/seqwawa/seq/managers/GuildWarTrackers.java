@@ -1,22 +1,24 @@
 package com.seqwawa.seq.managers;
 
+import com.seqwawa.seq.client.SeqClient;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.fabricmc.loader.api.FabricLoader;
-import com.seqwawa.seq.client.SeqClient;
 
 /**
- * Creates the Wynntils-backed guild war tracker only when the optional
- * dependency is available.
+ * Chooses the richest available guild-war tracker while keeping live telemetry
+ * available without optional dependencies.
  */
 public final class GuildWarTrackers {
     private static final AtomicBoolean WARNED_UNAVAILABLE = new AtomicBoolean(false);
 
     private GuildWarTrackers() {}
 
-    public static GuildWarTrackerHandle createIfAvailable() {
+    public static GuildWarTrackerHandle create() {
         if (!FabricLoader.getInstance().isModLoaded("wynntils")) {
-            warnOnce("Wynntils not found; guild war tracking is disabled.", null);
-            return null;
+            SeqClient.LOGGER.info(
+                    "[GuildWarTracker] Wynntils not found; vanilla live war telemetry enabled,"
+                            + " legacy lifecycle tracking unavailable.");
+            return new VanillaGuildWarTelemetryTracker();
         }
 
         try {
@@ -26,8 +28,10 @@ public final class GuildWarTrackers {
             SeqClient.LOGGER.info("[GuildWarTracker] Wynntils detected; guild war tracking enabled.");
             return (GuildWarTrackerHandle) tracker;
         } catch (Throwable throwable) {
-            warnOnce("Wynntils guild war tracker unavailable; guild war tracking is disabled.", throwable);
-            return null;
+            warnOnce(
+                    "Wynntils guild war tracker unavailable; falling back to vanilla live war telemetry.",
+                    throwable);
+            return new VanillaGuildWarTelemetryTracker();
         }
     }
 
@@ -36,10 +40,6 @@ public final class GuildWarTrackers {
             return;
         }
 
-        if (throwable == null) {
-            SeqClient.LOGGER.warn(message);
-        } else {
-            SeqClient.LOGGER.warn("{} Cause: {}", message, throwable.toString());
-        }
+        SeqClient.LOGGER.warn("{} Cause: {}", message, throwable.toString());
     }
 }

@@ -22,7 +22,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Clickable world names in chat, so a called-out world is one click away
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
-- Seq-only war planner with timed availability, exclusive 1–5 player parties, a shared Lead + three Eco board, and collaborative territory zones
+- Seq-only war planner with timed availability, shared five-player territory queues, exclusive 1–5 player parties, a shared Lead + three Eco board, and collaborative territory zones
 - Raid tracking and announcements
 - Per-player raid gambit counts parsed natively from the raid-start roster
 - Sequoia achievements: guild-raid completion counts ranked from Bronze to Mythril
@@ -36,7 +36,8 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Fabric Loader `0.18.4` or newer
 - Fabric API `0.141.2+1.21.11`
 - Java `21`
-- Wynntils (Optional)
+- Wynntils (optional; adds legacy completed-war and queue lifecycle reporting, while live war
+  telemetry and active-class detection also work through bounded vanilla fallbacks)
 
 ## First-time setup
 
@@ -120,9 +121,16 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 
 </details>
 
+## Party finder
+
+`/seq party scan` imports the leader's current Wynn party into the active Sequoia listing. Scanned usernames that
+match verified linked players with Party Finder access become regular listing members, which enables role, kick, and
+leadership actions. Unlinked, ineligible, conflicting, or recently kicked players remain visible as observed
+username-only occupancy without receiving Sequoia member privileges.
+
 ## War planner
 
-The planner uses backend schema v2: party membership is separate from the
+The planner uses backend schema v3: party membership is separate from the
 shared Lead/Eco support slots, so support players may also join a party. The
 zone map provides palette colors, multi-party assignment, territory routes,
 responsive full-map zone previews, and production-based resource coloring. Stored
@@ -130,14 +138,17 @@ resources do not affect color. Ordinary 9k emerald income is treated as the
 baseline; territories with 18k base emerald production are highlighted as
 emerald generators.
 
-The War Planner entry and `/seq war` command only appear after the protected backend snapshot confirms that the
-current account is a Sequoia member. Members can advertise timed availability and see their own team immediately;
+The War Planner entry and `/seq war` command only appear after a compact protected backend access check confirms
+that the current account is a Sequoia member. The full planner snapshot is fetched only when the player opens or
+explicitly refreshes the screen. Members can advertise timed availability and see their own team immediately;
 authorized managers can atomically create or edit parties of one to five people, while one shared Lead and three Eco
 slots remain independent of party membership. Managers choose `HQ Team`, `VLow Munch`, or `FFA` from the team editor;
-the backend keeps HQ unique and assigns the numeric VLow/FFA suffixes. Compact team cards show each member's
-Solo/DPS/Tank capabilities without colliding with manager actions. The Zones view assigns named, colored groups of
+the backend keeps HQ unique and assigns the numeric VLow/FFA suffixes. The Teams view adapts from full-width cards
+to a one-column rail and then a balanced two-column grid, while keeping shared support, presence, composition roles,
+actions, dragging, and scrolling on the same visible layout. The Zones view assigns named, colored groups of
 territories to teams and previews each zone against the complete territory map.
 Composition capabilities, eligibility, team exclusivity, versions, and all mutations remain server-authoritative.
+
 
 ## World map
 
@@ -180,6 +191,11 @@ The settings screen includes controls for:
 - Global Sequoia UI size
 - UI theme selection
 - Update checks on startup
+- War queue HUD text size, maximum rows, and an only-my-queues filter shared with the war planner map
+- Optional queue-miss blame messages, disabled by default
+
+War tracking, planner display, and queue controls share one **Wars** category. Settings that depend on another
+control remain visible underneath it and are indented and disabled while their parent is off.
 
 Sequoia includes Default and High Contrast themes. Open **Theme editor** from the Settings
 screen to copy a theme, edit its full RGBA palette, preview changes live, and save a personal
@@ -192,7 +208,8 @@ The complete supported schema is available in [`docs/theme-template.theme.yml`](
 1. Install Fabric for Minecraft `1.21.11`.
 2. Put the Sequoia mod jar in your Minecraft `mods` folder.
 3. Install Fabric API.
-4. Install [Wynntils](https://wynntils.com) for improved class detection.
+4. Optionally install [Wynntils](https://wynntils.com) for legacy completed-war and queue lifecycle
+   reporting. Sequoia's core UI, live war telemetry, and active-class detection do not require it.
 5. Start the game and press `O`, or run `/seq`.
 
 ## License

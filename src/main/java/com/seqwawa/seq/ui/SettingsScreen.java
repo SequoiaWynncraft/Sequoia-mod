@@ -99,7 +99,7 @@ public class SettingsScreen extends Screen {
         Map<String, List<SettingWidget<?>>> temp = new LinkedHashMap<>();
 
         for (Setting<?> setting : SeqClient.getConfigManager().getSettings()) {
-            String category = setting.getCategory();
+            String category = setting.getPresentationCategory();
             SettingWidget<?> widget = createWidget(setting);
             if (widget != null) {
                 temp.computeIfAbsent(category, k -> new ArrayList<>()).add(widget);
@@ -107,9 +107,22 @@ public class SettingsScreen extends Screen {
         }
 
         categories.clear();
-        categories.putAll(temp);
+        sortedCategoryNames(temp.keySet()).forEach(category -> categories.put(category, temp.get(category)));
         collapsedCategories.clear();
         collapsedCategories.addAll(categories.keySet());
+    }
+
+    static List<String> sortedCategoryNames(Collection<String> categoryNames) {
+        if (categoryNames == null || categoryNames.isEmpty()) {
+            return List.of();
+        }
+        return categoryNames.stream()
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(
+                                (String category) -> SettingWidget.toDisplayName(category),
+                                String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(String.CASE_INSENSITIVE_ORDER))
+                .toList();
     }
 
     private SettingWidget<?> createWidget(Setting<?> setting) {
@@ -164,10 +177,14 @@ public class SettingsScreen extends Screen {
                 ? SettingWidget.toDisplayName(settingName).toLowerCase()
                 : setting.getDisplayName().toLowerCase();
         String displayCategoryName = SettingWidget.toDisplayName(categoryName).toLowerCase();
+        String persistedCategoryName = setting.getCategory().toLowerCase();
+        String displayPersistedCategoryName = SettingWidget.toDisplayName(setting.getCategory()).toLowerCase();
         return settingName.toLowerCase().contains(query)
                 || categoryName.toLowerCase().contains(query)
                 || displaySettingName.contains(query)
                 || displayCategoryName.contains(query)
+                || persistedCategoryName.contains(query)
+                || displayPersistedCategoryName.contains(query)
                 || containsIgnoreCase(setting.getDescription(), query)
                 || containsIgnoreCase(setting.getSection(), query);
     }

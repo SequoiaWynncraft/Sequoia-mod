@@ -30,20 +30,30 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
 
     @Override
     public void render(UiCanvas canvas, float mouseX, float mouseY) {
+        boolean enabled = prepareEnabledState();
         cursorBlink++;
         String fontName = SeqClient.getFontManager().getSelectedFont();
 
-        canvas.drawText(getDisplayName(), x + TEXT_BOX_MARGIN, y + 2,
-                textStyle(fontName, color(TEXT_SECONDARY), UiCanvas.VerticalAlign.TOP));
+        drawParentGuide(canvas, enabled);
+        canvas.drawText(
+                getDisplayName(),
+                indentedContentX(TEXT_BOX_MARGIN),
+                y + 2,
+                textStyle(
+                        fontName,
+                        enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                        UiCanvas.VerticalAlign.TOP));
 
         // Text box
-        float boxX = x + TEXT_BOX_MARGIN;
+        float boxX = indentedContentX(TEXT_BOX_MARGIN);
         float boxY = y + 18;
-        float boxWidth = width - TEXT_BOX_MARGIN * 2;
+        float boxWidth = indentedContentWidth(TEXT_BOX_MARGIN);
 
-        Color boxBg = editing ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT, 200);
+        Color boxBg = !enabled
+                ? color(CONTROL_INPUT_SECONDARY, 120)
+                : editing ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT, 200);
         canvas.fillRect(boxX, boxY, boxWidth, TEXT_BOX_HEIGHT, boxBg);
-        if (editing) {
+        if (enabled && editing) {
             canvas.strokeRect(boxX, boxY, boxWidth, TEXT_BOX_HEIGHT, 1, color(CONTROL_BORDER));
         }
 
@@ -55,11 +65,14 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
         canvas.scissor(boxX, boxY, boxWidth, TEXT_BOX_HEIGHT);
         String renderText = isEmpty ? "..." : displayText;
         canvas.drawText(renderText, boxX + 4, boxY + TEXT_BOX_HEIGHT / 2f,
-                textStyle(fontName, isEmpty ? color(TEXT_DISABLED, 180) : color(TEXT_PRIMARY), UiCanvas.VerticalAlign.MIDDLE));
+                textStyle(
+                        fontName,
+                        !enabled || isEmpty ? color(TEXT_DISABLED, 180) : color(TEXT_PRIMARY),
+                        UiCanvas.VerticalAlign.MIDDLE));
         canvas.restore();
 
         // Draw cursor separately so it doesn't affect text width
-        if (editing && (cursorBlink / 1000) % 2 == 0) {
+        if (enabled && editing && (cursorBlink / 1000) % 2 == 0) {
             float textW = UiRenderer.measureText(
                     editBuffer.isEmpty() ? " " : editBuffer, fontName, FONT_SIZE).width();
             float cursorX = boxX + 4 + (editBuffer.isEmpty() ? 0 : textW) + 1;
@@ -74,12 +87,12 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
 
     @Override
     public boolean mouseClicked(float mouseX, float mouseY, int button) {
-        if (button != 0)
+        if (!prepareEnabledState() || button != 0)
             return false;
 
-        float boxX = x + TEXT_BOX_MARGIN;
+        float boxX = indentedContentX(TEXT_BOX_MARGIN);
         float boxY = y + 18;
-        float boxWidth = width - TEXT_BOX_MARGIN * 2;
+        float boxWidth = indentedContentWidth(TEXT_BOX_MARGIN);
 
         if (isHovered(mouseX, mouseY, boxX, boxY, boxWidth, TEXT_BOX_HEIGHT)) {
             editing = true;
@@ -97,6 +110,9 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
 
     @Override
     public boolean keyPressed(KeyEvent keyEvent) {
+        if (!prepareEnabledState()) {
+            return false;
+        }
         if (!editing)
             return false;
 
@@ -122,6 +138,9 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
 
     @Override
     public boolean charTyped(CharacterEvent characterEvent) {
+        if (!prepareEnabledState()) {
+            return false;
+        }
         if (!editing) {
             return false;
         }
@@ -134,5 +153,14 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
 
     private void applyEditBuffer() {
         setting.setValue(editBuffer);
+    }
+
+    private boolean prepareEnabledState() {
+        boolean enabled = isEnabled();
+        if (!enabled) {
+            editing = false;
+            editBuffer = setting.getValue() != null ? setting.getValue() : "";
+        }
+        return enabled;
     }
 }

@@ -15,6 +15,7 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneCategoryDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
+import com.seqwawa.seq.model.war.WarPlannerAccess;
 import com.seqwawa.seq.model.war.WarTeamType;
 import com.seqwawa.seq.network.ApiClient;
 import java.time.Clock;
@@ -34,14 +35,17 @@ class WarPlannerManagerTest {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
 
+        gateway.accessNext = new CompletableFuture<>();
         manager.tick(true, true);
         manager.tick(true, true);
 
-        assertEquals(1, gateway.calls);
+        assertEquals(1, gateway.accessCalls);
         assertEquals(WarPlannerManager.State.LOADING, manager.state());
         assertFalse(manager.isAuthorized());
 
+        gateway.accessNext.complete(access());
         WarPlannerSnapshot snapshot = snapshot(3, true);
+        manager.refreshNow();
         gateway.next.complete(snapshot);
 
         assertEquals(WarPlannerManager.State.READY, manager.state());
@@ -51,11 +55,96 @@ class WarPlannerManagerTest {
     }
 
     @Test
+    void lightweightAccessAuthorizesWithoutLoadingFullSnapshot() {
+        FakeGateway gateway = new FakeGateway();
+        WarPlannerManager manager = manager(gateway);
+
+        manager.tick(true, true);
+
+        assertTrue(manager.isAuthorized());
+        assertFalse(manager.canManage());
+        assertNull(manager.snapshot());
+        assertEquals("self", manager.playerUuid());
+        assertEquals(Duration.ofMinutes(30), manager.ownAvailabilityRemaining());
+        assertEquals(1, gateway.accessCalls);
+        assertEquals(0, gateway.calls);
+    }
+
+    @Test
+    void resetClearsLightweightAccessState() {
+        FakeGateway gateway = new FakeGateway();
+        WarPlannerManager manager = manager(gateway);
+        authorize(manager);
+
+        manager.reset();
+
+        assertFalse(manager.isAuthorized());
+        assertNull(manager.playerUuid());
+        assertEquals(Duration.ZERO, manager.ownAvailabilityRemaining());
+        assertEquals(WarPlannerManager.State.UNKNOWN, manager.state());
+    }
+
+    @Test
+    void incompatibleAccessRefreshRevokesCachedAuthorizationAndSnapshot() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        WarPlannerManager manager = new WarPlannerManager(gateway, clock);
+        loadSnapshot(manager, gateway, snapshot(3, true));
+        gateway.accessNext = CompletableFuture.completedFuture(
+                new WarPlannerAccess(2, NOW.plusSeconds(90), "self", null));
+
+        clock.advance(Duration.ofSeconds(45));
+        manager.tick(true, true);
+
+        assertFalse(manager.isAuthorized());
+        assertNull(manager.snapshot());
+        assertNull(manager.playerUuid());
+        assertEquals(WarPlannerManager.State.OFFLINE, manager.state());
+    }
+
+    @Test
+    void explicitRefreshWaitsForAnAccessPollAlreadyInFlight() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        WarPlannerManager manager = new WarPlannerManager(gateway, clock);
+        authorize(manager);
+        gateway.accessNext = new CompletableFuture<>();
+        gateway.next = new CompletableFuture<>();
+        clock.advance(Duration.ofSeconds(45));
+        manager.tick(true, true);
+
+        CompletableFuture<WarPlannerManager.ActionResult> result = manager.refreshNow();
+
+        assertFalse(result.isDone());
+        assertEquals(0, gateway.calls);
+        gateway.accessNext.complete(access());
+        assertEquals(1, gateway.calls);
+        gateway.next.complete(snapshot(3, true));
+        assertTrue(result.join().success());
+        assertTrue(manager.canManage());
+    }
+
+    @Test
+    void successfulAvailabilityMutationImmediatelyUpdatesLightweightState() {
+        FakeGateway gateway = new FakeGateway();
+        WarPlannerManager manager = manager(gateway);
+        loadSnapshot(manager, gateway, snapshot(3, true));
+        gateway.next = new CompletableFuture<>();
+
+        CompletableFuture<WarPlannerManager.ActionResult> result = manager.clearAvailability();
+        gateway.next.complete(snapshotWithoutAvailability());
+
+        assertTrue(result.join().success());
+        assertEquals(Duration.ZERO, manager.ownAvailabilityRemaining());
+        assertEquals("self", manager.playerUuid());
+    }
+
+    @Test
     void rejectsUnknownSchemaWithoutExposingPlanner() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
-        manager.tick(true, true);
-
+        authorize(manager);
+        manager.refreshNow();
         gateway.next.complete(snapshot(1, true));
 
         assertEquals(WarPlannerManager.State.OFFLINE, manager.state());
@@ -68,8 +157,7 @@ class WarPlannerManagerTest {
     void incompatibleRefreshRevokesAnOlderAuthorizedSnapshot() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
-        manager.tick(true, true);
-        gateway.next.complete(snapshot(3, true));
+        loadSnapshot(manager, gateway, snapshot(3, true));
         gateway.next = new CompletableFuture<>();
 
         manager.refreshNow();
@@ -84,8 +172,7 @@ class WarPlannerManagerTest {
     void forbiddenResponseClearsPreviouslyAuthorizedData() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
-        manager.tick(true, true);
-        gateway.next.complete(snapshot(3, true));
+        loadSnapshot(manager, gateway, snapshot(3, true));
         gateway.next = new CompletableFuture<>();
 
         manager.refreshNow();
@@ -102,8 +189,7 @@ class WarPlannerManagerTest {
     void countdownUsesBackendServerTimeOffset() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
-        manager.tick(true, true);
-        gateway.next.complete(snapshot(3, false));
+        loadSnapshot(manager, gateway, snapshot(3, false));
 
         assertEquals(Duration.ofMinutes(30), manager.ownAvailabilityRemaining());
     }
@@ -112,8 +198,7 @@ class WarPlannerManagerTest {
     void regularMemberCannotDispatchManagementMutation() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
-        manager.tick(true, true);
-        gateway.next.complete(snapshot(3, false));
+        loadSnapshot(manager, gateway, snapshot(3, false));
 
         var result = manager.saveTeam(null, new TeamDraft(
                 WarTeamType.VLOW_MUNCH, null, List.of(new TeamMemberDraft("self")))).join();
@@ -128,8 +213,7 @@ class WarPlannerManagerTest {
     void regularMemberCannotDispatchWarChatPing() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
-        manager.tick(true, true);
-        gateway.next.complete(snapshot(3, false));
+        loadSnapshot(manager, gateway, snapshot(3, false));
 
         CompletableFuture<WarPlannerManager.ActionResult> result = manager.pingPlayer("target");
 
@@ -142,8 +226,7 @@ class WarPlannerManagerTest {
     void managerCanDispatchWarChatPing() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
-        manager.tick(true, true);
-        gateway.next.complete(snapshot(3, true));
+        loadSnapshot(manager, gateway, snapshot(3, true));
         gateway.next = new CompletableFuture<>();
 
         CompletableFuture<WarPlannerManager.ActionResult> result = manager.pingPlayer("target");
@@ -157,8 +240,7 @@ class WarPlannerManagerTest {
     void regularMemberCanDispatchOwnTeamMutation() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
-        manager.tick(true, true);
-        gateway.next.complete(snapshot(3, false));
+        loadSnapshot(manager, gateway, snapshot(3, false));
         gateway.next = new CompletableFuture<>();
 
         CompletableFuture<WarPlannerManager.ActionResult> result = manager.joinTeam(7L);
@@ -173,8 +255,7 @@ class WarPlannerManagerTest {
     void regularMemberCanReplaceOwnDiscordCompositionRoles() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
-        manager.tick(true, true);
-        gateway.next.complete(snapshot(3, false));
+        loadSnapshot(manager, gateway, snapshot(3, false));
         gateway.next = new CompletableFuture<>();
 
         CompletableFuture<WarPlannerManager.ActionResult> result =
@@ -190,8 +271,7 @@ class WarPlannerManagerTest {
     void managerCanReplaceTheSharedHqTerritory() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
-        manager.tick(true, true);
-        gateway.next.complete(snapshot(3, true));
+        loadSnapshot(manager, gateway, snapshot(3, true));
         gateway.next = new CompletableFuture<>();
 
         CompletableFuture<WarPlannerManager.ActionResult> result = manager.setHqTerritory("Detlas", 42L);
@@ -206,8 +286,7 @@ class WarPlannerManagerTest {
     void managerRequiredMutationDowngradesCachedSnapshotToViewOnly() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
-        manager.tick(true, true);
-        gateway.next.complete(snapshot(3, true));
+        loadSnapshot(manager, gateway, snapshot(3, true));
         gateway.next = new CompletableFuture<>();
 
         CompletableFuture<WarPlannerManager.ActionResult> result = manager.deleteTeam(7L, 3L);
@@ -228,9 +307,8 @@ class WarPlannerManagerTest {
         for (int status : List.of(400, 404, 409, 422, 429)) {
             FakeGateway gateway = new FakeGateway();
             WarPlannerManager manager = manager(gateway);
-            manager.tick(true, true);
             WarPlannerSnapshot cached = snapshot(3, true);
-            gateway.next.complete(cached);
+            loadSnapshot(manager, gateway, cached);
             gateway.next = new CompletableFuture<>();
 
             CompletableFuture<WarPlannerManager.ActionResult> result = manager.setAvailability(30);
@@ -255,8 +333,7 @@ class WarPlannerManagerTest {
         for (Object[] failure : failures) {
             FakeGateway gateway = new FakeGateway();
             WarPlannerManager manager = manager(gateway);
-            manager.tick(true, true);
-            gateway.next.complete(snapshot(3, true));
+            loadSnapshot(manager, gateway, snapshot(3, true));
             gateway.next = new CompletableFuture<>();
 
             CompletableFuture<WarPlannerManager.ActionResult> result = manager.setAvailability(30);
@@ -278,8 +355,7 @@ class WarPlannerManagerTest {
     void staleGuildAuthorizationDependencyClearsSensitiveSnapshotButUsesOfflineRetry() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
-        manager.tick(true, true);
-        gateway.next.complete(snapshot(3, true));
+        loadSnapshot(manager, gateway, snapshot(3, true));
         gateway.next = new CompletableFuture<>();
 
         CompletableFuture<WarPlannerManager.ActionResult> result = manager.refreshNow();
@@ -298,8 +374,7 @@ class WarPlannerManagerTest {
     void moveAndDeleteDispatchCapturedVersionsThroughGateway() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
-        manager.tick(true, true);
-        gateway.next.complete(snapshot(3, true));
+        loadSnapshot(manager, gateway, snapshot(3, true));
         gateway.next = new CompletableFuture<>();
         TeamMemberMoveDraft move = new TeamMemberMoveDraft(1L, 2L, 3L, 4L);
 
@@ -332,16 +407,15 @@ class WarPlannerManagerTest {
         MutableClock clock = new MutableClock(NOW);
         WarPlannerManager manager = new WarPlannerManager(gateway, clock);
         manager.tick(true, true);
-        gateway.next.complete(snapshot(3, true));
-        gateway.next = new CompletableFuture<>();
 
         clock.advance(Duration.ofSeconds(44));
         manager.tick(true, true);
-        assertEquals(1, gateway.calls);
+        assertEquals(1, gateway.accessCalls);
 
         clock.advance(Duration.ofSeconds(1));
         manager.tick(true, true);
-        assertEquals(2, gateway.calls);
+        assertEquals(2, gateway.accessCalls);
+        assertEquals(0, gateway.calls, "background ticks must not fetch the full snapshot");
     }
 
     @Test
@@ -349,24 +423,42 @@ class WarPlannerManagerTest {
         FakeGateway gateway = new FakeGateway();
         MutableClock clock = new MutableClock(NOW);
         WarPlannerManager manager = new WarPlannerManager(gateway, clock);
+        gateway.accessNext = new CompletableFuture<>();
         manager.tick(true, true);
         long[] expectedBackoffSeconds = {5, 10, 20, 40, 80, 120};
 
         for (int failure = 0; failure < expectedBackoffSeconds.length; failure++) {
-            gateway.next.completeExceptionally(new IllegalStateException("offline"));
-            gateway.next = new CompletableFuture<>();
+            gateway.accessNext.completeExceptionally(new IllegalStateException("offline"));
+            gateway.accessNext = new CompletableFuture<>();
             clock.advance(Duration.ofSeconds(expectedBackoffSeconds[failure] - 1));
             manager.tick(true, true);
-            assertEquals(failure + 1, gateway.calls);
+            assertEquals(failure + 1, gateway.accessCalls);
 
             clock.advance(Duration.ofSeconds(1));
             manager.tick(true, true);
-            assertEquals(failure + 2, gateway.calls);
+            assertEquals(failure + 2, gateway.accessCalls);
         }
     }
 
     private static WarPlannerManager manager(FakeGateway gateway) {
         return new WarPlannerManager(gateway, Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    private static void authorize(WarPlannerManager manager) {
+        manager.tick(true, true);
+        assertTrue(manager.isAuthorized());
+    }
+
+    private static void loadSnapshot(
+            WarPlannerManager manager, FakeGateway gateway, WarPlannerSnapshot snapshot) {
+        authorize(manager);
+        manager.refreshNow();
+        gateway.next.complete(snapshot);
+    }
+
+    private static WarPlannerAccess access() {
+        Instant serverNow = NOW.plusSeconds(90);
+        return new WarPlannerAccess(1, serverNow, "self", serverNow.plus(Duration.ofMinutes(30)));
     }
 
     private static WarPlannerSnapshot snapshot(int schema, boolean canManage) {
@@ -384,6 +476,20 @@ class WarPlannerManagerTest {
                 List.of(),
                 List.of("Ragni"),
                 List.of());
+    }
+
+    private static WarPlannerSnapshot snapshotWithoutAvailability() {
+        WarPlannerSnapshot current = snapshot(3, true);
+        WarPlannerSnapshot.RosterMember caller = current.caller();
+        return new WarPlannerSnapshot(
+                current.schemaVersion(),
+                current.serverTime(),
+                current.self(),
+                current.discordRolesAvailable(),
+                List.of(new WarPlannerSnapshot.RosterMember(
+                        caller.playerUuid(), caller.minecraftUsername(), caller.discordId(), caller.discordUsername(),
+                        caller.compositionRoles(), caller.online(), false, null, caller.teamId())),
+                current.teams(), current.support(), current.zones(), current.territories(), current.territoryDetails());
     }
 
     private static final class MutableClock extends Clock {
@@ -421,7 +527,10 @@ class WarPlannerManagerTest {
 
     private static final class FakeGateway implements WarPlannerManager.Gateway {
         private CompletableFuture<WarPlannerSnapshot> next = new CompletableFuture<>();
+        private CompletableFuture<WarPlannerAccess> accessNext =
+                CompletableFuture.completedFuture(WarPlannerManagerTest.access());
         private int calls;
+        private int accessCalls;
         private String movedPlayerUuid;
         private TeamMemberMoveDraft moveDraft;
         private long deleteVersion;
@@ -431,6 +540,11 @@ class WarPlannerManagerTest {
         private CompletableFuture<WarPlannerSnapshot> call() {
             calls++;
             return next;
+        }
+
+        @Override public CompletableFuture<WarPlannerAccess> access() {
+            accessCalls++;
+            return accessNext;
         }
 
         @Override public CompletableFuture<WarPlannerSnapshot> snapshot() { return call(); }

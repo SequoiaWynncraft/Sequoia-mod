@@ -68,12 +68,17 @@ public final class ChatRegexFilterManager {
         this.gazDeathMessageEffect = Objects.requireNonNull(gazDeathMessageEffect);
         Setting.BooleanSetting economySetting =
                 new Setting.BooleanSetting("economy", SETTINGS_CATEGORY, false);
+        economySetting.setParentSetting(enabledSetting);
         economyAlertsOnlySetting =
                 new Setting.BooleanSetting("economy_resource_alerts_only", SETTINGS_CATEGORY, false);
-        economyAlertsOnlySetting.setVisibilityCondition(economySetting::getValue);
+        economyAlertsOnlySetting.setParentSetting(economySetting);
+        Setting.BooleanSetting guildBankSetting =
+                new Setting.BooleanSetting("guild_bank", SETTINGS_CATEGORY, false);
+        guildBankSetting.setParentSetting(enabledSetting);
         Setting.BooleanSetting removeTheCatSetting =
                 new Setting.BooleanSetting("remove_the_cat", SETTINGS_CATEGORY, false);
         removeTheCatSetting.setPresentation("Remove the cat", null, null);
+        removeTheCatSetting.setParentSetting(enabledSetting);
         removeTheCatSetting.setVisibilityCondition(easterEggsEnabled);
         builtInFilters = List.of(
                 new BuiltInFilter(
@@ -82,7 +87,7 @@ public final class ChatRegexFilterManager {
                         (message, normalized) -> matchesEconomy(normalized)),
                 new BuiltInFilter(
                         "guild_bank",
-                        new Setting.BooleanSetting("guild_bank", SETTINGS_CATEGORY, false),
+                        guildBankSetting,
                         (message, normalized) -> GUILD_BANK_PATTERN.matcher(normalized).matches()),
                 new BuiltInFilter(
                         "remove_the_cat",

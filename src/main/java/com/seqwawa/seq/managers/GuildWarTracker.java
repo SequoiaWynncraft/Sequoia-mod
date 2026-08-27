@@ -1,6 +1,10 @@
 package com.seqwawa.seq.managers;
 
+import com.seqwawa.seq.model.GuildWarQueueCancellation;
 import com.seqwawa.seq.model.GuildWarQueueSubmission;
+import com.seqwawa.seq.model.WarStatusUpdate;
+import com.seqwawa.seq.model.WarTowerUpdate;
+import com.seqwawa.seq.model.WynnClassType;
 import com.wynntils.core.WynntilsMod;
 import com.wynntils.core.components.Models;
 import com.wynntils.models.character.event.CharacterDeathEvent;
@@ -32,38 +36,52 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.GuildWarSubmission;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
+import com.seqwawa.seq.utils.WynnClassCache;
 
 /**
- * Tracks active guild wars via Wynntils tower state and relays one structured
- * summary when the war completes, disappears, or the local player dies.
+ * Tracks the optional Wynntils guild-war lifecycle and relays one structured
+ * legacy summary when the war completes, disappears, or the local player dies.
+ * Live presence and vanilla tower metrics are delegated to the same scalar
+ * telemetry state machine used by the no-Wynntils implementation.
  */
 public final class GuildWarTracker implements GuildWarTrackerHandle {
     private static final double TRACKING_RADIUS_SQ = 120 * 120;
     private static final Pattern VALID_USERNAME = Pattern.compile("^[a-zA-Z0-9_]{3,16}$");
     private static final Pattern TERRITORY_CAPTURED = Pattern.compile("(?i)Territory\\s+Captured");
     private static final Pattern CAPTURED_TERRITORY = Pattern.compile("(?i)Captured\\s+\"([^\"]+)\"");
-    private static final Pattern QUEUE_START = Pattern.compile("(?i)The\\s+war\\s+for\\s+([\\w' \\-]+)\\s+will");
     private static final Pattern SEASON_RATING = Pattern.compile("(?i)\\+\\s*(\\d+)\\s+Season(?:al)?\\s+Rating");
     private static final Pattern QUEUE_NAME = Pattern.compile("Attacking: (.+)");
-    private static final Pattern QUEUE_DEFENSE = Pattern.compile("Territory Defences: §.(.+)");
-    private static final Pattern QUEUE_TIMER = Pattern.compile("Time to Start: §.(\\d+)m");
+    private static final Pattern QUEUE_DEFENSE = Pattern.compile(
+            "Territory Defences: (Very Low|Low|Medium|High|Very High)");
+    private static final Pattern TERRITORY_CAPTURED_BY_GUILD = Pattern.compile(
+            "(?i)\\[[^\\]]{1,32}]\\s+captured\\s+the\\s+territory\\s+(.{1,128}?)\\.");
+    private static final Pattern ACTIVE_ATTACK_REFUNDED = Pattern.compile(
+            "(?i)Your\\s+active\\s+attack\\s+was\\s+cancell?ed\\s+and\\s+refunded\\s+to\\s+your"
+                    + "(?:\\s+headquarters?\\.)?");
     private static final Set<String> DEFENSE_LEVELS = Set.of("Very Low", "Low", "Medium", "High", "Very High");
-    private static final long QUEUE_ATTEMPT_TIMEOUT_MS = 2500L;
+    private static final long QUEUE_ATTEMPT_TIMEOUT_MS = 15_000L;
+    private static final long QUEUE_CANCELLATION_CHAT_WINDOW_MS = 10_000L;
+    static final long STATUS_HEARTBEAT_MS = LiveWarTelemetryTracker.STATUS_HEARTBEAT_MS;
+    static final long TOWER_HEARTBEAT_MS = LiveWarTelemetryTracker.TOWER_HEARTBEAT_MS;
 
     private final WarInfoProvider warInfoProvider;
     private final PlayerContext playerContext;
     private final SubmissionPublisher submissionPublisher;
     private final BooleanSupplier trackingEnabled;
     private final LongSupplier clock;
+    private final LiveWarTelemetryTracker liveTelemetryTracker;
 
     private WarContext activeContext;
     private String lastProcessedBattleId;
     private int lastProcessedStateHash;
     private boolean wynnDeathListenerRegistered;
+    private PendingQueueAttempt pendingQueueAttempt;
+    private String activeQueueTerritory;
+    private PendingQueueCancellation pendingQueueCancellation;
 
     public GuildWarTracker() {
         this(
-                () -> Models.GuildWarTower.getWarBattleInfo().orElse(null),
+                new RuntimeWarInfoProvider(),
                 new RuntimePlayerContext(),
                 new SubmissionPublisher() {
                     @Override
@@ -74,6 +92,26 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
                     @Override
                     public boolean publishQueue(GuildWarQueueSubmission submission) {
                         return ConnectionManager.getInstance().sendGuildWarQueue(submission);
+                    }
+
+                    @Override
+                    public boolean publishQueueCancellation(GuildWarQueueCancellation cancellation) {
+                        return ConnectionManager.getInstance().sendGuildWarQueueCancellation(cancellation);
+                    }
+
+                    @Override
+                    public boolean liveTelemetryReady() {
+                        return ConnectionManager.isLiveWarTelemetryReady();
+                    }
+
+                    @Override
+                    public boolean publishWarStatus(WarStatusUpdate update) {
+                        return ConnectionManager.getInstance().sendWarStatus(update);
+                    }
+
+                    @Override
+                    public boolean publishWarTowerUpdate(WarTowerUpdate update) {
+                        return ConnectionManager.getInstance().sendWarTowerUpdate(update);
                     }
                 },
                 () -> SeqClient.getTrackGuildWarsSetting() == null
@@ -94,6 +132,44 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         this.submissionPublisher = Objects.requireNonNull(submissionPublisher, "submissionPublisher");
         this.trackingEnabled = Objects.requireNonNull(trackingEnabled, "trackingEnabled");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.liveTelemetryTracker = new LiveWarTelemetryTracker(
+                new LiveWarTelemetryTracker.PlayerContext() {
+                    @Override
+                    public boolean warModeActive() {
+                        return playerContext.warModeActive();
+                    }
+
+                    @Override
+                    public WynnClassType localClassType() {
+                        return playerContext.localClassType();
+                    }
+
+                    @Override
+                    public LiveWarTelemetryTracker.WorldPosition worldPosition() {
+                        WorldPosition position = playerContext.worldPosition();
+                        return position == null
+                                ? null
+                                : new LiveWarTelemetryTracker.WorldPosition(position.x(), position.z());
+                    }
+                },
+                new LiveWarTelemetryTracker.Publisher() {
+                    @Override
+                    public boolean ready() {
+                        return submissionPublisher.liveTelemetryReady();
+                    }
+
+                    @Override
+                    public boolean publishWarStatus(WarStatusUpdate update) {
+                        return submissionPublisher.publishWarStatus(update);
+                    }
+
+                    @Override
+                    public boolean publishWarTowerUpdate(WarTowerUpdate update) {
+                        return submissionPublisher.publishWarTowerUpdate(update);
+                    }
+                },
+                trackingEnabled,
+                clock);
         if (registerDeathListener) {
             ensureDeathListenerRegistered();
         }
@@ -102,10 +178,15 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     public void tick() {
         ensureDeathListenerRegistered();
         if (!trackingEnabled.getAsBoolean()) {
-            reset();
+            liveTelemetryTracker.tick(null);
+            clearActiveWarContext();
+            pendingQueueAttempt = null;
+            pendingQueueCancellation = null;
             return;
         }
-        trackWarState();
+        WarBattleInfo info = warInfoProvider.getCurrentWar();
+        trackWarState(info);
+        liveTelemetryTracker.tick(toLiveObservation(info));
     }
 
     public void onSystemChat(Component message) {
@@ -118,7 +199,66 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             return;
         }
 
+        attemptQueueConfirmation(cleaned);
+        attemptQueueCancellation(cleaned);
         attemptTerritoryCapture(cleaned);
+    }
+
+    private void attemptQueueCancellation(String cleaned) {
+        if (!trackingEnabled.getAsBoolean()) {
+            pendingQueueCancellation = null;
+            return;
+        }
+
+        long now = clock.getAsLong();
+        if (pendingQueueCancellation != null && pendingQueueCancellation.expiresAtEpochMs() < now) {
+            pendingQueueCancellation = null;
+        }
+
+        Matcher capture = TERRITORY_CAPTURED_BY_GUILD.matcher(cleaned);
+        if (capture.find()) {
+            String territory = trimToNull(capture.group(1));
+            if (territory != null
+                    && (activeQueueTerritory == null || activeQueueTerritory.equalsIgnoreCase(territory))) {
+                pendingQueueCancellation =
+                        new PendingQueueCancellation(territory, now + QUEUE_CANCELLATION_CHAT_WINDOW_MS);
+            }
+        }
+
+        if (!ACTIVE_ATTACK_REFUNDED.matcher(cleaned).find() || pendingQueueCancellation == null) {
+            return;
+        }
+
+        PendingQueueCancellation cancellation = pendingQueueCancellation;
+        pendingQueueCancellation = null;
+        submitQueueCancellation(cancellation.territory());
+    }
+
+    private void attemptQueueConfirmation(String cleaned) {
+        if (pendingQueueAttempt == null) {
+            return;
+        }
+        if (!trackingEnabled.getAsBoolean()) {
+            pendingQueueAttempt = null;
+            return;
+        }
+        long now = clock.getAsLong();
+        if (pendingQueueAttempt.expiresAtEpochMs() < now) {
+            pendingQueueAttempt = null;
+            return;
+        }
+        WarTerritoryQueueManager.QueueConfirmation confirmation =
+                WarTerritoryQueueManager.parseQueueConfirmation(cleaned).orElse(null);
+        if (confirmation == null
+                || !pendingQueueAttempt.territory().equalsIgnoreCase(confirmation.territory())) {
+            return;
+        }
+
+        PendingQueueAttempt confirmed = pendingQueueAttempt;
+        pendingQueueAttempt = null;
+        pendingQueueCancellation = null;
+        int queueMinutes = Math.max(1, (confirmation.durationSeconds() + 59) / 60);
+        submitQueue(new QueueAttemptInfo(confirmed.territory(), confirmed.rating(), queueMinutes));
     }
 
     private void attemptTerritoryCapture(String cleaned) {
@@ -180,6 +320,14 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     }
 
     public void reset() {
+        warInfoProvider.resetTowerMetrics();
+        liveTelemetryTracker.reset();
+        clearActiveWarContext();
+        pendingQueueAttempt = null;
+        pendingQueueCancellation = null;
+    }
+
+    private void clearActiveWarContext() {
         activeContext = null;
         lastProcessedBattleId = null;
         lastProcessedStateHash = 0;
@@ -194,26 +342,22 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         if (!mName.find()) {
             return;
         }
-        if (!item.getHoverName().getString().matches("^§.§lAttack.*$")) {
+        String itemName = PacketTextNormalizer.normalizeForParsing(item.getHoverName().getString());
+        if (!itemName.startsWith("Attack")) {
             return;
         }
         String territoryName = mName.group(1).trim();
         String defense = null;
-        int timer = -1;
 
         for (Component component : item.getTooltipLines(Item.TooltipContext.EMPTY, Minecraft.getInstance().player, TooltipFlag.NORMAL)) {
-            String lineContent = component.getString();
+            String lineContent = PacketTextNormalizer.normalizeForParsing(component.getString());
             Matcher mDefense = QUEUE_DEFENSE.matcher(lineContent);
             if (mDefense.find()) {
                 defense = mDefense.group(1);
             }
-            Matcher mTimer = QUEUE_TIMER.matcher(lineContent);
-            if (mTimer.find()) {
-                timer = Integer.parseInt(mTimer.group(1));
-            }
         }
 
-        if (defense == null || timer == -1) {
+        if (defense == null) {
             SeqClient.LOGGER.warn("[GuildWarTracker] Failed to parse queue item tooltip, territory='{}'", territoryName);
             return;
         }
@@ -223,11 +367,21 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             return;
         }
 
-        submitQueue(new QueueAttemptInfo(territoryName, defense, timer));
+        rememberQueueAttempt(territoryName, defense);
     }
 
-    private void trackWarState() {
-        WarBattleInfo info = warInfoProvider.getCurrentWar();
+    void rememberQueueAttempt(String territory, String defense) {
+        String normalizedTerritory = trimToNull(territory);
+        String normalizedDefense = trimToNull(defense);
+        if (normalizedTerritory == null || !DEFENSE_LEVELS.contains(normalizedDefense)) {
+            return;
+        }
+        long now = clock.getAsLong();
+        pendingQueueAttempt = new PendingQueueAttempt(
+                normalizedTerritory, normalizedDefense, now + QUEUE_ATTEMPT_TIMEOUT_MS);
+    }
+
+    private void trackWarState(WarBattleInfo info) {
         if (info != null) {
             String battleId = buildBattleId(info);
             int stateHash = hashState(info.getCurrentState());
@@ -265,8 +419,22 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             if (!activeContext.submissionSent) {
                 requestSubmission(activeContext.info, activeContext, true);
             }
-            reset();
+            clearActiveWarContext();
+            pendingQueueAttempt = null;
         }
+    }
+
+    private LiveWarTelemetryTracker.WarObservation toLiveObservation(WarBattleInfo info) {
+        if (info == null) {
+            return null;
+        }
+        String territory = trimToNull(info.getTerritory());
+        if (territory == null) {
+            return null;
+        }
+        String battleId = activeContext == null ? buildBattleId(info) : activeContext.id;
+        return new LiveWarTelemetryTracker.WarObservation(
+                territory, battleId, warInfoProvider.towerUpdate(info));
     }
 
     private void ensureDeathListenerRegistered() {
@@ -384,6 +552,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         );
 
         if (submissionPublisher.publishQueue(submission)) {
+            activeQueueTerritory = info.territory();
             return;
         }
 
@@ -393,6 +562,31 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
                 info.rating(),
                 info.queueMinutes()
         );
+    }
+
+    private void submitQueueCancellation(String territory) {
+        String localUuid = trimToNull(playerContext.localUuid());
+        String normalizedTerritory = trimToNull(territory);
+        if (localUuid == null || normalizedTerritory == null) {
+            return;
+        }
+
+        GuildWarQueueCancellation cancellation = new GuildWarQueueCancellation(
+                normalizedTerritory,
+                localUuid,
+                toRfc3339(clock.getAsLong()));
+        SeqClient.LOGGER.info(
+                "[GuildWarTracker] Submitting queue cancellation territory='{}' reason=captured_by_other_guild",
+                normalizedTerritory);
+        if (submissionPublisher.publishQueueCancellation(cancellation)) {
+            if (activeQueueTerritory != null && activeQueueTerritory.equalsIgnoreCase(normalizedTerritory)) {
+                activeQueueTerritory = null;
+            }
+            return;
+        }
+        SeqClient.LOGGER.warn(
+                "[GuildWarTracker] Submission failed queue cancellation territory='{}'",
+                normalizedTerritory);
     }
 
     private WarSummary buildSummary(WarBattleInfo info) {
@@ -428,8 +622,19 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
 
     private String buildBattleId(WarBattleInfo info) {
         WarTowerState initial = info.getInitialState();
-        long timestamp = initial != null ? initial.timestamp() : clock.getAsLong();
         String territory = trimToNull(info.getTerritory());
+        String activeTerritory = activeContext == null || activeContext.info == null
+                ? null
+                : trimToNull(activeContext.info.getTerritory());
+        if ((initial == null || initial.timestamp() <= 0)
+                && territory != null
+                && activeTerritory != null
+                && territory.equalsIgnoreCase(activeTerritory)) {
+            return activeContext.id;
+        }
+        long timestamp = initial != null && initial.timestamp() > 0
+                ? initial.timestamp()
+                : clock.getAsLong();
         return (territory == null ? "unknown" : territory) + ":" + timestamp;
     }
 
@@ -541,6 +746,12 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
 
     interface WarInfoProvider {
         WarBattleInfo getCurrentWar();
+
+        default WarTowerUpdate towerUpdate(WarBattleInfo info) {
+            return null;
+        }
+
+        default void resetTowerMetrics() {}
     }
 
     interface PlayerContext {
@@ -549,16 +760,48 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         String localUuid();
 
         List<String> nearbyPlayerNames(double radiusSq);
+
+        default boolean warModeActive() {
+            return false;
+        }
+
+        default WynnClassType localClassType() {
+            return null;
+        }
+
+        default WorldPosition worldPosition() {
+            return null;
+        }
     }
 
     interface SubmissionPublisher {
         boolean publishWar(GuildWarSubmission submission);
         boolean publishQueue(GuildWarQueueSubmission submission);
+
+        boolean publishQueueCancellation(GuildWarQueueCancellation cancellation);
+
+        default boolean liveTelemetryReady() {
+            return true;
+        }
+
+        default boolean publishWarStatus(WarStatusUpdate update) {
+            return false;
+        }
+
+        default boolean publishWarTowerUpdate(WarTowerUpdate update) {
+            return false;
+        }
     }
 
     private record QueueAttemptInfo(String territory, String rating, int queueMinutes) {}
 
+    private record PendingQueueAttempt(String territory, String rating, long expiresAtEpochMs) {}
+
+    private record PendingQueueCancellation(String territory, long expiresAtEpochMs) {}
+
     private record WarSummary(String territory, GuildWarSubmission.TowerStats stats) {}
+
+    record WorldPosition(int x, int z) {}
 
     private static final class WarContext {
         private final String id;
@@ -608,15 +851,56 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
                 if (minecraft.player.distanceToSqr(other) > radiusSq) {
                     continue;
                 }
-                String name = other.getGameProfile() != null
-                        ? other.getName().getString()
-                        : other.getName().getString();
+                String name = other.getName().getString();
                 if (trimToNull(name) != null) {
                     uniqueNames.add(name.trim());
                 }
             }
 
             return uniqueNames.isEmpty() ? List.of() : List.copyOf(uniqueNames);
+        }
+
+        @Override
+        public boolean warModeActive() {
+            WarPlannerManager manager = SeqClient.getWarPlannerManager();
+            if (manager == null) {
+                return false;
+            }
+            Duration remaining = manager.ownAvailabilityRemaining();
+            return remaining != null && !remaining.isZero() && !remaining.isNegative();
+        }
+
+        @Override
+        public WynnClassType localClassType() {
+            if (!Models.Character.hasCharacter()) {
+                return null;
+            }
+            var classType = Models.Character.getClassType();
+            return classType == null ? null : WynnClassCache.parseClassType(classType.name());
+        }
+
+        @Override
+        public WorldPosition worldPosition() {
+            Player player = Minecraft.getInstance().player;
+            return player == null ? null : new WorldPosition(player.getBlockX(), player.getBlockZ());
+        }
+    }
+
+    private static final class RuntimeWarInfoProvider implements WarInfoProvider {
+        @Override
+        public WarBattleInfo getCurrentWar() {
+            return Models.GuildWarTower.getWarBattleInfo().orElse(null);
+        }
+
+        @Override
+        public WarTowerUpdate towerUpdate(WarBattleInfo info) {
+            String territory = info == null ? null : trimToNull(info.getTerritory());
+            return MinecraftWarTowerTracker.getInstance().snapshot(territory);
+        }
+
+        @Override
+        public void resetTowerMetrics() {
+            MinecraftWarTowerTracker.getInstance().reset();
         }
     }
 }
