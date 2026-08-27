@@ -201,6 +201,21 @@ public final class WarPlannerScreen extends Screen {
         if (manager != null) {
             showResult(manager.refreshNow());
         }
+        refreshQueueViewer();
+    }
+
+    private void refreshQueueViewer() {
+        if (queueManager == null) {
+            return;
+        }
+        queueManager.refreshForViewer().whenComplete((result, error) -> {
+            if (error == null && result != null && result.success()) {
+                return;
+            }
+            SeqClient.mc.execute(() -> flashMessage = error != null
+                    ? "War queue request failed."
+                    : result == null ? "War queue request failed." : result.message());
+        });
     }
 
     @Override
