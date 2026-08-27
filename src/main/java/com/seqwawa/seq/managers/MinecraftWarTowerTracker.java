@@ -80,11 +80,28 @@ public final class MinecraftWarTowerTracker {
             return null;
         }
 
-        return new WarTowerUpdate(
-                newest.tower.territory(),
-                Math.clamp(newest.progress, 0.0f, 1.0f),
-                newest.tower.effectiveHealth(),
-                newest.tower.towerDps());
+        return toUpdate(newest);
+    }
+
+    /**
+     * Returns the newest parsed tower together with its stable vanilla boss-bar
+     * identity. This is the authoritative war observation when Wynntils is not
+     * installed.
+     */
+    public TowerSnapshot latestSnapshot() {
+        UUID newestId = null;
+        TrackedBossBar newest = null;
+        for (Map.Entry<UUID, TrackedBossBar> entry : bars.entrySet()) {
+            TrackedBossBar bar = entry.getValue();
+            if (bar.tower == null || !Float.isFinite(bar.progress)) {
+                continue;
+            }
+            if (newest == null || bar.lastUpdatedOrder > newest.lastUpdatedOrder) {
+                newestId = entry.getKey();
+                newest = bar;
+            }
+        }
+        return newest == null ? null : new TowerSnapshot(newestId, toUpdate(newest));
     }
 
     /** Clears all packet-derived state at a connection/world boundary. */
@@ -98,6 +115,7 @@ public final class MinecraftWarTowerTracker {
             return;
         }
         TrackedBossBar bar = getOrCreate(id);
+        bar.resetLifecycle();
         bar.progress = progress;
         applyName(bar, name);
     }
@@ -152,8 +170,10 @@ public final class MinecraftWarTowerTracker {
                 return null;
             }
 
-            // Match the backend war-log formulas: remaining EHP is floored like
+            // Match the backend war-log formulas: effective health is floored like
             // Wynntils, while expected outgoing tower DPS is rounded like %.0f.
+            // Publication retains the first effective-health value for this bar
+            // lifecycle as initial EHP while the boss-bar progress keeps changing.
             double effectiveHealth = health / (1.0 - defense / 100.0);
             double towerDps = damageHigh * 5d / 6d * attackSpeed;
             if (!isNonnegativeLongValue(effectiveHealth) || !isNonnegativeLongValue(towerDps)) {
@@ -180,11 +200,25 @@ public final class MinecraftWarTowerTracker {
             bar.tower = null;
             return;
         }
+        if (bar.initialEffectiveHealth == null
+                || bar.initialTerritory == null
+                || !bar.initialTerritory.equalsIgnoreCase(parsed.territory())) {
+            bar.initialTerritory = parsed.territory();
+            bar.initialEffectiveHealth = parsed.effectiveHealth();
+        }
         bar.tower = parsed;
     }
 
     private void markUpdated(TrackedBossBar bar) {
         bar.lastUpdatedOrder = ++updateSequence;
+    }
+
+    private WarTowerUpdate toUpdate(TrackedBossBar bar) {
+        return new WarTowerUpdate(
+                bar.tower.territory(),
+                Math.clamp(bar.progress, 0.0f, 1.0f),
+                bar.initialEffectiveHealth,
+                bar.tower.towerDps());
     }
 
     private TrackedBossBar getOrCreate(UUID id) {
@@ -237,10 +271,21 @@ public final class MinecraftWarTowerTracker {
             long effectiveHealth,
             long towerDps) {}
 
+    public record TowerSnapshot(UUID bossBarId, WarTowerUpdate update) {}
+
     private static final class TrackedBossBar {
         private float progress = Float.NaN;
         private TowerTitle tower;
+        private String initialTerritory;
+        private Long initialEffectiveHealth;
         private long lastUpdatedOrder;
+
+        private void resetLifecycle() {
+            progress = Float.NaN;
+            tower = null;
+            initialTerritory = null;
+            initialEffectiveHealth = null;
+        }
     }
 
     private final class PacketHandler implements ClientboundBossEventPacket.Handler {

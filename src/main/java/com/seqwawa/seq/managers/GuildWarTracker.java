@@ -38,9 +38,10 @@ import com.seqwawa.seq.utils.PacketTextNormalizer;
 import com.seqwawa.seq.utils.WynnClassCache;
 
 /**
- * Tracks active guild-war lifecycle via Wynntils, reads live tower metrics from
- * vanilla boss-event packets, and relays one structured legacy summary when the
- * war completes, disappears, or the local player dies.
+ * Tracks the optional Wynntils guild-war lifecycle and relays one structured
+ * legacy summary when the war completes, disappears, or the local player dies.
+ * Live presence and vanilla tower metrics are delegated to the same scalar
+ * telemetry state machine used by the no-Wynntils implementation.
  */
 public final class GuildWarTracker implements GuildWarTrackerHandle {
     private static final double TRACKING_RADIUS_SQ = 120 * 120;
@@ -53,31 +54,21 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             "Territory Defences: (Very Low|Low|Medium|High|Very High)");
     private static final Set<String> DEFENSE_LEVELS = Set.of("Very Low", "Low", "Medium", "High", "Very High");
     private static final long QUEUE_ATTEMPT_TIMEOUT_MS = 15_000L;
-    static final long STATUS_HEARTBEAT_MS = 7_000L;
-    static final long TOWER_HEARTBEAT_MS = 4_000L;
-    private static final long LIVE_SEND_RETRY_MS = 1_000L;
+    static final long STATUS_HEARTBEAT_MS = LiveWarTelemetryTracker.STATUS_HEARTBEAT_MS;
+    static final long TOWER_HEARTBEAT_MS = LiveWarTelemetryTracker.TOWER_HEARTBEAT_MS;
 
     private final WarInfoProvider warInfoProvider;
     private final PlayerContext playerContext;
     private final SubmissionPublisher submissionPublisher;
     private final BooleanSupplier trackingEnabled;
     private final LongSupplier clock;
+    private final LiveWarTelemetryTracker liveTelemetryTracker;
 
     private WarContext activeContext;
     private String lastProcessedBattleId;
     private int lastProcessedStateHash;
     private boolean wynnDeathListenerRegistered;
     private PendingQueueAttempt pendingQueueAttempt;
-    private PresenceKey observedPresenceKey;
-    private boolean warModeObserved;
-    private boolean removalPending;
-    private WynnClassType lastObservedClass;
-    private long nextStatusHeartbeatAtMillis;
-    private long nextStatusAttemptAtMillis;
-    private String observedTowerTerritory;
-    private String observedTowerBattleId;
-    private long nextTowerHeartbeatAtMillis;
-    private boolean publisherWasReady;
 
     public GuildWarTracker() {
         this(
@@ -127,6 +118,44 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         this.submissionPublisher = Objects.requireNonNull(submissionPublisher, "submissionPublisher");
         this.trackingEnabled = Objects.requireNonNull(trackingEnabled, "trackingEnabled");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.liveTelemetryTracker = new LiveWarTelemetryTracker(
+                new LiveWarTelemetryTracker.PlayerContext() {
+                    @Override
+                    public boolean warModeActive() {
+                        return playerContext.warModeActive();
+                    }
+
+                    @Override
+                    public WynnClassType localClassType() {
+                        return playerContext.localClassType();
+                    }
+
+                    @Override
+                    public LiveWarTelemetryTracker.WorldPosition worldPosition() {
+                        WorldPosition position = playerContext.worldPosition();
+                        return position == null
+                                ? null
+                                : new LiveWarTelemetryTracker.WorldPosition(position.x(), position.z());
+                    }
+                },
+                new LiveWarTelemetryTracker.Publisher() {
+                    @Override
+                    public boolean ready() {
+                        return submissionPublisher.liveTelemetryReady();
+                    }
+
+                    @Override
+                    public boolean publishWarStatus(WarStatusUpdate update) {
+                        return submissionPublisher.publishWarStatus(update);
+                    }
+
+                    @Override
+                    public boolean publishWarTowerUpdate(WarTowerUpdate update) {
+                        return submissionPublisher.publishWarTowerUpdate(update);
+                    }
+                },
+                trackingEnabled,
+                clock);
         if (registerDeathListener) {
             ensureDeathListenerRegistered();
         }
@@ -135,12 +164,14 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     public void tick() {
         ensureDeathListenerRegistered();
         if (!trackingEnabled.getAsBoolean()) {
-            trackDisabledTelemetry();
+            liveTelemetryTracker.tick(null);
+            clearActiveWarContext();
+            pendingQueueAttempt = null;
             return;
         }
         WarBattleInfo info = warInfoProvider.getCurrentWar();
         trackWarState(info);
-        trackLiveTelemetry(info);
+        liveTelemetryTracker.tick(toLiveObservation(info));
     }
 
     public void onSystemChat(Component message) {
@@ -243,18 +274,9 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
 
     public void reset() {
         warInfoProvider.resetTowerMetrics();
+        liveTelemetryTracker.reset();
         clearActiveWarContext();
         pendingQueueAttempt = null;
-        observedPresenceKey = null;
-        warModeObserved = false;
-        removalPending = false;
-        lastObservedClass = null;
-        nextStatusHeartbeatAtMillis = 0L;
-        nextStatusAttemptAtMillis = 0L;
-        observedTowerTerritory = null;
-        observedTowerBattleId = null;
-        nextTowerHeartbeatAtMillis = 0L;
-        publisherWasReady = false;
     }
 
     private void clearActiveWarContext() {
@@ -354,170 +376,17 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         }
     }
 
-    private void trackLiveTelemetry(WarBattleInfo info) {
-        long now = clock.getAsLong();
-        boolean ready = submissionPublisher.liveTelemetryReady();
-        boolean reconnected = ready && !publisherWasReady;
-        publisherWasReady = ready;
-        String battleId = info == null ? null : buildBattleId(info);
-
-        boolean warModeActive = playerContext.warModeActive() || info != null;
-        WynnClassType classType = playerContext.localClassType();
-        if (classType != null) {
-            lastObservedClass = classType;
-        }
-
-        if (!warModeActive) {
-            stopTowerTelemetry();
-            if (warModeObserved || reconnected) {
-                removalPending = true;
-                observedPresenceKey = null;
-                nextStatusHeartbeatAtMillis = 0L;
-                nextStatusAttemptAtMillis = 0L;
-            }
-            warModeObserved = false;
-            if (removalPending) {
-                attemptRemoval(ready, now);
-            }
-            return;
-        }
-
-        warModeObserved = true;
-        removalPending = false;
-
-        WarStatusUpdate statusUpdate = statusUpdate(info, classType);
-        if (statusUpdate != null) {
-            PresenceKey presenceKey = PresenceKey.from(statusUpdate, battleId);
-            if (!presenceKey.equals(observedPresenceKey)) {
-                observedPresenceKey = presenceKey;
-                nextStatusHeartbeatAtMillis = 0L;
-                nextStatusAttemptAtMillis = 0L;
-            }
-            if (reconnected) {
-                nextStatusHeartbeatAtMillis = 0L;
-                nextStatusAttemptAtMillis = 0L;
-            }
-            if (ready
-                    && now >= nextStatusHeartbeatAtMillis
-                    && now >= nextStatusAttemptAtMillis) {
-                if (publishWarStatus(statusUpdate)) {
-                    nextStatusHeartbeatAtMillis = now + STATUS_HEARTBEAT_MS;
-                    nextStatusAttemptAtMillis = 0L;
-                } else {
-                    nextStatusAttemptAtMillis = now + LIVE_SEND_RETRY_MS;
-                }
-            }
-        }
-
-        trackTowerTelemetry(info, battleId, ready, reconnected, now);
-    }
-
-    private WarStatusUpdate statusUpdate(WarBattleInfo info, WynnClassType classType) {
-        if (classType == null) {
+    private LiveWarTelemetryTracker.WarObservation toLiveObservation(WarBattleInfo info) {
+        if (info == null) {
             return null;
         }
-        if (info != null) {
-            String territory = trimToNull(info.getTerritory());
-            return territory == null ? null : WarStatusUpdate.war(classType, territory);
-        }
-        WorldPosition position = playerContext.worldPosition();
-        return position == null ? null : WarStatusUpdate.world(classType, position.x(), position.z());
-    }
-
-    private void attemptRemoval(boolean ready, long now) {
-        if (!ready || now < nextStatusAttemptAtMillis) {
-            return;
-        }
-        WynnClassType classType = playerContext.localClassType();
-        if (classType == null) {
-            classType = lastObservedClass;
-        }
-        WarStatusUpdate removal = classType == null ? WarStatusUpdate.remove() : WarStatusUpdate.remove(classType);
-        if (publishWarStatus(removal)) {
-            removalPending = false;
-            nextStatusHeartbeatAtMillis = 0L;
-            nextStatusAttemptAtMillis = 0L;
-        } else {
-            nextStatusAttemptAtMillis = now + LIVE_SEND_RETRY_MS;
-        }
-    }
-
-    private void trackDisabledTelemetry() {
-        long now = clock.getAsLong();
-        boolean ready = submissionPublisher.liveTelemetryReady();
-        boolean reconnected = ready && !publisherWasReady;
-        publisherWasReady = ready;
-
-        if (warModeObserved || observedPresenceKey != null || reconnected) {
-            removalPending = true;
-            nextStatusAttemptAtMillis = 0L;
-        }
-        warModeObserved = false;
-        observedPresenceKey = null;
-        nextStatusHeartbeatAtMillis = 0L;
-        stopTowerTelemetry();
-        clearActiveWarContext();
-        pendingQueueAttempt = null;
-
-        if (removalPending) {
-            attemptRemoval(ready, now);
-        }
-    }
-
-    private void trackTowerTelemetry(
-            WarBattleInfo info, String battleId, boolean ready, boolean reconnected, long now) {
-        String territory = info == null ? null : trimToNull(info.getTerritory());
+        String territory = trimToNull(info.getTerritory());
         if (territory == null) {
-            stopTowerTelemetry();
-            return;
+            return null;
         }
-        if (!territory.equalsIgnoreCase(observedTowerTerritory)
-                || !Objects.equals(battleId, observedTowerBattleId)) {
-            observedTowerTerritory = territory;
-            observedTowerBattleId = battleId;
-            nextTowerHeartbeatAtMillis = 0L;
-        }
-        if (reconnected) {
-            nextTowerHeartbeatAtMillis = 0L;
-        }
-        if (!ready || now < nextTowerHeartbeatAtMillis) {
-            return;
-        }
-
-        WarTowerUpdate update = warInfoProvider.towerUpdate(info);
-        if (update == null) {
-            nextTowerHeartbeatAtMillis = now + LIVE_SEND_RETRY_MS;
-            return;
-        }
-        if (publishWarTowerUpdate(update)) {
-            nextTowerHeartbeatAtMillis = now + TOWER_HEARTBEAT_MS;
-        } else {
-            nextTowerHeartbeatAtMillis = now + LIVE_SEND_RETRY_MS;
-        }
-    }
-
-    private void stopTowerTelemetry() {
-        observedTowerTerritory = null;
-        observedTowerBattleId = null;
-        nextTowerHeartbeatAtMillis = 0L;
-    }
-
-    private boolean publishWarStatus(WarStatusUpdate update) {
-        try {
-            return submissionPublisher.publishWarStatus(update);
-        } catch (RuntimeException exception) {
-            SeqClient.LOGGER.debug("Live war status publisher failed; retrying on a later tick", exception);
-            return false;
-        }
-    }
-
-    private boolean publishWarTowerUpdate(WarTowerUpdate update) {
-        try {
-            return submissionPublisher.publishWarTowerUpdate(update);
-        } catch (RuntimeException exception) {
-            SeqClient.LOGGER.debug("Live war tower publisher failed; retrying on a later tick", exception);
-            return false;
-        }
+        String battleId = activeContext == null ? buildBattleId(info) : activeContext.id;
+        return new LiveWarTelemetryTracker.WarObservation(
+                territory, battleId, warInfoProvider.towerUpdate(info));
     }
 
     private void ensureDeathListenerRegistered() {
@@ -679,8 +548,19 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
 
     private String buildBattleId(WarBattleInfo info) {
         WarTowerState initial = info.getInitialState();
-        long timestamp = initial != null ? initial.timestamp() : clock.getAsLong();
         String territory = trimToNull(info.getTerritory());
+        String activeTerritory = activeContext == null || activeContext.info == null
+                ? null
+                : trimToNull(activeContext.info.getTerritory());
+        if ((initial == null || initial.timestamp() <= 0)
+                && territory != null
+                && activeTerritory != null
+                && territory.equalsIgnoreCase(activeTerritory)) {
+            return activeContext.id;
+        }
+        long timestamp = initial != null && initial.timestamp() > 0
+                ? initial.timestamp()
+                : clock.getAsLong();
         return (territory == null ? "unknown" : territory) + ":" + timestamp;
     }
 
@@ -845,13 +725,6 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
 
     record WorldPosition(int x, int z) {}
 
-    private record PresenceKey(
-            WarStatusUpdate.Status status, WynnClassType classType, String territory, String battleId) {
-        private static PresenceKey from(WarStatusUpdate update, String battleId) {
-            return new PresenceKey(update.status(), update.classType(), update.territory(), battleId);
-        }
-    }
-
     private static final class WarContext {
         private final String id;
         private WarBattleInfo info;
@@ -900,9 +773,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
                 if (minecraft.player.distanceToSqr(other) > radiusSq) {
                     continue;
                 }
-                String name = other.getGameProfile() != null
-                        ? other.getName().getString()
-                        : other.getName().getString();
+                String name = other.getName().getString();
                 if (trimToNull(name) != null) {
                     uniqueNames.add(name.trim());
                 }

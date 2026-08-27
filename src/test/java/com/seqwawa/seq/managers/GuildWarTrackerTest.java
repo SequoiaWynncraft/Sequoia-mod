@@ -481,6 +481,25 @@ class GuildWarTrackerTest {
     }
 
     @Test
+    void missingInitialTowerStateKeepsOneStableBattleIdentity() {
+        MutableWarInfoProvider warInfoProvider = new MutableWarInfoProvider();
+        warInfoProvider.currentWar = new WarBattleInfo("Mangled Lake", "Sequoia", null);
+        warInfoProvider.towerUpdate = new WarTowerUpdate("Mangled Lake", 0.8f, 533L, 10L);
+        MutablePlayerContext player = new MutablePlayerContext();
+        player.classType = WynnClassType.WARRIOR;
+        CapturingPublisher publisher = new CapturingPublisher();
+        MutableClock clock = new MutableClock(95_000L);
+        GuildWarTracker tracker = newTracker(warInfoProvider, player, publisher, clock);
+
+        tracker.tick();
+        clock.advance(1L);
+        tracker.tick();
+
+        assertEquals(1, publisher.statusUpdates.size());
+        assertEquals(1, publisher.towerUpdates.size());
+    }
+
+    @Test
     void disabledTrackingRetriesFailedRemoval() {
         MutableWarInfoProvider warInfoProvider = new MutableWarInfoProvider();
         MutablePlayerContext player = new MutablePlayerContext();

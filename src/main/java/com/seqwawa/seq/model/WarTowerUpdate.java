@@ -1,6 +1,6 @@
 package com.seqwawa.seq.model;
 
-/** Immutable live tower sample for the active guild war. */
+/** Immutable live tower sample with current health progress and initial tower EHP. */
 public record WarTowerUpdate(String territory, float health, long ehp, long dps) {
     public WarTowerUpdate {
         territory = territory == null ? null : territory.trim();

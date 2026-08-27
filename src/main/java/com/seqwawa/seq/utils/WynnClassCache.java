@@ -3,6 +3,7 @@ package com.seqwawa.seq.utils;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.managers.MinecraftCharacterClassDetector;
 import com.seqwawa.seq.model.WynnClassType;
 
 import java.util.Locale;
@@ -11,12 +12,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Resolves the local player's Wynncraft class to an asset key
  * (e.g. "archer", "warrior", "mage", "assassin", "shaman") using
- * Wynntils' {@code Models.Character} model.
+ * Wynntils when present and the bounded vanilla detector otherwise.
  *
  * <p>
- * Only the local player's class can be resolved client-side.
- * Remote players will return {@code null} until the backend
- * includes class information in the Member record.
+ * This helper resolves only the local player's class. Remote player classes are
+ * supplied separately by backend member data where available.
  */
 public class WynnClassCache {
     private static final AtomicBoolean WARNED_WYNNTILS_PROVIDER = new AtomicBoolean(false);
@@ -25,8 +25,7 @@ public class WynnClassCache {
      * Resolve a player UUID to a Wynncraft class asset key.
      *
      * <p>
-     * For the local player, reads directly from Wynntils'
-     * {@link com.wynntils.models.character.CharacterModel}.
+     * For the local player, reads the best available active-character provider.
      * For any other player, returns {@code null}.
      *
      * @param uuid the player's UUID (with or without dashes)
@@ -45,11 +44,14 @@ public class WynnClassCache {
         if (!localUuid.equals(normalizeUuid(uuid)))
             return null;
 
-        return resolveFromWynntils();
+        return toAssetKey(resolveLocalClassType());
     }
 
     public static WynnClassType resolveLocalClassType() {
-        return parseClassType(resolveFromWynntils());
+        WynnClassType wynntilsClass = parseClassType(resolveFromWynntils());
+        return wynntilsClass != null
+                ? wynntilsClass
+                : MinecraftCharacterClassDetector.getInstance().currentClass();
     }
 
     /** Maps canonical or reskinned Wynncraft class names without touching the optional Wynntils runtime. */
@@ -87,7 +89,6 @@ public class WynnClassCache {
 
     private static String resolveFromWynntils() {
         if (!FabricLoader.getInstance().isModLoaded("wynntils")) {
-            warnWynntilsProviderOnce("Wynntils not found; using internal class detection fallback.", null);
             return null;
         }
 
@@ -115,7 +116,7 @@ public class WynnClassCache {
 
             return normalizeClassName(classType.toString());
         } catch (Throwable throwable) {
-            warnWynntilsProviderOnce("Wynntils class provider unavailable; using internal class detection fallback.",
+            warnWynntilsProviderOnce("Wynntils class provider unavailable; using vanilla class detection.",
                     throwable);
             return null;
         }
@@ -126,26 +127,19 @@ public class WynnClassCache {
             return null;
         }
 
-        String lower = rawValue.toLowerCase(Locale.ROOT);
-        if (lower.contains("none")) {
-            return null;
-        }
-        if (lower.contains("archer") || lower.contains("hunter")) {
-            return "archer";
-        }
-        if (lower.contains("warrior") || lower.contains("knight")) {
-            return "warrior";
-        }
-        if (lower.contains("mage") || lower.contains("wizard")) {
-            return "mage";
-        }
-        if (lower.contains("assassin") || lower.contains("ninja")) {
-            return "assassin";
-        }
-        if (lower.contains("shaman") || lower.contains("skyseer")) {
-            return "shaman";
-        }
-        return null;
+        String normalized = rawValue.trim()
+                .toLowerCase(Locale.ROOT)
+                .replace('_', ' ')
+                .replace('-', ' ')
+                .replaceAll("\\s+", " ");
+        return switch (normalized) {
+            case "warrior", "knight" -> "warrior";
+            case "archer", "hunter" -> "archer";
+            case "mage", "wizard", "dark wizard" -> "mage";
+            case "assassin", "ninja" -> "assassin";
+            case "shaman", "skyseer" -> "shaman";
+            default -> null;
+        };
     }
 
     private static void warnWynntilsProviderOnce(String message, Throwable throwable) {

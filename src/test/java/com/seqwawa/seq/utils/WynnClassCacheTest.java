@@ -15,7 +15,10 @@ class WynnClassCacheTest {
         assertEquals(WynnClassType.MAGE, WynnClassCache.parseClassType("Wizard"));
         assertEquals(WynnClassType.ASSASSIN, WynnClassCache.parseClassType("ninja"));
         assertEquals(WynnClassType.SHAMAN, WynnClassCache.parseClassType("Skyseer"));
+        assertEquals(WynnClassType.MAGE, WynnClassCache.parseClassType("Dark Wizard"));
         assertNull(WynnClassCache.parseClassType("NONE"));
+        assertNull(WynnClassCache.parseClassType("Mage Island"));
+        assertNull(WynnClassCache.parseClassType("Class Req: Archer"));
         assertNull(WynnClassCache.parseClassType(null));
     }
 }

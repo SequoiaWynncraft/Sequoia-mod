@@ -47,7 +47,7 @@ class MinecraftWarTowerTrackerTest {
     }
 
     @Test
-    void packetStateProvidesFillEffectiveHealthAndTowerOutgoingDps() {
+    void packetStateRetainsInitialEhpWhileHealthFalls() {
         MinecraftWarTowerTracker tracker = new MinecraftWarTowerTracker();
         BossEvent tower = new BossEvent(
                 TOWER_ID,
@@ -57,11 +57,30 @@ class MinecraftWarTowerTrackerTest {
         tower.setProgress(1.0f);
 
         tracker.onBossEvent(ClientboundBossEventPacket.createAddPacket(tower));
+        assertEquals(new WarTowerUpdate("Detlas", 1.0f, 600_000L, 3_750L), tracker.snapshot("detlas"));
+
         tracker.updateName(TOWER_ID, towerTitle("Detlas", 300_000L, 25.0, 1_600L, 2_400L, 3.0));
         tracker.updateProgress(TOWER_ID, 0.731f);
 
-        assertEquals(new WarTowerUpdate("Detlas", 0.731f, 400_000L, 6_000L), tracker.snapshot("detlas"));
+        WarTowerUpdate expected = new WarTowerUpdate("Detlas", 0.731f, 600_000L, 6_000L);
+        assertEquals(expected, tracker.snapshot("detlas"));
+        assertEquals(expected, tracker.latestSnapshot().update());
         assertNull(tracker.snapshot("Ragni"));
+    }
+
+    @Test
+    void newBossBarLifecycleAndTerritoryEstablishFreshInitialEhp() {
+        MinecraftWarTowerTracker tracker = new MinecraftWarTowerTracker();
+
+        tracker.add(TOWER_ID, towerTitle("Detlas", 450_000L, 25.0), 1.0f);
+        tracker.updateName(TOWER_ID, towerTitle("Detlas", 300_000L, 25.0));
+        assertEquals(600_000L, tracker.snapshot("Detlas").ehp());
+
+        tracker.updateName(TOWER_ID, towerTitle("Ragni", 80L, 20.0));
+        assertEquals(100L, tracker.snapshot("Ragni").ehp());
+
+        tracker.add(TOWER_ID, towerTitle("Ragni", 40L, 20.0), 1.0f);
+        assertEquals(50L, tracker.snapshot("Ragni").ehp());
     }
 
     @Test
@@ -72,8 +91,32 @@ class MinecraftWarTowerTrackerTest {
         tracker.updateName(TOWER_ID, towerTitle("Ragni", 80L, 20.0));
 
         assertEquals(new WarTowerUpdate("Ragni", 0.42f, 100L, 3_750L), tracker.snapshot("Ragni"));
+        tracker.updateName(TOWER_ID, towerTitle("Ragni", 40L, 20.0));
+        tracker.updateProgress(TOWER_ID, 0.21f);
+        assertEquals(new WarTowerUpdate("Ragni", 0.21f, 100L, 3_750L), tracker.snapshot("Ragni"));
         tracker.remove(TOWER_ID);
         assertNull(tracker.snapshot("Ragni"));
+    }
+
+    @Test
+    void latestSnapshotCarriesStableBossIdentityAndTracksTheNewestActiveTower() {
+        MinecraftWarTowerTracker tracker = new MinecraftWarTowerTracker();
+        UUID otherTowerId = UUID.fromString("10000000-0000-0000-0000-000000000002");
+
+        tracker.add(TOWER_ID, towerTitle("Detlas", 100L, 0.0), 0.8f);
+        tracker.add(otherTowerId, towerTitle("Ragni", 200L, 0.0), 0.6f);
+
+        assertEquals(otherTowerId, tracker.latestSnapshot().bossBarId());
+        assertEquals("Ragni", tracker.latestSnapshot().update().territory());
+
+        tracker.updateProgress(TOWER_ID, 0.4f);
+        assertEquals(TOWER_ID, tracker.latestSnapshot().bossBarId());
+        assertEquals(new WarTowerUpdate("Detlas", 0.4f, 100L, 3_750L), tracker.latestSnapshot().update());
+
+        tracker.remove(TOWER_ID);
+        assertEquals(otherTowerId, tracker.latestSnapshot().bossBarId());
+        tracker.remove(otherTowerId);
+        assertNull(tracker.latestSnapshot());
     }
 
     @Test

@@ -13,6 +13,7 @@ import lombok.Getter;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientWorldEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -38,6 +39,7 @@ import com.seqwawa.seq.managers.GuildWarTrackers;
 import com.seqwawa.seq.managers.DiscordRankService;
 import com.seqwawa.seq.managers.IngredientGuideManager;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
+import com.seqwawa.seq.managers.MinecraftWarTowerTracker;
 import com.seqwawa.seq.managers.RankProfileRoster;
 import com.seqwawa.seq.managers.PartyHealthCache;
 import com.seqwawa.seq.managers.PartyFinderManager;
@@ -318,7 +320,7 @@ public class SeqClient implements ClientModInitializer {
         warTerritoryQueueManager = new WarTerritoryQueueManager();
         princessRaidStatsManager = new PrincessRaidStatsManager();
         wynnPartySyncManager = new WynnPartySyncManager();
-        guildWarTracker = GuildWarTrackers.createIfAvailable();
+        guildWarTracker = GuildWarTrackers.create();
         guildStorageTracker = GuildStorageTracker.getInstance();
         guildRewardAutomationManager = new GuildRewardAutomationManager();
         chatManager = new ChatManager();
@@ -345,6 +347,7 @@ public class SeqClient implements ClientModInitializer {
         HalcyonRangeVisualiserClient.initialize();
         IngredientWaypointRenderer.initialize();
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> MinecraftUiRenderer.shutdown());
+        ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> resetWarTrackingState());
         LightRoom.init();
 
         KeyMapping.Category category =
@@ -411,18 +414,11 @@ public class SeqClient implements ClientModInitializer {
                     wynnPartySyncManager.reset();
                 }
                 RaidPartySnapshotTracker.onServerUnavailable();
-                if (guildWarTracker != null) {
-                    guildWarTracker.reset();
-                }
+                resetWarTrackingState();
                 if (guildStorageTracker != null) {
                     guildStorageTracker.reset();
                 }
-                if (warPlannerManager != null) {
-                    warPlannerManager.reset();
-                }
-                if (warTerritoryQueueManager != null) {
-                    warTerritoryQueueManager.reset();
-                }
+                resetWarPlanningState();
                 GuildRaidProgressService.getInstance().tick(false);
                 return;
             }
@@ -430,15 +426,8 @@ public class SeqClient implements ClientModInitializer {
                 RadianceCheckerClient.reset();
                 RaidPartySnapshotTracker.onServerUnavailable();
                 ConnectionManager.flushPendingOutbound();
-                if (guildWarTracker != null) {
-                    guildWarTracker.reset();
-                }
-                if (warPlannerManager != null) {
-                    warPlannerManager.reset();
-                }
-                if (warTerritoryQueueManager != null) {
-                    warTerritoryQueueManager.reset();
-                }
+                resetWarTrackingState();
+                resetWarPlanningState();
                 GuildRaidProgressService.getInstance().tick(false);
                 return;
             }
@@ -547,22 +536,32 @@ public class SeqClient implements ClientModInitializer {
         }
         RaidPartySnapshotTracker.reset();
         GuildRaidProgressService.getInstance().reset();
-        if (guildWarTracker != null) {
-            guildWarTracker.reset();
-        }
+        resetWarTrackingState();
         if (guildStorageTracker != null) {
             guildStorageTracker.reset();
         }
+        resetWarPlanningState();
+        if (princessRaidStatsManager != null) {
+            princessRaidStatsManager.reset();
+        }
+        return true;
+    }
+
+    private static void resetWarTrackingState() {
+        if (guildWarTracker != null) {
+            guildWarTracker.reset();
+        } else {
+            MinecraftWarTowerTracker.getInstance().reset();
+        }
+    }
+
+    private static void resetWarPlanningState() {
         if (warPlannerManager != null) {
             warPlannerManager.reset();
         }
         if (warTerritoryQueueManager != null) {
             warTerritoryQueueManager.reset();
         }
-        if (princessRaidStatsManager != null) {
-            princessRaidStatsManager.reset();
-        }
-        return true;
     }
 
     private static UUID currentMinecraftProfileId() {
