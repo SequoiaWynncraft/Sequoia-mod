@@ -139,7 +139,7 @@ public final class RankGradientAnimation {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(displayRamp, "displayRamp");
         Objects.requireNonNull(roleRamp, "roleRamp");
-        TextColor color = TextColor.fromRgb(displayRamp.sample(position));
+        TextColor color = WynncraftTextShaderColor.safeTextColor(displayRamp.sample(position));
         remember(new Registration(color, new Stop(displayRamp, roleRamp, position, target, baseColor)));
         return color;
     }
@@ -167,15 +167,15 @@ public final class RankGradientAnimation {
         ColorRamp ramp = perUserColorsEnabled() ? stop.displayRamp() : stop.roleRamp();
         boolean storedRampActive = ramp == stop.displayRamp();
         if (!ramp.isGradient()) {
-            return storedRampActive ? color : TextColor.fromRgb(ramp.first());
+            return storedRampActive ? color : WynncraftTextShaderColor.safeTextColor(ramp.first());
         }
         if (!gradientsEnabled(stop.target())) {
-            return TextColor.fromRgb(ramp.first());
+            return WynncraftTextShaderColor.safeTextColor(ramp.first());
         }
         if (animationEnabled(stop.target())) {
-            return TextColor.fromRgb(ramp.scroll(stop.position(), phase));
+            return WynncraftTextShaderColor.safeTextColor(ramp.scroll(stop.position(), phase));
         }
-        return storedRampActive ? color : TextColor.fromRgb(ramp.sample(stop.position()));
+        return storedRampActive ? color : WynncraftTextShaderColor.safeTextColor(ramp.sample(stop.position()));
     }
 
     /** How far through the current turn the clock is, in {@code [0, 1)}. */

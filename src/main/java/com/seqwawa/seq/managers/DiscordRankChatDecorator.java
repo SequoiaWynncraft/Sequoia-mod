@@ -9,6 +9,7 @@ import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 import com.seqwawa.seq.utils.RankGradientAnimation;
+import com.seqwawa.seq.utils.WynncraftTextShaderColor;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
 import java.util.ArrayDeque;
 import java.util.LinkedHashSet;
@@ -1242,7 +1243,7 @@ public final class DiscordRankChatDecorator {
      * where splitting the text into independently coloured glyphs would be distracting.
      */
     static TextColor colorFor(RankPresentation rank) {
-        return TextColor.fromRgb(rampFor(rank).first());
+        return WynncraftTextShaderColor.safeTextColor(rampFor(rank).first());
     }
 
     private static boolean isEnabled() {
