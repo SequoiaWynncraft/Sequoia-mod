@@ -648,6 +648,8 @@ public class SeqCommand {
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildMapCommand() {
                 return ClientCommandManager.literal("map")
                                 .executes(SeqCommand::openWorldMapScreen)
+                                .then(ClientCommandManager.literal("refresh")
+                                                .executes(SeqCommand::runMapImageRefresh))
                                 .then(ClientCommandManager.literal("params")
                                                 .executes(SeqCommand::runMapParams))
                                 .then(ClientCommandManager.literal("eps")
@@ -888,6 +890,11 @@ public class SeqCommand {
 
         private static int runMapImageCacheStatus(CommandContext<FabricClientCommandSource> ctx) {
                 sendFeedback(ctx.getSource(), GatheringMapImageService.getInstance().cacheStatus());
+                return 1;
+        }
+
+        private static int runMapImageRefresh(CommandContext<FabricClientCommandSource> ctx) {
+                sendFeedback(ctx.getSource(), GatheringMapImageService.getInstance().refresh());
                 return 1;
         }
 
@@ -1432,7 +1439,7 @@ public class SeqCommand {
         private static String displayMapImageSource(GatheringMapImageService.Source source) {
                 return switch (source) {
                         case NONE -> "none";
-                        case FALLBACK -> "fallback";
+                        case CACHED_TILES -> "cached tiles";
                         case CACHED_HQ -> "cached HQ";
                 };
         }
