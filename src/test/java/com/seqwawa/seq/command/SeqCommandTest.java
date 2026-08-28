@@ -63,6 +63,17 @@ class SeqCommandTest {
     }
 
     @Test
+    void registersMapRefreshCommand() {
+        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+
+        SeqCommand.registerCommands(dispatcher, null);
+
+        var refresh = dispatcher.getRoot().getChild("seq").getChild("map").getChild("refresh");
+        assertNotNull(refresh);
+        assertNotNull(refresh.getCommand());
+    }
+
+    @Test
     void warSubtreeExistsButFailsClosedBeforeAuthorizedSnapshot() {
         CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
         var previous = SeqClient.warPlannerManager;

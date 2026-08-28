@@ -889,6 +889,38 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             renderFullMapImage(canvas, viewport, image);
         }
         renderMapTiles(canvas, viewport);
+        mapImageService.unavailableMessage()
+                .ifPresent(message -> renderMapUnavailable(canvas, viewport, message));
+    }
+
+    private void renderMapUnavailable(UiCanvas canvas, MapViewport viewport, String message) {
+        float panelWidth = Math.min(430, Math.max(220, viewport.screenWidth() - 64));
+        float contentWidth = panelWidth - 32;
+        List<String> lines = wrapText(message, contentWidth, 11);
+        float panelHeight = 48 + lines.size() * 16;
+        float x = viewport.screenX() + (viewport.screenWidth() - panelWidth) / 2;
+        float y = viewport.screenY() + (viewport.screenHeight() - panelHeight) / 2;
+
+        canvas.fillRoundedRect(x, y, panelWidth, panelHeight, 6, color(STATUS_DANGER_BACKGROUND));
+        canvas.strokeRect(x, y, panelWidth, panelHeight, 1, color(STATUS_DANGER_BORDER));
+        drawText(
+                canvas,
+                x + panelWidth / 2,
+                y + 18,
+                14,
+                "Map unavailable",
+                color(TEXT_PRIMARY),
+                TextAlignment.CENTER);
+        for (int index = 0; index < lines.size(); index++) {
+            drawText(
+                    canvas,
+                    x + 16,
+                    y + 42 + index * 16,
+                    11,
+                    lines.get(index),
+                    color(TEXT_SECONDARY),
+                    TextAlignment.LEFT);
+        }
     }
 
     private void renderFullMapImage(UiCanvas canvas, MapViewport viewport, UiImage image) {
@@ -5153,7 +5185,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private String displayMapImageSource() {
         return switch (mapImageService.imageSource()) {
             case NONE -> "none";
-            case FALLBACK -> "fallback";
+            case CACHED_TILES -> "cached tiles";
             case CACHED_HQ -> "cached HQ";
         };
     }
