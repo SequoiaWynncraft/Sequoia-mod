@@ -860,14 +860,10 @@ public class SeqClient implements ClientModInitializer {
         lightRoomRingColorSetting.setParentSetting(lightRoomVisualiserSetting);
         tnaRoomThreeHelperSetting = new Setting.BooleanSetting("enable_tna_room_3_helper", "raids", true);
         tnaRoomThreeHelperSetting.setPresentation(
-                "TNA room 3 aiming helper",
-                "Show standing and aiming markers during Challenge 2/4 in The Nameless Anomaly.",
-                "Raid helpers");
+                "VM lineup", null, "Raid helpers");
         tnaBerryLineupSetting = new Setting.BooleanSetting("enable_tna_berry_lineup", "raids", true);
         tnaBerryLineupSetting.setPresentation(
-                "Berry lineup",
-                "Show standing and aiming crosses during Challenge 0/4 in The Nameless Anomaly.",
-                "Raid helpers");
+                "Berry lineup", null, "Raid helpers");
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
