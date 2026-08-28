@@ -62,7 +62,8 @@ import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
-import com.seqwawa.seq.raids.tna.TnaRoomThreeHelper;
+import com.seqwawa.seq.raids.tna.TnaLineupHelper;
+import com.seqwawa.seq.scroll.CraftedScrollRangeVisualiserClient;
 import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.ui.PrincessRaidCelebration;
@@ -236,6 +237,12 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.ColorSetting lightRoomRingColorSetting;
 
     @Getter
+    public static Setting.ColorSetting craftedScrollRangeColorSetting;
+
+    @Getter
+    public static Setting.BooleanSetting tnaBerryLineupSetting;
+
+    @Getter
     public static Setting.BooleanSetting tnaRoomThreeHelperSetting;
 
     @Getter
@@ -353,8 +360,9 @@ public class SeqClient implements ClientModInitializer {
         PrincessRaidCelebration.initialize();
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
+        CraftedScrollRangeVisualiserClient.initialize();
         IngredientWaypointRenderer.initialize();
-        TnaRoomThreeHelper.initialize();
+        TnaLineupHelper.initialize();
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> MinecraftUiRenderer.shutdown());
         ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> resetWarTrackingState());
         LightRoom.init();
@@ -853,11 +861,17 @@ public class SeqClient implements ClientModInitializer {
         lightRoomRingColorSetting = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF)
                 .withValueOverride(PrincessMode::paletteColorOverride);
         lightRoomRingColorSetting.setParentSetting(lightRoomVisualiserSetting);
+        craftedScrollRangeColorSetting =
+                new Setting.ColorSetting("crafted_scroll_range_color", "raids", 0x00FFFF)
+                        .withValueOverride(PrincessMode::paletteColorOverride);
+        craftedScrollRangeColorSetting.setPresentation(
+                "Crafted scroll range color", null, "Raid helpers");
+        tnaBerryLineupSetting = new Setting.BooleanSetting("enable_tna_berry_lineup", "raids", true);
+        tnaBerryLineupSetting.setPresentation(
+                "Berry lineup", null, "Raid helpers");
         tnaRoomThreeHelperSetting = new Setting.BooleanSetting("enable_tna_room_3_helper", "raids", true);
         tnaRoomThreeHelperSetting.setPresentation(
-                "TNA room 3 aiming helper",
-                "Show standing and aiming markers during Challenge 2/4 in The Nameless Anomaly.",
-                "Raid helpers");
+                "VM lineup", null, "Raid helpers");
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
@@ -983,6 +997,8 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(halcyonRingColorSetting);
         getConfigManager().register(lightRoomVisualiserSetting);
         getConfigManager().register(lightRoomRingColorSetting);
+        getConfigManager().register(craftedScrollRangeColorSetting);
+        getConfigManager().register(tnaBerryLineupSetting);
         getConfigManager().register(tnaRoomThreeHelperSetting);
         getConfigManager().register(showRaidBadgesSetting);
         getConfigManager().register(showInsigniaBadgesSetting);

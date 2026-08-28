@@ -31,7 +31,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.minecraft.network.chat.Component;
 
-/** Owns the availability-scoped, schema-v1 territory queue feed. */
+/** Owns the schema-v1 queue feed: live while available, one-shot when explicitly viewed. */
 public final class WarTerritoryQueueManager {
     static final Duration POLL_INTERVAL = Duration.ofSeconds(5);
     static final int MAX_PENDING_OBSERVATIONS = 24;
@@ -76,6 +76,8 @@ public final class WarTerritoryQueueManager {
         boolean available();
 
         String playerUuid();
+
+        default void refreshAvailability() {}
     }
 
     public record Observation(
@@ -175,6 +177,8 @@ public final class WarTerritoryQueueManager {
     private long nextObservationAttemptAtMillis;
     private CompletableFuture<WarTerritoryQueueFeed> pollInFlight;
     private CompletableFuture<WarTerritoryQueueFeed> observationInFlight;
+    private CompletableFuture<WarTerritoryQueueFeed> viewerFetchInFlight;
+    private CompletableFuture<ActionResult> viewerRefreshInFlight;
 
     public WarTerritoryQueueManager() {
         this(
@@ -213,7 +217,7 @@ public final class WarTerritoryQueueManager {
     }
 
     public State state() {
-        return isAvailabilityActive() ? state : State.INACTIVE;
+        return state;
     }
 
     public boolean isActive() {
@@ -221,7 +225,7 @@ public final class WarTerritoryQueueManager {
     }
 
     public WarTerritoryQueueFeed feed() {
-        return isActive() ? feed : WarTerritoryQueueFeed.empty();
+        return feed;
     }
 
     public String lastError() {
@@ -229,17 +233,14 @@ public final class WarTerritoryQueueManager {
     }
 
     public Instant serverNow() {
-        return clock.instant().plusMillis(isActive() ? serverOffsetMillis : 0L);
+        return clock.instant().plusMillis(serverOffsetMillis);
     }
 
     public String localPlayerUuid() {
-        return isActive() ? availabilityContext.playerUuid() : null;
+        return playerUuid();
     }
 
     public List<TerritoryQueue> activeQueues() {
-        if (!isActive()) {
-            return List.of();
-        }
         Instant now = serverNow();
         return feed.queues().stream()
                 .filter(queue -> queue.id() > 0)
@@ -264,7 +265,13 @@ public final class WarTerritoryQueueManager {
 
     public void tick() {
         if (!isAvailabilityActive()) {
-            reset();
+            synchronized (this) {
+                if (playerUuid() == null) {
+                    resetLocked();
+                } else if (active) {
+                    suspendLivePollingLocked();
+                }
+            }
             return;
         }
 
@@ -285,6 +292,37 @@ public final class WarTerritoryQueueManager {
                 startObservation();
             }
         }
+    }
+
+    /** Fetches one queue snapshot for the explicitly opened war map without enabling live polling. */
+    public synchronized CompletableFuture<ActionResult> refreshForViewer() {
+        if (playerUuid() == null) {
+            return completedFailure(
+                    "player_identity_unavailable", "Your war queue identity is unavailable; try again shortly.");
+        }
+        if (isAvailabilityActive()) {
+            tick();
+            return CompletableFuture.completedFuture(new ActionResult(true, null, ""));
+        }
+        if (viewerRefreshInFlight != null) {
+            return viewerRefreshInFlight;
+        }
+
+        final CompletableFuture<WarTerritoryQueueFeed> request;
+        try {
+            request = gateway.fetch();
+        } catch (RuntimeException exception) {
+            ErrorDetails details = errorDetails(exception);
+            return completedFailure(details.code(), details.message());
+        }
+        state = feed.queues().isEmpty() ? State.LOADING : State.READY;
+        CompletableFuture<ActionResult> result = new CompletableFuture<>();
+        viewerFetchInFlight = request;
+        viewerRefreshInFlight = result;
+        long requestGeneration = generation;
+        request.whenComplete((received, error) ->
+                completeViewerRefresh(requestGeneration, request, result, received, error));
+        return result;
     }
 
     public boolean onSystemChat(Component message) {
@@ -369,11 +407,6 @@ public final class WarTerritoryQueueManager {
     }
 
     public synchronized CompletableFuture<ActionResult> joinQueue(long queueId) {
-        if (!isAvailabilityActive()) {
-            resetLocked();
-            return completedFailure(
-                    "war_availability_required", "Turn on war availability before joining a territory queue.");
-        }
         if (queueId <= 0) {
             return completedFailure("territory_queue_not_found", "That territory queue no longer exists.");
         }
@@ -403,12 +436,6 @@ public final class WarTerritoryQueueManager {
      * local no-op rather than a destructive queue cancellation.
      */
     public synchronized CompletableFuture<ActionResult> toggleQueueMembership(long queueId) {
-        if (!isAvailabilityActive()) {
-            resetLocked();
-            return completedFailure(
-                    "war_availability_required",
-                    "Turn on war availability before changing a territory queue.");
-        }
         if (queueId <= 0) {
             return completedFailure("territory_queue_not_found", "That territory queue no longer exists.");
         }
@@ -670,11 +697,9 @@ public final class WarTerritoryQueueManager {
             return;
         }
         pendingMembershipMutations.remove(queueId);
-        if (requestGeneration != generation || !active || !isAvailabilityActive()) {
+        if (requestGeneration != generation) {
             pending.result().complete(new ActionResult(
-                    false,
-                    "war_availability_required",
-                    "War availability ended before the territory queue update completed."));
+                    false, "queue_context_changed", "The war queue context changed before the update completed."));
             return;
         }
         if (error != null) {
@@ -697,7 +722,41 @@ public final class WarTerritoryQueueManager {
         String message = pending.action() == MembershipAction.JOIN
                 ? "Joined territory queue."
                 : "Left territory queue.";
+        if (pending.action() == MembershipAction.JOIN) {
+            availabilityContext.refreshAvailability();
+        }
         pending.result().complete(new ActionResult(true, null, message));
+    }
+
+    private synchronized void completeViewerRefresh(
+            long requestGeneration,
+            CompletableFuture<WarTerritoryQueueFeed> request,
+            CompletableFuture<ActionResult> result,
+            WarTerritoryQueueFeed received,
+            Throwable error) {
+        if (viewerFetchInFlight == request) {
+            viewerFetchInFlight = null;
+        }
+        if (viewerRefreshInFlight == result) {
+            viewerRefreshInFlight = null;
+        }
+        if (requestGeneration != generation) {
+            result.complete(new ActionResult(false, "queue_context_changed", "The war queue context changed."));
+            return;
+        }
+        if (error != null) {
+            ErrorDetails details = errorDetails(error);
+            lastError = details.message();
+            state = feed.queues().isEmpty() ? State.OFFLINE : State.READY;
+            result.complete(new ActionResult(false, details.code(), details.message()));
+            return;
+        }
+        if (!applyFeed(received)) {
+            result.complete(new ActionResult(
+                    false, "invalid_queue_feed", "The backend returned an unsupported territory queue feed."));
+            return;
+        }
+        result.complete(new ActionResult(true, null, ""));
     }
 
     private boolean applyFeed(WarTerritoryQueueFeed received) {
@@ -954,7 +1013,8 @@ public final class WarTerritoryQueueManager {
                 && notifiedMissedWars.isEmpty()
                 && pendingMembershipMutations.isEmpty()
                 && pollInFlight == null
-                && observationInFlight == null) {
+                && observationInFlight == null
+                && viewerFetchInFlight == null) {
             return;
         }
         generation++;
@@ -977,12 +1037,40 @@ public final class WarTerritoryQueueManager {
             observationInFlight.cancel(true);
             observationInFlight = null;
         }
+        if (viewerFetchInFlight != null) {
+            viewerFetchInFlight.cancel(true);
+            viewerFetchInFlight = null;
+        }
+        if (viewerRefreshInFlight != null) {
+            viewerRefreshInFlight.complete(
+                    new ActionResult(false, "queue_context_changed", "The war queue context changed."));
+            viewerRefreshInFlight = null;
+        }
         for (PendingMembershipMutation pending : new ArrayList<>(pendingMembershipMutations.values())) {
             pending.result().complete(new ActionResult(
-                    false, "war_availability_required", "War availability is no longer active."));
+                    false, "queue_context_changed", "The war queue context changed before the update completed."));
             pending.request().cancel(true);
         }
         pendingMembershipMutations.clear();
+    }
+
+    private void suspendLivePollingLocked() {
+        active = false;
+        state = feed.queues().isEmpty() ? State.INACTIVE : State.READY;
+        nextPollAtMillis = 0L;
+        nextObservationAttemptAtMillis = 0L;
+        pendingObservations.clear();
+        recentObservations.clear();
+        recentQueueSnapshots.clear();
+        notifiedMissedWars.clear();
+        if (pollInFlight != null) {
+            pollInFlight.cancel(true);
+            pollInFlight = null;
+        }
+        if (observationInFlight != null) {
+            observationInFlight.cancel(true);
+            observationInFlight = null;
+        }
     }
 
     private void cleanupRecentObservations(Instant now) {
@@ -1008,6 +1096,15 @@ public final class WarTerritoryQueueManager {
             return availabilityContext.available();
         } catch (RuntimeException exception) {
             return false;
+        }
+    }
+
+    private String playerUuid() {
+        try {
+            String playerUuid = availabilityContext.playerUuid();
+            return playerUuid == null || playerUuid.isBlank() ? null : playerUuid;
+        } catch (RuntimeException exception) {
+            return null;
         }
     }
 
@@ -1185,6 +1282,14 @@ public final class WarTerritoryQueueManager {
         public String playerUuid() {
             WarPlannerManager manager = SeqClient.getWarPlannerManager();
             return manager == null ? null : manager.playerUuid();
+        }
+
+        @Override
+        public void refreshAvailability() {
+            WarPlannerManager manager = SeqClient.getWarPlannerManager();
+            if (manager != null) {
+                manager.refreshNow();
+            }
         }
     }
 }

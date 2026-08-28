@@ -27,7 +27,7 @@ class WarTerritoryQueueManagerTest {
     private static final Instant NOW = Instant.parse("2026-08-24T12:00:00Z");
 
     @Test
-    void pollsEveryFiveSecondsOnlyWhileAvailableAndUsesServerClock() {
+    void pollsEveryFiveSecondsOnlyWhileAvailableAndRetainsTheLastViewerSnapshot() {
         FakeGateway gateway = new FakeGateway();
         MutableClock clock = new MutableClock(NOW);
         FakeAvailability availability = new FakeAvailability();
@@ -60,9 +60,56 @@ class WarTerritoryQueueManagerTest {
         availability.available = false;
         manager.tick();
         assertFalse(manager.isActive());
-        assertTrue(manager.activeQueues().isEmpty());
-        assertTrue(manager.feed().queues().isEmpty());
-        assertEquals(WarTerritoryQueueManager.State.INACTIVE, manager.state());
+        assertEquals(1, manager.activeQueues().size());
+        assertEquals(1, manager.feed().queues().size());
+        assertEquals(WarTerritoryQueueManager.State.READY, manager.state());
+
+        clock.advance(Duration.ofSeconds(10));
+        manager.tick();
+        assertEquals(2, gateway.fetchCalls);
+    }
+
+    @Test
+    void unavailableViewerFetchesOnceAndJoiningRefreshesAvailabilityWithoutStartingBackgroundPolling() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability);
+
+        CompletableFuture<WarTerritoryQueueManager.ActionResult> viewerRefresh = manager.refreshForViewer();
+        assertEquals(1, gateway.fetchCalls);
+        gateway.fetchRequests.getFirst().complete(feed(
+                1,
+                NOW,
+                List.of(queue(
+                        7,
+                        NOW.minusSeconds(30),
+                        NOW.plusSeconds(120),
+                        List.of(new Participant("queuer-uuid", "Queuer", 0))))));
+
+        assertTrue(viewerRefresh.join().success());
+        assertFalse(manager.isActive());
+        assertEquals(1, manager.activeQueues().size());
+        clock.advance(Duration.ofSeconds(10));
+        manager.tick();
+        assertEquals(1, gateway.fetchCalls);
+
+        CompletableFuture<WarTerritoryQueueManager.ActionResult> joined = manager.toggleQueueMembership(7);
+        assertEquals(1, gateway.joinCalls);
+        gateway.joinRequests.getFirst().complete(feed(
+                2,
+                NOW.plusSeconds(10),
+                List.of(queue(
+                        7,
+                        NOW.minusSeconds(30),
+                        NOW.plusSeconds(120),
+                        List.of(
+                                new Participant("queuer-uuid", "Queuer", 0),
+                                new Participant("self-uuid", "Self", 1))))));
+
+        assertTrue(joined.join().success());
+        assertEquals(1, availability.refreshCalls);
+        assertEquals(1, gateway.fetchCalls);
     }
 
     @Test
@@ -948,7 +995,7 @@ class WarTerritoryQueueManagerTest {
         WarTerritoryQueueManager manager =
                 new WarTerritoryQueueManager(gateway, Clock.fixed(NOW, ZoneOffset.UTC), availability);
 
-        assertEquals("war_availability_required", manager.joinQueue(7).join().code());
+        assertEquals("territory_queue_not_found", manager.joinQueue(7).join().code());
 
         availability.available = true;
         manager.tick();
@@ -1040,6 +1087,7 @@ class WarTerritoryQueueManagerTest {
 
     private static final class FakeAvailability implements WarTerritoryQueueManager.AvailabilityContext {
         private boolean available;
+        private int refreshCalls;
 
         @Override
         public boolean available() {
@@ -1049,6 +1097,11 @@ class WarTerritoryQueueManagerTest {
         @Override
         public String playerUuid() {
             return "self-uuid";
+        }
+
+        @Override
+        public void refreshAvailability() {
+            refreshCalls++;
         }
     }
 
