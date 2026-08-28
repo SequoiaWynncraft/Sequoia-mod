@@ -63,6 +63,7 @@ import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
 import com.seqwawa.seq.raids.tna.TnaRoomThreeHelper;
+import com.seqwawa.seq.scroll.CraftedScrollRangeVisualiserClient;
 import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.ui.PrincessRaidCelebration;
@@ -353,6 +354,7 @@ public class SeqClient implements ClientModInitializer {
         PrincessRaidCelebration.initialize();
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
+        CraftedScrollRangeVisualiserClient.initialize();
         IngredientWaypointRenderer.initialize();
         TnaRoomThreeHelper.initialize();
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> MinecraftUiRenderer.shutdown());
