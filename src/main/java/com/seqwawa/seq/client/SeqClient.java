@@ -237,10 +237,13 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.ColorSetting lightRoomRingColorSetting;
 
     @Getter
-    public static Setting.BooleanSetting tnaRoomThreeHelperSetting;
+    public static Setting.ColorSetting craftedScrollRangeColorSetting;
 
     @Getter
     public static Setting.BooleanSetting tnaBerryLineupSetting;
+
+    @Getter
+    public static Setting.BooleanSetting tnaRoomThreeHelperSetting;
 
     @Getter
     public static Setting.BooleanSetting showRaidBadgesSetting;
@@ -858,12 +861,17 @@ public class SeqClient implements ClientModInitializer {
         lightRoomRingColorSetting = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF)
                 .withValueOverride(PrincessMode::paletteColorOverride);
         lightRoomRingColorSetting.setParentSetting(lightRoomVisualiserSetting);
-        tnaRoomThreeHelperSetting = new Setting.BooleanSetting("enable_tna_room_3_helper", "raids", true);
-        tnaRoomThreeHelperSetting.setPresentation(
-                "VM lineup", null, "Raid helpers");
+        craftedScrollRangeColorSetting =
+                new Setting.ColorSetting("crafted_scroll_range_color", "raids", 0x00FFFF)
+                        .withValueOverride(PrincessMode::paletteColorOverride);
+        craftedScrollRangeColorSetting.setPresentation(
+                "Crafted scroll range color", null, "Raid helpers");
         tnaBerryLineupSetting = new Setting.BooleanSetting("enable_tna_berry_lineup", "raids", true);
         tnaBerryLineupSetting.setPresentation(
                 "Berry lineup", null, "Raid helpers");
+        tnaRoomThreeHelperSetting = new Setting.BooleanSetting("enable_tna_room_3_helper", "raids", true);
+        tnaRoomThreeHelperSetting.setPresentation(
+                "VM lineup", null, "Raid helpers");
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
@@ -989,8 +997,9 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(halcyonRingColorSetting);
         getConfigManager().register(lightRoomVisualiserSetting);
         getConfigManager().register(lightRoomRingColorSetting);
-        getConfigManager().register(tnaRoomThreeHelperSetting);
+        getConfigManager().register(craftedScrollRangeColorSetting);
         getConfigManager().register(tnaBerryLineupSetting);
+        getConfigManager().register(tnaRoomThreeHelperSetting);
         getConfigManager().register(showRaidBadgesSetting);
         getConfigManager().register(showInsigniaBadgesSetting);
         getConfigManager().register(showOwnLeaderboardBadgeSetting);

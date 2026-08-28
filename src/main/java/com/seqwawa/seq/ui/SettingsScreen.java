@@ -8,6 +8,7 @@ import com.seqwawa.seq.LightRoomTnaRange.LightRoom;
 import com.seqwawa.seq.halcyon.HalcyonRingRenderer;
 import com.seqwawa.seq.managers.PrincessMode;
 import com.seqwawa.seq.radiance.PingRenderer;
+import com.seqwawa.seq.scroll.CraftedScrollRangeVisualiserClient;
 import com.seqwawa.seq.ui.widget.BooleanWidget;
 import com.seqwawa.seq.ui.widget.ChoiceWidget;
 import com.seqwawa.seq.ui.widget.ColorWidget;
@@ -91,6 +92,7 @@ public class SettingsScreen extends Screen {
         LightRoom.setColorPreviewActive(false);
         HalcyonRingRenderer.setColorPreviewActive(false);
         PingRenderer.setColorPreviewActive(false);
+        CraftedScrollRangeVisualiserClient.setColorPreviewActive(false);
         SeqClient.getConfigManager().save();
         super.removed();
     }
@@ -154,6 +156,9 @@ public class SettingsScreen extends Screen {
         }
         if (setting == SeqClient.getRadianceMarkerColorSetting()) {
             return new ColorWidget(setting, PingRenderer::setColorPreviewActive);
+        }
+        if (setting == SeqClient.getCraftedScrollRangeColorSetting()) {
+            return new ColorWidget(setting, CraftedScrollRangeVisualiserClient::setColorPreviewActive);
         }
         return new ColorWidget(setting, null);
     }
