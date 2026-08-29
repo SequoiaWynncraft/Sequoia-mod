@@ -32,6 +32,9 @@ import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.PrincessRaidStats;
 import com.seqwawa.seq.model.RankProfilesResponse;
+import com.seqwawa.seq.model.SeqPointsEffects;
+import com.seqwawa.seq.model.SeqPointsPurchase;
+import com.seqwawa.seq.model.SeqPointsShop;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
@@ -245,6 +248,45 @@ public class ApiClient {
         return afterValidToken(
                 SeqClient.getAuthService().ensureValidToken(false),
                 () -> get(ALLY_RAIDS_PATH + "?cutoff=" + cutoffMinutes, AllyRaidReport.class));
+    }
+
+    // ── Seq Points Shop ──
+
+    public CompletableFuture<SeqPointsShop> getSeqPointsShop() {
+        return afterValidToken(
+                SeqClient.getAuthService().ensureValidToken(false),
+                () -> get("/seq-points/shop", SeqPointsShop.class));
+    }
+
+    public CompletableFuture<SeqPointsEffects> getSeqPointsEffects() {
+        return afterValidToken(
+                SeqClient.getAuthService().ensureValidToken(false),
+                () -> get("/seq-points/effects", SeqPointsEffects.class));
+    }
+
+    public CompletableFuture<SeqPointsPurchase> purchaseSeqPointsItem(
+            UUID requestId, String itemKey, String targetPlayerUuid, String value) {
+        JsonObject body = buildSeqPointsPurchasePayload(requestId, itemKey, targetPlayerUuid, value);
+        return afterValidToken(
+                SeqClient.getAuthService().ensureValidToken(false),
+                () -> post("/seq-points/purchases", body, SeqPointsPurchase.class));
+    }
+
+    static JsonObject buildSeqPointsPurchasePayload(
+            UUID requestId, String itemKey, String targetPlayerUuid, String value) {
+        if (requestId == null || itemKey == null || itemKey.isBlank()) {
+            throw new IllegalArgumentException("Request id and shop item are required.");
+        }
+        JsonObject body = new JsonObject();
+        body.addProperty("request_id", requestId.toString());
+        body.addProperty("item_key", itemKey.trim());
+        if (targetPlayerUuid != null && !targetPlayerUuid.isBlank()) {
+            body.addProperty("target_player_uuid", targetPlayerUuid.trim());
+        }
+        if (value != null && !value.isBlank()) {
+            body.addProperty("value", value.trim());
+        }
+        return body;
     }
 
     static <T> CompletableFuture<T> afterValidToken(

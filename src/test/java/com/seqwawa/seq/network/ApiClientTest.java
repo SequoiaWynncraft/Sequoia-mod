@@ -30,6 +30,26 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ApiClientTest {
 
     @Test
+    void buildsSeqPointsPurchasePayloadWithoutClaimedBuyerIdentity() {
+        UUID requestId = UUID.fromString("20000000-0000-4000-8000-000000000001");
+
+        JsonObject payload = ApiClient.buildSeqPointsPurchasePayload(
+                requestId,
+                " temporary-rename ",
+                "10000000-0000-4000-8000-000000000002",
+                " Pine Cone ");
+
+        assertEquals(requestId.toString(), payload.get("request_id").getAsString());
+        assertEquals("temporary-rename", payload.get("item_key").getAsString());
+        assertEquals(
+                "10000000-0000-4000-8000-000000000002",
+                payload.get("target_player_uuid").getAsString());
+        assertEquals("Pine Cone", payload.get("value").getAsString());
+        assertFalse(payload.has("player_uuid"));
+        assertFalse(payload.has("minecraft_username"));
+    }
+
+    @Test
     void princessRaidPayloadContainsOnlyEventIdentityAndRaidName() {
         UUID eventId = UUID.fromString("c15bd497-9db5-441f-9678-c2aa25dd15b6");
 

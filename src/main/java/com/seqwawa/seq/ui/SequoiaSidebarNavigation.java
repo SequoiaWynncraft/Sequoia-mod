@@ -14,6 +14,7 @@ final class SequoiaSidebarNavigation {
             Destination.GITHUB,
             Destination.INGREDIENTS,
             Destination.MAP,
+            Destination.SEQ_POINTS,
             Destination.SETTINGS);
     private static final List<Destination> WAR_DESTINATIONS = List.of(
             Destination.PARTY_FINDER,
@@ -22,6 +23,7 @@ final class SequoiaSidebarNavigation {
             Destination.GITHUB,
             Destination.INGREDIENTS,
             Destination.MAP,
+            Destination.SEQ_POINTS,
             Destination.SETTINGS,
             Destination.WAR);
 
@@ -69,6 +71,7 @@ final class SequoiaSidebarNavigation {
             case MAP -> SeqClient.mc.setScreen(new WorldMapScreen(parent));
             case INGREDIENTS -> SeqClient.mc.setScreen(new IngredientGuideScreen(parent));
             case ACHIEVEMENTS -> SeqClient.mc.setScreen(new AchievementsScreen(parent));
+            case SEQ_POINTS -> SeqClient.mc.setScreen(new SeqPointsShopScreen(parent));
             case GITHUB -> openGithub();
         }
     }
@@ -85,6 +88,7 @@ final class SequoiaSidebarNavigation {
         WAR("War Planner"),
         CONNECTION("Connection"),
         ACHIEVEMENTS("Achievements"),
+        SEQ_POINTS("Seq Points"),
         SETTINGS("Settings"),
         MAP("Map"),
         INGREDIENTS("Ingredients"),

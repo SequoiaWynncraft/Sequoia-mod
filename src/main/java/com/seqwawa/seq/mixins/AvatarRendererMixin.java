@@ -7,11 +7,15 @@ import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.player.AvatarRenderer;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.client.renderer.state.CameraRenderState;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Avatar;
 import net.minecraft.world.entity.EntityAttachment;
 import net.minecraft.world.phys.Vec3;
 import com.seqwawa.seq.managers.PartyHealthBarRenderer;
+import com.seqwawa.seq.managers.SeqPointsShopManager;
 import com.seqwawa.seq.managers.VanillaSeqBadgeNametagRenderer;
+import com.seqwawa.seq.model.SeqPointsShopEffect;
 import com.seqwawa.seq.render.SeqAvatarRenderStateExtension;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -37,6 +41,14 @@ public abstract class AvatarRendererMixin {
         Vec3 attachment = player.getAttachments()
                 .getNullable(EntityAttachment.NAME_TAG, 0, player.getYRot(partialTick));
         extension.seq$setNameTagAttachment(attachment);
+
+        SeqPointsShopEffect effect = SeqPointsShopManager.getInstance().effectForUuid(player.getUUID());
+        if (effect != null && state.nameTag != null && effect.value() != null && !effect.value().isBlank()) {
+            String realName = state.nameTag.getString();
+            state.nameTag = Component.empty()
+                    .append(Component.literal(effect.value()).withStyle(ChatFormatting.LIGHT_PURPLE))
+                    .append(Component.literal(" (" + realName + ")").withStyle(ChatFormatting.GRAY));
+        }
     }
 
     @Inject(

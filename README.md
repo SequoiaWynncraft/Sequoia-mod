@@ -26,6 +26,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Raid tracking and announcements
 - Per-player raid gambit counts parsed natively from the raid-start roster
 - Sequoia achievements: guild-raid completion counts ranked from Bronze to Mythril
+- Seq Points shop with achievement awards, weekly/monthly draft entries, and timed member aliases
 - A playful Princess-mode guild-raid count, compact leaderboard, and numbered raid celebration
 - Interactive world map with gathering nodes analysis and active world events
 - Guild-specific settings and status screens
@@ -178,6 +179,16 @@ presenting missing data as zero completions.
 
 Tier colours use the `achievement.bronze` through `achievement.mythril` theme keys. See
 [`docs/theme-template.theme.yml`](docs/theme-template.theme.yml) for the complete palette schema.
+
+## Seq Points shop
+
+Open **Seq Points** from the main Sequoia screen. The shop shows separate bonus and war balances, current catalog
+items, and whether the authenticated player has already entered the current weekly or monthly draft. Purchases are
+backend-authoritative and retry-safe.
+
+Temporary Rename asks for a Minecraft username and alias. Compatible SeqMod clients render the result as
+`Alias (RealUsername)` for 15 minutes; it does not change the player's Wynncraft account name or what vanilla clients
+see. The mod refreshes active cosmetic effects in the background while connected to Sequoia on Wynncraft.
 
 ## Settings
 

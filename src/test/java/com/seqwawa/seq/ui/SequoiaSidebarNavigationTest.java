@@ -13,10 +13,10 @@ class SequoiaSidebarNavigationTest {
     @Test
     void warPlannerIsOnlyListedForAuthorizedMembers() {
         assertEquals(
-                List.of(PARTY_FINDER, ACHIEVEMENTS, CONNECTION, GITHUB, INGREDIENTS, MAP, SETTINGS),
+                List.of(PARTY_FINDER, ACHIEVEMENTS, CONNECTION, GITHUB, INGREDIENTS, MAP, SEQ_POINTS, SETTINGS),
                 SequoiaSidebarNavigation.destinations(false));
         assertEquals(
-                List.of(PARTY_FINDER, ACHIEVEMENTS, CONNECTION, GITHUB, INGREDIENTS, MAP, SETTINGS, WAR),
+                List.of(PARTY_FINDER, ACHIEVEMENTS, CONNECTION, GITHUB, INGREDIENTS, MAP, SEQ_POINTS, SETTINGS, WAR),
                 SequoiaSidebarNavigation.destinations(true));
     }
 
@@ -37,9 +37,9 @@ class SequoiaSidebarNavigationTest {
     }
 
     @Test
-    void eightRowsFitACompactSidebar() {
+    void nineRowsFitACompactSidebar() {
         SequoiaSidebarNavigation.SidebarLayout layout =
-                SequoiaSidebarNavigation.sidebarLayout(160, 8, 22, 6);
+                SequoiaSidebarNavigation.sidebarLayout(160, 9, 22, 6);
 
         assertTrue(layout.rowStep() >= layout.buttonHeight());
         assertTrue(layout.buttonHeight() >= 10);
@@ -47,7 +47,11 @@ class SequoiaSidebarNavigationTest {
         assertFalse(SettingsScreen.princessPromptFits(160, layout.bottom()));
 
         SequoiaSidebarNavigation.SidebarLayout normal =
-                SequoiaSidebarNavigation.sidebarLayout(320, 8, 22, 6);
-        assertTrue(SettingsScreen.princessPromptFits(320, normal.bottom()));
+                SequoiaSidebarNavigation.sidebarLayout(320, 9, 22, 6);
+        assertFalse(SettingsScreen.princessPromptFits(320, normal.bottom()));
+
+        SequoiaSidebarNavigation.SidebarLayout tall =
+                SequoiaSidebarNavigation.sidebarLayout(400, 9, 22, 6);
+        assertTrue(SettingsScreen.princessPromptFits(400, tall.bottom()));
     }
 }

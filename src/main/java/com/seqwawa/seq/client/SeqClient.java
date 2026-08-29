@@ -49,6 +49,7 @@ import com.seqwawa.seq.managers.PrincessRaidStatsManager;
 import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
+import com.seqwawa.seq.managers.SeqPointsShopManager;
 import com.seqwawa.seq.managers.ThemeManager;
 import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
@@ -437,6 +438,7 @@ public class SeqClient implements ClientModInitializer {
                 }
                 resetWarPlanningState();
                 GuildRaidProgressService.getInstance().tick(false);
+                SeqPointsShopManager.getInstance().reset();
                 return;
             }
             if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
@@ -446,10 +448,12 @@ public class SeqClient implements ClientModInitializer {
                 resetWarTrackingState();
                 resetWarPlanningState();
                 GuildRaidProgressService.getInstance().tick(false);
+                SeqPointsShopManager.getInstance().reset();
                 return;
             }
 
             GuildRaidProgressService.getInstance().tick();
+            SeqPointsShopManager.getInstance().tick();
             if (minecraftAccountChanged) {
                 return;
             }
@@ -553,6 +557,7 @@ public class SeqClient implements ClientModInitializer {
         }
         RaidPartySnapshotTracker.reset();
         GuildRaidProgressService.getInstance().reset();
+        SeqPointsShopManager.getInstance().reset();
         resetWarTrackingState();
         if (guildStorageTracker != null) {
             guildStorageTracker.reset();
