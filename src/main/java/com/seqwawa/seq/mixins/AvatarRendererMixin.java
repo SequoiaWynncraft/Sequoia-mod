@@ -3,6 +3,7 @@ package com.seqwawa.seq.mixins;
 import com.mojang.blaze3d.vertex.PoseStack;
 import java.util.Objects;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.player.AvatarRenderer;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
@@ -42,9 +43,16 @@ public abstract class AvatarRendererMixin {
                 .getNullable(EntityAttachment.NAME_TAG, 0, player.getYRot(partialTick));
         extension.seq$setNameTagAttachment(attachment);
 
-        SeqPointsShopEffect effect = SeqPointsShopManager.getInstance().effectForUuid(player.getUUID());
+        String username = player instanceof AbstractClientPlayer clientPlayer
+                && clientPlayer.getGameProfile() != null
+                ? clientPlayer.getGameProfile().name()
+                : null;
+        SeqPointsShopEffect effect = SeqPointsShopManager.getInstance().effectForPlayer(player.getUUID(), username);
         if (effect != null && state.nameTag != null && effect.value() != null && !effect.value().isBlank()) {
-            String realName = state.nameTag.getString();
+            String realName = effect.targetUsername();
+            if (realName == null || realName.isBlank()) {
+                realName = username == null || username.isBlank() ? state.nameTag.getString() : username;
+            }
             state.nameTag = Component.empty()
                     .append(Component.literal(effect.value()).withStyle(ChatFormatting.LIGHT_PURPLE))
                     .append(Component.literal(" (" + realName + ")").withStyle(ChatFormatting.GRAY));

@@ -6,7 +6,7 @@ import com.seqwawa.seq.model.SeqPointsPurchase;
 import com.seqwawa.seq.model.SeqPointsShop;
 import com.seqwawa.seq.model.SeqPointsShopEffect;
 import com.seqwawa.seq.network.ApiClient;
-import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.utils.PlayerNameCache;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -89,9 +89,7 @@ public final class SeqPointsShopManager {
     }
 
     public void tick() {
-        if (!ConnectionManager.isConnected()) {
-            return;
-        }
+        // Alias visibility is REST-authenticated and must not depend on the optional WebSocket.
         long now = System.currentTimeMillis();
         synchronized (this) {
             if (effectLoading || now - lastEffectRefresh < EFFECT_REFRESH_MS) {
@@ -115,12 +113,17 @@ public final class SeqPointsShopManager {
 
     public SeqPointsShopEffect effectForUuid(UUID playerUuid) {
         if (playerUuid == null) return null;
-        return active(effectsByUuid.get(playerUuid.toString()));
+        return active(effectsByUuid.get(PlayerNameCache.canonicalPlayerUuid(playerUuid).toString()));
     }
 
     public SeqPointsShopEffect effectForUsername(String username) {
         if (username == null) return null;
         return active(effectsByUsername.get(username.trim().toLowerCase(Locale.ROOT)));
+    }
+
+    public SeqPointsShopEffect effectForPlayer(UUID playerUuid, String username) {
+        SeqPointsShopEffect effect = effectForUuid(playerUuid);
+        return effect != null ? effect : effectForUsername(username);
     }
 
     public synchronized void reset() {

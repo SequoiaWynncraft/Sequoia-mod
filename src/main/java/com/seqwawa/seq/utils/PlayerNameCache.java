@@ -192,7 +192,8 @@ public class PlayerNameCache {
                     ? localPlayer.getName().getString()
                     : null;
             if (localName != null && localName.equalsIgnoreCase(normalized)) {
-                String localUuid = localPlayer.getUUID().toString();
+                UUID canonicalUuid = canonicalPlayerUuid(localPlayer.getUUID());
+                String localUuid = canonicalUuid == null ? null : canonicalUuid.toString();
                 put(localUuid, localName);
                 return CompletableFuture.completedFuture(localUuid);
             }
@@ -207,9 +208,8 @@ public class PlayerNameCache {
 
                 String name = info.getProfile().name();
                 if (name != null && name.equalsIgnoreCase(normalized)) {
-                    String resolved = info.getProfile().id() != null
-                            ? info.getProfile().id().toString()
-                            : null;
+                    UUID canonicalUuid = canonicalPlayerUuid(info.getProfile().id());
+                    String resolved = canonicalUuid == null ? null : canonicalUuid.toString();
                     if (resolved != null) {
                         put(resolved, name);
                     }
@@ -245,6 +245,14 @@ public class PlayerNameCache {
                 return null;
             }
         });
+    }
+
+    /** Restores the canonical v4 UUID from Wynncraft's display UUID form. */
+    public static UUID canonicalPlayerUuid(UUID uuid) {
+        if (uuid == null || uuid.version() == 4) {
+            return uuid;
+        }
+        return new UUID((uuid.getMostSignificantBits() & ~0xf000L) | 0x4000L, uuid.getLeastSignificantBits());
     }
 
     private static boolean isCanonicalOnlinePlayerUuid(String uuid) {

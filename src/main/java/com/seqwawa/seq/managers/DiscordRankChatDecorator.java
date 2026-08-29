@@ -822,6 +822,12 @@ public final class DiscordRankChatDecorator {
         return hasBridgeMarker ? bridgeContinuationPrefix() : null;
     }
 
+    /** Whether this line came from Sequoia's Discord bridge rather than Minecraft. */
+    static boolean isBridgeLine(Component message) {
+        return message != null
+                && (message == lastBridgeLine || bridgeContinuationPrefixFor(message) != null);
+    }
+
     /**
      * Brings a bridge prefix to the column Wynncraft starts its guild badges on, so
      * bridged lines, their continuations and real guild lines all line up.
