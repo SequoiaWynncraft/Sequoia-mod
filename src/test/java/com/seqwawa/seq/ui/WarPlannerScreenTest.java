@@ -93,20 +93,25 @@ class WarPlannerScreenTest {
     @Test
     void warMapLayoutKeepsMapAndSidebarSeparateOnNarrowScreens() {
         WarPlannerScreen.WarMapLayout layout = WarPlannerScreen.warMapLayout(320, 110, 430);
-        WarPlannerScreen.WarQueueFilterBounds queueFilter = WarPlannerScreen.warQueueFilterBounds(layout);
+        WarPlannerScreen.WarMapControls controls = WarPlannerScreen.warMapControls(layout);
 
         assertEquals(12, layout.mapX());
         assertEquals(138, layout.mapWidth());
         assertEquals(158, layout.sidebarX());
         assertTrue(layout.mapX() + layout.mapWidth() < layout.sidebarX());
-        assertTrue(queueFilter.visible());
-        assertTrue(queueFilter.x() >= layout.mapX());
-        assertTrue(queueFilter.x() + queueFilter.width() <= layout.mapX() + layout.mapWidth());
+        assertTrue(controls.queues().visible());
+        assertTrue(controls.queues().x() >= layout.mapX());
+        assertTrue(controls.queues().x() + controls.queues().width() <= layout.mapX() + layout.mapWidth());
+        assertTrue(controls.players().visible());
+        assertEquals(84, controls.players().width());
+        assertTrue(controls.players().y() > controls.queues().y());
+        assertTrue(controls.players().x() + controls.players().width() <= layout.mapX() + layout.mapWidth());
     }
 
     @Test
     void wideWarMapLayoutGivesTheInteractiveCanvasMostOfThePlannerWidth() {
         WarPlannerScreen.WarMapLayout layout = WarPlannerScreen.warMapLayout(1200, 110, 610);
+        WarPlannerScreen.WarMapControls controls = WarPlannerScreen.warMapControls(layout);
 
         assertEquals(12, layout.mapX());
         assertEquals(948, layout.mapWidth());
@@ -118,6 +123,9 @@ class WarPlannerScreenTest {
         assertFalse(layout.containsMap(layout.sidebarX() + 1, layout.mapY() + 1));
         assertTrue(layout.containsSidebar(layout.sidebarX() + 1, layout.mapY() + 1));
         assertEquals(1200 - 12, layout.sidebarX() + layout.sidebarWidth());
+        assertEquals(84, controls.players().width());
+        assertEquals(controls.queues().y(), controls.players().y());
+        assertTrue(controls.players().x() >= controls.queues().x() + controls.queues().width());
     }
 
     @Test
@@ -402,34 +410,6 @@ class WarPlannerScreenTest {
         }
         assertTrue(wide.isInsideScreen(wide.worldToScreenX(requested.minX()), wide.worldToScreenZ(requested.minZ())));
         assertTrue(wide.isInsideScreen(wide.worldToScreenX(requested.maxX()), wide.worldToScreenZ(requested.maxZ())));
-    }
-
-    @Test
-    void warMapPanAndZoomPreserveScreenGeometryAndPointerAnchor() {
-        MapViewport before = new MapViewport(100, -200, 1, 12, 110, 948, 500);
-
-        MapViewport panned = WarPlannerScreen.panWarMapViewport(before, 20, -10);
-
-        assertEquals(80, panned.centerX());
-        assertEquals(-190, panned.centerZ());
-        assertEquals(before.pixelsPerBlock(), panned.pixelsPerBlock());
-        assertEquals(before.screenWidth(), panned.screenWidth());
-        assertEquals(before.screenHeight(), panned.screenHeight());
-
-        double pointerX = 300;
-        double pointerY = 240;
-        double anchorX = panned.screenToWorldX(pointerX);
-        double anchorZ = panned.screenToWorldZ(pointerY);
-        MapViewport zoomed = WarPlannerScreen.zoomWarMapViewport(panned, pointerX, pointerY, 1.15);
-
-        assertEquals(1.15, zoomed.pixelsPerBlock(), .0001);
-        assertEquals(anchorX, zoomed.screenToWorldX(pointerX), .0001);
-        assertEquals(anchorZ, zoomed.screenToWorldZ(pointerY), .0001);
-        assertEquals(1.8, WarPlannerScreen.zoomWarMapViewport(before, pointerX, pointerY, 100).pixelsPerBlock());
-        MapViewport nearMinimum = new MapViewport(0, 0, .016, 0, 0, 100, 100);
-        assertEquals(
-                .015,
-                WarPlannerScreen.zoomWarMapViewport(nearMinimum, 50, 50, .01).pixelsPerBlock());
     }
 
     @Test

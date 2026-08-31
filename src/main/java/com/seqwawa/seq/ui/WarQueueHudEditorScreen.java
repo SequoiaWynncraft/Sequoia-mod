@@ -11,6 +11,7 @@ import static com.seqwawa.seq.ui.theme.UiColor.TEXT_MUTED;
 import static com.seqwawa.seq.ui.theme.UiColor.TEXT_PRIMARY;
 
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.raids.tna.TnaBeamIndicatorHudRenderer;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
@@ -20,7 +21,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 
-/** Drag editor scoped to the war territory queue HUD. */
+/** Drag editor for Sequoia's on-screen HUD elements. */
 public final class WarQueueHudEditorScreen extends Screen {
     private static final float HEADER_HEIGHT = 30f;
     private static final float BUTTON_WIDTH = 64f;
@@ -28,14 +29,14 @@ public final class WarQueueHudEditorScreen extends Screen {
     private static final float PADDING = 7f;
 
     private final Screen parent;
-    private boolean dragging;
+    private DragTarget dragging;
     private float dragOffsetX;
     private float dragOffsetY;
     private float mouseX;
     private float mouseY;
 
     public WarQueueHudEditorScreen(Screen parent) {
-        super(Component.literal("War queue HUD layout"));
+        super(Component.literal("HUD layout"));
         this.parent = parent;
     }
 
@@ -53,25 +54,29 @@ public final class WarQueueHudEditorScreen extends Screen {
             canvas.fillRect(0, 0, width, HEADER_HEIGHT, color(BACKGROUND_HEADER));
             drawButton(canvas, font, resetButton(), "Reset");
             drawButton(canvas, font, doneButton(), "Done");
-            drawText(canvas, font, 16f, color(ACCENT_PRIMARY), width / 2f, HEADER_HEIGHT / 2f, "War queue HUD");
+            drawText(canvas, font, 16f, color(ACCENT_PRIMARY), width / 2f, HEADER_HEIGHT / 2f, "HUD layout");
 
-            WarTerritoryQueueHudRenderer.Bounds bounds =
+            WarTerritoryQueueHudRenderer.Bounds queueBounds =
                     WarTerritoryQueueHudRenderer.previewBounds(width, height);
-            canvas.fillRoundedRect(
-                    bounds.x() - PADDING,
-                    bounds.y() - PADDING,
-                    bounds.width() + PADDING * 2f,
-                    bounds.height() + PADDING * 2f,
-                    4f,
-                    color(CONTROL_INPUT, 210));
-            canvas.strokeRect(
-                    bounds.x() - PADDING,
-                    bounds.y() - PADDING,
-                    bounds.width() + PADDING * 2f,
-                    bounds.height() + PADDING * 2f,
-                    1f,
-                    color(dragging ? ACCENT_PRIMARY : CONTROL_BORDER));
+            drawPreviewFrame(
+                    canvas,
+                    queueBounds.x(),
+                    queueBounds.y(),
+                    queueBounds.width(),
+                    queueBounds.height(),
+                    dragging == DragTarget.WAR_QUEUE);
             WarTerritoryQueueHudRenderer.renderPreview(canvas);
+
+            TnaBeamIndicatorHudRenderer.Bounds beamBounds =
+                    TnaBeamIndicatorHudRenderer.previewBounds(width, height);
+            drawPreviewFrame(
+                    canvas,
+                    beamBounds.x(),
+                    beamBounds.y(),
+                    beamBounds.width(),
+                    beamBounds.height(),
+                    dragging == DragTarget.TNA_BEAMS);
+            TnaBeamIndicatorHudRenderer.renderPreview(canvas);
 
             drawText(
                     canvas,
@@ -80,7 +85,7 @@ public final class WarQueueHudEditorScreen extends Screen {
                     color(TEXT_MUTED),
                     width / 2f,
                     height - 12f,
-                    "Drag the preview to reposition the war territory queue feed");
+                    "Drag a preview to reposition that HUD element");
         });
     }
 
@@ -96,6 +101,8 @@ public final class WarQueueHudEditorScreen extends Screen {
         if (resetButton().contains(x, y)) {
             SeqClient.getWarQueueHudXSetting().reset();
             SeqClient.getWarQueueHudYSetting().reset();
+            SeqClient.getTnaBeamIndicatorXSetting().reset();
+            SeqClient.getTnaBeamIndicatorYSetting().reset();
             SeqClient.getConfigManager().save();
             return true;
         }
@@ -104,12 +111,21 @@ public final class WarQueueHudEditorScreen extends Screen {
             return true;
         }
 
-        WarTerritoryQueueHudRenderer.Bounds bounds =
+        TnaBeamIndicatorHudRenderer.Bounds beamBounds =
+                TnaBeamIndicatorHudRenderer.previewBounds(width, height);
+        if (beamBounds.contains(x, y, PADDING)) {
+            dragging = DragTarget.TNA_BEAMS;
+            dragOffsetX = x - beamBounds.x();
+            dragOffsetY = y - beamBounds.y();
+            return true;
+        }
+
+        WarTerritoryQueueHudRenderer.Bounds queueBounds =
                 WarTerritoryQueueHudRenderer.previewBounds(width, height);
-        if (bounds.contains(x, y, PADDING)) {
-            dragging = true;
-            dragOffsetX = x - bounds.x();
-            dragOffsetY = y - bounds.y();
+        if (queueBounds.contains(x, y, PADDING)) {
+            dragging = DragTarget.WAR_QUEUE;
+            dragOffsetX = x - queueBounds.x();
+            dragOffsetY = y - queueBounds.y();
             return true;
         }
         return super.mouseClicked(click, outsideScreen);
@@ -117,31 +133,38 @@ public final class WarQueueHudEditorScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
-        if (!dragging) {
+        if (dragging == null) {
             return super.mouseDragged(click, deltaX, deltaY);
         }
         float x = MinecraftUiRenderer.mouseX(click.x());
         float y = MinecraftUiRenderer.mouseY(click.y());
         float width = MinecraftUiRenderer.screenWidth();
         float height = MinecraftUiRenderer.screenHeight();
-        WarTerritoryQueueHudRenderer.Bounds bounds =
-                WarTerritoryQueueHudRenderer.previewBounds(width, height);
-        WarTerritoryQueueHudRenderer.Position position = WarTerritoryQueueHudRenderer.positionForTopLeft(
-                width,
-                height,
-                bounds.width(),
-                bounds.height(),
-                x - dragOffsetX,
-                y - dragOffsetY);
-        SeqClient.getWarQueueHudXSetting().setValue(position.x());
-        SeqClient.getWarQueueHudYSetting().setValue(position.y());
+        if (dragging == DragTarget.TNA_BEAMS) {
+            TnaBeamIndicatorHudRenderer.Position position = TnaBeamIndicatorHudRenderer.positionForTopLeft(
+                    width, height, x - dragOffsetX, y - dragOffsetY);
+            SeqClient.getTnaBeamIndicatorXSetting().setValue(position.x());
+            SeqClient.getTnaBeamIndicatorYSetting().setValue(position.y());
+        } else {
+            WarTerritoryQueueHudRenderer.Bounds bounds =
+                    WarTerritoryQueueHudRenderer.previewBounds(width, height);
+            WarTerritoryQueueHudRenderer.Position position = WarTerritoryQueueHudRenderer.positionForTopLeft(
+                    width,
+                    height,
+                    bounds.width(),
+                    bounds.height(),
+                    x - dragOffsetX,
+                    y - dragOffsetY);
+            SeqClient.getWarQueueHudXSetting().setValue(position.x());
+            SeqClient.getWarQueueHudYSetting().setValue(position.y());
+        }
         return true;
     }
 
     @Override
     public boolean mouseReleased(@NotNull MouseButtonEvent click) {
-        if (dragging && click.button() == 0) {
-            dragging = false;
+        if (dragging != null && click.button() == 0) {
+            dragging = null;
             SeqClient.getConfigManager().save();
             return true;
         }
@@ -181,6 +204,24 @@ public final class WarQueueHudEditorScreen extends Screen {
                 label);
     }
 
+    private void drawPreviewFrame(
+            UiCanvas canvas, float x, float y, float width, float height, boolean active) {
+        canvas.fillRoundedRect(
+                x - PADDING,
+                y - PADDING,
+                width + PADDING * 2f,
+                height + PADDING * 2f,
+                4f,
+                color(CONTROL_INPUT, 210));
+        canvas.strokeRect(
+                x - PADDING,
+                y - PADDING,
+                width + PADDING * 2f,
+                height + PADDING * 2f,
+                1f,
+                color(active ? ACCENT_PRIMARY : CONTROL_BORDER));
+    }
+
     private static void drawText(
             UiCanvas canvas, String font, float size, java.awt.Color textColor, float x, float y, String text) {
         canvas.drawText(
@@ -207,5 +248,10 @@ public final class WarQueueHudEditorScreen extends Screen {
         boolean contains(float pointX, float pointY) {
             return pointX >= x && pointX <= x + width && pointY >= y && pointY <= y + height;
         }
+    }
+
+    private enum DragTarget {
+        WAR_QUEUE,
+        TNA_BEAMS
     }
 }

@@ -25,8 +25,8 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.regex.Pattern;
 
-/** Draws the opted-in war telemetry roster on the world map. */
-public final class TelemetryPlayerMapOverlay {
+/** Draws the opted-in telemetry roster over the war planner map. */
+public final class TelemetryPlayerMapOverlay implements AutoCloseable {
     private static final long REFRESH_INTERVAL_MS = Duration.ofSeconds(5).toMillis();
     private static final int FACE_TEXTURE_PX = 64;
     private static final float HEAD_SIZE = 20;
@@ -47,15 +47,15 @@ public final class TelemetryPlayerMapOverlay {
     private volatile WarStatusSnapshot snapshot = WarStatusSnapshot.EMPTY;
     private volatile CompletableFuture<WarStatusSnapshot> refresh;
     private long nextRefreshAtMs;
-    private volatile boolean closed;
+    private volatile long generation;
 
     public TelemetryPlayerMapOverlay() {}
 
     public void tick() {
-        if (closed) return;
         long now = System.currentTimeMillis();
         String token = SeqClient.getConfigManager().getToken();
         if (token == null || token.isBlank()) {
+            cancelRefresh();
             snapshot = WarStatusSnapshot.EMPTY;
             nextRefreshAtMs = now + REFRESH_INTERVAL_MS;
             return;
@@ -63,9 +63,13 @@ public final class TelemetryPlayerMapOverlay {
         if (now < nextRefreshAtMs || refresh != null && !refresh.isDone()) return;
 
         nextRefreshAtMs = now + REFRESH_INTERVAL_MS;
-        refresh = api.getWarStatusSnapshot();
-        refresh.whenComplete((received, throwable) -> {
-            if (!closed) snapshot = throwable == null && received != null ? received : WarStatusSnapshot.EMPTY;
+        long requestGeneration = generation;
+        CompletableFuture<WarStatusSnapshot> request = api.getWarStatusSnapshot();
+        refresh = request;
+        request.whenComplete((received, throwable) -> {
+            if (generation == requestGeneration) {
+                snapshot = throwable == null && received != null ? received : WarStatusSnapshot.EMPTY;
+            }
         });
     }
 
@@ -86,7 +90,6 @@ public final class TelemetryPlayerMapOverlay {
                     continue;
                 }
                 float half = HEAD_SIZE / 2;
-                canvas.fillRect(x - half - 1, z - half - 1, HEAD_SIZE + 2, HEAD_SIZE + 2, PLATE);
                 canvas.drawImage(face, x - half, z - half, HEAD_SIZE, HEAD_SIZE, 1);
             }
         } finally {
@@ -94,12 +97,17 @@ public final class TelemetryPlayerMapOverlay {
         }
     }
 
+    @Override
     public void close() {
-        closed = true;
+        generation++;
+        cancelRefresh();
+        faceDownloads.values().forEach(download -> download.cancel(true));
         faces.values().forEach(UiRenderer::deleteImage);
         faces.clear();
         faceDownloads.clear();
         invalidFaces.clear();
+        snapshot = WarStatusSnapshot.EMPTY;
+        nextRefreshAtMs = 0;
     }
 
     private UiImage face(String username) {
@@ -150,8 +158,21 @@ public final class TelemetryPlayerMapOverlay {
             UiRenderer.deleteImage(entry.getValue());
             return true;
         });
-        faceDownloads.keySet().removeIf(username -> !live.contains(username));
+        faceDownloads.entrySet().removeIf(entry -> {
+            if (live.contains(entry.getKey())) return false;
+            entry.getValue().cancel(true);
+            return true;
+        });
         invalidFaces.removeIf(username -> !live.contains(username));
+    }
+
+    private void cancelRefresh() {
+        CompletableFuture<WarStatusSnapshot> active = refresh;
+        refresh = null;
+        if (active != null) {
+            generation++;
+            if (!active.isDone()) active.cancel(true);
+        }
     }
 
     static List<PlayerPoint> resolvePlayerPoints(List<Player> players, GuildTerritoryIndex territories) {

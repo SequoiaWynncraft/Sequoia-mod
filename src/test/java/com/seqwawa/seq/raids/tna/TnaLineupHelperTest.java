@@ -15,6 +15,7 @@ class TnaLineupHelperTest {
         assertEquals(0, TnaLineupHelper.detectChallengeProgress(
                 List.of("The Nameless Anomaly", "Challenges: 0/4", "Prepare")));
         assertEquals(2, TnaLineupHelper.detectChallengeProgress(List.of("§dChallenge   2 / 4§r")));
+        assertEquals(3, TnaLineupHelper.detectChallengeProgress(List.of("Challenges: 3/4")));
         assertEquals(-1, TnaLineupHelper.detectChallengeProgress(
                 List.of("Challenges: 2/5", "No challenge progress")));
     }

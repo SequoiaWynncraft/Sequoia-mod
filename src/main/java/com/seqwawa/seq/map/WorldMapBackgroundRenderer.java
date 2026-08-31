@@ -14,11 +14,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /** Shared high-resolution image and tile layer used by Sequoia map screens. */
-public final class WorldMapBackgroundRenderer {
-    public static final double MIN_PIXELS_PER_BLOCK = 0.035;
-    public static final double MAX_PIXELS_PER_BLOCK = 2.5;
-    public static final double FULL_MAP_FIT_SCALE = 0.92;
-
+public final class WorldMapBackgroundRenderer implements AutoCloseable {
     private final GatheringMapImageService service;
     private final Map<TileKey, UiImage> tileImages = new HashMap<>();
     private UiImage mapImage;
@@ -42,6 +38,7 @@ public final class WorldMapBackgroundRenderer {
 
     public void render(UiCanvas canvas, MapViewport viewport, float alpha) {
         alpha = Math.max(0, Math.min(1, alpha));
+        if (alpha == 0 || !intersectsMap(viewport)) return;
         var manifest = service.manifest().orElse(null);
         TileSet tileSet = manifest == null ? null : manifest.tiles();
         if (tileSet != null && "tiles".equalsIgnoreCase(manifest.preferredMode())) {
@@ -54,12 +51,17 @@ public final class WorldMapBackgroundRenderer {
         if (image != null) renderFullMapImage(canvas, viewport, image, alpha);
     }
 
+    @Override
     public void close() {
         if (mapImage != null) {
             UiRenderer.deleteImage(mapImage);
             mapImage = null;
         }
         clearTileImages();
+        mapImageLoadAttempted = false;
+        loadedMapImageVersion = -1;
+        loadedTileVersion = "";
+        resetTileRangeCache();
     }
 
     private void renderFullMapImage(UiCanvas canvas, MapViewport viewport, UiImage image, float alpha) {
@@ -193,6 +195,13 @@ public final class WorldMapBackgroundRenderer {
 
     private static int clampTile(int value, int count) {
         return Math.max(0, Math.min(count - 1, value));
+    }
+
+    private static boolean intersectsMap(MapViewport viewport) {
+        return viewport.maxWorldX() >= MapCalibration.MIN_WORLD_X
+                && viewport.minWorldX() <= MapCalibration.MAX_WORLD_X
+                && viewport.maxWorldZ() >= MapCalibration.MIN_WORLD_Z
+                && viewport.minWorldZ() <= MapCalibration.MAX_WORLD_Z;
     }
 
     private void clearTileImages() {

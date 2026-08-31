@@ -8,6 +8,8 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.mixins.GameRendererFogAccessor;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -66,7 +68,7 @@ public final class TnaLineupHelper {
     }
 
     private static void tick(Minecraft client) {
-        if (!isAnyLineupEnabled() || client.player == null || client.level == null) {
+        if (!WynncraftServerPolicy.isCurrentServerAllowed() || client.player == null || client.level == null) {
             reset();
             return;
         }
@@ -84,19 +86,14 @@ public final class TnaLineupHelper {
             return NO_CHALLENGE;
         }
 
-        int challenge = challengeProgress(sidebar.getDisplayName().getString());
-        if (challenge != NO_CHALLENGE) {
-            return challenge;
-        }
+        List<String> lines = new ArrayList<>();
+        lines.add(sidebar.getDisplayName().getString());
         for (PlayerScoreEntry entry : scoreboard.listPlayerScores(sidebar)) {
             PlayerTeam team = scoreboard.getPlayersTeam(entry.owner());
             Component renderedLine = PlayerTeam.formatNameForTeam(team, entry.ownerName());
-            challenge = challengeProgress(renderedLine.getString());
-            if (challenge != NO_CHALLENGE) {
-                return challenge;
-            }
+            lines.add(renderedLine.getString());
         }
-        return NO_CHALLENGE;
+        return detectChallengeProgress(lines);
     }
 
     static int detectChallengeProgress(Iterable<String> sidebarLines) {
@@ -279,8 +276,8 @@ public final class TnaLineupHelper {
                 .setNormal(pose, (float) normal.x, (float) normal.y, (float) normal.z);
     }
 
-    private static boolean isAnyLineupEnabled() {
-        return WynncraftServerPolicy.isCurrentServerAllowed() && (isBerryEnabled() || isRoomThreeEnabled());
+    static int activeChallenge() {
+        return activeChallenge;
     }
 
     private static boolean isBerryEnabled() {

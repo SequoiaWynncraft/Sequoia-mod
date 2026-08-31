@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.seqwawa.seq.map.GuildTerritory;
 import com.seqwawa.seq.map.GuildTerritoryIndex;
 import com.seqwawa.seq.map.MapCalibration;
-import com.seqwawa.seq.map.WorldMapBackgroundRenderer;
+import com.seqwawa.seq.map.MapViewport;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.ui.PickerControlLayout.Bounds;
 import com.seqwawa.seq.ui.WarTerritoryPickerPolicy.ControlKind;
@@ -28,7 +28,7 @@ class WarTerritoryPickerScreenTest {
 
         double expected = 800
                 / (MapCalibration.MAX_WORLD_Z - MapCalibration.MIN_WORLD_Z)
-                * WorldMapBackgroundRenderer.FULL_MAP_FIT_SCALE;
+                * MapViewport.FULL_MAP_FIT_SCALE;
         assertEquals(expected, viewport.pixelsPerBlock());
         assertEquals(
                 (MapCalibration.MIN_WORLD_X + MapCalibration.MAX_WORLD_X) / 2,

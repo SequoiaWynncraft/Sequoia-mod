@@ -61,9 +61,6 @@ import org.lwjgl.glfw.GLFW;
 
 /** Focused multi-territory editor over the same background and viewport as {@code /seq map}. */
 public final class WarTerritoryPickerScreen extends Screen {
-    private static final double MIN_ZOOM = WorldMapBackgroundRenderer.MIN_PIXELS_PER_BLOCK;
-    private static final double MAX_ZOOM = WorldMapBackgroundRenderer.MAX_PIXELS_PER_BLOCK;
-
     private final Screen parent;
     private final WarPlannerManager manager = SeqClient.getWarPlannerManager();
     private final Zone original;
@@ -497,13 +494,11 @@ public final class WarTerritoryPickerScreen extends Screen {
         }
         MapViewport before = viewport(layout.map());
         if (!before.isInsideScreen(mx, my)) return true;
-        double worldX = before.screenToWorldX(mx);
-        double worldZ = before.screenToWorldZ(my);
-        double factor = scrollY > 0 ? 1.15 : 1 / 1.15;
-        pixelsPerBlock = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pixelsPerBlock * factor));
-        MapViewport after = viewport(layout.map());
-        centerX = worldX - (mx - (after.screenX() + after.screenWidth() / 2)) / pixelsPerBlock;
-        centerZ = worldZ - (my - (after.screenY() + after.screenHeight() / 2)) / pixelsPerBlock;
+        double factor = scrollY > 0 ? MapViewport.SCROLL_ZOOM_FACTOR : 1 / MapViewport.SCROLL_ZOOM_FACTOR;
+        MapViewport zoomed = before.zoomAt(mx, my, factor);
+        centerX = zoomed.centerX();
+        centerZ = zoomed.centerZ();
+        pixelsPerBlock = zoomed.pixelsPerBlock();
         return true;
     }
 
@@ -845,12 +840,10 @@ public final class WarTerritoryPickerScreen extends Screen {
                 : MapCalibration.fullBounds();
         double centerX = (bounds.minX() + bounds.maxX()) / 2;
         double centerZ = (bounds.minZ() + bounds.maxZ()) / 2;
-        double fitX = Math.max(1, viewportWidth) / Math.max(1, bounds.maxX() - bounds.minX());
-        double fitZ = Math.max(1, viewportHeight) / Math.max(1, bounds.maxZ() - bounds.minZ());
         double fitScale = focusSelection && !selected.isEmpty()
                 ? 1
-                : WorldMapBackgroundRenderer.FULL_MAP_FIT_SCALE;
-        double pixelsPerBlock = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(fitX, fitZ) * fitScale));
+                : MapViewport.FULL_MAP_FIT_SCALE;
+        double pixelsPerBlock = MapViewport.fitPixelsPerBlock(bounds, viewportWidth, viewportHeight, fitScale);
         return new InitialViewport(centerX, centerZ, pixelsPerBlock);
     }
 

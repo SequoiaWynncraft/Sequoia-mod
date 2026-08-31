@@ -63,7 +63,6 @@ import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapDisplayMode;
 import com.seqwawa.seq.map.MapFocus;
 import com.seqwawa.seq.map.MapViewport;
-import com.seqwawa.seq.map.TelemetryPlayerMapOverlay;
 import com.seqwawa.seq.map.WorldEventDefinition;
 import com.seqwawa.seq.map.WorldEventDisplayFilter;
 import com.seqwawa.seq.map.WorldEventFilters;
@@ -116,8 +115,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final float MIN_HULL_PADDING_PX = 4f;
     private static final float MAX_HULL_PADDING_PX = 12f;
     private static final int HULL_SMOOTHING_PASSES = 2;
-    private static final double MIN_PIXELS_PER_BLOCK = WorldMapBackgroundRenderer.MIN_PIXELS_PER_BLOCK;
-    private static final double MAX_PIXELS_PER_BLOCK = WorldMapBackgroundRenderer.MAX_PIXELS_PER_BLOCK;
+    private static final double MIN_PIXELS_PER_BLOCK = MapViewport.MIN_PIXELS_PER_BLOCK;
+    private static final double MAX_PIXELS_PER_BLOCK = MapViewport.MAX_PIXELS_PER_BLOCK;
     private static final double TWO_PI = Math.PI * 2.0;
     private static final double NODE_DETAIL_PIXELS_PER_BLOCK = 0.42;
     private static final double CLUSTER_BADGE_PIXELS_PER_BLOCK = 0.65;
@@ -147,7 +146,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private final IngredientGuideManager ingredientGuideManager = IngredientGuideManager.getInstance();
     private final GatheringClusterCache clusterCache = GatheringClusterCache.getInstance();
     private final WorldEventService worldEventService = WorldEventService.getInstance();
-    private final TelemetryPlayerMapOverlay telemetryPlayerOverlay = new TelemetryPlayerMapOverlay();
     private final EnumMap<GatheringProfession, Boolean> professionToggles = new EnumMap<>(GatheringProfession.class);
 
     private double centerX = (MapCalibration.MIN_WORLD_X + MapCalibration.MAX_WORLD_X) / 2.0;
@@ -321,10 +319,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     @Override
     public void removed() {
         resetGatheringTotemSolve();
-        UiRenderer.renderResource(canvas -> {
-            telemetryPlayerOverlay.close();
-            mapBackground.close();
-        });
+        UiRenderer.renderResource(canvas -> mapBackground.close());
         super.removed();
     }
 
@@ -337,7 +332,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
         float screenWidth = uiScreenWidth();
         float screenHeight = uiScreenHeight();
-        telemetryPlayerOverlay.tick();
         showDebugInfo = mapSettings.showDebugInfo();
         float mapX = SIDEBAR_WIDTH;
         float mapY = 0;
@@ -373,7 +367,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             renderWorldEvents(canvas, viewport);
             renderPlayer(canvas, viewport);
-            telemetryPlayerOverlay.render(canvas, viewport, territoryIndex);
             renderSidebar(canvas);
             renderInsightsSidebar(canvas);
             return;
@@ -385,7 +378,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 renderMapFocus(canvas, viewport);
             }
             renderPlayer(canvas, viewport);
-            telemetryPlayerOverlay.render(canvas, viewport, territoryIndex);
             renderSidebar(canvas);
             renderInsightsSidebar(canvas);
             return;
@@ -414,7 +406,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         renderGatheringTotemPlacements(canvas, viewport);
         renderPlayer(canvas, viewport);
         renderTerritoryNames(canvas, viewport);
-        telemetryPlayerOverlay.render(canvas, viewport, territoryIndex);
         if (!draggingMap && hoveredGatheringTotemPlacement != null) {
             renderGatheringTotemTooltip(canvas, hoveredGatheringTotemPlacement);
         } else if (!draggingMap && hoveredCluster != null && (clusterMode || hoveredNode == null)) {
@@ -3823,12 +3814,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void fitFullMap(float mapW, float mapH) {
-        double xScale = mapW / (MapCalibration.MAX_WORLD_X - MapCalibration.MIN_WORLD_X);
-        double zScale = mapH / (MapCalibration.MAX_WORLD_Z - MapCalibration.MIN_WORLD_Z);
-        pixelsPerBlock = clamp(
-                Math.min(xScale, zScale) * WorldMapBackgroundRenderer.FULL_MAP_FIT_SCALE,
-                MIN_PIXELS_PER_BLOCK,
-                MAX_PIXELS_PER_BLOCK);
+        pixelsPerBlock = MapViewport.fitPixelsPerBlock(
+                MapCalibration.fullBounds(), mapW, mapH, MapViewport.FULL_MAP_FIT_SCALE);
     }
 
     private boolean hasMapFocus() {
@@ -4722,12 +4709,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (!viewport.isInsideScreen(mx, my)) {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
-        double worldX = viewport.screenToWorldX(mx);
-        double worldZ = viewport.screenToWorldZ(my);
-        double factor = scrollY > 0 ? 1.15 : 1.0 / 1.15;
-        pixelsPerBlock = clamp(pixelsPerBlock * factor, MIN_PIXELS_PER_BLOCK, MAX_PIXELS_PER_BLOCK);
-        centerX = worldX - (mx - (viewport.screenX() + viewport.screenWidth() / 2.0)) / pixelsPerBlock;
-        centerZ = worldZ - (my - (viewport.screenY() + viewport.screenHeight() / 2.0)) / pixelsPerBlock;
+        double factor = scrollY > 0 ? MapViewport.SCROLL_ZOOM_FACTOR : 1 / MapViewport.SCROLL_ZOOM_FACTOR;
+        MapViewport zoomed = viewport.zoomAt(mx, my, factor);
+        centerX = zoomed.centerX();
+        centerZ = zoomed.centerZ();
+        pixelsPerBlock = zoomed.pixelsPerBlock();
         return true;
     }
 

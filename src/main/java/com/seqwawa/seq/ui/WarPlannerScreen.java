@@ -14,6 +14,8 @@ import com.seqwawa.seq.map.GuildTerritoryService;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapViewport;
+import com.seqwawa.seq.map.TelemetryPlayerMapOverlay;
+import com.seqwawa.seq.map.WorldMapBackgroundRenderer;
 import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarCompositionTargets;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
@@ -34,10 +36,8 @@ import com.seqwawa.seq.model.war.WarTerritoryQueueFeed.TerritoryQueue;
 import com.seqwawa.seq.utils.TextInputHelper;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
-import com.seqwawa.seq.utils.rendering.UiImage;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 import java.awt.Color;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -81,8 +81,6 @@ public final class WarPlannerScreen extends Screen {
     private static final float WAR_MAP_CATEGORY_ROW_STEP = 30;
     private static final float WAR_MAP_SIDEBAR_CONTENT_TOP = 34;
     private static final float WAR_MAP_SIDEBAR_BOTTOM_PADDING = 6;
-    private static final double WAR_MAP_MIN_ZOOM = .015;
-    private static final double WAR_MAP_MAX_ZOOM = 1.8;
     private static final float BUTTON_HEIGHT = 22;
     private static final float MANAGER_ACTION_WIDTH = 92;
     private static final float MAX_ROSTER_WIDTH = 680;
@@ -103,6 +101,7 @@ public final class WarPlannerScreen extends Screen {
     private static final long WAR_QUEUE_DOUBLE_CLICK_MILLIS = 350;
     private static final float WAR_QUEUE_DOUBLE_CLICK_MOVE_TOLERANCE = 4;
     private static final float WAR_QUEUE_FILTER_BUTTON_WIDTH = 78;
+    private static final float WAR_MAP_PLAYERS_BUTTON_WIDTH = 84;
     private static final float WAR_QUEUE_MAP_MAX_FONT_SIZE = 8;
     private static final float WAR_QUEUE_MAP_MIN_FONT_SIZE = 5;
     private static final long WAR_QUEUE_PULSE_PERIOD_MILLIS = 1_600;
@@ -122,8 +121,8 @@ public final class WarPlannerScreen extends Screen {
     private final WarTerritoryQueueManager queueManager;
     private final GuildTerritoryIndex territoryIndex;
     private final GatheringMapImageService mapImageService = GatheringMapImageService.getInstance();
-    private UiImage zonePreviewMapImage;
-    private long loadedMapImageVersion = -1;
+    private final WorldMapBackgroundRenderer mapBackground = new WorldMapBackgroundRenderer(mapImageService);
+    private final TelemetryPlayerMapOverlay telemetryPlayerOverlay = new TelemetryPlayerMapOverlay();
     private Tab tab = Tab.ZONES;
     private float nvgMouseX;
     private float nvgMouseY;
@@ -189,6 +188,7 @@ public final class WarPlannerScreen extends Screen {
 
     @Override
     public void tick() {
+        if (tab == Tab.ZONES && warMapPlayersEnabled()) telemetryPlayerOverlay.tick();
         if (manager == null || manager.state() == WarPlannerManager.State.FORBIDDEN) {
             SeqClient.mc.setScreen(parent);
         } else if (warPingPickerOpen && !manager.canManage()) {
@@ -237,7 +237,9 @@ public final class WarPlannerScreen extends Screen {
         float screenWidth = canvas.metrics().width();
         float height = canvas.metrics().height();
         PlannerViewport viewport = activePlannerViewport(screenWidth);
-        canvas.fillRect(0, 0, screenWidth, height, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
+        if (tab != Tab.ZONES) {
+            canvas.fillRect(0, 0, screenWidth, height, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
+        }
         canvas.fillRect(0, 0, screenWidth, HEADER_HEIGHT, plannerBackground(color(BACKGROUND_HEADER)));
         float screenMouseX = nvgMouseX;
         nvgMouseX -= viewport.x();
@@ -683,7 +685,6 @@ public final class WarPlannerScreen extends Screen {
         float width = layout.mapWidth();
         float height = layout.mapHeight();
         hoveredWarMapTerritory = null;
-        canvas.fillRoundedRect(x, y, width, height, 3, plannerBackground(color(CONTROL_INPUT)));
         List<GuildTerritory> allMapTerritories = territoryIndex.territories();
         boolean locked = manager.canManage() && territoriesLocked();
         List<Zone> displayedZones = visibleZones(
@@ -717,19 +718,8 @@ public final class WarPlannerScreen extends Screen {
         float scale = (float) viewport.pixelsPerBlock();
         float offsetX = viewport.worldToScreenX(coordinateBounds.minX());
         float offsetY = viewport.worldToScreenZ(coordinateBounds.minZ());
+        mapBackground.render(canvas, viewport, .9f * backgroundOpacityPercent() / 100f);
         canvas.scissor(x, y, width, height);
-        UiImage mapImage = zonePreviewMapImage();
-        if (mapImage != null) {
-            MapBounds imageBounds = mapImageBounds();
-            float mapX = previewX(imageBounds.minX(), coordinateBounds, offsetX, scale);
-            float mapY = previewY(imageBounds.minZ(), coordinateBounds, offsetY, scale);
-            float mapWidth = (float) ((imageBounds.maxX() - imageBounds.minX()) * scale);
-            float mapHeight = (float) ((imageBounds.maxZ() - imageBounds.minZ()) * scale);
-            canvas.drawImage(mapImage, mapX, mapY, mapWidth, mapHeight, .9f * backgroundOpacityPercent() / 100f);
-            Color tint = color(BACKGROUND_BODY_OPAQUE);
-            canvas.fillRect(x, y, width, height,
-                    plannerBackground(new Color(tint.getRed(), tint.getGreen(), tint.getBlue(), 24)));
-        }
         if (resourceColorsEnabled()) {
             drawPreviewResources(canvas, coreTerritories, details, coordinateBounds, offsetX, offsetY, scale);
         }
@@ -831,19 +821,34 @@ public final class WarPlannerScreen extends Screen {
             drawHqIcon(canvas, hqTerritory, coordinateBounds, offsetX, offsetY, scale);
         }
         canvas.resetScissor();
-        button(canvas, layout.mapX() + 6, layout.mapY() + 6, 44, BUTTON_HEIGHT, "Fit", false, false);
-        WarQueueFilterBounds queueFilter = warQueueFilterBounds(layout);
-        if (queueFilter.visible()) {
+        if (warMapPlayersEnabled()) telemetryPlayerOverlay.render(canvas, viewport, territoryIndex);
+        WarMapControls controls = warMapControls(layout);
+        if (controls.fit().visible()) {
+            button(canvas, controls.fit().x(), controls.fit().y(), controls.fit().width(), controls.fit().height(),
+                    "Fit", false, false);
+        }
+        if (controls.queues().visible()) {
             boolean onlyMine = onlyMyWarQueuesEnabled();
             button(
                     canvas,
-                    queueFilter.x(),
-                    queueFilter.y(),
-                    queueFilter.width(),
-                    queueFilter.height(),
+                    controls.queues().x(),
+                    controls.queues().y(),
+                    controls.queues().width(),
+                    controls.queues().height(),
                     onlyMine ? "My queues ✓" : "All queues",
                     false,
                     SeqClient.getWarQueueHudOnlyOwnedOrJoinedSetting() == null);
+        }
+        if (controls.players().visible()) {
+            button(
+                    canvas,
+                    controls.players().x(),
+                    controls.players().y(),
+                    controls.players().width(),
+                    controls.players().height(),
+                    warMapPlayersEnabled() ? "Players ON" : "Players OFF",
+                    false,
+                    false);
         }
         return hoveredQueue;
     }
@@ -946,9 +951,7 @@ public final class WarPlannerScreen extends Screen {
     }
 
     static MapViewport fittedWarMapViewport(MapBounds bounds, WarMapLayout layout) {
-        double scale = Math.max(WAR_MAP_MIN_ZOOM, Math.min(WAR_MAP_MAX_ZOOM, Math.min(
-                (layout.mapWidth() - 10) / Math.max(1, bounds.maxX() - bounds.minX()),
-                (layout.mapHeight() - 10) / Math.max(1, bounds.maxZ() - bounds.minZ()))));
+        double scale = MapViewport.fitPixelsPerBlock(bounds, layout.mapWidth() - 10, layout.mapHeight() - 10, 1);
         return new MapViewport(
                 (bounds.minX() + bounds.maxX()) / 2,
                 (bounds.minZ() + bounds.maxZ()) / 2,
@@ -957,40 +960,6 @@ public final class WarPlannerScreen extends Screen {
                 layout.mapY(),
                 layout.mapWidth(),
                 layout.mapHeight());
-    }
-
-    static MapViewport panWarMapViewport(MapViewport before, double deltaX, double deltaY) {
-        if (before == null || before.pixelsPerBlock() <= 0) return before;
-        return new MapViewport(
-                before.centerX() - deltaX / before.pixelsPerBlock(),
-                before.centerZ() - deltaY / before.pixelsPerBlock(),
-                before.pixelsPerBlock(),
-                before.screenX(),
-                before.screenY(),
-                before.screenWidth(),
-                before.screenHeight());
-    }
-
-    static MapViewport zoomWarMapViewport(
-            MapViewport before, double pointerX, double pointerY, double zoomFactor) {
-        if (before == null || before.pixelsPerBlock() <= 0 || zoomFactor <= 0) return before;
-        double anchorX = before.screenToWorldX(pointerX);
-        double anchorZ = before.screenToWorldZ(pointerY);
-        double scale = Math.max(
-                WAR_MAP_MIN_ZOOM,
-                Math.min(WAR_MAP_MAX_ZOOM, before.pixelsPerBlock() * zoomFactor));
-        double centerX = anchorX
-                - (pointerX - (before.screenX() + before.screenWidth() / 2)) / scale;
-        double centerZ = anchorZ
-                - (pointerY - (before.screenY() + before.screenHeight() / 2)) / scale;
-        return new MapViewport(
-                centerX,
-                centerZ,
-                scale,
-                before.screenX(),
-                before.screenY(),
-                before.screenWidth(),
-                before.screenHeight());
     }
 
     static List<GuildTerritory> oneHopContextTerritories(
@@ -2275,7 +2244,8 @@ public final class WarPlannerScreen extends Screen {
         float top = contentTop();
         WarMapLayout layout = warMapLayout(width, top, MinecraftUiRenderer.screenHeight() - 42);
         boolean locked = manager.canManage() && territoriesLocked();
-        if (hit(mx, my, layout.mapX() + 6, layout.mapY() + 6, 44, BUTTON_HEIGHT)) {
+        WarMapControls controls = warMapControls(layout);
+        if (controls.fit().contains(mx, my)) {
             pendingWarQueueClick = null;
             resetWarMapViewport(
                     layout,
@@ -2283,13 +2253,24 @@ public final class WarPlannerScreen extends Screen {
                     locked);
             return true;
         }
-        WarQueueFilterBounds queueFilter = warQueueFilterBounds(layout);
-        if (queueFilter.visible()
-                && hit(mx, my, queueFilter.x(), queueFilter.y(), queueFilter.width(), queueFilter.height())) {
+        if (controls.queues().contains(mx, my)) {
             var setting = SeqClient.getWarQueueHudOnlyOwnedOrJoinedSetting();
             if (setting != null) {
                 setting.setValue(!onlyMyWarQueuesEnabled());
                 SeqClient.getConfigManager().save();
+            }
+            pendingWarQueueClick = null;
+            draggingWarMap = false;
+            return true;
+        }
+        if (controls.players().contains(mx, my)) {
+            var setting = SeqClient.getWarPlannerShowPlayersSetting();
+            if (setting != null) {
+                setting.setValue(!warMapPlayersEnabled());
+                SeqClient.getConfigManager().save();
+                if (!setting.getValue()) {
+                    UiRenderer.renderResource(canvas -> telemetryPlayerOverlay.close());
+                }
             }
             pendingWarQueueClick = null;
             draggingWarMap = false;
@@ -2469,8 +2450,7 @@ public final class WarPlannerScreen extends Screen {
             PlannerViewport plannerViewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
             WarMapLayout layout = warMapLayout(
                     plannerViewport.width(), contentTop(), MinecraftUiRenderer.screenHeight() - 42);
-            applyWarMapViewport(panWarMapViewport(
-                    currentWarMapViewport(layout),
+            applyWarMapViewport(currentWarMapViewport(layout).panByScreenDelta(
                     MinecraftUiRenderer.mouseDelta(deltaX),
                     MinecraftUiRenderer.mouseDelta(deltaY)));
             return true;
@@ -2859,8 +2839,10 @@ public final class WarPlannerScreen extends Screen {
                     boolean locked = manager.canManage() && territoriesLocked();
                     MapViewport before = warMapViewport(
                             layout, warMapDisplayedTerritories(snapshot, locked), locked);
-                    double zoomFactor = scrollY > 0 ? 1.15 : 1 / 1.15;
-                    applyWarMapViewport(zoomWarMapViewport(before, localMouseX, localMouseY, zoomFactor));
+                    double zoomFactor = scrollY > 0
+                            ? MapViewport.SCROLL_ZOOM_FACTOR
+                            : 1 / MapViewport.SCROLL_ZOOM_FACTOR;
+                    applyWarMapViewport(before.zoomAt(localMouseX, localMouseY, zoomFactor));
                     return true;
                 }
                 if (layout.containsSidebar(localMouseX, localMouseY)) {
@@ -2892,29 +2874,10 @@ public final class WarPlannerScreen extends Screen {
     @Override
     public void removed() {
         UiRenderer.renderResource(canvas -> {
-            if (zonePreviewMapImage != null) {
-                UiRenderer.deleteImage(zonePreviewMapImage);
-                zonePreviewMapImage = null;
-            }
+            mapBackground.close();
+            telemetryPlayerOverlay.close();
         });
         super.removed();
-    }
-
-    private UiImage zonePreviewMapImage() {
-        long version = mapImageService.version();
-        if (zonePreviewMapImage != null && loadedMapImageVersion == version) return zonePreviewMapImage;
-        if (zonePreviewMapImage != null) UiRenderer.deleteImage(zonePreviewMapImage);
-        zonePreviewMapImage = null;
-        loadedMapImageVersion = version;
-        try {
-            byte[] bytes = mapImageService.imageBytes();
-            if (bytes.length > 0) {
-                zonePreviewMapImage = UiRenderer.createImage(ByteBuffer.wrap(bytes), true);
-            }
-        } catch (RuntimeException exception) {
-            SeqClient.LOGGER.warn("[WarPlanner] Could not load zone-preview map image.", exception);
-        }
-        return zonePreviewMapImage;
     }
 
     private void beginTeamEdit(Team team) {
@@ -3714,6 +3677,11 @@ public final class WarPlannerScreen extends Screen {
                 && SeqClient.getWarPlannerResourceColorsSetting().getValue();
     }
 
+    static boolean warMapPlayersEnabled() {
+        return SeqClient.getWarPlannerShowPlayersSetting() == null
+                || SeqClient.getWarPlannerShowPlayersSetting().getValue();
+    }
+
     static boolean territoriesLocked() {
         return SeqClient.getWarPlannerLockTerritoriesSetting() != null
                 && SeqClient.getWarPlannerLockTerritoriesSetting().getValue();
@@ -3826,14 +3794,26 @@ public final class WarPlannerScreen extends Screen {
                 sidebarWidth);
     }
 
-    static WarQueueFilterBounds warQueueFilterBounds(WarMapLayout layout) {
-        float x = layout.mapX() + 54;
+    static WarMapControls warMapControls(WarMapLayout layout) {
         float right = layout.mapX() + layout.mapWidth() - 6;
-        return new WarQueueFilterBounds(
-                x,
-                layout.mapY() + 6,
-                Math.max(0, Math.min(WAR_QUEUE_FILTER_BUTTON_WIDTH, right - x)),
+        float top = layout.mapY() + 6;
+        WarMapButtonBounds fit = new WarMapButtonBounds(
+                layout.mapX() + 6, top, Math.max(0, Math.min(44, right - layout.mapX() - 6)), BUTTON_HEIGHT);
+        float queueX = fit.x() + fit.width() + 4;
+        WarMapButtonBounds queues = new WarMapButtonBounds(
+                queueX, top, Math.max(0, Math.min(WAR_QUEUE_FILTER_BUTTON_WIDTH, right - queueX)), BUTTON_HEIGHT);
+        float playersX = queues.x() + queues.width() + 6;
+        float playersY = top;
+        if (right - playersX < WAR_MAP_PLAYERS_BUTTON_WIDTH) {
+            playersX = fit.x();
+            playersY += BUTTON_HEIGHT + 6;
+        }
+        WarMapButtonBounds players = new WarMapButtonBounds(
+                playersX,
+                playersY,
+                Math.max(0, Math.min(WAR_MAP_PLAYERS_BUTTON_WIDTH, right - playersX)),
                 BUTTON_HEIGHT);
+        return new WarMapControls(fit, queues, players);
     }
 
     static int warMapVisibleZoneRows(float height) {
@@ -4067,11 +4047,17 @@ public final class WarPlannerScreen extends Screen {
         }
     }
 
-    record WarQueueFilterBounds(float x, float y, float width, float height) {
+    record WarMapButtonBounds(float x, float y, float width, float height) {
         boolean visible() {
             return width > 0;
         }
+
+        boolean contains(float pointX, float pointY) {
+            return visible() && hit(pointX, pointY, x, y, width, height);
+        }
     }
+
+    record WarMapControls(WarMapButtonBounds fit, WarMapButtonBounds queues, WarMapButtonBounds players) {}
 
     record WarQueueLabelBounds(float x, float y, float width, float height) {}
 
