@@ -6,7 +6,6 @@ import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import com.mojang.authlib.GameProfile;
 import java.awt.Color;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -71,12 +70,11 @@ import com.seqwawa.seq.map.WorldEventLocation;
 import com.seqwawa.seq.map.WorldEventMarkerHitTester;
 import com.seqwawa.seq.map.WorldEventService;
 import com.seqwawa.seq.map.WorldMapSettings;
+import com.seqwawa.seq.map.WorldMapBackgroundRenderer;
 import com.seqwawa.seq.map.WorldMapSidebarPanel;
 import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.IngredientGuideManager;
 import com.seqwawa.seq.managers.IngredientItemIconFactory;
-import com.seqwawa.seq.map.GatheringMapImageService.TileKey;
-import com.seqwawa.seq.map.GatheringMapImageService.TileSet;
 import com.seqwawa.seq.model.IngredientGuideEntry;
 import com.seqwawa.seq.render.MinecraftGuiOverlay;
 import com.seqwawa.seq.utils.TextInputHelper;
@@ -117,8 +115,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final float MIN_HULL_PADDING_PX = 4f;
     private static final float MAX_HULL_PADDING_PX = 12f;
     private static final int HULL_SMOOTHING_PASSES = 2;
-    private static final double MIN_PIXELS_PER_BLOCK = 0.035;
-    private static final double MAX_PIXELS_PER_BLOCK = 2.5;
+    private static final double MIN_PIXELS_PER_BLOCK = MapViewport.MIN_PIXELS_PER_BLOCK;
+    private static final double MAX_PIXELS_PER_BLOCK = MapViewport.MAX_PIXELS_PER_BLOCK;
     private static final double TWO_PI = Math.PI * 2.0;
     private static final double NODE_DETAIL_PIXELS_PER_BLOCK = 0.42;
     private static final double CLUSTER_BADGE_PIXELS_PER_BLOCK = 0.65;
@@ -143,6 +141,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private final GatheringNodeService nodeService = GatheringNodeService.getInstance();
     private final GuildTerritoryService territoryService = GuildTerritoryService.getInstance();
     private final GatheringMapImageService mapImageService = GatheringMapImageService.getInstance();
+    private final WorldMapBackgroundRenderer mapBackground = new WorldMapBackgroundRenderer(mapImageService);
     private final WorldMapSettings mapSettings = WorldMapSettings.getInstance();
     private final IngredientGuideManager ingredientGuideManager = IngredientGuideManager.getInstance();
     private final GatheringClusterCache clusterCache = GatheringClusterCache.getInstance();
@@ -235,20 +234,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private String cachedClusterKey = "";
     private long cachedSettingsVersion = -1;
     private long gatheringAnalysisVersion;
-    private UiImage mapImage;
-    private boolean mapImageLoadAttempted;
-    private long loadedMapImageVersion = -1;
-    private final Map<TileKey, UiImage> tileImages = new HashMap<>();
     private final Map<String, MapIngredientIcon> ingredientIconCache = new HashMap<>();
     private Map<String, IngredientGuideEntry> cachedIngredientsByName = Map.of();
     private long cachedIngredientSnapshotVersion = -1;
-    private String loadedTileVersion = "";
-    private long loadedTileContentVersion = -1;
-    private TileRange cachedVisibleTileRange;
-    private TileRange cachedPrefetchTileRange;
-    private List<TileKey> cachedVisibleTiles = List.of();
-    private List<TileKey> cachedPrefetchTiles = List.of();
-    private long lastTileRequestAtMs;
     private float nvgMouseX;
     private float nvgMouseY;
 
@@ -331,13 +319,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     @Override
     public void removed() {
         resetGatheringTotemSolve();
-        UiRenderer.renderResource(canvas -> {
-            if (mapImage != null) {
-                UiRenderer.deleteImage(mapImage);
-                mapImage = null;
-            }
-            clearTileImages();
-        });
+        UiRenderer.renderResource(canvas -> mapBackground.close());
         super.removed();
     }
 
@@ -382,7 +364,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         hoveredIngredientFarmSpot = null;
         focusIconOverlays.clear();
         renderMapBackground(canvas, viewport);
-        canvas.fillRect(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(), color(MAP_TINT));
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             renderWorldEvents(canvas, viewport);
             renderPlayer(canvas, viewport);
@@ -884,11 +865,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderMapBackground(UiCanvas canvas, MapViewport viewport) {
-        UiImage image = mapImage();
-        if (image != null) {
-            renderFullMapImage(canvas, viewport, image);
-        }
-        renderMapTiles(canvas, viewport);
+        mapBackground.render(canvas, viewport);
         mapImageService.unavailableMessage()
                 .ifPresent(message -> renderMapUnavailable(canvas, viewport, message));
     }
@@ -921,213 +898,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                     color(TEXT_SECONDARY),
                     TextAlignment.LEFT);
         }
-    }
-
-    private void renderFullMapImage(UiCanvas canvas, MapViewport viewport, UiImage image) {
-        float x = viewport.worldToScreenX(MapCalibration.MIN_WORLD_X);
-        float y = viewport.worldToScreenZ(MapCalibration.MIN_WORLD_Z);
-        float width = viewport.worldToScreenX(MapCalibration.MAX_WORLD_X) - x;
-        float height = viewport.worldToScreenZ(MapCalibration.MAX_WORLD_Z) - y;
-        if (width <= 0 || height <= 0) {
-            return;
-        }
-
-        try {
-            canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
-            canvas.drawImage(image, x, y, width, height, 1f);
-        } finally {
-            canvas.resetScissor();
-        }
-    }
-
-    private void renderMapTiles(UiCanvas canvas, MapViewport viewport) {
-        var manifest = mapImageService.manifest().orElse(null);
-        TileSet tileSet = manifest == null ? null : manifest.tiles();
-        if (tileSet == null || !"tiles".equalsIgnoreCase(manifest.preferredMode())) {
-            if (!tileImages.isEmpty()) {
-                clearTileImages();
-                loadedTileVersion = "";
-            }
-            resetTileRangeCache();
-            return;
-        }
-        if (!manifest.version().equals(loadedTileVersion)) {
-            clearTileImages();
-            loadedTileVersion = manifest.version();
-            resetTileRangeCache();
-        }
-
-        TileRange visibleRange = visibleTileRange(viewport, tileSet, 0);
-        TileRange prefetchRange = visibleTileRange(viewport, tileSet, 1);
-        boolean visibleRangeChanged = !visibleRange.equals(cachedVisibleTileRange);
-        boolean prefetchRangeChanged = !prefetchRange.equals(cachedPrefetchTileRange);
-        if (visibleRangeChanged) {
-            cachedVisibleTileRange = visibleRange;
-            cachedVisibleTiles = tilesInRange(visibleRange);
-        }
-        if (prefetchRangeChanged) {
-            cachedPrefetchTileRange = prefetchRange;
-            cachedPrefetchTiles = tilesInRange(prefetchRange);
-        }
-
-        long now = System.currentTimeMillis();
-        if (visibleRangeChanged || prefetchRangeChanged || now - lastTileRequestAtMs >= 1_000L) {
-            mapImageService.requestTiles(cachedVisibleTiles, cachedPrefetchTiles);
-            lastTileRequestAtMs = now;
-        }
-
-        long tileContentVersion = mapImageService.tileVersion();
-        boolean loadMissingTileHandles = visibleRangeChanged || tileContentVersion != loadedTileContentVersion;
-
-        canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
-        try {
-            for (TileKey key : cachedVisibleTiles) {
-                UiImage tileImage = tileImage(key, loadMissingTileHandles);
-                if (tileImage != null) {
-                    renderTile(canvas, viewport, tileSet, key, tileImage);
-                }
-            }
-        } finally {
-            canvas.resetScissor();
-        }
-        loadedTileContentVersion = tileContentVersion;
-    }
-
-    private UiImage tileImage(TileKey key, boolean loadMissing) {
-        UiImage existing = tileImages.get(key);
-        if (existing != null) {
-            return existing;
-        }
-        if (!loadMissing) {
-            return null;
-        }
-        byte[] imageBytes = mapImageService.cachedTileBytes(key);
-        if (imageBytes == null || imageBytes.length == 0) {
-            return null;
-        }
-        try {
-            UiImage image = UiRenderer.createImage(ByteBuffer.wrap(imageBytes), true);
-            if (image != null) {
-                tileImages.put(key, image);
-            }
-            return image;
-        } catch (RuntimeException exception) {
-            SeqClient.LOGGER.warn("[GatheringMap] Could not load map tile {}.", key.id(), exception);
-            return null;
-        }
-    }
-
-    private void renderTile(UiCanvas canvas, MapViewport viewport, TileSet tileSet, TileKey key, UiImage image) {
-        int pixelX0 = key.x() * tileSet.tileSize();
-        int pixelY0 = key.y() * tileSet.tileSize();
-        int pixelX1 = Math.min(tileSet.width(), pixelX0 + tileSet.tileSize());
-        int pixelY1 = Math.min(tileSet.height(), pixelY0 + tileSet.tileSize());
-        double worldX0 = imageToWorldX(pixelX0, tileSet.width());
-        double worldZ0 = imageToWorldZ(pixelY0, tileSet.height());
-        double worldX1 = imageToWorldX(pixelX1, tileSet.width());
-        double worldZ1 = imageToWorldZ(pixelY1, tileSet.height());
-        float x = viewport.worldToScreenX(worldX0);
-        float y = viewport.worldToScreenZ(worldZ0);
-        float width = viewport.worldToScreenX(worldX1) - x;
-        float height = viewport.worldToScreenZ(worldZ1) - y;
-        if (width <= 0 || height <= 0) {
-            return;
-        }
-
-        canvas.drawImage(image, x, y, width, height, 1f);
-    }
-
-    private static TileRange visibleTileRange(MapViewport viewport, TileSet tileSet, int margin) {
-        double minImageX = clampImageX(MapCalibration.worldToImageX(viewport.minWorldX(), tileSet.width()), tileSet);
-        double maxImageX = clampImageX(MapCalibration.worldToImageX(viewport.maxWorldX(), tileSet.width()), tileSet);
-        double minImageY = clampImageY(MapCalibration.worldToImageZ(viewport.minWorldZ(), tileSet.height()), tileSet);
-        double maxImageY = clampImageY(MapCalibration.worldToImageZ(viewport.maxWorldZ(), tileSet.height()), tileSet);
-        int minX = clampTile((int) Math.floor(minImageX / tileSet.tileSize()) - margin, tileSet.columns());
-        int maxX = clampTile((int) Math.floor(maxImageX / tileSet.tileSize()) + margin, tileSet.columns());
-        int minY = clampTile((int) Math.floor(minImageY / tileSet.tileSize()) - margin, tileSet.rows());
-        int maxY = clampTile((int) Math.floor(maxImageY / tileSet.tileSize()) + margin, tileSet.rows());
-        return new TileRange(minX, maxX, minY, maxY);
-    }
-
-    private static List<TileKey> tilesInRange(TileRange range) {
-        List<TileKey> tiles = new ArrayList<>();
-        for (int y = range.minY(); y <= range.maxY(); y++) {
-            for (int x = range.minX(); x <= range.maxX(); x++) {
-                tiles.add(new TileKey(x, y));
-            }
-        }
-        return tiles;
-    }
-
-    private static double imageToWorldX(double imageX, int imageWidth) {
-        return MapCalibration.MIN_WORLD_X
-                + (imageX / imageWidth) * (MapCalibration.MAX_WORLD_X - MapCalibration.MIN_WORLD_X);
-    }
-
-    private static double imageToWorldZ(double imageY, int imageHeight) {
-        return MapCalibration.MIN_WORLD_Z
-                + (imageY / imageHeight) * (MapCalibration.MAX_WORLD_Z - MapCalibration.MIN_WORLD_Z);
-    }
-
-    private static double clampImageX(double value, TileSet tileSet) {
-        return Math.max(0, Math.min(tileSet.width() - 1, value));
-    }
-
-    private static double clampImageY(double value, TileSet tileSet) {
-        return Math.max(0, Math.min(tileSet.height() - 1, value));
-    }
-
-    private static int clampTile(int value, int count) {
-        return Math.max(0, Math.min(count - 1, value));
-    }
-
-    private void clearTileImages() {
-        for (UiImage image : tileImages.values()) {
-            UiRenderer.deleteImage(image);
-        }
-        tileImages.clear();
-    }
-
-    private void resetTileRangeCache() {
-        cachedVisibleTileRange = null;
-        cachedPrefetchTileRange = null;
-        cachedVisibleTiles = List.of();
-        cachedPrefetchTiles = List.of();
-        loadedTileContentVersion = -1;
-        lastTileRequestAtMs = 0;
-    }
-
-    private UiImage mapImage() {
-        long imageVersion = mapImageService.version();
-        if (mapImage != null && loadedMapImageVersion == imageVersion) {
-            return mapImage;
-        }
-        if (mapImage != null) {
-            UiRenderer.deleteImage(mapImage);
-            mapImage = null;
-        }
-        if (mapImageLoadAttempted && loadedMapImageVersion == imageVersion) {
-            return null;
-        }
-        mapImageLoadAttempted = true;
-
-        try {
-            byte[] imageBytes = mapImageService.imageBytes();
-            if (imageBytes.length == 0) {
-                loadedMapImageVersion = imageVersion;
-                return null;
-            }
-            mapImage = UiRenderer.createImage(ByteBuffer.wrap(imageBytes), true);
-            loadedMapImageVersion = imageVersion;
-        } catch (RuntimeException exception) {
-            SeqClient.LOGGER.warn(
-                    "[GatheringMap] Could not load {} map image.",
-                    mapImageService.imageSource().name().toLowerCase(Locale.ROOT),
-                    exception);
-            mapImage = null;
-            loadedMapImageVersion = imageVersion;
-        }
-        return mapImage;
     }
 
     private void renderClusterHulls(UiCanvas canvas, MapViewport viewport, boolean allowHover) {
@@ -4044,9 +3814,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void fitFullMap(float mapW, float mapH) {
-        double xScale = mapW / (MapCalibration.MAX_WORLD_X - MapCalibration.MIN_WORLD_X);
-        double zScale = mapH / (MapCalibration.MAX_WORLD_Z - MapCalibration.MIN_WORLD_Z);
-        pixelsPerBlock = clamp(Math.min(xScale, zScale) * 0.92, MIN_PIXELS_PER_BLOCK, MAX_PIXELS_PER_BLOCK);
+        pixelsPerBlock = MapViewport.fitPixelsPerBlock(
+                MapCalibration.fullBounds(), mapW, mapH, MapViewport.FULL_MAP_FIT_SCALE);
     }
 
     private boolean hasMapFocus() {
@@ -4940,12 +4709,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (!viewport.isInsideScreen(mx, my)) {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
-        double worldX = viewport.screenToWorldX(mx);
-        double worldZ = viewport.screenToWorldZ(my);
-        double factor = scrollY > 0 ? 1.15 : 1.0 / 1.15;
-        pixelsPerBlock = clamp(pixelsPerBlock * factor, MIN_PIXELS_PER_BLOCK, MAX_PIXELS_PER_BLOCK);
-        centerX = worldX - (mx - (viewport.screenX() + viewport.screenWidth() / 2.0)) / pixelsPerBlock;
-        centerZ = worldZ - (my - (viewport.screenY() + viewport.screenHeight() / 2.0)) / pixelsPerBlock;
+        double factor = scrollY > 0 ? MapViewport.SCROLL_ZOOM_FACTOR : 1 / MapViewport.SCROLL_ZOOM_FACTOR;
+        MapViewport zoomed = viewport.zoomAt(mx, my, factor);
+        centerX = zoomed.centerX();
+        centerZ = zoomed.centerZ();
+        pixelsPerBlock = zoomed.pixelsPerBlock();
         return true;
     }
 
@@ -5822,8 +5590,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                     && centerScreenY + minY <= viewport.screenY() + viewport.screenHeight();
         }
     }
-
-    private record TileRange(int minX, int maxX, int minY, int maxY) {}
 
     @Override
     public boolean isPauseScreen() {

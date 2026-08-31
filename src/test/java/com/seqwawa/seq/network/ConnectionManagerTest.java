@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.model.ChatItemPreview;
 import com.seqwawa.seq.model.GuildWarSubmission;
 import com.seqwawa.seq.model.WarStatusUpdate;
 import com.seqwawa.seq.model.WarTowerUpdate;
@@ -16,6 +17,35 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class ConnectionManagerTest {
+
+    @Test
+    void itemPreviewPayloadIncludesV3Sections() {
+        var sections = List.of(
+                new ChatItemPreview.Section("Mount Stats", List.of("Speed: 12/20", "Jump Height: 4/8")),
+                new ChatItemPreview.Section("Major ID: Hawkeye", List.of("Arrow Storm fires five arrows.")));
+        var preview = new ChatItemPreview(
+                "Gale's Force",
+                "Mythic • Bow • Lv. 95",
+                0xAA00AA,
+                List.of("3 rerolls"),
+                List.of("+26% Walk Speed"),
+                List.of(),
+                null,
+                sections);
+
+        var payload = ConnectionManager.itemPreviewArray(List.of(preview)).get(0).getAsJsonObject();
+
+        assertEquals(2, payload.getAsJsonArray("sections").size());
+        assertEquals("Mount Stats", payload.getAsJsonArray("sections").get(0).getAsJsonObject()
+                .get("title")
+                .getAsString());
+        assertEquals("Jump Height: 4/8", payload.getAsJsonArray("sections")
+                .get(0)
+                .getAsJsonObject()
+                .getAsJsonArray("lines")
+                .get(1)
+                .getAsString());
+    }
 
     @Test
     void raidAnnouncementIncludesObservedPartyGambitCounts() {

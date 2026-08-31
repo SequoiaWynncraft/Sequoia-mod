@@ -1,10 +1,15 @@
 package com.seqwawa.seq.raids.tna;
 
+import com.mojang.blaze3d.buffers.GpuBufferSlice;
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.mixins.GameRendererFogAccessor;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -12,8 +17,12 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientWorldEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.fog.FogRenderer;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.DisplaySlot;
 import net.minecraft.world.scores.Objective;
@@ -59,7 +68,7 @@ public final class TnaLineupHelper {
     }
 
     private static void tick(Minecraft client) {
-        if (!isAnyLineupEnabled() || client.player == null || client.level == null) {
+        if (!WynncraftServerPolicy.isCurrentServerAllowed() || client.player == null || client.level == null) {
             reset();
             return;
         }
@@ -77,19 +86,14 @@ public final class TnaLineupHelper {
             return NO_CHALLENGE;
         }
 
-        int challenge = challengeProgress(sidebar.getDisplayName().getString());
-        if (challenge != NO_CHALLENGE) {
-            return challenge;
-        }
+        List<String> lines = new ArrayList<>();
+        lines.add(sidebar.getDisplayName().getString());
         for (PlayerScoreEntry entry : scoreboard.listPlayerScores(sidebar)) {
             PlayerTeam team = scoreboard.getPlayersTeam(entry.owner());
             Component renderedLine = PlayerTeam.formatNameForTeam(team, entry.ownerName());
-            challenge = challengeProgress(renderedLine.getString());
-            if (challenge != NO_CHALLENGE) {
-                return challenge;
-            }
+            lines.add(renderedLine.getString());
         }
-        return NO_CHALLENGE;
+        return detectChallengeProgress(lines);
     }
 
     static int detectChallengeProgress(Iterable<String> sidebarLines) {
@@ -136,9 +140,14 @@ public final class TnaLineupHelper {
             return;
         }
 
-        RenderState state = renderState(context, client);
+        boolean blinded = client.player.hasEffect(MobEffects.BLINDNESS);
+        RenderType lines = blinded ? RenderTypes.SECONDARY_BLOCK_OUTLINE : RenderTypes.LINES_TRANSLUCENT;
+        RenderState state = renderState(context, client, lines);
         renderFloorCross(state.lines(), state.pose(), state.camera(), BERRY_STAND_POINT);
         renderAimCross(state.lines(), state.pose(), state.camera(), BERRY_STAND_POINT, BERRY_AIM_POINT);
+        if (blinded) {
+            flushWithoutFog(context, client, lines);
+        }
     }
 
     private static void renderRoomThree(WorldRenderContext context, Minecraft client) {
@@ -149,7 +158,7 @@ public final class TnaLineupHelper {
             return;
         }
 
-        RenderState state = renderState(context, client);
+        RenderState state = renderState(context, client, RenderTypes.LINES_TRANSLUCENT);
         renderFloorCross(state.lines(), state.pose(), state.camera(), ROOM_THREE_STAND_POINT);
         addLine(
                 state.lines(),
@@ -162,11 +171,24 @@ public final class TnaLineupHelper {
                 AIM_BLUE);
     }
 
-    private static RenderState renderState(WorldRenderContext context, Minecraft client) {
+    private static RenderState renderState(WorldRenderContext context, Minecraft client, RenderType lines) {
         return new RenderState(
-                context.consumers().getBuffer(RenderTypes.LINES_TRANSLUCENT),
+                context.consumers().getBuffer(lines),
                 context.matrices().last(),
                 client.gameRenderer.getMainCamera().position());
+    }
+
+    private static void flushWithoutFog(WorldRenderContext context, Minecraft client, RenderType lines) {
+        GpuBufferSlice worldFog = RenderSystem.getShaderFog();
+        FogRenderer fogRenderer = ((GameRendererFogAccessor) client.gameRenderer).seq$getFogRenderer();
+        try {
+            RenderSystem.setShaderFog(fogRenderer.getBuffer(FogRenderer.FogMode.NONE));
+            if (context.consumers() instanceof MultiBufferSource.BufferSource buffers) {
+                buffers.endBatch(lines);
+            }
+        } finally {
+            RenderSystem.setShaderFog(worldFog);
+        }
     }
 
     private static void renderFloorCross(
@@ -254,8 +276,8 @@ public final class TnaLineupHelper {
                 .setNormal(pose, (float) normal.x, (float) normal.y, (float) normal.z);
     }
 
-    private static boolean isAnyLineupEnabled() {
-        return WynncraftServerPolicy.isCurrentServerAllowed() && (isBerryEnabled() || isRoomThreeEnabled());
+    static int activeChallenge() {
+        return activeChallenge;
     }
 
     private static boolean isBerryEnabled() {

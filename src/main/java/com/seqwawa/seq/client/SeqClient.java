@@ -32,6 +32,7 @@ import com.seqwawa.seq.managers.ChatManager;
 import com.seqwawa.seq.managers.ChatRegexFilterManager;
 import com.seqwawa.seq.managers.FontManager;
 import com.seqwawa.seq.managers.GameManager;
+import com.seqwawa.seq.managers.GlobalSoundListener;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
@@ -63,6 +64,7 @@ import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
 import com.seqwawa.seq.raids.tna.TnaLineupHelper;
+import com.seqwawa.seq.raids.tna.TnaSahurSoundDetector;
 import com.seqwawa.seq.scroll.CraftedScrollRangeVisualiserClient;
 import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
@@ -246,6 +248,18 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting tnaRoomThreeHelperSetting;
 
     @Getter
+    public static Setting.BooleanSetting tnaBeamIndicatorSetting;
+
+    @Getter
+    public static Setting.IntSetting tnaBeamIndicatorSizeSetting;
+
+    @Getter
+    public static Setting.FloatSetting tnaBeamIndicatorXSetting;
+
+    @Getter
+    public static Setting.FloatSetting tnaBeamIndicatorYSetting;
+
+    @Getter
     public static Setting.BooleanSetting showRaidBadgesSetting;
 
     @Getter
@@ -264,10 +278,19 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting warPlannerResourceColorsSetting;
 
     @Getter
+    public static Setting.BooleanSetting warPlannerShowPlayersSetting;
+
+    @Getter
     public static Setting.IntSetting warPlannerBackgroundOpacitySetting;
 
     @Getter
     public static Setting.IntSetting warQueueHudTextSizeSetting;
+
+    @Getter
+    public static Setting.FloatSetting warQueueHudXSetting;
+
+    @Getter
+    public static Setting.FloatSetting warQueueHudYSetting;
 
     @Getter
     public static Setting.BooleanSetting warQueueHudOnlyOwnedOrJoinedSetting;
@@ -325,6 +348,7 @@ public class SeqClient implements ClientModInitializer {
         try {
             eventBus = new EventBus(mc::execute);
             eventBus.subscribe(this);
+            TnaSahurSoundDetector.initialize(eventBus);
         } catch (Exception e) {
             LOGGER.warn("Event bus failed to initialize.");
         }
@@ -363,7 +387,10 @@ public class SeqClient implements ClientModInitializer {
         CraftedScrollRangeVisualiserClient.initialize();
         IngredientWaypointRenderer.initialize();
         TnaLineupHelper.initialize();
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> MinecraftUiRenderer.shutdown());
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            GlobalSoundListener.shutdown();
+            MinecraftUiRenderer.shutdown();
+        });
         ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> resetWarTrackingState());
         LightRoom.init();
 
@@ -733,6 +760,7 @@ public class SeqClient implements ClientModInitializer {
     @Subscribe(Preference.CALLER) // to stay in thread
     public void onMinecraftFinishedLoading(MinecraftFinishedLoading ignored) {
         // after minecraft done loading
+        GlobalSoundListener.initialize();
         MinecraftUiRenderer.initialize();
         SeqClient.gameManager.loadFont();
         SeqClient.assetManager = new AssetManager();
@@ -872,6 +900,22 @@ public class SeqClient implements ClientModInitializer {
         tnaRoomThreeHelperSetting = new Setting.BooleanSetting("enable_tna_room_3_helper", "raids", true);
         tnaRoomThreeHelperSetting.setPresentation(
                 "VM lineup", null, "Raid helpers");
+        tnaBeamIndicatorSetting = new Setting.BooleanSetting("enable_tna_beam_indicator", "raids", true);
+        tnaBeamIndicatorSetting.setPresentation(
+                "TNA beam indicator",
+                "Show the predicted beam countdown during Challenges: 3/4.",
+                "Raid helpers");
+        tnaBeamIndicatorSizeSetting =
+                new Setting.IntSetting("tna_beam_indicator_size_percent", "raids", 100, 25, 400, 5);
+        tnaBeamIndicatorSizeSetting.setPresentation(
+                "TNA beam indicator size", "Scale the beam countdown.", "Raid helpers");
+        tnaBeamIndicatorSizeSetting.setParentSetting(tnaBeamIndicatorSetting);
+        tnaBeamIndicatorXSetting =
+                new Setting.FloatSetting("tna_beam_indicator_x", "raids", 0.5f, 0f, 1f, 0.001f);
+        tnaBeamIndicatorYSetting =
+                new Setting.FloatSetting("tna_beam_indicator_y", "raids", 0.58f, 0f, 1f, 0.001f);
+        tnaBeamIndicatorXSetting.setVisibilityCondition(() -> false);
+        tnaBeamIndicatorYSetting.setVisibilityCondition(() -> false);
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
@@ -908,10 +952,16 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.BooleanSetting("notify_tracked_world_events", "world_events", false);
         warPlannerResourceColorsSetting =
                 new Setting.BooleanSetting("resource_colors", "war_planner", false);
+        warPlannerShowPlayersSetting =
+                new Setting.BooleanSetting("show_players", "war_planner", true);
         warPlannerBackgroundOpacitySetting =
                 new Setting.IntSetting("background_opacity_percent", "war_planner", 100, 0, 100, 5);
         warQueueHudTextSizeSetting =
                 new Setting.IntSetting("queue_hud_text_size", "war_planner", 9, 6, 18);
+        warQueueHudXSetting = new Setting.FloatSetting("queue_hud_x", "war_planner", 1f, 0f, 1f, 0.001f);
+        warQueueHudYSetting = new Setting.FloatSetting("queue_hud_y", "war_planner", 0f, 0f, 1f, 0.001f);
+        warQueueHudXSetting.setVisibilityCondition(() -> false);
+        warQueueHudYSetting.setVisibilityCondition(() -> false);
         warQueueHudOnlyOwnedOrJoinedSetting =
                 new Setting.BooleanSetting("queue_hud_only_owned_or_joined", "war_planner", false);
         warQueueMissMessagesSetting =
@@ -922,6 +972,7 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.BooleanSetting("lock_territories", "war_planner", false);
         List.of(
                         warPlannerResourceColorsSetting,
+                        warPlannerShowPlayersSetting,
                         warPlannerBackgroundOpacitySetting,
                         warQueueHudTextSizeSetting,
                         warQueueHudOnlyOwnedOrJoinedSetting,
@@ -932,6 +983,10 @@ public class SeqClient implements ClientModInitializer {
         warPlannerResourceColorsSetting.setPresentation(
                 "Color by resource type",
                 "Fill map territories using their resource production colors.",
+                "War planner display");
+        warPlannerShowPlayersSetting.setPresentation(
+                "Show telemetry players",
+                "Show opted-in player heads on the war map.",
                 "War planner display");
         warPlannerBackgroundOpacitySetting.setPresentation(
                 "Background opacity",
@@ -1000,17 +1055,24 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(craftedScrollRangeColorSetting);
         getConfigManager().register(tnaBerryLineupSetting);
         getConfigManager().register(tnaRoomThreeHelperSetting);
+        getConfigManager().register(tnaBeamIndicatorSetting);
+        getConfigManager().register(tnaBeamIndicatorSizeSetting);
+        getConfigManager().register(tnaBeamIndicatorXSetting);
+        getConfigManager().register(tnaBeamIndicatorYSetting);
         getConfigManager().register(showRaidBadgesSetting);
         getConfigManager().register(showInsigniaBadgesSetting);
         getConfigManager().register(showOwnLeaderboardBadgeSetting);
         getConfigManager().register(showPartyHealthBarsSetting);
         getConfigManager().register(notifyTrackedWorldEventsSetting);
         getConfigManager().register(warPlannerResourceColorsSetting);
+        getConfigManager().register(warPlannerShowPlayersSetting);
         getConfigManager().register(warPlannerBackgroundOpacitySetting);
         getConfigManager().register(warPlannerLockTerritoriesSetting);
         getConfigManager().register(warQueueHudOnlyOwnedOrJoinedSetting);
         getConfigManager().register(warQueueHudMaxRowsSetting);
         getConfigManager().register(warQueueHudTextSizeSetting);
+        getConfigManager().register(warQueueHudXSetting);
+        getConfigManager().register(warQueueHudYSetting);
         getConfigManager().register(warQueueMissMessagesSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 

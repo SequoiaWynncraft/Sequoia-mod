@@ -25,6 +25,7 @@ import com.seqwawa.seq.map.GuildTerritoryService;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapViewport;
+import com.seqwawa.seq.map.WorldMapBackgroundRenderer;
 import com.seqwawa.seq.model.war.WarPlannerDrafts;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
@@ -38,11 +39,9 @@ import com.seqwawa.seq.ui.WarTerritoryPickerPolicy.TerritoryAccess;
 import com.seqwawa.seq.utils.TextInputHelper;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
-import com.seqwawa.seq.utils.rendering.UiImage;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 import com.seqwawa.seq.ui.widget.ColorWidget;
 import java.awt.Color;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -60,16 +59,14 @@ import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
 
-/** Focused multi-territory editor; it reuses the established map calibration, image and territory index. */
+/** Focused multi-territory editor over the same background and viewport as {@code /seq map}. */
 public final class WarTerritoryPickerScreen extends Screen {
-    private static final double MIN_ZOOM = 0.06;
-    private static final double MAX_ZOOM = 1.8;
-
     private final Screen parent;
     private final WarPlannerManager manager = SeqClient.getWarPlannerManager();
     private final Zone original;
     private final GuildTerritoryService territoryService = GuildTerritoryService.getInstance();
     private final GatheringMapImageService mapImageService = GatheringMapImageService.getInstance();
+    private final WorldMapBackgroundRenderer mapBackground = new WorldMapBackgroundRenderer(mapImageService);
 
     private GuildTerritoryIndex territoryIndex;
     private WarZoneSelection selection;
@@ -93,8 +90,6 @@ public final class WarTerritoryPickerScreen extends Screen {
     private boolean draggingMap;
     private boolean dragMoved;
     private GuildTerritory hoveredTerritory;
-    private UiImage mapImage;
-    private long loadedImageVersion = -1;
     private WarPlannerSnapshot cachedTerritorySnapshot;
     private TerritoryAccess cachedTerritoryAccess = TerritoryAccess.empty();
     private Map<String, WarPlannerSnapshot.TerritoryDetails> cachedTerritoryDetails = Map.of();
@@ -162,7 +157,6 @@ public final class WarTerritoryPickerScreen extends Screen {
             pixelsPerBlock = initial.pixelsPerBlock();
             fitted = true;
         }
-        canvas.fillRect(0, 0, width, height, WarPlannerScreen.plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         renderMap(canvas, viewport(layout.map()));
         renderSidebar(canvas, layout);
         canvas.fillRect(
@@ -206,19 +200,8 @@ public final class WarTerritoryPickerScreen extends Screen {
     }
 
     private void renderMap(UiCanvas canvas, MapViewport viewport) {
-        canvas.fillRect(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(),
-                WarPlannerScreen.plannerBackground(color(BACKGROUND_BODY)));
-        UiImage image = mapImage();
+        mapBackground.render(canvas, viewport, WarPlannerScreen.backgroundOpacityPercent() / 100f);
         canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
-        if (image != null) {
-            float x = viewport.worldToScreenX(MapCalibration.MIN_WORLD_X);
-            float y = viewport.worldToScreenZ(MapCalibration.MIN_WORLD_Z);
-            float w = viewport.worldToScreenX(MapCalibration.MAX_WORLD_X) - x;
-            float h = viewport.worldToScreenZ(MapCalibration.MAX_WORLD_Z) - y;
-            canvas.drawImage(image, x, y, w, h, WarPlannerScreen.backgroundOpacityPercent() / 100f);
-        }
-        canvas.fillRect(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(),
-                WarPlannerScreen.plannerBackground(color(MAP_TINT)));
 
         TerritoryAccess access = territoryAccess();
         hoveredTerritory = !draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY)
@@ -511,13 +494,11 @@ public final class WarTerritoryPickerScreen extends Screen {
         }
         MapViewport before = viewport(layout.map());
         if (!before.isInsideScreen(mx, my)) return true;
-        double worldX = before.screenToWorldX(mx);
-        double worldZ = before.screenToWorldZ(my);
-        double factor = scrollY > 0 ? 1.15 : 1 / 1.15;
-        pixelsPerBlock = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pixelsPerBlock * factor));
-        MapViewport after = viewport(layout.map());
-        centerX = worldX - (mx - (after.screenX() + after.screenWidth() / 2)) / pixelsPerBlock;
-        centerZ = worldZ - (my - (after.screenY() + after.screenHeight() / 2)) / pixelsPerBlock;
+        double factor = scrollY > 0 ? MapViewport.SCROLL_ZOOM_FACTOR : 1 / MapViewport.SCROLL_ZOOM_FACTOR;
+        MapViewport zoomed = before.zoomAt(mx, my, factor);
+        centerX = zoomed.centerX();
+        centerZ = zoomed.centerZ();
+        pixelsPerBlock = zoomed.pixelsPerBlock();
         return true;
     }
 
@@ -661,12 +642,7 @@ public final class WarTerritoryPickerScreen extends Screen {
 
     @Override
     public void removed() {
-        UiRenderer.renderResource(canvas -> {
-            if (mapImage != null) {
-                UiRenderer.deleteImage(mapImage);
-                mapImage = null;
-            }
-        });
+        UiRenderer.renderResource(canvas -> mapBackground.close());
         super.removed();
     }
 
@@ -864,25 +840,11 @@ public final class WarTerritoryPickerScreen extends Screen {
                 : MapCalibration.fullBounds();
         double centerX = (bounds.minX() + bounds.maxX()) / 2;
         double centerZ = (bounds.minZ() + bounds.maxZ()) / 2;
-        double fitX = Math.max(1, viewportWidth) / Math.max(1, bounds.maxX() - bounds.minX());
-        double fitZ = Math.max(1, viewportHeight) / Math.max(1, bounds.maxZ() - bounds.minZ());
-        double pixelsPerBlock = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(fitX, fitZ)));
+        double fitScale = focusSelection && !selected.isEmpty()
+                ? 1
+                : MapViewport.FULL_MAP_FIT_SCALE;
+        double pixelsPerBlock = MapViewport.fitPixelsPerBlock(bounds, viewportWidth, viewportHeight, fitScale);
         return new InitialViewport(centerX, centerZ, pixelsPerBlock);
-    }
-
-    private UiImage mapImage() {
-        long version = mapImageService.version();
-        if (mapImage != null && loadedImageVersion == version) return mapImage;
-        if (mapImage != null) UiRenderer.deleteImage(mapImage);
-        mapImage = null;
-        loadedImageVersion = version;
-        try {
-            byte[] bytes = mapImageService.imageBytes();
-            if (bytes.length > 0) mapImage = UiRenderer.createImage(ByteBuffer.wrap(bytes), true);
-        } catch (RuntimeException exception) {
-            SeqClient.LOGGER.warn("[WarPlanner] Could not load territory-picker map image.", exception);
-        }
-        return mapImage;
     }
 
     private void label(UiCanvas canvas, String value, float y) {

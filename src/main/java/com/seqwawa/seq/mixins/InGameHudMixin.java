@@ -7,6 +7,7 @@ import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
 import com.seqwawa.seq.accessors.EventBusAccessor;
 import com.seqwawa.seq.events.Render2DEvent;
+import com.seqwawa.seq.raids.tna.TnaBeamIndicatorHudRenderer;
 import com.seqwawa.seq.ui.SequoiaScreen;
 import com.seqwawa.seq.ui.SettingsScreen;
 import com.seqwawa.seq.ui.WarTerritoryQueueHudRenderer;
@@ -34,10 +35,14 @@ public class InGameHudMixin implements EventBusAccessor {
         if (currentScreen == null) {
             UiRenderer.renderHud(canvas -> {
                 seqdispatch(new Render2DEvent(context, tickCounter.getGameTimeDeltaPartialTick(true)));
+                TnaBeamIndicatorHudRenderer.render(canvas);
                 WarTerritoryQueueHudRenderer.render(canvas);
             });
         } else if (isChatScreen(currentScreen.getClass())) {
-            UiRenderer.renderScreen(currentScreen, WarTerritoryQueueHudRenderer::render);
+            UiRenderer.renderScreen(currentScreen, canvas -> {
+                TnaBeamIndicatorHudRenderer.render(canvas);
+                WarTerritoryQueueHudRenderer.render(canvas);
+            });
         }
     }
 
