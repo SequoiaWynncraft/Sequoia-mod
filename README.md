@@ -19,6 +19,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Automatic backend authentication
 - Automatic connection to Sequoia services
 - In-game Discord chat bridge
+- Wynntils item links rendered in Discord with item-encoding-v3 stats, major IDs, crafted details, and mounts
 - Clickable world names in chat, so a called-out world is one click away
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
@@ -36,8 +37,9 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Fabric Loader `0.18.4` or newer
 - Fabric API `0.141.2+1.21.11`
 - Java `21`
-- Wynntils (optional; adds legacy completed-war and queue lifecycle reporting, while live war
-  telemetry and active-class detection also work through bounded vanilla fallbacks)
+- Wynntils (optional; version 4.2.9 or newer enables item-encoding-v3 Discord previews and also adds legacy
+  completed-war and queue lifecycle reporting, while live war telemetry and active-class detection use bounded
+  vanilla fallbacks)
 
 ## First-time setup
 
@@ -208,8 +210,9 @@ The complete supported schema is available in [`docs/theme-template.theme.yml`](
 1. Install Fabric for Minecraft `1.21.11`.
 2. Put the Sequoia mod jar in your Minecraft `mods` folder.
 3. Install Fabric API.
-4. Optionally install [Wynntils](https://wynntils.com) for legacy completed-war and queue lifecycle
-   reporting. Sequoia's core UI, live war telemetry, and active-class detection do not require it.
+4. Optionally install [Wynntils](https://wynntils.com) 4.2.9 or newer for complete item-encoding-v3 Discord
+   previews plus legacy completed-war and queue lifecycle reporting. Sequoia's core UI, live war telemetry, and
+   active-class detection do not require it.
 5. Start the game and press `O`, or run `/seq`.
 
 ## License

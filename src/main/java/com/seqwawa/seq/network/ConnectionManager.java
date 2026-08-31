@@ -1098,7 +1098,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return List.copyOf(uniqueNames.values());
     }
 
-    private static JsonArray itemPreviewArray(List<ChatItemPreview> itemPreviews) {
+    static JsonArray itemPreviewArray(List<ChatItemPreview> itemPreviews) {
         JsonArray previews = new JsonArray();
         if (itemPreviews == null || itemPreviews.isEmpty()) {
             return previews;
@@ -1130,9 +1130,34 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             if (preview.shinyStat() != null) {
                 json.add("shiny_stat", shinyStatJson(preview.shinyStat()));
             }
+            JsonArray sections = itemSectionArray(preview.sections());
+            if (sections.size() > 0) {
+                json.add("sections", sections);
+            }
             previews.add(json);
         }
         return previews;
+    }
+
+    private static JsonArray itemSectionArray(List<ChatItemPreview.Section> sections) {
+        JsonArray array = new JsonArray();
+        if (sections == null || sections.isEmpty()) {
+            return array;
+        }
+        for (ChatItemPreview.Section section : sections) {
+            if (section == null || section.title() == null || section.title().isBlank()) {
+                continue;
+            }
+            JsonArray lines = stringArray(section.lines());
+            if (lines.size() == 0) {
+                continue;
+            }
+            JsonObject json = new JsonObject();
+            json.addProperty("title", section.title());
+            json.add("lines", lines);
+            array.add(json);
+        }
+        return array;
     }
 
     private static JsonObject shinyStatJson(ChatItemPreview.ShinyStat shinyStat) {
