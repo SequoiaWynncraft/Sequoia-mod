@@ -2,12 +2,9 @@ package com.seqwawa.seq.integrations;
 
 import com.wynntils.core.components.Models;
 import com.wynntils.models.items.WynnItem;
-import com.wynntils.models.items.items.game.CharmItem;
 import com.wynntils.models.items.items.game.CraftedConsumableItem;
-import com.wynntils.models.items.items.game.CraftedGearItem;
 import com.wynntils.models.items.items.game.GearItem;
 import com.wynntils.models.items.items.game.MountItem;
-import com.wynntils.models.items.items.game.TomeItem;
 import com.wynntils.models.items.properties.CraftedItemProperty;
 import com.wynntils.models.items.properties.DurableItemProperty;
 import com.wynntils.models.items.properties.GearTierItemProperty;
@@ -19,17 +16,13 @@ import com.wynntils.models.items.properties.PowderedItemProperty;
 import com.wynntils.models.items.properties.RerollableItemProperty;
 import com.wynntils.models.items.properties.ShinyItemProperty;
 import com.wynntils.models.stats.StatCalculator;
-import com.wynntils.models.stats.type.FixedStats;
 import com.wynntils.models.stats.type.StatActualValue;
 import com.wynntils.models.stats.type.StatPossibleValues;
-import com.wynntils.models.gear.type.GearRequirements;
 import com.wynntils.models.mount.type.MountInfo;
 import com.wynntils.models.mount.type.MountStat;
 import com.wynntils.utils.EncodedByteBuffer;
 import com.wynntils.utils.type.CappedValue;
 import com.wynntils.utils.type.ErrorOr;
-import com.wynntils.utils.type.Pair;
-import com.wynntils.utils.type.RangedValue;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -285,101 +278,18 @@ public final class WynntilsItemPreviewAccess {
     static List<ChatItemPreview.Section> sections(WynnItem item) {
         List<ChatItemPreview.Section> sections = new ArrayList<>();
         if (item instanceof GearItem gearItem) {
-            FixedStats fixedStats = gearItem.getItemInfo().fixedStats();
-            addSection(sections, "Base Stats", baseStatLines(
-                    fixedStats.averageDps(),
-                    fixedStats.healthBuff(),
-                    fixedStats.attackSpeed().map(speed -> speed.getName()).orElse(null),
-                    fixedStats.damages(),
-                    fixedStats.defences()));
-            fixedStats.majorIds().ifPresent(majorId -> addSection(
+            gearItem.getItemInfo().fixedStats().majorIds().ifPresent(majorId -> addSection(
                     sections,
                     "Major ID: " + majorId.name(),
                     splitLines(majorId.lore().getStringWithoutFormatting())));
-            addSection(sections, "Requirements", requirementLines(gearItem.getItemInfo().requirements()));
-        } else if (item instanceof CraftedGearItem craftedGear) {
-            addSection(sections, "Base Stats", baseStatLines(
-                    craftedGear.getDps(),
-                    craftedGear.getHealth(),
-                    craftedGear.getAttackSpeed().map(speed -> speed.getName()).orElse(null),
-                    craftedGear.getDamages(),
-                    craftedGear.getDefences()));
-            addSection(sections, "Requirements", requirementLines(craftedGear.getRequirements()));
         } else if (item instanceof CraftedConsumableItem consumable) {
             addSection(sections, "Consumable", consumableLines(consumable));
             addSection(sections, "Effects", consumableEffectLines(consumable));
         } else if (item instanceof MountItem mount) {
             addSection(sections, "Mount", mountLines(mount));
             addSection(sections, "Mount Stats", mountStatLines(mount.getMountInfo()));
-        } else if (item instanceof TomeItem tome) {
-            List<String> requirements = new ArrayList<>();
-            requirements.add("Combat Level: " + tome.getItemInfo().requirements().level());
-            if (tome.getItemInfo().requirements().tomeSeeking()) {
-                requirements.add("Requires Tome Seeking");
-            }
-            addSection(sections, "Requirements", requirements);
-        } else if (item instanceof CharmItem charm) {
-            List<String> requirements = new ArrayList<>();
-            requirements.add("Combat Level: " + charm.getItemInfo().requirements().level());
-            RangedValue workingLevels = charm.getItemInfo().requirements().workingLevelRange();
-            if (workingLevels != null && !workingLevels.equals(RangedValue.NONE)) {
-                requirements.add("Effective Levels: " + formatRange(workingLevels));
-            }
-            addSection(sections, "Requirements", requirements);
         }
         return List.copyOf(sections);
-    }
-
-    private static List<String> baseStatLines(
-            int averageDps,
-            int health,
-            String attackSpeed,
-            List<? extends Pair<?, RangedValue>> damages,
-            List<? extends Pair<?, Integer>> defences) {
-        List<String> lines = new ArrayList<>();
-        if (attackSpeed != null && !attackSpeed.isBlank()) {
-            lines.add("Attack Speed: " + attackSpeed);
-        }
-        if (averageDps > 0) {
-            lines.add("Average DPS: " + averageDps);
-        }
-        if (health != 0) {
-            lines.add("Health: " + signed(health));
-        }
-        if (damages != null) {
-            damages.stream()
-                    .filter(pair -> pair != null && pair.a() != null && pair.b() != null)
-                    .map(pair -> displayName(pair.a()) + " Damage: " + formatRange(pair.b()))
-                    .forEach(lines::add);
-        }
-        if (defences != null) {
-            defences.stream()
-                    .filter(pair -> pair != null && pair.a() != null && pair.b() != null && pair.b() != 0)
-                    .map(pair -> displayName(pair.a()) + " Defence: " + signed(pair.b()))
-                    .forEach(lines::add);
-        }
-        return lines;
-    }
-
-    private static List<String> requirementLines(GearRequirements requirements) {
-        if (requirements == null) {
-            return List.of();
-        }
-        List<String> lines = new ArrayList<>();
-        if (requirements.level() > 0) {
-            lines.add("Combat Level: " + requirements.level());
-        }
-        requirements.classType()
-                .filter(classType -> !"NONE".equals(classType.name()))
-                .ifPresent(classType -> lines.add("Class: " + classType.getName()));
-        if (requirements.skills() != null) {
-            requirements.skills().stream()
-                    .filter(pair -> pair != null && pair.a() != null && pair.b() != null && pair.b() > 0)
-                    .map(pair -> pair.a().getDisplayName() + ": " + pair.b())
-                    .forEach(lines::add);
-        }
-        requirements.quest().filter(quest -> !quest.isBlank()).ifPresent(quest -> lines.add("Quest: " + quest));
-        return lines;
     }
 
     private static List<String> consumableLines(CraftedConsumableItem item) {
@@ -486,22 +396,6 @@ public final class WynntilsItemPreviewAccess {
 
     private static String signed(int value) {
         return value > 0 ? "+" + value : String.valueOf(value);
-    }
-
-    private static String formatRange(RangedValue range) {
-        return range.isFixed() ? String.valueOf(range.low()) : range.low() + "–" + range.high();
-    }
-
-    private static String displayName(Object value) {
-        try {
-            Object displayName = value.getClass().getMethod("getDisplayName").invoke(value);
-            if (displayName != null && !displayName.toString().isBlank()) {
-                return displayName.toString().trim();
-            }
-        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException ignored) {
-            // Fall through to enum/object formatting.
-        }
-        return formatEnumName(value);
     }
 
     private static String formatRollPercentage(StatActualValue stat, StatPossibleValues possibleValue) {

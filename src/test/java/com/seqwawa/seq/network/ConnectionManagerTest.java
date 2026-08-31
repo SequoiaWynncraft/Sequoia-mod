@@ -21,7 +21,7 @@ class ConnectionManagerTest {
     @Test
     void itemPreviewPayloadIncludesV3Sections() {
         var sections = List.of(
-                new ChatItemPreview.Section("Base Stats", List.of("Average DPS: 1200", "Air Damage: 400–500")),
+                new ChatItemPreview.Section("Mount Stats", List.of("Speed: 12/20", "Jump Height: 4/8")),
                 new ChatItemPreview.Section("Major ID: Hawkeye", List.of("Arrow Storm fires five arrows.")));
         var preview = new ChatItemPreview(
                 "Gale's Force",
@@ -36,10 +36,10 @@ class ConnectionManagerTest {
         var payload = ConnectionManager.itemPreviewArray(List.of(preview)).get(0).getAsJsonObject();
 
         assertEquals(2, payload.getAsJsonArray("sections").size());
-        assertEquals("Base Stats", payload.getAsJsonArray("sections").get(0).getAsJsonObject()
+        assertEquals("Mount Stats", payload.getAsJsonArray("sections").get(0).getAsJsonObject()
                 .get("title")
                 .getAsString());
-        assertEquals("Air Damage: 400–500", payload.getAsJsonArray("sections")
+        assertEquals("Jump Height: 4/8", payload.getAsJsonArray("sections")
                 .get(0)
                 .getAsJsonObject()
                 .getAsJsonArray("lines")

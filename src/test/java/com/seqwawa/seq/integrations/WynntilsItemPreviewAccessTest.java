@@ -39,7 +39,7 @@ class WynntilsItemPreviewAccessTest {
     }
 
     @Test
-    void createsCraftedGearBaseStatsAndRequirementsSections() {
+    void omitsCraftedGearBaseStatsAndRequirementsSections() {
         CraftedGearItem gear = new CraftedGearItem(
                 "Forged Spear",
                 GearType.SPEAR,
@@ -63,21 +63,7 @@ class WynntilsItemPreviewAccessTest {
 
         List<ChatItemPreview.Section> sections = WynntilsItemPreviewAccess.sections(gear);
 
-        assertEquals(
-                List.of(
-                        "Attack Speed: Fast",
-                        "Average DPS: 725",
-                        "Health: +1250",
-                        "Neutral Damage: 450–600",
-                        "Fire Defence: +80"),
-                sections.get(0).lines());
-        assertEquals(
-                List.of(
-                        "Combat Level: 105",
-                        "Class: Warrior",
-                        "Strength: 70",
-                        "Quest: A Journey Beyond"),
-                sections.get(1).lines());
+        assertEquals(List.of(), sections);
     }
 
     @Test

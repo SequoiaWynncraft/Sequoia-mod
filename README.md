@@ -210,7 +210,7 @@ The complete supported schema is available in [`docs/theme-template.theme.yml`](
 1. Install Fabric for Minecraft `1.21.11`.
 2. Put the Sequoia mod jar in your Minecraft `mods` folder.
 3. Install Fabric API.
-4. Optionally install [Wynntils](https://wynntils.com) 4.2.9 or newer for complete item-encoding-v3 Discord
+4. Optionally install [Wynntils](https://wynntils.com) 4.2.9 or newer for item-encoding-v3 Discord
    previews plus legacy completed-war and queue lifecycle reporting. Sequoia's core UI, live war telemetry, and
    active-class detection do not require it.
 5. Start the game and press `O`, or run `/seq`.
