@@ -42,9 +42,16 @@ public final class WorldMapBackgroundRenderer {
 
     public void render(UiCanvas canvas, MapViewport viewport, float alpha) {
         alpha = Math.max(0, Math.min(1, alpha));
+        var manifest = service.manifest().orElse(null);
+        TileSet tileSet = manifest == null ? null : manifest.tiles();
+        if (tileSet != null && "tiles".equalsIgnoreCase(manifest.preferredMode())) {
+            renderMapTiles(canvas, viewport, manifest.version(), tileSet, alpha);
+            return;
+        }
+
+        clearInactiveTiles();
         UiImage image = mapImage();
         if (image != null) renderFullMapImage(canvas, viewport, image, alpha);
-        renderMapTiles(canvas, viewport, alpha);
     }
 
     public void close() {
@@ -70,20 +77,11 @@ public final class WorldMapBackgroundRenderer {
         }
     }
 
-    private void renderMapTiles(UiCanvas canvas, MapViewport viewport, float alpha) {
-        var manifest = service.manifest().orElse(null);
-        TileSet tileSet = manifest == null ? null : manifest.tiles();
-        if (tileSet == null || !"tiles".equalsIgnoreCase(manifest.preferredMode())) {
-            if (!tileImages.isEmpty()) {
-                clearTileImages();
-                loadedTileVersion = "";
-            }
-            resetTileRangeCache();
-            return;
-        }
-        if (!manifest.version().equals(loadedTileVersion)) {
+    private void renderMapTiles(
+            UiCanvas canvas, MapViewport viewport, String manifestVersion, TileSet tileSet, float alpha) {
+        if (!manifestVersion.equals(loadedTileVersion)) {
             clearTileImages();
-            loadedTileVersion = manifest.version();
+            loadedTileVersion = manifestVersion;
             resetTileRangeCache();
         }
 
@@ -118,6 +116,13 @@ public final class WorldMapBackgroundRenderer {
             canvas.resetScissor();
         }
         loadedTileContentVersion = tileContentVersion;
+    }
+
+    private void clearInactiveTiles() {
+        if (loadedTileVersion.isEmpty()) return;
+        if (!tileImages.isEmpty()) clearTileImages();
+        loadedTileVersion = "";
+        resetTileRangeCache();
     }
 
     private UiImage tileImage(TileKey key, boolean loadMissing) {

@@ -370,7 +370,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         hoveredIngredientFarmSpot = null;
         focusIconOverlays.clear();
         renderMapBackground(canvas, viewport);
-        canvas.fillRect(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(), color(MAP_TINT));
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             renderWorldEvents(canvas, viewport);
             renderPlayer(canvas, viewport);

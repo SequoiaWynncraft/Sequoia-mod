@@ -160,7 +160,6 @@ public final class WarTerritoryPickerScreen extends Screen {
             pixelsPerBlock = initial.pixelsPerBlock();
             fitted = true;
         }
-        canvas.fillRect(0, 0, width, height, WarPlannerScreen.plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         renderMap(canvas, viewport(layout.map()));
         renderSidebar(canvas, layout);
         canvas.fillRect(
@@ -204,12 +203,8 @@ public final class WarTerritoryPickerScreen extends Screen {
     }
 
     private void renderMap(UiCanvas canvas, MapViewport viewport) {
-        canvas.fillRect(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(),
-                WarPlannerScreen.plannerBackground(color(BACKGROUND_BODY)));
         mapBackground.render(canvas, viewport, WarPlannerScreen.backgroundOpacityPercent() / 100f);
         canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
-        canvas.fillRect(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(),
-                WarPlannerScreen.plannerBackground(color(MAP_TINT)));
 
         TerritoryAccess access = territoryAccess();
         hoveredTerritory = !draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY)
