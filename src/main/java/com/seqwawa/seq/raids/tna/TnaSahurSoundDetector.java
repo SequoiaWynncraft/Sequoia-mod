@@ -3,12 +3,7 @@ package com.seqwawa.seq.raids.tna;
 import com.collarmc.pounce.EventBus;
 import com.collarmc.pounce.Preference;
 import com.collarmc.pounce.Subscribe;
-import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.events.SoundPlayedEvent;
-import com.seqwawa.seq.events.TnaSahurSoundProcEvent;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.Set;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -19,13 +14,11 @@ import net.minecraft.resources.Identifier;
 public final class TnaSahurSoundDetector {
     static final int SAHUR_CHALLENGE = 3;
     static final long DUPLICATE_WINDOW_MS = 300L;
-    static final long SEQUENCE_TIMEOUT_MS = 6_000L;
+    static final long EXPECTED_DANGER_MS = 1_800L;
     static final long DANGER_DISPLAY_MS = 1_200L;
 
     private static final long UNSET = -1L;
     private static final TnaSahurSoundDetector INSTANCE = new TnaSahurSoundDetector();
-    private static final DateTimeFormatter LOG_TIME =
-            DateTimeFormatter.ofPattern("HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
     private static final Map<Identifier, Set<Identifier>> SAHUR_SOUNDS = Map.of(
             id("item.trident.thunder"),
                     Set.of(id("item/trident/thunder1"), id("item/trident/thunder2")),
@@ -52,20 +45,7 @@ public final class TnaSahurSoundDetector {
             return;
         }
 
-        long nowMs = monotonicMillis();
-        ProcResult proc = tracker.record(kind, nowMs);
-        SeqClient.LOGGER.info(
-                "[TNA] Watched beam sound at {} rawDelta={} sequenceElapsed={} logical={} timerBeams={} event={} sound={}",
-                LOG_TIME.format(Instant.ofEpochMilli(System.currentTimeMillis())),
-                elapsed(proc.rawDeltaMs()),
-                elapsed(proc.sequenceElapsedMs()),
-                proc.accepted() ? kind.name().toLowerCase(java.util.Locale.ROOT) : "duplicate",
-                proc.timerBeams(),
-                sound.eventId(),
-                sound.soundId());
-        if (proc.accepted()) {
-            SeqClient.getEventBus().dispatch(new TnaSahurSoundProcEvent(sound));
-        }
+        tracker.record(kind, monotonicMillis());
     }
 
     static IndicatorState indicatorState(long nowMs) {
@@ -87,10 +67,6 @@ public final class TnaSahurSoundDetector {
         return eventId.equals(id("item.trident.thunder")) ? BeamKind.DANGER : BeamKind.TIMER;
     }
 
-    private static String elapsed(long milliseconds) {
-        return milliseconds < 0 ? "n/a" : "+" + milliseconds + "ms";
-    }
-
     private static long monotonicMillis() {
         return System.nanoTime() / 1_000_000L;
     }
@@ -107,56 +83,53 @@ public final class TnaSahurSoundDetector {
     static final class BeamTracker {
         private int timerBeams;
         private long sequenceStartedAtMs = UNSET;
-        private long lastLogicalProcAtMs = UNSET;
-        private long lastRawProcAtMs = UNSET;
         private long lastTimerProcAtMs = UNSET;
         private long lastDangerProcAtMs = UNSET;
         private long dangerStartedAtMs = UNSET;
 
-        ProcResult record(BeamKind kind, long nowMs) {
-            long rawDeltaMs = since(lastRawProcAtMs, nowMs);
-            if (lastLogicalProcAtMs != UNSET && nowMs - lastLogicalProcAtMs >= SEQUENCE_TIMEOUT_MS) {
-                reset();
-            }
-            lastRawProcAtMs = nowMs;
-
+        boolean record(BeamKind kind, long nowMs) {
             long previousKindProc = kind == BeamKind.TIMER ? lastTimerProcAtMs : lastDangerProcAtMs;
             boolean accepted = previousKindProc == UNSET || nowMs - previousKindProc >= DUPLICATE_WINDOW_MS;
-            if (accepted) {
-                if (sequenceStartedAtMs == UNSET || dangerStartedAtMs != UNSET && kind == BeamKind.TIMER) {
-                    sequenceStartedAtMs = nowMs;
-                    timerBeams = 0;
-                    dangerStartedAtMs = UNSET;
-                }
-                lastLogicalProcAtMs = nowMs;
-                if (kind == BeamKind.TIMER) {
-                    lastTimerProcAtMs = nowMs;
-                    timerBeams = Math.min(2, timerBeams + 1);
-                } else {
-                    lastDangerProcAtMs = nowMs;
-                    dangerStartedAtMs = nowMs;
-                }
+            if (!accepted) {
+                return false;
             }
-            return new ProcResult(
-                    accepted,
-                    rawDeltaMs,
-                    since(sequenceStartedAtMs, nowMs),
-                    timerBeams);
+
+            boolean sequenceComplete = dangerStartedAtMs != UNSET
+                    || sequenceStartedAtMs != UNSET
+                            && nowMs - sequenceStartedAtMs >= EXPECTED_DANGER_MS;
+            if (sequenceStartedAtMs == UNSET || sequenceComplete && kind == BeamKind.TIMER) {
+                sequenceStartedAtMs = nowMs;
+                dangerStartedAtMs = UNSET;
+                timerBeams = 0;
+            }
+            if (kind == BeamKind.TIMER) {
+                lastTimerProcAtMs = nowMs;
+                timerBeams = Math.min(2, timerBeams + 1);
+            } else {
+                lastDangerProcAtMs = nowMs;
+                dangerStartedAtMs = nowMs;
+            }
+            return true;
         }
 
         IndicatorState snapshot(int challenge, long nowMs) {
             expire(challenge, nowMs);
+            long sequenceElapsedMs = since(sequenceStartedAtMs, nowMs);
             return new IndicatorState(
-                    challenge == SAHUR_CHALLENGE && (timerBeams > 0 || dangerStartedAtMs != UNSET),
+                    challenge == SAHUR_CHALLENGE && timerBeams > 0,
                     timerBeams,
-                    dangerStartedAtMs != UNSET,
-                    since(dangerStartedAtMs, nowMs));
+                    dangerStartedAtMs != UNSET || sequenceElapsedMs >= EXPECTED_DANGER_MS,
+                    sequenceElapsedMs < 0
+                            ? EXPECTED_DANGER_MS
+                            : Math.max(0L, EXPECTED_DANGER_MS - sequenceElapsedMs));
         }
 
         void expire(int challenge, long nowMs) {
             if (challenge != SAHUR_CHALLENGE
                     || dangerStartedAtMs != UNSET && nowMs - dangerStartedAtMs >= DANGER_DISPLAY_MS
-                    || lastLogicalProcAtMs != UNSET && nowMs - lastLogicalProcAtMs >= SEQUENCE_TIMEOUT_MS) {
+                    || dangerStartedAtMs == UNSET
+                            && sequenceStartedAtMs != UNSET
+                            && nowMs - sequenceStartedAtMs >= EXPECTED_DANGER_MS + DANGER_DISPLAY_MS) {
                 reset();
             }
         }
@@ -164,27 +137,19 @@ public final class TnaSahurSoundDetector {
         void reset() {
             timerBeams = 0;
             sequenceStartedAtMs = UNSET;
-            lastLogicalProcAtMs = UNSET;
-            lastRawProcAtMs = UNSET;
             lastTimerProcAtMs = UNSET;
             lastDangerProcAtMs = UNSET;
             dangerStartedAtMs = UNSET;
         }
-
-        private static long since(long startedAtMs, long nowMs) {
-            return startedAtMs == UNSET ? UNSET : Math.max(0L, nowMs - startedAtMs);
-        }
     }
-
-    record ProcResult(
-            boolean accepted,
-            long rawDeltaMs,
-            long sequenceElapsedMs,
-            int timerBeams) {}
 
     record IndicatorState(
             boolean visible,
             int timerBeams,
-            boolean danger,
-            long dangerElapsedMs) {}
+            boolean firing,
+            long remainingMs) {}
+
+    private static long since(long startedAtMs, long nowMs) {
+        return startedAtMs == UNSET ? UNSET : Math.max(0L, nowMs - startedAtMs);
+    }
 }

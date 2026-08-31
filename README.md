@@ -194,7 +194,7 @@ The settings screen includes controls for:
 - UI theme selection
 - Update checks on startup
 - Draggable war queue HUD position through **HUD layout**, text size, maximum rows, and an only-my-queues filter shared with the war planner map
-- Toggleable TNA beam dots with a draggable position in **HUD layout**
+- Toggleable TNA beam countdown with a draggable position in **HUD layout**
 - Optional queue-miss blame messages, disabled by default
 
 War tracking, planner display, and queue controls share one **Wars** category. Settings that depend on another

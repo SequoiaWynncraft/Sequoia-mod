@@ -8,8 +8,9 @@ import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.managers.ThemeManager;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import java.awt.Color;
+import java.util.Locale;
 
-/** Three beam-progress dots shown below the crosshair during TNA's third challenge. */
+/** Predicted beam countdown shown below the crosshair during TNA's third challenge. */
 public final class TnaBeamIndicatorHudRenderer {
     static final float DEFAULT_X = 0.5f;
     static final float DEFAULT_Y = 0.58f;
@@ -17,8 +18,8 @@ public final class TnaBeamIndicatorHudRenderer {
     private static final float HUD_MARGIN = 7f;
     private static final float LAMP_RADIUS = 6f;
     private static final float LAMP_GAP = 18f;
-    private static final float CONTENT_WIDTH = LAMP_GAP * 2f + LAMP_RADIUS * 2f;
-    private static final float CONTENT_HEIGHT = 28f;
+    private static final float CONTENT_WIDTH = 48f;
+    private static final float CONTENT_HEIGHT = 32f;
 
     private TnaBeamIndicatorHudRenderer() {}
 
@@ -33,13 +34,12 @@ public final class TnaBeamIndicatorHudRenderer {
         }
 
         Bounds bounds = bounds(canvas.metrics().width(), canvas.metrics().height());
-        int completedBeams = state.danger() ? 3 : state.timerBeams();
-        renderDots(canvas, bounds, completedBeams, state.danger(), scale());
+        renderIndicator(canvas, bounds, state.timerBeams(), displayText(state), state.firing(), scale());
     }
 
     public static Bounds renderPreview(UiCanvas canvas) {
         Bounds bounds = previewBounds(canvas.metrics().width(), canvas.metrics().height());
-        renderDots(canvas, bounds, 2, false, scale());
+        renderIndicator(canvas, bounds, 2, "1.0", false, scale());
         return bounds;
     }
 
@@ -47,25 +47,35 @@ public final class TnaBeamIndicatorHudRenderer {
         return bounds(screenWidth, screenHeight);
     }
 
-    private static void renderDots(
-            UiCanvas canvas, Bounds bounds, int completedBeams, boolean fire, float scale) {
+    private static void renderIndicator(
+            UiCanvas canvas,
+            Bounds bounds,
+            int timerBeams,
+            String text,
+            boolean fire,
+            float scale) {
         float centerX = bounds.x() + bounds.width() / 2f;
-        float centerY = bounds.y() + LAMP_RADIUS * scale;
+        float lampY = bounds.y() + LAMP_RADIUS * scale;
+        int completedBeams = fire ? 3 : timerBeams;
         for (int index = 1; index <= 3; index++) {
             float x = centerX + (index - 2) * LAMP_GAP * scale;
             Color color = opaque(ThemeManager.color(index <= completedBeams ? CONTROL_SUCCESS : CONTROL_DANGER));
-            canvas.fillCircle(x, centerY, LAMP_RADIUS * scale, color);
+            canvas.fillCircle(x, lampY, LAMP_RADIUS * scale, color);
         }
 
-        if (fire) {
-            drawText(
-                    canvas,
-                    "FIRE !",
-                    centerX,
-                    centerY + 14f * scale,
-                    11f * scale,
-                    opaque(ThemeManager.color(CONTROL_DANGER)));
-        }
+        drawText(
+                canvas,
+                text,
+                centerX,
+                lampY + 18f * scale,
+                (fire ? 13f : 12f) * scale,
+                opaque(ThemeManager.color(fire ? CONTROL_DANGER : CONTROL_SUCCESS)));
+    }
+
+    static String displayText(TnaSahurSoundDetector.IndicatorState state) {
+        return state.firing()
+                ? "FIRE !"
+                : String.format(Locale.ROOT, "%.1f", Math.ceil(state.remainingMs() / 100d) / 10d);
     }
 
     private static Bounds bounds(float screenWidth, float screenHeight) {

@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.seqwawa.seq.raids.tna.TnaSahurSoundDetector.BeamKind;
 import com.seqwawa.seq.raids.tna.TnaSahurSoundDetector.BeamTracker;
 import com.seqwawa.seq.raids.tna.TnaSahurSoundDetector.IndicatorState;
-import com.seqwawa.seq.raids.tna.TnaSahurSoundDetector.ProcResult;
 import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.Test;
 
@@ -30,22 +29,21 @@ class TnaSahurSoundDetectorTest {
     }
 
     @Test
-    void groupsDuplicateCallbacksAndArmsTheThirdLamp() {
+    void groupsDuplicateCallbacksAndAdvancesTheCountdown() {
         BeamTracker tracker = new BeamTracker();
 
-        ProcResult firstTimer = tracker.record(BeamKind.TIMER, 1_000L);
-        ProcResult firstDuplicate = tracker.record(BeamKind.TIMER, 1_020L);
-        ProcResult secondTimer = tracker.record(BeamKind.TIMER, 2_000L);
+        boolean firstTimer = tracker.record(BeamKind.TIMER, 1_000L);
+        boolean firstDuplicate = tracker.record(BeamKind.TIMER, 1_020L);
+        boolean secondTimer = tracker.record(BeamKind.TIMER, 2_000L);
         IndicatorState armed = tracker.snapshot(3, 2_000L);
 
-        assertTrue(firstTimer.accepted());
-        assertFalse(firstDuplicate.accepted());
-        assertEquals(20L, firstDuplicate.rawDeltaMs());
-        assertTrue(secondTimer.accepted());
-        assertEquals(1_000L, secondTimer.sequenceElapsedMs());
-        assertEquals(2, armed.timerBeams());
+        assertTrue(firstTimer);
+        assertFalse(firstDuplicate);
+        assertTrue(secondTimer);
         assertTrue(armed.visible());
-        assertFalse(armed.danger());
+        assertEquals(2, armed.timerBeams());
+        assertFalse(armed.firing());
+        assertEquals(800L, armed.remainingMs());
     }
 
     @Test
@@ -54,19 +52,18 @@ class TnaSahurSoundDetectorTest {
         tracker.record(BeamKind.TIMER, 1_000L);
         tracker.record(BeamKind.TIMER, 2_000L);
 
-        ProcResult danger = tracker.record(BeamKind.DANGER, 3_000L);
-        ProcResult dangerDuplicate = tracker.record(BeamKind.DANGER, 3_010L);
+        boolean danger = tracker.record(BeamKind.DANGER, 3_000L);
+        boolean dangerDuplicate = tracker.record(BeamKind.DANGER, 3_010L);
         IndicatorState firing = tracker.snapshot(3, 3_100L);
         IndicatorState reset = tracker.snapshot(3, 3_000L + TnaSahurSoundDetector.DANGER_DISPLAY_MS);
 
-        assertTrue(danger.accepted());
-        assertEquals(2_000L, danger.sequenceElapsedMs());
-        assertFalse(dangerDuplicate.accepted());
+        assertTrue(danger);
+        assertFalse(dangerDuplicate);
         assertTrue(firing.visible());
-        assertTrue(firing.danger());
+        assertTrue(firing.firing());
+        assertEquals(0L, firing.remainingMs());
         assertFalse(reset.visible());
-        assertEquals(0, reset.timerBeams());
-        assertFalse(reset.danger());
+        assertFalse(reset.firing());
     }
 
     @Test
@@ -79,7 +76,28 @@ class TnaSahurSoundDetectorTest {
 
         assertFalse(hidden.visible());
         assertFalse(waiting.visible());
-        assertEquals(0, waiting.timerBeams());
+    }
+
+    @Test
+    void predictsFireAndExpiresWhenDangerSoundIsMissing() {
+        BeamTracker tracker = new BeamTracker();
+        tracker.record(BeamKind.TIMER, 1_000L);
+        tracker.record(BeamKind.TIMER, 2_000L);
+
+        IndicatorState warning = tracker.snapshot(
+                3, 1_000L + TnaSahurSoundDetector.EXPECTED_DANGER_MS - 1L);
+        IndicatorState firing = tracker.snapshot(
+                3, 1_000L + TnaSahurSoundDetector.EXPECTED_DANGER_MS);
+        IndicatorState reset = tracker.snapshot(
+                3,
+                1_000L + TnaSahurSoundDetector.EXPECTED_DANGER_MS
+                        + TnaSahurSoundDetector.DANGER_DISPLAY_MS);
+
+        assertFalse(warning.firing());
+        assertEquals(1L, warning.remainingMs());
+        assertTrue(firing.visible());
+        assertTrue(firing.firing());
+        assertFalse(reset.visible());
     }
 
     private static boolean isSahurProc(String eventId, String soundId) {

@@ -903,12 +903,12 @@ public class SeqClient implements ClientModInitializer {
         tnaBeamIndicatorSetting = new Setting.BooleanSetting("enable_tna_beam_indicator", "raids", true);
         tnaBeamIndicatorSetting.setPresentation(
                 "TNA beam indicator",
-                "Show the three-dot beam counter during Challenges: 3/4.",
+                "Show the predicted beam countdown during Challenges: 3/4.",
                 "Raid helpers");
         tnaBeamIndicatorSizeSetting =
                 new Setting.IntSetting("tna_beam_indicator_size_percent", "raids", 100, 25, 400, 5);
         tnaBeamIndicatorSizeSetting.setPresentation(
-                "TNA beam indicator size", "Scale the three-dot beam counter.", "Raid helpers");
+                "TNA beam indicator size", "Scale the beam countdown.", "Raid helpers");
         tnaBeamIndicatorSizeSetting.setParentSetting(tnaBeamIndicatorSetting);
         tnaBeamIndicatorXSetting =
                 new Setting.FloatSetting("tna_beam_indicator_x", "raids", 0.5f, 0f, 1f, 0.001f);

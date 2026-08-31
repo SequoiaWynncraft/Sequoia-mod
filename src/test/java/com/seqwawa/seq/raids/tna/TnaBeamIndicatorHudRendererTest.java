@@ -9,6 +9,15 @@ import org.junit.jupiter.api.Test;
 
 class TnaBeamIndicatorHudRendererTest {
     @Test
+    void formatsCountdownWithOneDecimalBeforeFire() {
+        assertEquals("1.8", text(false, 1_800L));
+        assertEquals("1.1", text(false, 1_001L));
+        assertEquals("1.0", text(false, 1_000L));
+        assertEquals("0.1", text(false, 1L));
+        assertEquals("FIRE !", text(true, 0L));
+    }
+
+    @Test
     void enableSettingDefaultsOnAndCanDisableTheHud() {
         assertTrue(TnaBeamIndicatorHudRenderer.isEnabled(null));
         assertTrue(TnaBeamIndicatorHudRenderer.isEnabled(
@@ -31,13 +40,18 @@ class TnaBeamIndicatorHudRendererTest {
     @Test
     void positionsAndClampsTheDraggableIndicator() {
         assertEquals(
-                new TnaBeamIndicatorHudRenderer.Bounds(76f, 36f, 48f, 28f),
+                new TnaBeamIndicatorHudRenderer.Bounds(76f, 34f, 48f, 32f),
                 TnaBeamIndicatorHudRenderer.positionBounds(200f, 100f, 0.5f, 0.5f, 1f));
         assertEquals(
-                new TnaBeamIndicatorHudRenderer.Bounds(52f, 22f, 96f, 56f),
+                new TnaBeamIndicatorHudRenderer.Bounds(52f, 18f, 96f, 64f),
                 TnaBeamIndicatorHudRenderer.positionBounds(200f, 100f, 0.5f, 0.5f, 2f));
         assertEquals(
                 new TnaBeamIndicatorHudRenderer.Position(0f, 1f),
                 TnaBeamIndicatorHudRenderer.positionForTopLeft(200f, 100f, -20f, 500f));
+    }
+
+    private static String text(boolean firing, long remainingMs) {
+        return TnaBeamIndicatorHudRenderer.displayText(
+                new TnaSahurSoundDetector.IndicatorState(true, 2, firing, remainingMs));
     }
 }
