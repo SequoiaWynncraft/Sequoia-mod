@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.map.GuildTerritory;
 import com.seqwawa.seq.map.GuildTerritoryIndex;
+import com.seqwawa.seq.map.MapCalibration;
+import com.seqwawa.seq.map.WorldMapBackgroundRenderer;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
 import com.seqwawa.seq.ui.PickerControlLayout.Bounds;
 import com.seqwawa.seq.ui.WarTerritoryPickerPolicy.ControlKind;
@@ -19,6 +21,23 @@ import org.junit.jupiter.api.Test;
 import org.lwjgl.glfw.GLFW;
 
 class WarTerritoryPickerScreenTest {
+    @Test
+    void fullMapViewportUsesWorldMapFitAndZoomBounds() {
+        WarTerritoryPickerScreen.InitialViewport viewport = WarTerritoryPickerScreen.initialViewport(
+                new GuildTerritoryIndex(List.of()), Set.of(), false, 1_000, 800);
+
+        double expected = 800
+                / (MapCalibration.MAX_WORLD_Z - MapCalibration.MIN_WORLD_Z)
+                * WorldMapBackgroundRenderer.FULL_MAP_FIT_SCALE;
+        assertEquals(expected, viewport.pixelsPerBlock());
+        assertEquals(
+                (MapCalibration.MIN_WORLD_X + MapCalibration.MAX_WORLD_X) / 2,
+                viewport.centerX());
+        assertEquals(
+                (MapCalibration.MIN_WORLD_Z + MapCalibration.MAX_WORLD_Z) / 2,
+                viewport.centerZ());
+    }
+
     @Test
     void focusedViewportCentersAndFitsSelectedTerritories() {
         GuildTerritory selected = GuildTerritory.fromCorners("Selected", -1000, -3000, -800, -2800);
