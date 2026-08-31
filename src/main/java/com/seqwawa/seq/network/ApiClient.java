@@ -43,6 +43,7 @@ import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneCategoryDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import com.seqwawa.seq.model.war.WarPlannerAccess;
 import com.seqwawa.seq.model.war.WarPlannerSnapshot;
+import com.seqwawa.seq.model.war.WarStatusSnapshot;
 import com.seqwawa.seq.model.war.WarTerritoryQueueFeed;
 import com.seqwawa.seq.network.auth.MinecraftAuthChallengeResponse;
 import com.seqwawa.seq.network.auth.MinecraftAuthCompleteRequest;
@@ -290,6 +291,10 @@ public class ApiClient {
 
     public CompletableFuture<WarPlannerAccess> getWarPlannerAccess() {
         return get("/war-planner/access", WarPlannerAccess.class);
+    }
+
+    public CompletableFuture<WarStatusSnapshot> getWarStatusSnapshot() {
+        return get("/war-status/snapshot", WarStatusSnapshot.class);
     }
 
     public CompletableFuture<WarTerritoryQueueFeed> getWarTerritoryQueues() {

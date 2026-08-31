@@ -64,6 +64,7 @@ import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapDisplayMode;
 import com.seqwawa.seq.map.MapFocus;
 import com.seqwawa.seq.map.MapViewport;
+import com.seqwawa.seq.map.TelemetryPlayerMapOverlay;
 import com.seqwawa.seq.map.WorldEventDefinition;
 import com.seqwawa.seq.map.WorldEventDisplayFilter;
 import com.seqwawa.seq.map.WorldEventFilters;
@@ -147,6 +148,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private final IngredientGuideManager ingredientGuideManager = IngredientGuideManager.getInstance();
     private final GatheringClusterCache clusterCache = GatheringClusterCache.getInstance();
     private final WorldEventService worldEventService = WorldEventService.getInstance();
+    private final TelemetryPlayerMapOverlay telemetryPlayerOverlay = new TelemetryPlayerMapOverlay();
     private final EnumMap<GatheringProfession, Boolean> professionToggles = new EnumMap<>(GatheringProfession.class);
 
     private double centerX = (MapCalibration.MIN_WORLD_X + MapCalibration.MAX_WORLD_X) / 2.0;
@@ -332,6 +334,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     public void removed() {
         resetGatheringTotemSolve();
         UiRenderer.renderResource(canvas -> {
+            telemetryPlayerOverlay.close();
             if (mapImage != null) {
                 UiRenderer.deleteImage(mapImage);
                 mapImage = null;
@@ -350,6 +353,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
         float screenWidth = uiScreenWidth();
         float screenHeight = uiScreenHeight();
+        telemetryPlayerOverlay.tick();
         showDebugInfo = mapSettings.showDebugInfo();
         float mapX = SIDEBAR_WIDTH;
         float mapY = 0;
@@ -386,6 +390,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             renderWorldEvents(canvas, viewport);
             renderPlayer(canvas, viewport);
+            telemetryPlayerOverlay.render(canvas, viewport, territoryIndex);
             renderSidebar(canvas);
             renderInsightsSidebar(canvas);
             return;
@@ -397,6 +402,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 renderMapFocus(canvas, viewport);
             }
             renderPlayer(canvas, viewport);
+            telemetryPlayerOverlay.render(canvas, viewport, territoryIndex);
             renderSidebar(canvas);
             renderInsightsSidebar(canvas);
             return;
@@ -425,6 +431,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         renderGatheringTotemPlacements(canvas, viewport);
         renderPlayer(canvas, viewport);
         renderTerritoryNames(canvas, viewport);
+        telemetryPlayerOverlay.render(canvas, viewport, territoryIndex);
         if (!draggingMap && hoveredGatheringTotemPlacement != null) {
             renderGatheringTotemTooltip(canvas, hoveredGatheringTotemPlacement);
         } else if (!draggingMap && hoveredCluster != null && (clusterMode || hoveredNode == null)) {
