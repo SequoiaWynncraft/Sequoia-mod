@@ -270,6 +270,12 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.IntSetting warQueueHudTextSizeSetting;
 
     @Getter
+    public static Setting.FloatSetting warQueueHudXSetting;
+
+    @Getter
+    public static Setting.FloatSetting warQueueHudYSetting;
+
+    @Getter
     public static Setting.BooleanSetting warQueueHudOnlyOwnedOrJoinedSetting;
 
     @Getter
@@ -912,6 +918,10 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.IntSetting("background_opacity_percent", "war_planner", 100, 0, 100, 5);
         warQueueHudTextSizeSetting =
                 new Setting.IntSetting("queue_hud_text_size", "war_planner", 9, 6, 18);
+        warQueueHudXSetting = new Setting.FloatSetting("queue_hud_x", "war_planner", 1f, 0f, 1f, 0.001f);
+        warQueueHudYSetting = new Setting.FloatSetting("queue_hud_y", "war_planner", 0f, 0f, 1f, 0.001f);
+        warQueueHudXSetting.setVisibilityCondition(() -> false);
+        warQueueHudYSetting.setVisibilityCondition(() -> false);
         warQueueHudOnlyOwnedOrJoinedSetting =
                 new Setting.BooleanSetting("queue_hud_only_owned_or_joined", "war_planner", false);
         warQueueMissMessagesSetting =
@@ -1011,6 +1021,8 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(warQueueHudOnlyOwnedOrJoinedSetting);
         getConfigManager().register(warQueueHudMaxRowsSetting);
         getConfigManager().register(warQueueHudTextSizeSetting);
+        getConfigManager().register(warQueueHudXSetting);
+        getConfigManager().register(warQueueHudYSetting);
         getConfigManager().register(warQueueMissMessagesSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 

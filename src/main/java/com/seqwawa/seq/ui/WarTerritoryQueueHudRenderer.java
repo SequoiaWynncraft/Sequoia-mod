@@ -22,8 +22,11 @@ public final class WarTerritoryQueueHudRenderer {
     static final int MAX_CONFIGURABLE_ROWS = 20;
     static final float DEFAULT_TEXT_SIZE = 9f;
     private static final float ROW_GAP = 3f;
-    private static final float RIGHT_MARGIN = 7f;
-    private static final float TOP_MARGIN = 7f;
+    private static final float HUD_MARGIN = 7f;
+    private static final String PREVIEW_FIRST_LINE =
+            "Soup Person 12m ago - Alekin (Very Low/Very High) 02:40  3/5";
+    private static final String PREVIEW_SECOND_LINE =
+            "Queue Owner 19s ago - Detlas (Low) 01:41  1/5";
 
     private WarTerritoryQueueHudRenderer() {}
 
@@ -36,7 +39,6 @@ public final class WarTerritoryQueueHudRenderer {
                 ? "mc"
                 : SeqClient.getFontManager().getSelectedFont();
         float textSize = textSize(SeqClient.getWarQueueHudTextSizeSetting());
-        float rowHeight = rowHeight(textSize);
         int visibleRows = Math.min(
                 maxRows(SeqClient.getWarQueueHudMaxRowsSetting()),
                 rowsFittingHeight(canvas.metrics().height(), textSize));
@@ -50,15 +52,67 @@ public final class WarTerritoryQueueHudRenderer {
         }
 
         Instant now = manager.serverNow();
-        float right = canvas.metrics().width() - RIGHT_MARGIN;
-        for (int row = 0; row < queues.size(); row++) {
-            List<Segment> segments = styledSegments(queues.get(row), now);
-            float width = 0f;
-            for (Segment segment : segments) {
-                width += UiRenderer.measureText(segment.text(), font, textSize).width();
-            }
-            float x = right - width;
-            float y = TOP_MARGIN + row * rowHeight;
+        drawLines(
+                canvas,
+                queues.stream().map(queue -> styledSegments(queue, now)).toList(),
+                font,
+                textSize,
+                position(SeqClient.getWarQueueHudXSetting(), 1f),
+                position(SeqClient.getWarQueueHudYSetting(), 0f));
+    }
+
+    static Bounds renderPreview(UiCanvas canvas) {
+        String font = SeqClient.getFontManager() == null
+                ? "mc"
+                : SeqClient.getFontManager().getSelectedFont();
+        return drawLines(
+                canvas,
+                List.of(
+                        List.of(new Segment(
+                                PREVIEW_FIRST_LINE,
+                                ThemeManager.color(UiColor.TEXT_PRIMARY))),
+                        List.of(new Segment(
+                                PREVIEW_SECOND_LINE,
+                                ThemeManager.color(UiColor.TEXT_SECONDARY)))),
+                font,
+                textSize(SeqClient.getWarQueueHudTextSizeSetting()),
+                position(SeqClient.getWarQueueHudXSetting(), 1f),
+                position(SeqClient.getWarQueueHudYSetting(), 0f));
+    }
+
+    static Bounds previewBounds(float screenWidth, float screenHeight) {
+        String font = SeqClient.getFontManager() == null
+                ? "mc"
+                : SeqClient.getFontManager().getSelectedFont();
+        float textSize = textSize(SeqClient.getWarQueueHudTextSizeSetting());
+        float width = Math.max(
+                UiRenderer.measureText(PREVIEW_FIRST_LINE, font, textSize).width(),
+                UiRenderer.measureText(PREVIEW_SECOND_LINE, font, textSize).width());
+        return positionBounds(
+                screenWidth,
+                screenHeight,
+                width,
+                textSize + rowHeight(textSize),
+                position(SeqClient.getWarQueueHudXSetting(), 1f),
+                position(SeqClient.getWarQueueHudYSetting(), 0f));
+    }
+
+    private static Bounds drawLines(
+            UiCanvas canvas,
+            List<List<Segment>> lines,
+            String font,
+            float textSize,
+            float normalizedX,
+            float normalizedY) {
+        List<Float> widths = lines.stream().map(line -> lineWidth(line, font, textSize)).toList();
+        float width = widths.stream().max(Float::compare).orElse(0f);
+        float height = lines.isEmpty() ? 0f : textSize + (lines.size() - 1) * rowHeight(textSize);
+        Bounds bounds = positionBounds(
+                canvas.metrics().width(), canvas.metrics().height(), width, height, normalizedX, normalizedY);
+        for (int row = 0; row < lines.size(); row++) {
+            List<Segment> segments = lines.get(row);
+            float x = bounds.x() + width - widths.get(row);
+            float y = bounds.y() + row * rowHeight(textSize);
             for (Segment segment : segments) {
                 canvas.drawText(
                         segment.text(),
@@ -73,6 +127,17 @@ public final class WarTerritoryQueueHudRenderer {
                 x += UiRenderer.measureText(segment.text(), font, textSize).width();
             }
         }
+        return bounds;
+    }
+
+    private static float lineWidth(List<Segment> segments, String font, float textSize) {
+        return segments.stream()
+                .map(segment -> UiRenderer.measureText(segment.text(), font, textSize).width())
+                .reduce(0f, Float::sum);
+    }
+
+    private static float position(Setting.FloatSetting setting, float fallback) {
+        return setting == null || setting.getValue() == null ? fallback : Math.clamp(setting.getValue(), 0f, 1f);
     }
 
     static float textSize(Setting.IntSetting setting) {
@@ -96,7 +161,7 @@ public final class WarTerritoryQueueHudRenderer {
         if (!Float.isFinite(canvasHeight) || !Float.isFinite(textSize) || textSize <= 0f) {
             return 0;
         }
-        float remainingAfterFirstRow = canvasHeight - TOP_MARGIN - textSize;
+        float remainingAfterFirstRow = canvasHeight - HUD_MARGIN - textSize;
         if (remainingAfterFirstRow < 0f) {
             return 0;
         }
@@ -274,7 +339,48 @@ public final class WarTerritoryQueueHudRenderer {
         return new DefenseRatings(queued, reported);
     }
 
+    static Bounds positionBounds(
+            float screenWidth,
+            float screenHeight,
+            float contentWidth,
+            float contentHeight,
+            float normalizedX,
+            float normalizedY) {
+        float travelX = Math.max(0f, screenWidth - HUD_MARGIN * 2f - contentWidth);
+        float travelY = Math.max(0f, screenHeight - HUD_MARGIN * 2f - contentHeight);
+        return new Bounds(
+                HUD_MARGIN + Math.clamp(normalizedX, 0f, 1f) * travelX,
+                HUD_MARGIN + Math.clamp(normalizedY, 0f, 1f) * travelY,
+                contentWidth,
+                contentHeight);
+    }
+
+    static Position positionForTopLeft(
+            float screenWidth,
+            float screenHeight,
+            float contentWidth,
+            float contentHeight,
+            float left,
+            float top) {
+        float travelX = Math.max(0f, screenWidth - HUD_MARGIN * 2f - contentWidth);
+        float travelY = Math.max(0f, screenHeight - HUD_MARGIN * 2f - contentHeight);
+        return new Position(
+                travelX == 0f ? 0f : Math.clamp((left - HUD_MARGIN) / travelX, 0f, 1f),
+                travelY == 0f ? 0f : Math.clamp((top - HUD_MARGIN) / travelY, 0f, 1f));
+    }
+
     private record Segment(String text, Color color) {}
+
+    record Bounds(float x, float y, float width, float height) {
+        boolean contains(float pointX, float pointY, float padding) {
+            return pointX >= x - padding
+                    && pointX <= x + width + padding
+                    && pointY >= y - padding
+                    && pointY <= y + height + padding;
+        }
+    }
+
+    record Position(float x, float y) {}
 
     record DefenseRatings(String queued, String reported) {}
 }

@@ -49,6 +49,8 @@ public class SettingsScreen extends Screen {
     private static final float SEARCH_BAR_WIDTH = 180;
     private static final float SEARCH_BAR_MARGIN = 8;
     private static final float THEME_EDITOR_BUTTON_WIDTH = 94;
+    private static final float HUD_EDITOR_BUTTON_WIDTH = 76;
+    private static final float HEADER_BUTTON_GAP = 6;
     private static final float PRINCESS_PROMPT_HEIGHT = 24;
 
     // Font sizes
@@ -342,6 +344,30 @@ public class SettingsScreen extends Screen {
                     searchY + SEARCH_BAR_HEIGHT / 2f,
                     "Theme editor");
 
+            float hudEditorX = themeEditorX + THEME_EDITOR_BUTTON_WIDTH + HEADER_BUTTON_GAP;
+            boolean hudEditorHovered = isHovered(
+                    nvgMouseX,
+                    nvgMouseY,
+                    hudEditorX,
+                    searchY,
+                    HUD_EDITOR_BUTTON_WIDTH,
+                    SEARCH_BAR_HEIGHT);
+            canvas.fillRect(
+                    hudEditorX,
+                    searchY,
+                    HUD_EDITOR_BUTTON_WIDTH,
+                    SEARCH_BAR_HEIGHT,
+                    hudEditorHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT_SECONDARY));
+            drawText(
+                    canvas,
+                    fontName,
+                    11,
+                    color(TEXT_PRIMARY),
+                    UiCanvas.HorizontalAlign.CENTER,
+                    hudEditorX + HUD_EDITOR_BUTTON_WIDTH / 2f,
+                    searchY + SEARCH_BAR_HEIGHT / 2f,
+                    "HUD layout");
+
             // Title (right side of header)
             drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY), UiCanvas.HorizontalAlign.RIGHT,
                     panelX + panelWidth - SEARCH_BAR_MARGIN, panelY + HEADER_HEIGHT / 2f, "Settings");
@@ -605,6 +631,11 @@ public class SettingsScreen extends Screen {
             float themeEditorX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
             if (isHovered(mx, my, themeEditorX, searchY, THEME_EDITOR_BUTTON_WIDTH, SEARCH_BAR_HEIGHT)) {
                 SeqClient.mc.setScreen(new ThemeEditorScreen(this));
+                return true;
+            }
+            float hudEditorX = themeEditorX + THEME_EDITOR_BUTTON_WIDTH + HEADER_BUTTON_GAP;
+            if (isHovered(mx, my, hudEditorX, searchY, HUD_EDITOR_BUTTON_WIDTH, SEARCH_BAR_HEIGHT)) {
+                SeqClient.mc.setScreen(new WarQueueHudEditorScreen(this));
                 return true;
             }
 

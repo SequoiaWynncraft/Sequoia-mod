@@ -102,6 +102,19 @@ class WarTerritoryQueueHudRendererTest {
     }
 
     @Test
+    void positionsQueueHudResponsivelyAndClampsDraggedCoordinates() {
+        assertEquals(
+                new WarTerritoryQueueHudRenderer.Bounds(153f, 7f, 40f, 20f),
+                WarTerritoryQueueHudRenderer.positionBounds(200f, 100f, 40f, 20f, 1f, 0f));
+        assertEquals(
+                new WarTerritoryQueueHudRenderer.Bounds(80f, 40f, 40f, 20f),
+                WarTerritoryQueueHudRenderer.positionBounds(200f, 100f, 40f, 20f, 0.5f, 0.5f));
+        assertEquals(
+                new WarTerritoryQueueHudRenderer.Position(0f, 1f),
+                WarTerritoryQueueHudRenderer.positionForTopLeft(200f, 100f, 40f, 20f, -50f, 500f));
+    }
+
+    @Test
     void filtersToQueuesTheLocalPlayerQueuedOrJoinedBeforeApplyingLimit() {
         TerritoryQueue owned = queue(1L, "Owned", "SELF", List.of(new Participant("other", "Other", 0)));
         TerritoryQueue joined = queue(2L, "Joined", "other", List.of(new Participant("self", "Self", 1)));
