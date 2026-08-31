@@ -19,7 +19,6 @@
     "GuildAllianceSnapshotPacketMixin",
     "InGameHudMixin",
     "ParticleEngineMixin",
-    "SubmitNodeCollectionMixin",
     "TitleScreenMixin"
   ],
   "injectors": {

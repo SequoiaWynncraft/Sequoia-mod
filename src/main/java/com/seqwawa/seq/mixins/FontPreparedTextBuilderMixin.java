@@ -34,7 +34,7 @@ public class FontPreparedTextBuilderMixin {
      * registered. Text is laid out on the render thread, one glyph at a time.
      */
     @Unique
-    private static boolean seq$decorationGlyph;
+    private boolean seq$decorationGlyph;
 
     @ModifyVariable(
             method = "getTextColor(Lnet/minecraft/network/chat/TextColor;)I",
@@ -57,7 +57,9 @@ public class FontPreparedTextBuilderMixin {
             at = @At("RETURN"),
             cancellable = true)
     private void seq$keepRankDecorationOpaque(TextColor color, CallbackInfoReturnable<Integer> callback) {
-        if (seq$decorationGlyph) {
+        boolean decorationGlyph = seq$decorationGlyph;
+        seq$decorationGlyph = false;
+        if (decorationGlyph) {
             callback.setReturnValue(ARGB.opaque(callback.getReturnValue()));
         }
     }

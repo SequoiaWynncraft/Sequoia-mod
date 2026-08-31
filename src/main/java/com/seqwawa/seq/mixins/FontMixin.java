@@ -1,14 +1,13 @@
 package com.seqwawa.seq.mixins;
 
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.seqwawa.seq.utils.SeeThroughTextPass;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.network.chat.Component;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Tells {@link SeeThroughTextPass} when the text being laid out is the copy of a
@@ -18,11 +17,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Font.class)
 public abstract class FontMixin {
 
-    @Inject(
+    @WrapMethod(
             method =
-                    "drawInBatch(Lnet/minecraft/network/chat/Component;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/gui/Font$DisplayMode;II)V",
-            at = @At("HEAD"))
-    private void seq$beginTextPass(
+                    "drawInBatch(Lnet/minecraft/network/chat/Component;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/gui/Font$DisplayMode;II)V")
+    private void seq$drawInTextPass(
             Component text,
             float x,
             float y,
@@ -33,28 +31,27 @@ public abstract class FontMixin {
             Font.DisplayMode displayMode,
             int backgroundColor,
             int lightCoords,
-            CallbackInfo callbackInfo) {
-        if (displayMode == Font.DisplayMode.SEE_THROUGH) {
+            Operation<Void> original) {
+        boolean seeThrough = displayMode == Font.DisplayMode.SEE_THROUGH;
+        if (seeThrough) {
             SeeThroughTextPass.begin();
         }
-    }
-
-    @Inject(
-            method =
-                    "drawInBatch(Lnet/minecraft/network/chat/Component;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/gui/Font$DisplayMode;II)V",
-            at = @At("RETURN"))
-    private void seq$endTextPass(
-            Component text,
-            float x,
-            float y,
-            int color,
-            boolean dropShadow,
-            Matrix4f pose,
-            MultiBufferSource bufferSource,
-            Font.DisplayMode displayMode,
-            int backgroundColor,
-            int lightCoords,
-            CallbackInfo callbackInfo) {
-        SeeThroughTextPass.end();
+        try {
+            original.call(
+                    text,
+                    x,
+                    y,
+                    color,
+                    dropShadow,
+                    pose,
+                    bufferSource,
+                    displayMode,
+                    backgroundColor,
+                    lightCoords);
+        } finally {
+            if (seeThrough) {
+                SeeThroughTextPass.end();
+            }
+        }
     }
 }

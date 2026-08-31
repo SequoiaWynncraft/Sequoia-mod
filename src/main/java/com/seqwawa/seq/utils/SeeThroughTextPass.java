@@ -14,24 +14,30 @@ package com.seqwawa.seq.utils;
  * Set by {@code FontMixin} around the see-through pass and read by {@code
  * FontPreparedTextBuilderMixin}, which draws Sequoia's own decorations at full alpha
  * in both passes so they look the same however the depth test falls. Text is laid out
- * on the render thread, so a plain field is enough.
+ * on the render thread. A thread-local nesting depth also keeps the marker correct
+ * if another renderer lays out text inside an active pass.
  */
 public final class SeeThroughTextPass {
 
-    private static boolean active;
+    private static final ThreadLocal<Integer> DEPTH = ThreadLocal.withInitial(() -> 0);
 
     private SeeThroughTextPass() {}
 
     public static void begin() {
-        active = true;
+        DEPTH.set(DEPTH.get() + 1);
     }
 
     public static void end() {
-        active = false;
+        int depth = DEPTH.get() - 1;
+        if (depth <= 0) {
+            DEPTH.remove();
+        } else {
+            DEPTH.set(depth);
+        }
     }
 
     /** True while the see-through copy of a nametag is being laid out. */
     public static boolean isActive() {
-        return active;
+        return DEPTH.get() > 0;
     }
 }

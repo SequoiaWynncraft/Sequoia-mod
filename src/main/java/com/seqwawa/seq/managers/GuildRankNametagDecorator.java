@@ -14,7 +14,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import net.minecraft.network.chat.Component;
@@ -27,18 +26,13 @@ import net.minecraft.network.chat.TextColor;
  * makes in guild chat and on the Discord bridge. Players with no linked Sequoia
  * rank keep the nametag Wynncraft sent, untouched.
  * <p>
- * The rewrite happens at the very last step before a nametag is drawn, in
- * {@code SubmitNodeCollection#submitNameTag}, which every renderer funnels
- * through: vanilla, Wynntils' custom nametag feature, and third-party mods that
- * rebuild the tag from their own data. Rewriting the render state earlier would
- * be simpler, but a mod that replaces {@code nameTag} at render time would then
- * silently drop the Sequoia rank again.
+ * The rewrite happens while an {@code AvatarRenderer} submits a player's nametag,
+ * after the render state has been extracted. This keeps changes made to that state
+ * by other mods while retaining the UUID of the player it belongs to.
  * <p>
- * That submission carries no entity, only a component, so the player behind a
- * nametag is recovered from the name written on it. {@link #rememberRenderedPlayer}
- * publishes the identities being rendered from the avatar extraction pass, which
- * runs earlier in the same frame; only a name registered there is ever decorated,
- * so an ordinary hologram or mob cannot pick up a rank pill.
+ * {@link #rememberRenderedPlayer} records the names that this particular player's
+ * tag may display. Decoration is then keyed by the same UUID, so an ordinary
+ * hologram, a mob, or another account using the same text cannot pick up the rank.
  * <p>
  * Everything here runs on the render thread.
  */
@@ -51,9 +45,6 @@ public final class GuildRankNametagDecorator {
     private static final int MIN_NAME_LENGTH = 3;
     private static final int MAX_NAME_LENGTH = 16;
 
-    /** Names seen on a rendered avatar this session, mapped to who is behind them. */
-    private static final Map<String, Member> MEMBERS_BY_NAME = boundedMap(MAX_REMEMBERED_PLAYERS);
-
     /** What was last published for a player, so an unchanged frame costs one lookup. */
     private static final Map<UUID, Registration> REGISTRATIONS = boundedMap(MAX_REMEMBERED_PLAYERS);
 
@@ -63,7 +54,7 @@ public final class GuildRankNametagDecorator {
      * upstream caches, so without this the pill would be rebuilt — and its animated
      * colours re-registered — sixty times a second per player.
      */
-    private static final Map<Component, Decoration> DECORATED_NAMETAGS = decorationCache();
+    private static final Map<DecorationKey, Decoration> DECORATED_NAMETAGS = decorationCache();
 
     private GuildRankNametagDecorator() {}
 
@@ -79,32 +70,18 @@ public final class GuildRankNametagDecorator {
             return;
         }
 
-        RankPresentation rank = rankFor(uuid, username);
+        RankPresentation rank = rankFor(uuid);
+        Member member = rank == null ? null : new Member(username, rank);
+        Registration replacement = new Registration(nameTag, member, registeredNames(username, nameTag));
         Registration previous = REGISTRATIONS.get(uuid);
-        if (previous != null && previous.covers(rank, nameTag)) {
+        if (replacement.equals(previous)) {
             return;
         }
 
-        // Names are only taken back once the player stops being a member. A tag that
-        // merely changed — Wynncraft drops it past the name-rendering distance, so it
-        // comes and goes as one walks — republishes over its own entries, and clearing
-        // every cached decoration for that would rebuild each visible pill per frame.
-        boolean changed = rank == null && previous != null && withdraw(previous.names(), username);
-        Member member = rank == null ? null : new Member(username, rank);
-        List<String> published = new ArrayList<>(2);
-        if (member != null) {
-            changed |= publish(username, member, published);
-            for (String name : nameCandidates(nameTag == null ? "" : nameTag.getString())) {
-                changed |= publish(name, member, published);
-            }
-        }
-        REGISTRATIONS.put(uuid, new Registration(nameTag, rank, List.copyOf(published)));
-
-        // A name that belonged to nobody a moment ago may belong to a member now, so
-        // the answers cached against the previous roster cannot be trusted.
-        if (changed) {
-            forgetDecorations();
-        }
+        // Replacing the registration replaces its complete alias set. No obsolete
+        // nickname remains available to this UUID after the displayed tag changes.
+        REGISTRATIONS.put(uuid, replacement);
+        forgetDecorations(uuid);
     }
 
     /**
@@ -112,24 +89,30 @@ public final class GuildRankNametagDecorator {
      * badge replaced by the speaker's Sequoia rank, or {@code nameTag} itself when
      * it belongs to nobody the roster knows.
      */
-    public static Component decorate(Component nameTag) {
-        if (nameTag == null || !isEnabled() || MEMBERS_BY_NAME.isEmpty()) {
+    public static Component decorate(UUID uuid, Component nameTag) {
+        if (uuid == null || nameTag == null || !isEnabled()) {
             return nameTag;
         }
 
-        Decoration cached = DECORATED_NAMETAGS.get(nameTag);
+        Registration registration = REGISTRATIONS.get(uuid);
+        if (registration == null || registration.member() == null) {
+            return nameTag;
+        }
+
+        DecorationKey key = new DecorationKey(uuid, nameTag);
+        Decoration cached = DECORATED_NAMETAGS.get(key);
         if (cached != null) {
             return cached.component();
         }
 
         Decoration decorated;
         try {
-            decorated = decorate(nameTag, GuildRankNametagDecorator::member);
+            decorated = decorate(nameTag, registration::memberFor);
         } catch (RuntimeException exception) {
             SeqClient.LOGGER.debug("[DiscordRanks] Failed to decorate a nametag.", exception);
             decorated = Decoration.unchanged(nameTag);
         }
-        DECORATED_NAMETAGS.put(nameTag, decorated);
+        DECORATED_NAMETAGS.put(key, decorated);
         return decorated.component();
     }
 
@@ -359,41 +342,21 @@ public final class GuildRankNametagDecorator {
         return candidate.length() >= MIN_NAME_LENGTH && candidate.length() <= MAX_NAME_LENGTH;
     }
 
-    private static Member member(String name) {
-        return MEMBERS_BY_NAME.get(name);
+    /** All account-name-shaped aliases currently shown for one rendered player. */
+    private static List<String> registeredNames(String username, Component nameTag) {
+        List<String> names = new ArrayList<>(3);
+        addRegisteredName(names, username);
+        for (String candidate : nameCandidates(nameTag == null ? "" : nameTag.getString())) {
+            addRegisteredName(names, candidate);
+        }
+        return List.copyOf(names);
     }
 
-    /**
-     * Maps {@code name} to {@code member}, recording it as published so it can be
-     * taken back later.
-     *
-     * @return whether this changed who that name resolves to
-     */
-    private static boolean publish(String name, Member member, List<String> published) {
+    private static void addRegisteredName(List<String> names, String name) {
         String key = key(name);
-        if (key == null) {
-            return false;
+        if (key != null && !names.contains(key)) {
+            names.add(key);
         }
-        published.add(key);
-        return !Objects.equals(MEMBERS_BY_NAME.put(key, member), member);
-    }
-
-    /**
-     * Takes back the names a player published, e.g. once they no longer hold a rank.
-     * A name another player has since claimed is left with its current owner.
-     *
-     * @return whether any name stopped resolving to a member
-     */
-    private static boolean withdraw(List<String> names, String username) {
-        boolean changed = false;
-        for (String name : names) {
-            Member current = MEMBERS_BY_NAME.get(name);
-            if (current != null && current.username().equalsIgnoreCase(username)) {
-                MEMBERS_BY_NAME.remove(name);
-                changed = true;
-            }
-        }
-        return changed;
     }
 
     /** The map key a name is stored under, or {@code null} when it cannot be one. */
@@ -409,11 +372,9 @@ public final class GuildRankNametagDecorator {
         return name.toLowerCase(Locale.ROOT);
     }
 
-    /** The member's rank, resolved on their account first and their name second. */
-    private static RankPresentation rankFor(UUID uuid, String username) {
-        DiscordRankService service = DiscordRankService.getInstance();
-        RankPresentation byAccount = service.presentationForMinecraftUuid(uuid);
-        return byAccount != null ? byAccount : service.presentationForMinecraftUsername(username);
+    /** The member's rank, resolved only from the verified Minecraft account. */
+    private static RankPresentation rankFor(UUID uuid) {
+        return DiscordRankService.getInstance().presentationForMinecraftUuid(uuid);
     }
 
     private static boolean isEnabled() {
@@ -425,10 +386,10 @@ public final class GuildRankNametagDecorator {
      * The decoration cache, which hands a dropped decoration's colours back to the
      * animation registry: nothing else knows when a nametag has stopped being drawn.
      */
-    private static Map<Component, Decoration> decorationCache() {
+    private static Map<DecorationKey, Decoration> decorationCache() {
         return Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, false) {
             @Override
-            protected boolean removeEldestEntry(Map.Entry<Component, Decoration> eldest) {
+            protected boolean removeEldestEntry(Map.Entry<DecorationKey, Decoration> eldest) {
                 if (size() <= MAX_CACHED_NAMETAGS) {
                     return false;
                 }
@@ -438,10 +399,17 @@ public final class GuildRankNametagDecorator {
         });
     }
 
-    private static void forgetDecorations() {
+    private static void forgetDecorations(UUID uuid) {
         synchronized (DECORATED_NAMETAGS) {
-            DECORATED_NAMETAGS.values().forEach(decoration -> RankGradientAnimation.release(decoration.colors()));
-            DECORATED_NAMETAGS.clear();
+            List<List<TextColor>> released = new ArrayList<>();
+            DECORATED_NAMETAGS.entrySet().removeIf(entry -> {
+                if (!entry.getKey().uuid().equals(uuid)) {
+                    return false;
+                }
+                released.add(entry.getValue().colors());
+                return true;
+            });
+            RankGradientAnimation.releaseAll(released);
         }
     }
 
@@ -477,10 +445,13 @@ public final class GuildRankNametagDecorator {
     /** The span a rank badge occupies, up to and including the space after it. */
     record Badge(int start, int endExclusive) {}
 
-    /** What was last published for a player, to recognise a frame that changed nothing. */
-    private record Registration(Component nameTag, RankPresentation rank, List<String> names) {
-        private boolean covers(RankPresentation currentRank, Component currentNameTag) {
-            return Objects.equals(rank, currentRank) && Objects.equals(nameTag, currentNameTag);
+    /** Cache identity: the same component text may legitimately belong to two players. */
+    private record DecorationKey(UUID uuid, Component nameTag) {}
+
+    /** What was last published for one UUID, including only that player's aliases. */
+    private record Registration(Component nameTag, Member member, List<String> names) {
+        private Member memberFor(String candidate) {
+            return names.contains(normalize(candidate)) ? member : null;
         }
     }
 }

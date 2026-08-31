@@ -65,6 +65,9 @@ public final class RankGradientAnimation {
      */
     private static volatile Map<TextColor, Stop> stops = new IdentityHashMap<>();
 
+    /** Fixed-colour glyphs that are part of a decoration but do not animate. */
+    private static volatile Map<TextColor, Boolean> fixedDecorationColors = new IdentityHashMap<>();
+
     /**
      * Registrations made while one chat decoration is being built. Nested batches
      * share the outer list, so composing a pill and a name still publishes once.
@@ -88,7 +91,8 @@ public final class RankGradientAnimation {
     /**
      * Builds one decoration while collecting all of its colours, then publishes them
      * to the render thread in a single copy-on-write update. Calls may be nested: only
-     * the outermost call publishes.
+     * the outermost call publishes. A pinned build cannot be nested inside this
+     * evictable batch because no caller would receive ownership of its colours.
      */
     public static <T> T batchRegistrations(Supplier<T> build) {
         return batch(build, false).value();
@@ -110,7 +114,11 @@ public final class RankGradientAnimation {
 
     private static <T> Pinned<T> batch(Supplier<T> build, boolean pinned) {
         Objects.requireNonNull(build, "build");
-        if (PENDING_REGISTRATIONS.get() != null) {
+        Batch outer = PENDING_REGISTRATIONS.get();
+        if (outer != null) {
+            if (pinned && !outer.pinned()) {
+                throw new IllegalStateException("A pinned decoration cannot be built inside an evictable batch");
+            }
             // An inner batch: the outermost call owns the publication and the colours.
             return new Pinned<>(build.get(), List.of());
         }
@@ -128,15 +136,30 @@ public final class RankGradientAnimation {
     }
 
     /** Forgets pinned colours, so the decoration they belonged to stops being tracked. */
-    public static synchronized void release(List<TextColor> colors) {
+    public static void release(List<TextColor> colors) {
         if (colors == null || colors.isEmpty()) {
             return;
         }
+        releaseAll(List.of(colors));
+    }
 
-        IdentityHashMap<TextColor, Stop> updated = new IdentityHashMap<>(stops);
+    /** Forgets several pinned decorations with one copy-on-write publication. */
+    public static synchronized void releaseAll(Iterable<? extends Iterable<TextColor>> colorGroups) {
+        if (colorGroups == null) {
+            return;
+        }
+        IdentityHashMap<TextColor, Stop> updated = null;
         boolean removed = false;
-        for (TextColor color : colors) {
-            removed |= updated.remove(color) != null;
+        for (Iterable<TextColor> colors : colorGroups) {
+            if (colors == null) {
+                continue;
+            }
+            for (TextColor color : colors) {
+                if (updated == null) {
+                    updated = new IdentityHashMap<>(stops);
+                }
+                removed |= updated.remove(color) != null;
+            }
         }
         if (!removed) {
             return;
@@ -298,7 +321,16 @@ public final class RankGradientAnimation {
      * is consulted while text is being laid out.
      */
     public static boolean isDecorationColor(TextColor color) {
-        return color != null && stops.containsKey(color);
+        return color != null && (stops.containsKey(color) || fixedDecorationColors.containsKey(color));
+    }
+
+    /** Marks a shared, non-animated colour as belonging to a Sequoia decoration. */
+    public static synchronized TextColor markDecorationColor(TextColor color) {
+        Objects.requireNonNull(color, "color");
+        IdentityHashMap<TextColor, Boolean> updated = new IdentityHashMap<>(fixedDecorationColors);
+        updated.put(color, Boolean.TRUE);
+        fixedDecorationColors = updated;
+        return color;
     }
 
     static synchronized long publicationCount() {

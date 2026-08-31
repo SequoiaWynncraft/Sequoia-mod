@@ -100,6 +100,22 @@ class GuildRankNametagDecoratorTest {
         assertSame(decorated, decorate(decorated));
     }
 
+    @Test
+    void recognisesAnExistingMultiWordRankPill() {
+        RankPresentation strategist = new RankPresentation(
+                new DiscordRank("rank.upper_strategist", "Upper Strategist", 110),
+                ColorRamp.of(0x2ECC71));
+        Member ranked = new Member("ArcLeRetour", strategist);
+        Component nameTag = Component.literal(
+                WynnPillGlyphs.encodePlainPill("Upper Strategist") + " ArcLeRetour");
+
+        GuildRankNametagDecorator.Decoration decoration = GuildRankNametagDecorator.decorate(
+                nameTag, name -> "arcleretour".equals(name) ? ranked : null);
+
+        assertSame(nameTag, decoration.component());
+        assertEquals(List.of(), decoration.colors());
+    }
+
     /**
      * Only the badge standing next to the name is the rank badge. Another mod's
      * marker in front of it, such as a starred profile, has to survive.
@@ -217,6 +233,11 @@ class GuildRankNametagDecoratorTest {
         for (TextColor background : backgrounds) {
             assertTrue(RankGradientAnimation.isDecorationColor(background), "an unrecognised pill colour");
         }
+        List<TextColor> labels = pillLabelColors(decorated);
+        assertFalse(labels.isEmpty());
+        for (TextColor label : labels) {
+            assertTrue(RankGradientAnimation.isDecorationColor(label), "an unrecognised pill label colour");
+        }
         assertFalse(
                 RankGradientAnimation.isDecorationColor(TextColor.fromRgb(0x123456)),
                 "a colour Sequoia never minted");
@@ -282,6 +303,14 @@ class GuildRankNametagDecoratorTest {
     private static List<TextColor> pillBackgroundColors(Component component) {
         return ComponentTextEditor.flatten(component).stream()
                 .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
+                .map(fragment -> fragment.style().getColor())
+                .toList();
+    }
+
+    /** Colours of the label glyphs drawn on top of the pill background. */
+    private static List<TextColor> pillLabelColors(Component component) {
+        return ComponentTextEditor.flatten(component).stream()
+                .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.TEXT_OFFSET) >= 0)
                 .map(fragment -> fragment.style().getColor())
                 .toList();
     }

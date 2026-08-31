@@ -1,8 +1,11 @@
 package com.seqwawa.seq.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
@@ -161,6 +164,37 @@ class RankGradientAnimationTest {
                 RankGradientAnimation.publicationCount(),
                 "all glyph stops should share one copy-on-write publication");
         assertEquals(4096, RankGradientAnimation.rememberedStopCount(), "the registry remains bounded");
+    }
+
+    @Test
+    void rejectsAPinNestedInsideAnEvictableBatch() {
+        assertThrows(
+                IllegalStateException.class,
+                () -> RankGradientAnimation.batchRegistrations(
+                        () -> RankGradientAnimation.pin(() -> RankGradientAnimation.colorAt(GRADIENT, 0d))));
+    }
+
+    @Test
+    void releasesSeveralPinnedDecorationsWithOnePublication() {
+        RankGradientAnimation.Pinned<TextColor> first =
+                RankGradientAnimation.pin(() -> RankGradientAnimation.colorAt(GRADIENT, 0d));
+        RankGradientAnimation.Pinned<TextColor> second =
+                RankGradientAnimation.pin(() -> RankGradientAnimation.colorAt(GRADIENT, 1d));
+        long publicationsBefore = RankGradientAnimation.publicationCount();
+
+        RankGradientAnimation.releaseAll(List.of(first.colors(), second.colors()));
+
+        assertEquals(publicationsBefore + 1, RankGradientAnimation.publicationCount());
+        assertFalse(RankGradientAnimation.isDecorationColor(first.value()));
+        assertFalse(RankGradientAnimation.isDecorationColor(second.value()));
+    }
+
+    @Test
+    void recognisesMarkedFixedDecorationColors() {
+        TextColor fixed = RankGradientAnimation.markDecorationColor(TextColor.fromRgb(0x1F2126));
+
+        assertTrue(RankGradientAnimation.isDecorationColor(fixed));
+        assertSame(fixed, RankGradientAnimation.animate(fixed, 0.5d));
     }
 
     private static int animated(TextColor color, double phase) {
