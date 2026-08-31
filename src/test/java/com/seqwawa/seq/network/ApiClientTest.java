@@ -50,6 +50,17 @@ class ApiClientTest {
     }
 
     @Test
+    void sendsPayoutAsAWholeLeValueWithoutATarget() {
+        UUID requestId = UUID.fromString("20000000-0000-4000-8000-000000000003");
+
+        JsonObject payload = ApiClient.buildSeqPointsPurchasePayload(requestId, "payout", null, " 12 ");
+
+        assertEquals("payout", payload.get("item_key").getAsString());
+        assertEquals("12", payload.get("value").getAsString());
+        assertFalse(payload.has("target_player_uuid"));
+    }
+
+    @Test
     void princessRaidPayloadContainsOnlyEventIdentityAndRaidName() {
         UUID eventId = UUID.fromString("c15bd497-9db5-441f-9678-c2aa25dd15b6");
 

@@ -28,6 +28,7 @@ public final class SeqPointsShopScreen extends Screen {
     private static final float PANEL_MAX_WIDTH = 620;
     private static final float ROW_HEIGHT = 66;
     private static final float ROW_GAP = 6;
+    private static final float SCROLL_SPEED = ROW_HEIGHT + ROW_GAP;
     private static final float BUTTON_WIDTH = 82;
     private static final float BUTTON_HEIGHT = 24;
 
@@ -37,6 +38,8 @@ public final class SeqPointsShopScreen extends Screen {
     private float mouseY;
     private String message;
     private String purchasingKey;
+    private float scrollOffset;
+    private float maxScroll;
 
     public SeqPointsShopScreen(Screen parent) {
         super(Component.literal("Seq Points Shop"));
@@ -85,11 +88,18 @@ public final class SeqPointsShopScreen extends Screen {
             return;
         }
 
-        float y = panelY + 12;
+        float contentTop = panelY + 12;
+        float contentBottom = panelY + panelHeight - (message == null ? 10 : 26);
+        float viewportHeight = Math.max(0, contentBottom - contentTop);
+        maxScroll = catalogMaxScroll(shop.items().size(), viewportHeight);
+        scrollOffset = Math.min(scrollOffset, maxScroll);
+        float y = contentTop - scrollOffset;
+        canvas.scissor(panelX, contentTop, panelWidth, viewportHeight);
         for (SeqPointsShop.Item item : shop.items()) {
             renderItem(canvas, item, panelX + 10, y, panelWidth - 20);
             y += ROW_HEIGHT + ROW_GAP;
         }
+        canvas.resetScissor();
         if (message != null) {
             text(canvas, message, panelX + 12, panelY + panelHeight - 14, 9,
                     color(message.startsWith("Purchased") ? CONTROL_SUCCESS : CONTROL_WARNING), false);
@@ -100,14 +110,13 @@ public final class SeqPointsShopScreen extends Screen {
         canvas.fillRoundedRect(x, y, width, ROW_HEIGHT, 6, color(BACKGROUND_CONTENT, 225));
         text(canvas, item.name(), x + 12, y + 17, 13, color(TEXT_PRIMARY), false);
         text(canvas, item.description(), x + 12, y + 37, 9, color(TEXT_MUTED), false);
-        String source = item.allowWarPoints() ? "bonus or war" : "bonus only";
-        text(canvas, item.price() + " SP · " + source, x + 12, y + 53, 9, color(ACCENT_SECONDARY), false);
+        text(canvas, purchaseDetails(item), x + 12, y + 53, 9, color(ACCENT_SECONDARY), false);
 
-        boolean purchased = item.purchasedThisPeriod();
         boolean busy = item.key().equals(purchasingKey);
-        String label = purchased ? "Entered" : busy ? "Buying…" : item.isRename() ? "Configure" : "Buy";
+        boolean blocked = purchaseBlocked(item);
+        String label = purchaseLabel(item, busy);
         button(canvas, x + width - BUTTON_WIDTH - 12, y + (ROW_HEIGHT - BUTTON_HEIGHT) / 2,
-                BUTTON_WIDTH, label, purchased || busy);
+                BUTTON_WIDTH, label, blocked || busy);
     }
 
     @Override
@@ -117,15 +126,23 @@ public final class SeqPointsShopScreen extends Screen {
         float screenWidth = MinecraftUiRenderer.screenWidth();
         float panelWidth = Math.max(0, Math.min(PANEL_MAX_WIDTH, screenWidth - MARGIN * 2));
         float panelX = (screenWidth - panelWidth) / 2;
-        float y = HEADER_HEIGHT + MARGIN + 12;
+        float panelY = HEADER_HEIGHT + MARGIN;
+        float panelHeight = Math.max(0, MinecraftUiRenderer.screenHeight() - panelY - MARGIN);
+        float contentTop = panelY + 12;
+        float contentBottom = panelY + panelHeight - (message == null ? 10 : 26);
+        float y = contentTop - scrollOffset;
         for (SeqPointsShop.Item item : shop.items()) {
             float buttonX = panelX + 10 + panelWidth - 20 - BUTTON_WIDTH - 12;
             float buttonY = y + (ROW_HEIGHT - BUTTON_HEIGHT) / 2;
-            if (!item.purchasedThisPeriod()
+            if (!purchaseBlocked(item)
                     && purchasingKey == null
+                    && mouseY >= contentTop
+                    && mouseY <= contentBottom
                     && hit(mouseX, mouseY, buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT)) {
                 if (item.isRename()) {
                     SeqClient.mc.setScreen(new SeqPointsRenameScreen(this, item));
+                } else if (item.isPayout()) {
+                    SeqClient.mc.setScreen(new SeqPointsPayoutScreen(this, item));
                 } else {
                     purchase(item);
                 }
@@ -134,6 +151,38 @@ public final class SeqPointsShopScreen extends Screen {
             y += ROW_HEIGHT + ROW_GAP;
         }
         return true;
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset - (float) scrollY * SCROLL_SPEED));
+        return true;
+    }
+
+    static float catalogMaxScroll(int itemCount, float viewportHeight) {
+        float contentHeight = Math.max(0, itemCount * (ROW_HEIGHT + ROW_GAP) - ROW_GAP);
+        return Math.max(0, contentHeight - Math.max(0, viewportHeight));
+    }
+
+    static boolean purchaseBlocked(SeqPointsShop.Item item) {
+        return item.purchasedThisPeriod() && !item.isDraft() && !item.isPayout();
+    }
+
+    static String purchaseLabel(SeqPointsShop.Item item, boolean busy) {
+        if (busy) return "Buying…";
+        if (purchaseBlocked(item)) return "Entered";
+        if (item.isPayout()) return "Payout";
+        if (item.purchasedThisPeriod()) return "Buy again";
+        return item.isRename() ? "Configure" : "Buy";
+    }
+
+    static String purchaseDetails(SeqPointsShop.Item item) {
+        if (item.isPayout()) return item.price() + " SP = 1 LE · all points";
+        String source = item.allowWarPoints() ? "bonus or war" : "bonus only";
+        String details = item.price() + " SP · " + source;
+        Long tickets = item.ticketCountThisPeriod();
+        if (!item.isDraft() || tickets == null) return details;
+        return details + " · " + tickets + (tickets == 1 ? " ticket" : " tickets");
     }
 
     private void purchase(SeqPointsShop.Item item) {

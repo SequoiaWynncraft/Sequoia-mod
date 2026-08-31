@@ -183,8 +183,12 @@ Tier colours use the `achievement.bronze` through `achievement.mythril` theme ke
 ## Seq Points shop
 
 Open **Seq Points** from the main Sequoia screen. The shop shows separate bonus and war balances, current catalog
-items, and whether the authenticated player has already entered the current weekly or monthly draft. Purchases are
-backend-authoritative and retry-safe.
+items, and whether the authenticated player has already entered the current weekly or monthly draft. Players can buy
+multiple entries in each draft period and see their exact ticket count. Purchases are backend-authoritative and
+retry-safe.
+
+Payout converts Seq Points to Liquid Emeralds at the rate shown by the shop. Enter a whole LE amount in the payout
+screen; the request is forwarded to Discord and remains pending until it is fulfilled in person.
 
 Temporary Rename asks for a Minecraft username and alias. Compatible SeqMod clients render the result as
 `Alias (RealUsername)` for 15 minutes; it does not change the player's Wynncraft account name or what vanilla clients

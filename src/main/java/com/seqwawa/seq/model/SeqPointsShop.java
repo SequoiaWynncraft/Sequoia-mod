@@ -39,10 +39,19 @@ public record SeqPointsShop(
             @SerializedName("fulfillment_type") String fulfillmentType,
             @SerializedName("allow_war_points") boolean allowWarPoints,
             @SerializedName("current_period") String currentPeriod,
-            @SerializedName("purchased_this_period") boolean purchasedThisPeriod) {
+            @SerializedName("purchased_this_period") boolean purchasedThisPeriod,
+            @SerializedName("ticket_count_this_period") Long ticketCountThisPeriod) {
 
         public boolean isRename() {
             return "TEMPORARY_RENAME".equals(fulfillmentType);
+        }
+
+        public boolean isDraft() {
+            return "DRAFT_ENTRY".equals(fulfillmentType);
+        }
+
+        public boolean isPayout() {
+            return "PAYOUT".equals(fulfillmentType);
         }
     }
 
