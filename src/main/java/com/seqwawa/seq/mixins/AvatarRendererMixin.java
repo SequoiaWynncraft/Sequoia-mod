@@ -2,13 +2,11 @@ package com.seqwawa.seq.mixins;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import java.util.Objects;
-import java.util.UUID;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.player.AvatarRenderer;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.client.renderer.state.CameraRenderState;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Avatar;
 import net.minecraft.world.entity.EntityAttachment;
 import net.minecraft.world.entity.player.Player;
@@ -20,7 +18,6 @@ import com.seqwawa.seq.render.SeqAvatarRenderStateExtension;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(AvatarRenderer.class)
@@ -40,7 +37,7 @@ public abstract class AvatarRendererMixin {
                         || Objects.equals(player.getUUID(), minecraft.player.getUUID())));
 
         // The nametag is rewritten where it is submitted, which knows nothing of the
-        // entity behind it; publish who is being drawn while that is still known.
+        // entity behind it; publish the names it may show while that is still known.
         if (player instanceof Player profiled && profiled.getGameProfile() != null) {
             GuildRankNametagDecorator.rememberRenderedPlayer(
                     profiled.getUUID(), profiled.getGameProfile().name(), state.nameTag);
@@ -49,24 +46,6 @@ public abstract class AvatarRendererMixin {
         Vec3 attachment = player.getAttachments()
                 .getNullable(EntityAttachment.NAME_TAG, 0, player.getYRot(partialTick));
         extension.seq$setNameTagAttachment(attachment);
-    }
-
-    /**
-     * Decorates only the component submitted for this avatar. Redirecting the field
-     * read keeps the player UUID in scope and cannot affect mob or hologram nametags
-     * that happen to contain the same text.
-     */
-    @Redirect(
-            method =
-                    "submitNameTag(Lnet/minecraft/client/renderer/entity/state/AvatarRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/CameraRenderState;)V",
-            at = @At(
-                    value = "FIELD",
-                    target =
-                            "Lnet/minecraft/client/renderer/entity/state/AvatarRenderState;nameTag:Lnet/minecraft/network/chat/Component;",
-                    ordinal = 1))
-    private Component seq$showGuildRankOnNametag(AvatarRenderState state) {
-        UUID uuid = ((SeqAvatarRenderStateExtension) state).seq$getPlayerUuid();
-        return GuildRankNametagDecorator.decorate(uuid, state.nameTag);
     }
 
     @Inject(

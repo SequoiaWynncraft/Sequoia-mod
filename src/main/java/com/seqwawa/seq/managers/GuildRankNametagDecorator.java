@@ -70,7 +70,7 @@ public final class GuildRankNametagDecorator {
             return;
         }
 
-        RankPresentation rank = rankFor(uuid);
+        RankPresentation rank = rankFor(uuid, username);
         Member member = rank == null ? null : new Member(username, rank);
         Registration replacement = new Registration(nameTag, member, registeredNames(username, nameTag));
         Registration previous = REGISTRATIONS.get(uuid);
@@ -372,9 +372,18 @@ public final class GuildRankNametagDecorator {
         return name.toLowerCase(Locale.ROOT);
     }
 
-    /** The member's rank, resolved only from the verified Minecraft account. */
-    private static RankPresentation rankFor(UUID uuid) {
-        return DiscordRankService.getInstance().presentationForMinecraftUuid(uuid);
+    /**
+     * The member's rank. The UUID is preferred because it cannot be spoofed by a
+     * nickname and survives a rename, but the roster only carries one for members
+     * whose profile records it, so the account name still has to answer for the rest.
+     */
+    private static RankPresentation rankFor(UUID uuid, String username) {
+        return rankFor(DiscordRankService.getInstance(), uuid, username);
+    }
+
+    static RankPresentation rankFor(DiscordRankService service, UUID uuid, String username) {
+        RankPresentation byAccount = service.presentationForMinecraftUuid(uuid);
+        return byAccount != null ? byAccount : service.presentationForMinecraftUsername(username);
     }
 
     private static boolean isEnabled() {

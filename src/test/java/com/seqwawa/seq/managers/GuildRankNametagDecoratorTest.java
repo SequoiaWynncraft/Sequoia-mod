@@ -13,6 +13,7 @@ import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.managers.GuildRankNametagDecorator.Member;
 import com.seqwawa.seq.model.DiscordRank;
 import com.seqwawa.seq.model.RankPresentation;
+import com.seqwawa.seq.model.RankProfilesResponse;
 import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.seqwawa.seq.utils.RankGradientAnimation;
@@ -20,6 +21,7 @@ import com.seqwawa.seq.utils.WynnPillGlyphs;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.function.Function;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
@@ -27,6 +29,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class GuildRankNametagDecoratorTest {
+
+    private static final UUID ROSTER_UUID = UUID.fromString("95f1b342-d7f5-466e-b1c8-32f0b42214db");
 
     private static final RankPresentation DRYAD =
             new RankPresentation(new DiscordRank("rank.dryad", "Dryad", 95), ColorRamp.of(0x2ECC71));
@@ -329,5 +333,91 @@ class GuildRankNametagDecoratorTest {
             badge.appendCodePoint(0xE000 + (label.charAt(index) - 'a'));
         }
         return badge.appendCodePoint(0xD0002).toString();
+    }
+
+    @Test
+    void theRankIsFoundByAccountWhenTheRosterCarriesOne() {
+        DiscordRankService service = serviceWith(profile(ROSTER_UUID.toString(), "ArcLeRetour"));
+
+        RankPresentation rank =
+                GuildRankNametagDecorator.rankFor(service, ROSTER_UUID, "ArcLeRetour");
+
+        assertNotNull(rank);
+        assertEquals("Sapling", rank.rank().label());
+    }
+
+    @Test
+    void theRankIsStillFoundWhenTheRosterHasNoAccountId() {
+        DiscordRankService service = serviceWith(profile(null, "ArcLeRetour"));
+
+        RankPresentation rank =
+                GuildRankNametagDecorator.rankFor(service, ROSTER_UUID, "ArcLeRetour");
+
+        assertNotNull(rank, "a member without a stored uuid still wears their rank");
+        assertEquals("Sapling", rank.rank().label());
+    }
+
+    @Test
+    void theAccountIdIsTriedBeforeTheName() {
+        DiscordRankService service = serviceWith(
+                profile(ROSTER_UUID.toString(), "ArcLeRetour"), profile(null, "Impostor"));
+
+        RankPresentation rank = GuildRankNametagDecorator.rankFor(service, ROSTER_UUID, "Impostor");
+
+        assertNotNull(rank);
+        assertEquals("Sapling", rank.rank().label());
+    }
+
+    @Test
+    void nobodyOnTheRosterWearsNothing() {
+        DiscordRankService service = serviceWith(profile(ROSTER_UUID.toString(), "ArcLeRetour"));
+
+        assertNull(GuildRankNametagDecorator.rankFor(service, UUID.randomUUID(), "Stranger"));
+    }
+
+    private static RankProfilesResponse.Profile profile(String uuid, String username) {
+        return new RankProfilesResponse.Profile(
+                new RankProfilesResponse.MinecraftIdentity(uuid, username),
+                List.of("rank.sapling"),
+                List.of());
+    }
+
+    private static DiscordRankService serviceWith(RankProfilesResponse.Profile... profiles) {
+        RankProfilesResponse response = new RankProfilesResponse(
+                1,
+                new RankProfilesResponse.Catalog(
+                        List.of(new RankProfilesResponse.RoleDefinition(
+                                "rank.sapling",
+                                "Sapling",
+                                "progression_rank",
+                                null,
+                                null,
+                                88,
+                                new RankProfilesResponse.RoleColors("#4CB4FA", null, null))),
+                        List.of(),
+                        List.of()),
+                List.of(profiles));
+        return DiscordRankService.withIndex(DiscordRankService.parseProfiles(response));
+    }
+
+    /**
+     * The submission a nametag is decorated at carries no entity, only a component, so
+     * the player is named separately for the length of their render. A tag submitted
+     * outside that, by a mob or a hologram, belongs to nobody and is left alone even
+     * when it carries a member's name.
+     */
+    @Test
+    void decoratesNothingWithoutAKnownOwner() {
+        Setting.BooleanSetting previous = SeqClient.showNametagRanksSetting;
+        try {
+            SeqClient.showNametagRanksSetting =
+                    new Setting.BooleanSetting("show_nametag_ranks", "nametags", true);
+            Component nameTag = Component.literal(CHAMPION_BADGE + " ArcLeRetour");
+
+            assertSame(nameTag, GuildRankNametagDecorator.decorate(null, nameTag));
+            assertSame(nameTag, GuildRankNametagDecorator.decorate(UUID.randomUUID(), nameTag));
+        } finally {
+            SeqClient.showNametagRanksSetting = previous;
+        }
     }
 }
