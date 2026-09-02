@@ -71,7 +71,7 @@ class GuildRankNametagDecoratorTest {
         Component decorated = decorate(nameTag);
 
         assertNotSame(nameTag, decorated);
-        assertEquals(List.of("dryad"), pillLabels(decorated));
+        assertEquals(List.of("dryad"), badgeLabels(decorated));
         assertTrue(decorated.getString().endsWith(" ArcLeRetour"), decorated.getString());
     }
 
@@ -88,7 +88,7 @@ class GuildRankNametagDecoratorTest {
 
         Component decorated = decorate(nameTag);
 
-        assertEquals(List.of("dryad"), pillLabels(decorated));
+        assertEquals(List.of("dryad"), badgeLabels(decorated));
         assertTrue(decorated.getString().endsWith(" ArcLeRetour"), decorated.getString());
     }
 
@@ -132,7 +132,7 @@ class GuildRankNametagDecoratorTest {
         Component decorated = decorate(nameTag);
 
         assertTrue(decorated.getString().startsWith(OTHER_MOD_GLYPH + " "), decorated.getString());
-        assertEquals(List.of("dryad"), pillLabels(decorated));
+        assertEquals(List.of("dryad"), badgeLabels(decorated));
     }
 
     /** A badge another mod appends after the name is not a rank badge either. */
@@ -144,9 +144,8 @@ class GuildRankNametagDecoratorTest {
         Component decorated = decorate(nameTag);
 
         assertTrue(
-                decorated.getString().endsWith(" ArcLeRetour " + OTHER_MOD_GLYPH),
-                decorated.getString());
-        assertEquals(List.of("dryad"), pillLabels(decorated));
+                decorated.getString().endsWith(" ArcLeRetour " + OTHER_MOD_GLYPH), decorated.getString());
+        assertEquals(List.of("dryad"), badgeLabels(decorated));
     }
 
     /**
@@ -160,7 +159,7 @@ class GuildRankNametagDecoratorTest {
 
         Component decorated = decorate(nameTag);
 
-        assertEquals(List.of("dryad"), pillLabels(decorated));
+        assertEquals(List.of("dryad"), badgeLabels(decorated));
         assertTrue(decorated.getString().endsWith(" ArcLeRetour"), decorated.getString());
     }
 
@@ -176,11 +175,14 @@ class GuildRankNametagDecoratorTest {
 
         Component decorated = decorate(nameTag);
 
-        assertEquals(List.of("dryad"), pillLabels(decorated));
+        assertEquals(List.of("dryad"), badgeLabels(decorated));
         assertEquals(
                 1,
-                WynnPillGlyphs.findGlyphRuns(decorated.getString()).size(),
-                "the old badge left glyphs behind: " + decorated.getString());
+                WynnPillGlyphs.findPills(decorated.getString()).size(),
+                "the old badge left a layer behind: " + decorated.getString());
+        assertTrue(
+                decorated.getString().indexOf(WynnPillGlyphs.BACKGROUND) >= 0,
+                "the badge is chat's pill, background blocks and all");
     }
 
     /** The name carries the rank colours too, so the tag reads as one label. */
@@ -189,7 +191,10 @@ class GuildRankNametagDecoratorTest {
         Component decorated =
                 decorate(Component.literal(CHAMPION_BADGE + " ArcLeRetour"));
 
-        assertEquals(List.of(0x2ECC71), nameColors(decorated));
+        assertEquals(List.of(0x2ECC71), nameColors(decorated), "the name wears the rank colour");
+        assertTrue(
+                rankLabelColors(decorated).stream().allMatch(color -> color.getValue() == 0x2ECC71),
+                "and so does the badge in front of it");
     }
 
     /**
@@ -204,7 +209,7 @@ class GuildRankNametagDecoratorTest {
         Component nameTag = Component.literal(CHAMPION_BADGE)
                 .withStyle(style -> style.withColor(WYNNCRAFT_BADGE_COLOR))
                 .append(Component.literal(" ArcLeRetour"));
-        List<TextColor> backgrounds = pillBackgroundColors(decorate(nameTag));
+        List<TextColor> backgrounds = rankLabelColors(decorate(nameTag));
         assertFalse(backgrounds.isEmpty());
 
         fillAnimationRegistry();
@@ -225,22 +230,17 @@ class GuildRankNametagDecoratorTest {
 
     /**
      * Minecraft draws every nametag twice, and styled text takes the alpha of the pass
-     * drawing it. Sequoia's glyphs are drawn at full alpha in both, which needs them to
+     * drawing it. Sequoia's own text is drawn at full alpha in both, which needs it to
      * be recognisable as its own; see {@code SeeThroughTextPass}.
      */
     @Test
     void marksItsColoursAsSequoiaDecorations() {
         Component decorated = decorate(Component.literal(CHAMPION_BADGE + " ArcLeRetour"));
 
-        List<TextColor> backgrounds = pillBackgroundColors(decorated);
-        assertFalse(backgrounds.isEmpty());
-        for (TextColor background : backgrounds) {
-            assertTrue(RankGradientAnimation.isDecorationColor(background), "an unrecognised pill colour");
-        }
-        List<TextColor> labels = pillLabelColors(decorated);
-        assertFalse(labels.isEmpty());
-        for (TextColor label : labels) {
-            assertTrue(RankGradientAnimation.isDecorationColor(label), "an unrecognised pill label colour");
+        List<TextColor> rankColors = rankLabelColors(decorated);
+        assertFalse(rankColors.isEmpty());
+        for (TextColor rankColor : rankColors) {
+            assertTrue(RankGradientAnimation.isDecorationColor(rankColor), "an unrecognised rank colour");
         }
         assertFalse(
                 RankGradientAnimation.isDecorationColor(TextColor.fromRgb(0x123456)),
@@ -288,36 +288,31 @@ class GuildRankNametagDecoratorTest {
         assertNull(GuildRankNametagDecorator.displayedName("Wandering Merchant", MEMBERS));
     }
 
-    private static List<String> pillLabels(Component component) {
-        return WynnPillGlyphs.findPills(component.getString()).stream()
-                .map(pill -> pill.label().toLowerCase(Locale.ROOT))
-                .toList();
-    }
-
-    /** Colours of the fragments holding the displayed name. */
+    /** Colours of the fragments holding the displayed name, which is mixed case. */
     private static List<Integer> nameColors(Component component) {
         return ComponentTextEditor.flatten(component).stream()
                 .filter(fragment -> fragment.text().chars().allMatch(Character::isLetterOrDigit))
-                .filter(fragment -> !fragment.text().isEmpty())
+                .filter(fragment -> fragment.text().chars().anyMatch(Character::isLowerCase))
                 .map(fragment -> fragment.style().getColor().getValue())
                 .toList();
     }
 
-    /** Colours of the pill's background blocks, i.e. the glyphs carrying no label. */
-    private static List<TextColor> pillBackgroundColors(Component component) {
+    /** Colours of the pill's background blocks, which carry the rank's palette. */
+    private static List<TextColor> rankLabelColors(Component component) {
         return ComponentTextEditor.flatten(component).stream()
                 .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
                 .map(fragment -> fragment.style().getColor())
                 .toList();
     }
 
-    /** Colours of the label glyphs drawn on top of the pill background. */
-    private static List<TextColor> pillLabelColors(Component component) {
-        return ComponentTextEditor.flatten(component).stream()
-                .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.TEXT_OFFSET) >= 0)
-                .map(fragment -> fragment.style().getColor())
+    /** The ranks the badges on a tag spell out. */
+    private static List<String> badgeLabels(Component component) {
+        return WynnPillGlyphs.findPills(component.getString()).stream()
+                .map(pill -> pill.label().toLowerCase(Locale.ROOT))
                 .toList();
     }
+
+
 
     /**
      * Wynncraft's layered badge: a corner-framed foreground layer, a back-advance,

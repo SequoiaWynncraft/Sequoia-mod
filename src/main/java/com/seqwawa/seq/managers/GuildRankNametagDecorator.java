@@ -51,7 +51,7 @@ public final class GuildRankNametagDecorator {
     /**
      * Decoration results keyed by the component handed to the renderer, including
      * the ones left alone. A nametag is submitted every frame from a component that
-     * upstream caches, so without this the pill would be rebuilt — and its animated
+     * upstream caches, so without this the rank would be rebuilt — and its animated
      * colours re-registered — sixty times a second per player.
      */
     private static final Map<DecorationKey, Decoration> DECORATED_NAMETAGS = decorationCache();
@@ -122,7 +122,7 @@ public final class GuildRankNametagDecorator {
      * The colours are pinned rather than merely registered: a nametag stands on screen
      * for as long as its owner is in sight, far longer than the chat line this registry
      * was built for, and a stop evicted underneath it would drop that one glyph out of
-     * step with the rest of the pill.
+     * step with the rest of the rank.
      */
     static Decoration decorate(Component nameTag, Function<String, Member> members) {
         List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(nameTag);
@@ -135,7 +135,7 @@ public final class GuildRankNametagDecorator {
         Member member = name.member();
         String label = PrincessRankEasterEgg.pillLabel(member.rank().pillLabel(), member.username());
         Badge badge = badgeBefore(text, name.start());
-        if (label.equalsIgnoreCase(badgeLabel(text, badge))) {
+        if (alreadyDecorated(text, name.start(), label, badge)) {
             return Decoration.unchanged(nameTag);
         }
 
@@ -154,7 +154,8 @@ public final class GuildRankNametagDecorator {
             TextColor badgeColor) {
         RankPresentation rank = name.member().rank();
         List<ComponentTextEditor.Fragment> coloured = paintName(fragments, name, rank);
-        MutableComponent replacement = Component.empty()
+        MutableComponent replacement =
+                Component.empty()
                 .append(NotificationAccessor.wynnPill(
                         label,
                         DiscordRankChatDecorator.rampFor(rank),
@@ -172,8 +173,22 @@ public final class GuildRankNametagDecorator {
     }
 
     /**
-     * The colour Wynncraft drew the badge in, which the pill returns to when member
-     * colouring is switched off. Without it the pill would fall back to the plain
+     * Whether the tag already carries this rank: as the label written in front of the
+     * name, or as a badge spelling it. A nametag is decorated every frame from the tag
+     * its renderer holds, and a mod may hand back one this already rewrote.
+     */
+    private static boolean alreadyDecorated(String text, int nameStart, String label, Badge badge) {
+        if (label.equalsIgnoreCase(badgeLabel(text, badge))) {
+            return true;
+        }
+        String before = text.substring(0, nameStart).stripTrailing();
+        return before.length() >= label.length()
+                && before.regionMatches(true, before.length() - label.length(), label, 0, label.length());
+    }
+
+    /**
+     * The colour Wynncraft drew the badge in, which the rank returns to when member
+     * colouring is switched off. Without it the rank would fall back to the plain
      * white a nametag is drawn in, rather than to the rank colour it replaced.
      */
     private static TextColor badgeColor(List<ComponentTextEditor.Fragment> fragments, Badge badge) {
@@ -206,7 +221,7 @@ public final class GuildRankNametagDecorator {
     }
 
     /**
-     * Paints the member's name in their rank colours, so the name and the pill in
+     * Paints the member's name in their rank colours, so the name and the rank in
      * front of it read as one label rather than as a Sequoia rank stuck on a
      * Wynncraft-coloured name.
      * <p>

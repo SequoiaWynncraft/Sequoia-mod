@@ -324,6 +324,22 @@ public final class RankGradientAnimation {
         return color != null && (stops.containsKey(color) || fixedDecorationColors.containsKey(color));
     }
 
+    /**
+     * Whether {@code color} belongs to a rank badge rather than to a decorated name.
+     * A badge is built by laying glyphs on top of one another and a name is not, so
+     * the two have to be drawn differently in the world; see {@code NametagTextPass}.
+     */
+    public static boolean isBadgeColor(TextColor color) {
+        if (color == null) {
+            return false;
+        }
+        if (fixedDecorationColors.containsKey(color)) {
+            return true;
+        }
+        Stop stop = stops.get(color);
+        return stop != null && stop.target() == Target.RANK_BADGE;
+    }
+
     /** Marks a shared, non-animated colour as belonging to a Sequoia decoration. */
     public static synchronized TextColor markDecorationColor(TextColor color) {
         Objects.requireNonNull(color, "color");

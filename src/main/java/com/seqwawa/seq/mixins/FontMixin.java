@@ -2,7 +2,7 @@ package com.seqwawa.seq.mixins;
 
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
-import com.seqwawa.seq.utils.SeeThroughTextPass;
+import com.seqwawa.seq.utils.NametagTextPass;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.network.chat.Component;
@@ -10,7 +10,7 @@ import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 
 /**
- * Tells {@link SeeThroughTextPass} when the text being laid out is the copy of a
+ * Tells {@link NametagTextPass} when the text being laid out is the copy of a
  * nametag that shows through terrain, which is the only place a Sequoia decoration
  * would otherwise be drawn at a different opacity than the pass drawn on top of it.
  */
@@ -34,7 +34,7 @@ public abstract class FontMixin {
             Operation<Void> original) {
         boolean seeThrough = displayMode == Font.DisplayMode.SEE_THROUGH;
         if (seeThrough) {
-            SeeThroughTextPass.begin();
+            NametagTextPass.beginSeeThrough();
         }
         try {
             original.call(
@@ -50,7 +50,7 @@ public abstract class FontMixin {
                     lightCoords);
         } finally {
             if (seeThrough) {
-                SeeThroughTextPass.end();
+                NametagTextPass.endSeeThrough();
             }
         }
     }

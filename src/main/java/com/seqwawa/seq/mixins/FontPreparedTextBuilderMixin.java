@@ -1,7 +1,7 @@
 package com.seqwawa.seq.mixins;
 
 import com.seqwawa.seq.utils.RankGradientAnimation;
-import com.seqwawa.seq.utils.SeeThroughTextPass;
+import com.seqwawa.seq.utils.NametagTextPass;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.util.ARGB;
 import org.spongepowered.asm.mixin.Mixin;
@@ -23,16 +23,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *
  * @see RankGradientAnimation which recognises registered rank-decoration colours and
  *      leaves all others untouched
- * @see SeeThroughTextPass for why a nametag decoration must ignore the pass's alpha
+ * @see NametagTextPass for how a nametag decoration is drawn
  */
 @Mixin(targets = "net.minecraft.client.gui.Font$PreparedTextBuilder")
 public class FontPreparedTextBuilderMixin {
 
     /**
-     * Whether the glyph being coloured is a rank decoration. Recorded on the way in,
-     * because animating a gradient hands back a different colour than the one that was
-     * registered. Text is laid out on the render thread, one glyph at a time.
+     * Whether the glyph being coloured belongs to a rank badge, and whether it belongs
+     * to any Sequoia decoration at all. Recorded on the way in, because animating a
+     * gradient hands back a different colour than the one that was registered. Text is
+     * laid out on the render thread, one glyph at a time.
      */
+    @Unique
+    private boolean seq$badgeGlyph;
+
     @Unique
     private boolean seq$decorationGlyph;
 
@@ -41,25 +45,34 @@ public class FontPreparedTextBuilderMixin {
             at = @At("HEAD"),
             argsOnly = true)
     private TextColor seq$animateRankGradient(TextColor color) {
-        // Only the see-through pass needs to know, and asking costs a lookup per glyph.
+        // Only a nametag needs any of this, and asking costs a lookup per glyph.
         seq$decorationGlyph =
-                SeeThroughTextPass.isActive() && RankGradientAnimation.isDecorationColor(color);
+                NametagTextPass.isDrawingNametags() && RankGradientAnimation.isDecorationColor(color);
+        seq$badgeGlyph = seq$decorationGlyph && RankGradientAnimation.isBadgeColor(color);
         return RankGradientAnimation.animate(color);
     }
 
     /**
-     * Draws Sequoia's decorations at full alpha in the see-through pass as well, so a
-     * pill looks the same whether the depth test keeps the copy drawn over it or not.
-     * Everything else keeps the faded colour that marks a nametag seen through terrain.
+     * Draws a rank badge in the copy of the nametag that ignores the depth test, and
+     * skips it in the copy that does not, so the glyphs a badge lays on top of one
+     * another are never compared by depth. A decorated name overlays nothing, so it is
+     * simply kept at full alpha and reads the same through a wall as in front of one.
+     *
+     * @see NametagTextPass
      */
     @Inject(
             method = "getTextColor(Lnet/minecraft/network/chat/TextColor;)I",
             at = @At("RETURN"),
             cancellable = true)
-    private void seq$keepRankDecorationOpaque(TextColor color, CallbackInfoReturnable<Integer> callback) {
+    private void seq$drawRankDecoration(TextColor color, CallbackInfoReturnable<Integer> callback) {
+        boolean badgeGlyph = seq$badgeGlyph;
         boolean decorationGlyph = seq$decorationGlyph;
+        seq$badgeGlyph = false;
         seq$decorationGlyph = false;
-        if (decorationGlyph) {
+        if (badgeGlyph) {
+            callback.setReturnValue(
+                    NametagTextPass.badgeColor(callback.getReturnValue(), NametagTextPass.isSeeThrough()));
+        } else if (decorationGlyph) {
             callback.setReturnValue(ARGB.opaque(callback.getReturnValue()));
         }
     }

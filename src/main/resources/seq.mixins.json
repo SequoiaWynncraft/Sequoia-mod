@@ -19,6 +19,7 @@
     "GameRendererMixin",
     "GuildAllianceSnapshotPacketMixin",
     "InGameHudMixin",
+    "NameTagFeatureRendererMixin",
     "ParticleEngineMixin",
     "SubmitNodeCollectionMixin",
     "TitleScreenMixin"
