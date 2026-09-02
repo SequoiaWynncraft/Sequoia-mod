@@ -269,6 +269,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting showOwnLeaderboardBadgeSetting;
 
     @Getter
+    public static Setting.BooleanSetting showNametagRanksSetting;
+
+    @Getter
     public static Setting.BooleanSetting showPartyHealthBarsSetting;
 
     @Getter
@@ -947,6 +950,13 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.BooleanSetting("show_insignia_badges", "leaderboard_badges", true);
         showOwnLeaderboardBadgeSetting =
                 new Setting.BooleanSetting("show_own_leaderboard_badge", "leaderboard_badges", true);
+        // Off by default: the badge above a head is the rank Wynncraft gave that
+        // account, and replacing what other players see of it is a deliberate choice.
+        showNametagRanksSetting = new Setting.BooleanSetting("show_nametag_ranks", "nametags", false);
+        showNametagRanksSetting.setPresentation(
+                "Show Sequoia ranks on nametags",
+                "Show a member's Sequoia rank and colors above their head.",
+                null);
         showPartyHealthBarsSetting = new Setting.BooleanSetting("show_party_healthbars", "raids", true);
         notifyTrackedWorldEventsSetting =
                 new Setting.BooleanSetting("notify_tracked_world_events", "world_events", false);
@@ -1062,6 +1072,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(showRaidBadgesSetting);
         getConfigManager().register(showInsigniaBadgesSetting);
         getConfigManager().register(showOwnLeaderboardBadgeSetting);
+        getConfigManager().register(showNametagRanksSetting);
         getConfigManager().register(showPartyHealthBarsSetting);
         getConfigManager().register(notifyTrackedWorldEventsSetting);
         getConfigManager().register(warPlannerResourceColorsSetting);

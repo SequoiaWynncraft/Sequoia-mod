@@ -113,6 +113,19 @@ public final class DiscordRankService {
         return present(lookup(index.unverifiedMinecraftAliases(), username));
     }
 
+    /**
+     * Rank and colours of a player identified by their Minecraft account rather than
+     * by a name. Preferred wherever the account is known, such as a rendered entity:
+     * the UUID cannot be spoofed by a nickname and survives a name change.
+     */
+    public RankPresentation presentationForMinecraftUuid(UUID uuid) {
+        DiscordRank rank = rankForUuid(uuid);
+        if (rank == null) {
+            return null;
+        }
+        return presentation(rank, lookup(index.colorsByIdentity(), PlayerNameCache.formatUUID(uuid.toString())));
+    }
+
     /** Rank and colours of a bridge sender, matched on Discord identity then game name. */
     public RankPresentation presentationForBridgeSender(String senderName) {
         return present(rankForBridgeSender(senderName), senderName);

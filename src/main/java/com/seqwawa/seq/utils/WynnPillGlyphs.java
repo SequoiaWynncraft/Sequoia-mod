@@ -94,7 +94,7 @@ public final class WynnPillGlyphs {
     public static List<Pill> findPills(String text) {
         List<Pill> pills = new ArrayList<>(findLayeredPills(text));
         findGlyphRuns(text).stream()
-                .filter(pill -> pill.label().length() >= MIN_LABEL_LENGTH)
+                .filter(pill -> hasMinimumLabelLength(pill.label()))
                 .filter(candidate -> pills.stream().noneMatch(layered -> overlaps(layered, candidate)))
                 .forEach(pills::add);
         pills.sort(Comparator.comparingInt(Pill::start));
@@ -222,7 +222,14 @@ public final class WynnPillGlyphs {
                     label.append(decoded);
                     continue;
                 }
-                if (current == CORNER_RIGHT && label.length() >= MIN_LABEL_LENGTH) {
+                // NotificationAccessor represents a space with a background block but
+                // no text-offset/glyph pair. That missing pair is the only information
+                // needed to recover the gap in a multi-word label.
+                if (current == BACKGROUND && (index >= text.length() || text.charAt(index) != TEXT_OFFSET)) {
+                    label.append(' ');
+                    continue;
+                }
+                if (current == CORNER_RIGHT && hasMinimumLabelLength(label)) {
                     while (index < text.length() && isPadding(text.charAt(index))) {
                         index++;
                     }
@@ -237,6 +244,16 @@ public final class WynnPillGlyphs {
             }
         }
         return List.copyOf(runs);
+    }
+
+    private static boolean hasMinimumLabelLength(CharSequence label) {
+        int readable = 0;
+        for (int index = 0; index < label.length(); index++) {
+            if (!Character.isWhitespace(label.charAt(index)) && ++readable >= MIN_LABEL_LENGTH) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
