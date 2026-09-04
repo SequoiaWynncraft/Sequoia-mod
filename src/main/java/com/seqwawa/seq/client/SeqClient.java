@@ -55,6 +55,7 @@ import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
+import com.seqwawa.seq.ui.GuildMembersScreen;
 import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.ui.PrincessRaidCelebration;
@@ -617,6 +618,10 @@ public class SeqClient implements ClientModInitializer {
 
     public static void openIngredientGuideScreen() {
         mc.execute(() -> mc.setScreen(new IngredientGuideScreen(mc.screen)));
+    }
+
+    public static void openGuildMembersScreen() {
+        mc.execute(() -> mc.setScreen(new GuildMembersScreen(mc.screen)));
     }
 
     public static boolean isBombShareHotkeyDown() {

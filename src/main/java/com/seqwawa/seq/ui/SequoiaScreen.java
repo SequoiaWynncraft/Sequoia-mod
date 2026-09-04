@@ -4,6 +4,7 @@ import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import java.awt.Color;
+import java.util.List;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -19,7 +20,6 @@ public class SequoiaScreen extends Screen {
     private static final float BUTTON_WIDTH = 120;
     private static final float BUTTON_HEIGHT = 24;
     private static final float BUTTON_SPACING = 8;
-    private static final float BUTTON_RADIUS = 6;
     private static final float TITLE_FONT_SIZE = 24;
     private static final float BUTTON_FONT_SIZE = 14;
 
@@ -27,6 +27,19 @@ public class SequoiaScreen extends Screen {
 
     private float nvgMouseX;
     private float nvgMouseY;
+
+    /**
+     * The menu in draw order. Render and hit testing both walk this list, so a new
+     * entry cannot land in one and not the other.
+     */
+    private final List<MenuEntry> entries = List.of(
+            new MenuEntry("Partyfinder", () -> SeqClient.mc.setScreen(new PartyFinderScreen(this))),
+            new MenuEntry("Members", () -> SeqClient.mc.setScreen(new GuildMembersScreen(this))),
+            new MenuEntry("Connection", () -> SeqClient.mc.setScreen(new ConnectionScreen(this))),
+            new MenuEntry("Settings", () -> SeqClient.mc.setScreen(new SettingsScreen(this))),
+            new MenuEntry("Map", () -> SeqClient.mc.setScreen(new WorldMapScreen(this))),
+            new MenuEntry("Ingredients", () -> SeqClient.mc.setScreen(new IngredientGuideScreen(this))),
+            new MenuEntry("Github", SequoiaScreen::openGithub));
 
     public SequoiaScreen() {
         super(Component.literal("Sequoia"));
@@ -48,7 +61,7 @@ public class SequoiaScreen extends Screen {
 
             // Title
             String fontName = SeqClient.getFontManager().getSelectedFont();
-            float titleY = screenHeight * 0.3f;
+            float titleY = titleY(screenHeight);
             canvas.drawText("Sequoia", screenWidth / 2f, titleY, new UiCanvas.TextStyle(
                     fontName,
                     TITLE_FONT_SIZE,
@@ -57,16 +70,19 @@ public class SequoiaScreen extends Screen {
                     UiCanvas.VerticalAlign.MIDDLE));
 
             // Buttons
-            float startY = titleY + 40;
             float centerX = screenWidth / 2f - BUTTON_WIDTH / 2f;
-
-            drawButton(canvas, centerX, startY, "Partyfinder");
-            drawButton(canvas, centerX, startY + BUTTON_HEIGHT + BUTTON_SPACING, "Connection");
-            drawButton(canvas, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 2, "Settings");
-            drawButton(canvas, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 3, "Map");
-            drawButton(canvas, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 4, "Ingredients");
-            drawButton(canvas, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 5, "Github");
+            for (int i = 0; i < entries.size(); i++) {
+                drawButton(canvas, centerX, buttonY(screenHeight, i), entries.get(i).label());
+            }
         });
+    }
+
+    private static float titleY(float screenHeight) {
+        return screenHeight * 0.3f;
+    }
+
+    private static float buttonY(float screenHeight, int index) {
+        return titleY(screenHeight) + 40 + (BUTTON_HEIGHT + BUTTON_SPACING) * index;
     }
 
     private void drawButton(UiCanvas canvas, float x, float y, String label) {
@@ -93,30 +109,24 @@ public class SequoiaScreen extends Screen {
 
             float screenWidth = MinecraftUiRenderer.screenWidth();
             float screenHeight = MinecraftUiRenderer.screenHeight();
-
-            float titleY = screenHeight * 0.3f;
-            float startY = titleY + 40;
             float centerX = screenWidth / 2f - BUTTON_WIDTH / 2f;
 
-            if (isInButton(mx, my, centerX, startY)) {
-                SeqClient.mc.setScreen(new PartyFinderScreen(this));
-            } else if (isInButton(mx, my, centerX, startY + BUTTON_HEIGHT + BUTTON_SPACING)) {
-                SeqClient.mc.setScreen(new ConnectionScreen(this));
-            } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 2)) {
-                SeqClient.mc.setScreen(new SettingsScreen(this));
-            } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 3)) {
-                SeqClient.mc.setScreen(new WorldMapScreen(this));
-            } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 4)) {
-                SeqClient.mc.setScreen(new IngredientGuideScreen(this));
-            } else if (isInButton(mx, my, centerX, startY + (BUTTON_HEIGHT + BUTTON_SPACING) * 5)) {
-                try {
-                    java.net.URI uri = java.net.URI.create(GITHUB_URL);
-                    java.awt.Desktop.getDesktop().browse(uri);
-                } catch (Exception ignored) {
+            for (int i = 0; i < entries.size(); i++) {
+                if (isInButton(mx, my, centerX, buttonY(screenHeight, i))) {
+                    entries.get(i).action().run();
+                    break;
                 }
             }
         }
         return super.mouseClicked(click, outsideScreen);
+    }
+
+    private static void openGithub() {
+        try {
+            java.net.URI uri = java.net.URI.create(GITHUB_URL);
+            java.awt.Desktop.getDesktop().browse(uri);
+        } catch (Exception ignored) {
+        }
     }
 
     private boolean isInButton(float mx, float my, float bx, float by) {
@@ -128,4 +138,5 @@ public class SequoiaScreen extends Screen {
         return false;
     }
 
+    private record MenuEntry(String label, Runnable action) {}
 }

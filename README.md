@@ -20,6 +20,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Automatic connection to Sequoia services
 - In-game Discord chat bridge
 - Clickable world names in chat, so a called-out world is one click away
+- Guild members panel: who is online, on which world, and who is mid-raid
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
 - Raid tracking and announcements
@@ -54,6 +55,7 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq`: open the main Sequoia screen
 - `/seq p`: open the Sequoia party finder UI
 - `/seq map`: open the Sequoia world map
+- `/seq members`: open the guild members panel
 - `/seq connect`: connect to the backend
 - `/seq status`: show connection state
 - `/seq logout`: clear the current backend session
@@ -75,6 +77,8 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq request tome <reason>`
 - `/seq ignore <IGN>`
 - `/seq unignore <IGN>`
+- `/seq members`
+- `/seq member`
 - `/seq map`
 - `/seq map params`
 - `/seq map eps <blocks>`
@@ -116,6 +120,28 @@ Navigation and map mode controls remain pinned in the left sidebar. Its map, ana
 Gathering analysis supports three scopes: all bundled gathering nodes, nodes inside any guild territory, or nodes inside the selected territory. Resource, profession, cluster, and score controls continue to refine the active scope.
 
 The Events view shows runs currently visible through the Wynncraft API. Choose All or Tracked to filter the markers, click a marker for event details, and use Track Event or the searchable tracking dropdown to manage persistent tracking. The management list can be limited to Tracked Only for quick removal. Tracked-event detection messages can be enabled in the World Events settings category.
+
+## Guild members
+
+Run `/seq members`, or press `O` and choose **Members**, to see every guild member Wynncraft
+reports as online. Members are grouped by the world they are on: the world you are already on
+comes first, then the worlds holding the most members, so it is obvious where the guild has
+gathered. A member with no world reported — Wynncraft hides the server of anyone who has turned
+off their online status — is listed last under `Unknown`.
+
+Each row carries two actions:
+
+- **Join** switches you to that member's world.
+- **Invite** invites them to your Wynncraft party, creating the party first when you are not in
+  one yet.
+
+A member shows a **Busy** chip with a countdown for eight minutes after finishing a raid. The
+signal is the same raid completion report the mod relays to Discord: Wynncraft announces every
+guild raid in guild chat, so one completion marks its whole party at once, with no server round
+trip. Members running Sequoia are tagged `SEQ`.
+
+The roster comes from Wynncraft's public API, which serves it on a two-minute cache, so the
+panel refreshes at most once a minute; **Refresh** in the header forces the next allowed fetch.
 
 ## Settings
 

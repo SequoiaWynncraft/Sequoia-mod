@@ -138,6 +138,10 @@ public class SeqCommand {
                                                 .executes(SeqCommand::openIngredientGuideScreen))
                                 .then(ClientCommandManager.literal("ingredient")
                                                 .executes(SeqCommand::openIngredientGuideScreen))
+                                .then(ClientCommandManager.literal("members")
+                                                .executes(SeqCommand::openGuildMembersScreen))
+                                .then(ClientCommandManager.literal("member")
+                                                .executes(SeqCommand::openGuildMembersScreen))
                                 .then(buildPartyCommand("party"))
                                 .then(buildPartyCommand("p"));
 
@@ -552,6 +556,11 @@ public class SeqCommand {
 
         private static int openIngredientGuideScreen(CommandContext<FabricClientCommandSource> ctx) {
                 SeqClient.openIngredientGuideScreen();
+                return 1;
+        }
+
+        private static int openGuildMembersScreen(CommandContext<FabricClientCommandSource> ctx) {
+                SeqClient.openGuildMembersScreen();
                 return 1;
         }
 

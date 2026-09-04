@@ -212,6 +212,17 @@ public class WynnPartySyncManager {
         return List.copyOf(observedState.memberUsernames);
     }
 
+    /**
+     * Whether the local player is currently in a Wynncraft party at all.
+     * <p>
+     * Distinct from an empty {@link #getObservedMemberUsernames()}: a party the local
+     * player just created is active while holding only them, and Wynncraft rejects a
+     * second {@code /party create} in that state.
+     */
+    public boolean hasActiveParty() {
+        return observedState.initialized && observedState.active;
+    }
+
     private void handlePartyCreated() {
         RaidPartySnapshotTracker.onPartyChanged();
         observedState.reset();
