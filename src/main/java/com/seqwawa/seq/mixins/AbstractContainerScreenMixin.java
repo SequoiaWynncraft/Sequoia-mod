@@ -41,14 +41,23 @@ public abstract class AbstractContainerScreenMixin<T extends AbstractContainerMe
     private void seq$renderGuildStorageShortcut(
             GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
         GuildStorageShortcutOverlay.render(graphics, menu, leftPos, topPos, imageWidth, mouseX, mouseY);
-        EquippedBuildOverlay.render(graphics, menu, leftPos, topPos, imageWidth, mouseX, mouseY);
     }
 
+    /**
+     * Drawn from {@code renderContents} rather than {@code render}.
+     *
+     * <p>The player's own inventory is an {@code AbstractRecipeBookScreen}, which overrides
+     * {@code render} and calls {@code renderContents} directly instead of its superclass, so a
+     * {@code render} injection never fires there — it only looks like it works on plain container
+     * screens. {@code renderContents} is reached both ways, and being before the carried item and
+     * the tooltips is where an overlay belongs anyway.
+     */
     @Inject(method = "renderContents", at = @At("TAIL"))
-    private void seq$observeRaidGambitRoster(
+    private void seq$renderContentsOverlays(
             GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
         Screen screen = (Screen) (Object) this;
         RaidGambitRosterTracker.observe(menu, screen.getTitle());
+        EquippedBuildOverlay.render(graphics, menu, leftPos, topPos, imageWidth, mouseX, mouseY);
         // The ability tree and the tome menu are the only places Wynncraft prints what the player
         // has taken, so they are read while the player has them open rather than by asking for them.
         WynntilsAbilityTreeAccess.observe(menu);

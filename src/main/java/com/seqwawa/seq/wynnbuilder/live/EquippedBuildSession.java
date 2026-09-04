@@ -61,7 +61,7 @@ public final class EquippedBuildSession {
             String status) {
 
         public static State empty() {
-            return new State(EquippedBuild.Snapshot.empty(), null, null, null, "");
+            return new State(EquippedBuild.Snapshot.empty(), null, null, null, "Reading your gear...");
         }
 
         public boolean hasNumbers() {
