@@ -186,9 +186,9 @@ public final class DamageSources {
     private static DamageCalc.Weapon weaponOf(WynnBuild build, WynnDataSet data, BuildStats stats) {
         BuildEquipment equipment = build.equipment(EquipmentSlot.WEAPON);
 
-        if (equipment instanceof BuildEquipment.Normal normal) {
-            WynnItem item = data.item(normal.itemId());
-            if (item == null || !item.isWeapon()) {
+        WynnItem item = BuildStats.resolveItem(equipment, data);
+        if (item != null) {
+            if (!item.isWeapon()) {
                 return null;
             }
             int[][] damages = new int[DamageCalc.ELEMENTS][2];
@@ -231,9 +231,9 @@ public final class DamageSources {
 
     private static String weaponName(WynnBuild build, WynnDataSet data) {
         BuildEquipment equipment = build.equipment(EquipmentSlot.WEAPON);
-        if (equipment instanceof BuildEquipment.Normal normal) {
-            WynnItem item = data.item(normal.itemId());
-            return item == null ? "Unknown weapon" : item.displayName();
+        WynnItem item = BuildStats.resolveItem(equipment, data);
+        if (item != null) {
+            return item.displayName();
         }
         return equipment instanceof BuildEquipment.Crafted ? "Crafted weapon" : null;
     }

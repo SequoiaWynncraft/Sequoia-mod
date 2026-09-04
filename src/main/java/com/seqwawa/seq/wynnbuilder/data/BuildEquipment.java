@@ -25,6 +25,25 @@ public sealed interface BuildEquipment {
      */
     record Custom(BitVector bits) implements BuildEquipment {}
 
+    /**
+     * A piece read off the player, carrying the values the game itself prints.
+     *
+     * <p>Everything about it is already resolved: the identifications are the roll this particular
+     * drop got rather than a range, and the damage, health and defences are the powdered numbers
+     * from the tooltip. That is what makes the powder tier a non-question — Wynncraft never shows
+     * it and Wynntils assumes six, but the tooltip has already applied whatever tier is really
+     * socketed, so the build carries no powders and nothing has to be guessed.
+     *
+     * @param crafted whether the piece is player-made, which the skill point solver needs to know
+     *     because a craft's own bonuses cannot pay for its own requirements
+     * @param best the same item rolled perfectly, used to price what a bad roll is costing
+     */
+    record Live(WynnItem item, boolean crafted, WynnItem best) implements BuildEquipment {
+        public Live(WynnItem item, boolean crafted) {
+            this(item, crafted, item);
+        }
+    }
+
     static BuildEquipment none() {
         return None.INSTANCE;
     }

@@ -23,6 +23,7 @@ wynnbuilder/
   data/    downloaded data, parsed and indexed
   calc/    skill points, rolls, powders, aggregated stats, crafting
   atree/   ability tree graph, selection rules and effect evaluation
+  live/    the build the player is actually wearing, and its audit
   ui/      the hub, builder, crafter, ability tree and picker screens
 ```
 
@@ -83,6 +84,63 @@ than they look:
   requiring them, so the order pieces are equipped changes how many points must be assigned.
   `SkillPoints.allocate` searches the equip orders for the cheapest valid one; an item cannot pay for
   its own requirement, and crafted items' bonuses do not count towards requirements at all.
+
+## The equipped build
+
+The same calculator, pointed at the player instead of at a hand-entered build. Only the input is
+new: `BuildEvaluation` is shared with the builder screen precisely so the two cannot drift, since
+the damage numbers are the whole point of both.
+
+### Reading a worn item
+
+`BuildEquipment.Live` is a slot holding an already-resolved item rather than a reference into the
+data set. Its identifications are the roll that particular drop got, and it is marked `fixID` so
+`IdentificationRolls` returns them verbatim instead of re-rolling numbers that are no longer
+hypothetical.
+
+Two details are worth knowing.
+
+**Powder tiers are unknowable and do not need to be known.** Wynncraft never prints a powder's tier
+— Wynntils hardcodes six when it encodes an item — so applying `PowderCalc` to an item's base stats
+would mis-state every powdered weapon. `WynnItemParser.parseItemStack` returns the tooltip's own
+damage, health and defences, which already have whatever tier is really socketed applied. A live
+piece therefore carries powdered stats and an empty powder list, and `PowderCalc` is bypassed rather
+than fed a guess.
+
+**Wynntils and WynnBuilder disagree on the sign of a spell cost.** Wynntils negates cost stats while
+parsing so that a larger number is always the better roll; the calculator keeps the game's own sign,
+where a reduction is the negative number the tooltip shows. `StatKeys.isNegated` is the flip, and
+missing it would turn every cost reduction into a cost increase.
+
+### Where the rest of a character comes from
+
+Gear is always readable. Everything else is printed only inside a menu, and all three are read while
+the player has that menu open rather than by asking the server for it: `AbilityTreeParser` is public,
+so the parsing Wynntils does during its own query works just as well on a container the player
+opened. The exception is skill points, which appear only in the character sheet, and there is no
+passive path — the panel says they are missing until a scan is asked for.
+
+The ability tree scrolls across seven pages, so a passive read is often partial. Observations
+accumulate by ability name across openings and the coverage is reported, because the alternative —
+treating an unobserved node as taken — would overstate the build instead of visibly understating it.
+
+### The audit
+
+`GearAudit` answers "what do I replace first" by measuring rather than scoring. For each slot it
+re-runs the whole pipeline with the piece at its ceiling and with the piece removed, and reports the
+difference in the build's own damage. Nothing in it knows what a good item looks like, which is
+exactly why it survives a build whose damage scales off health.
+
+Two things make the numbers comparable:
+
+- **One reference source.** The strongest sustained output is chosen once from the baseline and every
+  variant is measured against that same spell. A delta between two different spells is not a delta.
+- **A ceiling that depends on provenance.** A dropped item's is its best roll; a crafted item's also
+  drops the identifications that hurt, since an ingredient that subtracts from the build is a choice
+  and not a bad roll. Applying that to dropped gear would invent an impossible ideal and condemn
+  every mythic for the drawback printed on it.
+
+Nineteen full evaluations, so it runs off the render thread on request rather than on a frame.
 
 ## Ability tree
 

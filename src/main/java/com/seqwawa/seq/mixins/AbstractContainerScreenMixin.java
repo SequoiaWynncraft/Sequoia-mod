@@ -1,7 +1,10 @@
 package com.seqwawa.seq.mixins;
 
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.integrations.WynntilsAbilityTreeAccess;
+import com.seqwawa.seq.integrations.WynntilsTomeAccess;
 import com.seqwawa.seq.managers.RaidGambitRosterTracker;
+import com.seqwawa.seq.ui.EquippedBuildOverlay;
 import com.seqwawa.seq.ui.GuildStorageShortcutOverlay;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -38,6 +41,7 @@ public abstract class AbstractContainerScreenMixin<T extends AbstractContainerMe
     private void seq$renderGuildStorageShortcut(
             GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
         GuildStorageShortcutOverlay.render(graphics, menu, leftPos, topPos, imageWidth, mouseX, mouseY);
+        EquippedBuildOverlay.render(graphics, menu, leftPos, topPos, imageWidth, mouseX, mouseY);
     }
 
     @Inject(method = "renderContents", at = @At("TAIL"))
@@ -45,6 +49,10 @@ public abstract class AbstractContainerScreenMixin<T extends AbstractContainerMe
             GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
         Screen screen = (Screen) (Object) this;
         RaidGambitRosterTracker.observe(menu, screen.getTitle());
+        // The ability tree and the tome menu are the only places Wynncraft prints what the player
+        // has taken, so they are read while the player has them open rather than by asking for them.
+        WynntilsAbilityTreeAccess.observe(menu);
+        WynntilsTomeAccess.observe(menu);
     }
 
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
@@ -55,6 +63,11 @@ public abstract class AbstractContainerScreenMixin<T extends AbstractContainerMe
         }
 
         if (GuildStorageShortcutOverlay.mouseClicked(menu, leftPos, topPos, imageWidth, event.x(), event.y())) {
+            cir.setReturnValue(true);
+            return;
+        }
+
+        if (EquippedBuildOverlay.mouseClicked(menu, event.x(), event.y())) {
             cir.setReturnValue(true);
         }
     }

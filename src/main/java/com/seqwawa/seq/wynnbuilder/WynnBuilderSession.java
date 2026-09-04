@@ -160,26 +160,20 @@ public final class WynnBuilderSession {
             return null;
         }
         if (statsDirty || cachedStats == null) {
-            // Two passes: some abilities scale off the build's own totals, so a first pass without
-            // them produces the stats the second pass reads. One extra pass settles it; iterating
-            // further would chase a fixed point for a bonus that is small by construction.
-            var firstPass = abilityTreeEvaluation(Map.of());
-            double skillPointBoost =
-                    com.seqwawa.seq.wynnbuilder.calc.ExternalBoosts.skillPointMultiplier(enabledExternalBoosts);
-            BuildStats provisional = BuildStats.compute(
-                    build, data, rollMode, withBuffs(firstPass.statBonuses()), skillPointBoost);
-            // Major identifications can rewrite a spell's own properties, so they have to be known
-            // before the spells are assembled rather than merged into the stats afterwards.
-            var propertyModifiers = com.seqwawa.seq.wynnbuilder.atree.AbilityTreeEngine
-                    .collectPropertyModifiers(majorIdAbilities(provisional));
-            var secondPass = abilityTreeEvaluation(provisional.identifications(), propertyModifiers);
-            Map<String, Integer> combined = withBuffs(secondPass.statBonuses());
-            // Major identifications carry ability effects of their own, from gear and raid buffs
-            // alike, and they read the totals the earlier pass produced.
-            majorIdEffects(provisional, combined.keySet())
-                    .forEach((key, value) -> combined.merge(key, value, Integer::sum));
-            cachedStats = BuildStats.compute(build, data, rollMode, combined, skillPointBoost);
-            cachedEvaluation = secondPass;
+            com.seqwawa.seq.wynnbuilder.calc.BuildEvaluation evaluated =
+                    com.seqwawa.seq.wynnbuilder.calc.BuildEvaluation.compute(
+                            build,
+                            data,
+                            rollMode,
+                            abilityTreeState(),
+                            sliderValues,
+                            enabledToggles,
+                            buffBonuses(),
+                            buffMajorIds(),
+                            com.seqwawa.seq.wynnbuilder.calc.ExternalBoosts.skillPointMultiplier(
+                                    enabledExternalBoosts));
+            cachedStats = evaluated.stats();
+            cachedEvaluation = evaluated.evaluation();
             statsDirty = false;
         }
         return cachedStats;
@@ -197,7 +191,7 @@ public final class WynnBuilderSession {
         WynnBuild without = build.copy();
         without.setEquipment(slot, BuildEquipment.none());
         without.powders(slot).clear();
-        return BuildStats.compute(without, data, rollMode, withBuffs(Map.of()));
+        return BuildStats.compute(without, data, rollMode, buffBonuses());
     }
 
     // ------------------------------------------------------------------ ability tree
@@ -211,11 +205,9 @@ public final class WynnBuilderSession {
         if (data == null || build == null) {
             return null;
         }
-        if (build.equipment(EquipmentSlot.WEAPON) instanceof BuildEquipment.Normal normal) {
-            WynnItem weapon = data.item(normal.itemId());
-            if (weapon != null) {
-                return com.seqwawa.seq.wynnbuilder.atree.AbilityTree.classForWeaponType(weapon.type());
-            }
+        WynnItem weapon = BuildStats.resolveItem(build.equipment(EquipmentSlot.WEAPON), data);
+        if (weapon != null) {
+            return com.seqwawa.seq.wynnbuilder.atree.AbilityTree.classForWeaponType(weapon.type());
         }
         return null;
     }
@@ -305,13 +297,13 @@ public final class WynnBuilderSession {
     }
 
     /**
-     * Combines the ability bonuses with the toggled raid buffs and powder specials.
+     * The stats that come from neither gear nor the ability tree.
      *
-     * <p>All three are temporary boosts rather than gear, so they are applied together at the same
-     * point in the calculation.
+     * <p>Raid buffs, powder specials and boosts other players provide are all temporary rather than
+     * equipment, so they are applied together at the same point in the calculation.
      */
-    private Map<String, Integer> withBuffs(Map<String, Integer> abilityBonuses) {
-        Map<String, Integer> combined = new java.util.LinkedHashMap<>(abilityBonuses);
+    private Map<String, Integer> buffBonuses() {
+        Map<String, Integer> combined = new java.util.LinkedHashMap<>();
         for (String name : enabledRaidBuffs) {
             var buff = com.seqwawa.seq.wynnbuilder.calc.RaidBuffs.byName(name);
             if (buff != null) {
@@ -335,39 +327,6 @@ public final class WynnBuilderSession {
             }
         }
         return majorIds;
-    }
-
-    /** The stat effects of every major identification the build has. */
-    /** The ability definitions every major identification on the build contributes. */
-    private java.util.List<com.google.gson.JsonObject> majorIdAbilities(BuildStats provisional) {
-        java.util.List<com.google.gson.JsonObject> abilities = new java.util.ArrayList<>();
-        if (data == null || provisional == null) {
-            return abilities;
-        }
-        java.util.List<String> names = new java.util.ArrayList<>(provisional.majorIds());
-        names.addAll(buffMajorIds());
-        java.util.Set<String> seen = new java.util.HashSet<>();
-        for (String name : names) {
-            if (!seen.add(name)) {
-                // A major ID granted twice still only applies once.
-                continue;
-            }
-            var entry = data.majorIds().get(name);
-            if (entry != null) {
-                abilities.addAll(entry.abilities());
-            }
-        }
-        return abilities;
-    }
-
-    private Map<String, Integer> majorIdEffects(BuildStats provisional, java.util.Set<String> ignored) {
-        java.util.List<String> names = new java.util.ArrayList<>(provisional.majorIds());
-        names.addAll(buffMajorIds());
-        if (names.isEmpty() || data == null) {
-            return Map.of();
-        }
-        return com.seqwawa.seq.wynnbuilder.atree.AbilityTreeEngine.applyAbilityEffects(
-                majorIdAbilities(provisional), sliderValues, enabledToggles, provisional.identifications());
     }
 
     public java.util.Set<String> enabledExternalBoosts() {

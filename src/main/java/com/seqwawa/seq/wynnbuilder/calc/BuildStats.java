@@ -121,7 +121,7 @@ public record BuildStats(
 
         for (EquipmentSlot slot : EquipmentSlot.encodingOrder()) {
             BuildEquipment equipment = build.equipment(slot);
-            WynnItem item = equipment instanceof BuildEquipment.Normal normal ? data.item(normal.itemId()) : null;
+            WynnItem item = resolveItem(equipment, data);
             int powderCapacity = 0;
 
             if (item != null) {
@@ -297,6 +297,28 @@ public record BuildStats(
                 resolved);
     }
 
+    /**
+     * The item occupying a slot, whether it came from the data set or from the player.
+     *
+     * <p>A live piece already holds its own resolved item, so it needs no lookup; the rest of the
+     * aggregation cannot tell the two apart, which is the point.
+     */
+    public static WynnItem resolveItem(BuildEquipment equipment, WynnDataSet data) {
+        if (equipment instanceof BuildEquipment.Normal normal) {
+            return data == null ? null : data.item(normal.itemId());
+        }
+        if (equipment instanceof BuildEquipment.Live live) {
+            return live.item();
+        }
+        return null;
+    }
+
+    /** Whether a slot holds a player-made piece, which changes how its skill points are counted. */
+    public static boolean isCrafted(BuildEquipment equipment) {
+        return equipment instanceof BuildEquipment.Crafted
+                || (equipment instanceof BuildEquipment.Live live && live.crafted());
+    }
+
     private static int sumItemSkillPoints(List<SkillPoints.Item> items, SkillPoints.Item weapon, int index) {
         int total = weapon.bonuses()[index];
         for (SkillPoints.Item item : items) {
@@ -332,7 +354,7 @@ public record BuildStats(
                 bonuses[i] = range == null ? 0 : Math.max(range[0], range[1]);
             }
         }
-        return new SkillPoints.Item(requirements, bonuses, equipment instanceof BuildEquipment.Crafted);
+        return new SkillPoints.Item(requirements, bonuses, isCrafted(equipment));
     }
 
     /**

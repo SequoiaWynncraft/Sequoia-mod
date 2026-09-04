@@ -205,6 +205,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting halcyonRangeVisualiserSetting;
 
     @Getter
+    public static Setting.BooleanSetting equippedBuildOverlaySetting;
+
+    @Getter
     public static Setting.ColorSetting halcyonRingColorSetting;
 
     @Getter
@@ -763,6 +766,12 @@ public class SeqClient implements ClientModInitializer {
         lightRoomRingColorSetting = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF)
                 .withValueOverride(PrincessMode::paletteColorOverride);
         lightRoomRingColorSetting.setVisibilityCondition(() -> lightRoomVisualiserSetting.getValue());
+        equippedBuildOverlaySetting = new Setting.BooleanSetting("equipped_build_overlay", "ui", true);
+        equippedBuildOverlaySetting.setPresentation(
+                "Build panel in the inventory",
+                "Show what each spell costs and deals for the gear you are wearing, beside your inventory,"
+                        + " with a button that finds the piece worth replacing first.",
+                "Inventory");
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
@@ -828,6 +837,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(radianceCheckerSetting);
         getConfigManager().register(radianceMarkerColorSetting);
         getConfigManager().register(halcyonRangeVisualiserSetting);
+        getConfigManager().register(equippedBuildOverlaySetting);
         getConfigManager().register(halcyonRingColorSetting);
         getConfigManager().register(lightRoomVisualiserSetting);
         getConfigManager().register(lightRoomRingColorSetting);

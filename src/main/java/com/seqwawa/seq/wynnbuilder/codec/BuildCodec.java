@@ -106,6 +106,16 @@ public final class BuildCodec {
                     String recipeType = recipeTypeLookup == null ? null : recipeTypeLookup.apply(crafted.craft().recipeId());
                     CraftedCodec.encode(vector, crafted.craft(), CraftedItem.isWeaponType(recipeType));
                 }
+                case BuildEquipment.Live live -> {
+                    // A live piece is a real item read off the player, so a dropped one exports as
+                    // itself. A crafted one cannot: the link format carries a craft's recipe and
+                    // ingredients, and reading a finished item off the player never reveals them.
+                    // Writing an empty slot loses the piece, which is at least visible, where
+                    // inventing a craft would quietly export a different build.
+                    vector.append(consts.equipmentKindNormal(), consts.equipmentKindBits());
+                    int itemId = live.crafted() || live.item() == null ? -1 : live.item().id();
+                    vector.append(itemId < 0 ? 0 : itemId + 1, consts.itemIdBits());
+                }
                 case BuildEquipment.Custom custom -> {
                     vector.append(consts.equipmentKindCustom(), consts.equipmentKindBits());
                     // The length field counts Base64 characters, not bits.

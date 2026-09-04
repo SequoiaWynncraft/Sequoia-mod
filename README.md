@@ -26,6 +26,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Per-player raid gambit counts parsed natively from the raid-start roster
 - Interactive world map with gathering nodes analysis and active world events
 - In-game WynnBuilder builder and crafter, including reading and generating WynnBuilder links
+- Spell damage, spell costs and a worst-piece verdict for the gear you are wearing, beside your inventory
 - Guild-specific settings and status screens
 
 ## Requirements
@@ -147,6 +148,44 @@ Open **WynnBuilder** from the main Sequoia screen, or run `/seq wb`, for an in-g
 - **Crafter** (`/seq wb craft` or `/seq craft`) — pick a recipe, material tiers and up to six
   ingredients, and see the resulting item. Ingredient effectiveness is shown per grid position,
   since where an ingredient sits changes what it contributes.
+
+### The gear you are wearing
+
+Open your inventory and a panel appears beside it, running the same calculator over the build you
+have on: what each spell costs in mana, what it deals per second, and your effective health.
+
+**Find my weakest piece** answers the question the numbers are usually asked for — what to replace
+first. It is a measurement, not an opinion. Every equipped piece is put through the whole pipeline
+twice, once as it is and once as it would be at its ceiling, and the difference in the build's own
+damage is the verdict. A perfectly rolled ring of stats the build does not scale on therefore ranks
+below a mediocre one carrying the right damage type, and a major identification that makes health
+drive damage is accounted for without anything having to know about it.
+
+A piece's ceiling depends on where it came from. A dropped item's is its best possible roll — a
+drawback printed on a mythic is part of the item and no amount of rerolling removes it. A crafted
+item's ceiling also drops the identifications that actively hurt, because those came from an
+ingredient and are a recipe decision rather than luck. That is the difference between "reroll this"
+and "recraft this", and the panel says which.
+
+Powder tiers never have to be guessed. Wynncraft does not print them, but it does print the damage,
+health and defences that result from them, so those printed numbers are what the panel reads.
+
+#### What has to be opened
+
+Gear is read the moment you open your inventory. The rest of a character lives in menus Wynncraft
+only fills in when you look at them, so they are read while you look:
+
+| What | Where it comes from |
+| --- | --- |
+| Equipment, powders, rolls | Always available |
+| Ability tree | Read while you browse your own tree. It scrolls, so a partial read is reported as a percentage and climbs as you scroll |
+| Mastery tomes | Read when you open the tome menu; a single page, so one look is enough |
+| Skill points | Only printed in the character sheet |
+
+Nothing is requested on your behalf. The panel lists what it has not counted rather than quietly
+guessing, and a **Scan** button asks Wynntils to read the character sheet and the full ability tree
+when you would rather not do it yourself — that one closes your inventory and opens those menus in
+the background, which is why it only ever happens on a click.
 
 ### Links
 
