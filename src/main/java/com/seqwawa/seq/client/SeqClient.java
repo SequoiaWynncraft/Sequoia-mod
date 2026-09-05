@@ -134,6 +134,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting showDiscordRanksSetting;
 
     @Getter
+    public static Setting.BooleanSetting showDiscordRankPillsSetting;
+
+    @Getter
     public static Setting.BooleanSetting showChatInsigniasSetting;
 
     @Getter
@@ -769,6 +772,7 @@ public class SeqClient implements ClientModInitializer {
         autoConnectSetting = new Setting.BooleanSetting("auto_connect", "network", true);
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
         showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", true);
+        showDiscordRankPillsSetting = new Setting.BooleanSetting("show_discord_rank_pills", "chat", true);
         showChatInsigniasSetting = new Setting.BooleanSetting("show_chat_insignias", "chat", false);
         usePerUserColorsSetting = new Setting.BooleanSetting("use_per_user_colors", "chat", true);
         colorDiscordBridgeSetting = new Setting.BooleanSetting("color_discord_bridge", "chat", true);
@@ -818,6 +822,11 @@ public class SeqClient implements ClientModInitializer {
                 "Show Discord ranks and colors",
                 "Show Sequoia Discord ranks in guild chat and member colors in supported chat channels.",
                 "Discord ranks");
+        showDiscordRankPillsSetting.setPresentation(
+                "Show Discord rank on pills",
+                "Use the Sequoia Discord rank instead of the Wynncraft guild rank on in-game chat pills.",
+                "Rank pills");
+        showDiscordRankPillsSetting.setParentSetting(showDiscordRanksSetting);
         showChatInsigniasSetting.setPresentation(
                 "Show insignias", "Display a member's Sequoia insignia beside their chat name.", "Discord ranks");
         showChatInsigniasSetting.setParentSetting(showDiscordRanksSetting);
@@ -1020,6 +1029,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(discordChatTextColorSetting);
         getConfigManager().register(inGameGuildChatTextColorSetting);
         getConfigManager().register(showDiscordRanksSetting);
+        getConfigManager().register(showDiscordRankPillsSetting);
         getConfigManager().register(showChatInsigniasSetting);
         getConfigManager().register(usePerUserColorsSetting);
         getConfigManager().register(colorRankPillsSetting);

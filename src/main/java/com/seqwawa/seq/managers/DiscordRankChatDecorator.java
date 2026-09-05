@@ -1087,25 +1087,33 @@ public final class DiscordRankChatDecorator {
         return withTooltip(pill, tooltip);
     }
 
-    /** In-game pill with the local label easter egg and the original guild rank on hover. */
+    /** In-game pill using either the Discord or Wynncraft rank label. */
     static MutableComponent rankPill(
             RankPresentation rank,
             String replacedWynncraftRank,
             TextColor baseBackgroundColor,
             String speakerUsername) {
-        MutableComponent pill = buildRankPill(
-                rank, PrincessRankEasterEgg.pillLabel(rank.pillLabel(), speakerUsername), baseBackgroundColor);
-
         String inGameRank = replacedWynncraftRank == null || replacedWynncraftRank.isBlank()
                 ? null
                 : capitalize(replacedWynncraftRank);
         if (inGameRank == null && PrincessRankEasterEgg.isLocalSpeaker(speakerUsername)) {
             inGameRank = WynntilsGuildRankAccess.currentRankLabel();
         }
-        MutableComponent tooltip = Component.literal("In-game rank: ")
-                .withStyle(ChatFormatting.GRAY)
-                .append(Component.literal(inGameRank == null ? "Unknown" : inGameRank)
-                        .withStyle(ChatFormatting.WHITE));
+        boolean showDiscordRank = SeqClient.getShowDiscordRankPillsSetting() == null
+                || SeqClient.getShowDiscordRankPillsSetting().getValue()
+                || inGameRank == null;
+        String pillLabel = showDiscordRank
+                ? PrincessRankEasterEgg.pillLabel(rank.pillLabel(), speakerUsername)
+                : inGameRank.toUpperCase(Locale.ROOT);
+        MutableComponent pill = buildRankPill(rank, pillLabel, baseBackgroundColor);
+        MutableComponent tooltip = showDiscordRank
+                ? Component.literal("In-game rank: ")
+                        .withStyle(ChatFormatting.GRAY)
+                        .append(Component.literal(inGameRank == null ? "Unknown" : inGameRank)
+                                .withStyle(ChatFormatting.WHITE))
+                : Component.literal("Sequoia rank: ")
+                        .withStyle(ChatFormatting.GRAY)
+                        .append(Component.literal(rank.label()).withStyle(style -> style.withColor(colorFor(rank))));
         return withTooltip(pill, tooltip);
     }
 

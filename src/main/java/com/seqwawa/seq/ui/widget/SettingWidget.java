@@ -25,6 +25,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("auto_connect", "Auto connect to Sequoia backend");
         DISPLAY_NAME_OVERRIDES.put("show_discord_bridge", "Show Discord chat");
         DISPLAY_NAME_OVERRIDES.put("show_discord_ranks", "Show Discord ranks and colors in guild chat");
+        DISPLAY_NAME_OVERRIDES.put("show_discord_rank_pills", "Show Discord rank on pills");
         DISPLAY_NAME_OVERRIDES.put("show_chat_insignias", "Show insignias in chat");
         DISPLAY_NAME_OVERRIDES.put("use_per_user_colors", "Use per-user colors");
         DISPLAY_NAME_OVERRIDES.put("color_discord_bridge", "Color Chatbridge with Discord ranks");
