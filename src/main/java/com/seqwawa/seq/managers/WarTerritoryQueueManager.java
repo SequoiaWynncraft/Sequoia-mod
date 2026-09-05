@@ -43,6 +43,8 @@ public final class WarTerritoryQueueManager {
     static final Duration MISSED_WAR_MIN_DELAY = Duration.ofSeconds(1);
     static final Duration MISSED_WAR_MAX_DELAY = Duration.ofSeconds(10);
     private static final Duration MISSED_WAR_CACHE_RETENTION = Duration.ofSeconds(30);
+    private static final Duration WAR_ENTRY_EARLY_TOLERANCE = Duration.ofSeconds(2);
+    private static final Duration WAR_ENTRY_LATE_TOLERANCE = Duration.ofSeconds(12);
     private static final String NOBODY_LOGGED_IN_MESSAGE = "Nobody logged in for the war.";
     private static final Pattern MINECRAFT_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Pattern DEFENSE_MESSAGE_PATTERN = Pattern.compile(
@@ -170,6 +172,9 @@ public final class WarTerritoryQueueManager {
     private volatile State state = State.INACTIVE;
     private volatile WarTerritoryQueueFeed feed = WarTerritoryQueueFeed.empty();
     private volatile String lastError;
+    private volatile String recentPlayerUuid;
+    private String bootstrapPlayerUuid;
+    private boolean bootstrapComplete;
     private volatile long serverOffsetMillis;
     private boolean active;
     private long generation;
@@ -221,7 +226,7 @@ public final class WarTerritoryQueueManager {
     }
 
     public boolean isActive() {
-        return active && isAvailabilityActive();
+        return active && (isAvailabilityActive() || hasLocalActiveQueue(playerUuid()));
     }
 
     public WarTerritoryQueueFeed feed() {
@@ -263,12 +268,46 @@ public final class WarTerritoryQueueManager {
                 .findFirst();
     }
 
+    /** Territory whose queue timer expired as the preparation room was entered. */
+    public synchronized Optional<String> enteredTerritoryForLocalPlayer() {
+        Instant now = adjustedServerNow();
+        cleanupRecentQueueSnapshots(now);
+        String playerUuid = playerUuid();
+        List<TerritoryQueue> candidates = recentQueueSnapshots.values().stream()
+                .filter(queue -> queue.expiresAt() != null)
+                .filter(queue -> !queue.expiresAt().isBefore(now.minus(WAR_ENTRY_LATE_TOLERANCE)))
+                .filter(queue -> !queue.expiresAt().isAfter(now.plus(WAR_ENTRY_EARLY_TOLERANCE)))
+                .toList();
+        List<TerritoryQueue> localCandidates = candidates.stream()
+                .filter(queue -> belongsToPlayer(queue, playerUuid))
+                .toList();
+        if (!localCandidates.isEmpty()) {
+            return localCandidates.size() == 1
+                    ? Optional.of(localCandidates.getFirst().territory())
+                    : Optional.empty();
+        }
+        return candidates.size() == 1
+                ? Optional.of(candidates.getFirst().territory())
+                : Optional.empty();
+    }
+
     public void tick() {
-        if (!isAvailabilityActive()) {
+        String playerUuid = playerUuid();
+        if (playerUuid == null) {
             synchronized (this) {
-                if (playerUuid() == null) {
-                    resetLocked();
-                } else if (active) {
+                resetLocked();
+            }
+            return;
+        }
+        synchronized (this) {
+            if (!java.util.Objects.equals(playerUuid, bootstrapPlayerUuid)) {
+                bootstrapPlayerUuid = playerUuid;
+                bootstrapComplete = false;
+            }
+        }
+        if (!isAvailabilityActive() && !hasLocalActiveQueue(playerUuid) && bootstrapComplete) {
+            synchronized (this) {
+                if (active) {
                     suspendLivePollingLocked();
                 }
             }
@@ -494,6 +533,16 @@ public final class WarTerritoryQueueManager {
 
     public synchronized void reset() {
         resetLocked();
+    }
+
+    /** Clears live queue state without losing timers needed immediately after an instance teleport. */
+    public synchronized void resetForWorldTransition() {
+        String playerUuid = playerUuid();
+        LinkedHashMap<Long, TerritoryQueue> recentTimers = new LinkedHashMap<>(recentQueueSnapshots);
+        resetLocked();
+        recentPlayerUuid = playerUuid;
+        recentQueueSnapshots.putAll(recentTimers);
+        cleanupRecentQueueSnapshots(adjustedServerNow());
     }
 
     int pendingObservationCount() {
@@ -771,6 +820,8 @@ public final class WarTerritoryQueueManager {
             }
             reconcileRecentQueueSnapshots(received, adjustedServerNow());
         }
+        bootstrapPlayerUuid = playerUuid();
+        bootstrapComplete = bootstrapPlayerUuid != null;
         state = State.READY;
         lastError = null;
         nextPollAtMillis = clock.millis() + POLL_INTERVAL.toMillis();
@@ -1008,6 +1059,9 @@ public final class WarTerritoryQueueManager {
         if (!active
                 && state == State.INACTIVE
                 && feed.queues().isEmpty()
+                && recentPlayerUuid == null
+                && bootstrapPlayerUuid == null
+                && !bootstrapComplete
                 && pendingObservations.isEmpty()
                 && recentQueueSnapshots.isEmpty()
                 && notifiedMissedWars.isEmpty()
@@ -1022,6 +1076,9 @@ public final class WarTerritoryQueueManager {
         state = State.INACTIVE;
         feed = WarTerritoryQueueFeed.empty();
         lastError = null;
+        recentPlayerUuid = null;
+        bootstrapPlayerUuid = null;
+        bootstrapComplete = false;
         serverOffsetMillis = 0L;
         nextPollAtMillis = 0L;
         nextObservationAttemptAtMillis = 0L;
@@ -1061,7 +1118,8 @@ public final class WarTerritoryQueueManager {
         nextObservationAttemptAtMillis = 0L;
         pendingObservations.clear();
         recentObservations.clear();
-        recentQueueSnapshots.clear();
+        // Availability can briefly disappear while teleporting into the war instance.
+        // The destination still needs the timer that was visible before the transition.
         notifiedMissedWars.clear();
         if (pollInFlight != null) {
             pollInFlight.cancel(true);
@@ -1099,12 +1157,20 @@ public final class WarTerritoryQueueManager {
         }
     }
 
+    private boolean hasLocalActiveQueue(String playerUuid) {
+        return playerUuid != null
+                && activeQueues().stream().anyMatch(queue -> belongsToPlayer(queue, playerUuid));
+    }
+
     private String playerUuid() {
         try {
             String playerUuid = availabilityContext.playerUuid();
-            return playerUuid == null || playerUuid.isBlank() ? null : playerUuid;
+            if (playerUuid != null && !playerUuid.isBlank()) {
+                recentPlayerUuid = playerUuid;
+            }
+            return playerUuid == null || playerUuid.isBlank() ? recentPlayerUuid : playerUuid;
         } catch (RuntimeException exception) {
-            return null;
+            return recentPlayerUuid;
         }
     }
 

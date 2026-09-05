@@ -465,7 +465,11 @@ public class SeqClient implements ClientModInitializer {
                 if (guildStorageTracker != null) {
                     guildStorageTracker.reset();
                 }
-                resetWarPlanningState();
+                if (currentHost == null) {
+                    resetWarPlanningStateForWorldTransition();
+                } else {
+                    resetWarPlanningState();
+                }
                 GuildRaidProgressService.getInstance().tick(false);
                 return;
             }
@@ -474,7 +478,7 @@ public class SeqClient implements ClientModInitializer {
                 RaidPartySnapshotTracker.onServerUnavailable();
                 ConnectionManager.flushPendingOutbound();
                 resetWarTrackingState();
-                resetWarPlanningState();
+                resetWarPlanningStateForWorldTransition();
                 GuildRaidProgressService.getInstance().tick(false);
                 return;
             }
@@ -608,6 +612,15 @@ public class SeqClient implements ClientModInitializer {
         }
         if (warTerritoryQueueManager != null) {
             warTerritoryQueueManager.reset();
+        }
+    }
+
+    private static void resetWarPlanningStateForWorldTransition() {
+        if (warTerritoryQueueManager != null) {
+            warTerritoryQueueManager.resetForWorldTransition();
+        }
+        if (warPlannerManager != null) {
+            warPlannerManager.reset();
         }
     }
 

@@ -140,6 +140,16 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
                     }
 
                     @Override
+                    public String enteredWarTerritory() {
+                        return playerContext.enteredWarTerritory();
+                    }
+
+                    @Override
+                    public boolean warInstanceActive() {
+                        return playerContext.warInstanceActive();
+                    }
+
+                    @Override
                     public WynnClassType localClassType() {
                         return playerContext.localClassType();
                     }
@@ -178,6 +188,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     public void tick() {
         ensureDeathListenerRegistered();
         if (!trackingEnabled.getAsBoolean()) {
+            MinecraftWarWorldDetector.reset();
             liveTelemetryTracker.tick(null);
             clearActiveWarContext();
             pendingQueueAttempt = null;
@@ -322,6 +333,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
     public void reset() {
         warInfoProvider.resetTowerMetrics();
         liveTelemetryTracker.reset();
+        MinecraftWarWorldDetector.reset();
         clearActiveWarContext();
         pendingQueueAttempt = null;
         pendingQueueCancellation = null;
@@ -765,6 +777,14 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             return false;
         }
 
+        default String enteredWarTerritory() {
+            return null;
+        }
+
+        default boolean warInstanceActive() {
+            return false;
+        }
+
         default WynnClassType localClassType() {
             return null;
         }
@@ -791,6 +811,7 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
         default boolean publishWarTowerUpdate(WarTowerUpdate update) {
             return false;
         }
+
     }
 
     private record QueueAttemptInfo(String territory, String rating, int queueMinutes) {}
@@ -868,6 +889,16 @@ public final class GuildWarTracker implements GuildWarTrackerHandle {
             }
             Duration remaining = manager.ownAvailabilityRemaining();
             return remaining != null && !remaining.isZero() && !remaining.isNegative();
+        }
+
+        @Override
+        public String enteredWarTerritory() {
+            return MinecraftWarWorldDetector.enteredTerritory();
+        }
+
+        @Override
+        public boolean warInstanceActive() {
+            return MinecraftWarWorldDetector.isWarInstance();
         }
 
         @Override
