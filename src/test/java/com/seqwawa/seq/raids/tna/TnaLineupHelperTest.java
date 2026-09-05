@@ -11,6 +11,13 @@ import org.junit.jupiter.api.Test;
 class TnaLineupHelperTest {
 
     @Test
+    void recognizesOnlyTheNamelessAnomalyTitle() {
+        assertTrue(TnaLineupHelper.isTnaTitle("§9§lThe Nameless Anomaly"));
+        assertFalse(TnaLineupHelper.isTnaTitle("The Canyon Colossus"));
+        assertFalse(TnaLineupHelper.isTnaTitle(null));
+    }
+
+    @Test
     void detectsBerryAndRoomThreeChallengeProgress() {
         assertEquals(0, TnaLineupHelper.detectChallengeProgress(
                 List.of("The Nameless Anomaly", "Challenges: 0/4", "Prepare")));
@@ -27,6 +34,14 @@ class TnaLineupHelperTest {
         assertTrue(TnaLineupHelper.shouldRender(0, 0, radiusSquared));
         assertFalse(TnaLineupHelper.shouldRender(0, 2, 0.0));
         assertFalse(TnaLineupHelper.shouldRender(0, 0, radiusSquared + 0.01));
+    }
+
+    @Test
+    void berryRoomUsesItsUniqueCoordinatesInsteadOfRaidTitleState() {
+        double radiusSquared = TnaLineupHelper.DISPLAY_RADIUS * TnaLineupHelper.DISPLAY_RADIUS;
+
+        assertTrue(TnaLineupHelper.isWithinDisplayRadius(radiusSquared));
+        assertFalse(TnaLineupHelper.isWithinDisplayRadius(radiusSquared + 0.01));
     }
 
     @Test

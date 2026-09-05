@@ -10,6 +10,7 @@ import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -22,7 +23,6 @@ import net.minecraft.client.renderer.fog.FogRenderer;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.DisplaySlot;
 import net.minecraft.world.scores.Objective;
@@ -38,9 +38,11 @@ public final class TnaLineupHelper {
     static final Vec3 ROOM_THREE_AIM_POINT = new Vec3(25_591.4, 32.8, -23_548.0);
     static final double DISPLAY_RADIUS = 12.0;
 
-    private static final int BERRY_CHALLENGE = 0;
     private static final int ROOM_THREE_CHALLENGE = 2;
     private static final int NO_CHALLENGE = -1;
+    private static final String TNA_TITLE = "the nameless anomaly";
+    private static final List<String> OTHER_RAID_TITLES = List.of(
+            "nest of the grootslangs", "nexus of light", "the canyon colossus", "the wartorn palace");
     private static final Pattern CHALLENGE_PROGRESS =
             Pattern.compile("(?i)(?:^|\\s)Challenges?\\s*:?\\s*([0-4])/4(?:\\s|$)");
     private static final int SIDEBAR_SCAN_INTERVAL_TICKS = 5;
@@ -58,6 +60,7 @@ public final class TnaLineupHelper {
 
     private static int activeChallenge = NO_CHALLENGE;
     private static int sidebarScanTicksRemaining;
+    private static boolean inTnaRaid;
 
     private TnaLineupHelper() {}
 
@@ -80,6 +83,10 @@ public final class TnaLineupHelper {
     }
 
     private static int readChallengeProgress(Minecraft client) {
+        if (!inTnaRaid) {
+            return NO_CHALLENGE;
+        }
+
         Scoreboard scoreboard = client.level.getScoreboard();
         Objective sidebar = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR);
         if (sidebar == null) {
@@ -94,6 +101,30 @@ public final class TnaLineupHelper {
             lines.add(renderedLine.getString());
         }
         return detectChallengeProgress(lines);
+    }
+
+    public static void onTitle(Component title) {
+        if (title == null) {
+            return;
+        }
+        String rawTitle = title.getString();
+        if (isTnaTitle(rawTitle)) {
+            inTnaRaid = true;
+        } else if (OTHER_RAID_TITLES.stream().anyMatch(cleanTitle(rawTitle)::contains)) {
+            inTnaRaid = false;
+        }
+    }
+
+    static boolean isTnaTitle(String title) {
+        return title != null && cleanTitle(title).contains(TNA_TITLE);
+    }
+
+    private static String cleanTitle(String title) {
+        return PacketTextNormalizer.normalizeForParsing(title).toLowerCase(Locale.ROOT);
+    }
+
+    static int activeTnaChallenge() {
+        return inTnaRaid ? activeChallenge : NO_CHALLENGE;
     }
 
     static int detectChallengeProgress(Iterable<String> sidebarLines) {
@@ -125,29 +156,28 @@ public final class TnaLineupHelper {
             return;
         }
 
-        if (activeChallenge == BERRY_CHALLENGE && isBerryEnabled()) {
+        if (isBerryEnabled()) {
             renderBerry(context, client);
-        } else if (activeChallenge == ROOM_THREE_CHALLENGE && isRoomThreeEnabled()) {
+        }
+        if (activeChallenge == ROOM_THREE_CHALLENGE && isRoomThreeEnabled()) {
             renderRoomThree(context, client);
         }
     }
 
     private static void renderBerry(WorldRenderContext context, Minecraft client) {
-        if (!shouldRender(
-                BERRY_CHALLENGE,
-                activeChallenge,
-                client.player.position().distanceToSqr(BERRY_STAND_POINT))) {
+        if (!isWithinDisplayRadius(client.player.position().distanceToSqr(BERRY_STAND_POINT))) {
             return;
         }
 
-        boolean blinded = client.player.hasEffect(MobEffects.BLINDNESS);
-        RenderType lines = blinded ? RenderTypes.SECONDARY_BLOCK_OUTLINE : RenderTypes.LINES_TRANSLUCENT;
+        RenderType lines = RenderTypes.LINES_TRANSLUCENT;
         RenderState state = renderState(context, client, lines);
         renderFloorCross(state.lines(), state.pose(), state.camera(), BERRY_STAND_POINT);
         renderAimCross(state.lines(), state.pose(), state.camera(), BERRY_STAND_POINT, BERRY_AIM_POINT);
-        if (blinded) {
-            flushWithoutFog(context, client, lines);
-        }
+        flushWithoutFog(context, client, lines);
+    }
+
+    static boolean isWithinDisplayRadius(double distanceSquared) {
+        return distanceSquared <= DISPLAY_RADIUS * DISPLAY_RADIUS;
     }
 
     private static void renderRoomThree(WorldRenderContext context, Minecraft client) {
@@ -276,10 +306,6 @@ public final class TnaLineupHelper {
                 .setNormal(pose, (float) normal.x, (float) normal.y, (float) normal.z);
     }
 
-    static int activeChallenge() {
-        return activeChallenge;
-    }
-
     private static boolean isBerryEnabled() {
         return SeqClient.getTnaBerryLineupSetting() == null || SeqClient.getTnaBerryLineupSetting().getValue();
     }
@@ -292,6 +318,7 @@ public final class TnaLineupHelper {
     private static void reset() {
         activeChallenge = NO_CHALLENGE;
         sidebarScanTicksRemaining = 0;
+        inTnaRaid = false;
     }
 
     private record RenderState(VertexConsumer lines, PoseStack.Pose pose, Vec3 camera) {}

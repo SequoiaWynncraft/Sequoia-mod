@@ -14,6 +14,7 @@ import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.MinecraftCharacterClassDetector;
 import com.seqwawa.seq.managers.MinecraftWarTowerTracker;
 import com.seqwawa.seq.managers.RaidTracker;
+import com.seqwawa.seq.raids.tna.TnaLineupHelper;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 import org.spongepowered.asm.mixin.Mixin;
@@ -125,5 +126,6 @@ public class ClientPacketListenerMixin {
                     shift = At.Shift.AFTER))
     private void seq$onSetTitleText(ClientboundSetTitleTextPacket packet, CallbackInfo ci) {
         RaidTracker.onTitle(packet.text());
+        TnaLineupHelper.onTitle(packet.text());
     }
 }
