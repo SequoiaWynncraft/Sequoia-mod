@@ -94,7 +94,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final float TOGGLE_HEIGHT = 22;
     private static final float INPUT_HEIGHT = 24;
     private static final float SIDEBAR_HEADER_HEIGHT = 44;
-    private static final float SIDEBAR_PANEL_TOP = 166;
+    private static final float SIDEBAR_PANEL_TOP = 134;
+    private static final float BACK_BUTTON_SIZE = 24;
+    private static final float BACK_BUTTON_Y = (SIDEBAR_HEADER_HEIGHT - BACK_BUTTON_SIZE) / 2f;
     private static final float SIDEBAR_SCROLL_STEP = 28;
     private static final float PANEL_HEADER_HEIGHT = 28;
     private static final float PANEL_GAP = 10;
@@ -132,7 +134,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final float INGREDIENT_CHECKBOX_SIZE = 12;
     private static final ItemStack TOTEM_MAP_ICON = new ItemStack(Items.TOTEM_OF_UNDYING);
     private static final long TOTEM_SOLVE_DEBOUNCE_MS = 200;
-    private final Screen parent;
     private final MapFocus mapFocus;
     private final ItemStack mapFocusIcon;
     private final Supplier<PlayerSkin> mapFocusSkinLookup;
@@ -270,7 +271,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             GameProfile mapFocusSkinProfile,
             IngredientFarmSpot farmSpot) {
         super(Component.literal("Sequoia Map"));
-        this.parent = parent;
         this.mapFocus = mapFocus;
         this.mapFocusIcon = mapFocusIcon == null ? ItemStack.EMPTY : mapFocusIcon.copy();
         this.mapFocusSkinLookup = mapFocusSkinProfile == null
@@ -1189,6 +1189,13 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         drawCircle(canvas, sx, sy, 5, color(MAP_PLAYER));
     }
 
+    private void renderSidebarHeader(UiCanvas canvas) {
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
+        SequoiaUiStyle.drawSidebarTitle(canvas, SeqClient.getFontManager().getSelectedFont(),
+                SIDEBAR_WIDTH, "Sequoia Map", 18, color(MAP_TITLE));
+        drawButton(canvas, PADDING, BACK_BUTTON_Y, BACK_BUTTON_SIZE, BACK_BUTTON_SIZE, "X", false);
+    }
+
     private void renderSidebar(UiCanvas canvas) {
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             renderWorldEventSidebar(canvas);
@@ -1202,11 +1209,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         SidebarLayout layout = sidebarLayout();
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(MAP_SIDEBAR));
-        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
-        SequoiaUiStyle.drawSidebarTitle(canvas, SeqClient.getFontManager().getSelectedFont(),
-                SIDEBAR_WIDTH, "Sequoia Map", 18, color(MAP_TITLE));
+        renderSidebarHeader(canvas);
 
-        drawButton(canvas, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
         drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
         drawMapModeControl(canvas, layout.modeY());
         canvas.scissor(0, SIDEBAR_PANEL_TOP, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_PANEL_TOP));
@@ -1291,11 +1295,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         WorldEventSidebarLayout layout = worldEventSidebarLayout();
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(MAP_SIDEBAR));
-        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
-        SequoiaUiStyle.drawSidebarTitle(canvas, SeqClient.getFontManager().getSelectedFont(),
-                SIDEBAR_WIDTH, "Sequoia Map", 18, color(MAP_TITLE));
+        renderSidebarHeader(canvas);
 
-        drawButton(canvas, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
         drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
         drawMapModeControl(canvas, layout.modeY());
         canvas.scissor(0, SIDEBAR_PANEL_TOP, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_PANEL_TOP));
@@ -1343,10 +1344,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         sidebarContentHeight = ingredientSidebarContentHeight(layout);
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(MAP_SIDEBAR));
-        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
-        SequoiaUiStyle.drawSidebarTitle(canvas, SeqClient.getFontManager().getSelectedFont(),
-                SIDEBAR_WIDTH, "Sequoia Map", 18, color(MAP_TITLE));
-        drawButton(canvas, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
+        renderSidebarHeader(canvas);
         drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
         drawMapModeControl(canvas, layout.modeY());
 
@@ -3957,6 +3955,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         mapDragMoved = false;
         clearIngredientSelectionOnRelease = false;
 
+        if (isHovered(mx, my, PADDING, BACK_BUTTON_Y, BACK_BUTTON_SIZE, BACK_BUTTON_SIZE)) {
+            SeqClient.mc.setScreen(new SequoiaScreen());
+            return true;
+        }
         if (mx >= 0 && mx <= SIDEBAR_WIDTH && my < SIDEBAR_HEADER_HEIGHT) {
             return true;
         }
@@ -4018,10 +4020,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             }
         }
 
-        if (isHovered(mx, my, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(parent);
-            return true;
-        }
         if (isHovered(mx, my, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
             if (!centerOnPlayer()) {
                 centerPlayerWarningUntilMs = System.currentTimeMillis() + CENTER_PLAYER_WARNING_DURATION_MS;
@@ -4277,10 +4275,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private boolean mouseClickedIngredients(float mx, float my, float screenWidth, float screenHeight) {
         IngredientSidebarLayout layout = ingredientSidebarLayout();
         float buttonWidth = SIDEBAR_WIDTH - PADDING * 2;
-        if (isHovered(mx, my, PADDING, layout.backY(), buttonWidth, BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(parent);
-            return true;
-        }
         if (isHovered(mx, my, PADDING, layout.centerY(), buttonWidth, BUTTON_HEIGHT)) {
             if (!centerOnPlayer()) {
                 centerPlayerWarningUntilMs = System.currentTimeMillis() + CENTER_PLAYER_WARNING_DURATION_MS;
@@ -4501,10 +4495,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 toggleTrackedWorldEvent(events.get(worldEventDropdownScroll + optionIndex), true);
                 return true;
             }
-        }
-        if (isHovered(mx, my, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(parent);
-            return true;
         }
         if (isHovered(mx, my, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
             if (!centerOnPlayer()) {
@@ -5273,8 +5263,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private IngredientSidebarLayout ingredientSidebarLayout() {
-        float backY = 58;
-        float centerY = backY + BUTTON_HEIGHT + 8;
+        float centerY = 58;
         float modeY = centerY + BUTTON_HEIGHT + 18;
         float titleY = modeY + BUTTON_HEIGHT + 18;
         float renderWaypointsY = titleY + BUTTON_HEIGHT + 10;
@@ -5288,7 +5277,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float selectedDetailY = selectedTitleY + 24;
         float copyY = selectedDetailY + 44;
         return new IngredientSidebarLayout(
-                backY,
                 centerY,
                 modeY,
                 titleY,
@@ -5306,8 +5294,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private SidebarLayout sidebarLayout() {
         float y = 58;
-        float backY = y;
-        y += BUTTON_HEIGHT + 8;
         float centerY = y;
         y += BUTTON_HEIGHT + 18;
         float modeY = y;
@@ -5363,7 +5349,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float totemPanelY = y;
         y = totemSolverLayout(totemPanelY).endY();
         return new SidebarLayout(
-                backY,
                 centerY,
                 modeY,
                 mapPanelY,
@@ -5425,8 +5410,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private WorldEventSidebarLayout worldEventSidebarLayout() {
         float y = 58;
-        float backY = y;
-        y += BUTTON_HEIGHT + 8;
         float centerY = y;
         y += BUTTON_HEIGHT + 18;
         float modeY = y;
@@ -5455,7 +5438,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             y += INPUT_HEIGHT + 8;
         }
         return new WorldEventSidebarLayout(
-                backY,
                 centerY,
                 modeY,
                 displayPanelY,
@@ -5490,7 +5472,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private record TerritoryLabelLayout(List<String> lines, float fontSize, float lineHeight) {}
 
     private record IngredientSidebarLayout(
-            float backY,
             float centerY,
             float modeY,
             float titleY,
@@ -5506,7 +5487,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float copyY) {}
 
     private record SidebarLayout(
-            float backY,
             float centerY,
             float modeY,
             float mapPanelY,
@@ -5539,7 +5519,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float endY) {}
 
     private record WorldEventSidebarLayout(
-            float backY,
             float centerY,
             float modeY,
             float displayPanelY,

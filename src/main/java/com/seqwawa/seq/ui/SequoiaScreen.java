@@ -52,7 +52,7 @@ public class SequoiaScreen extends Screen {
                 float artworkWidth = artwork.getWidth() * scale;
                 float artworkHeight = artwork.getHeight() * scale;
                 canvas.drawImage(artwork.getImage(), 0, (screenHeight - artworkHeight) / 2f,
-                        artworkWidth, artworkHeight, 102 / 255f);
+                        artworkWidth, artworkHeight, 0.35f);
             }
 
             // Title
