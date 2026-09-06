@@ -1,7 +1,6 @@
 package com.seqwawa.seq.ui;
 
 import static com.seqwawa.seq.managers.ThemeManager.color;
-import static com.seqwawa.seq.managers.ThemeManager.withAlpha;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import com.mojang.authlib.GameProfile;
@@ -451,17 +450,17 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             boolean hovered = marker.equals(hoveredFocusMarker);
             Color markerColor = selected ? color(MAP_SELECTED_TERRITORY) : color(ACCENT_PRIMARY);
             if (areaRadius >= 4) {
-                drawCircle(canvas, x, y, areaRadius, withAlpha(markerColor, selected ? 34 : 20));
-                drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, withAlpha(markerColor, 145));
+                drawCircle(canvas, x, y, areaRadius, markerColor);
+                drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, markerColor);
             }
             if (mapFocusIcon.isEmpty()) {
                 float markerRadius = selected || hovered ? 4 : 3;
-                drawCircle(canvas, x, y, markerRadius + 1.5f, color(BACKGROUND_MODAL_OVERLAY, 190));
+                drawCircle(canvas, x, y, markerRadius + 1.5f, color(BACKGROUND_MODAL_OVERLAY));
                 drawCircle(canvas, x, y, markerRadius, markerColor);
             } else {
                 float iconSize = selected || hovered ? 22 : 18;
                 float outlineRadius = iconSize / 2f + 1;
-                drawCircle(canvas, x, y, outlineRadius, color(BACKGROUND_MODAL_OVERLAY, 145));
+                drawCircle(canvas, x, y, outlineRadius, color(BACKGROUND_MODAL_OVERLAY));
                 if (selected || hovered) {
                     drawCircleOutline(canvas, x, y, outlineRadius, 1, markerColor);
                 }
@@ -512,12 +511,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             Color markerColor = selected ? color(MAP_SELECTED_TERRITORY) : color(ACCENT_PRIMARY);
             float areaRadius = (float) (spot.radius() * viewport.pixelsPerBlock());
             if (areaRadius >= 4) {
-                drawCircle(canvas, x, y, areaRadius, withAlpha(markerColor, selected ? 34 : 20));
-                drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, withAlpha(markerColor, 145));
+                drawCircle(canvas, x, y, areaRadius, markerColor);
+                drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, markerColor);
             }
             float iconSize = selected || hovered ? 22 : 18;
             float outlineRadius = iconSize / 2f + 1;
-            drawCircle(canvas, x, y, outlineRadius, color(BACKGROUND_MODAL_OVERLAY, 190));
+            drawCircle(canvas, x, y, outlineRadius, color(BACKGROUND_MODAL_OVERLAY));
             drawCircleOutline(canvas, x, y, outlineRadius, selected || hovered ? 1.5f : 1, markerColor);
             focusIconOverlays.add(new FocusIconOverlay(
                     x - iconSize / 2f,
@@ -580,7 +579,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float width = Math.min(260, Math.max(170, textWidth(title, 12) + 32));
         float x = viewport.screenX() + (viewport.screenWidth() - width) / 2f;
         float y = viewport.screenY() + 10;
-        canvas.fillRoundedRect(x, y, width, 42, 6, color(MAP_SIDEBAR, 235));
+        canvas.fillRoundedRect(x, y, width, 42, 6, color(MAP_SIDEBAR));
         canvas.strokeRect(x, y, width, 42, 1, color(MAP_BORDER));
         drawFittedText(canvas, x + 10, y + 14, 12, title, color(MAP_TEXT), width - 20, TextAlignment.LEFT);
         drawFittedText(canvas, x + 10, y + 30, 10, subtitle, color(MAP_SUBTEXT), width - 20, TextAlignment.LEFT);
@@ -621,15 +620,14 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             boolean hovered = territory.equals(hoveredTerritory);
             Color color = selected ? color(MAP_SELECTED_TERRITORY) : color(MAP_TERRITORY);
             if (selected || hovered) {
-                int alpha = selected ? 38 : 24;
-                canvas.fillRect(x, y, width, height, withAlpha(color, alpha));
+                canvas.fillRect(x, y, width, height, color);
             }
             canvas.strokeRect(x,
                     y,
                     width,
                     height,
                     selected || hovered ? 1.8f : 0.8f,
-                    withAlpha(color, selected || hovered ? 235 : 115));
+                    color);
         }
         canvas.resetScissor();
     }
@@ -697,18 +695,18 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 float areaRadius = (float) (location.radius() * viewport.pixelsPerBlock());
                 if (areaRadius >= 5) {
                     Color areaColor = eventTracked ? color(MAP_TRACKED_WORLD_EVENT) : color(MAP_WORLD_EVENT);
-                    drawCircleOutline(canvas, x, y, areaRadius, 1, withAlpha(areaColor, eventSelected ? 150 : 65));
+                    drawCircleOutline(canvas, x, y, areaRadius, 1, areaColor);
                 }
 
                 Color markerColor = eventTracked ? color(MAP_TRACKED_WORLD_EVENT) : color(MAP_WORLD_EVENT);
                 boolean highlighted = eventSelected || (event.equals(hoveredWorldEvent) && locationIndex == hoveredWorldEventLocationIndex);
                 if (markerAsset == null) {
-                    drawCircle(canvas, x, y, highlighted ? 8 : 7, color(BACKGROUND_MODAL_OVERLAY, 190));
+                    drawCircle(canvas, x, y, highlighted ? 8 : 7, color(BACKGROUND_MODAL_OVERLAY));
                     drawCircle(canvas, x, y, highlighted ? 5.5f : 4.5f, eventSelected ? color(MAP_PLAYER) : markerColor);
                 } else {
                     float outerRadius = highlighted ? 9 : 8;
                     float assetSize = highlighted ? 12 : 11;
-                    drawCircle(canvas, x, y, outerRadius, color(BACKGROUND_MODAL_OVERLAY, 210));
+                    drawCircle(canvas, x, y, outerRadius, color(BACKGROUND_MODAL_OVERLAY));
                     drawCircle(canvas, x, y, outerRadius - 1.5f, markerColor);
                     canvas.drawImage(
                             markerAsset.getImage(),
@@ -770,7 +768,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                         lineY + 1,
                         label.fontSize(),
                         line,
-                        color(BACKGROUND_MODAL_OVERLAY, 210),
+                        color(BACKGROUND_MODAL_OVERLAY),
                         TextAlignment.CENTER);
                 drawText(
                         canvas,
@@ -994,25 +992,22 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             boolean selected,
             boolean highlighted) {
         Color color = selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color();
-        Color fill = withAlpha(color, highlighted ? 48 : 18);
-        Color stroke = withAlpha(color, highlighted ? 220 : 105);
-
         List<UiCanvas.Point> points = outline.points().stream()
                 .map(point -> new UiCanvas.Point(centerScreenX + point.x(), centerScreenY + point.y()))
                 .toList();
         boolean closed = points.size() > 2;
         canvas.fillAndStrokePolygon(
                 points,
-                closed ? fill : null,
-                stroke,
+                closed ? color : null,
+                color,
                 hullStrokeWidthForZoom(viewport.pixelsPerBlock(), highlighted),
                 closed);
     }
 
     private void drawClusterMarker(UiCanvas canvas, float x, float y, float radius, GatheringNodeCluster cluster, boolean selected, boolean highlighted) {
         Color color = selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color();
-        drawCircle(canvas, x, y, radius + 3, color(BACKGROUND_MODAL_OVERLAY, highlighted ? 205 : 150));
-        drawCircle(canvas, x, y, radius, withAlpha(color, highlighted ? 250 : 220));
+        drawCircle(canvas, x, y, radius + 3, color(BACKGROUND_MODAL_OVERLAY));
+        drawCircle(canvas, x, y, radius, color);
         drawText(canvas, x, y + 1, clusterCountTextSize(cluster), String.valueOf(cluster.nodeCount()), color(MAP_TEXT), TextAlignment.CENTER);
     }
 
@@ -1038,7 +1033,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             boolean selected = selectedNode == node || (selectedCluster != null && selectedCluster.nodes().contains(node));
             Color color = selected ? color(MAP_PLAYER) : node.profession().color();
             drawCircle(canvas, x, y, selected || hovered ? Math.min(radius + 1.8f, 5.6f) : radius,
-                    color(BACKGROUND_MODAL_OVERLAY, 160));
+                    color(BACKGROUND_MODAL_OVERLAY));
             drawCircle(canvas, x, y, radius, color);
         }
         canvas.resetScissor();
@@ -1124,7 +1119,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             } else {
                 boolean closed = screenHull.size() > 2;
                 Color fill = selected && closed
-                        ? withAlpha(color(MAP_TOTEM), hovered ? 76 : 44)
+                        ? color(MAP_TOTEM)
                         : null;
                 canvas.fillAndStrokePolygon(
                         screenHull,
@@ -1149,7 +1144,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             }
         }
         float markerRadius = selected ? 6 : 4.5f;
-        drawCircle(canvas, x, z, markerRadius + 2, color(BACKGROUND_MODAL_OVERLAY, selected ? 220 : 165));
+        drawCircle(canvas, x, z, markerRadius + 2, color(BACKGROUND_MODAL_OVERLAY));
         drawCircle(canvas, x, z, markerRadius, selected ? color(MAP_PLAYER) : color(MAP_TOTEM_MUTED));
         drawCircle(canvas, x, z, selected ? 3 : 2.25f, color(MAP_TOTEM));
         canvas.resetScissor();
@@ -1190,7 +1185,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         }
         float sx = viewport.worldToScreenX(x);
         float sy = viewport.worldToScreenZ(z);
-        drawCircle(canvas, sx, sy, 8, color(BACKGROUND_MODAL_OVERLAY, 180));
+        drawCircle(canvas, sx, sy, 8, color(BACKGROUND_MODAL_OVERLAY));
         drawCircle(canvas, sx, sy, 5, color(MAP_PLAYER));
     }
 
@@ -1829,7 +1824,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private void renderIngredientTotemInsights(
             UiCanvas canvas, float contentX, float contentWidth, float overlayOffsetY) {
         if (selectedIngredientFarmSpot == null) {
-            canvas.fillRoundedRect(contentX, 60, contentWidth, 78, 5, color(MAP_HEADER, 210));
+            canvas.fillRoundedRect(contentX, 60, contentWidth, 78, 5, color(MAP_HEADER));
             canvas.strokeRect(contentX, 60, contentWidth, 78, 1, color(MAP_BORDER));
             drawText(
                     canvas,
@@ -1855,7 +1850,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         drawInsightsSectionTitle(canvas, contentX, 60, "Selected Spot");
         float spotCardY = 72;
         float spotCardHeight = selectedTotemSpotCardHeight(contentWidth);
-        canvas.fillRoundedRect(contentX, spotCardY, contentWidth, spotCardHeight, 5, color(MAP_HEADER, 210));
+        canvas.fillRoundedRect(contentX, spotCardY, contentWidth, spotCardHeight, 5, color(MAP_HEADER));
         canvas.strokeRect(contentX, spotCardY, contentWidth, spotCardHeight, 1, color(MAP_BORDER));
         float spotTextY = drawWrappedText(
                 canvas,
@@ -2128,8 +2123,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float thumbHeight = Math.max(24, trackHeight * viewportHeight / contentHeight);
         float thumbY = trackY + (trackHeight - thumbHeight) * (ingredientTotemInsightsScroll / maxScroll);
         float trackX = x + INSIGHTS_SIDEBAR_WIDTH - 5;
-        canvas.fillRect(trackX, trackY, 3, trackHeight, color(MAP_TEXT, 28));
-        canvas.fillRect(trackX, thumbY, 3, thumbHeight, color(MAP_TEXT, 110));
+        canvas.fillRect(trackX, trackY, 3, trackHeight, color(CONTROL_TRACK));
+        canvas.fillRect(trackX, thumbY, 3, thumbHeight, color(CONTROL_THUMB));
     }
 
     private void renderGatheringInsights(UiCanvas canvas, float x, float screenHeight, InsightsLayout layout) {
@@ -2237,7 +2232,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderClusterDetail(UiCanvas canvas, float x, float y, float width, GatheringNodeCluster cluster) {
-        canvas.fillRect(x, y, width, CLUSTER_DETAIL_HEIGHT, color(MAP_HEADER, 210));
+        canvas.fillRect(x, y, width, CLUSTER_DETAIL_HEIGHT, color(MAP_HEADER));
         canvas.strokeRect(x, y, width, CLUSTER_DETAIL_HEIGHT, 1, color(MAP_BORDER));
         float textWidth = width - 16;
         drawFittedText(canvas, x + 8, y + 17, 14, cluster.resource(), color(MAP_TEXT), textWidth, TextAlignment.LEFT);
@@ -2248,7 +2243,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderNodeDetail(UiCanvas canvas, float x, float y, float width, GatheringNode node) {
-        canvas.fillRect(x, y, width, NODE_DETAIL_HEIGHT, color(MAP_HEADER, 210));
+        canvas.fillRect(x, y, width, NODE_DETAIL_HEIGHT, color(MAP_HEADER));
         canvas.strokeRect(x, y, width, NODE_DETAIL_HEIGHT, 1, color(MAP_BORDER));
         drawFittedText(canvas, x + 8, y + 17, 14, node.resource(), color(MAP_TEXT), width - 16, TextAlignment.LEFT);
         drawFittedText(canvas, x + 8, y + 38, 12, nodeCoords(node), color(MAP_SUBTEXT), width - 16, TextAlignment.LEFT);
@@ -2262,7 +2257,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             WorldEventDefinition event,
             boolean allowTrackingButton) {
         float textWidth = width - 16;
-        canvas.fillRect(x, y, width, WORLD_EVENT_DETAIL_HEIGHT, color(MAP_HEADER, 220));
+        canvas.fillRect(x, y, width, WORLD_EVENT_DETAIL_HEIGHT, color(MAP_HEADER));
         canvas.strokeRect(x, y, width, WORLD_EVENT_DETAIL_HEIGHT, 1, color(MAP_BORDER));
         drawFittedText(canvas, x + 8, y + 16, 14, event.name(), color(MAP_TEXT), textWidth, TextAlignment.LEFT);
         String metadata = worldEventMetadata(event);
@@ -2813,18 +2808,19 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             boolean inputFocused,
             String search,
             String unfocusedValue) {
-        canvas.fillRect(PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, dropdownOpen ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
-        canvas.strokeRect(PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, 1, color(MAP_BORDER));
+        float width = SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2);
+        canvas.fillRect(PADDING, y, width, INPUT_HEIGHT, dropdownOpen ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
+        canvas.strokeRect(PADDING, y, width, INPUT_HEIGHT, 1, color(MAP_BORDER));
         String value = inputFocused ? search : unfocusedValue;
         Color valueColor = value == null || value.isBlank() ? color(MAP_SUBTEXT) : color(MAP_TEXT);
         String displayValue = value == null || value.isBlank() ? "Search" : value;
-        float inputTextWidth = SIDEBAR_WIDTH - PADDING * 2 - 30;
+        float inputTextWidth = Math.max(0, width - 30);
         drawFittedText(canvas, PADDING + 8, y + INPUT_HEIGHT / 2f, 12, displayValue, valueColor, inputTextWidth, TextAlignment.LEFT);
         if (inputFocused) {
             float cursorX = PADDING + 10 + Math.min(textWidth(value, 12), inputTextWidth);
             drawText(canvas, cursorX, y + INPUT_HEIGHT / 2f, 12, "|", color(MAP_TEXT), TextAlignment.LEFT);
         }
-        drawText(canvas, SIDEBAR_WIDTH - PADDING - 10, y + INPUT_HEIGHT / 2f, 12, dropdownOpen ? "^" : "v", color(MAP_SUBTEXT), TextAlignment.CENTER);
+        drawText(canvas, PADDING + width - 10, y + INPUT_HEIGHT / 2f, 12, dropdownOpen ? "^" : "v", color(MAP_SUBTEXT), TextAlignment.CENTER);
     }
 
     private void drawScopeControl(UiCanvas canvas, float y) {
@@ -2836,10 +2832,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             boolean enabled = scope != GatheringAnalysisScope.SELECTED_TERRITORY || selectedTerritory != null;
             boolean active = gatheringAnalysisScope == scope;
             boolean hovered = enabled && isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
-            Color background = active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL);
-            if (!enabled) {
-                background = withAlpha(background, 105);
-            }
+            Color background = !enabled ? color(MAP_CONTROL_INACTIVE)
+                    : active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL);
             canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, background);
             canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, color(MAP_BORDER));
             drawFittedText(
@@ -2860,7 +2854,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float y,
             float width,
             GuildTerritory territory) {
-        canvas.fillRect(x, y, width, TERRITORY_DETAIL_HEIGHT, color(MAP_HEADER, 210));
+        canvas.fillRect(x, y, width, TERRITORY_DETAIL_HEIGHT, color(MAP_HEADER));
         canvas.strokeRect(x, y, width, TERRITORY_DETAIL_HEIGHT, 1, color(MAP_SELECTED_TERRITORY));
         float detailWidth = width - 16;
         int totalNodes = cachedTerritoryNodeCounts.getOrDefault(territory.name(), 0);
@@ -2934,7 +2928,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float x = PADDING;
         float width = SIDEBAR_WIDTH - PADDING * 2;
         float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
-        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY, 248));
+        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY));
         canvas.strokeRect(x, y, width, height, 1, color(MAP_BORDER));
         if (resources.isEmpty()) {
             drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", color(MAP_SUBTEXT), TextAlignment.LEFT);
@@ -2965,7 +2959,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float x = PADDING;
         float width = SIDEBAR_WIDTH - PADDING * 2;
         float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
-        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY, 248));
+        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY));
         canvas.strokeRect(x, y, width, height, 1, color(MAP_BORDER));
         if (territories.isEmpty()) {
             drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", color(MAP_SUBTEXT), TextAlignment.LEFT);
@@ -2996,7 +2990,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float x = PADDING;
         float width = SIDEBAR_WIDTH - PADDING * 2;
         float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
-        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY, 248));
+        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY));
         canvas.strokeRect(x, y, width, height, 1, color(MAP_BORDER));
         if (events.isEmpty()) {
             drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", color(MAP_SUBTEXT), TextAlignment.LEFT);
@@ -3048,8 +3042,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float scrollableContentHeight = Math.max(viewportHeight, sidebarContentHeight - SIDEBAR_PANEL_TOP);
         float thumbHeight = Math.max(24, trackHeight * (viewportHeight / scrollableContentHeight));
         float thumbY = trackY + (trackHeight - thumbHeight) * (sidebarScroll / maxScroll);
-        canvas.fillRect(trackX, trackY, 3, trackHeight, color(MAP_TEXT, 28));
-        canvas.fillRect(trackX, thumbY, 3, thumbHeight, color(MAP_TEXT, 110));
+        canvas.fillRect(trackX, trackY, 3, trackHeight, color(CONTROL_TRACK));
+        canvas.fillRect(trackX, thumbY, 3, thumbHeight, color(CONTROL_THUMB));
     }
 
     private String centerPlayerButtonLabel() {
@@ -4083,7 +4077,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return true;
         }
         if (layout.territoryInputY() >= 0
-                && isHovered(mx, sidebarMy, PADDING, layout.territoryInputY(), SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT)) {
+                && isHovered(mx, sidebarMy, PADDING, layout.territoryInputY(), SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2), INPUT_HEIGHT)) {
             boolean shouldOpen = !territoryDropdownOpen;
             closeResourceSearch();
             territoryInputFocused = shouldOpen;
@@ -4217,7 +4211,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             }
         }
         if (layout.resourceInputY() >= 0
-                && isHovered(mx, sidebarMy, PADDING, layout.resourceInputY(), SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT)) {
+                && isHovered(mx, sidebarMy, PADDING, layout.resourceInputY(), SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2), INPUT_HEIGHT)) {
             boolean shouldOpen = !resourceDropdownOpen;
             closeTerritorySearch();
             resourceInputFocused = shouldOpen;
@@ -4552,7 +4546,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return true;
         }
         if (layout.eventInputY() >= 0
-                && isHovered(mx, sidebarMy, PADDING, layout.eventInputY(), SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT)) {
+                && isHovered(mx, sidebarMy, PADDING, layout.eventInputY(), SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2), INPUT_HEIGHT)) {
             boolean shouldOpen = !worldEventDropdownOpen;
             closeResourceSearch();
             closeTerritorySearch();

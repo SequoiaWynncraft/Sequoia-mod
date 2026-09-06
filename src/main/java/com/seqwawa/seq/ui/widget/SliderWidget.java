@@ -149,7 +149,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
                 trackY,
                 layout.sliderWidth(),
                 4,
-                enabled ? color(CONTROL_INPUT_SECONDARY) : color(CONTROL_INPUT_SECONDARY, 120));
+                color(CONTROL_INPUT_SECONDARY));
 
         // Slider fill
         double value = getDoubleValue();
@@ -161,7 +161,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
                 trackY,
                 fillWidth,
                 4,
-                enabled ? color(ACCENT_PRIMARY) : color(CONTROL_INPUT_SECONDARY, 120));
+                enabled ? color(ACCENT_PRIMARY) : color(CONTROL_INPUT_SECONDARY));
 
         // Knob
         float knobX = layout.sliderX() + fillWidth;
@@ -171,8 +171,8 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
         // Text box
         Color boxBg = !enabled
-                ? color(CONTROL_INPUT_SECONDARY, 120)
-                : editing ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT, 200);
+                ? color(CONTROL_INPUT_SECONDARY)
+                : editing ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
         canvas.fillRect(layout.textBoxX(), layout.textBoxY(), TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, boxBg);
         if (enabled && editing) {
             canvas.strokeRect(layout.textBoxX(), layout.textBoxY(), TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, 1,

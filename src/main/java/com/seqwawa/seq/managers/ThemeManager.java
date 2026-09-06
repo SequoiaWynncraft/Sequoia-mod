@@ -161,16 +161,9 @@ public final class ThemeManager {
         return currentTheme;
     }
 
+    /** Returns configured RGBA unchanged. Use theme tokens for states, never hard-coded alpha overrides. */
     public static Color color(UiColor token) {
         return currentTheme.color(token);
-    }
-
-    public static Color color(UiColor token, int alpha) {
-        return currentTheme.color(token, alpha);
-    }
-
-    public static Color withAlpha(Color color, int alpha) {
-        return new Color(color.getRed(), color.getGreen(), color.getBlue(), alpha);
     }
 
     public static synchronized List<String> loadedThemeNames() {

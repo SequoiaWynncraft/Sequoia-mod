@@ -147,14 +147,13 @@ public final class AchievementsScreen extends Screen {
         float panelY = panel.y();
         float panelHeight = panel.height();
 
-        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY, 210));
-        canvas.fillRect(0, 0, width, HEADER_HEIGHT, color(BACKGROUND_HEADER, 248));
-        canvas.fillHorizontalGradient(
-                0, HEADER_HEIGHT - 1, width, 1, color(ACCENT_PRIMARY, 190), color(ACCENT_PRIMARY, 0));
+        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
+        canvas.fillRect(0, 0, width, HEADER_HEIGHT, color(BACKGROUND_HEADER));
+        canvas.fillRect(0, HEADER_HEIGHT - 1, width, 1, color(ACCENT_PRIMARY));
         text(canvas, "Sequoia Achievements", MARGIN, HEADER_HEIGHT / 2f, 19, color(ACCENT_PRIMARY), LEFT);
 
         canvas.fillRoundedRect(
-                panelX, panelY, panelWidth, panelHeight, PANEL_RADIUS, color(BACKGROUND_BODY_OPAQUE, 245));
+                panelX, panelY, panelWidth, panelHeight, PANEL_RADIUS, color(BACKGROUND_BODY_OPAQUE));
 
         if (state != State.READY) {
             text(canvas, statusLine(), panelX + panelWidth / 2f, panelY + panelHeight / 2f, 12,
@@ -234,7 +233,7 @@ public final class AchievementsScreen extends Screen {
 
     private static void renderRow(UiCanvas canvas, Row row, float x, float y, float width, float counterWidth) {
         Color metal = tierColor(row.tier());
-        canvas.fillRoundedRect(x, y, width, ROW_HEIGHT, 6, color(BACKGROUND_CONTENT, 225));
+        canvas.fillRoundedRect(x, y, width, ROW_HEIGHT, 6, color(BACKGROUND_CONTENT));
 
         drawIcon(canvas, row, x + 12, y + ROW_HEIGHT / 2f);
 
@@ -281,12 +280,12 @@ public final class AchievementsScreen extends Screen {
 
     private static void progressBar(UiCanvas canvas, float x, float y, float width, Row row) {
         float radius = BAR_HEIGHT / 2f;
-        canvas.fillRoundedRect(x, y, width, BAR_HEIGHT, radius, color(CONTROL_INPUT, 190));
+        canvas.fillRoundedRect(x, y, width, BAR_HEIGHT, radius, color(CONTROL_INPUT));
 
         float ratio = progressRatio(row);
         if (ratio > 0) {
             float filled = Math.min(width, Math.max(BAR_HEIGHT, width * ratio));
-            canvas.fillRoundedRect(x, y, filled, BAR_HEIGHT, radius, alpha(barColor(row), 235));
+            canvas.fillRoundedRect(x, y, filled, BAR_HEIGHT, radius, barColor(row));
         }
     }
 
@@ -298,7 +297,7 @@ public final class AchievementsScreen extends Screen {
     }
 
     private static Color ringColor(SeqTier tier) {
-        return tier == null ? color(ACCENT_SECONDARY, 120) : alpha(color(tierToken(tier)), 215);
+        return tier == null ? color(ACCENT_SECONDARY) : color(tierToken(tier));
     }
 
     private static Color barColor(Row row) {
@@ -312,7 +311,7 @@ public final class AchievementsScreen extends Screen {
         float width = measure(label, 8) + 14;
 
         canvas.fillRoundedRect(x, centerY - LINE_HALF, width, LINE_HALF * 2, LINE_HALF,
-                tier == null ? color(CONTROL_INPUT, 200) : shade(alpha(metal, 235), 0.32f));
+                tier == null ? color(CONTROL_INPUT) : shade(metal, 0.32f));
         text(canvas, label, x + width / 2f, centerY, 8,
                 tier == null ? color(TEXT_DISABLED) : lighten(metal, 0.25f), CENTER);
     }
@@ -323,7 +322,7 @@ public final class AchievementsScreen extends Screen {
         AssetManager.Asset asset =
                 SeqClient.assetManager == null ? null : SeqClient.assetManager.getAsset(row.icon());
 
-        canvas.fillCircle(centerX, centerY, radius, color(CONTROL_INPUT, 235));
+        canvas.fillCircle(centerX, centerY, radius, color(CONTROL_INPUT));
         if (asset != null && asset.getImage() != null) {
             canvas.save();
             canvas.beginPath();
@@ -394,10 +393,6 @@ public final class AchievementsScreen extends Screen {
 
     private static float measure(String value, float size) {
         return UiRenderer.measureText(value, SeqClient.getFontManager().getSelectedFont(), size).width();
-    }
-
-    private static Color alpha(Color base, int value) {
-        return new Color(base.getRed(), base.getGreen(), base.getBlue(), Math.max(0, Math.min(255, value)));
     }
 
     private static Color shade(Color base, float factor) {

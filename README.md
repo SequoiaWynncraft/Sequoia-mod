@@ -212,6 +212,18 @@ theme without restarting. Personal themes are stored as `*.theme.yml` files unde
 `config/sequoia/themes`. Files added manually are discovered when the client starts.
 The complete supported schema is available in [`docs/theme-template.theme.yml`](docs/theme-template.theme.yml).
 
+Themed screens and controls preserve the alpha values from the active theme, including
+fully transparent colors. Sidebar navigation shares Partyfinder's active, hover, and idle colors.
+Search fields share its 140-unit width and shrink to fit when space is limited; drawing, text
+clipping, and click targets use the same width. Map search dropdown results may be wider to fit names.
+The War Planner's explicit background-opacity control still scales the configured alpha; at 100%
+it preserves it exactly. The Theme editor's RGBA controls remain the way to change individual alphas.
+
+When changing the UI, use `ThemeManager.color(token)` and the shared `SequoiaUiStyle` conventions.
+Do not replace a configured alpha with a constant or force a theme color opaque. Use the appropriate
+theme token for disabled, active, and hover states. Add alpha adjustments only when explicitly requested.
+
+
 ## Installation
 
 1. Install Fabric for Minecraft `1.21.11`.

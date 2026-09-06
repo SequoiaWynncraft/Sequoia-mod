@@ -140,7 +140,7 @@ public final class ThemeEditorScreen extends Screen {
                 22,
                 "Sequoia");
         canvas.fillRect(10, 40, SIDEBAR_WIDTH - 20, 1, color(ACCENT_DIVIDER));
-        canvas.fillRect(10, 50, SIDEBAR_WIDTH - 20, 22, color(ACCENT_PRIMARY_DARK_HOVER, 120));
+        canvas.fillRect(10, 50, SIDEBAR_WIDTH - 20, 22, SequoiaUiStyle.sidebarButtonColor(true, false));
         drawText(
                 canvas,
                 font,
@@ -290,7 +290,7 @@ public final class ThemeEditorScreen extends Screen {
                             rowHeight,
                             rowIndex++ % 2 == 0
                                     ? color(BACKGROUND_BODY)
-                                    : color(BACKGROUND_CONTENT_FOCUSED, 100));
+                                    : color(BACKGROUND_CONTENT_FOCUSED));
                     renderColorRow(canvas, font, layout, token, cursorY);
                     cursorY += rowHeight;
                 }

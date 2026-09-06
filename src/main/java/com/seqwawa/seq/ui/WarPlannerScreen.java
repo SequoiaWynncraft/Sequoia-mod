@@ -476,15 +476,15 @@ public final class WarPlannerScreen extends Screen {
         button(canvas, x + w - 34, y + 9, 24, BUTTON_HEIGHT, "×", true, warPingSending);
 
         float searchY = y + 52;
-        boolean searchHovered = hit(nvgMouseX, nvgMouseY, x + 12, searchY, w - 24, TEAM_EDITOR_SEARCH_HEIGHT);
-        canvas.fillRect(x + 12, searchY, w - 24, TEAM_EDITOR_SEARCH_HEIGHT,
+        boolean searchHovered = hit(nvgMouseX, nvgMouseY, x + 12, searchY, SequoiaUiStyle.searchWidth(w - 24), TEAM_EDITOR_SEARCH_HEIGHT);
+        canvas.fillRect(x + 12, searchY, SequoiaUiStyle.searchWidth(w - 24), TEAM_EDITOR_SEARCH_HEIGHT,
                 color(warPingSearchFocused || searchHovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
-        canvas.strokeRect(x + 12, searchY, w - 24, TEAM_EDITOR_SEARCH_HEIGHT, 1,
+        canvas.strokeRect(x + 12, searchY, SequoiaUiStyle.searchWidth(w - 24), TEAM_EDITOR_SEARCH_HEIGHT, 1,
                 color(warPingSearchFocused ? CONTROL_BORDER : CONTROL_INPUT_SECONDARY));
         String searchText = warPingSearchQuery.isEmpty() ? "Search online members…" : warPingSearchQuery;
         if (warPingSearchFocused && (System.currentTimeMillis() / 500) % 2 == 0) searchText += "|";
         canvas.save();
-        canvas.scissor(x + 18, searchY, w - 36, TEAM_EDITOR_SEARCH_HEIGHT);
+        canvas.scissor(x + 18, searchY, Math.max(0, SequoiaUiStyle.searchWidth(w - 24) - 12), TEAM_EDITOR_SEARCH_HEIGHT);
         text(canvas, searchText, x + 18, searchY + TEAM_EDITOR_SEARCH_HEIGHT / 2, 10,
                 color(warPingSearchQuery.isEmpty() ? TEXT_MUTED : TEXT_PRIMARY), false);
         canvas.restore();
@@ -749,7 +749,7 @@ public final class WarPlannerScreen extends Screen {
                     offsetX,
                     offsetY,
                     scale,
-                    new Color(91, 195, 255, 82));
+                    color(MAP_TERRITORY));
         }
         Color mapColor = color(TEXT_MUTED);
         drawPreviewOutlines(
@@ -759,7 +759,7 @@ public final class WarPlannerScreen extends Screen {
                 offsetX,
                 offsetY,
                 scale,
-                new Color(mapColor.getRed(), mapColor.getGreen(), mapColor.getBlue(), 72),
+                mapColor,
                 .55f,
                 0);
         if (!contextTerritories.isEmpty()) {
@@ -770,7 +770,7 @@ public final class WarPlannerScreen extends Screen {
                     offsetX,
                     offsetY,
                     scale,
-                    new Color(mapColor.getRed(), mapColor.getGreen(), mapColor.getBlue(), 155),
+                    mapColor,
                     .75f,
                     0);
         }
@@ -783,13 +783,13 @@ public final class WarPlannerScreen extends Screen {
                     offsetX,
                     offsetY,
                     scale,
-                    new Color(zoneColor.getRed(), zoneColor.getGreen(), zoneColor.getBlue(), 235),
+                    zoneColor,
                     1.8f,
                     1);
         }
         GuildTerritory hqTerritory = snapshot.hqTerritory() == null ? null : byName.get(snapshot.hqTerritory());
         if (hqTerritory != null && displayedNames.contains(hqTerritory.name().toLowerCase(Locale.ROOT))) {
-            Color hqColor = new Color(255, 205, 74, 255);
+            Color hqColor = color(MAP_SELECTED_TERRITORY);
             drawPreviewOutlines(
                     canvas,
                     List.of(hqTerritory),
@@ -1053,7 +1053,7 @@ public final class WarPlannerScreen extends Screen {
         Color zoneColor = parseColor(zone.color(), color(ACCENT_PRIMARY));
         canvas.fillRoundedRect(x + 6, rowY, width - 12, WAR_MAP_ZONE_ROW_HEIGHT, 4,
                 plannerBackground(color(BACKGROUND_CONTENT_FOCUSED)));
-        canvas.fillRect(x + 11, rowY + 7, 5, 24, displayed ? zoneColor : alpha(zoneColor, 70));
+        canvas.fillRect(x + 11, rowY + 7, 5, 24, displayed ? zoneColor : color(TEXT_DISABLED));
         text(canvas, truncate(zone.name(), 22), x + 22, rowY + 13, 11,
                 color(displayed ? TEXT_PRIMARY : TEXT_MUTED), false);
         String assigned = zone.assignedTeamIds().isEmpty()
@@ -1367,7 +1367,11 @@ public final class WarPlannerScreen extends Screen {
     }
 
     static Color warQueuePulseColor(TerritoryQueue queue, long elapsedMillis) {
-        Color defenseColor = WarTerritoryQueueHudRenderer.defenseColor(warQueuePulseDefense(queue));
+        Color defenseColor = WarTerritoryQueueHudRenderer.vanillaDefenseColor(warQueuePulseDefense(queue));
+        if (defenseColor == null) {
+            // Unknown defenses use the configured fallback unchanged; only vanilla palette markers pulse.
+            return color(TEXT_SECONDARY);
+        }
         return new Color(
                 defenseColor.getRed(),
                 defenseColor.getGreen(),
@@ -1391,9 +1395,9 @@ public final class WarPlannerScreen extends Screen {
                 Math.min(centerX - labelWidth / 2, layout.mapX() + layout.mapWidth() - labelWidth - 6));
         float labelY = Math.max(layout.mapY() + 34,
                 Math.min(centerY - 11, layout.mapY() + layout.mapHeight() - 25));
-        canvas.fillRoundedRect(labelX, labelY, labelWidth, 20, 4, new Color(22, 76, 105, 225));
+        canvas.fillRoundedRect(labelX, labelY, labelWidth, 20, 4, color(BACKGROUND_POPUP));
         text(canvas, truncate(territory.name(), 34), labelX + labelWidth / 2, labelY + 10,
-                9, new Color(190, 232, 255), true);
+                9, color(MAP_TEXT), true);
     }
 
     private static void drawWarQueueLabels(
@@ -1453,7 +1457,7 @@ public final class WarPlannerScreen extends Screen {
                 labelBounds.width(),
                 labelBounds.height(),
                 Math.min(3, labelBounds.height() / 4),
-                new Color(17, 58, 76, 230));
+                color(BACKGROUND_POPUP));
         text(
                 canvas,
                 label,
@@ -1718,8 +1722,8 @@ public final class WarPlannerScreen extends Screen {
                 float startY = previewY(territory.centerZ(), fitted, offsetY, scale);
                 float endX = previewX(linked.centerX(), fitted, offsetX, scale);
                 float endY = previewY(linked.centerZ(), fitted, offsetY, scale);
-                canvas.strokeLine(startX, startY, endX, endY, 1.6f, alpha(color(BACKGROUND_BODY_OPAQUE), 210));
-                canvas.strokeLine(startX, startY, endX, endY, .75f, alpha(foreground, 235));
+                canvas.strokeLine(startX, startY, endX, endY, 1.6f, color(BACKGROUND_BODY_OPAQUE));
+                canvas.strokeLine(startX, startY, endX, endY, .75f, foreground);
             }
         }
     }
@@ -1893,17 +1897,17 @@ public final class WarPlannerScreen extends Screen {
         }
         float searchY = fieldY + TEAM_EDITOR_SEARCH_OFFSET;
         boolean searchHovered = hit(
-                nvgMouseX, nvgMouseY, x + 12, searchY, w - 24, TEAM_EDITOR_SEARCH_HEIGHT);
+                nvgMouseX, nvgMouseY, x + 12, searchY, SequoiaUiStyle.searchWidth(w - 24), TEAM_EDITOR_SEARCH_HEIGHT);
         canvas.fillRect(
                 x + 12,
                 searchY,
-                w - 24,
+                SequoiaUiStyle.searchWidth(w - 24),
                 TEAM_EDITOR_SEARCH_HEIGHT,
                 color(teamEditorSearchFocused || searchHovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
         canvas.strokeRect(
                 x + 12,
                 searchY,
-                w - 24,
+                SequoiaUiStyle.searchWidth(w - 24),
                 TEAM_EDITOR_SEARCH_HEIGHT,
                 1,
                 color(teamEditorSearchFocused ? CONTROL_BORDER : CONTROL_INPUT_SECONDARY));
@@ -1912,7 +1916,7 @@ public final class WarPlannerScreen extends Screen {
             searchText += "|";
         }
         canvas.save();
-        canvas.scissor(x + 18, searchY, w - 36, TEAM_EDITOR_SEARCH_HEIGHT);
+        canvas.scissor(x + 18, searchY, Math.max(0, SequoiaUiStyle.searchWidth(w - 24) - 12), TEAM_EDITOR_SEARCH_HEIGHT);
         text(
                 canvas,
                 searchText,
@@ -2568,7 +2572,7 @@ public final class WarPlannerScreen extends Screen {
         }
         float fieldY = y + 34;
         float searchY = fieldY + TEAM_EDITOR_SEARCH_OFFSET;
-        boolean searchClicked = hit(mx, my, x + 12, searchY, w - 24, TEAM_EDITOR_SEARCH_HEIGHT);
+        boolean searchClicked = hit(mx, my, x + 12, searchY, SequoiaUiStyle.searchWidth(w - 24), TEAM_EDITOR_SEARCH_HEIGHT);
         if (!searchClicked || teamTypeMenuOpen) {
             teamEditorSearchFocused = false;
         }
@@ -2645,7 +2649,7 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         float searchY = y + 52;
-        if (hit(mx, my, x + 12, searchY, w - 24, TEAM_EDITOR_SEARCH_HEIGHT)) {
+        if (hit(mx, my, x + 12, searchY, SequoiaUiStyle.searchWidth(w - 24), TEAM_EDITOR_SEARCH_HEIGHT)) {
             warPingSearchFocused = true;
             return true;
         }
@@ -3687,6 +3691,7 @@ public final class WarPlannerScreen extends Screen {
                 && SeqClient.getWarPlannerLockTerritoriesSetting().getValue();
     }
 
+    // This is an explicit user opacity control, not a hard-coded replacement for theme alpha.
     static Color plannerBackground(Color source) {
         int alpha = opacityAlpha(source.getAlpha(), backgroundOpacityPercent());
         return new Color(source.getRed(), source.getGreen(), source.getBlue(), alpha);
@@ -3886,10 +3891,6 @@ public final class WarPlannerScreen extends Screen {
         } catch (NumberFormatException ignored) {
             return fallback;
         }
-    }
-
-    private static Color alpha(Color source, int alpha) {
-        return new Color(source.getRed(), source.getGreen(), source.getBlue(), alpha);
     }
 
     private static float contentTop() {

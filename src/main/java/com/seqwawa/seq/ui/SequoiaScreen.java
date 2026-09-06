@@ -42,7 +42,7 @@ public class SequoiaScreen extends Screen {
             float screenHeight = canvas.metrics().height();
 
             // Dark background
-            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY, 140));
+            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
 
             // Title
             String fontName = SeqClient.getFontManager().getSelectedFont();
@@ -69,7 +69,7 @@ public class SequoiaScreen extends Screen {
         boolean hovered = nvgMouseX >= x && nvgMouseX <= x + BUTTON_WIDTH
                 && nvgMouseY >= y && nvgMouseY <= y + height;
 
-        Color bgColor = hovered ? color(CONTROL_INPUT_HOVER) : color(BACKGROUND_POPUP, 200);
+        Color bgColor = hovered ? color(CONTROL_INPUT_HOVER) : color(BACKGROUND_POPUP);
         canvas.fillRect(x, y, BUTTON_WIDTH, height, bgColor);
 
         String fontName = SeqClient.getFontManager().getSelectedFont();

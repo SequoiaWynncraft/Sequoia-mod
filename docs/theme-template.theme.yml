@@ -1,3 +1,6 @@
+# RGBA values, including alpha, are used as configured by themed UI elements.
+# UI code must not substitute hard-coded alpha values. The explicit War Planner
+# opacity control scales background alpha only when its configured value is below 100%.
 # Copy this file to config/sequoia/themes/<name>.theme.yml.
 # Theme names may contain lowercase letters, numbers, underscores, and hyphens.
 name: example_theme

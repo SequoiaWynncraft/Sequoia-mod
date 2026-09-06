@@ -46,7 +46,6 @@ public class SettingsScreen extends Screen {
     private static final float CATEGORY_SPACING = 6;
     private static final float PADDING = 8;
     private static final float SEARCH_BAR_HEIGHT = 18;
-    private static final float SEARCH_BAR_WIDTH = 180;
     private static final float SEARCH_BAR_MARGIN = 8;
     private static final float THEME_EDITOR_BUTTON_WIDTH = 94;
     private static final float HUD_EDITOR_BUTTON_WIDTH = 76;
@@ -300,17 +299,18 @@ public class SettingsScreen extends Screen {
             // Search bar (top left of header)
             searchCursorBlink++;
             float searchX = panelX + SEARCH_BAR_MARGIN;
+            float searchWidth = SequoiaUiStyle.searchWidth(panelWidth - SEARCH_BAR_MARGIN * 2);
             float searchY = panelY + (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
 
             Color searchBg = searchFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
-            canvas.fillRect(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, searchBg);
+            canvas.fillRect(searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT, searchBg);
             if (searchFocused) {
-                canvas.strokeRect(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, 1,
+                canvas.strokeRect(searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT, 1,
                         color(CONTROL_BORDER));
             }
 
             canvas.save();
-            canvas.scissor(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT);
+            canvas.scissor(searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT);
 
             if (searchQuery.isEmpty() && !searchFocused) {
                 drawText(canvas, fontName, SEARCH_FONT_SIZE, color(TEXT_DISABLED), UiCanvas.HorizontalAlign.LEFT,
@@ -327,12 +327,12 @@ public class SettingsScreen extends Screen {
                 float textW = searchQuery.isEmpty()
                         ? 0
                         : UiRenderer.measureText(searchQuery, fontName, SEARCH_FONT_SIZE).width();
-                float cursorDrawX = searchX + 6 + textW + 1;
+                float cursorDrawX = Math.min(searchX + 6 + textW + 1, searchX + searchWidth - 1);
                 canvas.fillRect(cursorDrawX, searchY + 3, 1, SEARCH_BAR_HEIGHT - 6, color(TEXT_PRIMARY));
             }
 
             // Title (right side of header)
-            float themeEditorX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
+            float themeEditorX = searchX + searchWidth + SEARCH_BAR_MARGIN;
             boolean themeEditorHovered = isHovered(
                     nvgMouseX,
                     nvgMouseY,
@@ -445,7 +445,7 @@ public class SettingsScreen extends Screen {
                                     nvgMouseX, nvgMouseY, contentX, cursorY, contentWidth, SECTION_HEIGHT)
                                     && nvgMouseY >= contentY && nvgMouseY <= contentY + contentHeight;
                             canvas.fillRect(contentX, cursorY, contentWidth, SECTION_HEIGHT,
-                                    sectionHovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT, 170));
+                                    sectionHovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
                             drawText(canvas, fontName, SECTION_FONT_SIZE, color(TEXT_SECONDARY),
                                     UiCanvas.HorizontalAlign.CENTER, contentX + PADDING + 14,
                                     cursorY + SECTION_HEIGHT / 2f,
@@ -465,7 +465,7 @@ public class SettingsScreen extends Screen {
                         if (isSectionCollapsed(category, section)) {
                             continue;
                         }
-                        Color bg = (settingIndex % 2 == 0) ? color(BACKGROUND_BODY) : color(BACKGROUND_CONTENT_FOCUSED, 100);
+                        Color bg = (settingIndex % 2 == 0) ? color(BACKGROUND_BODY) : color(BACKGROUND_CONTENT_FOCUSED);
                         canvas.fillRect(contentX, cursorY, contentWidth, widget.getHeight(), bg);
 
                         widget.setPosition(contentX + PADDING, cursorY, widgetWidth, widget.getHeight());
@@ -501,7 +501,7 @@ public class SettingsScreen extends Screen {
             UiCanvas canvas, String fontName, float x, float y, float w, float h, String label, boolean active) {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
 
-        Color bgColor = active ? color(ACCENT_PRIMARY_DARK_HOVER, 120) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
+        Color bgColor = SequoiaUiStyle.sidebarButtonColor(active, hovered);
         canvas.fillRect(x, y, w, h, bgColor);
         drawText(canvas, fontName, Math.min(SIDEBAR_BUTTON_SIZE, Math.max(8, h - 2)), color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
                 x + w / 2f, y + h / 2f, label);
@@ -641,9 +641,10 @@ public class SettingsScreen extends Screen {
 
             // Search bar click
             float searchX = panelX + SEARCH_BAR_MARGIN;
+            float searchWidth = SequoiaUiStyle.searchWidth(panelWidth - SEARCH_BAR_MARGIN * 2);
             float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
 
-            if (isHovered(mx, my, searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT)) {
+            if (isHovered(mx, my, searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT)) {
                 searchFocused = true;
                 searchCursorBlink = 0;
                 return true;
@@ -651,7 +652,7 @@ public class SettingsScreen extends Screen {
                 searchFocused = false;
             }
 
-            float themeEditorX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
+            float themeEditorX = searchX + searchWidth + SEARCH_BAR_MARGIN;
             if (isHovered(mx, my, themeEditorX, searchY, THEME_EDITOR_BUTTON_WIDTH, SEARCH_BAR_HEIGHT)) {
                 SeqClient.mc.setScreen(new ThemeEditorScreen(this));
                 return true;

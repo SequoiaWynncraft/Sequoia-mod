@@ -23,7 +23,6 @@ public class ConnectionScreen extends Screen {
     private static final float SIDEBAR_BUTTON_SPACING = 6;
     private static final float HEADER_HEIGHT = 30;
     private static final float SEARCH_BAR_HEIGHT = 18;
-    private static final float SEARCH_BAR_WIDTH = 180;
     private static final float SEARCH_BAR_MARGIN = 8;
     private static final float TITLE_FONT_SIZE = 18;
     private static final float SIDEBAR_TITLE_SIZE = 16;
@@ -100,10 +99,14 @@ public class ConnectionScreen extends Screen {
 
     private void renderHeader(UiCanvas canvas, String fontName, float panelX, float panelWidth) {
         float searchX = panelX + SEARCH_BAR_MARGIN;
+        float searchWidth = SequoiaUiStyle.searchWidth(panelWidth - SEARCH_BAR_MARGIN * 2);
         float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
-        canvas.fillRect(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, color(CONTROL_INPUT));
+        canvas.fillRect(searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT, color(CONTROL_INPUT));
+        canvas.save();
+        canvas.scissor(searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT);
         drawText(canvas, fontName, 12, color(TEXT_DISABLED), UiCanvas.HorizontalAlign.LEFT,
                 searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, "Search...");
+        canvas.restore();
         drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY), UiCanvas.HorizontalAlign.RIGHT,
                 panelX + panelWidth - SEARCH_BAR_MARGIN, HEADER_HEIGHT / 2f, "Connection");
     }
@@ -206,7 +209,7 @@ public class ConnectionScreen extends Screen {
     private void drawSidebarButton(
             UiCanvas canvas, String fontName, float x, float y, float w, float h, String label, boolean active) {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
-        Color bgColor = active ? color(ACCENT_PRIMARY_DARK_HOVER, 120) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
+        Color bgColor = SequoiaUiStyle.sidebarButtonColor(active, hovered);
         canvas.fillRect(x, y, w, h, bgColor);
         drawText(canvas, fontName, Math.min(SIDEBAR_BUTTON_SIZE, Math.max(8, h - 2)), color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
                 x + w / 2f, y + h / 2f, label);

@@ -56,7 +56,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float HEADER_HEIGHT = 30;
     private static final float PADDING = 8;
     private static final float SEARCH_BAR_HEIGHT = 18;
-    private static final float SEARCH_BAR_WIDTH = 140;
     private static final float SEARCH_BAR_MARGIN = 8;
     private static final float HEADER_BUTTON_SPACING = 6;
     private static final float HEADER_BUTTON_HORIZONTAL_PADDING = 8;
@@ -327,7 +326,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     filterY,
                     FILTER_BUTTON_W,
                     FILTER_BUTTON_H,
-                    filterHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
+                    filterHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
             drawText(
                     canvas,
                     fontName,
@@ -402,7 +401,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float popupX = panelX + (panelWidth - popupW) / 2f;
         float popupY = screenHeight - STATUS_BANNER_H - 10;
 
-        canvas.fillRect(popupX, popupY, popupW, STATUS_BANNER_H, color(ACCENT_PRIMARY_DARK, 235));
+        canvas.fillRect(popupX, popupY, popupW, STATUS_BANNER_H, color(ACCENT_PRIMARY_DARK));
         canvas.strokeRect(popupX, popupY, popupW, STATUS_BANNER_H, 1, color(ACCENT_PRIMARY));
         drawText(
                 canvas,
@@ -453,7 +452,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private void drawSidebarButton(
             UiCanvas canvas, String fontName, float x, float y, float w, float h, String label, boolean active) {
         boolean hovered = isHovered(uiMouseX, uiMouseY, x, y, w, h);
-        Color bg = active ? color(ACCENT_PRIMARY_DARK) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
+        Color bg = SequoiaUiStyle.sidebarButtonColor(active, hovered);
         canvas.fillRect(x, y, w, h, bg);
         drawText(
                 canvas,
@@ -507,17 +506,18 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         if (searchFocused && (searchCursorBlink / 1000) % 2 == 0) {
             float textW = searchQuery.isEmpty() ? 0 : textWidth(searchQuery, fontName, SEARCH_FONT_SIZE);
-            canvas.fillRect(searchX + 6 + textW + 1, searchY + 3, 1, searchBar.h() - 6, color(TEXT_PRIMARY));
+            canvas.fillRect(Math.min(searchX + 6 + textW + 1, searchX + searchBar.w() - 1),
+                    searchY + 3, 1, searchBar.h() - 6, color(TEXT_PRIMARY));
         }
 
         if (party().isPartyLeader()) {
             String manageLabel = party().hasListedParty() ? "Manage Party" : "New party +";
-            drawHeaderButton(canvas, fontName, layout.manageButton(), manageLabel, color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
-            drawHeaderButton(canvas, fontName, layout.inviteButton(), "Invite", color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
+            drawHeaderButton(canvas, fontName, layout.manageButton(), manageLabel, color(ACCENT_PRIMARY), color(ACCENT_PRIMARY_HOVER));
+            drawHeaderButton(canvas, fontName, layout.inviteButton(), "Invite", color(ACCENT_PRIMARY), color(ACCENT_PRIMARY_HOVER));
             boolean autoClosed = isCurrentListingAutoClosed();
             String openCloseLabel = autoClosed ? "Auto-closed" : (isCurrentListingClosed() ? "Open party" : "Close party");
-            Color openCloseBg = autoClosed ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_DARK_HOVER, 200);
-            Color openCloseHover = autoClosed ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_DARK_HOVER, 220);
+            Color openCloseBg = autoClosed ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_DARK);
+            Color openCloseHover = autoClosed ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_DARK_HOVER);
             drawHeaderButton(
                     canvas,
                     fontName,
@@ -526,13 +526,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     openCloseBg,
                     openCloseHover);
             drawHeaderButton(
-                    canvas, fontName, layout.delistButton(), "Delist party", color(CONTROL_DANGER, 200), color(CONTROL_DANGER_HOVER));
-            drawHeaderButton(canvas, fontName, layout.inviteAllButton(), "Invite all", color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
-            drawHeaderButton(canvas, fontName, layout.scanButton(), "Scan party", color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
+                    canvas, fontName, layout.delistButton(), "Delist party", color(CONTROL_DANGER), color(CONTROL_DANGER_HOVER));
+            drawHeaderButton(canvas, fontName, layout.inviteAllButton(), "Invite all", color(ACCENT_PRIMARY), color(ACCENT_PRIMARY_HOVER));
+            drawHeaderButton(canvas, fontName, layout.scanButton(), "Scan party", color(ACCENT_PRIMARY), color(ACCENT_PRIMARY_HOVER));
         } else {
             boolean inPartyAsMember = party().getJoinedPartyIndex() >= 0;
-            Color newBg = inPartyAsMember ? color(ACCENT_DISABLED, 180) : color(ACCENT_PRIMARY, 200);
-            Color newHover = inPartyAsMember ? color(ACCENT_DISABLED, 180) : color(ACCENT_PRIMARY_HOVER, 220);
+            Color newBg = inPartyAsMember ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY);
+            Color newHover = inPartyAsMember ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_HOVER);
             drawHeaderButton(canvas, fontName, layout.newPartyButton(), "New party +", newBg, newHover);
         }
 
@@ -649,9 +649,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float rightEdge = panelX + panelWidth - SEARCH_BAR_MARGIN;
         float roleDropdownWidth = Math.min(roleDropdownWidth(fontName), Math.max(50f, panelWidth * 0.3f));
         float roleDropdownX = rightEdge - roleDropdownWidth;
-        float searchWidth = Math.min(
-                SEARCH_BAR_WIDTH,
-                Math.max(60f, roleDropdownX - searchX - HEADER_BUTTON_SPACING));
+        float searchWidth = SequoiaUiStyle.searchWidth(roleDropdownX - searchX - HEADER_BUTTON_SPACING);
         HeaderButtonBounds searchBar = new HeaderButtonBounds(searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT);
         HeaderButtonBounds roleDropdown =
                 new HeaderButtonBounds(roleDropdownX, searchY, roleDropdownWidth, SEARCH_BAR_HEIGHT);
@@ -1182,7 +1180,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 buttonY,
                 kickButtonWidth,
                 LEADER_ACTION_BUTTON_HEIGHT,
-                kickHovered ? color(CONTROL_DANGER_HOVER) : color(CONTROL_DANGER, 200));
+                kickHovered ? color(CONTROL_DANGER_HOVER) : color(CONTROL_DANGER));
         drawText(
                 canvas,
                 fontName,
@@ -1352,7 +1350,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 if (raidIcon != null) {
                     canvas.fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
                 } else {
-                    canvas.fillPath(color(ACCENT_PRIMARY, 120));
+                    canvas.fillPath(color(ACCENT_PRIMARY));
                 }
                 canvas.restore();
             } else {
@@ -1367,7 +1365,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     canvas.fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
                 } else {
                     // Fallback solid color for missing icon
-                    canvas.fillPath(color(ACCENT_PRIMARY, 120));
+                    canvas.fillPath(color(ACCENT_PRIMARY));
                 }
                 canvas.restore();
             }
@@ -1437,7 +1435,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
             // Selection highlight behind icon
             if (selected) {
-                canvas.fillCircle(rcx, rcy, RAID_CIRCLE_SIZE / 2f - 2, color(ACCENT_PRIMARY, 120));
+                canvas.fillCircle(rcx, rcy, RAID_CIRCLE_SIZE / 2f - 2, color(ACCENT_PRIMARY));
             }
 
             // Draw raid icon image (or text fallback for raids without an asset)
@@ -1563,7 +1561,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     regionButtonsY,
                     REGION_BUTTON_W,
                     MODAL_DROPDOWN_H,
-                    regionSelected ? color(ACCENT_PRIMARY, 120) : (regionHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT)));
+                    regionSelected ? color(ACCENT_PRIMARY) : (regionHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT)));
             canvas.strokeRect(
                     regionX,
                     regionButtonsY,
@@ -1617,7 +1615,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     JOIN_POLICY_BUTTON_W,
                     MODAL_DROPDOWN_H,
                     joinPolicySelected
-                            ? color(ACCENT_PRIMARY, 120)
+                            ? color(ACCENT_PRIMARY)
                             : (joinPolicyHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT)));
             canvas.strokeRect(
                     joinPolicyX,
@@ -1650,7 +1648,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 createBtnY,
                 createButtonWidth,
                 MODAL_BUTTON_H,
-                createHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
+                createHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
 
         drawText(
                 canvas,
@@ -1696,7 +1694,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Active filters box
         float activeBoxY = filterY + 34;
-        canvas.fillRect(boxX, activeBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
+        canvas.fillRect(boxX, activeBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE));
         drawText(
                 canvas,
                 fontName,
@@ -1721,7 +1719,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Inactive filters box
         float inactiveBoxY = activeBoxY + boxH + 8;
-        canvas.fillRect(boxX, inactiveBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
+        canvas.fillRect(boxX, inactiveBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE));
         drawText(
                 canvas,
                 fontName,
@@ -1755,7 +1753,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 backY,
                 backW,
                 backH,
-                backHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
+                backHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
         drawText(
                 canvas,
                 fontName,
@@ -1830,7 +1828,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     chipW,
                     chipH,
                     4,
-                    chipHovered ? color(CONTROL_INPUT_HOVER) : color(ACCENT_DIVIDER, 220));
+                    chipHovered ? color(CONTROL_INPUT_HOVER) : color(ACCENT_DIVIDER));
 
             drawText(
                     canvas,
@@ -2440,7 +2438,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 sendBtnY,
                 MODAL_BUTTON_W,
                 MODAL_BUTTON_H,
-                sendHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
+                sendHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
 
         drawText(
                 canvas,

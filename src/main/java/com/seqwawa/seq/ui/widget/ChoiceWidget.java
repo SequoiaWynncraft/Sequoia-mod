@@ -46,7 +46,7 @@ public final class ChoiceWidget extends SettingWidget<Setting.ChoiceSetting> {
                 BUTTON_WIDTH,
                 BUTTON_HEIGHT,
                 !enabled
-                        ? color(CONTROL_INPUT_SECONDARY, 120)
+                        ? color(CONTROL_INPUT_SECONDARY)
                         : hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT_SECONDARY));
         canvas.save();
         canvas.scissor(buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT);
