@@ -10,6 +10,9 @@ import com.seqwawa.seq.utils.rendering.UiRenderer;
 
 /** Shared navigation and search conventions, matching Party Finder. */
 final class SequoiaUiStyle {
+    static final float HEADER_HEIGHT = 30;
+    static final float CONTENT_PADDING = 8;
+    static final float HEADER_CONTROL_HEIGHT = 18;
     private static final float SEARCH_BAR_WIDTH = 140;
 
     private SequoiaUiStyle() {}
@@ -32,6 +35,15 @@ final class SequoiaUiStyle {
         }
         canvas.drawText(title, startX + iconWidth + gap, 22, new UiCanvas.TextStyle(
                 font, fontSize, textColor, UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE));
+    }
+
+    /** Uses the same overlay, body, and header layers as Party Finder. */
+    static void drawPanelFrame(UiCanvas canvas, float headerHeight) {
+        float x = SequoiaSidebarNavigation.WIDTH;
+        float width = Math.max(0, canvas.metrics().width() - x);
+        canvas.fillRect(0, 0, canvas.metrics().width(), canvas.metrics().height(), color(BACKGROUND_OVERLAY));
+        canvas.fillRect(x, 0, width, canvas.metrics().height(), color(BACKGROUND_BODY));
+        canvas.fillRect(x, 0, width, headerHeight, color(BACKGROUND_HEADER));
     }
 
     static float searchWidth(float availableWidth) {

@@ -174,9 +174,10 @@ The Events view shows runs currently visible through the Wynncraft API. Choose A
 
 ## Achievements
 
-Open **Achievements** from the navigation sidebar in Partyfinder, Connection, or Settings.
+Open **Achievements** with `/seq achievement` or from the navigation sidebar.
 
-The screen shows one line per guild raid with the authenticated Minecraft account's completions,
+The screen uses Party Finder's compact rows and theme backgrounds, with a badge-colored ring around each icon.
+It shows one row per guild raid with the authenticated Minecraft account's completions,
 current tier, and progress toward the next tier, plus a combined line for all guild raids. Tiers run
 from Bronze to Mythril, each with its own theme colour; combined tiers require twice as many runs as
 a single-raid tier.

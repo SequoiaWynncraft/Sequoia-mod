@@ -13,17 +13,38 @@ class IngredientGuideScreenTest {
             var layout = IngredientGuideScreen.guideLayout(width, 540);
             var list = layout.list();
             var detail = layout.detail();
-            for (var bounds : new IngredientGuideScreen.Bounds[] {list, detail, layout.category(), layout.refresh()}) {
-                assertTrue(bounds.x() >= SequoiaSidebarNavigation.WIDTH + 14);
-                assertTrue(bounds.x() + bounds.width() <= width - 14);
-                assertTrue(bounds.y() + bounds.height() <= 540 - 14);
+            for (var bounds : new IngredientGuideScreen.Bounds[] {list, detail, layout.category(), layout.refresh(), layout.search(), layout.scope()}) {
+                assertTrue(bounds.x() >= SequoiaSidebarNavigation.WIDTH + 8);
+                assertTrue(bounds.x() + bounds.width() <= width - 8);
+                assertTrue(bounds.y() + bounds.height() <= 540 - 8);
                 assertTrue(bounds.width() > 0 && bounds.height() > 0);
             }
             assertFalse(list.contains(detail.x() + 1, detail.y() + 1));
             assertTrue(detail.contains(detail.x() + 1, detail.y() + 1));
             assertFalse(list.contains(70, 150));
-            assertFalse(layout.category().contains(layout.refresh().x() + 1, layout.refresh().y() + 1));
+            var controls = new IngredientGuideScreen.Bounds[] {layout.search(), layout.scope(), layout.category(), layout.refresh()};
+            for (int i = 0; i < controls.length; i++) {
+                var control = controls[i];
+                assertTrue(control.y() + control.height() <= layout.headerHeight());
+                assertTrue(control.y() + control.height() < list.y());
+                for (int j = i + 1; j < controls.length; j++) {
+                    var other = controls[j];
+                    assertFalse(control.x() < other.x() + other.width() && control.x() + control.width() > other.x()
+                            && control.y() < other.y() + other.height() && control.y() + control.height() > other.y());
+                }
+            }
         }
+    }
+
+    @Test
+    void totemCategoryUsesTheTopLeftWithoutReservingHiddenControls() {
+        var layout = IngredientGuideScreen.guideLayout(960, 540, false);
+        assertEquals(SequoiaSidebarNavigation.WIDTH + 8, layout.category().x());
+        assertEquals(6, layout.category().y());
+        assertEquals(0, layout.search().width());
+        assertEquals(0, layout.scope().width());
+        assertEquals(0, layout.refresh().width());
+        assertTrue(layout.list().y() > layout.headerHeight());
     }
 
     @Test
