@@ -1,15 +1,13 @@
 package com.seqwawa.seq.raids.tna;
 
-import com.mojang.blaze3d.buffers.GpuBufferSlice;
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.mixins.GameRendererFogAccessor;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -17,12 +15,8 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientWorldEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.fog.FogRenderer;
-import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.DisplaySlot;
 import net.minecraft.world.scores.Objective;
@@ -38,16 +32,18 @@ public final class TnaLineupHelper {
     static final Vec3 ROOM_THREE_AIM_POINT = new Vec3(25_591.4, 32.8, -23_548.0);
     static final double DISPLAY_RADIUS = 12.0;
 
-    private static final int BERRY_CHALLENGE = 0;
     private static final int ROOM_THREE_CHALLENGE = 2;
     private static final int NO_CHALLENGE = -1;
+    private static final String TNA_TITLE = "the nameless anomaly";
+    private static final List<String> OTHER_RAID_TITLES = List.of(
+            "nest of the grootslangs", "nexus of light", "the canyon colossus", "the wartorn palace");
     private static final Pattern CHALLENGE_PROGRESS =
             Pattern.compile("(?i)(?:^|\\s)Challenges?\\s*:?\\s*([0-4])/4(?:\\s|$)");
     private static final int SIDEBAR_SCAN_INTERVAL_TICKS = 5;
     private static final double CROSS_HALF_SIZE = 0.35;
+    private static final double STRIP_HALF_WIDTH = 0.04;
     private static final double FLOOR_MARKER_OFFSET = 0.03;
     private static final double WALL_MARKER_OFFSET = 0.03;
-    private static final float LINE_WIDTH = 3.0F;
     private static final int STAND_RED = 0x55;
     private static final int STAND_GREEN = 0xFF;
     private static final int STAND_BLUE = 0x80;
@@ -58,6 +54,7 @@ public final class TnaLineupHelper {
 
     private static int activeChallenge = NO_CHALLENGE;
     private static int sidebarScanTicksRemaining;
+    private static boolean inTnaRaid;
 
     private TnaLineupHelper() {}
 
@@ -68,7 +65,7 @@ public final class TnaLineupHelper {
     }
 
     private static void tick(Minecraft client) {
-        if (!WynncraftServerPolicy.isCurrentServerAllowed() || client.player == null || client.level == null) {
+        if (!supportsScope(WynncraftServerPolicy.currentScope()) || client.player == null || client.level == null) {
             reset();
             return;
         }
@@ -80,6 +77,10 @@ public final class TnaLineupHelper {
     }
 
     private static int readChallengeProgress(Minecraft client) {
+        if (!inTnaRaid) {
+            return NO_CHALLENGE;
+        }
+
         Scoreboard scoreboard = client.level.getScoreboard();
         Objective sidebar = scoreboard.getDisplayObjective(DisplaySlot.SIDEBAR);
         if (sidebar == null) {
@@ -94,6 +95,34 @@ public final class TnaLineupHelper {
             lines.add(renderedLine.getString());
         }
         return detectChallengeProgress(lines);
+    }
+
+    public static void onTitle(Component title) {
+        if (title == null) {
+            return;
+        }
+        String rawTitle = title.getString();
+        if (isTnaTitle(rawTitle)) {
+            inTnaRaid = true;
+        } else if (OTHER_RAID_TITLES.stream().anyMatch(cleanTitle(rawTitle)::contains)) {
+            inTnaRaid = false;
+        }
+    }
+
+    static boolean isTnaTitle(String title) {
+        return title != null && cleanTitle(title).contains(TNA_TITLE);
+    }
+
+    private static String cleanTitle(String title) {
+        return PacketTextNormalizer.normalizeForParsing(title).toLowerCase(Locale.ROOT);
+    }
+
+    static int activeTnaChallenge() {
+        return inTnaRaid ? activeChallenge : NO_CHALLENGE;
+    }
+
+    static boolean supportsScope(WynncraftServerPolicy.Scope scope) {
+        return scope != WynncraftServerPolicy.Scope.BLOCKED;
     }
 
     static int detectChallengeProgress(Iterable<String> sidebarLines) {
@@ -121,33 +150,30 @@ public final class TnaLineupHelper {
 
     private static void render(WorldRenderContext context) {
         Minecraft client = Minecraft.getInstance();
-        if (!WynncraftServerPolicy.isCurrentServerAllowed() || client.player == null || client.level == null) {
+        if (!supportsScope(WynncraftServerPolicy.currentScope()) || client.player == null || client.level == null) {
             return;
         }
 
-        if (activeChallenge == BERRY_CHALLENGE && isBerryEnabled()) {
+        if (isBerryEnabled()) {
             renderBerry(context, client);
-        } else if (activeChallenge == ROOM_THREE_CHALLENGE && isRoomThreeEnabled()) {
+        }
+        if (activeChallenge == ROOM_THREE_CHALLENGE && isRoomThreeEnabled()) {
             renderRoomThree(context, client);
         }
     }
 
     private static void renderBerry(WorldRenderContext context, Minecraft client) {
-        if (!shouldRender(
-                BERRY_CHALLENGE,
-                activeChallenge,
-                client.player.position().distanceToSqr(BERRY_STAND_POINT))) {
+        if (!isWithinDisplayRadius(client.player.position().distanceToSqr(BERRY_STAND_POINT))) {
             return;
         }
 
-        boolean blinded = client.player.hasEffect(MobEffects.BLINDNESS);
-        RenderType lines = blinded ? RenderTypes.SECONDARY_BLOCK_OUTLINE : RenderTypes.LINES_TRANSLUCENT;
-        RenderState state = renderState(context, client, lines);
+        RenderState state = renderState(context, client);
         renderFloorCross(state.lines(), state.pose(), state.camera(), BERRY_STAND_POINT);
         renderAimCross(state.lines(), state.pose(), state.camera(), BERRY_STAND_POINT, BERRY_AIM_POINT);
-        if (blinded) {
-            flushWithoutFog(context, client, lines);
-        }
+    }
+
+    static boolean isWithinDisplayRadius(double distanceSquared) {
+        return distanceSquared <= DISPLAY_RADIUS * DISPLAY_RADIUS;
     }
 
     private static void renderRoomThree(WorldRenderContext context, Minecraft client) {
@@ -158,9 +184,9 @@ public final class TnaLineupHelper {
             return;
         }
 
-        RenderState state = renderState(context, client, RenderTypes.LINES_TRANSLUCENT);
+        RenderState state = renderState(context, client);
         renderFloorCross(state.lines(), state.pose(), state.camera(), ROOM_THREE_STAND_POINT);
-        addLine(
+        renderBeam(
                 state.lines(),
                 state.pose(),
                 floorMarkerCenter(ROOM_THREE_STAND_POINT),
@@ -171,44 +197,35 @@ public final class TnaLineupHelper {
                 AIM_BLUE);
     }
 
-    private static RenderState renderState(WorldRenderContext context, Minecraft client, RenderType lines) {
+    private static RenderState renderState(WorldRenderContext context, Minecraft client) {
         return new RenderState(
-                context.consumers().getBuffer(lines),
+                context.consumers().getBuffer(RenderTypes.debugQuads()),
                 context.matrices().last(),
                 client.gameRenderer.getMainCamera().position());
-    }
-
-    private static void flushWithoutFog(WorldRenderContext context, Minecraft client, RenderType lines) {
-        GpuBufferSlice worldFog = RenderSystem.getShaderFog();
-        FogRenderer fogRenderer = ((GameRendererFogAccessor) client.gameRenderer).seq$getFogRenderer();
-        try {
-            RenderSystem.setShaderFog(fogRenderer.getBuffer(FogRenderer.FogMode.NONE));
-            if (context.consumers() instanceof MultiBufferSource.BufferSource buffers) {
-                buffers.endBatch(lines);
-            }
-        } finally {
-            RenderSystem.setShaderFog(worldFog);
-        }
     }
 
     private static void renderFloorCross(
             VertexConsumer lines, PoseStack.Pose pose, Vec3 camera, Vec3 point) {
         Vec3 center = floorMarkerCenter(point);
-        addLine(
+        addDoubleSidedQuad(
                 lines,
                 pose,
-                center.add(-CROSS_HALF_SIZE, 0.0, 0.0),
-                center.add(CROSS_HALF_SIZE, 0.0, 0.0),
                 camera,
+                center.add(-CROSS_HALF_SIZE, 0.0, -STRIP_HALF_WIDTH),
+                center.add(CROSS_HALF_SIZE, 0.0, -STRIP_HALF_WIDTH),
+                center.add(CROSS_HALF_SIZE, 0.0, STRIP_HALF_WIDTH),
+                center.add(-CROSS_HALF_SIZE, 0.0, STRIP_HALF_WIDTH),
                 STAND_RED,
                 STAND_GREEN,
                 STAND_BLUE);
-        addLine(
+        addDoubleSidedQuad(
                 lines,
                 pose,
-                center.add(0.0, 0.0, -CROSS_HALF_SIZE),
-                center.add(0.0, 0.0, CROSS_HALF_SIZE),
                 camera,
+                center.add(-STRIP_HALF_WIDTH, 0.0, -CROSS_HALF_SIZE),
+                center.add(STRIP_HALF_WIDTH, 0.0, -CROSS_HALF_SIZE),
+                center.add(STRIP_HALF_WIDTH, 0.0, CROSS_HALF_SIZE),
+                center.add(-STRIP_HALF_WIDTH, 0.0, CROSS_HALF_SIZE),
                 STAND_RED,
                 STAND_GREEN,
                 STAND_BLUE);
@@ -217,21 +234,32 @@ public final class TnaLineupHelper {
     private static void renderAimCross(
             VertexConsumer lines, PoseStack.Pose pose, Vec3 camera, Vec3 standPoint, Vec3 aimPoint) {
         Vec3 center = wallMarkerCenter(standPoint, aimPoint);
-        addLine(
+        Vec3 direction = aimPoint.subtract(standPoint).normalize();
+        Vec3 side = new Vec3(-direction.z, 0.0, direction.x).normalize();
+        if (side.lengthSqr() == 0.0) {
+            side = new Vec3(0.0, 0.0, 1.0);
+        }
+        Vec3 thinSide = side.scale(STRIP_HALF_WIDTH);
+        Vec3 wideSide = side.scale(CROSS_HALF_SIZE);
+        addDoubleSidedQuad(
                 lines,
                 pose,
-                center.add(0.0, -CROSS_HALF_SIZE, 0.0),
-                center.add(0.0, CROSS_HALF_SIZE, 0.0),
                 camera,
+                center.add(0.0, -CROSS_HALF_SIZE, 0.0).subtract(thinSide),
+                center.add(0.0, CROSS_HALF_SIZE, 0.0).subtract(thinSide),
+                center.add(0.0, CROSS_HALF_SIZE, 0.0).add(thinSide),
+                center.add(0.0, -CROSS_HALF_SIZE, 0.0).add(thinSide),
                 AIM_RED,
                 AIM_GREEN,
                 AIM_BLUE);
-        addLine(
+        addDoubleSidedQuad(
                 lines,
                 pose,
-                center.add(0.0, 0.0, -CROSS_HALF_SIZE),
-                center.add(0.0, 0.0, CROSS_HALF_SIZE),
                 camera,
+                center.subtract(wideSide).add(0.0, -STRIP_HALF_WIDTH, 0.0),
+                center.subtract(wideSide).add(0.0, STRIP_HALF_WIDTH, 0.0),
+                center.add(wideSide).add(0.0, STRIP_HALF_WIDTH, 0.0),
+                center.add(wideSide).add(0.0, -STRIP_HALF_WIDTH, 0.0),
                 AIM_RED,
                 AIM_GREEN,
                 AIM_BLUE);
@@ -246,7 +274,7 @@ public final class TnaLineupHelper {
         return aimPoint.add(direction * WALL_MARKER_OFFSET, 0.0, 0.0);
     }
 
-    private static void addLine(
+    private static void renderBeam(
             VertexConsumer lines,
             PoseStack.Pose pose,
             Vec3 worldStart,
@@ -255,29 +283,42 @@ public final class TnaLineupHelper {
             int red,
             int green,
             int blue) {
-        Vec3 start = worldStart.subtract(camera);
-        Vec3 end = worldEnd.subtract(camera);
-        Vec3 normal = end.subtract(start).normalize();
-        addVertex(lines, pose, start, normal, red, green, blue);
-        addVertex(lines, pose, end, normal, red, green, blue);
+        Vec3 direction = worldEnd.subtract(worldStart).normalize();
+        Vec3 side = direction.cross(new Vec3(0.0, 1.0, 0.0)).normalize().scale(STRIP_HALF_WIDTH);
+        Vec3 up = direction.cross(side).normalize().scale(STRIP_HALF_WIDTH);
+        addDoubleSidedQuad(
+                lines, pose, camera, worldStart.subtract(side), worldEnd.subtract(side), worldEnd.add(side),
+                worldStart.add(side), red, green, blue);
+        addDoubleSidedQuad(
+                lines, pose, camera, worldStart.subtract(up), worldEnd.subtract(up), worldEnd.add(up),
+                worldStart.add(up), red, green, blue);
     }
 
-    private static void addVertex(
+    private static void addDoubleSidedQuad(
             VertexConsumer lines,
             PoseStack.Pose pose,
-            Vec3 point,
-            Vec3 normal,
+            Vec3 camera,
+            Vec3 first,
+            Vec3 second,
+            Vec3 third,
+            Vec3 fourth,
             int red,
             int green,
             int blue) {
-        lines.addVertex(pose, (float) point.x, (float) point.y, (float) point.z)
-                .setColor(red, green, blue, MARKER_ALPHA)
-                .setLineWidth(LINE_WIDTH)
-                .setNormal(pose, (float) normal.x, (float) normal.y, (float) normal.z);
+        addVertex(lines, pose, first.subtract(camera), red, green, blue);
+        addVertex(lines, pose, second.subtract(camera), red, green, blue);
+        addVertex(lines, pose, third.subtract(camera), red, green, blue);
+        addVertex(lines, pose, fourth.subtract(camera), red, green, blue);
+        addVertex(lines, pose, fourth.subtract(camera), red, green, blue);
+        addVertex(lines, pose, third.subtract(camera), red, green, blue);
+        addVertex(lines, pose, second.subtract(camera), red, green, blue);
+        addVertex(lines, pose, first.subtract(camera), red, green, blue);
     }
 
-    static int activeChallenge() {
-        return activeChallenge;
+    private static void addVertex(
+            VertexConsumer lines, PoseStack.Pose pose, Vec3 point, int red, int green, int blue) {
+        lines.addVertex(pose, (float) point.x, (float) point.y, (float) point.z)
+                .setColor(red, green, blue, MARKER_ALPHA);
     }
 
     private static boolean isBerryEnabled() {
@@ -292,6 +333,7 @@ public final class TnaLineupHelper {
     private static void reset() {
         activeChallenge = NO_CHALLENGE;
         sidebarScanTicksRemaining = 0;
+        inTnaRaid = false;
     }
 
     private record RenderState(VertexConsumer lines, PoseStack.Pose pose, Vec3 camera) {}

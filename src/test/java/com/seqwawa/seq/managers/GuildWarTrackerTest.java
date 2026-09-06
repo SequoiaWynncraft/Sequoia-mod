@@ -186,6 +186,24 @@ class GuildWarTrackerTest {
     }
 
     @Test
+    void queuedTerritoryIdentifiesPlayerAfterWarInstanceTeleport() {
+        MutableWarInfoProvider warInfoProvider = new MutableWarInfoProvider();
+        MutablePlayerContext player = new MutablePlayerContext();
+        player.warModeActive = true;
+        player.warInstanceActive = true;
+        player.enteredWarTerritory = "Lava Springs";
+        player.classType = WynnClassType.MAGE;
+        CapturingPublisher publisher = new CapturingPublisher();
+        GuildWarTracker tracker = newTracker(warInfoProvider, player, publisher);
+
+        tracker.tick();
+
+        assertEquals(
+                List.of(WarStatusUpdate.war(WynnClassType.MAGE, "Lava Springs")),
+                publisher.statusUpdates);
+    }
+
+    @Test
     void unconfirmedQueueClickExpiresWithoutPublishing() {
         MutableWarInfoProvider warInfoProvider = new MutableWarInfoProvider();
         CapturingPublisher publisher = new CapturingPublisher();
@@ -685,6 +703,8 @@ class GuildWarTrackerTest {
 
     private static final class MutablePlayerContext implements GuildWarTracker.PlayerContext {
         private boolean warModeActive;
+        private boolean warInstanceActive;
+        private String enteredWarTerritory;
         private WynnClassType classType;
         private int x;
         private int z;
@@ -708,6 +728,16 @@ class GuildWarTrackerTest {
         @Override
         public boolean warModeActive() {
             return warModeActive;
+        }
+
+        @Override
+        public boolean warInstanceActive() {
+            return warInstanceActive;
+        }
+
+        @Override
+        public String enteredWarTerritory() {
+            return enteredWarTerritory;
         }
 
         @Override

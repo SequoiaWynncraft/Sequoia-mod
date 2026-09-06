@@ -27,22 +27,134 @@ class WarTerritoryQueueManagerTest {
     private static final Instant NOW = Instant.parse("2026-08-24T12:00:00Z");
 
     @Test
-    void pollsEveryFiveSecondsOnlyWhileAvailableAndRetainsTheLastViewerSnapshot() {
+    void findsLocalTerritoryWhenItsTimerExpiresAtThePreparationRoom() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        availability.available = true;
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability);
+        manager.tick();
+        gateway.fetchRequests.getFirst().complete(feed(
+                1,
+                NOW,
+                List.of(queue(
+                        7,
+                        NOW.minusSeconds(30),
+                        NOW,
+                        List.of(new Participant("self-uuid", "Self", 1))))));
+
+        assertEquals("Alekin", manager.enteredTerritoryForLocalPlayer().orElseThrow());
+        availability.available = false;
+        manager.tick();
+        assertEquals("Alekin", manager.enteredTerritoryForLocalPlayer().orElseThrow());
+        manager.resetForWorldTransition();
+        availability.playerUuid = null;
+        assertEquals("Alekin", manager.enteredTerritoryForLocalPlayer().orElseThrow());
+        clock.advance(Duration.ofSeconds(12));
+        assertEquals("Alekin", manager.enteredTerritoryForLocalPlayer().orElseThrow());
+        clock.advance(Duration.ofSeconds(1));
+        assertTrue(manager.enteredTerritoryForLocalPlayer().isEmpty());
+    }
+
+    @Test
+    void preservesServerClockOffsetAcrossTheInstanceTransfer() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        availability.available = true;
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability);
+        Instant serverNow = NOW.plusSeconds(46);
+        manager.tick();
+        gateway.fetchRequests.getFirst().complete(feed(
+                1,
+                serverNow,
+                List.of(queue(7, serverNow.minusSeconds(30), serverNow, List.of()))));
+
+        manager.resetForWorldTransition();
+        availability.playerUuid = null;
+
+        assertEquals("Alekin", manager.enteredTerritoryForLocalPlayer().orElseThrow());
+    }
+
+    @Test
+    void recognizesOnlyTheWarSidebarCue() {
+        assertTrue(MinecraftWarWorldDetector.hasWarSidebar(List.of("§4War:", "The battle starts soon")));
+        assertFalse(MinecraftWarWorldDetector.hasWarSidebar(List.of("Guild Wars", "Challenges: 0/4")));
+    }
+
+    @Test
+    void recognizesTranslatedWarInstanceCoordinates() {
+        assertTrue(MinecraftWarWorldDetector.hasWarInstanceCoordinates(-65_534, -65_554));
+        assertFalse(MinecraftWarWorldDetector.hasWarInstanceCoordinates(-1_517, -5_130));
+    }
+
+    @Test
+    void prefersTheLocalPlayersQueueWhenSeveralTimersExpireTogether() {
+        FakeGateway gateway = new FakeGateway();
+        FakeAvailability availability = new FakeAvailability();
+        availability.available = true;
+        WarTerritoryQueueManager manager =
+                new WarTerritoryQueueManager(gateway, new MutableClock(NOW), availability);
+        manager.tick();
+        gateway.fetchRequests.getFirst().complete(feed(
+                1,
+                NOW,
+                List.of(
+                        queue(7, "Other Queue", "other-uuid", "Other", NOW, NOW.plusSeconds(1), List.of()),
+                        queue(8, "Local Queue", "self-uuid", "Self", NOW, NOW.plusSeconds(2), List.of()))));
+
+        manager.resetForWorldTransition();
+        availability.playerUuid = null;
+        assertEquals("Local Queue", manager.enteredTerritoryForLocalPlayer().orElseThrow());
+    }
+
+    @Test
+    void acceptsOneUnownedTimerButDoesNotGuessBetweenSeveral() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        availability.available = true;
+        WarTerritoryQueueManager manager =
+                new WarTerritoryQueueManager(gateway, clock, availability);
+        manager.tick();
+        gateway.fetchRequests.getFirst().complete(feed(
+                1,
+                NOW,
+                List.of(queue(7, "Only Queue", "other-uuid", "Other", NOW, NOW.plusSeconds(2), List.of()))));
+
+        assertEquals("Only Queue", manager.enteredTerritoryForLocalPlayer().orElseThrow());
+
+        clock.advance(Duration.ofSeconds(5));
+        manager.tick();
+        gateway.fetchRequests.get(1).complete(feed(
+                2,
+                NOW.plusSeconds(5),
+                List.of(
+                        queue(7, "First Queue", "other-uuid", "Other", NOW, NOW.plusSeconds(1), List.of()),
+                        queue(8, "Second Queue", "another-uuid", "Another", NOW, NOW.plusSeconds(2), List.of()))));
+
+        assertTrue(manager.enteredTerritoryForLocalPlayer().isEmpty());
+    }
+
+    @Test
+    void bootstrapsOnceThenPollsEveryFiveSecondsWhileAvailable() {
         FakeGateway gateway = new FakeGateway();
         MutableClock clock = new MutableClock(NOW);
         FakeAvailability availability = new FakeAvailability();
         WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability);
 
         manager.tick();
-        assertEquals(0, gateway.fetchCalls);
+        assertEquals(1, gateway.fetchCalls);
         assertFalse(manager.isActive());
+        gateway.fetchRequests.getFirst().complete(feed(1, NOW, List.of()));
+        manager.tick();
 
         availability.available = true;
         manager.tick();
-        assertEquals(1, gateway.fetchCalls);
+        assertEquals(2, gateway.fetchCalls);
         assertEquals(WarTerritoryQueueManager.State.LOADING, manager.state());
-        gateway.fetchRequests.getFirst().complete(feed(
-                1,
+        gateway.fetchRequests.get(1).complete(feed(
+                2,
                 NOW.plusSeconds(30),
                 List.of(queue(7, NOW.plusSeconds(30), NOW.plusSeconds(150), List.of()))));
 
@@ -52,10 +164,10 @@ class WarTerritoryQueueManagerTest {
 
         clock.advance(Duration.ofSeconds(4));
         manager.tick();
-        assertEquals(1, gateway.fetchCalls);
+        assertEquals(2, gateway.fetchCalls);
         clock.advance(Duration.ofSeconds(1));
         manager.tick();
-        assertEquals(2, gateway.fetchCalls);
+        assertEquals(3, gateway.fetchCalls);
 
         availability.available = false;
         manager.tick();
@@ -66,7 +178,7 @@ class WarTerritoryQueueManagerTest {
 
         clock.advance(Duration.ofSeconds(10));
         manager.tick();
-        assertEquals(2, gateway.fetchCalls);
+        assertEquals(3, gateway.fetchCalls);
     }
 
     @Test
@@ -1087,6 +1199,7 @@ class WarTerritoryQueueManagerTest {
 
     private static final class FakeAvailability implements WarTerritoryQueueManager.AvailabilityContext {
         private boolean available;
+        private String playerUuid = "self-uuid";
         private int refreshCalls;
 
         @Override
@@ -1096,7 +1209,7 @@ class WarTerritoryQueueManagerTest {
 
         @Override
         public String playerUuid() {
-            return "self-uuid";
+            return playerUuid;
         }
 
         @Override

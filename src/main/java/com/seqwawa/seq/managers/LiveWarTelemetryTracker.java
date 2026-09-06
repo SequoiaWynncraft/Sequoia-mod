@@ -65,7 +65,12 @@ final class LiveWarTelemetryTracker {
             matchingWarStatusExpiresAtMillis = 0L;
         }
 
-        boolean warModeActive = playerContext.warModeActive() || observation != null;
+        String enteredWarTerritory = trimToNull(playerContext.enteredWarTerritory());
+        boolean warInstanceActive = playerContext.warInstanceActive();
+        boolean warModeActive = playerContext.warModeActive()
+                || observation != null
+                || enteredWarTerritory != null
+                || warInstanceActive;
         WynnClassType classType = playerContext.localClassType();
         if (classType != null) {
             lastObservedClass = classType;
@@ -90,7 +95,7 @@ final class LiveWarTelemetryTracker {
 
         warModeObserved = true;
 
-        WarStatusUpdate statusUpdate = statusUpdate(observation, classType);
+        WarStatusUpdate statusUpdate = statusUpdate(observation, enteredWarTerritory, warInstanceActive, classType);
         if (statusUpdate == null) {
             matchingWarStatusPublished = false;
             matchingWarStatusExpiresAtMillis = 0L;
@@ -156,13 +161,23 @@ final class LiveWarTelemetryTracker {
         publisherWasReady = false;
     }
 
-    private WarStatusUpdate statusUpdate(WarObservation observation, WynnClassType classType) {
-        if (classType == null) {
-            return null;
-        }
+    private WarStatusUpdate statusUpdate(
+            WarObservation observation,
+            String enteredWarTerritory,
+            boolean warInstanceActive,
+            WynnClassType classType) {
         if (observation != null) {
             String territory = trimToNull(observation.territory());
-            return territory == null ? null : WarStatusUpdate.war(classType, territory);
+            return territory == null || classType == null ? null : WarStatusUpdate.war(classType, territory);
+        }
+        if (enteredWarTerritory != null) {
+            return classType == null ? null : WarStatusUpdate.war(classType, enteredWarTerritory);
+        }
+        if (warInstanceActive) {
+            return classType == null ? WarStatusUpdate.remove() : WarStatusUpdate.remove(classType);
+        }
+        if (classType == null) {
+            return null;
         }
         WorldPosition position = playerContext.worldPosition();
         return position == null ? null : WarStatusUpdate.world(classType, position.x(), position.z());
@@ -276,6 +291,14 @@ final class LiveWarTelemetryTracker {
 
     interface PlayerContext {
         boolean warModeActive();
+
+        default String enteredWarTerritory() {
+            return null;
+        }
+
+        default boolean warInstanceActive() {
+            return false;
+        }
 
         WynnClassType localClassType();
 

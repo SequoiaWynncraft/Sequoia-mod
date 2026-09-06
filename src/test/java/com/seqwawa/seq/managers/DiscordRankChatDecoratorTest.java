@@ -105,6 +105,24 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void canKeepTheWynncraftRankOnTheColoredPill() {
+        Setting.BooleanSetting previous = SeqClient.showDiscordRankPillsSetting;
+        try {
+            SeqClient.showDiscordRankPillsSetting =
+                    new Setting.BooleanSetting("show_discord_rank_pills", "chat", false);
+
+            Component decorated = DiscordRankChatDecorator.decorateGuildChat(
+                    guildLine("RECRUITER", "ArcLeRetour", "ArcLeRetour", "hi"),
+                    DiscordRankChatDecoratorTest::lookup);
+
+            assertEquals(List.of("recruiter"), pillLabels(decorated));
+            assertEquals("Sequoia rank: Sapling", hoverText(decorated));
+        } finally {
+            SeqClient.showDiscordRankPillsSetting = previous;
+        }
+    }
+
+    @Test
     void guildPillContainingPartyGlyphStillUsesGuildDecoration() {
         Component message = Component.empty()
                 .append(Component.literal(CONTINUATION_GLYPHS)

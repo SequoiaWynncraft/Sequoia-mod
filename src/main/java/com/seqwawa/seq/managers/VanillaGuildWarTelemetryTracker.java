@@ -58,6 +58,8 @@ final class VanillaGuildWarTelemetryTracker implements GuildWarTrackerHandle {
     void tickCurrentState() {
         if (trackingEnabled()) {
             classDetector.tick();
+        } else {
+            MinecraftWarWorldDetector.reset();
         }
         MinecraftWarTowerTracker.TowerSnapshot snapshot = towerTracker.latestSnapshot();
         LiveWarTelemetryTracker.WarObservation observation = snapshot == null
@@ -85,6 +87,7 @@ final class VanillaGuildWarTelemetryTracker implements GuildWarTrackerHandle {
         classDetector.reset();
         towerTracker.reset();
         liveTelemetryTracker.reset();
+        MinecraftWarWorldDetector.reset();
     }
 
     @Override
@@ -141,6 +144,16 @@ final class VanillaGuildWarTelemetryTracker implements GuildWarTrackerHandle {
             }
             Duration remaining = manager.ownAvailabilityRemaining();
             return remaining != null && !remaining.isZero() && !remaining.isNegative();
+        }
+
+        @Override
+        public String enteredWarTerritory() {
+            return MinecraftWarWorldDetector.enteredTerritory();
+        }
+
+        @Override
+        public boolean warInstanceActive() {
+            return MinecraftWarWorldDetector.isWarInstance();
         }
 
         @Override

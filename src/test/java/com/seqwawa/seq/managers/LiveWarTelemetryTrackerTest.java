@@ -122,6 +122,30 @@ class LiveWarTelemetryTrackerTest {
                 publisher.events);
     }
 
+    @Test
+    void preWarDelayPublishesTerritoryInsteadOfInstancedWorldCoordinates() {
+        MutablePlayerContext player = new MutablePlayerContext();
+        player.classType = WynnClassType.MAGE;
+        player.enteredWarTerritory = "Detlas";
+        CapturingPublisher publisher = new CapturingPublisher();
+
+        tracker(player, publisher, new MutableClock(50_000L)).tick(null);
+
+        assertEquals(List.of("status:WAR:Detlas"), publisher.events);
+    }
+
+    @Test
+    void unresolvedWarInstanceRemovesWorldPositionInsteadOfGuessing() {
+        MutablePlayerContext player = new MutablePlayerContext();
+        player.classType = WynnClassType.MAGE;
+        player.warInstanceActive = true;
+        CapturingPublisher publisher = new CapturingPublisher();
+
+        tracker(player, publisher, new MutableClock(50_000L)).tick(null);
+
+        assertEquals(List.of("status:REMOVE:null"), publisher.events);
+    }
+
     private LiveWarTelemetryTracker tracker(
             MutablePlayerContext player, CapturingPublisher publisher, LongSupplier clock) {
         return new LiveWarTelemetryTracker(player, publisher, () -> true, clock);
@@ -130,12 +154,24 @@ class LiveWarTelemetryTrackerTest {
     private static final class MutablePlayerContext implements LiveWarTelemetryTracker.PlayerContext {
         private boolean warModeActive;
         private WynnClassType classType;
+        private String enteredWarTerritory;
+        private boolean warInstanceActive;
         private LiveWarTelemetryTracker.WorldPosition position =
                 new LiveWarTelemetryTracker.WorldPosition(10, -20);
 
         @Override
         public boolean warModeActive() {
             return warModeActive;
+        }
+
+        @Override
+        public String enteredWarTerritory() {
+            return enteredWarTerritory;
+        }
+
+        @Override
+        public boolean warInstanceActive() {
+            return warInstanceActive;
         }
 
         @Override
@@ -177,6 +213,7 @@ class LiveWarTelemetryTrackerTest {
             events.add("tower:" + update.territory());
             return true;
         }
+
     }
 
     private static final class MutableClock implements LongSupplier {

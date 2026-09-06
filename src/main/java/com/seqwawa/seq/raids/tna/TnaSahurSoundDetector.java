@@ -36,7 +36,7 @@ public final class TnaSahurSoundDetector {
 
     @Subscribe(Preference.CALLER)
     public void onSoundPlayed(SoundPlayedEvent sound) {
-        int challenge = TnaLineupHelper.activeChallenge();
+        int challenge = TnaLineupHelper.activeTnaChallenge();
         BeamKind kind = beamKind(sound.eventId(), sound.soundId());
         if (challenge != SAHUR_CHALLENGE || kind == null) {
             if (challenge != SAHUR_CHALLENGE) {
@@ -49,7 +49,7 @@ public final class TnaSahurSoundDetector {
     }
 
     static IndicatorState indicatorState(long nowMs) {
-        return INSTANCE.tracker.snapshot(TnaLineupHelper.activeChallenge(), nowMs);
+        return INSTANCE.tracker.snapshot(TnaLineupHelper.activeTnaChallenge(), nowMs);
     }
 
     static boolean isSahurProc(int challenge, Identifier eventId, Identifier soundId) {
@@ -57,7 +57,7 @@ public final class TnaSahurSoundDetector {
     }
 
     private void tick(long nowMs) {
-        tracker.expire(TnaLineupHelper.activeChallenge(), nowMs);
+        tracker.expire(TnaLineupHelper.activeTnaChallenge(), nowMs);
     }
 
     private static BeamKind beamKind(Identifier eventId, Identifier soundId) {
