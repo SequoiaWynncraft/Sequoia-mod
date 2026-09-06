@@ -48,7 +48,7 @@ public class WynnClassCache {
     }
 
     public static WynnClassType resolveLocalClassType() {
-        WynnClassType wynntilsClass = parseClassType(resolveFromWynntils());
+        WynnClassType wynntilsClass = resolveFromWynntils();
         return wynntilsClass != null
                 ? wynntilsClass
                 : MinecraftCharacterClassDetector.getInstance().currentClass();
@@ -87,7 +87,7 @@ public class WynnClassCache {
         return uuid.replace("-", "").toLowerCase(Locale.ROOT);
     }
 
-    private static String resolveFromWynntils() {
+    private static WynnClassType resolveFromWynntils() {
         if (!FabricLoader.getInstance().isModLoaded("wynntils")) {
             return null;
         }
@@ -96,30 +96,25 @@ public class WynnClassCache {
             Class<?> modelsClass = Class.forName("com.wynntils.core.components.Models");
             Object characterModel = modelsClass.getField("Character").get(null);
 
-            if (characterModel == null) {
-                return null;
-            }
-
-            boolean hasCharacter = (boolean) characterModel.getClass()
-                    .getMethod("hasCharacter")
-                    .invoke(characterModel);
-            if (!hasCharacter) {
-                return null;
-            }
-
-            Object classType = characterModel.getClass()
-                    .getMethod("getClassType")
-                    .invoke(characterModel);
-            if (classType == null) {
-                return null;
-            }
-
-            return normalizeClassName(classType.toString());
+            return readWynntilsClass(characterModel);
         } catch (Throwable throwable) {
             warnWynntilsProviderOnce("Wynntils class provider unavailable; using vanilla class detection.",
                     throwable);
             return null;
         }
+    }
+
+    /** Reads the current model each time, including while a Sequoia screen is open. */
+    static WynnClassType readWynntilsClass(Object characterModel) throws ReflectiveOperationException {
+        if (characterModel == null) return null;
+        boolean hasCharacter = (boolean) characterModel.getClass()
+                .getMethod("hasCharacter").invoke(characterModel);
+        if (!hasCharacter) return null;
+        Object classType = characterModel.getClass().getMethod("getClassType").invoke(characterModel);
+        if (classType == null) return null;
+        // Wynntils overrides toString() with a combined normal/reskinned display label.
+        // Use the enum identifier so detection works independently of that label.
+        return parseClassType(classType instanceof Enum<?> value ? value.name() : classType.toString());
     }
 
     private static String normalizeClassName(String rawValue) {
