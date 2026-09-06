@@ -1,7 +1,7 @@
 package com.seqwawa.seq.ui;
 
 import static com.seqwawa.seq.managers.ThemeManager.color;
-import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_DIVIDER;
+import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY_DARK;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_SECONDARY;
 import static com.seqwawa.seq.ui.theme.UiColor.ACHIEVEMENT_BRONZE;
@@ -172,7 +172,7 @@ public final class AchievementsScreen extends Screen {
         canvas.scissor(panelX, panelY, panelWidth, panelHeight);
         for (Row row : rows) {
             if (row.total()) {
-                canvas.fillRect(rowX, rowY + DIVIDER_GAP, rowWidth, 1, color(ACCENT_DIVIDER));
+                canvas.fillRect(rowX, rowY + DIVIDER_GAP, rowWidth, 1, color(ACCENT_PRIMARY_DARK));
                 rowY += DIVIDER_GAP * 2 + ROW_GAP + 1;
             }
             renderRow(canvas, row, rowX, rowY, rowWidth, counterWidth);

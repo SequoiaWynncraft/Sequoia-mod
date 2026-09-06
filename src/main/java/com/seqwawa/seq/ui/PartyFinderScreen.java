@@ -214,9 +214,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
     }
 
-    private record HeaderButtonBounds(float x, float y, float w, float h) {}
+    record HeaderButtonBounds(float x, float y, float w, float h) {}
 
-    private record HeaderControlsLayout(
+    record HeaderControlsLayout(
             HeaderButtonBounds searchBar,
             HeaderButtonBounds manageButton,
             HeaderButtonBounds inviteButton,
@@ -226,6 +226,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             HeaderButtonBounds scanButton,
             HeaderButtonBounds newPartyButton,
             HeaderButtonBounds roleDropdown,
+            float titleRight,
             float height) {}
 
     public PartyFinderScreen(Screen parent) {
@@ -427,7 +428,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 22,
                 "Sequoia",
                 UiCanvas.HorizontalAlign.CENTER);
-        canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_DIVIDER));
+        canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_PRIMARY_DARK));
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
@@ -468,6 +469,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     // ── Header ──
 
     private void renderHeaderControls(UiCanvas canvas, String fontName, HeaderControlsLayout layout) {
+        drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY_HOVER),
+                layout.titleRight(), HEADER_HEIGHT / 2f, "Party Finder", UiCanvas.HorizontalAlign.RIGHT);
         searchCursorBlink++;
         HeaderButtonBounds searchBar = layout.searchBar();
         float searchX = searchBar.x();
@@ -644,27 +647,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     }
 
     private HeaderControlsLayout computeHeaderControlsLayout(float panelX, float panelWidth, String fontName) {
-        float searchX = panelX + SEARCH_BAR_MARGIN;
-        float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
-        float rightEdge = panelX + panelWidth - SEARCH_BAR_MARGIN;
-        float roleDropdownWidth = Math.min(roleDropdownWidth(fontName), Math.max(50f, panelWidth * 0.3f));
-        float roleDropdownX = rightEdge - roleDropdownWidth;
-        float searchWidth = SequoiaUiStyle.searchWidth(roleDropdownX - searchX - HEADER_BUTTON_SPACING);
-        HeaderButtonBounds searchBar = new HeaderButtonBounds(searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT);
-        HeaderButtonBounds roleDropdown =
-                new HeaderButtonBounds(roleDropdownX, searchY, roleDropdownWidth, SEARCH_BAR_HEIGHT);
-
-        float nextButtonX = searchX + searchWidth + HEADER_BUTTON_SPACING;
-        float buttonY = searchY;
-        float rowRightEdge = roleDropdownX - HEADER_BUTTON_SPACING;
-        HeaderButtonBounds manageButton = null;
-        HeaderButtonBounds inviteButton = null;
-        HeaderButtonBounds openCloseButton = null;
-        HeaderButtonBounds delistButton = null;
-        HeaderButtonBounds inviteAllButton = null;
-        HeaderButtonBounds scanButton = null;
-        HeaderButtonBounds newPartyButton = null;
-
         List<Float> widths = new ArrayList<>();
         if (party().isPartyLeader()) {
             widths.add(paddedHeaderButtonWidth(party().hasListedParty() ? "Manage Party" : "New party +", fontName));
@@ -681,10 +663,33 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             widths.add(paddedHeaderButtonWidth("New party +", fontName));
         }
 
+        return computeHeaderControlsLayout(panelX, panelWidth, widths, roleDropdownWidth(fontName),
+                textWidth("Party Finder", fontName, TITLE_FONT_SIZE), party().isPartyLeader());
+    }
+
+    static HeaderControlsLayout computeHeaderControlsLayout(
+            float panelX, float panelWidth, List<Float> actionWidths, float preferredRoleWidth,
+            float titleWidth, boolean leader) {
+        float searchX = panelX + SEARCH_BAR_MARGIN;
+        float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
+        float rightEdge = panelX + panelWidth - SEARCH_BAR_MARGIN;
+        float availableWidth = Math.max(0, rightEdge - searchX);
+        float rowRightEdge = Math.max(searchX, rightEdge - titleWidth - HEADER_BUTTON_SPACING);
+        float searchWidth = SequoiaUiStyle.searchWidth(rowRightEdge - searchX - HEADER_BUTTON_SPACING);
+        HeaderButtonBounds searchBar = new HeaderButtonBounds(searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT);
+        float roleWidth = Math.min(preferredRoleWidth, Math.max(50f, panelWidth * 0.3f));
+        List<Float> widths = new ArrayList<>(actionWidths);
+        widths.add(1, roleWidth);
+
+        float nextButtonX = searchX + searchWidth + HEADER_BUTTON_SPACING;
+        float buttonY = searchY;
         HeaderButtonBounds[] buttons = new HeaderButtonBounds[widths.size()];
         for (int index = 0; index < widths.size(); index++) {
-            float width = Math.min(widths.get(index), rightEdge - searchX);
-            if (nextButtonX + width > rowRightEdge) {
+            float width = Math.min(widths.get(index), availableWidth);
+            // Keep New/Manage Party and Your role together whenever a full row can fit both.
+            float groupWidth = index == 0 ? width + HEADER_BUTTON_SPACING + roleWidth : width;
+            float requiredWidth = groupWidth <= availableWidth ? groupWidth : width;
+            if (nextButtonX + requiredWidth > rowRightEdge) {
                 buttonY += SEARCH_BAR_HEIGHT + HEADER_BUTTON_SPACING;
                 nextButtonX = searchX;
                 rowRightEdge = rightEdge;
@@ -693,28 +698,18 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             nextButtonX += width + HEADER_BUTTON_SPACING;
         }
 
-        if (party().isPartyLeader()) {
-            manageButton = buttons[0];
-            inviteButton = buttons[1];
-            openCloseButton = buttons[2];
-            delistButton = buttons[3];
-            inviteAllButton = buttons[4];
-            scanButton = buttons[5];
-        } else {
-            newPartyButton = buttons[0];
-        }
-
         float headerHeight = Math.max(HEADER_HEIGHT, buttonY + SEARCH_BAR_HEIGHT + SEARCH_BAR_MARGIN);
         return new HeaderControlsLayout(
                 searchBar,
-                manageButton,
-                inviteButton,
-                openCloseButton,
-                delistButton,
-                inviteAllButton,
-                scanButton,
-                newPartyButton,
-                roleDropdown,
+                leader ? buttons[0] : null,
+                leader ? buttons[2] : null,
+                leader ? buttons[3] : null,
+                leader ? buttons[4] : null,
+                leader ? buttons[5] : null,
+                leader ? buttons[6] : null,
+                leader ? null : buttons[0],
+                buttons[1],
+                rightEdge,
                 headerHeight);
     }
 
@@ -1376,13 +1371,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 float splitAngle = startAngle;
                 float dx = radius * (float) Math.cos(splitAngle);
                 float dy = radius * (float) Math.sin(splitAngle);
-                canvas.strokeLine(cx - dx, cy - dy, cx + dx, cy + dy, 1.25f, color(ACCENT_DIVIDER));
+                canvas.strokeLine(cx - dx, cy - dy, cx + dx, cy + dy, 1.25f, color(ACCENT_PRIMARY_DARK));
             } else {
                 for (int i = 0; i < count; i++) {
                     float splitAngle = startAngle + i * anglePerSlice;
                     float edgeX = cx + radius * (float) Math.cos(splitAngle);
                     float edgeY = cy + radius * (float) Math.sin(splitAngle);
-                    canvas.strokeLine(cx, cy, edgeX, edgeY, 1.25f, color(ACCENT_DIVIDER));
+                    canvas.strokeLine(cx, cy, edgeX, edgeY, 1.25f, color(ACCENT_PRIMARY_DARK));
                 }
             }
         }

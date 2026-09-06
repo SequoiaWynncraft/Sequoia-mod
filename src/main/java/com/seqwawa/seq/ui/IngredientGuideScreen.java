@@ -2,6 +2,7 @@ package com.seqwawa.seq.ui;
 
 import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_DIVIDER;
+import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY_DARK;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY_HOVER;
 import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_BODY_OPAQUE;
@@ -167,7 +168,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
         drawGuideCategoryControl(canvas, screenWidth / 2f - 112, 9, 224);
         if (guideCategory == GuideCategory.INGREDIENTS) {
-            drawText(canvas, manager.status(), screenWidth - 92, HEADER_HEIGHT / 2f, 11, color(TEXT_MUTED),
+            drawText(canvas, manager.status(), screenWidth - 92, HEADER_HEIGHT / 2f, 11, color(ACCENT_PRIMARY_HOVER),
                     UiCanvas.HorizontalAlign.RIGHT, UiCanvas.VerticalAlign.MIDDLE);
             drawButton(canvas, screenWidth - 82, 9, 68, 24, manager.isLoading() ? "Loading" : "Refresh");
             renderIngredientList(canvas, listX, panelTop, listWidth, panelHeight);
@@ -412,7 +413,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 scopeX,
                 searchY + SEARCH_HEIGHT - 4,
                 1,
-                color(ACCENT_DIVIDER));
+                color(ACCENT_PRIMARY_DARK));
         String searchText = searchQuery.isEmpty() ? searchPlaceholder(searchScope) : searchQuery;
         float searchTextMaxWidth = searchWidth - SEARCH_SCOPE_WIDTH - 18;
         String visibleSearchText = ellipsize(searchText, searchTextMaxWidth, 12);
@@ -582,7 +583,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             int locationCount = selectedIngredient.dropSources().stream()
                     .mapToInt(source -> source.locations().size())
                     .sum();
-            canvas.strokeLine(contentX, cursorY, contentX + contentWidth, cursorY, 1, color(ACCENT_DIVIDER));
+            canvas.strokeLine(contentX, cursorY, contentX + contentWidth, cursorY, 1, color(ACCENT_PRIMARY_DARK));
             cursorY += 18;
             drawText(canvas, "DROP SOURCES", contentX, cursorY, 11, color(ACCENT_PRIMARY),
                     UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
@@ -690,7 +691,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         List<EffectLine> modifierLines = craftingModifierLines(selectedIngredient.craftingModifiers());
         int effectCount = statLines.size() + modifierLines.size();
 
-        canvas.strokeLine(contentX, cursorY, contentX + contentWidth, cursorY, 1, color(ACCENT_DIVIDER));
+        canvas.strokeLine(contentX, cursorY, contentX + contentWidth, cursorY, 1, color(ACCENT_PRIMARY_DARK));
         cursorY += 18;
         drawText(canvas, "EFFECTS", contentX, cursorY, 11, color(ACCENT_PRIMARY),
                 UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
@@ -741,7 +742,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             EffectLine line = lines.get(index);
             float rowY = y + 4 + index * rowHeight;
             if (index > 0) {
-                canvas.strokeLine(x + 9, rowY, x + width - 9, rowY, 1, color(ACCENT_DIVIDER));
+                canvas.strokeLine(x + 9, rowY, x + width - 9, rowY, 1, color(ACCENT_PRIMARY_DARK));
             }
             float valueWidth = UiRenderer.measureText(
                             line.value(),
@@ -1400,7 +1401,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 x + keyWidth,
                 y + SORT_ROW_HEIGHT - 3,
                 1,
-                color(ACCENT_DIVIDER));
+                color(ACCENT_PRIMARY_DARK));
         drawText(
                 canvas,
                 key.label(),

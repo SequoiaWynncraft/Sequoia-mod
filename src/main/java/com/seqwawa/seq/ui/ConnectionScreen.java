@@ -75,7 +75,7 @@ public class ConnectionScreen extends Screen {
         drawText(canvas, fontName, SIDEBAR_TITLE_SIZE, color(ACCENT_PRIMARY),
                 UiCanvas.HorizontalAlign.CENTER, SIDEBAR_WIDTH / 2f, 22, "Sequoia");
 
-        canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_DIVIDER));
+        canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_PRIMARY_DARK));
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
@@ -107,7 +107,7 @@ public class ConnectionScreen extends Screen {
         drawText(canvas, fontName, 12, color(TEXT_DISABLED), UiCanvas.HorizontalAlign.LEFT,
                 searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, "Search...");
         canvas.restore();
-        drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY), UiCanvas.HorizontalAlign.RIGHT,
+        drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY_HOVER), UiCanvas.HorizontalAlign.RIGHT,
                 panelX + panelWidth - SEARCH_BAR_MARGIN, HEADER_HEIGHT / 2f, "Connection");
     }
 
@@ -184,7 +184,7 @@ public class ConnectionScreen extends Screen {
                     color(CONTROL_DANGER_HOVER));
         }
 
-        canvas.fillRect(baseX, dividerY, panelWidth - 68, 1, color(ACCENT_DIVIDER));
+        canvas.fillRect(baseX, dividerY, panelWidth - 68, 1, color(ACCENT_PRIMARY_DARK));
         drawMetaLine(
                 canvas,
                 fontName,

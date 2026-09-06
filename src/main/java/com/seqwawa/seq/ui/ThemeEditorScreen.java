@@ -116,7 +116,7 @@ public final class ThemeEditorScreen extends Screen {
                     canvas,
                     font,
                     18,
-                    color(ACCENT_PRIMARY),
+                    color(ACCENT_PRIMARY_HOVER),
                     UiCanvas.HorizontalAlign.RIGHT,
                     screenWidth - PADDING,
                     HEADER_HEIGHT / 2f,
@@ -139,7 +139,7 @@ public final class ThemeEditorScreen extends Screen {
                 SIDEBAR_WIDTH / 2f,
                 22,
                 "Sequoia");
-        canvas.fillRect(10, 40, SIDEBAR_WIDTH - 20, 1, color(ACCENT_DIVIDER));
+        canvas.fillRect(10, 40, SIDEBAR_WIDTH - 20, 1, color(ACCENT_PRIMARY_DARK));
         canvas.fillRect(10, 50, SIDEBAR_WIDTH - 20, 22, SequoiaUiStyle.sidebarButtonColor(true, false));
         drawText(
                 canvas,

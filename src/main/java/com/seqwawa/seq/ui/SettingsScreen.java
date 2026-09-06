@@ -237,7 +237,7 @@ public class SettingsScreen extends Screen {
                     SIDEBAR_WIDTH / 2f, 22, "Sequoia");
 
             // Divider under title
-            canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_DIVIDER));
+            canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_PRIMARY_DARK));
 
             // Sidebar buttons
             float btnX = SIDEBAR_PADDING;
@@ -381,7 +381,7 @@ public class SettingsScreen extends Screen {
                     "HUD layout");
 
             // Title (right side of header)
-            drawText(canvas, fontName, TITLE_FONT_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.RIGHT,
+            drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY_HOVER), UiCanvas.HorizontalAlign.RIGHT,
                     panelX + panelWidth - SEARCH_BAR_MARGIN, panelY + HEADER_HEIGHT / 2f, "Settings");
 
             // Content area with scissor

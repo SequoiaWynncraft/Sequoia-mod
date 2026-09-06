@@ -202,7 +202,7 @@ The settings screen includes controls for:
 War tracking, planner display, and queue controls share one **Wars** category. Settings that depend on another
 control remain visible underneath it and are indented and disabled while their parent is off.
 Major category headings and their fold indicators use the theme's light primary accent (`accent.primary_hover`).
-Settings titles and enabled control labels use primary text; subcategory headings use secondary text. Categories and subcategories start folded. Click their
+Setting titles and enabled control labels use primary text; subcategory headings use secondary text. Categories and subcategories start folded. Click their
 headers to expand or fold them. Search reveals matching controls without changing the saved
 expansion choices for the current screen. Folding stops hidden input and color previews.
 
@@ -213,7 +213,10 @@ theme without restarting. Personal themes are stored as `*.theme.yml` files unde
 The complete supported schema is available in [`docs/theme-template.theme.yml`](docs/theme-template.theme.yml).
 
 Themed screens and controls preserve the alpha values from the active theme, including
-fully transparent colors. Sidebar navigation shares Partyfinder's active, hover, and idle colors.
+fully transparent colors. Top-right header text uses the light primary accent (`accent.primary_hover`),
+and dividers use the dark primary accent (`accent.primary_dark`). Party Finder places the role selector
+next to New/Manage Party on the left and its title on the right; controls wrap when space is limited.
+Sidebar navigation shares Partyfinder's active, hover, and idle colors.
 Search fields share its 140-unit width and shrink to fit when space is limited; drawing, text
 clipping, and click targets use the same width. Map search dropdown results may be wider to fit names.
 The War Planner's explicit background-opacity control still scales the configured alpha; at 100%
