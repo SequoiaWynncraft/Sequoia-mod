@@ -65,6 +65,7 @@ public class SettingsScreen extends Screen {
     private final Screen parent;
     private final LinkedHashMap<String, List<SettingWidget<?>>> categories = new LinkedHashMap<>();
     private final Set<String> collapsedCategories = new HashSet<>();
+    private final SettingsSectionExpansion sectionExpansion = new SettingsSectionExpansion();
     private float scrollOffset = 0;
     private float maxScroll = 0;
     private float nvgMouseX, nvgMouseY;
@@ -205,6 +206,7 @@ public class SettingsScreen extends Screen {
         if (!princessPromptAllowed() && PrincessMode.isEnabled()) {
             PrincessMode.setEnabled(false);
         }
+        deactivateHiddenWidgets();
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
         nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
@@ -369,7 +371,7 @@ public class SettingsScreen extends Screen {
                     "HUD layout");
 
             // Title (right side of header)
-            drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY), UiCanvas.HorizontalAlign.RIGHT,
+            drawText(canvas, fontName, TITLE_FONT_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.RIGHT,
                     panelX + panelWidth - SEARCH_BAR_MARGIN, panelY + HEADER_HEIGHT / 2f, "Settings");
 
             // Content area with scissor
@@ -413,12 +415,12 @@ public class SettingsScreen extends Screen {
                         catHovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
 
                 // Arrow
-                drawText(canvas, fontName, 12, color(ACCENT_SECONDARY), UiCanvas.HorizontalAlign.CENTER,
+                drawText(canvas, fontName, 12, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
                         contentX + PADDING + 14, cursorY + CATEGORY_HEIGHT / 2f, collapsed ? "+" : "-");
 
                 // Category name
                 String displayName = SettingWidget.toDisplayName(category);
-                drawText(canvas, fontName, CATEGORY_FONT_SIZE, color(TEXT_MUTED), UiCanvas.HorizontalAlign.LEFT,
+                drawText(canvas, fontName, CATEGORY_FONT_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.LEFT,
                         contentX + PADDING + 26, cursorY + CATEGORY_HEIGHT / 2f, displayName);
 
                 cursorY += CATEGORY_HEIGHT;
@@ -429,19 +431,30 @@ public class SettingsScreen extends Screen {
                     for (SettingWidget<?> widget : filtered) {
                         String section = widget.getSetting().getSection();
                         if (section != null && !section.equals(currentSection)) {
-                            canvas.fillRect(contentX, cursorY, contentWidth, SECTION_HEIGHT, color(BACKGROUND_CONTENT, 170));
+                            boolean sectionHovered = isHovered(
+                                    nvgMouseX, nvgMouseY, contentX, cursorY, contentWidth, SECTION_HEIGHT)
+                                    && nvgMouseY >= contentY && nvgMouseY <= contentY + contentHeight;
+                            canvas.fillRect(contentX, cursorY, contentWidth, SECTION_HEIGHT,
+                                    sectionHovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT, 170));
+                            drawText(canvas, fontName, SECTION_FONT_SIZE, color(TEXT_SECONDARY),
+                                    UiCanvas.HorizontalAlign.CENTER, contentX + PADDING + 14,
+                                    cursorY + SECTION_HEIGHT / 2f,
+                                    isSectionCollapsed(category, section) ? "+" : "-");
                             drawText(
                                     canvas,
                                     fontName,
                                     SECTION_FONT_SIZE,
-                                    color(ACCENT_SECONDARY),
+                                    color(TEXT_SECONDARY),
                                     UiCanvas.HorizontalAlign.LEFT,
-                                    contentX + PADDING + 8,
+                                    contentX + PADDING + 26,
                                     cursorY + SECTION_HEIGHT / 2f,
                                     section);
                             cursorY += SECTION_HEIGHT;
                         }
                         currentSection = section;
+                        if (isSectionCollapsed(category, section)) {
+                            continue;
+                        }
                         Color bg = (settingIndex % 2 == 0) ? color(BACKGROUND_BODY) : color(BACKGROUND_CONTENT_FOCUSED, 100);
                         canvas.fillRect(contentX, cursorY, contentWidth, widget.getHeight(), bg);
 
@@ -686,10 +699,13 @@ public class SettingsScreen extends Screen {
             // Category header click
             if (isHovered(mx, my, panelX, cursorY, contentWidth, CATEGORY_HEIGHT)) {
                 if (click.button() == 0) {
-                    if (collapsed) {
-                        collapsedCategories.remove(category);
-                    } else {
-                        collapsedCategories.add(category);
+                    if (searchQuery.isEmpty()) {
+                        if (collapsed) {
+                            collapsedCategories.remove(category);
+                        } else {
+                            collapsedCategories.add(category);
+                        }
+                        deactivateHiddenWidgets();
                     }
                     return true;
                 }
@@ -702,9 +718,22 @@ public class SettingsScreen extends Screen {
                 for (SettingWidget<?> widget : filtered) {
                     String section = widget.getSetting().getSection();
                     if (section != null && !section.equals(currentSection)) {
+                        if (isHovered(mx, my, panelX, cursorY, contentWidth, SECTION_HEIGHT)) {
+                            if (click.button() == 0) {
+                                if (searchQuery.isEmpty()) {
+                                    sectionExpansion.toggle(category, section);
+                                    deactivateHiddenWidgets();
+                                }
+                                return true;
+                            }
+                            return super.mouseClicked(click, outsideScreen);
+                        }
                         cursorY += SECTION_HEIGHT;
                     }
                     currentSection = section;
+                    if (isSectionCollapsed(category, section)) {
+                        continue;
+                    }
                     widget.setPosition(panelX + PADDING, cursorY, widgetWidth, widget.getHeight());
                     if (widget.mouseClicked(mx, my, click.button())) {
                         return true;
@@ -756,7 +785,7 @@ public class SettingsScreen extends Screen {
         }
 
         for (List<SettingWidget<?>> widgets : categories.values()) {
-            for (SettingWidget<?> widget : widgets) {
+            for (SettingWidget<?> widget : interactiveWidgets(widgets)) {
                 if (widget.mouseDragged(mx, my))
                     return true;
             }
@@ -791,7 +820,7 @@ public class SettingsScreen extends Screen {
         }
 
         for (List<SettingWidget<?>> widgets : categories.values()) {
-            for (SettingWidget<?> widget : widgets) {
+            for (SettingWidget<?> widget : interactiveWidgets(widgets)) {
                 if (widget.keyPressed(keyEvent))
                     return true;
             }
@@ -811,7 +840,7 @@ public class SettingsScreen extends Screen {
         }
 
         for (List<SettingWidget<?>> widgets : categories.values()) {
-            for (SettingWidget<?> widget : widgets) {
+            for (SettingWidget<?> widget : interactiveWidgets(widgets)) {
                 if (widget.charTyped(characterEvent)) {
                     return true;
                 }
@@ -826,6 +855,33 @@ public class SettingsScreen extends Screen {
 
     private boolean isCategoryCollapsed(String category) {
         return searchQuery.isEmpty() && collapsedCategories.contains(category);
+    }
+
+    private boolean isSectionCollapsed(String category, String section) {
+        return sectionExpansion.isCollapsed(category, section, !searchQuery.isEmpty());
+    }
+
+    private boolean isWidgetInteractive(SettingWidget<?> widget) {
+        Setting<?> setting = widget.getSetting();
+        String category = setting.getPresentationCategory();
+        return setting.isVisible()
+                && !isCategoryCollapsed(category)
+                && !isSectionCollapsed(category, setting.getSection())
+                && matchesSearch(setting, category);
+    }
+
+    private List<SettingWidget<?>> interactiveWidgets(List<SettingWidget<?>> widgets) {
+        return widgets.stream().filter(this::isWidgetInteractive).toList();
+    }
+
+    private void deactivateHiddenWidgets() {
+        for (List<SettingWidget<?>> widgets : categories.values()) {
+            for (SettingWidget<?> widget : widgets) {
+                if (!isWidgetInteractive(widget)) {
+                    widget.onHidden();
+                }
+            }
+        }
     }
 
     private List<SettingWidget<?>> visibleWidgets(List<SettingWidget<?>> widgets) {

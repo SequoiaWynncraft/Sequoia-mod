@@ -35,7 +35,7 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
                 labelY,
                 textStyle(
                         fontName,
-                        enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                        enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
                         FONT_SIZE,
                         UiCanvas.HorizontalAlign.LEFT));
         if (hasDescription()) {

@@ -136,7 +136,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
                 y + 2,
                 textStyle(
                         fontName,
-                        enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                        enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
                         UiCanvas.HorizontalAlign.LEFT,
                         UiCanvas.VerticalAlign.TOP));
 
@@ -336,12 +336,17 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         }
     }
 
+    @Override
+    public void onHidden() {
+        dragging = false;
+        editing = false;
+        editBuffer = formatValue(getDoubleValue());
+    }
+
     private boolean prepareEnabledState() {
         boolean enabled = isEnabled();
         if (!enabled) {
-            dragging = false;
-            editing = false;
-            editBuffer = formatValue(getDoubleValue());
+            onHidden();
         }
         return enabled;
     }

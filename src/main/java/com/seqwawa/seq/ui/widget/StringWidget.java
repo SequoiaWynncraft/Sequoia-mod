@@ -41,7 +41,7 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
                 y + 2,
                 textStyle(
                         fontName,
-                        enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                        enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
                         UiCanvas.VerticalAlign.TOP));
 
         // Text box
@@ -155,11 +155,16 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
         setting.setValue(editBuffer);
     }
 
+    @Override
+    public void onHidden() {
+        editing = false;
+        editBuffer = setting.getValue() != null ? setting.getValue() : "";
+    }
+
     private boolean prepareEnabledState() {
         boolean enabled = isEnabled();
         if (!enabled) {
-            editing = false;
-            editBuffer = setting.getValue() != null ? setting.getValue() : "";
+            onHidden();
         }
         return enabled;
     }

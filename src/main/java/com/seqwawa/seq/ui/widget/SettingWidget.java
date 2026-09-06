@@ -108,6 +108,9 @@ public abstract class SettingWidget<T extends Setting<?>> {
         return false;
     }
 
+    /** Clears transient input and previews when a category, section, or search hides this control. */
+    public void onHidden() {}
+
     public Setting<?> getSetting() {
         return setting;
     }

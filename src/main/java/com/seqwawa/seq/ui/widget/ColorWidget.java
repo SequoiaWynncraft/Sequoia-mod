@@ -70,7 +70,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                 canvas,
                 fontName,
                 FONT_SIZE,
-                enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
                 UiCanvas.HorizontalAlign.LEFT,
                 UiCanvas.VerticalAlign.TOP,
                 indentedContentX(MARGIN),
@@ -542,17 +542,22 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
         return Math.max(0f, Math.min(1f, value));
     }
 
+    @Override
+    public void onHidden() {
+        editing = false;
+        expanded = false;
+        draggingSaturationValue = false;
+        draggingHue = false;
+        height = COLLAPSED_HEIGHT;
+        editBuffer = hexDigits(setting);
+        syncPickerFromSetting();
+        deactivatePreview();
+    }
+
     private boolean prepareEnabledState() {
         boolean enabled = isEnabled();
         if (!enabled) {
-            editing = false;
-            expanded = false;
-            draggingSaturationValue = false;
-            draggingHue = false;
-            height = COLLAPSED_HEIGHT;
-            editBuffer = hexDigits(setting);
-            syncPickerFromSetting();
-            deactivatePreview();
+            onHidden();
         }
         return enabled;
     }

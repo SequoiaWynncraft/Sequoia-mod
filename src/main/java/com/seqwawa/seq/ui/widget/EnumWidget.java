@@ -31,7 +31,7 @@ public class EnumWidget extends SettingWidget<Setting.EnumSetting<?>> {
                 y + height / 2f,
                 textStyle(
                         fontName,
-                        enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                        enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
                         UiCanvas.HorizontalAlign.LEFT));
 
         // Button

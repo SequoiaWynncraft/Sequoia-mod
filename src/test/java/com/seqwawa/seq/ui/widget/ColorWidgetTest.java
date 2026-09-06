@@ -100,4 +100,28 @@ class ColorWidgetTest {
         assertFalse(widget.mouseDragged(220, 100), "the old drag does not resume");
         assertEquals(valueAtDisable, setting.getValue());
     }
+    @Test
+    void hidingAColorControlStopsItsPreviewPickerAndEditing() {
+        Setting.ColorSetting setting = new Setting.ColorSetting("color", "test", 0x123456);
+        AtomicReference<Boolean> preview = new AtomicReference<>();
+        ColorWidget widget = new ColorWidget(setting, preview::set);
+        widget.setPosition(0, 0, 400, widget.getHeight());
+        assertTrue(widget.mouseClicked(130, 20, 0));
+        assertTrue(widget.mouseClicked(330, 20, 0));
+        assertEquals(Boolean.TRUE, preview.get());
+        assertTrue(widget.mouseClicked(50, 60, 0));
+        int valueBeforeHiding = setting.getValue();
+
+        widget.onHidden();
+
+        assertEquals(Boolean.FALSE, preview.get());
+        assertEquals(42f, widget.getHeight());
+        assertFalse(widget.mouseDragged(220, 100));
+        assertEquals(valueBeforeHiding, setting.getValue());
+        assertTrue(widget.mouseClicked(30, 20, 0));
+        widget.onHidden();
+        assertFalse(widget.charTyped(new CharacterEvent('A', 0)));
+        assertEquals(valueBeforeHiding, setting.getValue());
+    }
+
 }
