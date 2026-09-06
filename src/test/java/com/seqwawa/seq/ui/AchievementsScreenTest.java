@@ -115,6 +115,21 @@ class AchievementsScreenTest {
     }
 
     @Test
+    void overviewAndEveryRaidRemainReachableWhenGridCollapses() {
+        int raidCount = SeqRaid.values().length;
+        float narrowHeight = AchievementsScreen.contentHeight(400, raidCount);
+        float wideHeight = AchievementsScreen.contentHeight(800, raidCount);
+        assertEquals(1, AchievementsScreen.columns(400));
+        assertEquals(2, AchievementsScreen.columns(800));
+        assertTrue(narrowHeight > wideHeight);
+        assertTrue(wideHeight >= 144 + 38 + Math.ceil(raidCount / 2.0) * 126);
+        var panel = AchievementsScreen.panelLayout(960, 540, wideHeight);
+        assertTrue(panel.x() >= SequoiaSidebarNavigation.WIDTH + 14);
+        assertTrue(panel.height() < wideHeight);
+        assertTrue(panel.bottom() <= 526);
+    }
+
+    @Test
     void compactViewportKeepsThePanelInsideItsMargins() {
         AchievementsScreen.PanelLayout panel = AchievementsScreen.panelLayout(284.7f, 160, 345);
 

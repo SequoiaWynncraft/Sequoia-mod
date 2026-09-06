@@ -59,6 +59,7 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 
 - `/seq`: open the main menu with Partyfinder, Connection, Ingredients, Map, and Settings
 - `/seq p`: open the Sequoia party finder UI
+- `/seq achievement`: open your guild raid achievements
 - `/seq map`: open the Sequoia world map
 - `/seq war`: open the Seq-only war planner after the backend authorizes the current member
 - `/seq war available <minutes>`: advertise war availability for 1–1440 minutes
@@ -87,6 +88,7 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq allyraids [minutes]`
 - `/seq ignore <IGN>`
 - `/seq unignore <IGN>`
+- `/seq achievement`
 - `/seq map`
 - `/seq map params`
 - `/seq map eps <blocks>`

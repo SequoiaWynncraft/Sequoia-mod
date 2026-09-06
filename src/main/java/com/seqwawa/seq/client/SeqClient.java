@@ -67,6 +67,7 @@ import com.seqwawa.seq.raids.tna.TnaLineupHelper;
 import com.seqwawa.seq.raids.tna.TnaSahurSoundDetector;
 import com.seqwawa.seq.scroll.CraftedScrollRangeVisualiserClient;
 import com.seqwawa.seq.ui.IngredientGuideScreen;
+import com.seqwawa.seq.ui.AchievementsScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.ui.PrincessRaidCelebration;
 import com.seqwawa.seq.ui.SequoiaScreen;
@@ -763,6 +764,10 @@ public class SeqClient implements ClientModInitializer {
 
     public static void openWorldMapScreen() {
         mc.execute(() -> mc.setScreen(new WorldMapScreen(mc.screen)));
+    }
+
+    public static void openAchievementsScreen() {
+        mc.execute(() -> mc.setScreen(new AchievementsScreen(mc.screen)));
     }
 
     public static void openIngredientGuideScreen() {

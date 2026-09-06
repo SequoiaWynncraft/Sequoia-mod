@@ -150,6 +150,11 @@ public class SeqCommand {
                                                         SeqClient.openSettingsScreen();
                                                         return 1;
                                                 }))
+                                .then(ClientCommandManager.literal("achievement")
+                                                .executes(ctx -> {
+                                                        SeqClient.openAchievementsScreen();
+                                                        return 1;
+                                                }))
                                 .then(buildMapCommand())
                                 .then(buildWarCommand())
                                 .then(buildAllyRaidsCommand("allyraids"))
