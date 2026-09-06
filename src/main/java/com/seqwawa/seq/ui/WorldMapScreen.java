@@ -112,7 +112,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final int TERRITORY_DROPDOWN_VISIBLE_ROWS = 8;
     private static final int WORLD_EVENT_DROPDOWN_VISIBLE_ROWS = 8;
     private static final float WORLD_EVENT_DETAIL_HEIGHT = 122;
-    private static final String WORLD_EVENT_MARKER_ASSET = "world_event";
+    private static final String WORLD_EVENT_MARKER_ASSET = "world_event_icon";
     private static final float MIN_HULL_PADDING_PX = 4f;
     private static final float MAX_HULL_PADDING_PX = 12f;
     private static final int HULL_SMOOTHING_PASSES = 2;
