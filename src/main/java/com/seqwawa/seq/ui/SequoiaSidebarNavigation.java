@@ -7,25 +7,35 @@ import net.minecraft.client.gui.screens.Screen;
 
 final class SequoiaSidebarNavigation {
     private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
+    private static final List<Destination> MAIN_MENU_DESTINATIONS = List.of(
+            Destination.PARTY_FINDER,
+            Destination.CONNECTION,
+            Destination.INGREDIENTS,
+            Destination.MAP,
+            Destination.SETTINGS);
     private static final List<Destination> STANDARD_DESTINATIONS = List.of(
             Destination.PARTY_FINDER,
             Destination.ACHIEVEMENTS,
             Destination.CONNECTION,
-            Destination.GITHUB,
             Destination.INGREDIENTS,
             Destination.MAP,
-            Destination.SETTINGS);
+            Destination.SETTINGS,
+            Destination.GITHUB);
     private static final List<Destination> WAR_DESTINATIONS = List.of(
             Destination.PARTY_FINDER,
             Destination.ACHIEVEMENTS,
             Destination.CONNECTION,
-            Destination.GITHUB,
             Destination.INGREDIENTS,
             Destination.MAP,
             Destination.SETTINGS,
-            Destination.WAR);
+            Destination.WAR,
+            Destination.GITHUB);
 
     private SequoiaSidebarNavigation() {}
+
+    static List<Destination> mainMenuDestinations() {
+        return MAIN_MENU_DESTINATIONS;
+    }
 
     static List<Destination> destinations() {
         return destinations(SeqClient.getWarPlannerManager() != null

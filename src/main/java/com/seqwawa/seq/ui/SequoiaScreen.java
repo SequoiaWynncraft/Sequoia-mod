@@ -46,7 +46,7 @@ public class SequoiaScreen extends Screen {
 
             // Title
             String fontName = SeqClient.getFontManager().getSelectedFont();
-            var destinations = SequoiaSidebarNavigation.destinations();
+            var destinations = SequoiaSidebarNavigation.mainMenuDestinations();
             MenuLayout menu = menuLayout(screenHeight, destinations.size());
             float titleY = menu.titleY();
             canvas.drawText("Sequoia", screenWidth / 2f, titleY, new UiCanvas.TextStyle(
@@ -90,7 +90,7 @@ public class SequoiaScreen extends Screen {
             float screenWidth = MinecraftUiRenderer.screenWidth();
             float screenHeight = MinecraftUiRenderer.screenHeight();
 
-            var destinations = SequoiaSidebarNavigation.destinations();
+            var destinations = SequoiaSidebarNavigation.mainMenuDestinations();
             MenuLayout menu = menuLayout(screenHeight, destinations.size());
             float centerX = screenWidth / 2f - BUTTON_WIDTH / 2f;
 

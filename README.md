@@ -57,7 +57,7 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 
 ## Common commands
 
-- `/seq`: open the main Sequoia screen
+- `/seq`: open the main menu with Partyfinder, Connection, Ingredients, Map, and Settings
 - `/seq p`: open the Sequoia party finder UI
 - `/seq map`: open the Sequoia world map
 - `/seq war`: open the Seq-only war planner after the backend authorizes the current member
@@ -123,6 +123,8 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 
 </details>
 
+The navigation sidebars also include Achievements and, for authorized members, War Planner. Github is always the last navigation entry.
+
 ## Party finder
 
 `/seq party scan` imports the leader's current Wynn party into the active Sequoia listing. Scanned usernames that
@@ -140,7 +142,7 @@ resources do not affect color. Ordinary 9k emerald income is treated as the
 baseline; territories with 18k base emerald production are highlighted as
 emerald generators.
 
-The War Planner entry and `/seq war` command only appear after a compact protected backend access check confirms
+The War Planner sidebar entry and `/seq war` command only appear after a compact protected backend access check confirms
 that the current account is a Sequoia member. The full planner snapshot is fetched only when the player opens or
 explicitly refreshes the screen. Members can advertise timed availability and see their own team immediately;
 authorized managers can atomically create or edit parties of one to five people, while one shared Lead and three Eco
@@ -164,7 +166,7 @@ The Events view shows runs currently visible through the Wynncraft API. Choose A
 
 ## Achievements
 
-Open **Achievements** from the main Sequoia screen (`/seq`, or `O`) or from any Sequoia sidebar.
+Open **Achievements** from the navigation sidebar in Partyfinder, Connection, or Settings.
 
 The screen shows one line per guild raid with the authenticated Minecraft account's completions,
 current tier, and progress toward the next tier, plus a combined line for all guild raids. Tiers run

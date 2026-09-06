@@ -13,22 +13,24 @@ class SequoiaSidebarNavigationTest {
     @Test
     void warPlannerIsOnlyListedForAuthorizedMembers() {
         assertEquals(
-                List.of(PARTY_FINDER, ACHIEVEMENTS, CONNECTION, GITHUB, INGREDIENTS, MAP, SETTINGS),
+                List.of(PARTY_FINDER, ACHIEVEMENTS, CONNECTION, INGREDIENTS, MAP, SETTINGS, GITHUB),
                 SequoiaSidebarNavigation.destinations(false));
         assertEquals(
-                List.of(PARTY_FINDER, ACHIEVEMENTS, CONNECTION, GITHUB, INGREDIENTS, MAP, SETTINGS, WAR),
+                List.of(PARTY_FINDER, ACHIEVEMENTS, CONNECTION, INGREDIENTS, MAP, SETTINGS, WAR, GITHUB),
                 SequoiaSidebarNavigation.destinations(true));
     }
 
     @Test
-    void partyFinderStaysFirstAndOtherDestinationsStayInAlphabeticalOrder() {
+    void partyFinderStaysFirstGithubStaysLastAndModulesStayInAlphabeticalOrder() {
         Stream.of(false, true).forEach(authorized -> {
             List<SequoiaSidebarNavigation.Destination> destinations =
                     SequoiaSidebarNavigation.destinations(authorized);
             assertEquals(PARTY_FINDER, destinations.getFirst());
+            assertEquals(GITHUB, destinations.getLast());
 
             List<String> labels = destinations.stream()
                     .skip(1)
+                    .limit(destinations.size() - 2)
                     .map(SequoiaSidebarNavigation.Destination::label)
                     .toList();
 
