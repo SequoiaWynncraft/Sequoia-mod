@@ -11,7 +11,21 @@ class WorldMapModeDropdownLayoutTest {
             assertTrue(layout.x() >= 230);
             assertTrue(layout.x() + layout.width() <= 230 + mapWidth);
             assertTrue(layout.width() >= 0 && layout.width() <= 160);
+            assertTrue(layout.x() + layout.width() <= layout.closeX());
+            assertTrue(layout.closeX() + layout.width() <= 230 + mapWidth);
         }
+    }
+
+    @Test
+    void dropdownAndCloseOccupyOppositeTopCornersWithSeparateHitTargets() {
+        var layout = WorldMapModeDropdownLayout.fit(230, 700);
+        assertEquals(242, layout.x());
+        assertEquals(918, layout.closeX() + layout.width());
+        assertTrue(layout.contains(layout.x() + 1, 13, false));
+        assertFalse(layout.containsClose(layout.x() + 1, 13));
+        assertTrue(layout.containsClose(layout.closeX() + 1, 13));
+        assertFalse(layout.contains(layout.closeX() + 1, 13, true));
+        assertFalse(layout.containsClose(layout.closeX() + 1, 36));
     }
 
     @Test

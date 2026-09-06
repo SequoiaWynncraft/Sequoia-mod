@@ -159,9 +159,9 @@ Composition capabilities, eligibility, team exclusivity, versions, and all mutat
 
 ## World map
 
-Run `/seq map` to open the world map. Use the dropdown near the top-right of the map view to select Gathering, Events, or Ingredients. The sidebar title follows the selected mode.
+Run `/seq map` to open the world map. Use the dropdown near the top-left of the map view to select Gathering, Events, or Ingredients. The sidebar title follows the selected mode.
 
-The X to the left of the map title returns to the `/seq` menu, including when the map was opened directly with `/seq map`.
+The Close Map button at the top-right of the map view returns to the `/seq` menu, including when the map was opened directly with `/seq map`.
 Navigation remains pinned in the left sidebar; the map mode dropdown stays over the map view, clear of the right sidebar. Its map, analysis, filter, display, and tracking groups can be folded independently, while selection details and map insights are available from the collapsible right sidebar.
 
 Gathering analysis supports three scopes: all bundled gathering nodes, nodes inside any guild territory, or nodes inside the selected territory. Resource, profession, cluster, and score controls continue to refine the active scope.
@@ -220,7 +220,7 @@ Map cluster hulls explicitly override alpha to 35% (89/255), including selected 
 Map point markers use squares, while world-space radius indicators remain circular. Gathering, Events, Ingredients,
 and the territory picker show your player head using the same cached 20-unit renderer as the war map.
 A square fallback remains visible while a head image loads or if it is unavailable. Totem map markers use `shaman.png`,
-and the map header uses a lowercase `x` for its return-to-menu button. Cluster counts are centered by their
+and Close Map returns to the main menu. Cluster counts are centered by their
 text bounds, with a 1-unit border at 35% opacity.
 Other themed screens and controls preserve the alpha values from the active theme, including
 fully transparent colors. Top-right header text uses the light primary accent (`accent.primary_hover`),

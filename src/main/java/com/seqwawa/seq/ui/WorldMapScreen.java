@@ -96,8 +96,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final float INPUT_HEIGHT = 24;
     private static final float SIDEBAR_HEADER_HEIGHT = 44;
     private static final float SIDEBAR_PANEL_TOP = 92;
-    private static final float BACK_BUTTON_SIZE = 24;
-    private static final float BACK_BUTTON_Y = (SIDEBAR_HEADER_HEIGHT - BACK_BUTTON_SIZE) / 2f;
     private static final float SIDEBAR_SCROLL_STEP = 28;
     private static final float PANEL_HEADER_HEIGHT = 28;
     private static final float PANEL_GAP = 10;
@@ -1201,10 +1199,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         String font = SeqClient.getFontManager().getSelectedFont();
         String title = displayMode.mapTitle();
         float titleWidth = UiRenderer.measureText(title, font, 18).width();
-        float availableTextWidth = SIDEBAR_WIDTH - 2 * (PADDING + BACK_BUTTON_SIZE + 6) - 30;
+        float availableTextWidth = SIDEBAR_WIDTH - 2 * PADDING - 30;
         float titleSize = titleWidth > 0 ? Math.min(18, 18 * availableTextWidth / titleWidth) : 18;
         SequoiaUiStyle.drawSidebarTitle(canvas, font, SIDEBAR_WIDTH, title, titleSize, color(MAP_TITLE));
-        drawButton(canvas, PADDING, BACK_BUTTON_Y, BACK_BUTTON_SIZE, BACK_BUTTON_SIZE, "x", false);
     }
 
     private void renderSidebar(UiCanvas canvas) {
@@ -2308,6 +2305,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                         layout.width(), layout.rowHeight(), mode.label(), displayMode == mode);
             }
         }
+        canvas.restore();
+        canvas.save();
+        canvas.scissor(layout.closeX(), layout.y(), layout.width(), layout.rowHeight());
+        drawButton(canvas, layout.closeX(), layout.y(), layout.width(), layout.rowHeight(), "Close Map", false);
         canvas.restore();
     }
 
@@ -3979,6 +3980,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float screenWidth = uiScreenWidth();
         float screenHeight = uiScreenHeight();
 
+        if (mapModeDropdownLayout().containsClose(mx, my)) {
+            if (click.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                SeqClient.mc.setScreen(new SequoiaScreen());
+            }
+            return true;
+        }
         if (click.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT && clickMapModeDropdown(mx, my)) {
             return true;
         }
@@ -3997,10 +4004,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         mapDragMoved = false;
         clearIngredientSelectionOnRelease = false;
 
-        if (isHovered(mx, my, PADDING, BACK_BUTTON_Y, BACK_BUTTON_SIZE, BACK_BUTTON_SIZE)) {
-            SeqClient.mc.setScreen(new SequoiaScreen());
-            return true;
-        }
         if (mx >= 0 && mx <= SIDEBAR_WIDTH && my < SIDEBAR_HEADER_HEIGHT) {
             return true;
         }
@@ -4635,7 +4638,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         float mx = scaledMouseX(mouseX);
         float my = scaledMouseY(mouseY);
-        if (mapModeDropdownLayout().contains(mx, my, mapModeDropdownOpen)) {
+        if (mapModeDropdownLayout().contains(mx, my, mapModeDropdownOpen)
+                || mapModeDropdownLayout().containsClose(mx, my)) {
             return true;
         }
         if (displayMode == MapDisplayMode.WORLD_EVENTS && worldEventDropdownOpen) {
