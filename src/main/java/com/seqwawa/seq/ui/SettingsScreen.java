@@ -112,9 +112,19 @@ public class SettingsScreen extends Screen {
         }
 
         categories.clear();
-        sortedCategoryNames(temp.keySet()).forEach(category -> categories.put(category, temp.get(category)));
+        sortedCategoryNames(temp.keySet()).forEach(
+                category -> categories.put(category, groupWidgetsBySection(temp.get(category))));
         collapsedCategories.clear();
         collapsedCategories.addAll(categories.keySet());
+    }
+
+    /** Keeps each section contiguous while preserving section and control registration order. */
+    static List<SettingWidget<?>> groupWidgetsBySection(List<SettingWidget<?>> widgets) {
+        Map<String, List<SettingWidget<?>>> sections = new LinkedHashMap<>();
+        for (SettingWidget<?> widget : widgets) {
+            sections.computeIfAbsent(widget.getSetting().getSection(), key -> new ArrayList<>()).add(widget);
+        }
+        return sections.values().stream().flatMap(List::stream).toList();
     }
 
     static List<String> sortedCategoryNames(Collection<String> categoryNames) {
