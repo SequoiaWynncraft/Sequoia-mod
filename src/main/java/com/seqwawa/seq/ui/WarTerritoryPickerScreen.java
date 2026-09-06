@@ -25,6 +25,7 @@ import com.seqwawa.seq.map.GuildTerritoryService;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapViewport;
+import com.seqwawa.seq.map.MapPlayerHeadRenderer;
 import com.seqwawa.seq.map.WorldMapBackgroundRenderer;
 import com.seqwawa.seq.model.war.WarPlannerDrafts;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
@@ -67,6 +68,7 @@ public final class WarTerritoryPickerScreen extends Screen {
     private final GuildTerritoryService territoryService = GuildTerritoryService.getInstance();
     private final GatheringMapImageService mapImageService = GatheringMapImageService.getInstance();
     private final WorldMapBackgroundRenderer mapBackground = new WorldMapBackgroundRenderer(mapImageService);
+    private final MapPlayerHeadRenderer playerHeads = new MapPlayerHeadRenderer();
 
     private GuildTerritoryIndex territoryIndex;
     private WarZoneSelection selection;
@@ -251,6 +253,7 @@ public final class WarTerritoryPickerScreen extends Screen {
                         color(MAP_TERRITORY));
             }
         }
+        playerHeads.renderLocalPlayer(canvas, viewport);
         canvas.resetScissor();
         if (hoveredTerritory != null) {
             WarPlannerSnapshot.TerritoryDetails detail = details.get(hoveredTerritory.name());
@@ -642,7 +645,10 @@ public final class WarTerritoryPickerScreen extends Screen {
 
     @Override
     public void removed() {
-        UiRenderer.renderResource(canvas -> mapBackground.close());
+        UiRenderer.renderResource(canvas -> {
+            mapBackground.close();
+            playerHeads.close();
+        });
         super.removed();
     }
 

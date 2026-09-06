@@ -62,6 +62,7 @@ import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapDisplayMode;
 import com.seqwawa.seq.map.MapFocus;
 import com.seqwawa.seq.map.MapViewport;
+import com.seqwawa.seq.map.MapPlayerHeadRenderer;
 import com.seqwawa.seq.map.WorldEventDefinition;
 import com.seqwawa.seq.map.WorldEventDisplayFilter;
 import com.seqwawa.seq.map.WorldEventFilters;
@@ -141,6 +142,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private final GuildTerritoryService territoryService = GuildTerritoryService.getInstance();
     private final GatheringMapImageService mapImageService = GatheringMapImageService.getInstance();
     private final WorldMapBackgroundRenderer mapBackground = new WorldMapBackgroundRenderer(mapImageService);
+    private final MapPlayerHeadRenderer playerHeads = new MapPlayerHeadRenderer();
     private final WorldMapSettings mapSettings = WorldMapSettings.getInstance();
     private final IngredientGuideManager ingredientGuideManager = IngredientGuideManager.getInstance();
     private final GatheringClusterCache clusterCache = GatheringClusterCache.getInstance();
@@ -318,7 +320,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     @Override
     public void removed() {
         resetGatheringTotemSolve();
-        UiRenderer.renderResource(canvas -> mapBackground.close());
+        UiRenderer.renderResource(canvas -> {
+            mapBackground.close();
+            playerHeads.close();
+        });
         super.removed();
     }
 
@@ -1188,19 +1193,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderPlayer(UiCanvas canvas, MapViewport viewport) {
-        if (SeqClient.mc.player == null) {
-            return;
-        }
-        double x = SeqClient.mc.player.getX();
-        double z = SeqClient.mc.player.getZ();
-        MapBounds visibleBounds = viewport.visibleBounds();
-        if (!visibleBounds.contains(x, z)) {
-            return;
-        }
-        float sx = viewport.worldToScreenX(x);
-        float sy = viewport.worldToScreenZ(z);
-        drawSquareMarker(canvas, sx, sy, 8, color(BACKGROUND_MODAL_OVERLAY));
-        drawSquareMarker(canvas, sx, sy, 5, color(MAP_PLAYER));
+        playerHeads.renderLocalPlayer(canvas, viewport);
     }
 
     private void renderSidebarHeader(UiCanvas canvas) {
