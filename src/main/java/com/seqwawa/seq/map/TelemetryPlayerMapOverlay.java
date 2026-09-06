@@ -31,7 +31,7 @@ public final class TelemetryPlayerMapOverlay implements AutoCloseable {
     private static final int FACE_TEXTURE_PX = 64;
     private static final float HEAD_SIZE = 20;
     private static final float FAN_RADIUS = HEAD_SIZE * 0.65f;
-    private static final float DOT_RADIUS = 3;
+    private static final float MARKER_HALF_SIZE = 3;
     private static final int MAX_FACE_BYTES = 512 * 1024;
     private static final Color PLATE = new Color(12, 14, 23, 217);
     private static final Color GOLD = new Color(245, 197, 66);
@@ -85,8 +85,10 @@ public final class TelemetryPlayerMapOverlay implements AutoCloseable {
 
                 UiImage face = face(point.username());
                 if (face == null) {
-                    canvas.fillCircle(x, z, DOT_RADIUS, GOLD);
-                    canvas.strokeCircle(x, z, DOT_RADIUS, 1, PLATE);
+                    canvas.fillRect(x - MARKER_HALF_SIZE, z - MARKER_HALF_SIZE,
+                            MARKER_HALF_SIZE * 2, MARKER_HALF_SIZE * 2, GOLD);
+                    canvas.strokeRect(x - MARKER_HALF_SIZE, z - MARKER_HALF_SIZE,
+                            MARKER_HALF_SIZE * 2, MARKER_HALF_SIZE * 2, 1, PLATE);
                     continue;
                 }
                 float half = HEAD_SIZE / 2;

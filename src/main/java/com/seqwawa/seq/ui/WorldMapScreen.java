@@ -132,7 +132,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final float INGREDIENT_FARM_SPOT_ICON_GAP = 3;
     private static final float INGREDIENT_OPTION_HEIGHT = 18;
     private static final float INGREDIENT_CHECKBOX_SIZE = 12;
-    private static final ItemStack TOTEM_MAP_ICON = new ItemStack(Items.TOTEM_OF_UNDYING);
     private static final long TOTEM_SOLVE_DEBOUNCE_MS = 200;
     private final MapFocus mapFocus;
     private final ItemStack mapFocusIcon;
@@ -427,12 +426,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
         MapBounds visibleBounds = viewport.visibleBounds();
         if (!draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY)) {
-            double closestDistance = 10;
+            double closestDistance = 12;
             for (MapFocus.Marker marker : mapFocus.markers()) {
                 if (!visibleBounds.contains(marker.x(), marker.z())) {
                     continue;
                 }
-                double distance = Math.hypot(
+                double distance = markerDistance(
                         nvgMouseX - viewport.worldToScreenX(marker.x()),
                         nvgMouseY - viewport.worldToScreenZ(marker.z()));
                 if (distance <= closestDistance) {
@@ -459,14 +458,14 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             }
             if (mapFocusIcon.isEmpty()) {
                 float markerRadius = selected || hovered ? 4 : 3;
-                drawCircle(canvas, x, y, markerRadius + 1.5f, color(BACKGROUND_MODAL_OVERLAY));
-                drawCircle(canvas, x, y, markerRadius, markerColor);
+                drawSquareMarker(canvas, x, y, markerRadius + 1.5f, color(BACKGROUND_MODAL_OVERLAY));
+                drawSquareMarker(canvas, x, y, markerRadius, markerColor);
             } else {
                 float iconSize = selected || hovered ? 22 : 18;
                 float outlineRadius = iconSize / 2f + 1;
-                drawCircle(canvas, x, y, outlineRadius, color(BACKGROUND_MODAL_OVERLAY));
+                drawSquareMarker(canvas, x, y, outlineRadius, color(BACKGROUND_MODAL_OVERLAY));
                 if (selected || hovered) {
-                    drawCircleOutline(canvas, x, y, outlineRadius, 1, markerColor);
+                    drawSquareMarkerOutline(canvas, x, y, outlineRadius, 1, markerColor);
                 }
                 focusIconOverlays.add(new FocusIconOverlay(
                         x - iconSize / 2f,
@@ -488,12 +487,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         List<IngredientFarmSpot> spots = IngredientFarmSpotCatalog.all();
         MapBounds visibleBounds = viewport.visibleBounds();
         if (!draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY)) {
-            double closestDistance = 11;
+            double closestDistance = 12;
             for (IngredientFarmSpot spot : spots) {
                 if (!visibleBounds.contains(spot.x(), spot.z())) {
                     continue;
                 }
-                double distance = Math.hypot(
+                double distance = markerDistance(
                         nvgMouseX - viewport.worldToScreenX(spot.x()),
                         nvgMouseY - viewport.worldToScreenZ(spot.z()));
                 if (distance <= closestDistance) {
@@ -518,16 +517,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 drawCircle(canvas, x, y, areaRadius, markerColor);
                 drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, markerColor);
             }
-            float iconSize = selected || hovered ? 22 : 18;
-            float outlineRadius = iconSize / 2f + 1;
-            drawCircle(canvas, x, y, outlineRadius, color(BACKGROUND_MODAL_OVERLAY));
-            drawCircleOutline(canvas, x, y, outlineRadius, selected || hovered ? 1.5f : 1, markerColor);
-            focusIconOverlays.add(new FocusIconOverlay(
-                    x - iconSize / 2f,
-                    y - iconSize / 2f,
-                    iconSize,
-                    TOTEM_MAP_ICON,
-                    null));
+            drawTotemMarker(canvas, x, y, selected || hovered ? 22 : 18,
+                    markerColor, selected || hovered);
         }
         canvas.resetScissor();
 
@@ -675,7 +666,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                     candidates.add(new WorldEventMarkerHitTester.Candidate(
                             event,
                             locationIndex,
-                            Math.hypot(nvgMouseX - x, nvgMouseY - y)));
+                            markerDistance(nvgMouseX - x, nvgMouseY - y)));
                 }
             }
             WorldEventMarkerHitTester.Candidate closest = WorldEventMarkerHitTester.closest(candidates, 9);
@@ -705,13 +696,13 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 Color markerColor = eventTracked ? color(MAP_TRACKED_WORLD_EVENT) : color(MAP_WORLD_EVENT);
                 boolean highlighted = eventSelected || (event.equals(hoveredWorldEvent) && locationIndex == hoveredWorldEventLocationIndex);
                 if (markerAsset == null) {
-                    drawCircle(canvas, x, y, highlighted ? 8 : 7, color(BACKGROUND_MODAL_OVERLAY));
-                    drawCircle(canvas, x, y, highlighted ? 5.5f : 4.5f, eventSelected ? color(MAP_PLAYER) : markerColor);
+                    drawSquareMarker(canvas, x, y, highlighted ? 8 : 7, color(BACKGROUND_MODAL_OVERLAY));
+                    drawSquareMarker(canvas, x, y, highlighted ? 5.5f : 4.5f, eventSelected ? color(MAP_PLAYER) : markerColor);
                 } else {
                     float outerRadius = highlighted ? 9 : 8;
                     float assetSize = highlighted ? 12 : 11;
-                    drawCircle(canvas, x, y, outerRadius, color(BACKGROUND_MODAL_OVERLAY));
-                    drawCircle(canvas, x, y, outerRadius - 1.5f, markerColor);
+                    drawSquareMarker(canvas, x, y, outerRadius, color(BACKGROUND_MODAL_OVERLAY));
+                    drawSquareMarker(canvas, x, y, outerRadius - 1.5f, markerColor);
                     canvas.drawImage(
                             markerAsset.getImage(),
                             x - assetSize / 2,
@@ -720,7 +711,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                             assetSize,
                             1f);
                     if (eventSelected) {
-                        drawCircleOutline(canvas, x, y, outerRadius + 1, 1.5f, color(MAP_PLAYER));
+                        drawSquareMarkerOutline(canvas, x, y, outerRadius + 1, 1.5f, color(MAP_PLAYER));
                     }
                 }
             }
@@ -916,7 +907,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 continue;
             }
             float radius = clusterRadius(cluster);
-            float distance = allowHover ? (float) Math.hypot(nvgMouseX - x, nvgMouseY - y) : Float.MAX_VALUE;
+            float distance = allowHover ? (float) markerDistance(nvgMouseX - x, nvgMouseY - y) : Float.MAX_VALUE;
             boolean hovered = allowHover
                     && (distance <= Math.max(12, radius + 3)
                             || isPointInsideCluster(outline, x, y, nvgMouseX, nvgMouseY));
@@ -986,8 +977,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         canvas.resetScissor();
     }
 
-    // Explicit cluster-only alpha override requested for the map (35%, rounded to 8-bit alpha).
-    private static Color clusterColor(Color source) {
+    // Explicit cluster-hull-only alpha override requested for the map (35%, rounded to 8-bit alpha).
+    private static Color clusterHullColor(Color source) {
         return new Color(source.getRed(), source.getGreen(), source.getBlue(), Math.round(255 * 0.35f));
     }
 
@@ -1000,7 +991,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float centerScreenY,
             boolean selected,
             boolean highlighted) {
-        Color color = clusterColor(selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color());
+        Color color = clusterHullColor(selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color());
         List<UiCanvas.Point> points = outline.points().stream()
                 .map(point -> new UiCanvas.Point(centerScreenX + point.x(), centerScreenY + point.y()))
                 .toList();
@@ -1014,9 +1005,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void drawClusterMarker(UiCanvas canvas, float x, float y, float radius, GatheringNodeCluster cluster, boolean selected, boolean highlighted) {
-        Color color = clusterColor(selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color());
-        drawCircle(canvas, x, y, radius + 3, clusterColor(color(BACKGROUND_MODAL_OVERLAY)));
-        drawCircle(canvas, x, y, radius, color);
+        Color color = selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color();
+        drawSquareMarker(canvas, x, y, radius + 3, color(BACKGROUND_MODAL_OVERLAY));
+        drawSquareMarker(canvas, x, y, radius, color);
         drawText(canvas, x, y + 1, clusterCountTextSize(cluster), String.valueOf(cluster.nodeCount()), color(MAP_TEXT), TextAlignment.CENTER);
     }
 
@@ -1033,7 +1024,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float x = viewport.worldToScreenX(node.x());
             float y = viewport.worldToScreenZ(node.z());
             float radius = (float) Math.max(1.5, Math.min(4.0, pixelsPerBlock * 12.0));
-            float distance = allowHover ? (float) Math.hypot(nvgMouseX - x, nvgMouseY - y) : Float.MAX_VALUE;
+            float distance = allowHover ? (float) markerDistance(nvgMouseX - x, nvgMouseY - y) : Float.MAX_VALUE;
             boolean hovered = allowHover && distance <= Math.max(8, radius + 3);
             if (hovered && distance < bestHoverDistance) {
                 bestHoverDistance = distance;
@@ -1041,9 +1032,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             }
             boolean selected = selectedNode == node || (selectedCluster != null && selectedCluster.nodes().contains(node));
             Color color = selected ? color(MAP_PLAYER) : node.profession().color();
-            drawCircle(canvas, x, y, selected || hovered ? Math.min(radius + 1.8f, 5.6f) : radius,
+            drawSquareMarker(canvas, x, y, selected || hovered ? Math.min(radius + 1.8f, 5.6f) : radius,
                     color(BACKGROUND_MODAL_OVERLAY));
-            drawCircle(canvas, x, y, radius, color);
+            drawSquareMarker(canvas, x, y, radius, color);
         }
         canvas.resetScissor();
         if (hoveredNode != null) {
@@ -1124,7 +1115,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (showGatheringTotemHulls) {
             Color hullColor = selected ? color(MAP_TOTEM) : color(MAP_TOTEM_MUTED);
             if (screenHull.size() == 1) {
-                drawCircle(canvas, screenHull.getFirst().x(), screenHull.getFirst().y(), hovered ? 7 : 5, hullColor);
+                drawSquareMarker(canvas, screenHull.getFirst().x(), screenHull.getFirst().y(), hovered ? 7 : 5, hullColor);
             } else {
                 boolean closed = screenHull.size() > 2;
                 Color fill = selected && closed
@@ -1144,7 +1135,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 if (!viewport.visibleBounds().contains(node.x(), node.z())) {
                     continue;
                 }
-                drawCircle(
+                drawSquareMarker(
                         canvas,
                         viewport.worldToScreenX(node.x()),
                         viewport.worldToScreenZ(node.z()),
@@ -1152,10 +1143,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                         color(MAP_TOTEM));
             }
         }
-        float markerRadius = selected ? 6 : 4.5f;
-        drawCircle(canvas, x, z, markerRadius + 2, color(BACKGROUND_MODAL_OVERLAY));
-        drawCircle(canvas, x, z, markerRadius, selected ? color(MAP_PLAYER) : color(MAP_TOTEM_MUTED));
-        drawCircle(canvas, x, z, selected ? 3 : 2.25f, color(MAP_TOTEM));
+        drawTotemMarker(canvas, x, z, selected || hovered ? 22 : 18,
+                selected ? color(MAP_PLAYER) : color(MAP_TOTEM_MUTED), selected || hovered);
         canvas.resetScissor();
     }
 
@@ -1194,8 +1183,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         }
         float sx = viewport.worldToScreenX(x);
         float sy = viewport.worldToScreenZ(z);
-        drawCircle(canvas, sx, sy, 8, color(BACKGROUND_MODAL_OVERLAY));
-        drawCircle(canvas, sx, sy, 5, color(MAP_PLAYER));
+        drawSquareMarker(canvas, sx, sy, 8, color(BACKGROUND_MODAL_OVERLAY));
+        drawSquareMarker(canvas, sx, sy, 5, color(MAP_PLAYER));
     }
 
     private void renderSidebarHeader(UiCanvas canvas) {
@@ -1206,7 +1195,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float availableTextWidth = SIDEBAR_WIDTH - 2 * (PADDING + BACK_BUTTON_SIZE + 6) - 30;
         float titleSize = titleWidth > 0 ? Math.min(18, 18 * availableTextWidth / titleWidth) : 18;
         SequoiaUiStyle.drawSidebarTitle(canvas, font, SIDEBAR_WIDTH, title, titleSize, color(MAP_TITLE));
-        drawButton(canvas, PADDING, BACK_BUTTON_Y, BACK_BUTTON_SIZE, BACK_BUTTON_SIZE, "X", false);
+        drawButton(canvas, PADDING, BACK_BUTTON_Y, BACK_BUTTON_SIZE, BACK_BUTTON_SIZE, "", false);
+        if (!drawMapAsset(canvas, "cross", PADDING + BACK_BUTTON_SIZE / 2f,
+                BACK_BUTTON_Y + BACK_BUTTON_SIZE / 2f, 16)) {
+            drawText(canvas, PADDING + BACK_BUTTON_SIZE / 2f, BACK_BUTTON_Y + BACK_BUTTON_SIZE / 2f,
+                    12, "X", color(MAP_TEXT), TextAlignment.CENTER);
+        }
     }
 
     private void renderSidebar(UiCanvas canvas) {
@@ -2612,13 +2606,13 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderGatheringTotemLegend(UiCanvas canvas, float y) {
-        drawCircle(canvas, PADDING + 5, y, 3.5f, color(MAP_TOTEM));
+        drawSquareMarker(canvas, PADDING + 5, y, 3.5f, color(MAP_TOTEM));
         drawText(canvas, PADDING + 14, y, 9, "amber hull = valid totem positions", color(MAP_SUBTEXT), TextAlignment.LEFT);
         drawCircleOutline(canvas, PADDING + 5, y + 13, 4, 1.5f, color(MAP_TOTEM_RANGE));
         drawText(canvas, PADDING + 14, y + 13, 9, "solid cyan = 50 player range", color(MAP_SUBTEXT), TextAlignment.LEFT);
         drawText(canvas, PADDING + 5, y + 26, 10, "--", color(MAP_TOTEM_REACH), TextAlignment.CENTER);
         drawText(canvas, PADDING + 14, y + 26, 9, "dashed cyan = 52 node reach", color(MAP_SUBTEXT), TextAlignment.LEFT);
-        drawCircle(canvas, PADDING + 5, y + 39, 3.5f, color(MAP_PLAYER));
+        drawTotemMarker(canvas, PADDING + 5, y + 39, 8, color(MAP_PLAYER), true);
         drawText(canvas, PADDING + 14, y + 39, 9, "bright marker = best integer spot", color(MAP_SUBTEXT), TextAlignment.LEFT);
     }
 
@@ -2957,7 +2951,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private void drawToggle(UiCanvas canvas, float x, float y, float w, float h, GatheringProfession profession, boolean active) {
         drawButton(canvas, x, y, w, h, displayProfession(profession), active);
-        drawCircle(canvas, x + 13, y + h / 2f, 4, profession.color());
+        drawSquareMarker(canvas, x + 13, y + h / 2f, 4, profession.color());
     }
 
     private void renderResourceDropdown(UiCanvas canvas, float y) {
@@ -3199,11 +3193,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float mouseX,
             float mouseY) {
         Placement closestMarker = null;
-        double closestMarkerDistance = 9;
+        double closestMarkerDistance = 12;
         for (Placement placement : placements) {
             float bestX = viewport.worldToScreenX(placement.x());
             float bestZ = viewport.worldToScreenZ(placement.z());
-            double distance = Math.hypot(mouseX - bestX, mouseY - bestZ);
+            double distance = markerDistance(mouseX - bestX, mouseY - bestZ);
             if (distance <= closestMarkerDistance) {
                 closestMarker = placement;
                 closestMarkerDistance = distance;
@@ -4859,6 +4853,41 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return true;
         }
         return super.charTyped(characterEvent);
+    }
+
+    private static boolean drawMapAsset(UiCanvas canvas, String assetName, float x, float y, float size) {
+        AssetManager.Asset asset = AssetManager.getAssetsMap().get(assetName);
+        if (asset == null || asset.getImage() == null) {
+            return false;
+        }
+        float scale = size / Math.max(asset.getWidth(), asset.getHeight());
+        float width = asset.getWidth() * scale;
+        float height = asset.getHeight() * scale;
+        canvas.drawImage(asset.getImage(), x - width / 2f, y - height / 2f, width, height, 1f);
+        return true;
+    }
+
+    private static void drawTotemMarker(
+            UiCanvas canvas, float x, float y, float size, Color border, boolean highlighted) {
+        float halfSize = size / 2f + 1;
+        drawSquareMarker(canvas, x, y, halfSize, color(BACKGROUND_MODAL_OVERLAY));
+        drawSquareMarkerOutline(canvas, x, y, halfSize, highlighted ? 1.5f : 1, border);
+        if (!drawMapAsset(canvas, "shaman", x, y, size)) {
+            drawSquareMarker(canvas, x, y, size / 4f, color(MAP_TOTEM));
+        }
+    }
+
+    private static double markerDistance(double deltaX, double deltaY) {
+        return Math.max(Math.abs(deltaX), Math.abs(deltaY));
+    }
+
+    private static void drawSquareMarker(UiCanvas canvas, float x, float y, float halfSize, Color color) {
+        canvas.fillRect(x - halfSize, y - halfSize, halfSize * 2, halfSize * 2, color);
+    }
+
+    private static void drawSquareMarkerOutline(
+            UiCanvas canvas, float x, float y, float halfSize, float width, Color color) {
+        canvas.strokeRect(x - halfSize, y - halfSize, halfSize * 2, halfSize * 2, width, color);
     }
 
     private static void drawCircle(UiCanvas canvas, float x, float y, float radius, Color color) {
