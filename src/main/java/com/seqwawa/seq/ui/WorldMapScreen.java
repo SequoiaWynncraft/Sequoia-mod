@@ -94,7 +94,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final float TOGGLE_HEIGHT = 22;
     private static final float INPUT_HEIGHT = 24;
     private static final float SIDEBAR_HEADER_HEIGHT = 44;
-    private static final float SIDEBAR_PANEL_TOP = 134;
+    private static final float SIDEBAR_PANEL_TOP = 92;
     private static final float BACK_BUTTON_SIZE = 24;
     private static final float BACK_BUTTON_Y = (SIDEBAR_HEADER_HEIGHT - BACK_BUTTON_SIZE) / 2f;
     private static final float SIDEBAR_SCROLL_STEP = 28;
@@ -195,6 +195,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private GatheringAnalysisScope gatheringAnalysisScope = GatheringAnalysisScope.ALL;
     private GatheringTotemSearchTarget gatheringTotemSearchTarget = GatheringTotemSearchTarget.ALL_FILTERED;
     private MapDisplayMode displayMode = MapDisplayMode.GATHERING;
+    private boolean mapModeDropdownOpen;
     private WorldEventDisplayFilter worldEventDisplayFilter = WorldEventDisplayFilter.ALL;
     private List<WorldEventDefinition> allWorldEvents = List.of();
     private List<WorldEventDefinition> visibleWorldEvents = List.of();
@@ -355,7 +356,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             refreshWorldEvents();
         }
         MapViewport viewport = new MapViewport(centerX, centerZ, pixelsPerBlock, mapX, mapY, mapW, mapH);
-        UiRenderer.renderScreen(this, canvas -> renderNvg(canvas, viewport));
+        UiRenderer.renderScreen(this, canvas -> {
+            renderNvg(canvas, viewport);
+            drawMapModeControl(canvas);
+        });
     }
 
     private void renderNvg(UiCanvas canvas, MapViewport viewport) {
@@ -982,6 +986,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         canvas.resetScissor();
     }
 
+    // Explicit cluster-only alpha override requested for the map (35%, rounded to 8-bit alpha).
+    private static Color clusterColor(Color source) {
+        return new Color(source.getRed(), source.getGreen(), source.getBlue(), Math.round(255 * 0.35f));
+    }
+
     private void renderClusterOutline(
             UiCanvas canvas,
             MapViewport viewport,
@@ -991,7 +1000,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float centerScreenY,
             boolean selected,
             boolean highlighted) {
-        Color color = selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color();
+        Color color = clusterColor(selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color());
         List<UiCanvas.Point> points = outline.points().stream()
                 .map(point -> new UiCanvas.Point(centerScreenX + point.x(), centerScreenY + point.y()))
                 .toList();
@@ -1005,8 +1014,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void drawClusterMarker(UiCanvas canvas, float x, float y, float radius, GatheringNodeCluster cluster, boolean selected, boolean highlighted) {
-        Color color = selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color();
-        drawCircle(canvas, x, y, radius + 3, color(BACKGROUND_MODAL_OVERLAY));
+        Color color = clusterColor(selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color());
+        drawCircle(canvas, x, y, radius + 3, clusterColor(color(BACKGROUND_MODAL_OVERLAY)));
         drawCircle(canvas, x, y, radius, color);
         drawText(canvas, x, y + 1, clusterCountTextSize(cluster), String.valueOf(cluster.nodeCount()), color(MAP_TEXT), TextAlignment.CENTER);
     }
@@ -1191,8 +1200,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private void renderSidebarHeader(UiCanvas canvas) {
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
-        SequoiaUiStyle.drawSidebarTitle(canvas, SeqClient.getFontManager().getSelectedFont(),
-                SIDEBAR_WIDTH, "Sequoia Map", 18, color(MAP_TITLE));
+        String font = SeqClient.getFontManager().getSelectedFont();
+        String title = displayMode.mapTitle();
+        float titleWidth = UiRenderer.measureText(title, font, 18).width();
+        float availableTextWidth = SIDEBAR_WIDTH - 2 * (PADDING + BACK_BUTTON_SIZE + 6) - 30;
+        float titleSize = titleWidth > 0 ? Math.min(18, 18 * availableTextWidth / titleWidth) : 18;
+        SequoiaUiStyle.drawSidebarTitle(canvas, font, SIDEBAR_WIDTH, title, titleSize, color(MAP_TITLE));
         drawButton(canvas, PADDING, BACK_BUTTON_Y, BACK_BUTTON_SIZE, BACK_BUTTON_SIZE, "X", false);
     }
 
@@ -1212,7 +1225,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         renderSidebarHeader(canvas);
 
         drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
-        drawMapModeControl(canvas, layout.modeY());
         canvas.scissor(0, SIDEBAR_PANEL_TOP, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_PANEL_TOP));
         renderPanelHeader(
                 canvas,
@@ -1298,7 +1310,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         renderSidebarHeader(canvas);
 
         drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
-        drawMapModeControl(canvas, layout.modeY());
         canvas.scissor(0, SIDEBAR_PANEL_TOP, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_PANEL_TOP));
 
         renderPanelHeader(
@@ -1346,7 +1357,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(MAP_SIDEBAR));
         renderSidebarHeader(canvas);
         drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
-        drawMapModeControl(canvas, layout.modeY());
 
         float contentWidth = SIDEBAR_WIDTH - PADDING * 2;
         canvas.scissor(0, SIDEBAR_PANEL_TOP, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_PANEL_TOP));
@@ -2281,18 +2291,46 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         }
     }
 
-    private void drawMapModeControl(UiCanvas canvas, float y) {
-        float width = SIDEBAR_WIDTH - PADDING * 2;
-        float segmentWidth = width / MapDisplayMode.values().length;
-        for (int index = 0; index < MapDisplayMode.values().length; index++) {
-            MapDisplayMode mode = MapDisplayMode.values()[index];
-            float x = PADDING + index * segmentWidth;
-            boolean active = displayMode == mode;
-            boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
-            canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
-            canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, color(MAP_BORDER));
-            drawText(canvas, x + segmentWidth / 2f, y + BUTTON_HEIGHT / 2f, 11, mode.label(), color(MAP_TEXT), TextAlignment.CENTER);
+    private WorldMapModeDropdownLayout mapModeDropdownLayout() {
+        MapViewport viewport = mapViewport(uiScreenWidth(), uiScreenHeight());
+        return WorldMapModeDropdownLayout.fit(viewport.screenX(), viewport.screenWidth());
+    }
+
+    private void drawMapModeControl(UiCanvas canvas) {
+        var layout = mapModeDropdownLayout();
+        canvas.save();
+        canvas.scissor(layout.x(), layout.y(), layout.width(),
+                layout.rowHeight() * (MapDisplayMode.values().length + 1));
+        drawButton(canvas, layout.x(), layout.y(), layout.width(), layout.rowHeight(),
+                displayMode.label() + (mapModeDropdownOpen ? "  ^" : "  v"), mapModeDropdownOpen);
+        if (mapModeDropdownOpen) {
+            for (int index = 0; index < MapDisplayMode.values().length; index++) {
+                MapDisplayMode mode = MapDisplayMode.values()[index];
+                drawButton(canvas, layout.x(), layout.y() + layout.rowHeight() * (index + 1),
+                        layout.width(), layout.rowHeight(), mode.label(), displayMode == mode);
+            }
         }
+        canvas.restore();
+    }
+
+    private boolean clickMapModeDropdown(float mx, float my) {
+        var layout = mapModeDropdownLayout();
+        if (layout.contains(mx, my, false)) {
+            mapModeDropdownOpen = !mapModeDropdownOpen;
+            closeSearchDropdowns();
+            draggingMap = false;
+            return true;
+        }
+        if (mapModeDropdownOpen) {
+            int option = layout.optionAt(mx, my);
+            mapModeDropdownOpen = false;
+            if (option >= 0) {
+                setDisplayMode(MapDisplayMode.values()[option]);
+            }
+            // Dismissing the menu must not select or drag the map underneath it.
+            return true;
+        }
+        return false;
     }
 
     private void drawWorldEventFilterControl(UiCanvas canvas, float y) {
@@ -3943,6 +3981,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float screenWidth = uiScreenWidth();
         float screenHeight = uiScreenHeight();
 
+        if (click.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT && clickMapModeDropdown(mx, my)) {
+            return true;
+        }
+        if (mapModeDropdownLayout().contains(mx, my, mapModeDropdownOpen)) {
+            return true;
+        }
         if (click.button() == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
             if (copyHoveredCoordinates(mx, my, sidebarMy, screenWidth, screenHeight)) {
                 return true;
@@ -4024,10 +4068,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             if (!centerOnPlayer()) {
                 centerPlayerWarningUntilMs = System.currentTimeMillis() + CENTER_PLAYER_WARNING_DURATION_MS;
             }
-            return true;
-        }
-        if (isHovered(mx, my, PADDING, layout.modeY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
-            setDisplayMode(mapModeAt(mx));
             return true;
         }
         if (isHovered(mx, sidebarMy, PADDING, layout.mapPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)) {
@@ -4281,10 +4321,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             }
             return true;
         }
-        if (isHovered(mx, my, PADDING, layout.modeY(), buttonWidth, BUTTON_HEIGHT)) {
-            setDisplayMode(mapModeAt(mx));
-            return true;
-        }
         boolean insideScrollablePanel = my >= SIDEBAR_PANEL_TOP && my <= screenHeight;
         if (insideScrollablePanel
                 && isHovered(mx, my, PADDING, sidebarY(layout.titleY()), buttonWidth, BUTTON_HEIGHT)) {
@@ -4502,10 +4538,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             }
             return true;
         }
-        if (isHovered(mx, my, PADDING, layout.modeY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
-            setDisplayMode(mapModeAt(mx));
-            return true;
-        }
         if (isHovered(mx, sidebarMy, PADDING, layout.displayPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)) {
             togglePanel(WorldMapSidebarPanel.EVENT_DISPLAY);
             return true;
@@ -4605,6 +4637,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         float mx = scaledMouseX(mouseX);
         float my = scaledMouseY(mouseY);
+        if (mapModeDropdownLayout().contains(mx, my, mapModeDropdownOpen)) {
+            return true;
+        }
         if (displayMode == MapDisplayMode.WORLD_EVENTS && worldEventDropdownOpen) {
             WorldEventSidebarLayout eventLayout = worldEventSidebarLayout();
             List<WorldEventDefinition> events = worldEventDropdownOptions();
@@ -4707,6 +4742,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
         int keyCode = keyEvent.key();
+        if (mapModeDropdownOpen && keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            mapModeDropdownOpen = false;
+            return true;
+        }
         if (worldEventInputFocused) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 closeWorldEventSearch();
@@ -5075,12 +5114,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         return GatheringAnalysisScope.values()[index];
     }
 
-    private MapDisplayMode mapModeAt(float mouseX) {
-        float segmentWidth = (SIDEBAR_WIDTH - PADDING * 2) / MapDisplayMode.values().length;
-        int index = (int) ((mouseX - PADDING) / segmentWidth);
-        return index >= 0 && index < MapDisplayMode.values().length ? MapDisplayMode.values()[index] : null;
-    }
-
     private IngredientMapCategory ingredientMapCategoryAt(float mouseX) {
         float segmentWidth = (SIDEBAR_WIDTH - PADDING * 2) / IngredientMapCategory.values().length;
         int index = (int) ((mouseX - PADDING) / segmentWidth);
@@ -5264,8 +5297,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private IngredientSidebarLayout ingredientSidebarLayout() {
         float centerY = 58;
-        float modeY = centerY + BUTTON_HEIGHT + 18;
-        float titleY = modeY + BUTTON_HEIGHT + 18;
+        float titleY = centerY + BUTTON_HEIGHT + 18;
         float renderWaypointsY = titleY + BUTTON_HEIGHT + 10;
         float radiusToggleY = renderWaypointsY + BUTTON_HEIGHT + 6;
         float radiusColorToggleY = radiusToggleY + INGREDIENT_OPTION_HEIGHT + 2;
@@ -5278,7 +5310,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float copyY = selectedDetailY + 44;
         return new IngredientSidebarLayout(
                 centerY,
-                modeY,
                 titleY,
                 renderWaypointsY,
                 radiusToggleY,
@@ -5295,8 +5326,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private SidebarLayout sidebarLayout() {
         float y = 58;
         float centerY = y;
-        y += BUTTON_HEIGHT + 18;
-        float modeY = y;
         y += BUTTON_HEIGHT + 18;
         float mapPanelY = y;
         y += PANEL_HEADER_HEIGHT;
@@ -5350,7 +5379,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         y = totemSolverLayout(totemPanelY).endY();
         return new SidebarLayout(
                 centerY,
-                modeY,
                 mapPanelY,
                 territoryToggleY,
                 scopeLabelY,
@@ -5412,8 +5440,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float y = 58;
         float centerY = y;
         y += BUTTON_HEIGHT + 18;
-        float modeY = y;
-        y += BUTTON_HEIGHT + 18;
         float displayPanelY = y;
         y += PANEL_HEADER_HEIGHT;
         float filterLabelY = -1;
@@ -5439,7 +5465,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         }
         return new WorldEventSidebarLayout(
                 centerY,
-                modeY,
                 displayPanelY,
                 filterLabelY,
                 filterY,
@@ -5473,7 +5498,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private record IngredientSidebarLayout(
             float centerY,
-            float modeY,
             float titleY,
             float renderWaypointsY,
             float radiusToggleY,
@@ -5488,7 +5512,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private record SidebarLayout(
             float centerY,
-            float modeY,
             float mapPanelY,
             float territoryToggleY,
             float scopeLabelY,
@@ -5520,7 +5543,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private record WorldEventSidebarLayout(
             float centerY,
-            float modeY,
             float displayPanelY,
             float filterLabelY,
             float filterY,

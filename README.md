@@ -156,10 +156,10 @@ Composition capabilities, eligibility, team exclusivity, versions, and all mutat
 
 ## World map
 
-Run `/seq map` to open the world map. Use the Gathering / Events control to switch between gathering analysis with guild territories and API-visible world events.
+Run `/seq map` to open the world map. Use the dropdown near the top-right of the map view to select Gathering, Events, or Ingredients. The sidebar title follows the selected mode.
 
 The X to the left of the map title returns to the `/seq` menu, including when the map was opened directly with `/seq map`.
-Navigation and map mode controls remain pinned in the left sidebar. Its map, analysis, filter, display, and tracking groups can be folded independently, while selection details and map insights are available from the collapsible right sidebar.
+Navigation remains pinned in the left sidebar; the map mode dropdown stays over the map view, clear of the right sidebar. Its map, analysis, filter, display, and tracking groups can be folded independently, while selection details and map insights are available from the collapsible right sidebar.
 
 Gathering analysis supports three scopes: all bundled gathering nodes, nodes inside any guild territory, or nodes inside the selected territory. Resource, profession, cluster, and score controls continue to refine the active scope.
 
@@ -213,7 +213,8 @@ theme without restarting. Personal themes are stored as `*.theme.yml` files unde
 `config/sequoia/themes`. Files added manually are discovered when the client starts.
 The complete supported schema is available in [`docs/theme-template.theme.yml`](docs/theme-template.theme.yml).
 
-Themed screens and controls preserve the alpha values from the active theme, including
+Map cluster hulls and badge colors explicitly override alpha to 35% (89/255), including selected clusters.
+Other themed screens and controls preserve the alpha values from the active theme, including
 fully transparent colors. Top-right header text uses the light primary accent (`accent.primary_hover`),
 and dividers use the dark primary accent (`accent.primary_dark`). Party Finder places the role selector
 next to New/Manage Party on the left and its title on the right; controls wrap when space is limited.
