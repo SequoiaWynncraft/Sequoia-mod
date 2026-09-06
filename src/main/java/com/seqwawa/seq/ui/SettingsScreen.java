@@ -425,12 +425,12 @@ public class SettingsScreen extends Screen {
                         catHovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
 
                 // Arrow
-                drawText(canvas, fontName, 12, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
+                drawText(canvas, fontName, 12, color(ACCENT_PRIMARY_HOVER), UiCanvas.HorizontalAlign.CENTER,
                         contentX + PADDING + 14, cursorY + CATEGORY_HEIGHT / 2f, collapsed ? "+" : "-");
 
                 // Category name
                 String displayName = SettingWidget.toDisplayName(category);
-                drawText(canvas, fontName, CATEGORY_FONT_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.LEFT,
+                drawText(canvas, fontName, CATEGORY_FONT_SIZE, color(ACCENT_PRIMARY_HOVER), UiCanvas.HorizontalAlign.LEFT,
                         contentX + PADDING + 26, cursorY + CATEGORY_HEIGHT / 2f, displayName);
 
                 cursorY += CATEGORY_HEIGHT;

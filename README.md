@@ -201,8 +201,8 @@ The settings screen includes controls for:
 
 War tracking, planner display, and queue controls share one **Wars** category. Settings that depend on another
 control remain visible underneath it and are indented and disabled while their parent is off.
-Settings titles, category headings, and enabled control labels use the theme's primary text color;
-subcategory headings use secondary text. Categories and subcategories start folded. Click their
+Major category headings and their fold indicators use the theme's light primary accent (`accent.primary_hover`).
+Settings titles and enabled control labels use primary text; subcategory headings use secondary text. Categories and subcategories start folded. Click their
 headers to expand or fold them. Search reveals matching controls without changing the saved
 expansion choices for the current screen. Folding stops hidden input and color previews.
 
