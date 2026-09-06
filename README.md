@@ -215,7 +215,8 @@ The complete supported schema is available in [`docs/theme-template.theme.yml`](
 
 Map cluster hulls explicitly override alpha to 35% (89/255), including selected clusters; markers use their normal theme opacity.
 Map point markers use squares, while world-space radius indicators remain circular. Totem map markers use `shaman.png`,
-and the map header uses `cross.png` for its return-to-menu button.
+and the map header uses a lowercase `x` for its return-to-menu button. Cluster counts are centered by their
+text bounds, with a 1-unit border at 35% opacity.
 Other themed screens and controls preserve the alpha values from the active theme, including
 fully transparent colors. Top-right header text uses the light primary accent (`accent.primary_hover`),
 and dividers use the dark primary accent (`accent.primary_dark`). Party Finder places the role selector

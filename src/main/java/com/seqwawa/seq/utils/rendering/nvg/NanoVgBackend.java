@@ -133,10 +133,16 @@ public final class NanoVgBackend implements UiRenderBackend {
             return new UiTextMetrics(0, 0, 0, 0);
         }
         float[] bounds = new float[4];
-        nvgFontSize(context, size);
-        nvgFontFace(context, font);
-        nvgTextBounds(context, 0, 0, text, bounds);
-        return new UiTextMetrics(bounds[0], bounds[1], bounds[2], bounds[3]);
+        nvgSave(context);
+        try {
+            nvgFontSize(context, size);
+            nvgFontFace(context, font);
+            nvgTextAlign(context, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
+            nvgTextBounds(context, 0, 0, text, bounds);
+            return new UiTextMetrics(bounds[0], bounds[1], bounds[2], bounds[3]);
+        } finally {
+            nvgRestore(context);
+        }
     }
 
     @Override

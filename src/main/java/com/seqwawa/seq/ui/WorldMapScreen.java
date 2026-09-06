@@ -1006,9 +1006,25 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private void drawClusterMarker(UiCanvas canvas, float x, float y, float radius, GatheringNodeCluster cluster, boolean selected, boolean highlighted) {
         Color color = selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color();
-        drawSquareMarker(canvas, x, y, radius + 3, color(BACKGROUND_MODAL_OVERLAY));
         drawSquareMarker(canvas, x, y, radius, color);
-        drawText(canvas, x, y + 1, clusterCountTextSize(cluster), String.valueOf(cluster.nodeCount()), color(MAP_TEXT), TextAlignment.CENTER);
+        Color border = color(BACKGROUND_MODAL_OVERLAY);
+        // A thin, softer border; the badge fill keeps its normal theme opacity.
+        border = new Color(border.getRed(), border.getGreen(), border.getBlue(), Math.round(255 * 0.35f));
+        drawSquareMarkerOutline(canvas, x, y, radius + 0.5f, 1, border);
+
+        String count = String.valueOf(cluster.nodeCount());
+        String font = SeqClient.getFontManager().getSelectedFont();
+        float size = clusterCountTextSize(cluster);
+        var bounds = UiRenderer.measureText(count, font, size);
+        float availableSize = radius * 2 - 2;
+        float textSize = Math.max(bounds.width(), bounds.height());
+        if (textSize > availableSize) {
+            size *= availableSize / textSize;
+            bounds = UiRenderer.measureText(count, font, size);
+        }
+        canvas.drawText(count, x - (bounds.minX() + bounds.maxX()) / 2f,
+                y - (bounds.minY() + bounds.maxY()) / 2f, new UiCanvas.TextStyle(
+                        font, size, color(MAP_TEXT), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.BASELINE));
     }
 
     private void renderNodes(UiCanvas canvas, MapViewport viewport, List<GatheringNode> nodes) {
@@ -1195,12 +1211,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float availableTextWidth = SIDEBAR_WIDTH - 2 * (PADDING + BACK_BUTTON_SIZE + 6) - 30;
         float titleSize = titleWidth > 0 ? Math.min(18, 18 * availableTextWidth / titleWidth) : 18;
         SequoiaUiStyle.drawSidebarTitle(canvas, font, SIDEBAR_WIDTH, title, titleSize, color(MAP_TITLE));
-        drawButton(canvas, PADDING, BACK_BUTTON_Y, BACK_BUTTON_SIZE, BACK_BUTTON_SIZE, "", false);
-        if (!drawMapAsset(canvas, "cross", PADDING + BACK_BUTTON_SIZE / 2f,
-                BACK_BUTTON_Y + BACK_BUTTON_SIZE / 2f, 16)) {
-            drawText(canvas, PADDING + BACK_BUTTON_SIZE / 2f, BACK_BUTTON_Y + BACK_BUTTON_SIZE / 2f,
-                    12, "X", color(MAP_TEXT), TextAlignment.CENTER);
-        }
+        drawButton(canvas, PADDING, BACK_BUTTON_Y, BACK_BUTTON_SIZE, BACK_BUTTON_SIZE, "x", false);
     }
 
     private void renderSidebar(UiCanvas canvas) {
