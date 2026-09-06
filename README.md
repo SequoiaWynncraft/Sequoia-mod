@@ -216,6 +216,8 @@ Themed screens and controls preserve the alpha values from the active theme, inc
 fully transparent colors. Top-right header text uses the light primary accent (`accent.primary_hover`),
 and dividers use the dark primary accent (`accent.primary_dark`). Party Finder places the role selector
 next to New/Manage Party on the left and its title on the right; controls wrap when space is limited.
+Sidebar headers center the Sequoia icon and title together. The `/seq` menu fits `seqmod_bg.png`
+proportionally along its left side at 40% opacity (alpha 102).
 Sidebar navigation shares Partyfinder's active, hover, and idle colors.
 Search fields share its 140-unit width and shrink to fit when space is limited; drawing, text
 clipping, and click targets use the same width. Map search dropdown results may be wider to fit names.

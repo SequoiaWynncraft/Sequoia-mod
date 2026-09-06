@@ -1203,7 +1203,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         SidebarLayout layout = sidebarLayout();
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(MAP_SIDEBAR));
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
-        drawText(canvas, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", color(MAP_TITLE), TextAlignment.CENTER);
+        SequoiaUiStyle.drawSidebarTitle(canvas, SeqClient.getFontManager().getSelectedFont(),
+                SIDEBAR_WIDTH, "Sequoia Map", 18, color(MAP_TITLE));
 
         drawButton(canvas, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
         drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
@@ -1291,7 +1292,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         WorldEventSidebarLayout layout = worldEventSidebarLayout();
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(MAP_SIDEBAR));
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
-        drawText(canvas, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", color(MAP_TITLE), TextAlignment.CENTER);
+        SequoiaUiStyle.drawSidebarTitle(canvas, SeqClient.getFontManager().getSelectedFont(),
+                SIDEBAR_WIDTH, "Sequoia Map", 18, color(MAP_TITLE));
 
         drawButton(canvas, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
         drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
@@ -1342,7 +1344,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(MAP_SIDEBAR));
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
-        drawText(canvas, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", color(MAP_TITLE), TextAlignment.CENTER);
+        SequoiaUiStyle.drawSidebarTitle(canvas, SeqClient.getFontManager().getSelectedFont(),
+                SIDEBAR_WIDTH, "Sequoia Map", 18, color(MAP_TITLE));
         drawButton(canvas, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
         drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
         drawMapModeControl(canvas, layout.modeY());

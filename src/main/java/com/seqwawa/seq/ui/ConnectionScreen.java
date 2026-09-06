@@ -72,8 +72,7 @@ public class ConnectionScreen extends Screen {
 
     private void renderSidebar(UiCanvas canvas, String fontName, float screenHeight) {
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(BACKGROUND_SIDEBAR));
-        drawText(canvas, fontName, SIDEBAR_TITLE_SIZE, color(ACCENT_PRIMARY),
-                UiCanvas.HorizontalAlign.CENTER, SIDEBAR_WIDTH / 2f, 22, "Sequoia");
+        SequoiaUiStyle.drawSidebarTitle(canvas, fontName, SIDEBAR_WIDTH);
 
         canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_PRIMARY_DARK));
 

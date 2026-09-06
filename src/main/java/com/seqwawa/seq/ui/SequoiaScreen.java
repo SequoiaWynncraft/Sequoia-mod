@@ -4,6 +4,7 @@ import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import java.awt.Color;
+import com.seqwawa.seq.managers.AssetManager;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -43,6 +44,16 @@ public class SequoiaScreen extends Screen {
 
             // Dark background
             canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
+
+            // Fit the artwork against the left edge without stretching or cropping it.
+            var artwork = AssetManager.getAssetsMap().get("seqmod_bg");
+            if (artwork != null && artwork.getImage() != null) {
+                float scale = Math.min(screenWidth / 2f / artwork.getWidth(), screenHeight / artwork.getHeight());
+                float artworkWidth = artwork.getWidth() * scale;
+                float artworkHeight = artwork.getHeight() * scale;
+                canvas.drawImage(artwork.getImage(), 0, (screenHeight - artworkHeight) / 2f,
+                        artworkWidth, artworkHeight, 102 / 255f);
+            }
 
             // Title
             String fontName = SeqClient.getFontManager().getSelectedFont();

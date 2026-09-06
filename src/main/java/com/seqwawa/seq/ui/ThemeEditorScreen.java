@@ -130,15 +130,7 @@ public final class ThemeEditorScreen extends Screen {
 
     private void renderSidebar(UiCanvas canvas, String font, float screenHeight) {
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(BACKGROUND_SIDEBAR));
-        drawText(
-                canvas,
-                font,
-                16,
-                color(ACCENT_PRIMARY),
-                UiCanvas.HorizontalAlign.CENTER,
-                SIDEBAR_WIDTH / 2f,
-                22,
-                "Sequoia");
+        SequoiaUiStyle.drawSidebarTitle(canvas, font, SIDEBAR_WIDTH);
         canvas.fillRect(10, 40, SIDEBAR_WIDTH - 20, 1, color(ACCENT_PRIMARY_DARK));
         canvas.fillRect(10, 50, SIDEBAR_WIDTH - 20, 22, SequoiaUiStyle.sidebarButtonColor(true, false));
         drawText(
