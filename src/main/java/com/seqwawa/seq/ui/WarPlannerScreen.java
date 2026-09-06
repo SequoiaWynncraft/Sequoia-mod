@@ -718,7 +718,7 @@ public final class WarPlannerScreen extends Screen {
         float scale = (float) viewport.pixelsPerBlock();
         float offsetX = viewport.worldToScreenX(coordinateBounds.minX());
         float offsetY = viewport.worldToScreenZ(coordinateBounds.minZ());
-        mapBackground.render(canvas, viewport, .9f * backgroundOpacityPercent() / 100f);
+        mapBackground.render(canvas, viewport);
         canvas.scissor(x, y, width, height);
         if (resourceColorsEnabled()) {
             drawPreviewResources(canvas, coreTerritories, details, coordinateBounds, offsetX, offsetY, scale);

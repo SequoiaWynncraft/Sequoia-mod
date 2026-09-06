@@ -202,7 +202,7 @@ public final class WarTerritoryPickerScreen extends Screen {
     }
 
     private void renderMap(UiCanvas canvas, MapViewport viewport) {
-        mapBackground.render(canvas, viewport, WarPlannerScreen.backgroundOpacityPercent() / 100f);
+        mapBackground.render(canvas, viewport);
         canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
 
         TerritoryAccess access = territoryAccess();

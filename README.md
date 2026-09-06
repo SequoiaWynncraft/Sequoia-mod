@@ -231,8 +231,8 @@ proportionally along its left side at 35% opacity.
 Sidebar navigation shares Partyfinder's active, hover, and idle colors.
 Search fields share its 140-unit width and shrink to fit when space is limited; drawing, text
 clipping, and click targets use the same width. Map search dropdown results may be wider to fit names.
-The War Planner's explicit background-opacity control still scales the configured alpha; at 100%
-it preserves it exactly. The Theme editor's RGBA controls remain the way to change individual alphas.
+The War Planner's opacity control scales panel backgrounds and preserves their configured alpha at 100%.
+Map imagery in the planner and territory picker stays at full opacity independently of that slider. The Theme editor's RGBA controls remain the way to change individual alphas.
 
 When changing the UI, use `ThemeManager.color(token)` and the shared `SequoiaUiStyle` conventions.
 Do not replace a configured alpha with a constant or force a theme color opaque. Use the appropriate
