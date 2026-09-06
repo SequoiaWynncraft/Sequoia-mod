@@ -3,6 +3,7 @@ package com.seqwawa.seq.raids.tna;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 import java.util.ArrayList;
 import java.util.List;
@@ -64,7 +65,7 @@ public final class TnaLineupHelper {
     }
 
     private static void tick(Minecraft client) {
-        if (client.player == null || client.level == null) {
+        if (!supportsScope(WynncraftServerPolicy.currentScope()) || client.player == null || client.level == null) {
             reset();
             return;
         }
@@ -120,6 +121,10 @@ public final class TnaLineupHelper {
         return inTnaRaid ? activeChallenge : NO_CHALLENGE;
     }
 
+    static boolean supportsScope(WynncraftServerPolicy.Scope scope) {
+        return scope != WynncraftServerPolicy.Scope.BLOCKED;
+    }
+
     static int detectChallengeProgress(Iterable<String> sidebarLines) {
         if (sidebarLines == null) {
             return NO_CHALLENGE;
@@ -145,7 +150,7 @@ public final class TnaLineupHelper {
 
     private static void render(WorldRenderContext context) {
         Minecraft client = Minecraft.getInstance();
-        if (client.player == null || client.level == null) {
+        if (!supportsScope(WynncraftServerPolicy.currentScope()) || client.player == null || client.level == null) {
             return;
         }
 

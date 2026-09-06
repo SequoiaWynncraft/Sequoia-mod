@@ -57,6 +57,26 @@ class WarTerritoryQueueManagerTest {
     }
 
     @Test
+    void preservesServerClockOffsetAcrossTheInstanceTransfer() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        availability.available = true;
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability);
+        Instant serverNow = NOW.plusSeconds(46);
+        manager.tick();
+        gateway.fetchRequests.getFirst().complete(feed(
+                1,
+                serverNow,
+                List.of(queue(7, serverNow.minusSeconds(30), serverNow, List.of()))));
+
+        manager.resetForWorldTransition();
+        availability.playerUuid = null;
+
+        assertEquals("Alekin", manager.enteredTerritoryForLocalPlayer().orElseThrow());
+    }
+
+    @Test
     void recognizesOnlyTheWarSidebarCue() {
         assertTrue(MinecraftWarWorldDetector.hasWarSidebar(List.of("§4War:", "The battle starts soon")));
         assertFalse(MinecraftWarWorldDetector.hasWarSidebar(List.of("Guild Wars", "Challenges: 0/4")));

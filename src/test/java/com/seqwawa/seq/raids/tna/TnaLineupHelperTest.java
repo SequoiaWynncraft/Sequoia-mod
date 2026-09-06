@@ -4,11 +4,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.network.WynncraftServerPolicy;
 import java.util.List;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
 class TnaLineupHelperTest {
+
+    @Test
+    void allowsTransientWynncraftTransfersButBlocksOtherServers() {
+        assertTrue(TnaLineupHelper.supportsScope(WynncraftServerPolicy.Scope.MAIN));
+        assertTrue(TnaLineupHelper.supportsScope(WynncraftServerPolicy.Scope.UNKNOWN));
+        assertFalse(TnaLineupHelper.supportsScope(WynncraftServerPolicy.Scope.BLOCKED));
+    }
 
     @Test
     void recognizesOnlyTheNamelessAnomalyTitle() {

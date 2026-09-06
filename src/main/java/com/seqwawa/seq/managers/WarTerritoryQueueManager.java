@@ -538,9 +538,11 @@ public final class WarTerritoryQueueManager {
     /** Clears live queue state without losing timers needed immediately after an instance teleport. */
     public synchronized void resetForWorldTransition() {
         String playerUuid = playerUuid();
+        long recentServerOffsetMillis = serverOffsetMillis;
         LinkedHashMap<Long, TerritoryQueue> recentTimers = new LinkedHashMap<>(recentQueueSnapshots);
         resetLocked();
         recentPlayerUuid = playerUuid;
+        serverOffsetMillis = recentServerOffsetMillis;
         recentQueueSnapshots.putAll(recentTimers);
         cleanupRecentQueueSnapshots(adjustedServerNow());
     }
