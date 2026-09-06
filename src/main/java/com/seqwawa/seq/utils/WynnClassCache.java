@@ -37,7 +37,7 @@ public class WynnClassCache {
             return null;
 
         var mc = Minecraft.getInstance();
-        if (mc.player == null)
+        if (mc == null || mc.player == null)
             return null;
 
         String localUuid = normalizeUuid(mc.player.getUUID().toString());

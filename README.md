@@ -127,6 +127,9 @@ The navigation sidebars also include Achievements and, for authorized members, W
 
 ## Party finder
 
+Party Finder shows known class icons beside members in expanded cards and as an icon row in collapsed cards.
+Cached cards pick up newly detected local classes and class switches; remote classes use listing data.
+
 `/seq party scan` imports the leader's current Wynn party into the active Sequoia listing. Scanned usernames that
 match verified linked players with Party Finder access become regular listing members, which enables role, kick, and
 leadership actions. Unlinked, ineligible, conflicting, or recently kicked players remain visible as observed

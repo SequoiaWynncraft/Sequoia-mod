@@ -953,12 +953,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         rowX += STATUS_BADGE_W + 8;
 
         float rightX = x + w - CARD_PADDING;
-        float reservedRightWidth = 22;
-        for (int j = 0; j < party.members.size(); j++) {
-            if (getClassIcon(party.members.get(j).className) != null) {
-                reservedRightWidth += CLASS_ICON_SIZE + 4;
-            }
-        }
+        List<AssetManager.Asset> classIcons = party.members.stream()
+                .map(this::getMemberClassIcon)
+                .filter(Objects::nonNull)
+                .toList();
+        float reservedRightWidth = 22 + classIcons.size() * (CLASS_ICON_SIZE + 4);
         reservedRightWidth += 6;
         reservedRightWidth += textWidth(getPartyCardLabel(party), fontName, TYPE_FONT_SIZE);
         float leaderTextMaxX = rightX - reservedRightWidth;
@@ -1000,14 +999,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 UiCanvas.HorizontalAlign.RIGHT);
         rightX -= 22;
 
-        for (int j = party.members.size() - 1; j >= 0; j--) {
-            AssetManager.Asset icon = getClassIcon(party.members.get(j).className);
-            if (icon != null) {
-                float iconX = rightX - CLASS_ICON_SIZE;
-                float iconY = y + (COLLAPSED_ROW_HEIGHT - CLASS_ICON_SIZE) / 2f;
-                drawImage(canvas, icon, iconX, iconY, CLASS_ICON_SIZE, CLASS_ICON_SIZE, 255);
-                rightX -= CLASS_ICON_SIZE + 4;
-            }
+        for (int j = classIcons.size() - 1; j >= 0; j--) {
+            float iconX = rightX - CLASS_ICON_SIZE;
+            float iconY = centerY - CLASS_ICON_SIZE / 2f;
+            drawImage(canvas, classIcons.get(j), iconX, iconY, CLASS_ICON_SIZE, CLASS_ICON_SIZE, 255);
+            rightX -= CLASS_ICON_SIZE + 4;
         }
 
         rightX -= 6;
@@ -1098,7 +1094,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         rowX += nameW + 8;
 
-        AssetManager.Asset icon = getClassIcon(member.className);
+        AssetManager.Asset icon = getMemberClassIcon(member);
         if (icon != null) {
             float iconY = y + (MEMBER_ROW_HEIGHT - CLASS_ICON_SIZE) / 2f;
             drawImage(canvas, icon, rowX, iconY, CLASS_ICON_SIZE, CLASS_ICON_SIZE, 255);
@@ -1120,7 +1116,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     private float memberSuffixWidth(PartyMember member, String fontName) {
         float width = 8;
-        if (getClassIcon(member.className) != null) {
+        if (getMemberClassIcon(member) != null) {
             width += CLASS_ICON_SIZE + 6;
         }
         if (!member.isReserved && !member.isObserved) {
@@ -1845,6 +1841,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     }
 
     // ── Helpers ──
+
+    private AssetManager.Asset getMemberClassIcon(PartyMember member) {
+        AssetManager.Asset icon = getClassIcon(member.classIconKey());
+        return icon != null && icon.getImage() != null ? icon : null;
+    }
 
     private AssetManager.Asset getClassIcon(String className) {
         if (className == null || SeqClient.assetManager == null) return null;

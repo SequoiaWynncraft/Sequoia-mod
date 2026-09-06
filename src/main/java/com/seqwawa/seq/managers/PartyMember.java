@@ -6,6 +6,7 @@ import com.seqwawa.seq.model.ReservedSlot;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.utils.PlayerNameCache;
 import com.seqwawa.seq.utils.WynnClassCache;
+import java.util.function.Function;
 
 /**
  * Adapter class wrapping {@link Member} with public fields
@@ -16,18 +17,15 @@ import com.seqwawa.seq.utils.WynnClassCache;
  * the player serves in the group.
  *
  * <p>
- * {@code className} is the Wynncraft character class asset key
- * (e.g. "archer", "warrior", "mage", "assassin", "shaman") resolved
- * via Wynntils. It is {@code null} when the class has not yet been
- * resolved (async lookup in progress or player offline).
+ * {@link #classIconKey()} exposes the active local class when known, otherwise
+ * the class supplied by the listing. Unknown classes have no icon.
  */
 public class PartyMember {
 
     private static final String RESERVED_LABEL = "<RESERVED>";
 
     public final String name;
-    /** Wynncraft class asset key (e.g. "archer"), or null if not yet resolved. */
-    public final String className;
+    private final String backendClassIcon;
     public final boolean isLeader;
     public final boolean isReserved;
     public final boolean isObserved;
@@ -45,10 +43,7 @@ public class PartyMember {
         // Party role — display-friendly text
         this.role = formatRole(member.role());
 
-        // Wynncraft class icon key from backend class type (fallback to local
-        // resolution)
-        String backendClassIcon = WynnClassCache.toAssetKey(member.classType());
-        this.className = backendClassIcon != null ? backendClassIcon : WynnClassCache.resolve(member.playerUUID());
+        this.backendClassIcon = WynnClassCache.toAssetKey(member.classType());
     }
 
     private PartyMember(ReservedSlot reservedSlot) {
@@ -61,11 +56,22 @@ public class PartyMember {
         this.isObserved = reservedSlot != null && reservedSlot.isObservedWynnMember();
         this.isReserved = !isObserved;
         this.role = formatRole(reservedSlot != null ? reservedSlot.role() : null);
-        this.className = null;
+        this.backendClassIcon = null;
     }
 
     public static PartyMember reserved(ReservedSlot reservedSlot) {
         return new PartyMember(reservedSlot);
+    }
+
+    /** Resolve at display time so cached cards pick up newly detected or changed classes. */
+    public String classIconKey() {
+        return classIconKey(WynnClassCache::resolve);
+    }
+
+    String classIconKey(Function<String, String> localClassResolver) {
+        if (isReserved) return null;
+        String localClass = playerUUID == null ? null : localClassResolver.apply(playerUUID);
+        return localClass != null ? localClass : backendClassIcon;
     }
 
     public String displayName() {
