@@ -11,7 +11,9 @@ class SequoiaScreenTest {
         SequoiaScreen.MenuLayout layout = SequoiaScreen.menuLayout(320, 8);
 
         assertEquals(8, layout.rowCount());
-        assertTrue(layout.titleY() < layout.startY());
+        assertEquals(76.8f, layout.titleFontSize());
+        assertTrue(layout.titleY() - layout.titleFontSize() / 2f >= 12);
+        assertTrue(layout.titleY() + layout.titleFontSize() / 2f + 16 <= layout.startY());
         assertTrue(layout.bottom() <= 308);
     }
 
@@ -26,7 +28,8 @@ class SequoiaScreenTest {
     void authorizedMenuDoesNotOverlapItsTitleInACompactViewport() {
         SequoiaScreen.MenuLayout layout = SequoiaScreen.menuLayout(160, 8);
 
-        assertTrue(layout.startY() >= 34);
+        assertTrue(layout.titleY() - layout.titleFontSize() / 2f >= 12);
+        assertTrue(layout.titleY() + layout.titleFontSize() / 2f + 16 <= layout.startY());
         assertTrue(layout.buttonHeight() >= 10);
         assertTrue(layout.rowStep() >= layout.buttonHeight());
         assertTrue(layout.bottom() <= 148);

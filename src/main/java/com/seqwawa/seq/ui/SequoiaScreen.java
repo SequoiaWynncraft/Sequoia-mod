@@ -20,7 +20,7 @@ public class SequoiaScreen extends Screen {
     private static final float BUTTON_HEIGHT = 24;
     private static final float BUTTON_SPACING = 8;
     private static final float BUTTON_RADIUS = 6;
-    private static final float TITLE_FONT_SIZE = 24;
+    private static final float TITLE_FONT_SIZE = 76.8f;
     private static final float BUTTON_FONT_SIZE = 14;
 
     private float nvgMouseX;
@@ -51,7 +51,7 @@ public class SequoiaScreen extends Screen {
             float titleY = menu.titleY();
             canvas.drawText("Sequoia", screenWidth / 2f, titleY, new UiCanvas.TextStyle(
                     fontName,
-                    TITLE_FONT_SIZE,
+                    menu.titleFontSize(),
                     color(ACCENT_PRIMARY),
                     UiCanvas.HorizontalAlign.CENTER,
                     UiCanvas.VerticalAlign.MIDDLE));
@@ -111,7 +111,14 @@ public class SequoiaScreen extends Screen {
     static MenuLayout menuLayout(float screenHeight, int rowCount) {
         int rows = Math.max(1, rowCount);
         float bottomPadding = 12;
-        float minimumStartY = 34;
+        float topPadding = 12;
+        float titleGap = 16;
+        float minimumButtonHeight = 10;
+        float minimumSpacing = 1;
+        float minimumBlockHeight = minimumButtonHeight * rows + minimumSpacing * (rows - 1);
+        float titleFontSize = Math.min(TITLE_FONT_SIZE, Math.max(24,
+                screenHeight - topPadding - titleGap - minimumBlockHeight - bottomPadding));
+        float minimumStartY = topPadding + titleFontSize + titleGap;
         float availableHeight = Math.max(BUTTON_HEIGHT, screenHeight - minimumStartY - bottomPadding);
         float normalBlockHeight = BUTTON_HEIGHT * rows + BUTTON_SPACING * (rows - 1);
         float buttonHeight;
@@ -120,8 +127,6 @@ public class SequoiaScreen extends Screen {
             buttonHeight = BUTTON_HEIGHT;
             rowStep = BUTTON_HEIGHT + BUTTON_SPACING;
         } else {
-            float minimumButtonHeight = 10;
-            float minimumSpacing = 1;
             buttonHeight = Math.max(
                     minimumButtonHeight,
                     Math.min(BUTTON_HEIGHT, (availableHeight - minimumSpacing * (rows - 1)) / rows));
@@ -133,9 +138,12 @@ public class SequoiaScreen extends Screen {
             rowStep = buttonHeight + spacing;
         }
         float blockHeight = buttonHeight + rowStep * (rows - 1);
-        float startY = Math.max(8, Math.min(screenHeight * .3f + 40, screenHeight - bottomPadding - blockHeight));
-        float titleY = Math.max(18, Math.min(screenHeight * .3f, startY - 28));
-        return new MenuLayout(titleY, startY, rowStep, buttonHeight, rows);
+        float titleOffset = titleFontSize / 2f + titleGap;
+        float startY = Math.max(minimumStartY,
+                Math.min(screenHeight * .3f + titleOffset, screenHeight - bottomPadding - blockHeight));
+        float titleY = Math.max(topPadding + titleFontSize / 2f,
+                Math.min(screenHeight * .3f, startY - titleOffset));
+        return new MenuLayout(titleY, titleFontSize, startY, rowStep, buttonHeight, rows);
     }
 
     @Override
@@ -143,7 +151,7 @@ public class SequoiaScreen extends Screen {
         return false;
     }
 
-    record MenuLayout(float titleY, float startY, float rowStep, float buttonHeight, int rowCount) {
+    record MenuLayout(float titleY, float titleFontSize, float startY, float rowStep, float buttonHeight, int rowCount) {
         float buttonY(int row) {
             return startY + rowStep * row;
         }
