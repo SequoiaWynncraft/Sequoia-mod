@@ -57,7 +57,7 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 
 ## Common commands
 
-- `/seq`: open the main menu with Partyfinder, Connection, Ingredients, Map, and Settings
+- `/seq`: open the main menu with Partyfinder, Settings, Connection, Ingredients, and Map
 - `/seq p`: open the Sequoia party finder UI
 - `/seq achievement`: open your guild raid achievements
 - `/seq map`: open the Sequoia world map
@@ -125,7 +125,7 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 
 </details>
 
-The navigation sidebars also include Achievements and, for authorized members, War Planner. Github is always the last navigation entry.
+The navigation sidebars also include Achievements and, for authorized members, War Planner. The main menu and sidebars start with Partyfinder and Settings, followed by all remaining entries in alphabetical order.
 
 ## Party finder
 

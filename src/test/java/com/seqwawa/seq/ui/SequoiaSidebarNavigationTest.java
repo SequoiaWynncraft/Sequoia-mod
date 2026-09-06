@@ -29,24 +29,23 @@ class SequoiaSidebarNavigationTest {
     @Test
     void warPlannerIsOnlyListedForAuthorizedMembers() {
         assertEquals(
-                List.of(PARTY_FINDER, ACHIEVEMENTS, CONNECTION, INGREDIENTS, MAP, SETTINGS, GITHUB),
+                List.of(PARTY_FINDER, SETTINGS, ACHIEVEMENTS, CONNECTION, GITHUB, INGREDIENTS, MAP),
                 SequoiaSidebarNavigation.destinations(false));
         assertEquals(
-                List.of(PARTY_FINDER, ACHIEVEMENTS, CONNECTION, INGREDIENTS, MAP, SETTINGS, WAR, GITHUB),
+                List.of(PARTY_FINDER, SETTINGS, ACHIEVEMENTS, CONNECTION, GITHUB, INGREDIENTS, MAP, WAR),
                 SequoiaSidebarNavigation.destinations(true));
     }
 
     @Test
-    void partyFinderStaysFirstGithubStaysLastAndModulesStayInAlphabeticalOrder() {
-        Stream.of(false, true).forEach(authorized -> {
-            List<SequoiaSidebarNavigation.Destination> destinations =
-                    SequoiaSidebarNavigation.destinations(authorized);
+    void allMenusStartWithPartyFinderAndSettingsThenUseAlphabeticalOrder() {
+        Stream.of(SequoiaSidebarNavigation.mainMenuDestinations(),
+                SequoiaSidebarNavigation.destinations(false),
+                SequoiaSidebarNavigation.destinations(true)).forEach(destinations -> {
             assertEquals(PARTY_FINDER, destinations.getFirst());
-            assertEquals(GITHUB, destinations.getLast());
+            assertEquals(SETTINGS, destinations.get(1));
 
             List<String> labels = destinations.stream()
-                    .skip(1)
-                    .limit(destinations.size() - 2)
+                    .skip(2)
                     .map(SequoiaSidebarNavigation.Destination::label)
                     .toList();
 
