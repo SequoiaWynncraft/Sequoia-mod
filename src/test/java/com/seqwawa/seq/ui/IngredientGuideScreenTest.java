@@ -37,14 +37,11 @@ class IngredientGuideScreenTest {
     }
 
     @Test
-    void totemCategoryUsesTheTopLeftWithoutReservingHiddenControls() {
-        var layout = IngredientGuideScreen.guideLayout(960, 540, false);
-        assertEquals(SequoiaSidebarNavigation.WIDTH + 8, layout.category().x());
-        assertEquals(6, layout.category().y());
-        assertEquals(0, layout.search().width());
-        assertEquals(0, layout.scope().width());
-        assertEquals(0, layout.refresh().width());
-        assertTrue(layout.list().y() > layout.headerHeight());
+    void categorySwitchKeepsEveryControlAndContentPanelInPlace() {
+        for (float width : new float[] {420, 640, 960, 1280}) {
+            assertEquals(IngredientGuideScreen.guideLayout(width, 540, true),
+                    IngredientGuideScreen.guideLayout(width, 540, false));
+        }
     }
 
     @Test

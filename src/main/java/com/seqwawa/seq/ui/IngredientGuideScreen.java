@@ -168,14 +168,14 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 color(ACCENT_PRIMARY_HOVER), UiCanvas.HorizontalAlign.RIGHT, UiCanvas.VerticalAlign.MIDDLE);
         SequoiaSidebarNavigation.render(canvas, SequoiaSidebarNavigation.Destination.INGREDIENTS, nvgMouseX, nvgMouseY);
         drawGuideCategoryControl(canvas, layout.category().x(), layout.category().y(), layout.category().width());
+        renderHeaderSearch(canvas, layout);
+        Bounds refresh = layout.refresh();
+        boolean hovered = refresh.contains(nvgMouseX, nvgMouseY);
+        canvas.fillRect(refresh.x(), refresh.y(), refresh.width(), refresh.height(),
+                hovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
+        drawText(canvas, "Refresh", refresh.x() + refresh.width() / 2, refresh.y() + refresh.height() / 2,
+                12, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER, UiCanvas.VerticalAlign.MIDDLE);
         if (guideCategory == GuideCategory.INGREDIENTS) {
-            renderHeaderSearch(canvas, layout);
-            Bounds refresh = layout.refresh();
-            boolean hovered = refresh.contains(nvgMouseX, nvgMouseY);
-            canvas.fillRect(refresh.x(), refresh.y(), refresh.width(), refresh.height(),
-                    hovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
-            drawText(canvas, "Refresh", refresh.x() + refresh.width() / 2, refresh.y() + refresh.height() / 2,
-                    12, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER, UiCanvas.VerticalAlign.MIDDLE);
             renderIngredientList(canvas, listX, panelTop, listWidth, panelHeight);
             renderIngredientDetail(canvas, detailX, layout.detail().y(), detailWidth, layout.detail().height());
             coveredBySortMenu = null;
@@ -196,6 +196,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     }
 
     static GuideLayout guideLayout(float width, float height, boolean ingredientControls) {
+        // Reserve every header control in both modes so category switches never move the toolbar.
         float x = SequoiaSidebarNavigation.WIDTH + OUTER_MARGIN;
         float availableWidth = Math.max(0, width - x - OUTER_MARGIN);
         // Reserve the title on the first row, then wrap controls like Party Finder.
@@ -206,7 +207,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         float rowY = 6;
         float rowRight = firstRight;
         Bounds[] controls = new Bounds[3];
-        float[] widths = {88, 208, 64};
+        float[] widths = {176, 208, 64};
         for (int index = 0; index < widths.length; index++) {
             float controlWidth = Math.min(widths[index], availableWidth);
             if (nextX + controlWidth > rowRight) {
@@ -221,14 +222,6 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         Bounds category = controls[1];
         Bounds refresh = controls[2];
         float headerHeight = Math.max(HEADER_HEIGHT, rowY + SEARCH_HEIGHT + OUTER_MARGIN);
-        if (!ingredientControls) {
-            float categoryY = availableWidth >= 334 ? 6 : 30;
-            category = new Bounds(x, categoryY, Math.min(208, availableWidth), SEARCH_HEIGHT);
-            search = new Bounds(x, 6, 0, 0);
-            scope = new Bounds(x, 6, 0, 0);
-            refresh = new Bounds(x, 6, 0, 0);
-            headerHeight = Math.max(HEADER_HEIGHT, categoryY + SEARCH_HEIGHT + OUTER_MARGIN);
-        }
         float top = headerHeight + OUTER_MARGIN;
         top = Math.min(top, Math.max(0, height - OUTER_MARGIN));
         float availableHeight = Math.max(0, height - top - OUTER_MARGIN);
@@ -456,22 +449,31 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     }
 
     private void renderHeaderSearch(UiCanvas canvas, GuideLayout layout) {
+        boolean enabled = guideCategory == GuideCategory.INGREDIENTS;
         Bounds search = layout.search();
         canvas.fillRect(search.x(), search.y(), search.width(), search.height(),
-                searchFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
-        if (searchFocused) canvas.strokeRect(search.x(), search.y(), search.width(), search.height(), 1, color(CONTROL_BORDER));
+                enabled && searchFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+        if (enabled && searchFocused) canvas.strokeRect(search.x(), search.y(), search.width(), search.height(), 1, color(CONTROL_BORDER));
         String value = searchQuery.isEmpty() ? "Search..." : searchQuery;
         String visible = ellipsize(value, Math.max(0, search.width() - 12), 12);
-        if (searchQuerySelected && !searchQuery.isEmpty()) {
+        if (enabled && searchQuerySelected && !searchQuery.isEmpty()) {
             float selectionWidth = UiRenderer.measureText(visible, SeqClient.getFontManager().getSelectedFont(), 12).width();
             canvas.fillRect(search.x() + 4, search.y() + 2, Math.max(0, Math.min(selectionWidth + 4, search.width() - 8)),
                     search.height() - 4, color(ACCENT_PRIMARY));
         }
         drawText(canvas, visible, search.x() + 6, search.y() + search.height() / 2, 12,
-                searchQuery.isEmpty() ? color(TEXT_DISABLED) : color(TEXT_PRIMARY),
+                !enabled || searchQuery.isEmpty() ? color(TEXT_DISABLED) : color(TEXT_PRIMARY),
                 UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
         Bounds scope = layout.scope();
-        drawButton(canvas, scope.x(), scope.y(), scope.width(), scope.height(), searchScope.label());
+        String label = "Search for: " + searchScope.label();
+        if (enabled) {
+            drawButton(canvas, scope.x(), scope.y(), scope.width(), scope.height(), label);
+        } else {
+            canvas.fillRect(scope.x(), scope.y(), scope.width(), scope.height(), color(CONTROL_INPUT));
+            canvas.strokeRect(scope.x(), scope.y(), scope.width(), scope.height(), 1, color(ACCENT_DIVIDER));
+            drawText(canvas, label, scope.x() + scope.width() / 2, scope.y() + scope.height() / 2,
+                    12, color(TEXT_DISABLED), UiCanvas.HorizontalAlign.CENTER, UiCanvas.VerticalAlign.MIDDLE);
+        }
     }
 
     private void renderIngredientList(UiCanvas canvas, float x, float y, float width, float height) {
@@ -1029,8 +1031,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             }
             return true;
         }
-        if (guideCategory == GuideCategory.INGREDIENTS
-                && guide.refresh().contains(mx, my)) {
+        if (guide.refresh().contains(mx, my)) {
             openSortDropdown = null;
             manager.requestRefresh(true);
             return true;

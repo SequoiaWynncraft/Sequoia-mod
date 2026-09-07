@@ -224,11 +224,15 @@ public final class WorldMapSettings {
     }
 
     public synchronized boolean sidebarPanelExpanded(WorldMapSidebarPanel panel) {
-        return sidebarPanels.getOrDefault(panel, true);
+        return panel == WorldMapSidebarPanel.TOTEM_SOLVER
+                ? gatheringTotemSolverEnabled
+                : sidebarPanels.getOrDefault(panel, true);
     }
 
     public synchronized void setSidebarPanelExpanded(WorldMapSidebarPanel panel, boolean expanded) {
-        if (panel != null) {
+        if (panel == WorldMapSidebarPanel.TOTEM_SOLVER) {
+            gatheringTotemSolverEnabled = expanded;
+        } else if (panel != null) {
             sidebarPanels.put(panel, expanded);
         }
     }

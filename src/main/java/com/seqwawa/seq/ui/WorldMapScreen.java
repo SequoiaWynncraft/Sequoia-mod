@@ -181,6 +181,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private GuildTerritory hoveredTerritory;
     private GuildTerritory selectedTerritory;
     private boolean showClusters = true;
+    private static final List<String> TOTEM_LAYER_LABELS = List.of(
+            "Placement areas", "Player range (50)", "Node reach (52)", "Covered nodes", "Other placements");
+    private static final float TOTEM_LAYER_GAP = 4;
+
     private boolean gatheringTotemSolverEnabled;
     private boolean showGatheringTotemHulls = true;
     private boolean showGatheringTotemPlayerRadius = true;
@@ -1279,7 +1283,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 canvas,
                 sidebarY(layout.totemPanelY()),
                 "Totem Solver",
-                gatheringTotemPanelSummary(),
+                gatheringTotemSolverEnabled ? "On" : "Off",
                 WorldMapSidebarPanel.TOTEM_SOLVER);
         if (panelExpanded(WorldMapSidebarPanel.TOTEM_SOLVER)) {
             renderGatheringTotemControls(canvas, totemSolverLayout(layout.totemPanelY()));
@@ -2392,7 +2396,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 y,
                 SIDEBAR_WIDTH - PADDING * 2,
                 PANEL_HEADER_HEIGHT,
-                hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL_INACTIVE));
+                hovered ? color(MAP_CONTROL_HOVER)
+                        : panel == WorldMapSidebarPanel.TOTEM_SOLVER && expanded
+                                ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL_INACTIVE));
         canvas.strokeRect(PADDING,
                 y,
                 SIDEBAR_WIDTH - PADDING * 2,
@@ -2432,6 +2438,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void togglePanel(WorldMapSidebarPanel panel) {
+        if (panel == WorldMapSidebarPanel.TOTEM_SOLVER) {
+            gatheringTotemSolverEnabled = !gatheringTotemSolverEnabled;
+            mapSettings.setGatheringTotemSolverEnabled(gatheringTotemSolverEnabled);
+            resetGatheringTotemSolve();
+            return;
+        }
         boolean expanded = !panelExpanded(panel);
         mapSettings.setSidebarPanelExpanded(panel, expanded);
         sidebarScroll = 0;
@@ -2491,14 +2503,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderGatheringTotemControls(UiCanvas canvas, TotemSolverLayout layout) {
-        drawButton(
-                canvas,
-                PADDING,
-                sidebarY(layout.enabledY()),
-                SIDEBAR_WIDTH - PADDING * 2,
-                BUTTON_HEIGHT,
-                gatheringTotemSolverEnabled ? "Totem Solver On" : "Totem Solver Off",
-                gatheringTotemSolverEnabled);
         drawGatheringTotemTargetControl(canvas, sidebarY(layout.targetY()));
         drawFittedText(
                 canvas,
@@ -2593,32 +2597,30 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderGatheringTotemLayerButtons(UiCanvas canvas, float startY) {
-        String[] labels = {"Hulls", "50 Range", "+2 Reach", "Nodes", "Other Spots"};
-        float gap = 4;
-        float width = (SIDEBAR_WIDTH - PADDING * 2 - gap) / 2f;
-        for (int index = 0; index < labels.length; index++) {
-            int column = index % 2;
-            int row = index / 2;
-            drawButton(
-                    canvas,
-                    PADDING + column * (width + gap),
-                    startY + row * (TOGGLE_HEIGHT + gap),
-                    width,
-                    TOGGLE_HEIGHT,
-                    labels[index],
-                    gatheringTotemLayerEnabled(index));
+        float width = SIDEBAR_WIDTH - PADDING * 2;
+        for (int index = 0; index < TOTEM_LAYER_LABELS.size(); index++) {
+            float y = startY + index * (TOGGLE_HEIGHT + TOTEM_LAYER_GAP);
+            boolean enabled = gatheringTotemLayerEnabled(index);
+            boolean hovered = isHovered(nvgMouseX, nvgMouseY, PADDING, y, width, TOGGLE_HEIGHT);
+            canvas.fillRect(PADDING, y, width, TOGGLE_HEIGHT,
+                    hovered ? color(MAP_CONTROL_HOVER) : enabled ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL));
+            canvas.strokeRect(PADDING, y, width, TOGGLE_HEIGHT, 1, color(MAP_BORDER));
+            drawFittedText(canvas, PADDING + 8, y + TOGGLE_HEIGHT / 2, 11, TOTEM_LAYER_LABELS.get(index),
+                    color(MAP_TEXT), width - 42, TextAlignment.LEFT);
+            drawText(canvas, PADDING + width - 8, y + TOGGLE_HEIGHT / 2, 10,
+                    enabled ? "On" : "Off", color(MAP_SUBTEXT), TextAlignment.RIGHT);
         }
     }
 
     private void renderGatheringTotemLegend(UiCanvas canvas, float y) {
         drawSquareMarker(canvas, PADDING + 5, y, 3.5f, color(MAP_TOTEM));
-        drawText(canvas, PADDING + 14, y, 9, "amber hull = valid totem positions", color(MAP_SUBTEXT), TextAlignment.LEFT);
+        drawText(canvas, PADDING + 14, y, 9, "filled area = valid positions", color(MAP_SUBTEXT), TextAlignment.LEFT);
         drawCircleOutline(canvas, PADDING + 5, y + 13, 4, 1.5f, color(MAP_TOTEM_RANGE));
-        drawText(canvas, PADDING + 14, y + 13, 9, "solid cyan = 50 player range", color(MAP_SUBTEXT), TextAlignment.LEFT);
+        drawText(canvas, PADDING + 14, y + 13, 9, "solid ring = player range (50)", color(MAP_SUBTEXT), TextAlignment.LEFT);
         drawText(canvas, PADDING + 5, y + 26, 10, "--", color(MAP_TOTEM_REACH), TextAlignment.CENTER);
-        drawText(canvas, PADDING + 14, y + 26, 9, "dashed cyan = 52 node reach", color(MAP_SUBTEXT), TextAlignment.LEFT);
+        drawText(canvas, PADDING + 14, y + 26, 9, "dashed ring = node reach (52)", color(MAP_SUBTEXT), TextAlignment.LEFT);
         drawTotemMarker(canvas, PADDING + 5, y + 39, 8, color(MAP_PLAYER), true);
-        drawText(canvas, PADDING + 14, y + 39, 9, "bright marker = best integer spot", color(MAP_SUBTEXT), TextAlignment.LEFT);
+        drawText(canvas, PADDING + 14, y + 39, 9, "bright marker = best spot", color(MAP_SUBTEXT), TextAlignment.LEFT);
     }
 
     private void renderGatheringTotemResults(UiCanvas canvas, float startY) {
@@ -2678,22 +2680,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                     SIDEBAR_WIDTH - PADDING * 2 - 14,
                     TextAlignment.LEFT);
         }
-    }
-
-    private String gatheringTotemPanelSummary() {
-        if (!gatheringTotemSolverEnabled) {
-            return "Off";
-        }
-        if (gatheringTotemSearchTarget == GatheringTotemSearchTarget.SELECTED_CLUSTER && selectedCluster == null) {
-            return "No cluster";
-        }
-        if (gatheringTotemOptimizing()) {
-            return "Working";
-        }
-        if (gatheringTotemPlacement == null) {
-            return gatheringTotemSolveError == null ? "No results" : "Failed";
-        }
-        return gatheringTotemPlacement.nodeCount() + " x" + gatheringTotemPlacements.size();
     }
 
     private String gatheringTotemStatus() {
@@ -4153,19 +4139,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return true;
         }
         TotemSolverLayout totemLayout = totemSolverLayout(layout.totemPanelY());
-        if (totemLayout.enabledY() >= 0) {
-            if (isHovered(
-                    mx,
-                    sidebarMy,
-                    PADDING,
-                    totemLayout.enabledY(),
-                    SIDEBAR_WIDTH - PADDING * 2,
-                    BUTTON_HEIGHT)) {
-                gatheringTotemSolverEnabled = !gatheringTotemSolverEnabled;
-                mapSettings.setGatheringTotemSolverEnabled(gatheringTotemSolverEnabled);
-                resetGatheringTotemSolve();
-                return true;
-            }
+        if (totemLayout.targetY() >= 0) {
             if (isHovered(
                     mx,
                     sidebarMy,
@@ -4194,17 +4168,13 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 return true;
             }
 
-            float layerGap = 4;
-            float layerWidth = (SIDEBAR_WIDTH - PADDING * 2 - layerGap) / 2f;
-            for (int index = 0; index < 5; index++) {
-                int column = index % 2;
-                int row = index / 2;
+            for (int index = 0; index < TOTEM_LAYER_LABELS.size(); index++) {
                 if (isHovered(
                         mx,
                         sidebarMy,
-                        PADDING + column * (layerWidth + layerGap),
-                        totemLayout.layerStartY() + row * (TOGGLE_HEIGHT + layerGap),
-                        layerWidth,
+                        PADDING,
+                        totemLayout.layerStartY() + index * (TOGGLE_HEIGHT + TOTEM_LAYER_GAP),
+                        SIDEBAR_WIDTH - PADDING * 2,
                         TOGGLE_HEIGHT)) {
                     toggleGatheringTotemLayer(index);
                     return true;
@@ -5436,11 +5406,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private TotemSolverLayout totemSolverLayout(float panelY) {
         float y = panelY + PANEL_HEADER_HEIGHT;
         if (!panelExpanded(WorldMapSidebarPanel.TOTEM_SOLVER)) {
-            return new TotemSolverLayout(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, y);
+            return new TotemSolverLayout(-1, -1, -1, -1, -1, -1, -1, -1, -1, y);
         }
         y += 8;
-        float enabledY = y;
-        y += BUTTON_HEIGHT + 6;
         float targetY = y;
         y += BUTTON_HEIGHT + 8;
         float filterSummaryY = y + 5;
@@ -5450,7 +5418,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float layerLabelY = y + 5;
         y += 14;
         float layerStartY = y;
-        y += 3 * (TOGGLE_HEIGHT + 4);
+        y += TOTEM_LAYER_LABELS.size() * (TOGGLE_HEIGHT + TOTEM_LAYER_GAP);
         float legendY = y + 2;
         y += 52;
         float resultsLabelY = y + 5;
@@ -5460,7 +5428,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float actionsY = y;
         y += BUTTON_HEIGHT + 8;
         return new TotemSolverLayout(
-                enabledY,
                 targetY,
                 filterSummaryY,
                 refreshY,
@@ -5566,7 +5533,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float endY) {}
 
     private record TotemSolverLayout(
-            float enabledY,
             float targetY,
             float filterSummaryY,
             float refreshY,
