@@ -37,6 +37,20 @@ class IngredientGuideScreenTest {
     }
 
     @Test
+    void searchAndScopeStayJoinedWhenToolbarWraps() {
+        for (float width : new float[] {420, 640, 960, 1280}) {
+            var layout = IngredientGuideScreen.guideLayout(width, 540);
+            assertEquals(layout.search().x() + layout.search().width(), layout.scope().x());
+            assertEquals(layout.search().y(), layout.scope().y());
+            assertEquals(layout.search().height(), layout.scope().height());
+            var menu = IngredientGuideScreen.searchScopeMenuBounds(layout);
+            assertEquals(layout.scope().x(), menu.x());
+            assertEquals(layout.scope().y() + layout.scope().height(), menu.y());
+            assertTrue(menu.x() + menu.width() <= width - 8);
+        }
+    }
+
+    @Test
     void categorySwitchKeepsEveryControlAndContentPanelInPlace() {
         for (float width : new float[] {420, 640, 960, 1280}) {
             assertEquals(IngredientGuideScreen.guideLayout(width, 540, true),

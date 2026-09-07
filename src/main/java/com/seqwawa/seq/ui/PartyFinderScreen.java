@@ -1805,12 +1805,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             }
 
             boolean chipHovered = isHovered(uiMouseX, uiMouseY, curX, curY, chipW, chipH);
-            canvas.fillRoundedRect(
+            canvas.fillRect(
                     curX,
                     curY,
                     chipW,
                     chipH,
-                    4,
                     chipHovered ? color(CONTROL_INPUT_HOVER) : color(ACCENT_DIVIDER));
 
             drawText(

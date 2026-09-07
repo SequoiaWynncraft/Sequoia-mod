@@ -29,23 +29,25 @@ class SequoiaSidebarNavigationTest {
     @Test
     void warPlannerIsOnlyListedForAuthorizedMembers() {
         assertEquals(
-                List.of(PARTY_FINDER, SETTINGS, ACHIEVEMENTS, CONNECTION, GITHUB, INGREDIENTS, MAP),
+                List.of(PARTY_FINDER, SETTINGS, ACHIEVEMENTS, CONNECTION, INGREDIENTS, MAP, GITHUB),
                 SequoiaSidebarNavigation.destinations(false));
         assertEquals(
-                List.of(PARTY_FINDER, SETTINGS, ACHIEVEMENTS, CONNECTION, GITHUB, INGREDIENTS, MAP, WAR),
+                List.of(PARTY_FINDER, SETTINGS, ACHIEVEMENTS, CONNECTION, INGREDIENTS, MAP, WAR, GITHUB),
                 SequoiaSidebarNavigation.destinations(true));
     }
 
     @Test
-    void allMenusStartWithPartyFinderAndSettingsThenUseAlphabeticalOrder() {
+    void allMenusStartWithPartyFinderAndSettingsThenUseAlphabeticalOrderWithGithubLast() {
         Stream.of(SequoiaSidebarNavigation.mainMenuDestinations(),
                 SequoiaSidebarNavigation.destinations(false),
                 SequoiaSidebarNavigation.destinations(true)).forEach(destinations -> {
             assertEquals(PARTY_FINDER, destinations.getFirst());
             assertEquals(SETTINGS, destinations.get(1));
+            if (destinations.contains(GITHUB)) assertEquals(GITHUB, destinations.getLast());
 
             List<String> labels = destinations.stream()
                     .skip(2)
+                    .filter(destination -> destination != GITHUB)
                     .map(SequoiaSidebarNavigation.Destination::label)
                     .toList();
 

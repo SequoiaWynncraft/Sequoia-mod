@@ -22,18 +22,18 @@ final class SequoiaSidebarNavigation {
             Destination.SETTINGS,
             Destination.ACHIEVEMENTS,
             Destination.CONNECTION,
-            Destination.GITHUB,
             Destination.INGREDIENTS,
-            Destination.MAP);
+            Destination.MAP,
+            Destination.GITHUB);
     private static final List<Destination> WAR_DESTINATIONS = List.of(
             Destination.PARTY_FINDER,
             Destination.SETTINGS,
             Destination.ACHIEVEMENTS,
             Destination.CONNECTION,
-            Destination.GITHUB,
             Destination.INGREDIENTS,
             Destination.MAP,
-            Destination.WAR);
+            Destination.WAR,
+            Destination.GITHUB);
 
     private SequoiaSidebarNavigation() {}
 

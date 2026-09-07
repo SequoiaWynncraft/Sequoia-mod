@@ -6,6 +6,7 @@ import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY_DARK;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY_HOVER;
 import static com.seqwawa.seq.ui.theme.UiColor.TEXT_DISABLED;
+import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_BODY_OPAQUE;
 import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_CONTENT;
 import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_CONTENT_FOCUSED;
 import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_BORDER;
@@ -102,6 +103,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private boolean searchFocused;
     private boolean searchQuerySelected;
     private SearchScope searchScope;
+    private boolean searchScopeDropdownOpen;
     private SortKey primarySortKey;
     private SortDirection primarySortDirection;
     private SortKey secondarySortKey;
@@ -185,6 +187,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             renderFarmSpotList(canvas, listX, panelTop, listWidth, panelHeight);
             renderFarmSpotDetail(canvas, detailX, layout.detail().y(), detailWidth, layout.detail().height());
         }
+        renderSearchScopeDropdown(canvas, layout);
     }
 
     private GuideLayout currentLayout(float width, float height) {
@@ -201,13 +204,16 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         float availableWidth = Math.max(0, width - x - OUTER_MARGIN);
         // Reserve the title on the first row, then wrap controls like Party Finder.
         float firstRight = Math.max(x, width - OUTER_MARGIN - 126);
-        float searchWidth = SequoiaUiStyle.searchWidth(Math.max(0, firstRight - x - 6));
-        Bounds search = new Bounds(x, 6, searchWidth, SEARCH_HEIGHT);
-        float nextX = x + searchWidth + 6;
-        float rowY = 6;
-        float rowRight = firstRight;
-        Bounds[] controls = new Bounds[3];
-        float[] widths = {176, 208, 64};
+        float combinedWidth = Math.min(344, availableWidth);
+        float rowY = x + combinedWidth <= firstRight ? 6 : 6 + SEARCH_HEIGHT + 6;
+        float rowRight = rowY == 6 ? firstRight : width - OUTER_MARGIN;
+        float scopeWidth = Math.min(108, combinedWidth / 2);
+        float searchWidth = combinedWidth - scopeWidth;
+        Bounds search = new Bounds(x, rowY, searchWidth, SEARCH_HEIGHT);
+        Bounds scope = new Bounds(x + searchWidth, rowY, scopeWidth, SEARCH_HEIGHT);
+        float nextX = x + combinedWidth + 6;
+        Bounds[] controls = new Bounds[2];
+        float[] widths = {208, 64};
         for (int index = 0; index < widths.length; index++) {
             float controlWidth = Math.min(widths[index], availableWidth);
             if (nextX + controlWidth > rowRight) {
@@ -218,9 +224,8 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             controls[index] = new Bounds(nextX, rowY, controlWidth, SEARCH_HEIGHT);
             nextX += controlWidth + 6;
         }
-        Bounds scope = controls[0];
-        Bounds category = controls[1];
-        Bounds refresh = controls[2];
+        Bounds category = controls[0];
+        Bounds refresh = controls[1];
         float headerHeight = Math.max(HEADER_HEIGHT, rowY + SEARCH_HEIGHT + OUTER_MARGIN);
         float top = headerHeight + OUTER_MARGIN;
         top = Math.min(top, Math.max(0, height - OUTER_MARGIN));
@@ -451,10 +456,17 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private void renderHeaderSearch(UiCanvas canvas, GuideLayout layout) {
         boolean enabled = guideCategory == GuideCategory.INGREDIENTS;
         Bounds search = layout.search();
-        canvas.fillRect(search.x(), search.y(), search.width(), search.height(),
-                enabled && searchFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
-        if (enabled && searchFocused) canvas.strokeRect(search.x(), search.y(), search.width(), search.height(), 1, color(CONTROL_BORDER));
-        String value = searchQuery.isEmpty() ? "Search..." : searchQuery;
+        Bounds scope = layout.scope();
+        float totalWidth = search.width() + scope.width();
+        boolean active = enabled && (searchFocused || searchScopeDropdownOpen);
+        canvas.fillRect(search.x(), search.y(), totalWidth, search.height(), color(CONTROL_INPUT));
+        if (enabled && (searchScopeDropdownOpen || scope.contains(nvgMouseX, nvgMouseY))) {
+            canvas.fillRect(scope.x(), scope.y(), scope.width(), scope.height(), color(CONTROL_INPUT_HOVER));
+        }
+        canvas.strokeRect(search.x(), search.y(), totalWidth, search.height(), 1,
+                active ? color(CONTROL_BORDER) : color(ACCENT_DIVIDER));
+        canvas.fillRect(scope.x(), scope.y() + 3, 1, scope.height() - 6, color(ACCENT_DIVIDER));
+        String value = searchQuery.isEmpty() ? "Search for..." : searchQuery;
         String visible = ellipsize(value, Math.max(0, search.width() - 12), 12);
         if (enabled && searchQuerySelected && !searchQuery.isEmpty()) {
             float selectionWidth = UiRenderer.measureText(visible, SeqClient.getFontManager().getSelectedFont(), 12).width();
@@ -464,16 +476,60 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         drawText(canvas, visible, search.x() + 6, search.y() + search.height() / 2, 12,
                 !enabled || searchQuery.isEmpty() ? color(TEXT_DISABLED) : color(TEXT_PRIMARY),
                 UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+        drawText(canvas, ellipsize(searchScope.label(), Math.max(0, scope.width() - 24), 12),
+                scope.x() + 7, scope.y() + scope.height() / 2, 12,
+                enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
+        drawText(canvas, searchScopeDropdownOpen ? "^" : "v", scope.x() + scope.width() - 7,
+                scope.y() + scope.height() / 2, 10, enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                UiCanvas.HorizontalAlign.RIGHT, UiCanvas.VerticalAlign.MIDDLE);
+    }
+
+    static Bounds searchScopeMenuBounds(GuideLayout layout) {
         Bounds scope = layout.scope();
-        String label = "Search for: " + searchScope.label();
-        if (enabled) {
-            drawButton(canvas, scope.x(), scope.y(), scope.width(), scope.height(), label);
-        } else {
-            canvas.fillRect(scope.x(), scope.y(), scope.width(), scope.height(), color(CONTROL_INPUT));
-            canvas.strokeRect(scope.x(), scope.y(), scope.width(), scope.height(), 1, color(ACCENT_DIVIDER));
-            drawText(canvas, label, scope.x() + scope.width() / 2, scope.y() + scope.height() / 2,
-                    12, color(TEXT_DISABLED), UiCanvas.HorizontalAlign.CENTER, UiCanvas.VerticalAlign.MIDDLE);
+        return new Bounds(scope.x(), scope.y() + scope.height(), scope.width(),
+                SearchScope.values().length * SORT_OPTION_HEIGHT);
+    }
+
+    private void renderSearchScopeDropdown(UiCanvas canvas, GuideLayout layout) {
+        if (!searchScopeDropdownOpen || guideCategory != GuideCategory.INGREDIENTS) return;
+        Bounds menu = searchScopeMenuBounds(layout);
+        canvas.fillRect(menu.x(), menu.y(), menu.width(), menu.height(), color(BACKGROUND_BODY_OPAQUE));
+        itemIconOverlays.removeIf(icon -> icon.x() < menu.x() + menu.width() && icon.x() + icon.size() > menu.x()
+                && icon.y() < menu.y() + menu.height() && icon.y() + icon.size() > menu.y());
+        for (SearchScope option : SearchScope.values()) {
+            float y = menu.y() + option.ordinal() * SORT_OPTION_HEIGHT;
+            boolean selected = option == searchScope;
+            boolean hovered = contains(nvgMouseX, nvgMouseY, menu.x(), y, menu.width(), SORT_OPTION_HEIGHT);
+            canvas.fillRect(menu.x(), y, menu.width(), SORT_OPTION_HEIGHT,
+                    selected ? color(BACKGROUND_CONTENT_FOCUSED)
+                            : hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+            drawText(canvas, option.label(), menu.x() + 7, y + SORT_OPTION_HEIGHT / 2, 12,
+                    selected ? color(ACCENT_PRIMARY_HOVER) : color(TEXT_SECONDARY),
+                    UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
         }
+        canvas.strokeRect(menu.x(), menu.y(), menu.width(), menu.height(), 1, color(ACCENT_DIVIDER));
+    }
+
+    private boolean handleSearchScopeClick(float mouseX, float mouseY, GuideLayout layout) {
+        if (guideCategory != GuideCategory.INGREDIENTS) return false;
+        if (layout.scope().contains(mouseX, mouseY)) {
+            searchScopeDropdownOpen = !searchScopeDropdownOpen;
+            searchFocused = false;
+            searchQuerySelected = false;
+            openSortDropdown = null;
+            return true;
+        }
+        if (!searchScopeDropdownOpen) return false;
+        Bounds menu = searchScopeMenuBounds(layout);
+        searchScopeDropdownOpen = false;
+        if (!menu.contains(mouseX, mouseY)) return false;
+        searchScope = SearchScope.values()[(int) ((mouseY - menu.y()) / SORT_OPTION_HEIGHT)];
+        sessionSettings.setSearchScope(searchScope);
+        resortVisibleIngredients();
+        searchFocused = true;
+        searchQuerySelected = false;
+        return true;
     }
 
     private void renderIngredientList(UiCanvas canvas, float x, float y, float width, float height) {
@@ -1016,12 +1072,14 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         float detailX = guide.detail().x();
         float detailWidth = guide.detail().width();
 
+        if (handleSearchScopeClick(mx, my, guide)) return true;
         if (guide.category().contains(mx, my)) {
             GuideCategory nextCategory = mx < guide.category().x() + guide.category().width() / 2
                     ? GuideCategory.INGREDIENTS
                     : GuideCategory.TOTEM_SPOTS;
             if (nextCategory != guideCategory) {
                 guideCategory = nextCategory;
+                searchScopeDropdownOpen = false;
                 searchFocused = false;
                 searchQuerySelected = false;
                 listScroll = 0;
@@ -1078,13 +1136,6 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             return super.mouseClicked(click, outsideScreen);
         }
 
-        if (guide.scope().contains(mx, my)) {
-            openSortDropdown = null;
-            searchScope = searchScope.next();
-            sessionSettings.setSearchScope(searchScope);
-            resortVisibleIngredients();
-            return true;
-        }
         if (guide.search().contains(mx, my)) {
             openSortDropdown = null;
             searchFocused = true;
@@ -1274,6 +1325,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (searchScopeDropdownOpen) return true;
         float mx = MinecraftUiRenderer.mouseX(mouseX);
         float my = MinecraftUiRenderer.mouseY(mouseY);
         GuideLayout guide = currentLayout(MinecraftUiRenderer.screenWidth(), MinecraftUiRenderer.screenHeight());
@@ -1290,6 +1342,10 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
         int key = keyEvent.key();
+        if (key == GLFW.GLFW_KEY_ESCAPE && searchScopeDropdownOpen) {
+            searchScopeDropdownOpen = false;
+            return true;
+        }
         if (key == GLFW.GLFW_KEY_ESCAPE && openSortDropdown != null) {
             openSortDropdown = null;
             return true;
@@ -1330,6 +1386,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
             return true;
         }
         if (guideCategory == GuideCategory.INGREDIENTS && key == GLFW.GLFW_KEY_SLASH) {
+            searchScopeDropdownOpen = false;
             searchFocused = true;
             searchQuerySelected = false;
             return true;
