@@ -25,6 +25,7 @@ import com.seqwawa.seq.map.GuildTerritoryService;
 import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapCalibration;
 import com.seqwawa.seq.map.MapViewport;
+import com.seqwawa.seq.map.MapPlayerHeadRenderer;
 import com.seqwawa.seq.map.WorldMapBackgroundRenderer;
 import com.seqwawa.seq.model.war.WarPlannerDrafts;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
@@ -67,6 +68,7 @@ public final class WarTerritoryPickerScreen extends Screen {
     private final GuildTerritoryService territoryService = GuildTerritoryService.getInstance();
     private final GatheringMapImageService mapImageService = GatheringMapImageService.getInstance();
     private final WorldMapBackgroundRenderer mapBackground = new WorldMapBackgroundRenderer(mapImageService);
+    private final MapPlayerHeadRenderer playerHeads = new MapPlayerHeadRenderer();
 
     private GuildTerritoryIndex territoryIndex;
     private WarZoneSelection selection;
@@ -200,7 +202,7 @@ public final class WarTerritoryPickerScreen extends Screen {
     }
 
     private void renderMap(UiCanvas canvas, MapViewport viewport) {
-        mapBackground.render(canvas, viewport, WarPlannerScreen.backgroundOpacityPercent() / 100f);
+        mapBackground.render(canvas, viewport);
         canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
 
         TerritoryAccess access = territoryAccess();
@@ -236,21 +238,22 @@ public final class WarTerritoryPickerScreen extends Screen {
             boolean hovered = territory.equals(hoveredTerritory);
             Zone unavailableOwner = access.unavailableOwner(territory.name());
             if (unavailableOwner != null) {
-                canvas.fillRect(x, y, w, h, alpha(color(BACKGROUND_BODY_OPAQUE), 135));
+                canvas.fillRect(x, y, w, h, color(BACKGROUND_BODY_OPAQUE));
             }
             if (hovered) {
-                canvas.fillRect(x, y, w, h, alpha(color(MAP_TERRITORY), 42));
+                canvas.fillRect(x, y, w, h, color(MAP_TERRITORY));
             }
             if (unavailableOwner != null) {
                 canvas.strokeRect(x, y, w, h, hovered ? 1.7f : 1f,
-                        alpha(color(CONTROL_WARNING), hovered ? 245 : 170));
+                        color(CONTROL_WARNING));
             } else if (selected) {
-                canvas.strokeRect(x - 1, y - 1, w + 2, h + 2, 2.2f, alpha(selectedColor, 255));
+                canvas.strokeRect(x - 1, y - 1, w + 2, h + 2, 2.2f, selectedColor);
             } else {
                 canvas.strokeRect(x, y, w, h, hovered ? 1.7f : .7f,
-                        alpha(color(MAP_TERRITORY), hovered ? 245 : 100));
+                        color(MAP_TERRITORY));
             }
         }
+        playerHeads.renderLocalPlayer(canvas, viewport);
         canvas.resetScissor();
         if (hoveredTerritory != null) {
             WarPlannerSnapshot.TerritoryDetails detail = details.get(hoveredTerritory.name());
@@ -295,7 +298,7 @@ public final class WarTerritoryPickerScreen extends Screen {
                     layout.colorWidget().y(),
                     layout.colorWidget().width(),
                     layout.colorWidget().height(),
-                    alpha(color(ACCENT_DISABLED), 95));
+                    color(ACCENT_DISABLED));
         }
         label(canvas, "Party assignments · click to toggle", layout.teamsLabelY());
         WarPlannerSnapshot snapshot = plannerSnapshot();
@@ -642,7 +645,10 @@ public final class WarTerritoryPickerScreen extends Screen {
 
     @Override
     public void removed() {
-        UiRenderer.renderResource(canvas -> mapBackground.close());
+        UiRenderer.renderResource(canvas -> {
+            mapBackground.close();
+            playerHeads.close();
+        });
         super.removed();
     }
 
@@ -741,8 +747,8 @@ public final class WarTerritoryPickerScreen extends Screen {
                 float startY = centerScreenZ(viewport, territory);
                 float endX = centerScreenX(viewport, linked);
                 float endY = centerScreenZ(viewport, linked);
-                canvas.strokeLine(startX, startY, endX, endY, 2.2f, alpha(color(BACKGROUND_BODY_OPAQUE), 220));
-                canvas.strokeLine(startX, startY, endX, endY, 1.05f, alpha(color(MAP_TERRITORY), 245));
+                canvas.strokeLine(startX, startY, endX, endY, 2.2f, color(BACKGROUND_BODY_OPAQUE));
+                canvas.strokeLine(startX, startY, endX, endY, 1.05f, color(MAP_TERRITORY));
             }
         }
     }
@@ -754,7 +760,7 @@ public final class WarTerritoryPickerScreen extends Screen {
         float sliceWidth = width / colors.size();
         for (int index = 0; index < colors.size(); index++) {
             canvas.fillRect(x + index * sliceWidth, y, index == colors.size() - 1 ? width - index * sliceWidth : sliceWidth,
-                    height, alpha(colors.get(index), 115));
+                    height, colors.get(index));
         }
     }
 
@@ -891,10 +897,6 @@ public final class WarTerritoryPickerScreen extends Screen {
         } catch (NumberFormatException ignored) {
             return fallback;
         }
-    }
-
-    private static Color alpha(Color source, int alpha) {
-        return new Color(source.getRed(), source.getGreen(), source.getBlue(), alpha);
     }
 
     private static Color brighten(Color source, int amount) {

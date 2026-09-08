@@ -8,6 +8,24 @@ import org.junit.jupiter.api.Test;
 
 class WorldMapSettingsTest {
     @Test
+    void solverEnabledAndPanelExpandedAreTheSameState() {
+        var settings = WorldMapSettings.getInstance();
+        boolean original = settings.gatheringTotemSolverEnabled();
+        try {
+            settings.setGatheringTotemSolverEnabled(false);
+            assertFalse(settings.sidebarPanelExpanded(WorldMapSidebarPanel.TOTEM_SOLVER));
+            settings.setGatheringTotemSolverEnabled(true);
+            assertTrue(settings.sidebarPanelExpanded(WorldMapSidebarPanel.TOTEM_SOLVER));
+            settings.setSidebarPanelExpanded(WorldMapSidebarPanel.TOTEM_SOLVER, false);
+            assertFalse(settings.gatheringTotemSolverEnabled());
+            settings.setSidebarPanelExpanded(WorldMapSidebarPanel.TOTEM_SOLVER, true);
+            assertTrue(settings.gatheringTotemSolverEnabled());
+        } finally {
+            settings.setGatheringTotemSolverEnabled(original);
+        }
+    }
+
+    @Test
     void retainsSidebarStateForTheClientSession() {
         WorldMapSettings settings = WorldMapSettings.getInstance();
         boolean originalInsights = settings.insightsSidebarOpen();
@@ -40,7 +58,7 @@ class WorldMapSettingsTest {
 
             assertFalse(settings.insightsSidebarOpen());
             assertFalse(settings.sidebarPanelExpanded(WorldMapSidebarPanel.RESOURCE_FILTERS));
-            assertFalse(settings.sidebarPanelExpanded(WorldMapSidebarPanel.TOTEM_SOLVER));
+            assertTrue(settings.sidebarPanelExpanded(WorldMapSidebarPanel.TOTEM_SOLVER));
             assertTrue(settings.gatheringTotemSolverEnabled());
             assertEquals(GatheringTotemSearchTarget.SELECTED_CLUSTER, settings.gatheringTotemSearchTarget());
             assertFalse(settings.showGatheringTotemHulls());

@@ -29,6 +29,7 @@ import com.seqwawa.seq.utils.rendering.UiRenderMetrics;
 import java.awt.Color;
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.function.LongConsumer;
 import org.junit.jupiter.api.Test;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.glfw.GLFWErrorCallback;
@@ -41,26 +42,7 @@ class NanoVgCanvasNativeTest {
 
     @Test
     void overlappingBatchedFillsRetainPerShapeAlpha() {
-        GLFWErrorCallback errorCallback = GLFWErrorCallback.createPrint(System.err);
-        errorCallback.set();
-        boolean glfwInitialized = glfwInit();
-        long window = NULL;
-        long context = NULL;
-        try {
-            assumeTrue(glfwInitialized, "A native OpenGL context is unavailable");
-            glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-            glfwWindowHint(GLFW_STENCIL_BITS, 8);
-            glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-            glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
-            glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-            window = glfwCreateWindow(WIDTH, HEIGHT, "NanoVG overlap regression", NULL, NULL);
-            assumeTrue(window != NULL, "A native OpenGL window is unavailable");
-
-            glfwMakeContextCurrent(window);
-            GL.createCapabilities();
-            context = nvgCreate(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
-            assumeTrue(context != NULL, "A native NanoVG context is unavailable");
-
+        withContext(context -> {
             GL11.glViewport(0, 0, WIDTH, HEIGHT);
             GL11.glClearColor(0f, 0f, 0f, 0f);
             GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_STENCIL_BUFFER_BIT);
@@ -103,6 +85,86 @@ class NanoVgCanvasNativeTest {
                             + polygonSingleBlue
                             + ", overlap="
                             + polygonOverlapBlue);
+        });
+    }
+
+    @Test
+    void adjacentImageTilesHaveUniformCoverageAtFractionalZooms() {
+        withContext(context -> {
+            ByteBuffer pixels = BufferUtils.createByteBuffer(16);
+            while (pixels.hasRemaining()) pixels.put((byte) 255);
+            pixels.flip();
+            int handle = org.lwjgl.nanovg.NanoVG.nvgCreateImageRGBA(
+                    context, 2, 2, org.lwjgl.nanovg.NanoVG.NVG_IMAGE_NEAREST, pixels);
+            assertTrue(handle != 0);
+            NanoVgImage image = new NanoVgImage(handle, 2, 2);
+            try {
+                for (float density : new float[] {1, 1.5f, 3}) {
+                    NanoVgCanvas canvas = new NanoVgCanvas(
+                            context, new UiRenderMetrics(WIDTH, HEIGHT, 1, density / 2));
+                    for (float size : new float[] {11.3f, 18.25f, 23.75f}) {
+                        for (float offset : new float[] {0.1f, 0.25f, 0.5f, 0.75f, 0.9f}) {
+                            for (float alpha : new float[] {0.35f, 1}) {
+                                GL11.glViewport(0, 0, WIDTH, HEIGHT);
+                                GL11.glClearColor(0, 0, 0, 0);
+                                GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_STENCIL_BUFFER_BIT);
+                                nvgBeginFrame(context, WIDTH / density, HEIGHT / density, density);
+                                float origin = 10 + offset;
+                                for (int row = 0; row < 2; row++) {
+                                    for (int column = 0; column < 2; column++) {
+                                        float x = origin + column * size;
+                                        float y = origin + row * size;
+                                        canvas.drawImageTile(image, x / density, y / density,
+                                                size / density, size / density, alpha);
+                                    }
+                                }
+                                nvgEndFrame(context);
+                                GL11.glFinish();
+                                ByteBuffer frame = BufferUtils.createByteBuffer(WIDTH * HEIGHT * 4);
+                                GL11.glReadPixels(0, 0, WIDTH, HEIGHT, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, frame);
+                                int expected = Math.round(alpha * 255);
+                                // Include both seams and their crossing, excluding the outer map edge.
+                                for (int y = (int) Math.ceil(origin + 1); y < origin + 2 * size - 1; y++) {
+                                    for (int x = (int) Math.ceil(origin + 1); x < origin + 2 * size - 1; x++) {
+                                        int actual = Byte.toUnsignedInt(frame.get(((HEIGHT - 1 - y) * WIDTH + x) * 4));
+                                        assertTrue(Math.abs(actual - expected) <= 2,
+                                                "Tile coverage at " + x + "," + y + " should be " + expected
+                                                        + " but was " + actual + "; density=" + density
+                                                        + ", size=" + size + ", offset=" + offset);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } finally {
+                org.lwjgl.nanovg.NanoVG.nvgDeleteImage(context, handle);
+            }
+        });
+    }
+
+    private static void withContext(LongConsumer test) {
+        GLFWErrorCallback errorCallback = GLFWErrorCallback.createPrint(System.err);
+        errorCallback.set();
+        boolean glfwInitialized = glfwInit();
+        long window = NULL;
+        long context = NULL;
+        try {
+            assumeTrue(glfwInitialized, "A native OpenGL context is unavailable");
+            glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+            glfwWindowHint(GLFW_STENCIL_BITS, 8);
+            glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+            glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+            glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+            window = glfwCreateWindow(WIDTH, HEIGHT, "NanoVG overlap regression", NULL, NULL);
+            assumeTrue(window != NULL, "A native OpenGL window is unavailable");
+
+            glfwMakeContextCurrent(window);
+            GL.createCapabilities();
+            context = nvgCreate(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
+            assumeTrue(context != NULL, "A native NanoVG context is unavailable");
+
+            test.accept(context);
         } finally {
             if (context != NULL) {
                 nvgDelete(context);

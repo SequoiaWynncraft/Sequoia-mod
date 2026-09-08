@@ -20,6 +20,7 @@ public class AssetManager {
 
     private static final String[] ASSET_FILES = new String[] {
         "icon.png",
+        "seqmod_bg.png",
         "archer.png",
         "assassin.png",
         "warrior.png",
@@ -32,7 +33,7 @@ public class AssetManager {
         "tna.png",
         "twp.png",
         "annihilation.png",
-        "world_event.png",
+        "textures/map/world_event_icon.png",
         "starup.png",
         "cross.png",
         "gaz_ears.png",

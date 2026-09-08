@@ -1,7 +1,7 @@
 package com.seqwawa.seq.ui;
 
 import static com.seqwawa.seq.managers.ThemeManager.color;
-import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_DIVIDER;
+import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY_DARK;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY;
 import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_POPUP;
 import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_BORDER;
@@ -62,7 +62,7 @@ final class PrincessLeaderboardPanel {
                     x + width - 7,
                     y + 14,
                     ownSummary(snapshot, width < 175));
-            canvas.fillRect(x + 6, y + 26, width - 12, 1, color(ACCENT_DIVIDER));
+            canvas.fillRect(x + 6, y + 26, width - 12, 1, color(ACCENT_PRIMARY_DARK));
 
             List<LeaderboardEntry> entries = visibleEntries(snapshot, height);
             if (entries.isEmpty()) {

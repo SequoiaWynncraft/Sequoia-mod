@@ -1,10 +1,73 @@
 package com.seqwawa.seq.ui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import org.junit.jupiter.api.Test;
 
 class IngredientGuideScreenTest {
+    @Test
+    void panelsAndToolbarStayOutsideTheSidebarAtBothLayouts() {
+        for (float width : new float[] {420, 640, 960, 1280}) {
+            var layout = IngredientGuideScreen.guideLayout(width, 540);
+            var list = layout.list();
+            var detail = layout.detail();
+            for (var bounds : new IngredientGuideScreen.Bounds[] {list, detail, layout.category(), layout.refresh(), layout.search(), layout.scope()}) {
+                assertTrue(bounds.x() >= SequoiaSidebarNavigation.WIDTH + 8);
+                assertTrue(bounds.x() + bounds.width() <= width - 8);
+                assertTrue(bounds.y() + bounds.height() <= 540 - 8);
+                assertTrue(bounds.width() > 0 && bounds.height() > 0);
+            }
+            assertFalse(list.contains(detail.x() + 1, detail.y() + 1));
+            assertTrue(detail.contains(detail.x() + 1, detail.y() + 1));
+            assertFalse(list.contains(70, 150));
+            var controls = new IngredientGuideScreen.Bounds[] {layout.search(), layout.scope(), layout.category(), layout.refresh()};
+            for (int i = 0; i < controls.length; i++) {
+                var control = controls[i];
+                assertTrue(control.y() + control.height() <= layout.headerHeight());
+                assertTrue(control.y() + control.height() < list.y());
+                for (int j = i + 1; j < controls.length; j++) {
+                    var other = controls[j];
+                    assertFalse(control.x() < other.x() + other.width() && control.x() + control.width() > other.x()
+                            && control.y() < other.y() + other.height() && control.y() + control.height() > other.y());
+                }
+            }
+        }
+    }
+
+    @Test
+    void searchAndScopeStayJoinedWhenToolbarWraps() {
+        for (float width : new float[] {420, 640, 960, 1280}) {
+            var layout = IngredientGuideScreen.guideLayout(width, 540);
+            assertEquals(layout.search().x() + layout.search().width(), layout.scope().x());
+            assertEquals(layout.search().y(), layout.scope().y());
+            assertEquals(layout.search().height(), layout.scope().height());
+            var menu = IngredientGuideScreen.searchScopeMenuBounds(layout);
+            assertEquals(layout.scope().x(), menu.x());
+            assertEquals(layout.scope().y() + layout.scope().height(), menu.y());
+            assertTrue(menu.x() + menu.width() <= width - 8);
+        }
+    }
+
+    @Test
+    void categorySwitchKeepsEveryControlAndContentPanelInPlace() {
+        for (float width : new float[] {420, 640, 960, 1280}) {
+            assertEquals(IngredientGuideScreen.guideLayout(width, 540, true),
+                    IngredientGuideScreen.guideLayout(width, 540, false));
+        }
+    }
+
+    @Test
+    void narrowWindowsStackPanelsAndWideWindowsPlaceThemSideBySide() {
+        var narrow = IngredientGuideScreen.guideLayout(640, 540);
+        assertEquals(narrow.list().x(), narrow.detail().x());
+        assertTrue(narrow.detail().y() >= narrow.list().y() + narrow.list().height() + 9);
+        var wide = IngredientGuideScreen.guideLayout(960, 540);
+        assertEquals(wide.list().y(), wide.detail().y());
+        assertTrue(wide.detail().x() > wide.list().x() + wide.list().width());
+    }
+
     @Test
     void limitsFarmSpotPreviewsToThree() {
         assertEquals(0, IngredientGuideScreen.farmSpotVisiblePreviewCount(-1));

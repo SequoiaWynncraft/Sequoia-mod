@@ -53,4 +53,23 @@ class SliderWidgetTest {
                 new KeyEvent(GLFW.GLFW_KEY_ENTER, 0, 0)), "editing stays cleared after re-enable");
         assertEquals(valueAtDisable, setting.getValue());
     }
+    @Test
+    void hidingASliderStopsDraggingAndDiscardsManualInput() {
+        Setting.IntSetting setting = new Setting.IntSetting("amount", "test", 50, 0, 100);
+        SliderWidget widget = new SliderWidget(setting);
+        widget.setPosition(0, 0, 300, widget.getHeight());
+        assertTrue(widget.mouseClicked(120, 24, 0));
+        int valueBeforeHiding = setting.getValue();
+
+        widget.onHidden();
+
+        assertFalse(widget.mouseDragged(230, 24));
+        assertEquals(valueBeforeHiding, setting.getValue());
+        assertTrue(widget.mouseClicked(250, 20, 0));
+        assertTrue(widget.charTyped(new CharacterEvent('9', 0)));
+        widget.onHidden();
+        assertFalse(widget.keyPressed(new KeyEvent(GLFW.GLFW_KEY_ENTER, 0, 0)));
+        assertEquals(valueBeforeHiding, setting.getValue());
+    }
+
 }

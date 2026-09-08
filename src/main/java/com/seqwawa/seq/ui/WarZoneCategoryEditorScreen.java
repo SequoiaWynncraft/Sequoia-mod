@@ -5,6 +5,7 @@ import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY_DARK;
 import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_BODY_OPAQUE;
 import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_CONTENT;
+import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_MODAL_OVERLAY;
 import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_INPUT;
 import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_INPUT_HOVER;
 import static com.seqwawa.seq.ui.theme.UiColor.TEXT_MUTED;
@@ -74,7 +75,7 @@ final class WarZoneCategoryEditorScreen extends Screen {
         float height = canvas.metrics().height();
         float x = (width - PANEL_WIDTH) / 2;
         float y = (height - PANEL_HEIGHT) / 2;
-        canvas.fillRect(0, 0, width, height, new Color(0, 0, 0, 145));
+        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
         canvas.fillRoundedRect(x, y, PANEL_WIDTH, PANEL_HEIGHT, 6, color(BACKGROUND_BODY_OPAQUE));
         text(canvas, original == null ? "New zone category" : "Rename zone category",
                 x + 14, y + 18, 14, color(ACCENT_PRIMARY), false);

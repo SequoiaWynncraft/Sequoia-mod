@@ -21,4 +21,45 @@ class WynnClassCacheTest {
         assertNull(WynnClassCache.parseClassType("Class Req: Archer"));
         assertNull(WynnClassCache.parseClassType(null));
     }
+
+    @Test
+    void readsCanonicalEnumInsteadOfWynntilsCombinedDisplayName() throws ReflectiveOperationException {
+        var model = new CharacterModelStub();
+        model.hasCharacter = true;
+        for (var value : ProviderClass.values()) {
+            model.classType = value;
+            assertEquals(WynnClassType.valueOf(value.name()), WynnClassCache.readWynntilsClass(model));
+        }
+    }
+
+    @Test
+    void continuedPollingPicksUpLateDetectionAndClassSwitches() throws ReflectiveOperationException {
+        var model = new CharacterModelStub();
+        assertNull(WynnClassCache.readWynntilsClass(model));
+        model.hasCharacter = true;
+        assertNull(WynnClassCache.readWynntilsClass(model));
+        model.classType = ProviderClass.MAGE;
+        assertEquals(WynnClassType.MAGE, WynnClassCache.readWynntilsClass(model));
+        model.classType = ProviderClass.SHAMAN;
+        assertEquals(WynnClassType.SHAMAN, WynnClassCache.readWynntilsClass(model));
+        model.hasCharacter = false;
+        assertNull(WynnClassCache.readWynntilsClass(model));
+    }
+
+    public static final class CharacterModelStub {
+        boolean hasCharacter;
+        ProviderClass classType;
+
+        public boolean hasCharacter() { return hasCharacter; }
+        public ProviderClass getClassType() { return classType; }
+    }
+
+    public enum ProviderClass {
+        WARRIOR("Warrior/Knight"), ARCHER("Archer/Hunter"), MAGE("Mage/Dark Wizard"),
+        ASSASSIN("Assassin/Ninja"), SHAMAN("Shaman/Skyseer");
+
+        private final String label;
+        ProviderClass(String label) { this.label = label; }
+        @Override public String toString() { return label; }
+    }
 }

@@ -70,7 +70,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                 canvas,
                 fontName,
                 FONT_SIZE,
-                enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
                 UiCanvas.HorizontalAlign.LEFT,
                 UiCanvas.VerticalAlign.TOP,
                 indentedContentX(MARGIN),
@@ -92,8 +92,8 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
         float boxX = hexBoxX();
         float boxY = controlY();
         Color boxColor = !enabled
-                ? color(CONTROL_INPUT_SECONDARY, 120)
-                : editing ? color(CONTROL_INPUT_HOVER, 220) : color(CONTROL_INPUT, 200);
+                ? color(CONTROL_INPUT_SECONDARY)
+                : editing ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
         canvas.fillRect(boxX, boxY, HEX_BOX_WIDTH, CONTROL_HEIGHT, boxColor);
 
         boolean validBuffer = Setting.ColorSetting.isValidHex(editBuffer);
@@ -104,7 +104,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                     HEX_BOX_WIDTH,
                     CONTROL_HEIGHT,
                     1,
-                    validBuffer ? color(CONTROL_BORDER) : color(CONTROL_DANGER_HOVER, 230));
+                    validBuffer ? color(CONTROL_BORDER) : color(CONTROL_DANGER_HOVER));
         }
 
         String renderedValue = "#" + (editing ? editBuffer : hexDigits(setting));
@@ -148,7 +148,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                 CONTROL_HEIGHT,
                 enabled && expanded ? 2 : 1,
                 !enabled
-                        ? color(TEXT_DISABLED, 120)
+                        ? color(TEXT_DISABLED)
                         : expanded ? color(CONTROL_BORDER) : color(BACKGROUND_BODY_OPAQUE));
     }
 
@@ -161,10 +161,10 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
                 PREVIEW_BUTTON_WIDTH,
                 CONTROL_HEIGHT,
                 !enabled
-                        ? color(CONTROL_INPUT_SECONDARY, 120)
+                        ? color(CONTROL_INPUT_SECONDARY)
                         : previewActive
-                        ? color(ACCENT_PRIMARY_DARK_HOVER, 230)
-                        : color(CONTROL_INPUT_HOVER, 220));
+                        ? color(ACCENT_PRIMARY_DARK_HOVER)
+                        : color(CONTROL_INPUT_HOVER));
 
         drawText(
                 canvas,
@@ -542,17 +542,22 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
         return Math.max(0f, Math.min(1f, value));
     }
 
+    @Override
+    public void onHidden() {
+        editing = false;
+        expanded = false;
+        draggingSaturationValue = false;
+        draggingHue = false;
+        height = COLLAPSED_HEIGHT;
+        editBuffer = hexDigits(setting);
+        syncPickerFromSetting();
+        deactivatePreview();
+    }
+
     private boolean prepareEnabledState() {
         boolean enabled = isEnabled();
         if (!enabled) {
-            editing = false;
-            expanded = false;
-            draggingSaturationValue = false;
-            draggingHue = false;
-            height = COLLAPSED_HEIGHT;
-            editBuffer = hexDigits(setting);
-            syncPickerFromSetting();
-            deactivatePreview();
+            onHidden();
         }
         return enabled;
     }

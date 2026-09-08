@@ -37,4 +37,22 @@ class StringWidgetTest {
                 new KeyEvent(GLFW.GLFW_KEY_ENTER, 0, 0)), "editing stays cleared after re-enable");
         assertEquals("saved", setting.getValue());
     }
+    @Test
+    void hidingAStringControlDiscardsUnfinishedInput() {
+        Setting.StringSetting setting = new Setting.StringSetting("value", "test", "saved");
+        StringWidget widget = new StringWidget(setting);
+        widget.setPosition(0, 0, 300, widget.getHeight());
+        assertTrue(widget.mouseClicked(30, 25, 0));
+        assertTrue(widget.charTyped(new CharacterEvent('x', 0)));
+
+        widget.onHidden();
+
+        assertFalse(widget.charTyped(new CharacterEvent('y', 0)));
+        assertFalse(widget.keyPressed(new KeyEvent(GLFW.GLFW_KEY_ENTER, 0, 0)));
+        assertEquals("saved", setting.getValue());
+        assertTrue(widget.mouseClicked(30, 25, 0), "the control can be focused again after unfolding");
+        assertTrue(widget.keyPressed(new KeyEvent(GLFW.GLFW_KEY_ENTER, 0, 0)));
+        assertEquals("saved", setting.getValue());
+    }
+
 }

@@ -152,7 +152,7 @@ public final class WorldMapBackgroundRenderer implements AutoCloseable {
         float y = viewport.worldToScreenZ(imageToWorldZ(pixelY0, tileSet.height()));
         float width = viewport.worldToScreenX(imageToWorldX(pixelX1, tileSet.width())) - x;
         float height = viewport.worldToScreenZ(imageToWorldZ(pixelY1, tileSet.height())) - y;
-        if (width > 0 && height > 0) canvas.drawImage(image, x, y, width, height, alpha);
+        if (width > 0 && height > 0) canvas.drawImageTile(image, x, y, width, height, alpha);
     }
 
     private static TileRange visibleTileRange(MapViewport viewport, TileSet tileSet, int margin) {

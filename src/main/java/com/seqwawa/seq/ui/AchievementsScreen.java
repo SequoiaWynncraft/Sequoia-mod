@@ -1,25 +1,7 @@
 package com.seqwawa.seq.ui;
 
 import static com.seqwawa.seq.managers.ThemeManager.color;
-import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_DIVIDER;
-import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY;
-import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_SECONDARY;
-import static com.seqwawa.seq.ui.theme.UiColor.ACHIEVEMENT_BRONZE;
-import static com.seqwawa.seq.ui.theme.UiColor.ACHIEVEMENT_DIAMOND;
-import static com.seqwawa.seq.ui.theme.UiColor.ACHIEVEMENT_GOLD;
-import static com.seqwawa.seq.ui.theme.UiColor.ACHIEVEMENT_MYTHRIL;
-import static com.seqwawa.seq.ui.theme.UiColor.ACHIEVEMENT_OBSIDIAN;
-import static com.seqwawa.seq.ui.theme.UiColor.ACHIEVEMENT_PLATINUM;
-import static com.seqwawa.seq.ui.theme.UiColor.ACHIEVEMENT_SILVER;
-import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_BODY_OPAQUE;
-import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_CONTENT;
-import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_HEADER;
-import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_MODAL_OVERLAY;
-import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_INPUT;
-import static com.seqwawa.seq.ui.theme.UiColor.TEXT_DISABLED;
-import static com.seqwawa.seq.ui.theme.UiColor.TEXT_MUTED;
-import static com.seqwawa.seq.ui.theme.UiColor.TEXT_PRIMARY;
-import static com.seqwawa.seq.ui.theme.UiColor.TEXT_SECONDARY;
+import static com.seqwawa.seq.ui.theme.UiColor.*;
 import static com.seqwawa.seq.utils.rendering.UiCanvas.HorizontalAlign.CENTER;
 import static com.seqwawa.seq.utils.rendering.UiCanvas.HorizontalAlign.LEFT;
 import static com.seqwawa.seq.utils.rendering.UiCanvas.HorizontalAlign.RIGHT;
@@ -35,6 +17,7 @@ import com.seqwawa.seq.ui.theme.UiColor;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiCanvas.HorizontalAlign;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
+import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,30 +25,18 @@ import java.util.Locale;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
 
 public final class AchievementsScreen extends Screen {
 
-    private static final float MARGIN = 14;
-    private static final float HEADER_HEIGHT = 42;
-    private static final float PANEL_RADIUS = 7;
-    private static final float PANEL_MAX_WIDTH = 460;
-    private static final float ROW_HEIGHT = 46;
-    private static final float ROW_GAP = 4;
-    private static final float ICON = 26;
-    private static final float ROW_PADDING = 8;
-    private static final float LINE_HALF = 6.5f;
-    private static final float NAME_SIZE = 13;
-    private static final float COUNT_SIZE = 13;
-    private static final float BAR_HEIGHT = 5;
-    private static final float BAR_RATIO = 0.75f;
-    private static final float RING_WIDTH = 1.5f;
-    private static final float DIVIDER_GAP = 10;
-    private static final float PANEL_PADDING = 12;
-    private static final float STATUS_PANEL_HEIGHT = 120;
-    private static final float SCROLL_SPEED = 18;
+    private static final float MARGIN = SequoiaUiStyle.CONTENT_PADDING;
+    private static final float HEADER_HEIGHT = SequoiaUiStyle.HEADER_HEIGHT;
+    private static final float CARD_GAP = 6;
+    private static final float SECTION_HEIGHT = 14;
+    private static final float SCROLL_SPEED = 30;
 
     private final Screen parent;
     private final GuildRaidProgressService service = GuildRaidProgressService.getInstance();
@@ -75,6 +46,8 @@ public final class AchievementsScreen extends Screen {
     private GuildRaidProgress shown = GuildRaidProgress.EMPTY;
     private float scrollOffset;
     private float maxScroll;
+    private float mouseX;
+    private float mouseY;
 
     public AchievementsScreen(Screen parent) {
         super(Component.literal("Sequoia Achievements"));
@@ -134,76 +107,88 @@ public final class AchievementsScreen extends Screen {
             refresh();
             triggerImmediateNarration(true);
         }
+        mouseX = MinecraftUiRenderer.mouseX(pointerX);
+        mouseY = MinecraftUiRenderer.mouseY(pointerY);
         UiRenderer.renderScreen(this, this::renderScreen);
     }
 
     private void renderScreen(UiCanvas canvas) {
         float width = canvas.metrics().width();
         float height = canvas.metrics().height();
-        PanelLayout panel = panelLayout(
-                width, height, state == State.READY ? contentHeight() : STATUS_PANEL_HEIGHT);
-        float panelWidth = panel.width();
-        float panelX = panel.x();
-        float panelY = panel.y();
-        float panelHeight = panel.height();
-
-        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY, 210));
-        canvas.fillRect(0, 0, width, HEADER_HEIGHT, color(BACKGROUND_HEADER, 248));
-        canvas.fillHorizontalGradient(
-                0, HEADER_HEIGHT - 1, width, 1, color(ACCENT_PRIMARY, 190), color(ACCENT_PRIMARY, 0));
-        text(canvas, "Sequoia Achievements", MARGIN, HEADER_HEIGHT / 2f, 19, color(ACCENT_PRIMARY), LEFT);
-
-        canvas.fillRoundedRect(
-                panelX, panelY, panelWidth, panelHeight, PANEL_RADIUS, color(BACKGROUND_BODY_OPAQUE, 245));
+        PanelLayout panel = panelLayout(width, height, Float.MAX_VALUE);
+        SequoiaUiStyle.drawPanelFrame(canvas, HEADER_HEIGHT);
+        text(canvas, "Achievements", width - MARGIN, HEADER_HEIGHT / 2, 18, color(ACCENT_PRIMARY_HOVER), RIGHT);
+        SequoiaSidebarNavigation.render(canvas, SequoiaSidebarNavigation.Destination.ACHIEVEMENTS, mouseX, mouseY);
 
         if (state != State.READY) {
-            text(canvas, statusLine(), panelX + panelWidth / 2f, panelY + panelHeight / 2f, 12,
-                    color(TEXT_MUTED), CENTER);
+            canvas.fillRect(panel.x(), panel.y(), panel.width(), panel.height(), color(BACKGROUND_CONTENT));
+            fittedText(canvas, "Guild raid progress", panel.x() + 14, panel.y() + 26,
+                    Math.max(0, panel.width() - 28), 16, color(ACCENT_PRIMARY_HOVER));
+            fittedText(canvas, statusLine(), panel.x() + 14, panel.y() + 54,
+                    Math.max(0, panel.width() - 28), 12, color(TEXT_SECONDARY));
             return;
         }
 
-        maxScroll = Math.max(0, contentHeight() - panelHeight);
-        scrollOffset = Math.min(scrollOffset, maxScroll);
-
-        float rowX = panelX + 10;
-        float rowWidth = panelWidth - 20;
-        float rowY = panelY + PANEL_PADDING - scrollOffset;
-        float counterWidth = Math.min(counterColumnWidth(rows), Math.max(40, rowWidth * 0.48f));
-
-        canvas.scissor(panelX, panelY, panelWidth, panelHeight);
-        for (Row row : rows) {
-            if (row.total()) {
-                canvas.fillRect(rowX, rowY + DIVIDER_GAP, rowWidth, 1, color(ACCENT_DIVIDER));
-                rowY += DIVIDER_GAP * 2 + ROW_GAP + 1;
-            }
-            renderRow(canvas, row, rowX, rowY, rowWidth, counterWidth);
-            rowY += ROW_HEIGHT + ROW_GAP;
+        maxScroll = Math.max(0, contentHeight(panel.width(), rows.size() - 1) - panel.height());
+        scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
+        canvas.save();
+        canvas.scissor(panel.x(), panel.y(), panel.width(), panel.height());
+        renderProgress(canvas, rows, panel.x(), panel.y() - scrollOffset, Math.max(0, panel.width() - 6));
+        canvas.restore();
+        if (maxScroll > 0 && panel.height() > 0) {
+            float thumb = Math.min(panel.height(), Math.max(20, panel.height() * panel.height() / (panel.height() + maxScroll)));
+            float y = panel.y() + (panel.height() - thumb) * scrollOffset / maxScroll;
+            canvas.fillRect(panel.right() - 3, panel.y(), 3, panel.height(), color(CONTROL_TRACK));
+            canvas.fillRect(panel.right() - 3, y, 3, thumb, color(CONTROL_THUMB));
         }
-        canvas.resetScissor();
     }
 
-    private float contentHeight() {
-        float height = PANEL_PADDING * 2 - ROW_GAP;
-        for (Row row : rows) {
-            if (row.total()) {
-                height += DIVIDER_GAP * 2 + ROW_GAP + 1;
-            }
-            height += ROW_HEIGHT + ROW_GAP;
+    /** Draws the same progress composition for the live screen and rendering checks. */
+    static void renderProgress(UiCanvas canvas, List<Row> rows, float x, float y, float width) {
+        if (rows.isEmpty() || width <= 0) return;
+        renderCard(canvas, rows.getLast(), x, y, width);
+        y += cardHeight(width) + SECTION_HEIGHT;
+        for (int index = 0; index < rows.size() - 1; index++) {
+            renderCard(canvas, rows.get(index), x, y, width);
+            y += cardHeight(width) + CARD_GAP;
         }
-        return height;
+    }
+
+    static float cardHeight(float width) {
+        return width >= 500 ? 76 : 112;
+    }
+
+    static float contentHeight(float width, int raidCount) {
+        float rowHeight = cardHeight(Math.max(0, width - 6));
+        return rowHeight + SECTION_HEIGHT + Math.max(0, raidCount) * (rowHeight + CARD_GAP) - CARD_GAP;
     }
 
     static PanelLayout panelLayout(float screenWidth, float screenHeight, float desiredHeight) {
-        float panelWidth = Math.max(0, Math.min(PANEL_MAX_WIDTH, screenWidth - MARGIN * 2));
-        float panelX = (screenWidth - panelWidth) / 2f;
-        float panelY = HEADER_HEIGHT + MARGIN;
-        float availableHeight = Math.max(0, screenHeight - panelY - MARGIN);
-        float panelHeight = Math.min(availableHeight, Math.max(0, desiredHeight));
-        return new PanelLayout(panelX, panelY, panelWidth, panelHeight);
+        float x = SequoiaSidebarNavigation.WIDTH + MARGIN;
+        float width = Math.max(0, screenWidth - x - MARGIN);
+        float y = Math.min(HEADER_HEIGHT + MARGIN, Math.max(0, screenHeight - MARGIN));
+        float height = Math.min(Math.max(0, screenHeight - y - MARGIN), Math.max(0, desiredHeight));
+        return new PanelLayout(x, y, width, height);
+    }
+
+    @Override
+    public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
+        if (click.button() == 0 && SequoiaSidebarNavigation.click(
+                MinecraftUiRenderer.mouseX(click.x()), MinecraftUiRenderer.mouseY(click.y()),
+                MinecraftUiRenderer.screenHeight(), SequoiaSidebarNavigation.Destination.ACHIEVEMENTS, parent)) {
+            return true;
+        }
+        return super.mouseClicked(click, outsideScreen);
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        PanelLayout panel = panelLayout(MinecraftUiRenderer.screenWidth(), MinecraftUiRenderer.screenHeight(), Float.MAX_VALUE);
+        float x = MinecraftUiRenderer.mouseX(mouseX);
+        float y = MinecraftUiRenderer.mouseY(mouseY);
+        if (x < panel.x() || x >= panel.right() || y < panel.y() || y >= panel.bottom()) {
+            return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+        }
         scrollBy((float) -scrollY * SCROLL_SPEED);
         return true;
     }
@@ -213,8 +198,8 @@ public final class AchievementsScreen extends Screen {
         switch (event.key()) {
             case GLFW.GLFW_KEY_UP -> scrollBy(-SCROLL_SPEED);
             case GLFW.GLFW_KEY_DOWN -> scrollBy(SCROLL_SPEED);
-            case GLFW.GLFW_KEY_PAGE_UP -> scrollBy(-(ROW_HEIGHT + ROW_GAP) * 4);
-            case GLFW.GLFW_KEY_PAGE_DOWN -> scrollBy((ROW_HEIGHT + ROW_GAP) * 4);
+            case GLFW.GLFW_KEY_PAGE_UP -> scrollBy(-(cardHeight(MinecraftUiRenderer.screenWidth() - SequoiaSidebarNavigation.WIDTH - MARGIN * 2 - 6) + CARD_GAP) * 2);
+            case GLFW.GLFW_KEY_PAGE_DOWN -> scrollBy((cardHeight(MinecraftUiRenderer.screenWidth() - SequoiaSidebarNavigation.WIDTH - MARGIN * 2 - 6) + CARD_GAP) * 2);
             case GLFW.GLFW_KEY_HOME -> scrollOffset = 0;
             case GLFW.GLFW_KEY_END -> scrollOffset = maxScroll;
             default -> {
@@ -232,62 +217,50 @@ public final class AchievementsScreen extends Screen {
         return state == State.LOADING ? "Loading your guild raids..." : "Progress unavailable right now";
     }
 
-    private static void renderRow(UiCanvas canvas, Row row, float x, float y, float width, float counterWidth) {
-        Color metal = tierColor(row.tier());
-        canvas.fillRoundedRect(x, y, width, ROW_HEIGHT, 6, color(BACKGROUND_CONTENT, 225));
+    private static void renderCard(UiCanvas canvas, Row row, float x, float y, float width) {
+        float height = cardHeight(width);
+        canvas.fillRect(x, y, width, height, color(BACKGROUND_CONTENT));
+        float padding = 10;
+        boolean compact = width < 500;
+        float iconSize = width < 260 ? 32 : 48;
+        drawIcon(canvas, row, x + padding, y + 10, iconSize);
+        float textX = x + padding + iconSize + 10;
+        float right = x + width - padding;
+        float progressWidth = compact ? Math.max(0, width - padding * 2) : Math.min(240, width * 0.35f);
+        float nameWidth = Math.max(0, right - textX - (compact ? 0 : progressWidth + 18));
+        fittedText(canvas, row.name(), row.compactName(), textX, y + 22, nameWidth, 16, color(TEXT_PRIMARY));
+        String tier = row.tier() == null ? "Unranked" : row.tier().label();
+        String count = formatCount(row.count()) + " completions";
+        fittedText(canvas, count, textX, y + 43, nameWidth, 13, color(TEXT_SECONDARY));
+        fittedText(canvas, tier, textX, y + 61, nameWidth, 12, tierColor(row.tier()));
 
-        drawIcon(canvas, row, x + 12, y + ROW_HEIGHT / 2f);
-
-        float textX = x + 12 + ICON + 12;
-        float textRight = x + width - 14;
-        float topLine = y + ROW_PADDING + LINE_HALF;
-        float bottomLine = y + ROW_HEIGHT - ROW_PADDING - LINE_HALF;
-
-        String count = formatCount(row.count());
-        String target = target(row);
-        float targetWidth = target.isEmpty() ? 0 : measure(target, COUNT_SIZE);
-
-        float nameWidth = Math.max(0, textRight - counterWidth - 8 - textX);
-        String displayedName = measure(row.name(), NAME_SIZE) <= nameWidth ? row.name() : row.compactName();
-        canvas.save();
-        canvas.scissor(textX, y, nameWidth, ROW_HEIGHT / 2f);
-        text(canvas, displayedName, textX, topLine, NAME_SIZE, color(TEXT_PRIMARY), LEFT);
-        canvas.restore();
-        if (!target.isEmpty()) {
-            text(canvas, target, textRight, topLine, COUNT_SIZE, color(TEXT_MUTED), RIGHT);
-        }
-        text(canvas, count, textRight - targetWidth, topLine, COUNT_SIZE,
-                row.count() > 0 ? metal : color(TEXT_DISABLED), RIGHT);
-
-        chip(canvas, textX, bottomLine, row.tier());
-
-        float barWidth = counterWidth * BAR_RATIO;
-        progressBar(canvas, textRight - barWidth, bottomLine - BAR_HEIGHT / 2f, barWidth, row);
-    }
-
-    private static float counterColumnWidth(List<Row> rows) {
-        String widest = formatCount(SeqTier.MYTHRIL.threshold(SeqTier.ALL_RAIDS));
-        float reserved = measure(widest + " / " + widest, COUNT_SIZE);
-        for (Row row : rows) {
-            float used = measure(formatCount(row.count()) + target(row), COUNT_SIZE);
-            reserved = Math.max(reserved, used);
-        }
-        return reserved;
-    }
-
-    private static String target(Row row) {
-        return row.nextAt() > 0 ? " / " + formatCount(row.nextAt()) : "";
-    }
-
-    private static void progressBar(UiCanvas canvas, float x, float y, float width, Row row) {
-        float radius = BAR_HEIGHT / 2f;
-        canvas.fillRoundedRect(x, y, width, BAR_HEIGHT, radius, color(CONTROL_INPUT, 190));
-
+        float barX = compact ? x + padding : right - progressWidth;
+        float barY = compact ? y + height - 30 : y + 35;
+        String next = row.nextAt() <= 0 ? "Highest tier reached"
+                : formatCount(row.count()) + " / " + formatCount(row.nextAt());
+        if (!compact) text(canvas, next, right, y + 20, 12, color(TEXT_SECONDARY), RIGHT);
+        canvas.fillRect(barX, barY, progressWidth, 4, color(CONTROL_INPUT));
         float ratio = progressRatio(row);
-        if (ratio > 0) {
-            float filled = Math.min(width, Math.max(BAR_HEIGHT, width * ratio));
-            canvas.fillRoundedRect(x, y, filled, BAR_HEIGHT, radius, alpha(barColor(row), 235));
+        if (ratio > 0) canvas.fillRect(barX, barY, progressWidth * ratio, 4, color(ACCENT_PRIMARY));
+        String remaining = row.nextAt() <= 0 ? "All milestones complete"
+                : formatCount(Math.max(0, row.nextAt() - row.count())) + " to " + row.nextTier().label();
+        fittedText(canvas, remaining, barX, barY + 18, progressWidth, 12, color(TEXT_SECONDARY));
+    }
+
+    private static void fittedText(UiCanvas canvas, String value, float x, float y, float width, float size, Color textColor) {
+        fittedText(canvas, value, value, x, y, width, size, textColor);
+    }
+
+    private static void fittedText(UiCanvas canvas, String value, String compact, float x, float y, float width, float size, Color textColor) {
+        if (width <= 0) return;
+        String shown = measure(value, size) <= width ? value : compact;
+        if (measure(shown, size) > width) {
+            while (!shown.isEmpty() && measure(shown + "...", size) > width) {
+                shown = shown.substring(0, shown.length() - 1);
+            }
+            shown = shown.isEmpty() ? "" : shown + "...";
         }
+        text(canvas, shown, x, y, size, textColor, LEFT);
     }
 
     static float progressRatio(Row row) {
@@ -297,46 +270,17 @@ public final class AchievementsScreen extends Screen {
         return Math.min(1f, Math.max(0f, (float) row.count() / row.nextAt()));
     }
 
-    private static Color ringColor(SeqTier tier) {
-        return tier == null ? color(ACCENT_SECONDARY, 120) : alpha(color(tierToken(tier)), 215);
-    }
-
-    private static Color barColor(Row row) {
-        SeqTier reached = row.nextTier() != null ? row.nextTier() : row.tier();
-        return reached == null ? color(ACCENT_PRIMARY) : color(tierToken(reached));
-    }
-
-    private static void chip(UiCanvas canvas, float x, float centerY, SeqTier tier) {
-        Color metal = tierColor(tier);
-        String label = tier == null ? "UNRANKED" : tier.label().toUpperCase(Locale.ROOT);
-        float width = measure(label, 8) + 14;
-
-        canvas.fillRoundedRect(x, centerY - LINE_HALF, width, LINE_HALF * 2, LINE_HALF,
-                tier == null ? color(CONTROL_INPUT, 200) : shade(alpha(metal, 235), 0.32f));
-        text(canvas, label, x + width / 2f, centerY, 8,
-                tier == null ? color(TEXT_DISABLED) : lighten(metal, 0.25f), CENTER);
-    }
-
-    private static void drawIcon(UiCanvas canvas, Row row, float x, float centerY) {
-        float radius = ICON / 2f;
-        float centerX = x + radius;
-        AssetManager.Asset asset =
-                SeqClient.assetManager == null ? null : SeqClient.assetManager.getAsset(row.icon());
-
-        canvas.fillCircle(centerX, centerY, radius, color(CONTROL_INPUT, 235));
+    private static void drawIcon(UiCanvas canvas, Row row, float x, float y, float size) {
+        AssetManager.Asset asset = SeqClient.assetManager == null ? null : SeqClient.assetManager.getAsset(row.icon());
+        float ringWidth = 1.5f;
+        float radius = (size - ringWidth) / 2f;
+        canvas.fillCircle(x + size / 2f, y + size / 2f, radius, color(CONTROL_INPUT));
         if (asset != null && asset.getImage() != null) {
-            canvas.save();
-            canvas.beginPath();
-            canvas.circle(centerX, centerY, radius - 1);
-            canvas.fillCurrentPathWithImage(
-                    asset.getImage(), centerX - radius + 1, centerY - radius + 1, ICON - 2, ICON - 2,
-                    row.count() > 0 ? 1f : 0.45f);
-            canvas.closePath();
-            canvas.restore();
+            canvas.drawImage(asset.getImage(), x + 2, y + 2, size - 4, size - 4, 1f);
         } else {
-            text(canvas, row.name().substring(0, 1), centerX, centerY, radius, color(TEXT_SECONDARY), CENTER);
+            text(canvas, row.name().substring(0, 1), x + size / 2, y + size / 2, 13, color(TEXT_SECONDARY), CENTER);
         }
-        canvas.strokeCircle(centerX, centerY, radius, RING_WIDTH, ringColor(row.tier()));
+        canvas.strokeCircle(x + size / 2f, y + size / 2f, radius, ringWidth, tierColor(row.tier()));
     }
 
     static UiColor tierToken(SeqTier tier) {
@@ -394,26 +338,6 @@ public final class AchievementsScreen extends Screen {
 
     private static float measure(String value, float size) {
         return UiRenderer.measureText(value, SeqClient.getFontManager().getSelectedFont(), size).width();
-    }
-
-    private static Color alpha(Color base, int value) {
-        return new Color(base.getRed(), base.getGreen(), base.getBlue(), Math.max(0, Math.min(255, value)));
-    }
-
-    private static Color shade(Color base, float factor) {
-        return new Color(
-                Math.round(base.getRed() * factor),
-                Math.round(base.getGreen() * factor),
-                Math.round(base.getBlue() * factor),
-                base.getAlpha());
-    }
-
-    private static Color lighten(Color base, float amount) {
-        return new Color(
-                Math.round(base.getRed() + (255 - base.getRed()) * amount),
-                Math.round(base.getGreen() + (255 - base.getGreen()) * amount),
-                Math.round(base.getBlue() + (255 - base.getBlue()) * amount),
-                base.getAlpha());
     }
 
     record Row(

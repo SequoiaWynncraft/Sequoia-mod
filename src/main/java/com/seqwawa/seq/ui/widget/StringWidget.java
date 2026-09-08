@@ -41,7 +41,7 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
                 y + 2,
                 textStyle(
                         fontName,
-                        enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                        enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
                         UiCanvas.VerticalAlign.TOP));
 
         // Text box
@@ -50,8 +50,8 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
         float boxWidth = indentedContentWidth(TEXT_BOX_MARGIN);
 
         Color boxBg = !enabled
-                ? color(CONTROL_INPUT_SECONDARY, 120)
-                : editing ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT, 200);
+                ? color(CONTROL_INPUT_SECONDARY)
+                : editing ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
         canvas.fillRect(boxX, boxY, boxWidth, TEXT_BOX_HEIGHT, boxBg);
         if (enabled && editing) {
             canvas.strokeRect(boxX, boxY, boxWidth, TEXT_BOX_HEIGHT, 1, color(CONTROL_BORDER));
@@ -67,7 +67,7 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
         canvas.drawText(renderText, boxX + 4, boxY + TEXT_BOX_HEIGHT / 2f,
                 textStyle(
                         fontName,
-                        !enabled || isEmpty ? color(TEXT_DISABLED, 180) : color(TEXT_PRIMARY),
+                        !enabled || isEmpty ? color(TEXT_DISABLED) : color(TEXT_PRIMARY),
                         UiCanvas.VerticalAlign.MIDDLE));
         canvas.restore();
 
@@ -155,11 +155,16 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
         setting.setValue(editBuffer);
     }
 
+    @Override
+    public void onHidden() {
+        editing = false;
+        editBuffer = setting.getValue() != null ? setting.getValue() : "";
+    }
+
     private boolean prepareEnabledState() {
         boolean enabled = isEnabled();
         if (!enabled) {
-            editing = false;
-            editBuffer = setting.getValue() != null ? setting.getValue() : "";
+            onHidden();
         }
         return enabled;
     }

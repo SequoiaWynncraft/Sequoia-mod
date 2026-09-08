@@ -136,7 +136,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
                 y + 2,
                 textStyle(
                         fontName,
-                        enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                        enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
                         UiCanvas.HorizontalAlign.LEFT,
                         UiCanvas.VerticalAlign.TOP));
 
@@ -149,7 +149,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
                 trackY,
                 layout.sliderWidth(),
                 4,
-                enabled ? color(CONTROL_INPUT_SECONDARY) : color(CONTROL_INPUT_SECONDARY, 120));
+                color(CONTROL_INPUT_SECONDARY));
 
         // Slider fill
         double value = getDoubleValue();
@@ -161,7 +161,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
                 trackY,
                 fillWidth,
                 4,
-                enabled ? color(ACCENT_PRIMARY) : color(CONTROL_INPUT_SECONDARY, 120));
+                enabled ? color(ACCENT_PRIMARY) : color(CONTROL_INPUT_SECONDARY));
 
         // Knob
         float knobX = layout.sliderX() + fillWidth;
@@ -171,8 +171,8 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
         // Text box
         Color boxBg = !enabled
-                ? color(CONTROL_INPUT_SECONDARY, 120)
-                : editing ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT, 200);
+                ? color(CONTROL_INPUT_SECONDARY)
+                : editing ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
         canvas.fillRect(layout.textBoxX(), layout.textBoxY(), TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, boxBg);
         if (enabled && editing) {
             canvas.strokeRect(layout.textBoxX(), layout.textBoxY(), TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, 1,
@@ -336,12 +336,17 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         }
     }
 
+    @Override
+    public void onHidden() {
+        dragging = false;
+        editing = false;
+        editBuffer = formatValue(getDoubleValue());
+    }
+
     private boolean prepareEnabledState() {
         boolean enabled = isEnabled();
         if (!enabled) {
-            dragging = false;
-            editing = false;
-            editBuffer = formatValue(getDoubleValue());
+            onHidden();
         }
         return enabled;
     }

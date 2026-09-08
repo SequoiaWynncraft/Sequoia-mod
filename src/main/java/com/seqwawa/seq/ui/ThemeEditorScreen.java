@@ -116,7 +116,7 @@ public final class ThemeEditorScreen extends Screen {
                     canvas,
                     font,
                     18,
-                    color(ACCENT_PRIMARY),
+                    color(ACCENT_PRIMARY_HOVER),
                     UiCanvas.HorizontalAlign.RIGHT,
                     screenWidth - PADDING,
                     HEADER_HEIGHT / 2f,
@@ -130,17 +130,9 @@ public final class ThemeEditorScreen extends Screen {
 
     private void renderSidebar(UiCanvas canvas, String font, float screenHeight) {
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(BACKGROUND_SIDEBAR));
-        drawText(
-                canvas,
-                font,
-                16,
-                color(ACCENT_PRIMARY),
-                UiCanvas.HorizontalAlign.CENTER,
-                SIDEBAR_WIDTH / 2f,
-                22,
-                "Sequoia");
-        canvas.fillRect(10, 40, SIDEBAR_WIDTH - 20, 1, color(ACCENT_DIVIDER));
-        canvas.fillRect(10, 50, SIDEBAR_WIDTH - 20, 22, color(ACCENT_PRIMARY_DARK_HOVER, 120));
+        SequoiaUiStyle.drawSidebarTitle(canvas, font, SIDEBAR_WIDTH);
+        canvas.fillRect(10, 40, SIDEBAR_WIDTH - 20, 1, color(ACCENT_PRIMARY_DARK));
+        canvas.fillRect(10, 50, SIDEBAR_WIDTH - 20, 22, SequoiaUiStyle.sidebarButtonColor(true, false));
         drawText(
                 canvas,
                 font,
@@ -290,7 +282,7 @@ public final class ThemeEditorScreen extends Screen {
                             rowHeight,
                             rowIndex++ % 2 == 0
                                     ? color(BACKGROUND_BODY)
-                                    : color(BACKGROUND_CONTENT_FOCUSED, 100));
+                                    : color(BACKGROUND_CONTENT_FOCUSED));
                     renderColorRow(canvas, font, layout, token, cursorY);
                     cursorY += rowHeight;
                 }

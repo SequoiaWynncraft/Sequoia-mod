@@ -304,6 +304,19 @@ final class NanoVgCanvas implements UiCanvas {
     }
 
     @Override
+    public void drawImageTile(UiImage image, float x, float y, float width, float height, float alpha) {
+        nvgSave(context);
+        try {
+            // Shared tile edges must cover each pixel exactly once, even at fractional zoom.
+            // An antialiased fringe exposes the background; overlapping tiles would stack alpha.
+            org.lwjgl.nanovg.NanoVG.nvgShapeAntiAlias(context, false);
+            drawImage(image, x, y, width, height, alpha);
+        } finally {
+            nvgRestore(context);
+        }
+    }
+
+    @Override
     public void fillCurrentPathWithImage(UiImage image, float x, float y, float width, float height, float alpha) {
         NanoVgImage nanoVgImage = requireImage(image);
         try (NVGPaint paint = NVGPaint.calloc()) {

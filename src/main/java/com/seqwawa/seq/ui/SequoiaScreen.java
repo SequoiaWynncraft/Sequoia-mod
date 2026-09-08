@@ -4,6 +4,7 @@ import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import java.awt.Color;
+import com.seqwawa.seq.managers.AssetManager;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -20,7 +21,7 @@ public class SequoiaScreen extends Screen {
     private static final float BUTTON_HEIGHT = 24;
     private static final float BUTTON_SPACING = 8;
     private static final float BUTTON_RADIUS = 6;
-    private static final float TITLE_FONT_SIZE = 24;
+    private static final float TITLE_FONT_SIZE = 76.8f;
     private static final float BUTTON_FONT_SIZE = 14;
 
     private float nvgMouseX;
@@ -42,16 +43,26 @@ public class SequoiaScreen extends Screen {
             float screenHeight = canvas.metrics().height();
 
             // Dark background
-            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY, 140));
+            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
+
+            // Fit the artwork against the left edge without stretching or cropping it.
+            var artwork = AssetManager.getAssetsMap().get("seqmod_bg");
+            if (artwork != null && artwork.getImage() != null) {
+                float scale = Math.min(screenWidth / 2f / artwork.getWidth(), screenHeight / artwork.getHeight());
+                float artworkWidth = artwork.getWidth() * scale;
+                float artworkHeight = artwork.getHeight() * scale;
+                canvas.drawImage(artwork.getImage(), 0, (screenHeight - artworkHeight) / 2f,
+                        artworkWidth, artworkHeight, 0.35f);
+            }
 
             // Title
             String fontName = SeqClient.getFontManager().getSelectedFont();
-            var destinations = SequoiaSidebarNavigation.destinations();
+            var destinations = SequoiaSidebarNavigation.mainMenuDestinations();
             MenuLayout menu = menuLayout(screenHeight, destinations.size());
             float titleY = menu.titleY();
             canvas.drawText("Sequoia", screenWidth / 2f, titleY, new UiCanvas.TextStyle(
                     fontName,
-                    TITLE_FONT_SIZE,
+                    menu.titleFontSize(),
                     color(ACCENT_PRIMARY),
                     UiCanvas.HorizontalAlign.CENTER,
                     UiCanvas.VerticalAlign.MIDDLE));
@@ -69,7 +80,7 @@ public class SequoiaScreen extends Screen {
         boolean hovered = nvgMouseX >= x && nvgMouseX <= x + BUTTON_WIDTH
                 && nvgMouseY >= y && nvgMouseY <= y + height;
 
-        Color bgColor = hovered ? color(CONTROL_INPUT_HOVER) : color(BACKGROUND_POPUP, 200);
+        Color bgColor = hovered ? color(CONTROL_INPUT_HOVER) : color(BACKGROUND_POPUP);
         canvas.fillRect(x, y, BUTTON_WIDTH, height, bgColor);
 
         String fontName = SeqClient.getFontManager().getSelectedFont();
@@ -90,7 +101,7 @@ public class SequoiaScreen extends Screen {
             float screenWidth = MinecraftUiRenderer.screenWidth();
             float screenHeight = MinecraftUiRenderer.screenHeight();
 
-            var destinations = SequoiaSidebarNavigation.destinations();
+            var destinations = SequoiaSidebarNavigation.mainMenuDestinations();
             MenuLayout menu = menuLayout(screenHeight, destinations.size());
             float centerX = screenWidth / 2f - BUTTON_WIDTH / 2f;
 
@@ -111,7 +122,14 @@ public class SequoiaScreen extends Screen {
     static MenuLayout menuLayout(float screenHeight, int rowCount) {
         int rows = Math.max(1, rowCount);
         float bottomPadding = 12;
-        float minimumStartY = 34;
+        float topPadding = 12;
+        float titleGap = 16;
+        float minimumButtonHeight = 10;
+        float minimumSpacing = 1;
+        float minimumBlockHeight = minimumButtonHeight * rows + minimumSpacing * (rows - 1);
+        float titleFontSize = Math.min(TITLE_FONT_SIZE, Math.max(24,
+                screenHeight - topPadding - titleGap - minimumBlockHeight - bottomPadding));
+        float minimumStartY = topPadding + titleFontSize + titleGap;
         float availableHeight = Math.max(BUTTON_HEIGHT, screenHeight - minimumStartY - bottomPadding);
         float normalBlockHeight = BUTTON_HEIGHT * rows + BUTTON_SPACING * (rows - 1);
         float buttonHeight;
@@ -120,8 +138,6 @@ public class SequoiaScreen extends Screen {
             buttonHeight = BUTTON_HEIGHT;
             rowStep = BUTTON_HEIGHT + BUTTON_SPACING;
         } else {
-            float minimumButtonHeight = 10;
-            float minimumSpacing = 1;
             buttonHeight = Math.max(
                     minimumButtonHeight,
                     Math.min(BUTTON_HEIGHT, (availableHeight - minimumSpacing * (rows - 1)) / rows));
@@ -133,9 +149,12 @@ public class SequoiaScreen extends Screen {
             rowStep = buttonHeight + spacing;
         }
         float blockHeight = buttonHeight + rowStep * (rows - 1);
-        float startY = Math.max(8, Math.min(screenHeight * .3f + 40, screenHeight - bottomPadding - blockHeight));
-        float titleY = Math.max(18, Math.min(screenHeight * .3f, startY - 28));
-        return new MenuLayout(titleY, startY, rowStep, buttonHeight, rows);
+        float titleOffset = titleFontSize / 2f + titleGap;
+        float startY = Math.max(minimumStartY,
+                Math.min(screenHeight * .3f + titleOffset, screenHeight - bottomPadding - blockHeight));
+        float titleY = Math.max(topPadding + titleFontSize / 2f,
+                Math.min(screenHeight * .3f, startY - titleOffset));
+        return new MenuLayout(titleY, titleFontSize, startY, rowStep, buttonHeight, rows);
     }
 
     @Override
@@ -143,7 +162,7 @@ public class SequoiaScreen extends Screen {
         return false;
     }
 
-    record MenuLayout(float titleY, float startY, float rowStep, float buttonHeight, int rowCount) {
+    record MenuLayout(float titleY, float titleFontSize, float startY, float rowStep, float buttonHeight, int rowCount) {
         float buttonY(int row) {
             return startY + rowStep * row;
         }

@@ -295,6 +295,11 @@ public final class WarTerritoryQueueHudRenderer {
 
     /** Mirrors Wynntils' GuildResourceValues#getDefenceColor vanilla formatting palette. */
     static Color defenseColor(String defense) {
+        Color vanilla = vanillaDefenseColor(defense);
+        return vanilla == null ? ThemeManager.color(UiColor.TEXT_SECONDARY) : vanilla;
+    }
+
+    static Color vanillaDefenseColor(String defense) {
         String normalized = normalize(defense);
         ChatFormatting formatting = normalized == null
                 ? null
@@ -306,9 +311,7 @@ public final class WarTerritoryQueueHudRenderer {
                     case "very high" -> ChatFormatting.DARK_RED;
                     default -> null;
                 };
-        return formatting == null
-                ? ThemeManager.color(UiColor.TEXT_SECONDARY)
-                : new Color(formatting.getColor());
+        return formatting == null ? null : new Color(formatting.getColor());
     }
 
     private static String compact(String value, int maxLength) {

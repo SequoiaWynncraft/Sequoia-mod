@@ -212,7 +212,7 @@ public final class WarQueueHudEditorScreen extends Screen {
                 width + PADDING * 2f,
                 height + PADDING * 2f,
                 4f,
-                color(CONTROL_INPUT, 210));
+                color(CONTROL_INPUT));
         canvas.strokeRect(
                 x - PADDING,
                 y - PADDING,

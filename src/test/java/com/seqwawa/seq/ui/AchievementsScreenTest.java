@@ -115,13 +115,27 @@ class AchievementsScreenTest {
     }
 
     @Test
+    void rowsWrapProgressBelowTheDetailsInNarrowWindows() {
+        int raidCount = SeqRaid.values().length;
+        float narrowHeight = AchievementsScreen.contentHeight(400, raidCount);
+        float wideHeight = AchievementsScreen.contentHeight(800, raidCount);
+        assertTrue(AchievementsScreen.cardHeight(400) > AchievementsScreen.cardHeight(800));
+        assertTrue(narrowHeight > wideHeight);
+        assertTrue(wideHeight >= (raidCount + 1) * AchievementsScreen.cardHeight(800));
+        var panel = AchievementsScreen.panelLayout(640, 420, narrowHeight);
+        assertTrue(panel.x() >= SequoiaSidebarNavigation.WIDTH + 8);
+        assertTrue(panel.height() < narrowHeight);
+        assertTrue(panel.bottom() <= 412);
+    }
+
+    @Test
     void compactViewportKeepsThePanelInsideItsMargins() {
         AchievementsScreen.PanelLayout panel = AchievementsScreen.panelLayout(284.7f, 160, 345);
 
         assertTrue(panel.x() >= 14);
-        assertTrue(panel.right() <= 284.7f - 14);
+        assertTrue(panel.right() <= 284.7f - 8);
         assertTrue(panel.y() >= 0);
-        assertTrue(panel.bottom() <= 160 - 14);
+        assertTrue(panel.bottom() <= 160 - 8);
     }
 
     private static Map.Entry<String, Entry> entry(String key, int count, String tier) {

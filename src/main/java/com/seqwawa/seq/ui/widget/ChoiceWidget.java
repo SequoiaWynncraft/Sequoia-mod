@@ -5,7 +5,7 @@ import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY;
 import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_INPUT_HOVER;
 import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_INPUT_SECONDARY;
 import static com.seqwawa.seq.ui.theme.UiColor.TEXT_DISABLED;
-import static com.seqwawa.seq.ui.theme.UiColor.TEXT_SECONDARY;
+import static com.seqwawa.seq.ui.theme.UiColor.TEXT_PRIMARY;
 
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
@@ -34,7 +34,7 @@ public final class ChoiceWidget extends SettingWidget<Setting.ChoiceSetting> {
                 y + height / 2f,
                 textStyle(
                         fontName,
-                        enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                        enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
                         UiCanvas.HorizontalAlign.LEFT));
 
         float buttonX = x + width - BUTTON_WIDTH - 8;
@@ -46,7 +46,7 @@ public final class ChoiceWidget extends SettingWidget<Setting.ChoiceSetting> {
                 BUTTON_WIDTH,
                 BUTTON_HEIGHT,
                 !enabled
-                        ? color(CONTROL_INPUT_SECONDARY, 120)
+                        ? color(CONTROL_INPUT_SECONDARY)
                         : hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT_SECONDARY));
         canvas.save();
         canvas.scissor(buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT);

@@ -2,6 +2,7 @@ package com.seqwawa.seq.ui.widget;
 
 import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_DIVIDER;
+import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_DISABLED;
 
 import lombok.Getter;
 import net.minecraft.client.input.CharacterEvent;
@@ -108,6 +109,9 @@ public abstract class SettingWidget<T extends Setting<?>> {
         return false;
     }
 
+    /** Clears transient input and previews when a category, section, or search hides this control. */
+    public void onHidden() {}
+
     public Setting<?> getSetting() {
         return setting;
     }
@@ -156,7 +160,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
                 y + PARENT_GUIDE_VERTICAL_MARGIN,
                 PARENT_GUIDE_WIDTH,
                 Math.max(1f, height - PARENT_GUIDE_VERTICAL_MARGIN * 2f),
-                color(ACCENT_DIVIDER, enabled ? 170 : 80));
+                color(enabled ? ACCENT_DIVIDER : ACCENT_DISABLED));
     }
 
     public static String toDisplayName(String rawName) {

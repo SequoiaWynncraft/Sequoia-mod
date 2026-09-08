@@ -48,11 +48,11 @@ public class UpdatePromptScreen extends Screen {
             float screenWidth = canvas.metrics().width();
             float screenHeight = canvas.metrics().height();
 
-            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY, 150));
+            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
 
             float panelX = (screenWidth - PANEL_WIDTH) / 2f;
             float panelY = (screenHeight - PANEL_HEIGHT) / 2f;
-            canvas.fillRect(panelX, panelY, PANEL_WIDTH, PANEL_HEIGHT, color(BACKGROUND_BODY_OPAQUE, 240));
+            canvas.fillRect(panelX, panelY, PANEL_WIDTH, PANEL_HEIGHT, color(BACKGROUND_BODY_OPAQUE));
 
             String fontName = SeqClient.getFontManager().getSelectedFont();
             drawCenteredText(canvas, fontName, 16, color(ACCENT_PRIMARY_HOVER), panelX + PANEL_WIDTH / 2f, panelY + 26,
@@ -78,7 +78,7 @@ public class UpdatePromptScreen extends Screen {
         boolean hovered = nvgMouseX >= x && nvgMouseX <= x + BUTTON_WIDTH
                 && nvgMouseY >= y && nvgMouseY <= y + BUTTON_HEIGHT;
 
-        canvas.fillRect(x, y, BUTTON_WIDTH, BUTTON_HEIGHT, hovered ? color(ACCENT_PRIMARY_DARK_HOVER, 230) : color(CONTROL_INPUT_HOVER, 220));
+        canvas.fillRect(x, y, BUTTON_WIDTH, BUTTON_HEIGHT, hovered ? color(ACCENT_PRIMARY_DARK_HOVER) : color(CONTROL_INPUT_HOVER));
         drawCenteredText(canvas, fontName, 11, color(TEXT_SECONDARY),
                 x + BUTTON_WIDTH / 2f, y + BUTTON_HEIGHT / 2f, label);
     }

@@ -59,7 +59,7 @@ public final class TnaBeamIndicatorHudRenderer {
         int completedBeams = fire ? 3 : timerBeams;
         for (int index = 1; index <= 3; index++) {
             float x = centerX + (index - 2) * LAMP_GAP * scale;
-            Color color = opaque(ThemeManager.color(index <= completedBeams ? CONTROL_SUCCESS : CONTROL_DANGER));
+            Color color = ThemeManager.color(index <= completedBeams ? CONTROL_SUCCESS : CONTROL_DANGER);
             canvas.fillCircle(x, lampY, LAMP_RADIUS * scale, color);
         }
 
@@ -69,7 +69,7 @@ public final class TnaBeamIndicatorHudRenderer {
                 centerX,
                 lampY + 18f * scale,
                 (fire ? 13f : 12f) * scale,
-                opaque(ThemeManager.color(fire ? CONTROL_DANGER : CONTROL_SUCCESS)));
+                ThemeManager.color(fire ? CONTROL_DANGER : CONTROL_SUCCESS));
     }
 
     static String displayText(TnaSahurSoundDetector.IndicatorState state) {
@@ -145,10 +145,6 @@ public final class TnaBeamIndicatorHudRenderer {
 
     private static long monotonicMillis() {
         return System.nanoTime() / 1_000_000L;
-    }
-
-    private static Color opaque(Color color) {
-        return new Color(color.getRed(), color.getGreen(), color.getBlue());
     }
 
     public record Bounds(float x, float y, float width, float height) {

@@ -35,7 +35,7 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
                 labelY,
                 textStyle(
                         fontName,
-                        enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                        enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
                         FONT_SIZE,
                         UiCanvas.HorizontalAlign.LEFT));
         if (hasDescription()) {
@@ -56,8 +56,8 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
         boolean on = setting.getValue();
 
         Color bgColor = !enabled
-                ? color(CONTROL_INPUT_SECONDARY, 120)
-                : on ? color(ACCENT_PRIMARY) : color(ACCENT_SECONDARY, 200);
+                ? color(CONTROL_INPUT_SECONDARY)
+                : on ? color(ACCENT_PRIMARY) : color(ACCENT_SECONDARY);
         canvas.fillRect(toggleX, toggleY, TOGGLE_WIDTH, TOGGLE_HEIGHT, bgColor);
 
         float knobSize = TOGGLE_HEIGHT - KNOB_PADDING * 2;

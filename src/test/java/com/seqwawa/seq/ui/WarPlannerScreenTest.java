@@ -62,6 +62,10 @@ class WarPlannerScreenTest {
         assertEquals(0, WarPlannerScreen.opacityPercentForMouse(manager.opacityX() + 65, manager));
         assertEquals(100, WarPlannerScreen.opacityPercentForMouse(manager.opacityX() + 125, manager));
         assertEquals(100, WarPlannerScreen.opacityAlpha(200, 50));
+        for (int configuredAlpha : new int[] {0, 1, 42, 127, 254, 255}) {
+            assertEquals(configuredAlpha, WarPlannerScreen.opacityAlpha(configuredAlpha, 100));
+            assertEquals(0, WarPlannerScreen.opacityAlpha(configuredAlpha, 0));
+        }
         assertFalse(WarPlannerScreen.shouldBlurBackground(95));
         assertTrue(WarPlannerScreen.shouldBlurBackground(100));
         assertTrue(narrowManager.opacityX() >= 12);

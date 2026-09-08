@@ -5,14 +5,7 @@ import com.seqwawa.seq.model.war.WarStatusSnapshot;
 import com.seqwawa.seq.model.war.WarStatusSnapshot.Player;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
-import com.seqwawa.seq.utils.rendering.UiImage;
-import com.seqwawa.seq.utils.rendering.UiRenderer;
 import java.awt.Color;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -23,27 +16,17 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.regex.Pattern;
 
 /** Draws the opted-in telemetry roster over the war planner map. */
 public final class TelemetryPlayerMapOverlay implements AutoCloseable {
     private static final long REFRESH_INTERVAL_MS = Duration.ofSeconds(5).toMillis();
-    private static final int FACE_TEXTURE_PX = 64;
-    private static final float HEAD_SIZE = 20;
+    private static final float HEAD_SIZE = MapPlayerHeadRenderer.HEAD_SIZE;
     private static final float FAN_RADIUS = HEAD_SIZE * 0.65f;
-    private static final float DOT_RADIUS = 3;
-    private static final int MAX_FACE_BYTES = 512 * 1024;
+    private static final float MARKER_HALF_SIZE = 3;
     private static final Color PLATE = new Color(12, 14, 23, 217);
     private static final Color GOLD = new Color(245, 197, 66);
-    private static final Pattern USERNAME = Pattern.compile("[A-Za-z0-9_]{3,16}");
-    private static final HttpClient FACE_HTTP = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
-
     private final ApiClient api = ApiClient.getInstance();
-    private final Map<String, CompletableFuture<byte[]>> faceDownloads = new HashMap<>();
-    private final Map<String, UiImage> faces = new HashMap<>();
-    private final Set<String> invalidFaces = new HashSet<>();
+    private final MapPlayerHeadRenderer playerHeads = new MapPlayerHeadRenderer();
     private volatile WarStatusSnapshot snapshot = WarStatusSnapshot.EMPTY;
     private volatile CompletableFuture<WarStatusSnapshot> refresh;
     private long nextRefreshAtMs;
@@ -75,7 +58,9 @@ public final class TelemetryPlayerMapOverlay implements AutoCloseable {
 
     public void render(UiCanvas canvas, MapViewport viewport, GuildTerritoryIndex territories) {
         List<PlayerPoint> points = resolvePlayerPoints(snapshot.players(), territories);
-        pruneFaces(points);
+        Set<String> usernames = new HashSet<>();
+        points.forEach(point -> usernames.add(point.username()));
+        playerHeads.retain(usernames);
         canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
         try {
             for (PlayerPoint point : points) {
@@ -83,14 +68,12 @@ public final class TelemetryPlayerMapOverlay implements AutoCloseable {
                 float z = viewport.worldToScreenZ(point.z()) + (float) point.fanZ() * FAN_RADIUS;
                 if (!inBounds(viewport, x, z, HEAD_SIZE + 16)) continue;
 
-                UiImage face = face(point.username());
-                if (face == null) {
-                    canvas.fillCircle(x, z, DOT_RADIUS, GOLD);
-                    canvas.strokeCircle(x, z, DOT_RADIUS, 1, PLATE);
-                    continue;
+                if (!playerHeads.render(canvas, point.username(), x, z)) {
+                    canvas.fillRect(x - MARKER_HALF_SIZE, z - MARKER_HALF_SIZE,
+                            MARKER_HALF_SIZE * 2, MARKER_HALF_SIZE * 2, GOLD);
+                    canvas.strokeRect(x - MARKER_HALF_SIZE, z - MARKER_HALF_SIZE,
+                            MARKER_HALF_SIZE * 2, MARKER_HALF_SIZE * 2, 1, PLATE);
                 }
-                float half = HEAD_SIZE / 2;
-                canvas.drawImage(face, x - half, z - half, HEAD_SIZE, HEAD_SIZE, 1);
             }
         } finally {
             canvas.resetScissor();
@@ -101,69 +84,9 @@ public final class TelemetryPlayerMapOverlay implements AutoCloseable {
     public void close() {
         generation++;
         cancelRefresh();
-        faceDownloads.values().forEach(download -> download.cancel(true));
-        faces.values().forEach(UiRenderer::deleteImage);
-        faces.clear();
-        faceDownloads.clear();
-        invalidFaces.clear();
+        playerHeads.close();
         snapshot = WarStatusSnapshot.EMPTY;
         nextRefreshAtMs = 0;
-    }
-
-    private UiImage face(String username) {
-        UiImage existing = faces.get(username);
-        if (existing != null || invalidFaces.contains(username)) return existing;
-
-        CompletableFuture<byte[]> download = faceDownloads.computeIfAbsent(username, this::downloadFace);
-        if (!download.isDone()) return null;
-        byte[] bytes = download.getNow(null);
-        faceDownloads.remove(username);
-        if (bytes == null) {
-            invalidFaces.add(username);
-            return null;
-        }
-        try {
-            UiImage image = UiRenderer.createImage(ByteBuffer.wrap(bytes), true);
-            if (image == null) invalidFaces.add(username);
-            else faces.put(username, image);
-            return image;
-        } catch (RuntimeException exception) {
-            invalidFaces.add(username);
-            return null;
-        }
-    }
-
-    private CompletableFuture<byte[]> downloadFace(String username) {
-        if (!USERNAME.matcher(username).matches()) return CompletableFuture.completedFuture(null);
-        URI uri = URI.create("https://nmsr.seqwawa.com/face/" + username + "?w=" + FACE_TEXTURE_PX);
-        HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(15))
-                .header("Accept", "image/png")
-                .header("User-Agent", "Sequoia-Mod")
-                .GET()
-                .build();
-        return FACE_HTTP.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
-                .handle((response, throwable) -> {
-                    if (throwable != null || response.statusCode() != 200) return null;
-                    byte[] bytes = response.body();
-                    return bytes.length > 0 && bytes.length <= MAX_FACE_BYTES ? bytes : null;
-                });
-    }
-
-    private void pruneFaces(List<PlayerPoint> points) {
-        Set<String> live = new HashSet<>();
-        points.forEach(point -> live.add(point.username()));
-        faces.entrySet().removeIf(entry -> {
-            if (live.contains(entry.getKey())) return false;
-            UiRenderer.deleteImage(entry.getValue());
-            return true;
-        });
-        faceDownloads.entrySet().removeIf(entry -> {
-            if (live.contains(entry.getKey())) return false;
-            entry.getValue().cancel(true);
-            return true;
-        });
-        invalidFaces.removeIf(username -> !live.contains(username));
     }
 
     private void cancelRefresh() {
