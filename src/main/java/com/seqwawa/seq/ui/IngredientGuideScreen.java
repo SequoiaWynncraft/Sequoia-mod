@@ -204,11 +204,11 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         float availableWidth = Math.max(0, width - x - OUTER_MARGIN);
         // Reserve the title on the first row, then wrap controls like Party Finder.
         float firstRight = Math.max(x, width - OUTER_MARGIN - 126);
-        float combinedWidth = Math.min(344, availableWidth);
+        float scopeWidth = Math.min(108, availableWidth / 2);
+        float searchWidth = SequoiaUiStyle.searchWidth(availableWidth - scopeWidth);
+        float combinedWidth = searchWidth + scopeWidth;
         float rowY = x + combinedWidth <= firstRight ? 6 : 6 + SEARCH_HEIGHT + 6;
         float rowRight = rowY == 6 ? firstRight : width - OUTER_MARGIN;
-        float scopeWidth = Math.min(108, combinedWidth / 2);
-        float searchWidth = combinedWidth - scopeWidth;
         Bounds search = new Bounds(x, rowY, searchWidth, SEARCH_HEIGHT);
         Bounds scope = new Bounds(x + searchWidth, rowY, scopeWidth, SEARCH_HEIGHT);
         float nextX = x + combinedWidth + 6;
@@ -466,7 +466,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         canvas.strokeRect(search.x(), search.y(), totalWidth, search.height(), 1,
                 active ? color(CONTROL_BORDER) : color(ACCENT_DIVIDER));
         canvas.fillRect(scope.x(), scope.y() + 3, 1, scope.height() - 6, color(ACCENT_DIVIDER));
-        String value = searchQuery.isEmpty() ? "Search for..." : searchQuery;
+        String value = searchQuery.isEmpty() ? "Search..." : searchQuery;
         String visible = ellipsize(value, Math.max(0, search.width() - 12), 12);
         if (enabled && searchQuerySelected && !searchQuery.isEmpty()) {
             float selectionWidth = UiRenderer.measureText(visible, SeqClient.getFontManager().getSelectedFont(), 12).width();
