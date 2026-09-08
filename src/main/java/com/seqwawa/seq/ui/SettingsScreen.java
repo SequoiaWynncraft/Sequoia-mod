@@ -344,7 +344,7 @@ public class SettingsScreen extends Screen {
                     searchY,
                     THEME_EDITOR_BUTTON_WIDTH,
                     SEARCH_BAR_HEIGHT,
-                    themeEditorHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT_SECONDARY));
+                    themeEditorHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
             drawText(
                     canvas,
                     fontName,
@@ -368,7 +368,7 @@ public class SettingsScreen extends Screen {
                     searchY,
                     HUD_EDITOR_BUTTON_WIDTH,
                     SEARCH_BAR_HEIGHT,
-                    hudEditorHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT_SECONDARY));
+                    hudEditorHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
             drawText(
                     canvas,
                     fontName,

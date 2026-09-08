@@ -2312,7 +2312,13 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         canvas.restore();
         canvas.save();
         canvas.scissor(layout.closeX(), layout.y(), layout.width(), layout.rowHeight());
-        drawButton(canvas, layout.closeX(), layout.y(), layout.width(), layout.rowHeight(), "Close Map", false);
+        boolean closeHovered = isHovered(nvgMouseX, nvgMouseY,
+                layout.closeX(), layout.y(), layout.width(), layout.rowHeight());
+        canvas.fillRect(layout.closeX(), layout.y(), layout.width(), layout.rowHeight(),
+                closeHovered ? color(CONTROL_DANGER_HOVER) : color(CONTROL_DANGER));
+        canvas.strokeRect(layout.closeX(), layout.y(), layout.width(), layout.rowHeight(), 1, color(MAP_BORDER));
+        drawText(canvas, layout.closeX() + layout.width() / 2f, layout.y() + layout.rowHeight() / 2f,
+                12, "Close Map", color(MAP_TEXT), TextAlignment.CENTER);
         canvas.restore();
     }
 
