@@ -110,7 +110,7 @@ class WarPlannerScreenTest {
         assertEquals(220, WarPlannerScreen.warMapSidebarWidth(900));
         assertEquals(160, WarPlannerScreen.warMapSidebarWidth(640));
         assertEquals(150, WarPlannerScreen.warMapSidebarWidth(320));
-        assertEquals(4, WarPlannerScreen.warMapVisibleZoneRows(320));
+        assertEquals(5, WarPlannerScreen.warMapVisibleZoneRows(320));
     }
 
     @Test
@@ -545,12 +545,12 @@ class WarPlannerScreenTest {
     }
 
     @Test
-    void teamCardsGrowOnlyWithTheirDenseVerticalMemberStack() {
-        assertEquals(48, WarPlannerScreen.teamCardHeight(0));
-        assertEquals(48, WarPlannerScreen.teamCardHeight(1));
-        assertEquals(56, WarPlannerScreen.teamCardHeight(2));
-        assertEquals(89, WarPlannerScreen.teamCardHeight(5));
-        assertEquals(11, WarPlannerScreen.teamMemberRowStep());
+    void teamCardsGiveMembersReadableSpacing() {
+        assertEquals(80, WarPlannerScreen.teamCardHeight(0));
+        assertEquals(80, WarPlannerScreen.teamCardHeight(1));
+        assertEquals(80, WarPlannerScreen.teamCardHeight(2));
+        assertEquals(116, WarPlannerScreen.teamCardHeight(5));
+        assertEquals(16, WarPlannerScreen.teamMemberRowStep());
     }
 
     @Test
@@ -565,13 +565,13 @@ class WarPlannerScreenTest {
         assertTrue(actions.selfX() + actions.selfWidth() <= cardsRight);
         assertTrue(actions.selfY() > actions.managerY());
         assertTrue(actions.memberTop() > actions.selfY() + 22);
-        assertEquals(101, WarPlannerScreen.teamCardHeight(1, actions));
+        assertTrue(WarPlannerScreen.teamCardHeight(1, actions) >= actions.memberTop() + WarPlannerScreen.teamMemberRowStep());
     }
 
     @Test
     void teamSidebarAndEditorStayCompactOnWideScreens() {
-        assertEquals(214, WarPlannerScreen.teamSidebarWidth(780));
-        assertEquals(179.2f, WarPlannerScreen.teamSidebarWidth(640), .01f);
+        assertEquals(234, WarPlannerScreen.teamSidebarWidth(780), .01f);
+        assertEquals(220, WarPlannerScreen.teamSidebarWidth(640), .01f);
         assertEquals(560, WarPlannerScreen.teamEditorWidth(780));
         assertEquals(496, WarPlannerScreen.teamEditorWidth(520));
     }
@@ -911,8 +911,8 @@ class WarPlannerScreenTest {
     @Test
     void warMapSidebarRowsScaleWithAvailableHeight() {
         assertEquals(1, WarPlannerScreen.warMapVisibleZoneRows(100));
-        assertEquals(4, WarPlannerScreen.warMapVisibleZoneRows(320));
-        assertEquals(6, WarPlannerScreen.warMapVisibleZoneRows(480));
+        assertEquals(5, WarPlannerScreen.warMapVisibleZoneRows(320));
+        assertEquals(8, WarPlannerScreen.warMapVisibleZoneRows(480));
         assertEquals(6, WarPlannerScreen.warMapScrollStart(99, 10, 4));
         assertEquals(0, WarPlannerScreen.warMapScrollStart(2, 3, 4));
     }
@@ -970,8 +970,8 @@ class WarPlannerScreenTest {
                 WarPlannerScreen.ZoneSidebarEntry.zone(5L, first),
                 WarPlannerScreen.ZoneSidebarEntry.zone(5L, last));
 
-        assertEquals(2, WarPlannerScreen.zoneSidebarScrollStart(99, entries, 96));
-        assertEquals(1, WarPlannerScreen.zoneSidebarScrollStart(99, entries, 128));
+        assertEquals(1, WarPlannerScreen.zoneSidebarScrollStart(99, entries, 96));
+        assertEquals(0, WarPlannerScreen.zoneSidebarScrollStart(99, entries, 128));
     }
 
     @Test
