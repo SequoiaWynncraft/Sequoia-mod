@@ -61,7 +61,7 @@ import org.lwjgl.glfw.GLFW;
 /** Seq-only war management overlay. Authorization is supplied by protected backend responses. */
 public final class WarPlannerScreen extends Screen {
     private static final float PADDING = 12;
-    private static final float HEADER_HEIGHT = 38;
+    private static final float HEADER_HEIGHT = SequoiaUiStyle.HEADER_HEIGHT;
     private static final float AVAILABILITY_HEIGHT = 48;
     private static final float TAB_HEIGHT = 24;
     private static final float ROW_HEIGHT = 38;
@@ -83,7 +83,6 @@ public final class WarPlannerScreen extends Screen {
     private static final float WAR_MAP_SIDEBAR_BOTTOM_PADDING = 6;
     private static final float BUTTON_HEIGHT = 22;
     private static final float MANAGER_ACTION_WIDTH = 92;
-    private static final float MAX_PLANNER_WIDTH = 1200;
     private static final float COMPOSITION_ICON_SIZE = 12;
     private static final float COMPOSITION_ICON_GAP = 3;
     private static final float TEAM_EDITOR_SEARCH_HEIGHT = 22;
@@ -239,15 +238,17 @@ public final class WarPlannerScreen extends Screen {
             canvas.fillRect(0, 0, screenWidth, height, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         }
         canvas.fillRect(0, 0, screenWidth, HEADER_HEIGHT, plannerBackground(color(BACKGROUND_HEADER)));
+        SequoiaSidebarNavigation.render(canvas, SequoiaSidebarNavigation.Destination.WAR, nvgMouseX, nvgMouseY);
         float screenMouseX = nvgMouseX;
         nvgMouseX -= viewport.x();
         canvas.save();
         canvas.translate(viewport.x(), 0);
         try {
             float width = viewport.width();
-            text(canvas, "War Planner", PADDING, HEADER_HEIGHT / 2, 19, color(ACCENT_PRIMARY), false);
+            text(canvas, "War Planner", width - PADDING, HEADER_HEIGHT / 2, 18,
+                    color(ACCENT_PRIMARY_HOVER), UiCanvas.HorizontalAlign.RIGHT);
             if (width >= 520) {
-                text(canvas, stateLabel(), width - 300, HEADER_HEIGHT / 2, 11, stateColor(), false);
+                text(canvas, stateLabel(), 170, HEADER_HEIGHT / 2, 11, stateColor(), false);
             }
             WarPlannerSnapshot current = manager.snapshot();
             RosterMember caller = current == null ? null : current.caller();
@@ -256,9 +257,9 @@ public final class WarPlannerScreen extends Screen {
                     && caller != null
                     && caller.discordId() != null
                     && !caller.discordId().isBlank();
-            button(canvas, width - 158, 8, 70, BUTTON_HEIGHT, "My roles", false,
+            button(canvas, PADDING, 6, 64, SequoiaUiStyle.HEADER_CONTROL_HEIGHT, "My roles", false,
                     manager.isMutating() || !rolesEditable);
-            button(canvas, width - 82, 8, 70, BUTTON_HEIGHT, "Refresh", false, manager.isRequestInFlight());
+            button(canvas, PADDING + 70, 6, 64, SequoiaUiStyle.HEADER_CONTROL_HEIGHT, "Refresh", false, manager.isRequestInFlight());
 
             renderAvailability(canvas, width);
             renderTabs(canvas, width);
@@ -2040,6 +2041,8 @@ public final class WarPlannerScreen extends Screen {
         if (editingSupportSlot != null) {
             return clickSupportEditor(mx, my, width, height);
         }
+        if (SequoiaSidebarNavigation.click(mx + viewport.x(), my, height,
+                SequoiaSidebarNavigation.Destination.WAR, parent)) return true;
         DisplayControls controls = displayControls(width, manager.canManage());
         float controlsY = height - 34;
         if (hit(mx, my, controls.resourceX(), controlsY + 1, controls.resourceWidth(), BUTTON_HEIGHT)) {
@@ -2069,13 +2072,13 @@ public final class WarPlannerScreen extends Screen {
             updateBackgroundOpacity(mx, controls);
             return true;
         }
-        if (hit(mx, my, width - 82, 8, 70, BUTTON_HEIGHT)) {
+        if (hit(mx, my, PADDING + 70, 6, 64, SequoiaUiStyle.HEADER_CONTROL_HEIGHT)) {
             if (!manager.isRequestInFlight()) {
                 showResult(manager.refreshNow());
             }
             return true;
         }
-        if (hit(mx, my, width - 158, 8, 70, BUTTON_HEIGHT)) {
+        if (hit(mx, my, PADDING, 6, 64, SequoiaUiStyle.HEADER_CONTROL_HEIGHT)) {
             beginRoleEdit();
             return true;
         }
@@ -2811,6 +2814,10 @@ public final class WarPlannerScreen extends Screen {
             PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             float localMouseX = MinecraftUiRenderer.mouseX(mouseX) - viewport.x();
             float localMouseY = MinecraftUiRenderer.mouseY(mouseY);
+            if (!hit(localMouseX, localMouseY, PADDING, contentTop(),
+                    viewport.width() - PADDING * 2, MinecraftUiRenderer.screenHeight() - contentTop() - PADDING)) {
+                return true;
+            }
             TeamsLayout teamsLayout = tab == Tab.TEAMS
                     ? teamsLayout(
                             viewport.width(),
@@ -3504,12 +3511,8 @@ public final class WarPlannerScreen extends Screen {
     }
 
     static PlannerViewport plannerViewport(float screenWidth) {
-        return plannerViewport(screenWidth, MAX_PLANNER_WIDTH);
-    }
-
-    static PlannerViewport plannerViewport(float screenWidth, float maximumWidth) {
-        float width = Math.max(1, Math.min(maximumWidth, screenWidth));
-        return new PlannerViewport(Math.max(0, (screenWidth - width) / 2), width);
+        return new PlannerViewport(SequoiaSidebarNavigation.WIDTH,
+                Math.max(1, screenWidth - SequoiaSidebarNavigation.WIDTH));
     }
 
     static float teamSidebarWidth(float width) {

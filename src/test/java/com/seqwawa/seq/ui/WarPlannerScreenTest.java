@@ -34,11 +34,12 @@ class WarPlannerScreenTest {
     }
 
     @Test
-    void wideScreensUseACenteredCappedPlannerViewport() {
-        assertEquals(new WarPlannerScreen.PlannerViewport(360, 1200), WarPlannerScreen.plannerViewport(1920));
-        assertEquals(new WarPlannerScreen.PlannerViewport(620, 680), WarPlannerScreen.plannerViewport(1920, 680));
-        assertEquals(new WarPlannerScreen.PlannerViewport(570, 780), WarPlannerScreen.plannerViewport(1920, 780));
-        assertEquals(new WarPlannerScreen.PlannerViewport(0, 640), WarPlannerScreen.plannerViewport(640));
+    void plannerUsesTheSharedSidebarAndRemainingScreenWidth() {
+        for (float width : new float[] {420, 640, 960, 1920}) {
+            var viewport = WarPlannerScreen.plannerViewport(width);
+            assertEquals(SequoiaSidebarNavigation.WIDTH, viewport.x());
+            assertEquals(width, viewport.x() + viewport.width());
+        }
     }
 
     @Test
