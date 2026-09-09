@@ -269,7 +269,7 @@ public final class WarPlannerScreen extends Screen {
                 float messageWidth = stacked
                         ? Math.min(width - PADDING * 2, 480)
                         : Math.max(80, Math.min(480, controls.left() - PADDING - DISPLAY_CONTROL_GAP));
-                canvas.fillRoundedRect(PADDING, messageY, messageWidth, 24, 5,
+                canvas.fillRect(PADDING, messageY, messageWidth, 24,
                         plannerBackground(color(BACKGROUND_POPUP)));
                 text(canvas, truncate(flashMessage, 68), PADDING + 8, messageY + 12, 11,
                         color(manager.lastError() == null ? TEXT_SECONDARY : CONTROL_WARNING), false);
@@ -279,7 +279,7 @@ public final class WarPlannerScreen extends Screen {
                 float messageWidth = stacked
                         ? Math.min(width - PADDING * 2, 480)
                         : Math.max(80, Math.min(480, controls.left() - PADDING - DISPLAY_CONTROL_GAP));
-                canvas.fillRoundedRect(PADDING, messageY, messageWidth, 24, 5,
+                canvas.fillRect(PADDING, messageY, messageWidth, 24,
                         plannerBackground(color(STATUS_WARNING_BACKGROUND)));
                 text(canvas, truncate(manager.lastError(), 68), PADDING + 8, messageY + 12, 11,
                         color(TEXT_PRIMARY), false);
@@ -333,8 +333,8 @@ public final class WarPlannerScreen extends Screen {
     private DisplayControls renderDisplayControls(UiCanvas canvas, float width, float height) {
         DisplayControls controls = displayControls(width, manager.canManage());
         float y = height - 34;
-        canvas.fillRoundedRect(
-                controls.opacityX(), y, controls.opacityWidth(), 24, 4, plannerBackground(color(BACKGROUND_CONTENT)));
+        canvas.fillRect(
+                controls.opacityX(), y, controls.opacityWidth(), 24, plannerBackground(color(BACKGROUND_CONTENT)));
         int opacity = backgroundOpacityPercent();
         float labelWidth = controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? 45 : 65;
         text(
@@ -394,11 +394,11 @@ public final class WarPlannerScreen extends Screen {
         if (manager.canManage()) {
             if (tab == Tab.ROSTER) {
                 boolean noTargets = pingCandidates(manager.snapshot(), "").isEmpty();
-                button(canvas, width - 92, y + 1, 80, BUTTON_HEIGHT,
-                        "War ping", false, manager.isMutating() || noTargets);
+                primaryButton(canvas, width - 92, y + 1, 80, BUTTON_HEIGHT,
+                        "War ping", manager.isMutating() || noTargets);
             } else if (tab == Tab.TEAMS) {
-                button(canvas, width - 92, y + 1, 80, BUTTON_HEIGHT,
-                        "New team", false, manager.isMutating());
+                primaryButton(canvas, width - 92, y + 1, 80, BUTTON_HEIGHT,
+                        "New team", manager.isMutating());
             }
         }
     }
@@ -464,7 +464,7 @@ public final class WarPlannerScreen extends Screen {
         float x = (width - w) / 2;
         float y = (height - h) / 2;
         canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
-        canvas.fillRoundedRect(x, y, w, h, 7, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
+        canvas.fillRect(x, y, w, h, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
         text(canvas, "War ping", x + 14, y + 21, 16, color(ACCENT_PRIMARY), false);
         text(canvas, "Notify an online, Discord-linked member in war chat.",
@@ -501,7 +501,7 @@ public final class WarPlannerScreen extends Screen {
                 index < candidates.size() && warPingRowFullyVisible(rowY, listBottom);
                 index++, rowY += 30) {
             RosterMember member = candidates.get(index);
-            canvas.fillRoundedRect(x + 12, rowY + 2, w - 24, 25, 3,
+            canvas.fillRect(x + 12, rowY + 2, w - 24, 25,
                     plannerBackground(color(BACKGROUND_CONTENT)));
             float actionX = x + w - 72;
             int nameCharacters = availableCharacters(x + 18, actionX - 8, 11, 24);
@@ -550,7 +550,7 @@ public final class WarPlannerScreen extends Screen {
         if (memberDrag != null && memberDrag.active()) {
             RosterMember member = rosterMember(snapshot, memberDrag.playerUuid());
             String label = member == null ? memberDrag.playerUuid() : member.displayName();
-            canvas.fillRoundedRect(nvgMouseX + 8, nvgMouseY - 10, Math.max(74, label.length() * 6 + 16), 20, 4,
+            canvas.fillRect(nvgMouseX + 8, nvgMouseY - 10, Math.max(74, label.length() * 6 + 16), 20,
                     color(ACCENT_PRIMARY_DARK));
             text(canvas, truncate(label, 22), nvgMouseX + 16, nvgMouseY, 10, color(TEXT_PRIMARY), false);
         }
@@ -568,7 +568,7 @@ public final class WarPlannerScreen extends Screen {
         boolean dropTarget = memberDrag != null
                 && memberDrag.active()
                 && hit(nvgMouseX, nvgMouseY, x, y + 1, width, Math.max(0, visibleHeight - 2));
-        canvas.fillRoundedRect(x, y + 1, width, Math.max(1, visibleHeight - 2), 4,
+        canvas.fillRect(x, y + 1, width, Math.max(1, visibleHeight - 2),
                 plannerBackground(color(dropTarget
                         ? CONTROL_INPUT_HOVER
                         : ownTeam ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT)));
@@ -613,24 +613,23 @@ public final class WarPlannerScreen extends Screen {
             button(canvas, actions.editX(), y + actions.managerY(), actions.editWidth(), BUTTON_HEIGHT,
                     "Edit", false, manager.isMutating());
             boolean confirming = pendingDeleteTeam != null && pendingDeleteTeam.id() == team.id();
-            button(canvas, actions.deleteX(), y + actions.managerY(), actions.deleteWidth(), BUTTON_HEIGHT,
-                    confirming ? "Confirm" : "Delete", true, manager.isMutating());
+            destructiveButton(canvas, actions.deleteX(), y + actions.managerY(), actions.deleteWidth(), BUTTON_HEIGHT,
+                    confirming ? "Confirm" : "Delete", confirming, manager.isMutating());
         }
         if (caller != null && placement.fullyShows(actions.selfY(), BUTTON_HEIGHT)) {
-            button(canvas, actions.selfX(), y + actions.selfY(), actions.selfWidth(), BUTTON_HEIGHT,
-                    teamMembershipActionLabel(snapshot, team), false,
+            primaryButton(canvas, actions.selfX(), y + actions.selfY(), actions.selfWidth(), BUTTON_HEIGHT,
+                    teamMembershipActionLabel(snapshot, team),
                     manager.isMutating() || !canChangeOwnTeam(snapshot, team));
         }
     }
 
     private void renderCompactSupportBoard(
             UiCanvas canvas, WarPlannerSnapshot snapshot, TeamsLayout layout) {
-        canvas.fillRoundedRect(
+        canvas.fillRect(
                 layout.supportX(),
                 layout.supportY(),
                 layout.supportWidth(),
                 layout.supportHeight(),
-                5,
                 plannerBackground(color(BACKGROUND_CONTENT)));
         boolean showHeader = layout.supportHeight() > TEAM_SHORT_SUPPORT_HEIGHT;
         if (showHeader) {
@@ -653,7 +652,7 @@ public final class WarPlannerScreen extends Screen {
                     .orElse(null);
             boolean hovered = manager.canManage()
                     && hit(nvgMouseX, nvgMouseY, placement.x(), placement.y(), placement.width(), placement.height());
-            canvas.fillRoundedRect(placement.x(), placement.y(), placement.width(), placement.height(), 3,
+            canvas.fillRect(placement.x(), placement.y(), placement.width(), placement.height(),
                     color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
             String name = slot == null
                     ? "Empty"
@@ -983,11 +982,11 @@ public final class WarPlannerScreen extends Screen {
 
     private void renderWarMapSidebar(
             UiCanvas canvas, WarPlannerSnapshot snapshot, float x, float top, float width, float bottom) {
-        canvas.fillRoundedRect(x, top, width, bottom - top, 5, plannerBackground(color(BACKGROUND_CONTENT)));
+        canvas.fillRect(x, top, width, bottom - top, plannerBackground(color(BACKGROUND_CONTENT)));
         if (manager.canManage()) {
             float actionWidth = (width - 18) / 2;
-            button(canvas, x + 6, top + 7, actionWidth, 20, "+ Category", false, manager.isMutating());
-            button(canvas, x + 12 + actionWidth, top + 7, actionWidth, 20, "+ Zone", false, manager.isMutating());
+            primaryButton(canvas, x + 6, top + 7, actionWidth, 20, "+ Category", manager.isMutating());
+            primaryButton(canvas, x + 12 + actionWidth, top + 7, actionWidth, 20, "+ Zone", manager.isMutating());
         } else {
             text(canvas, "Click visibility controls", x + 10, top + 16, 8, color(TEXT_MUTED), false);
         }
@@ -1014,7 +1013,7 @@ public final class WarPlannerScreen extends Screen {
             rowY += entry.step();
         }
         if (zoneDrag != null && zoneDrag.active()) {
-            canvas.fillRoundedRect(nvgMouseX + 8, nvgMouseY - 10, 100, 20, 4, color(ACCENT_PRIMARY_DARK));
+            canvas.fillRect(nvgMouseX + 8, nvgMouseY - 10, 100, 20, color(ACCENT_PRIMARY_DARK));
             text(canvas, truncate(zoneDrag.zoneName(), 15), nvgMouseX + 16, nvgMouseY,
                     10, color(TEXT_PRIMARY), false);
         }
@@ -1024,7 +1023,7 @@ public final class WarPlannerScreen extends Screen {
             UiCanvas canvas, ZoneSidebarEntry entry, float x, float rowY, float width) {
         boolean displayed = !hiddenZoneCategoryIds.contains(entry.categoryId());
         boolean collapsed = containsCategory(collapsedZoneCategoryIds, entry.categoryId());
-        canvas.fillRoundedRect(x + 6, rowY, width - 12, WAR_MAP_CATEGORY_ROW_HEIGHT, 4,
+        canvas.fillRect(x + 6, rowY, width - 12, WAR_MAP_CATEGORY_ROW_HEIGHT,
                 plannerBackground(color(CONTROL_INPUT)));
         float controlsWidth = manager.canManage() && entry.category() != null ? 74 : 42;
         text(canvas, collapsed ? "▶" : "▼", x + 15, rowY + WAR_MAP_CATEGORY_ROW_HEIGHT / 2, 8,
@@ -1036,7 +1035,7 @@ public final class WarPlannerScreen extends Screen {
             button(canvas, x + width - 70, rowY + 3, 38, 20, displayed ? "Hide" : "Show", false, false);
             boolean confirming = pendingDeleteZoneCategory != null
                     && pendingDeleteZoneCategory.id() == entry.category().id();
-            button(canvas, x + width - 28, rowY + 3, 22, 20, confirming ? "?" : "X", true,
+            destructiveButton(canvas, x + width - 28, rowY + 3, 22, 20, confirming ? "?" : "X", confirming,
                     manager.isMutating());
         } else {
             button(canvas, x + width - 48, rowY + 3, 42, 20, displayed ? "Hide" : "Show", false, false);
@@ -1048,7 +1047,7 @@ public final class WarPlannerScreen extends Screen {
         boolean categoryDisplayed = !containsCategory(hiddenZoneCategoryIds, zone.categoryId());
         boolean displayed = categoryDisplayed && !hiddenZoneIds.contains(zone.id());
         Color zoneColor = parseColor(zone.color(), color(ACCENT_PRIMARY));
-        canvas.fillRoundedRect(x + 6, rowY, width - 12, WAR_MAP_ZONE_ROW_HEIGHT, 4,
+        canvas.fillRect(x + 6, rowY, width - 12, WAR_MAP_ZONE_ROW_HEIGHT,
                 plannerBackground(color(BACKGROUND_CONTENT_FOCUSED)));
         canvas.fillRect(x + 11, rowY + 7, 5, 24, displayed ? zoneColor : color(TEXT_DISABLED));
         text(canvas, truncate(zone.name(), 22), x + 22, rowY + 13, 11,
@@ -1067,8 +1066,8 @@ public final class WarPlannerScreen extends Screen {
             button(canvas, x + 16 + actionWidth, rowY + 35, actionWidth, BUTTON_HEIGHT,
                     categoryDisplayed ? displayed ? "Hide" : "Show" : "Group off", false, !categoryDisplayed);
             boolean confirming = pendingDeleteZone != null && pendingDeleteZone.id() == zone.id();
-            button(canvas, x + 20 + actionWidth * 2, rowY + 35, actionWidth, BUTTON_HEIGHT,
-                    confirming ? "Sure?" : "Delete", true, manager.isMutating());
+            destructiveButton(canvas, x + 20 + actionWidth * 2, rowY + 35, actionWidth, BUTTON_HEIGHT,
+                    confirming ? "Sure?" : "Delete", confirming, manager.isMutating());
         } else {
             button(canvas, x + 22, rowY + 35, 56, BUTTON_HEIGHT,
                     categoryDisplayed ? displayed ? "Hide" : "Show" : "Group off", false, !categoryDisplayed);
@@ -1392,7 +1391,7 @@ public final class WarPlannerScreen extends Screen {
                 Math.min(centerX - labelWidth / 2, layout.mapX() + layout.mapWidth() - labelWidth - 6));
         float labelY = Math.max(layout.mapY() + 34,
                 Math.min(centerY - 11, layout.mapY() + layout.mapHeight() - 25));
-        canvas.fillRoundedRect(labelX, labelY, labelWidth, 20, 4, color(BACKGROUND_POPUP));
+        canvas.fillRect(labelX, labelY, labelWidth, 20, color(BACKGROUND_POPUP));
         text(canvas, truncate(territory.name(), 34), labelX + labelWidth / 2, labelY + 10,
                 9, color(MAP_TEXT), true);
     }
@@ -1448,12 +1447,11 @@ public final class WarPlannerScreen extends Screen {
         WarQueueLabelBounds labelBounds = warQueueLabelBounds(
                 territory, fitted, offsetX, offsetY, scale, textWidth + 6, fontSize + 4);
         if (labelBounds == null) return;
-        canvas.fillRoundedRect(
+        canvas.fillRect(
                 labelBounds.x(),
                 labelBounds.y(),
                 labelBounds.width(),
                 labelBounds.height(),
-                Math.min(3, labelBounds.height() / 4),
                 color(BACKGROUND_POPUP));
         text(
                 canvas,
@@ -1628,12 +1626,11 @@ public final class WarPlannerScreen extends Screen {
                 tooltipHeight,
                 layout.mapY() + 4,
                 layout.mapY() + layout.mapHeight() - 4);
-        canvas.fillRoundedRect(
+        canvas.fillRect(
                 tooltipX,
                 tooltipY,
                 tooltipWidth,
                 tooltipHeight,
-                4,
                 plannerBackground(color(BACKGROUND_POPUP)));
         canvas.strokeRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight, 1, color(CONTROL_BORDER));
         for (int index = 0; index < wrappedLines.size(); index++) {
@@ -1727,12 +1724,11 @@ public final class WarPlannerScreen extends Screen {
 
     private void renderSupportBoard(
             UiCanvas canvas, WarPlannerSnapshot snapshot, float x, float top, float panelWidth, float bottom) {
-        canvas.fillRoundedRect(
+        canvas.fillRect(
                 x,
                 top + 2,
                 panelWidth,
                 Math.min(bottom - top - 4, SUPPORT_PANEL_HEIGHT),
-                5,
                 plannerBackground(color(BACKGROUND_CONTENT)));
         text(canvas, "Shared support", x + 10, top + 17, 13, color(ACCENT_PRIMARY), false);
         text(canvas, manager.canManage()
@@ -1749,7 +1745,7 @@ public final class WarPlannerScreen extends Screen {
                     .orElse(null);
             boolean hovered = manager.canManage()
                     && hit(nvgMouseX, nvgMouseY, x + 7, y, panelWidth - 14, SUPPORT_ROW_HEIGHT);
-            canvas.fillRoundedRect(x + 7, y, panelWidth - 14, SUPPORT_ROW_HEIGHT, 3,
+            canvas.fillRect(x + 7, y, panelWidth - 14, SUPPORT_ROW_HEIGHT,
                     color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
             text(canvas, index == 0 ? "Lead" : "Eco " + index, x + 13, y + 11, 10, color(TEXT_MUTED), false);
             String name = slot == null ? "Empty" : slot.minecraftUsername() == null ? slot.playerUuid() : slot.minecraftUsername();
@@ -1765,7 +1761,7 @@ public final class WarPlannerScreen extends Screen {
         boolean dropTarget = memberDrag != null
                 && memberDrag.active()
                 && hit(nvgMouseX, nvgMouseY, x, poolY, panelWidth, bottom - poolY);
-        canvas.fillRoundedRect(x, poolY, panelWidth, bottom - poolY, 5,
+        canvas.fillRect(x, poolY, panelWidth, bottom - poolY,
                 plannerBackground(color(dropTarget ? CONTROL_INPUT_HOVER : BACKGROUND_CONTENT)));
         text(canvas, "Unassigned", x + 10, poolY + 16, 12, color(ACCENT_PRIMARY), false);
         text(canvas, "Drag online players into a team", x + 10, poolY + 29, 9, color(TEXT_MUTED), false);
@@ -1777,7 +1773,7 @@ public final class WarPlannerScreen extends Screen {
             float rowY = rowsTop + (index - start) * UNASSIGNED_ROW_HEIGHT;
             RosterMember member = members.get(index);
             boolean hovered = memberDrag == null && hit(nvgMouseX, nvgMouseY, x + 6, rowY, panelWidth - 12, 18);
-            canvas.fillRoundedRect(x + 6, rowY, panelWidth - 12, 18, 3,
+            canvas.fillRect(x + 6, rowY, panelWidth - 12, 18,
                     plannerBackground(color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT)));
             text(canvas, truncate(member.displayName(), 19), x + 12, rowY + 9, 10, color(TEXT_SECONDARY), false);
             renderCompositionIcons(canvas, member.compositionRoles(), x + panelWidth - 54, rowY + 3);
@@ -1797,7 +1793,7 @@ public final class WarPlannerScreen extends Screen {
         float x = (width - w) / 2;
         float y = (height - h) / 2;
         canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
-        canvas.fillRoundedRect(x, y, w, h, 7, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
+        canvas.fillRect(x, y, w, h, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
         text(canvas, "Assign shared " + label, x + 14, y + 21, 16, color(ACCENT_PRIMARY), false);
         text(canvas, "Support members can also belong to any party.", x + 14, y + 39, 10, color(TEXT_MUTED), false);
@@ -1814,7 +1810,7 @@ public final class WarPlannerScreen extends Screen {
         for (int index = start; index < candidates.size() && rowY + 30 <= listBottom; index++, rowY += 30) {
             RosterMember candidate = candidates.get(index);
             boolean selected = samePlayer(selectedUuid, candidate.playerUuid());
-            canvas.fillRoundedRect(x + 12, rowY + 2, w - 24, 25, 3,
+            canvas.fillRect(x + 12, rowY + 2, w - 24, 25,
                     plannerBackground(color(selected ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT)));
             text(canvas, truncate(candidate.displayName(), 28), x + 18, rowY + 14, 11, color(TEXT_PRIMARY), false);
             text(canvas, candidate.online() ? "Online" : "Offline · currently assigned", x + w - 150, rowY + 14,
@@ -1831,7 +1827,7 @@ public final class WarPlannerScreen extends Screen {
         float x = (width - w) / 2;
         float y = (height - h) / 2;
         canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
-        canvas.fillRoundedRect(x, y, w, h, 7, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
+        canvas.fillRect(x, y, w, h, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
         text(canvas, "Your Discord war roles", x + 14, y + 22, 16, color(ACCENT_PRIMARY), false);
         text(canvas, "Only Solo, DPS, and Tank are changed. Other Discord roles stay untouched.",
@@ -1845,7 +1841,7 @@ public final class WarPlannerScreen extends Screen {
             WarCompositionRole role = roles[index];
             float optionX = x + 14 + index * (optionWidth + optionGap);
             boolean selected = selectedCompositionRoles.contains(role);
-            canvas.fillRoundedRect(optionX, optionY, optionWidth, 42, 4,
+            canvas.fillRect(optionX, optionY, optionWidth, 42,
                     plannerBackground(color(selected ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT)));
             canvas.strokeRect(optionX, optionY, optionWidth, 42, 1,
                     color(selected ? ACCENT_PRIMARY : CONTROL_BORDER));
@@ -1856,8 +1852,8 @@ public final class WarPlannerScreen extends Screen {
                     color(TEXT_MUTED), false);
         }
         button(canvas, x + w - 154, y + h - 34, 66, BUTTON_HEIGHT, "Cancel", false, roleEditorSaving);
-        button(canvas, x + w - 80, y + h - 34, 66, BUTTON_HEIGHT,
-                roleEditorSaving ? "Saving…" : "Save", false, roleEditorSaving);
+        primaryButton(canvas, x + w - 80, y + h - 34, 66, BUTTON_HEIGHT,
+                roleEditorSaving ? "Saving…" : "Save", roleEditorSaving);
     }
 
     private void renderTeamEditor(UiCanvas canvas, float width, float height) {
@@ -1870,7 +1866,7 @@ public final class WarPlannerScreen extends Screen {
         float y = 46;
         float h = height - 70;
         canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
-        canvas.fillRoundedRect(x, y, w, h, 7, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
+        canvas.fillRect(x, y, w, h, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
         text(canvas, editingTeamId == null ? "Create war team" : "Edit war team", x + 12, y + 20, 16,
                 color(ACCENT_PRIMARY), false);
@@ -1953,8 +1949,8 @@ public final class WarPlannerScreen extends Screen {
         canvas.resetScissor();
         text(canvas, teamMembers.size() + "/5 slots", x + 12, y + h - 22, 11, color(TEXT_MUTED), false);
         button(canvas, x + w - 148, y + h - 32, 64, BUTTON_HEIGHT, "Cancel", false, teamEditorSaving);
-        button(canvas, x + w - 78, y + h - 32, 66, BUTTON_HEIGHT,
-                teamEditorSaving ? "Saving…" : "Save", false, teamEditorSaving);
+        primaryButton(canvas, x + w - 78, y + h - 32, 66, BUTTON_HEIGHT,
+                teamEditorSaving ? "Saving…" : "Save", teamEditorSaving);
         if (teamTypeMenuOpen) {
             renderTeamTypeMenu(canvas, snapshot, x + 12, fieldY + 25, w - 24);
         }
@@ -3337,7 +3333,7 @@ public final class WarPlannerScreen extends Screen {
             if (asset != null && asset.getImage() != null) {
                 canvas.drawImage(asset.getImage(), nextX, y, COMPOSITION_ICON_SIZE, COMPOSITION_ICON_SIZE, 1f);
             } else {
-                canvas.fillRoundedRect(nextX, y, COMPOSITION_ICON_SIZE, COMPOSITION_ICON_SIZE, 2,
+                canvas.fillRect(nextX, y, COMPOSITION_ICON_SIZE, COMPOSITION_ICON_SIZE,
                         color(CONTROL_INPUT));
                 text(canvas, role.name().substring(0, 1), nextX + COMPOSITION_ICON_SIZE / 2,
                         y + COMPOSITION_ICON_SIZE / 2, 8, color(TEXT_SECONDARY), true);
@@ -3891,16 +3887,32 @@ public final class WarPlannerScreen extends Screen {
         return Math.max(0, Math.min(value, Math.max(0, size - 1)));
     }
 
+    private enum ButtonTone { SECONDARY, PRIMARY, DANGER, QUIET_DANGER }
+
+    private void primaryButton(UiCanvas canvas, float x, float y, float width, float height, String label, boolean disabled) {
+        button(canvas, x, y, width, height, label, ButtonTone.PRIMARY, disabled);
+    }
+
+    private void destructiveButton(UiCanvas canvas, float x, float y, float width, float height,
+            String label, boolean confirming, boolean disabled) {
+        button(canvas, x, y, width, height, label, confirming ? ButtonTone.DANGER : ButtonTone.QUIET_DANGER, disabled);
+    }
+
     private void button(UiCanvas canvas, float x, float y, float width, float height, String label, boolean danger, boolean disabled) {
+        button(canvas, x, y, width, height, label, danger ? ButtonTone.DANGER : ButtonTone.SECONDARY, disabled);
+    }
+
+    private void button(UiCanvas canvas, float x, float y, float width, float height, String label, ButtonTone tone, boolean disabled) {
         boolean hovered = !disabled && hit(nvgMouseX, nvgMouseY, x, y, width, height);
-        Color background = disabled
-                ? color(ACCENT_DISABLED)
-                : danger
-                        ? color(hovered ? CONTROL_DANGER_HOVER : CONTROL_DANGER)
-                        : color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT);
-        canvas.fillRoundedRect(x, y, width, height, 4, background);
+        Color background = disabled ? color(ACCENT_DISABLED) : switch (tone) {
+            case PRIMARY -> color(hovered ? ACCENT_PRIMARY_HOVER : ACCENT_PRIMARY);
+            case DANGER -> color(hovered ? CONTROL_DANGER_HOVER : CONTROL_DANGER);
+            case QUIET_DANGER -> color(hovered ? CONTROL_DANGER_HOVER : CONTROL_INPUT);
+            case SECONDARY -> color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT);
+        };
+        canvas.fillRect(x, y, width, height, background);
         text(canvas, label, x + width / 2, y + height / 2, 10,
-                color(disabled ? TEXT_DISABLED : TEXT_PRIMARY), true);
+                color(disabled ? TEXT_DISABLED : tone == ButtonTone.QUIET_DANGER && !hovered ? CONTROL_DANGER_HOVER : TEXT_PRIMARY), true);
     }
 
     private static void text(UiCanvas canvas, String value, float x, float y, float size, Color textColor, boolean centered) {

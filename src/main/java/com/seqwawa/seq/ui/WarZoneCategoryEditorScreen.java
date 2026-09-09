@@ -2,6 +2,7 @@ package com.seqwawa.seq.ui;
 
 import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY;
+import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY_HOVER;
 import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_PRIMARY_DARK;
 import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_BODY_OPAQUE;
 import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_CONTENT;
@@ -76,15 +77,15 @@ final class WarZoneCategoryEditorScreen extends Screen {
         float x = (width - PANEL_WIDTH) / 2;
         float y = (height - PANEL_HEIGHT) / 2;
         canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
-        canvas.fillRoundedRect(x, y, PANEL_WIDTH, PANEL_HEIGHT, 6, color(BACKGROUND_BODY_OPAQUE));
+        canvas.fillRect(x, y, PANEL_WIDTH, PANEL_HEIGHT, color(BACKGROUND_BODY_OPAQUE));
         text(canvas, original == null ? "New zone category" : "Rename zone category",
                 x + 14, y + 18, 14, color(ACCENT_PRIMARY), false);
-        canvas.fillRoundedRect(x + 14, y + 38, PANEL_WIDTH - 28, 26, 4, color(CONTROL_INPUT));
+        canvas.fillRect(x + 14, y + 38, PANEL_WIDTH - 28, 26, color(CONTROL_INPUT));
         text(canvas, name + (saving ? "" : "│"), x + 22, y + 51, 11, color(TEXT_PRIMARY), false);
         if (message != null) text(canvas, message, x + 14, y + 76, 9, color(TEXT_MUTED), false);
-        button(canvas, x + PANEL_WIDTH - 150, y + PANEL_HEIGHT - 34, 62, "Cancel", false);
+        button(canvas, x + PANEL_WIDTH - 150, y + PANEL_HEIGHT - 34, 62, "Cancel", false, false);
         button(canvas, x + PANEL_WIDTH - 80, y + PANEL_HEIGHT - 34, 66,
-                saving ? "Saving…" : "Save", saving);
+                saving ? "Saving…" : "Save", saving, true);
     }
 
     @Override
@@ -178,10 +179,12 @@ final class WarZoneCategoryEditorScreen extends Screen {
         SeqClient.mc.setScreen(parent);
     }
 
-    private void button(UiCanvas canvas, float x, float y, float width, String label, boolean disabled) {
+    private void button(UiCanvas canvas, float x, float y, float width, String label, boolean disabled, boolean primary) {
         boolean hovered = !disabled && hit(mouseX, mouseY, x, y, width, BUTTON_HEIGHT);
-        canvas.fillRoundedRect(x, y, width, BUTTON_HEIGHT, 4,
-                disabled ? color(ACCENT_PRIMARY_DARK) : color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
+        canvas.fillRect(x, y, width, BUTTON_HEIGHT,
+                color(disabled ? ACCENT_PRIMARY_DARK
+                        : primary ? (hovered ? ACCENT_PRIMARY_HOVER : ACCENT_PRIMARY)
+                        : hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
         text(canvas, label, x + width / 2, y + BUTTON_HEIGHT / 2, 10,
                 color(disabled ? TEXT_MUTED : TEXT_PRIMARY), true);
     }

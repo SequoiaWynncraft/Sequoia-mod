@@ -265,12 +265,11 @@ public final class WarTerritoryPickerScreen extends Screen {
                     : "Unavailable · assigned to " + unavailableOwner.name();
             float tooltipWidth = Math.min(280,
                     Math.max(150, 14 + Math.max(resourceText.length(), actionText.length()) * 6));
-            canvas.fillRoundedRect(
+            canvas.fillRect(
                     nvgMouseX + 10,
                     nvgMouseY + 10,
                     tooltipWidth,
                     49,
-                    4,
                     WarPlannerScreen.plannerBackground(color(BACKGROUND_POPUP)));
             text(canvas, hoveredTerritory.name(), nvgMouseX + 17, nvgMouseY + 21, 10, color(TEXT_PRIMARY), false);
             text(canvas, resourceText, nvgMouseX + 17, nvgMouseY + 36, 9, color(TEXT_MUTED), false);
@@ -317,8 +316,8 @@ public final class WarTerritoryPickerScreen extends Screen {
                 Color border = color(keyboardFocused
                         ? ACCENT_PRIMARY
                         : assigned ? STATUS_SUCCESS_BORDER : STATUS_DANGER_BORDER);
-                canvas.fillRoundedRect(
-                        teamBounds.x(), teamBounds.y(), teamBounds.width(), teamBounds.height(), 3,
+                canvas.fillRect(
+                        teamBounds.x(), teamBounds.y(), teamBounds.width(), teamBounds.height(),
                         hovered ? brighten(background, 18) : background);
                 canvas.strokeRect(
                         teamBounds.x(), teamBounds.y(), teamBounds.width(), teamBounds.height(),
@@ -876,7 +875,7 @@ public final class WarTerritoryPickerScreen extends Screen {
         Color background = disabled ? color(ACCENT_DISABLED)
                 : danger ? color(hovered ? CONTROL_DANGER_HOVER : CONTROL_DANGER)
                 : color(hovered ? MAP_CONTROL_HOVER : MAP_CONTROL);
-        canvas.fillRoundedRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), 4, background);
+        canvas.fillRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), background);
         if (focused && !disabled) {
             canvas.strokeRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), 2, color(ACCENT_PRIMARY));
         }
