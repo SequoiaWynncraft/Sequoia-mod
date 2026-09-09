@@ -68,6 +68,7 @@ final class WarAvailabilityEditorScreen extends Screen {
         float height = canvas.metrics().height();
         float x = (width - PANEL_WIDTH) / 2;
         float y = (height - PANEL_HEIGHT) / 2;
+        if (parent instanceof WarPlannerScreen planner) planner.renderBehindDialog(canvas);
         canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
         canvas.fillRect(x, y, PANEL_WIDTH, PANEL_HEIGHT, color(BACKGROUND_BODY_OPAQUE));
         text(canvas, "Custom availability", x + 14, y + 19, 14, color(ACCENT_PRIMARY), false);

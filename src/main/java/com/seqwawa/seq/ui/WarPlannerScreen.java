@@ -238,6 +238,19 @@ public final class WarPlannerScreen extends Screen {
         }
     }
 
+    void renderBehindDialog(UiCanvas canvas) {
+        float savedX = nvgMouseX;
+        float savedY = nvgMouseY;
+        nvgMouseX = Float.NEGATIVE_INFINITY;
+        nvgMouseY = Float.NEGATIVE_INFINITY;
+        try {
+            renderPlanner(canvas);
+        } finally {
+            nvgMouseX = savedX;
+            nvgMouseY = savedY;
+        }
+    }
+
     private void renderPlanner(UiCanvas canvas) {
         float screenWidth = canvas.metrics().width();
         float height = canvas.metrics().height();
