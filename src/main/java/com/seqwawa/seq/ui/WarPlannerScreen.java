@@ -83,9 +83,7 @@ public final class WarPlannerScreen extends Screen {
     private static final float WAR_MAP_SIDEBAR_BOTTOM_PADDING = 6;
     private static final float BUTTON_HEIGHT = 22;
     private static final float MANAGER_ACTION_WIDTH = 92;
-    private static final float MAX_ROSTER_WIDTH = 680;
-    private static final float MAX_TEAMS_WIDTH = 1080;
-    private static final float MAX_ZONES_WIDTH = 1200;
+    private static final float MAX_PLANNER_WIDTH = 1200;
     private static final float COMPOSITION_ICON_SIZE = 12;
     private static final float COMPOSITION_ICON_GAP = 3;
     private static final float TEAM_EDITOR_SEARCH_HEIGHT = 22;
@@ -236,7 +234,7 @@ public final class WarPlannerScreen extends Screen {
     private void renderPlanner(UiCanvas canvas) {
         float screenWidth = canvas.metrics().width();
         float height = canvas.metrics().height();
-        PlannerViewport viewport = activePlannerViewport(screenWidth);
+        PlannerViewport viewport = plannerViewport(screenWidth);
         if (tab != Tab.ZONES) {
             canvas.fillRect(0, 0, screenWidth, height, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         }
@@ -2001,7 +1999,7 @@ public final class WarPlannerScreen extends Screen {
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
         if (warPingPickerOpen && click.button() != 0) return true;
         if (click.button() == 1) {
-            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
             float my = MinecraftUiRenderer.mouseY(click.y());
             WarPlannerSnapshot snapshot = manager == null ? null : manager.snapshot();
@@ -2024,7 +2022,7 @@ public final class WarPlannerScreen extends Screen {
         if (click.button() != 0) {
             return super.mouseClicked(click, outsideScreen);
         }
-        PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+        PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
         float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
         float my = MinecraftUiRenderer.mouseY(click.y());
         float width = viewport.width();
@@ -2444,14 +2442,14 @@ public final class WarPlannerScreen extends Screen {
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (warPingPickerOpen) return true;
         if (draggingBackgroundOpacity && click.button() == 0) {
-            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
             updateBackgroundOpacity(mx, displayControls(viewport.width(), manager.canManage()));
             return true;
         }
         if (draggingWarMap && click.button() == 0) {
             pendingWarQueueClick = null;
-            PlannerViewport plannerViewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport plannerViewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             WarMapLayout layout = warMapLayout(
                     plannerViewport.width(), contentTop(), MinecraftUiRenderer.screenHeight() - 42);
             applyWarMapViewport(currentWarMapViewport(layout).panByScreenDelta(
@@ -2460,7 +2458,7 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         if (memberDrag != null && click.button() == 0) {
-            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
             float my = MinecraftUiRenderer.mouseY(click.y());
             if (!memberDrag.active()
@@ -2476,7 +2474,7 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         if (zoneDrag != null && click.button() == 0) {
-            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
             float my = MinecraftUiRenderer.mouseY(click.y());
             if (!zoneDrag.active() && Math.hypot(mx - zoneDrag.startX(), my - zoneDrag.startY()) >= 4) {
@@ -2502,7 +2500,7 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         if (click.button() == 0 && memberDrag != null) {
-            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
             float my = MinecraftUiRenderer.mouseY(click.y());
             MemberDrag completed = memberDrag;
@@ -2513,7 +2511,7 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         if (click.button() == 0 && zoneDrag != null) {
-            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
             float my = MinecraftUiRenderer.mouseY(click.y());
             ZoneDrag completed = zoneDrag;
@@ -2810,7 +2808,7 @@ public final class WarPlannerScreen extends Screen {
             supportEditorScrollRows = clampRows(
                     supportEditorScrollRows + delta, supportCandidates(snapshot, editingSupportSlot).size());
         } else {
-            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             float localMouseX = MinecraftUiRenderer.mouseX(mouseX) - viewport.x();
             float localMouseY = MinecraftUiRenderer.mouseY(mouseY);
             TeamsLayout teamsLayout = tab == Tab.TEAMS
@@ -3505,17 +3503,8 @@ public final class WarPlannerScreen extends Screen {
         return clampRows(requested, candidateCount);
     }
 
-    private PlannerViewport activePlannerViewport(float screenWidth) {
-        float maximum = switch (tab) {
-            case ROSTER -> MAX_ROSTER_WIDTH;
-            case TEAMS -> MAX_TEAMS_WIDTH;
-            case ZONES -> MAX_ZONES_WIDTH;
-        };
-        return plannerViewport(screenWidth, maximum);
-    }
-
     static PlannerViewport plannerViewport(float screenWidth) {
-        return plannerViewport(screenWidth, MAX_ZONES_WIDTH);
+        return plannerViewport(screenWidth, MAX_PLANNER_WIDTH);
     }
 
     static PlannerViewport plannerViewport(float screenWidth, float maximumWidth) {
