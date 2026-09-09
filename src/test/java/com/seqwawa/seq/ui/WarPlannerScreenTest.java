@@ -26,6 +26,17 @@ import org.junit.jupiter.api.Test;
 
 class WarPlannerScreenTest {
     @Test
+    void zoomedOutMapKeepsFocusButSuppressesTinyOutlinesAndUnrelatedConnections() {
+        assertEquals(0, WarPlannerScreen.territoryOutlineWeight(3, 1.2f));
+        assertTrue(WarPlannerScreen.territoryOutlineWeight(10, 1.2f)
+                < WarPlannerScreen.territoryOutlineWeight(50, 1.2f));
+        assertEquals(2, WarPlannerScreen.territoryOutlineWeight(3, 2));
+        assertFalse(WarPlannerScreen.warConnectionVisible(.08f, false));
+        assertTrue(WarPlannerScreen.warConnectionVisible(.08f, true));
+        assertTrue(WarPlannerScreen.warConnectionVisible(.3f, false));
+    }
+
+    @Test
     void availabilityCountdownCarriesRoundedMinutesIntoWholeHours() {
         assertEquals("30m", WarPlannerScreen.formatDuration(Duration.ofMinutes(30)));
         assertEquals("1h", WarPlannerScreen.formatDuration(Duration.ofSeconds(3_599)));

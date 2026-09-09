@@ -147,6 +147,10 @@ public final class WarPlannerScreen extends Screen {
     private boolean supportEditorSaving;
     private boolean draggingBackgroundOpacity;
     private boolean draggingWarMap;
+    private float mapPressX;
+    private float mapPressY;
+    private boolean mapPressMoved;
+    private String selectedWarTerritory;
     private PendingWarQueueClick pendingWarQueueClick;
     private boolean warMapFitted;
     private double warMapCenterX;
@@ -730,6 +734,9 @@ public final class WarPlannerScreen extends Screen {
                 offsetY,
                 scale,
                 monotonicMillis());
+        Set<String> emphasizedTerritories = new java.util.HashSet<>();
+        if (selectedWarTerritory != null) emphasizedTerritories.add(selectedWarTerritory.toLowerCase(Locale.ROOT));
+        if (hoveredWarMapTerritory != null) emphasizedTerritories.add(hoveredWarMapTerritory.name().toLowerCase(Locale.ROOT));
         drawPreviewConnections(
                 canvas,
                 coreTerritories,
@@ -739,7 +746,8 @@ public final class WarPlannerScreen extends Screen {
                 coordinateBounds,
                 offsetX,
                 offsetY,
-                scale);
+                scale,
+                emphasizedTerritories);
         if (hoveredWarMapTerritory != null) {
             drawPreviewFill(
                     canvas,
@@ -783,8 +791,15 @@ public final class WarPlannerScreen extends Screen {
                     offsetY,
                     scale,
                     zoneColor,
-                    1.8f,
-                    1);
+                    1.2f,
+                    0);
+        }
+        for (String name : emphasizedTerritories) {
+            GuildTerritory territory = byName.get(name);
+            if (territory != null && displayedNames.contains(name)) {
+                drawPreviewOutlines(canvas, List.of(territory), coordinateBounds, offsetX, offsetY, scale,
+                        color(MAP_SELECTED_TERRITORY), 2, 0);
+            }
         }
         GuildTerritory hqTerritory = snapshot.hqTerritory() == null ? null : byName.get(snapshot.hqTerritory());
         if (hqTerritory != null && displayedNames.contains(hqTerritory.name().toLowerCase(Locale.ROOT))) {
@@ -1724,8 +1739,19 @@ public final class WarPlannerScreen extends Screen {
             float territoryY = previewY(bounds.minZ(), fitted, offsetY, scale) - outset;
             float territoryWidth = Math.max(2, (float) ((bounds.maxX() - bounds.minX()) * scale)) + outset * 2;
             float territoryHeight = Math.max(2, (float) ((bounds.maxZ() - bounds.minZ()) * scale)) + outset * 2;
-            canvas.strokeRect(territoryX, territoryY, territoryWidth, territoryHeight, strokeWidth, stroke);
+            float weight = territoryOutlineWeight(Math.min(territoryWidth, territoryHeight), strokeWidth);
+            if (weight > 0) canvas.strokeRect(territoryX, territoryY, territoryWidth, territoryHeight, weight, stroke);
         }
+    }
+
+    static float territoryOutlineWeight(float projectedSize, float requestedWidth) {
+        if (requestedWidth >= 2) return requestedWidth;
+        if (projectedSize < 5) return 0;
+        return Math.min(requestedWidth, .5f + Math.min(1, projectedSize / 36) * .6f);
+    }
+
+    static boolean warConnectionVisible(float scale, boolean emphasized) {
+        return emphasized || scale >= .22f;
     }
 
     private static void drawPreviewConnections(
@@ -1737,7 +1763,8 @@ public final class WarPlannerScreen extends Screen {
             MapBounds fitted,
             float offsetX,
             float offsetY,
-            float scale) {
+            float scale,
+            Set<String> emphasizedTerritories) {
         Set<String> drawnConnections = new java.util.HashSet<>();
         Color foreground = color(TEXT_PRIMARY);
         for (GuildTerritory territory : territories) {
@@ -1749,12 +1776,15 @@ public final class WarPlannerScreen extends Screen {
                 String key = territory.name().compareToIgnoreCase(linkedName) < 0
                         ? territory.name() + "\n" + linkedName : linkedName + "\n" + territory.name();
                 if (!drawnConnections.add(key)) continue;
+                boolean emphasized = emphasizedTerritories.contains(territory.name().toLowerCase(Locale.ROOT))
+                        || emphasizedTerritories.contains(linked.name().toLowerCase(Locale.ROOT));
+                if (!warConnectionVisible(scale, emphasized)) continue;
                 float startX = previewX(territory.centerX(), fitted, offsetX, scale);
                 float startY = previewY(territory.centerZ(), fitted, offsetY, scale);
                 float endX = previewX(linked.centerX(), fitted, offsetX, scale);
                 float endY = previewY(linked.centerZ(), fitted, offsetY, scale);
-                canvas.strokeLine(startX, startY, endX, endY, 1.6f, color(BACKGROUND_BODY_OPAQUE));
-                canvas.strokeLine(startX, startY, endX, endY, .75f, foreground);
+                canvas.strokeLine(startX, startY, endX, endY, emphasized ? 1.2f : .55f,
+                        emphasized ? color(MAP_SELECTED_TERRITORY) : foreground);
             }
         }
     }
@@ -2332,6 +2362,9 @@ public final class WarPlannerScreen extends Screen {
                     ? null
                     : new PendingWarQueueClick(queue.id(), queue.territory(), mx, my, clickedAt);
             draggingWarMap = true;
+            mapPressX = mx;
+            mapPressY = my;
+            mapPressMoved = false;
             return true;
         }
         float sidebarWidth = layout.sidebarWidth();
@@ -2475,6 +2508,9 @@ public final class WarPlannerScreen extends Screen {
             PlannerViewport plannerViewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             WarMapLayout layout = warMapLayout(
                     plannerViewport.width(), contentTop(), MinecraftUiRenderer.screenHeight() - PADDING);
+            float mx = MinecraftUiRenderer.mouseX(click.x()) - plannerViewport.x();
+            float my = MinecraftUiRenderer.mouseY(click.y());
+            if (Math.hypot(mx - mapPressX, my - mapPressY) >= 4) mapPressMoved = true;
             applyWarMapViewport(currentWarMapViewport(layout).panByScreenDelta(
                     MinecraftUiRenderer.mouseDelta(deltaX),
                     MinecraftUiRenderer.mouseDelta(deltaY)));
@@ -2520,6 +2556,20 @@ public final class WarPlannerScreen extends Screen {
         }
         if (click.button() == 0 && draggingWarMap) {
             draggingWarMap = false;
+            if (!mapPressMoved) {
+                var planner = plannerViewport(MinecraftUiRenderer.screenWidth());
+                var layout = warMapLayout(planner.width(), contentTop(), MinecraftUiRenderer.screenHeight() - PADDING);
+                var snapshot = manager.snapshot();
+                if (snapshot != null) {
+                    boolean locked = manager.canManage() && territoriesLocked();
+                    var territories = warMapDisplayedTerritories(snapshot, locked);
+                    var names = territories.stream().map(territory -> territory.name().toLowerCase(Locale.ROOT))
+                            .collect(java.util.stream.Collectors.toSet());
+                    var selected = territoryAt(territoryIndex, warMapViewport(layout, territories, locked), names,
+                            MinecraftUiRenderer.mouseX(click.x()) - planner.x(), MinecraftUiRenderer.mouseY(click.y()));
+                    selectedWarTerritory = selected == null ? null : selected.name();
+                }
+            }
             return true;
         }
         if (click.button() == 0 && memberDrag != null) {
