@@ -234,10 +234,7 @@ public final class WarPlannerScreen extends Screen {
         float screenWidth = canvas.metrics().width();
         float height = canvas.metrics().height();
         PlannerViewport viewport = plannerViewport(screenWidth);
-        if (tab != Tab.ZONES) {
-            canvas.fillRect(0, 0, screenWidth, height, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
-        }
-        canvas.fillRect(0, 0, screenWidth, HEADER_HEIGHT, plannerBackground(color(BACKGROUND_HEADER)));
+        SequoiaUiStyle.drawPanelFrame(canvas, HEADER_HEIGHT);
         SequoiaSidebarNavigation.render(canvas, SequoiaSidebarNavigation.Destination.WAR, nvgMouseX, nvgMouseY);
         float screenMouseX = nvgMouseX;
         nvgMouseX -= viewport.x();
@@ -683,6 +680,7 @@ public final class WarPlannerScreen extends Screen {
         float y = layout.mapY();
         float width = layout.mapWidth();
         float height = layout.mapHeight();
+        canvas.fillRect(x, y, width, height, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         hoveredWarMapTerritory = null;
         List<GuildTerritory> allMapTerritories = territoryIndex.territories();
         boolean locked = manager.canManage() && territoriesLocked();
