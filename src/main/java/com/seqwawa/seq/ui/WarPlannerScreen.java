@@ -352,7 +352,7 @@ public final class WarPlannerScreen extends Screen {
         DisplayControls controls = displayControls(width, manager.canManage());
         float y = mapDisplayControlsY(width);
         canvas.fillRect(
-                controls.opacityX(), y, controls.opacityWidth(), 24, plannerBackground(color(BACKGROUND_CONTENT)));
+                controls.opacityX(), y, controls.opacityWidth(), 24, color(BACKGROUND_CONTENT));
         int opacity = backgroundOpacityPercent();
         float labelWidth = controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? 45 : 65;
         text(
@@ -405,7 +405,7 @@ public final class WarPlannerScreen extends Screen {
         for (Tab candidate : Tab.values()) {
             float x = PADDING + tabWidth * index++;
             canvas.fillRect(x, y, tabWidth - 4, TAB_HEIGHT,
-                    plannerBackground(color(candidate == tab ? ACCENT_PRIMARY_DARK : CONTROL_INPUT)));
+                    color(candidate == tab ? ACCENT_PRIMARY_DARK : CONTROL_INPUT));
             text(canvas, candidate.label, x + (tabWidth - 4) / 2, y + TAB_HEIGHT / 2, 12,
                     color(TEXT_PRIMARY), true);
         }
@@ -481,7 +481,7 @@ public final class WarPlannerScreen extends Screen {
         float h = Math.min(390, height - 44);
         float x = (width - w) / 2;
         float y = (height - h) / 2;
-        canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
+        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
         canvas.fillRect(x, y, w, h, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
         text(canvas, "War ping", x + 14, y + 21, 16, color(ACCENT_PRIMARY), false);
@@ -1064,7 +1064,7 @@ public final class WarPlannerScreen extends Screen {
         boolean displayed = !hiddenZoneCategoryIds.contains(entry.categoryId());
         boolean collapsed = containsCategory(collapsedZoneCategoryIds, entry.categoryId());
         canvas.fillRect(x + 6, rowY, width - 12, WAR_MAP_CATEGORY_ROW_HEIGHT,
-                plannerBackground(color(CONTROL_INPUT)));
+                color(CONTROL_INPUT));
         float controlsWidth = manager.canManage() && entry.category() != null ? 74 : 42;
         text(canvas, collapsed ? "▶" : "▼", x + 15, rowY + WAR_MAP_CATEGORY_ROW_HEIGHT / 2, 8,
                 color(TEXT_SECONDARY), true);
@@ -1879,7 +1879,7 @@ public final class WarPlannerScreen extends Screen {
             RosterMember member = members.get(index);
             boolean hovered = memberDrag == null && hit(nvgMouseX, nvgMouseY, x + 6, rowY, panelWidth - 12, UNASSIGNED_ROW_HEIGHT - 2);
             canvas.fillRect(x + 6, rowY, panelWidth - 12, UNASSIGNED_ROW_HEIGHT - 2,
-                    plannerBackground(color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT)));
+                    color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
             text(canvas, truncate(member.displayName(), 19), x + 12, rowY + 11, 11, color(TEXT_SECONDARY), false);
             renderCompositionIcons(canvas, member.compositionRoles(), x + panelWidth - 54, rowY + 5);
         }
@@ -1897,7 +1897,7 @@ public final class WarPlannerScreen extends Screen {
         float h = Math.min(390, height - 44);
         float x = (width - w) / 2;
         float y = (height - h) / 2;
-        canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
+        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
         canvas.fillRect(x, y, w, h, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
         text(canvas, "Assign shared " + label, x + 14, y + 21, 16, color(ACCENT_PRIMARY), false);
@@ -1916,7 +1916,7 @@ public final class WarPlannerScreen extends Screen {
             RosterMember candidate = candidates.get(index);
             boolean selected = samePlayer(selectedUuid, candidate.playerUuid());
             canvas.fillRect(x + 12, rowY + 2, w - 24, 25,
-                    plannerBackground(color(selected ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT)));
+                    color(selected ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT));
             text(canvas, truncate(candidate.displayName(), 28), x + 18, rowY + 14, 11, color(TEXT_PRIMARY), false);
             text(canvas, candidate.online() ? "Online" : "Offline · currently assigned", x + w - 150, rowY + 14,
                     9, color(candidate.online() ? CONTROL_SUCCESS : TEXT_MUTED), false);
@@ -1931,7 +1931,7 @@ public final class WarPlannerScreen extends Screen {
         float h = 176;
         float x = (width - w) / 2;
         float y = (height - h) / 2;
-        canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
+        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
         canvas.fillRect(x, y, w, h, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
         text(canvas, "Your Discord war roles", x + 14, y + 22, 16, color(ACCENT_PRIMARY), false);
@@ -1947,7 +1947,7 @@ public final class WarPlannerScreen extends Screen {
             float optionX = x + 14 + index * (optionWidth + optionGap);
             boolean selected = selectedCompositionRoles.contains(role);
             canvas.fillRect(optionX, optionY, optionWidth, 42,
-                    plannerBackground(color(selected ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT)));
+                    color(selected ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT));
             canvas.strokeRect(optionX, optionY, optionWidth, 42, 1,
                     color(selected ? ACCENT_PRIMARY : CONTROL_BORDER));
             renderCompositionIcons(canvas, List.of(role), optionX + 10, optionY + 8);
@@ -1970,7 +1970,7 @@ public final class WarPlannerScreen extends Screen {
         float x = (width - w) / 2;
         float y = 46;
         float h = height - 70;
-        canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
+        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
         canvas.fillRect(x, y, w, h, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
         text(canvas, editingTeamId == null ? "Create war team" : "Edit war team", x + 12, y + 20, 16,
@@ -2038,7 +2038,7 @@ public final class WarPlannerScreen extends Screen {
             RosterMember member = eligible.get(index);
             TeamMemberDraft selected = teamMember(member.playerUuid());
             canvas.fillRect(x + 12, rowY + 2, w - 24, 24,
-                    plannerBackground(color(selected == null ? BACKGROUND_CONTENT : ACCENT_PRIMARY_DARK)));
+                    color(selected == null ? BACKGROUND_CONTENT : ACCENT_PRIMARY_DARK));
             String memberLabel = member.displayName() + (member.online() ? "" : " · Offline");
             text(canvas, truncate(memberLabel, w >= 360 ? 24 : 14), x + 18, rowY + 14, 11,
                     color(TEXT_PRIMARY), false);
