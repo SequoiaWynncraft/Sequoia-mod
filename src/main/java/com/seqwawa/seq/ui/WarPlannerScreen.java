@@ -145,6 +145,7 @@ public final class WarPlannerScreen extends Screen {
     private Integer editingSupportSlot;
     private int supportEditorScrollRows;
     private boolean supportEditorSaving;
+    private java.util.concurrent.CompletableFuture<WarPlannerManager.ActionResult> availabilityUpdate;
     private boolean draggingBackgroundOpacity;
     private boolean draggingWarMap;
     private float mapPressX;
@@ -276,8 +277,8 @@ public final class WarPlannerScreen extends Screen {
                     && caller.discordId() != null
                     && !caller.discordId().isBlank();
             button(canvas, PADDING, 6, 64, SequoiaUiStyle.HEADER_CONTROL_HEIGHT, "My roles", false,
-                    manager.isMutating() || !rolesEditable);
-            button(canvas, PADDING + 70, 6, 64, SequoiaUiStyle.HEADER_CONTROL_HEIGHT, "Refresh", false, manager.isRequestInFlight());
+                    showBusyControls() || !rolesEditable);
+            button(canvas, PADDING + 70, 6, 64, SequoiaUiStyle.HEADER_CONTROL_HEIGHT, "Refresh", false, manager.isRequestInFlight() && !availabilityUpdatePending());
 
             renderAvailability(canvas, width);
             renderTabs(canvas, width);
@@ -344,7 +345,7 @@ public final class WarPlannerScreen extends Screen {
                 : new String[] {"30 min", "1 hour", "2 hours", "Custom", "Unavailable"};
         for (int index = 0; index < labels.length; index++) {
             button(canvas, layout.buttonX(index), y + layout.y(), layout.buttonWidth(index), BUTTON_HEIGHT,
-                    labels[index], index == 4, manager.isMutating());
+                    labels[index], index == 4, showBusyControls());
         }
     }
 
@@ -411,10 +412,10 @@ public final class WarPlannerScreen extends Screen {
             if (tab == Tab.ROSTER) {
                 boolean noTargets = pingCandidates(manager.snapshot(), "").isEmpty();
                 primaryButton(canvas, width - 92, y + 1, 80, BUTTON_HEIGHT,
-                        "War ping", manager.isMutating() || noTargets);
+                        "War ping", showBusyControls() || noTargets);
             } else if (tab == Tab.TEAMS) {
                 primaryButton(canvas, width - 92, y + 1, 80, BUTTON_HEIGHT,
-                        "New team", manager.isMutating());
+                        "New team", showBusyControls());
             }
         }
     }
@@ -524,7 +525,7 @@ public final class WarPlannerScreen extends Screen {
             text(canvas, truncate(member.displayName(), nameCharacters), x + 18, rowY + 14, 11,
                     color(TEXT_PRIMARY), false);
             button(canvas, actionX, rowY + 4, 54, BUTTON_HEIGHT, "Ping", false,
-                    warPingSending || manager.isMutating());
+                    warPingSending || showBusyControls());
         }
         canvas.resetScissor();
     }
@@ -627,15 +628,15 @@ public final class WarPlannerScreen extends Screen {
         }
         if (manager.canManage() && placement.fullyShows(actions.managerY(), BUTTON_HEIGHT)) {
             button(canvas, actions.editX(), y + actions.managerY(), actions.editWidth(), BUTTON_HEIGHT,
-                    "Edit", false, manager.isMutating());
+                    "Edit", false, showBusyControls());
             boolean confirming = pendingDeleteTeam != null && pendingDeleteTeam.id() == team.id();
             destructiveButton(canvas, actions.deleteX(), y + actions.managerY(), actions.deleteWidth(), BUTTON_HEIGHT,
-                    confirming ? "Confirm" : "Delete", confirming, manager.isMutating());
+                    confirming ? "Confirm" : "Delete", confirming, showBusyControls());
         }
         if (caller != null && placement.fullyShows(actions.selfY(), BUTTON_HEIGHT)) {
             primaryButton(canvas, actions.selfX(), y + actions.selfY(), actions.selfWidth(), BUTTON_HEIGHT,
                     teamMembershipActionLabel(snapshot, team),
-                    manager.isMutating() || !canChangeOwnTeam(snapshot, team));
+                    showBusyControls() || !canChangeOwnTeam(snapshot, team));
         }
     }
 
@@ -1019,8 +1020,8 @@ public final class WarPlannerScreen extends Screen {
         canvas.fillRect(x, top, width, bottom - top, plannerBackground(color(BACKGROUND_CONTENT)));
         if (manager.canManage()) {
             float actionWidth = (width - 18) / 2;
-            primaryButton(canvas, x + 6, top + 7, actionWidth, 20, "+ Category", manager.isMutating());
-            primaryButton(canvas, x + 12 + actionWidth, top + 7, actionWidth, 20, "+ Zone", manager.isMutating());
+            primaryButton(canvas, x + 6, top + 7, actionWidth, 20, "+ Category", showBusyControls());
+            primaryButton(canvas, x + 12 + actionWidth, top + 7, actionWidth, 20, "+ Zone", showBusyControls());
         } else {
             text(canvas, "Click visibility controls", x + 10, top + 16, 8, color(TEXT_MUTED), false);
         }
@@ -1070,7 +1071,7 @@ public final class WarPlannerScreen extends Screen {
             boolean confirming = pendingDeleteZoneCategory != null
                     && pendingDeleteZoneCategory.id() == entry.category().id();
             destructiveButton(canvas, x + width - 28, rowY + 3, 22, 20, confirming ? "?" : "X", confirming,
-                    manager.isMutating());
+                    showBusyControls());
         } else {
             button(canvas, x + width - 48, rowY + 3, 42, 20, displayed ? "Hide" : "Show", false, false);
         }
@@ -1095,7 +1096,7 @@ public final class WarPlannerScreen extends Screen {
                 x + 20, rowY + 32, 9, color(TEXT_MUTED), false);
         button(canvas, actionX, rowY + 3, 44, 20, displayed ? "Hide" : "Show", false, !categoryDisplayed);
         if (manager.canManage()) {
-            button(canvas, x + width - 36, rowY + 3, 28, 20, "...", false, manager.isMutating());
+            button(canvas, x + width - 36, rowY + 3, 28, 20, "...", false, showBusyControls());
             if (java.util.Objects.equals(zoneActionsId, zone.id())) {
                 float menuY = Math.min(rowY + 25, canvas.metrics().height() - 60);
                 zoneActionsBounds = new WarMapButtonBounds(x + width - 120, menuY, 112, 52);
@@ -1107,10 +1108,10 @@ public final class WarPlannerScreen extends Screen {
         if (zoneActionsId == null || zoneActionsBounds == null || !manager.canManage()) return;
         var menu = zoneActionsBounds;
         canvas.fillRect(menu.x(), menu.y(), menu.width(), menu.height(), color(BACKGROUND_BODY_OPAQUE));
-        button(canvas, menu.x() + 2, menu.y() + 2, menu.width() - 4, 22, "Edit zone", false, manager.isMutating());
+        button(canvas, menu.x() + 2, menu.y() + 2, menu.width() - 4, 22, "Edit zone", false, showBusyControls());
         boolean confirming = pendingDeleteZone != null && pendingDeleteZone.id() == zoneActionsId;
         destructiveButton(canvas, menu.x() + 2, menu.y() + 28, menu.width() - 4, 22,
-                confirming ? "Confirm delete" : "Delete zone", confirming, manager.isMutating());
+                confirming ? "Confirm delete" : "Delete zone", confirming, showBusyControls());
         canvas.strokeRect(menu.x(), menu.y(), menu.width(), menu.height(), 1, color(ACCENT_DIVIDER));
     }
 
@@ -2193,8 +2194,7 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         if (hit(mx, my, availability.buttonX(4), availabilityY, availability.buttonWidth(4), BUTTON_HEIGHT)) {
-            showResult(manager.clearAvailability());
-            return true;
+            return setAvailability(0);
         }
 
         float tabsY = HEADER_HEIGHT + AVAILABILITY_HEIGHT;
@@ -3391,8 +3391,19 @@ public final class WarPlannerScreen extends Screen {
                 .toList();
     }
 
+    private boolean availabilityUpdatePending() {
+        return availabilityUpdate != null && !availabilityUpdate.isDone();
+    }
+
+    private boolean showBusyControls() {
+        // Availability updates keep the existing button colors; request guards still prevent concurrent edits.
+        return manager.isMutating() && !availabilityUpdatePending();
+    }
+
     private boolean setAvailability(int minutes) {
-        showResult(manager.setAvailability(minutes));
+        if (manager.isRequestInFlight()) return true;
+        availabilityUpdate = minutes == 0 ? manager.clearAvailability() : manager.setAvailability(minutes);
+        showResult(availabilityUpdate);
         return true;
     }
 
