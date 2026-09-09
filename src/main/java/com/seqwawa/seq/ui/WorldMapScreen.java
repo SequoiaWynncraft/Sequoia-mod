@@ -426,6 +426,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         renderInsightsSidebar(canvas);
     }
 
+    static Color ingredientRadiusFillColor(Color markerColor) {
+        return new Color(markerColor.getRed(), markerColor.getGreen(), markerColor.getBlue(),
+                Math.round(markerColor.getAlpha() * 0.35f));
+    }
+
     private void renderMapFocus(UiCanvas canvas, MapViewport viewport) {
         if (!hasMapFocus()) {
             return;
@@ -460,7 +465,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             boolean hovered = marker.equals(hoveredFocusMarker);
             Color markerColor = selected ? color(MAP_SELECTED_TERRITORY) : color(ACCENT_PRIMARY);
             if (areaRadius >= 4) {
-                drawCircle(canvas, x, y, areaRadius, markerColor);
+                drawCircle(canvas, x, y, areaRadius, ingredientRadiusFillColor(markerColor));
                 drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, markerColor);
             }
             if (mapFocusIcon.isEmpty()) {
@@ -521,7 +526,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             Color markerColor = selected ? color(MAP_SELECTED_TERRITORY) : color(ACCENT_PRIMARY);
             float areaRadius = (float) (spot.radius() * viewport.pixelsPerBlock());
             if (areaRadius >= 4) {
-                drawCircle(canvas, x, y, areaRadius, markerColor);
+                drawCircle(canvas, x, y, areaRadius, ingredientRadiusFillColor(markerColor));
                 drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, markerColor);
             }
             drawTotemMarker(canvas, x, y, selected || hovered ? 22 : 18,
