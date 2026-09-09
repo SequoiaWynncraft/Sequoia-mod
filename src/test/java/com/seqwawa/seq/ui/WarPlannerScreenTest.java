@@ -37,6 +37,17 @@ class WarPlannerScreenTest {
     }
 
     @Test
+    void resourceModePreservesBordersAndConnectionsAtEveryZoom() {
+        for (float size : new float[] {2, 4, 10, 50}) {
+            for (float weight : new float[] {.55f, .75f, 1.8f}) {
+                assertEquals(weight, WarPlannerScreen.territoryOutlineWeight(size, weight, true));
+            }
+        }
+        assertTrue(WarPlannerScreen.warConnectionVisible(.08f, false, true));
+        assertFalse(WarPlannerScreen.warConnectionVisible(.08f, false, false));
+    }
+
+    @Test
     void availabilityCountdownCarriesRoundedMinutesIntoWholeHours() {
         assertEquals("30m", WarPlannerScreen.formatDuration(Duration.ofMinutes(30)));
         assertEquals("1h", WarPlannerScreen.formatDuration(Duration.ofSeconds(3_599)));

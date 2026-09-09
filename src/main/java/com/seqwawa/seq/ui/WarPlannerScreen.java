@@ -736,7 +736,8 @@ public final class WarPlannerScreen extends Screen {
         float offsetY = viewport.worldToScreenZ(coordinateBounds.minZ());
         mapBackground.render(canvas, viewport);
         canvas.scissor(x, y, width, height);
-        if (resourceColorsEnabled()) {
+        boolean resourceColors = resourceColorsEnabled();
+        if (resourceColors) {
             drawPreviewResources(canvas, coreTerritories, details, coordinateBounds, offsetX, offsetY, scale);
         }
         drawWarQueuePulses(
@@ -760,7 +761,8 @@ public final class WarPlannerScreen extends Screen {
                 offsetX,
                 offsetY,
                 scale,
-                emphasizedTerritories);
+                emphasizedTerritories,
+                resourceColors);
         if (hoveredWarMapTerritory != null) {
             drawPreviewFill(
                     canvas,
@@ -781,7 +783,8 @@ public final class WarPlannerScreen extends Screen {
                 scale,
                 mapColor,
                 .55f,
-                0);
+                0,
+                resourceColors);
         if (!contextTerritories.isEmpty()) {
             drawPreviewOutlines(
                     canvas,
@@ -792,7 +795,8 @@ public final class WarPlannerScreen extends Screen {
                     scale,
                     mapColor,
                     .75f,
-                    0);
+                    0,
+                    resourceColors);
         }
         for (Zone zone : displayedZones) {
             Color zoneColor = parseColor(zone.color(), color(ACCENT_PRIMARY));
@@ -804,8 +808,9 @@ public final class WarPlannerScreen extends Screen {
                     offsetY,
                     scale,
                     zoneColor,
-                    1.2f,
-                    0);
+                    resourceColors ? 1.8f : 1.2f,
+                    resourceColors ? 1 : 0,
+                    resourceColors);
         }
         for (String name : emphasizedTerritories) {
             GuildTerritory territory = byName.get(name);
@@ -1746,25 +1751,41 @@ public final class WarPlannerScreen extends Screen {
             Color stroke,
             float strokeWidth,
             float outset) {
+        drawPreviewOutlines(canvas, territories, fitted, offsetX, offsetY, scale, stroke, strokeWidth, outset, false);
+    }
+
+    private static void drawPreviewOutlines(
+            UiCanvas canvas, List<GuildTerritory> territories, MapBounds fitted,
+            float offsetX, float offsetY, float scale, Color stroke,
+            float strokeWidth, float outset, boolean resourceColors) {
         for (GuildTerritory territory : territories) {
             MapBounds bounds = territory.bounds();
             float territoryX = previewX(bounds.minX(), fitted, offsetX, scale) - outset;
             float territoryY = previewY(bounds.minZ(), fitted, offsetY, scale) - outset;
             float territoryWidth = Math.max(2, (float) ((bounds.maxX() - bounds.minX()) * scale)) + outset * 2;
             float territoryHeight = Math.max(2, (float) ((bounds.maxZ() - bounds.minZ()) * scale)) + outset * 2;
-            float weight = territoryOutlineWeight(Math.min(territoryWidth, territoryHeight), strokeWidth);
+            float weight = territoryOutlineWeight(Math.min(territoryWidth, territoryHeight), strokeWidth, resourceColors);
             if (weight > 0) canvas.strokeRect(territoryX, territoryY, territoryWidth, territoryHeight, weight, stroke);
         }
     }
 
     static float territoryOutlineWeight(float projectedSize, float requestedWidth) {
+        return territoryOutlineWeight(projectedSize, requestedWidth, false);
+    }
+
+    static float territoryOutlineWeight(float projectedSize, float requestedWidth, boolean resourceColors) {
+        if (resourceColors) return requestedWidth;
         if (requestedWidth >= 2) return requestedWidth;
         if (projectedSize < 5) return 0;
         return Math.min(requestedWidth, .5f + Math.min(1, projectedSize / 36) * .6f);
     }
 
     static boolean warConnectionVisible(float scale, boolean emphasized) {
-        return emphasized || scale >= .22f;
+        return warConnectionVisible(scale, emphasized, false);
+    }
+
+    static boolean warConnectionVisible(float scale, boolean emphasized, boolean resourceColors) {
+        return resourceColors || emphasized || scale >= .22f;
     }
 
     private static void drawPreviewConnections(
@@ -1777,7 +1798,8 @@ public final class WarPlannerScreen extends Screen {
             float offsetX,
             float offsetY,
             float scale,
-            Set<String> emphasizedTerritories) {
+            Set<String> emphasizedTerritories,
+            boolean resourceColors) {
         Set<String> drawnConnections = new java.util.HashSet<>();
         Color foreground = color(TEXT_PRIMARY);
         for (GuildTerritory territory : territories) {
@@ -1791,12 +1813,15 @@ public final class WarPlannerScreen extends Screen {
                 if (!drawnConnections.add(key)) continue;
                 boolean emphasized = emphasizedTerritories.contains(territory.name().toLowerCase(Locale.ROOT))
                         || emphasizedTerritories.contains(linked.name().toLowerCase(Locale.ROOT));
-                if (!warConnectionVisible(scale, emphasized)) continue;
+                if (!warConnectionVisible(scale, emphasized, resourceColors)) continue;
                 float startX = previewX(territory.centerX(), fitted, offsetX, scale);
                 float startY = previewY(territory.centerZ(), fitted, offsetY, scale);
                 float endX = previewX(linked.centerX(), fitted, offsetX, scale);
                 float endY = previewY(linked.centerZ(), fitted, offsetY, scale);
-                canvas.strokeLine(startX, startY, endX, endY, emphasized ? 1.2f : .55f,
+                if (resourceColors) {
+                    canvas.strokeLine(startX, startY, endX, endY, 1.6f, color(BACKGROUND_BODY_OPAQUE));
+                }
+                canvas.strokeLine(startX, startY, endX, endY, emphasized ? 1.2f : resourceColors ? .75f : .55f,
                         emphasized ? color(MAP_SELECTED_TERRITORY) : foreground);
             }
         }
