@@ -110,7 +110,9 @@ final class SequoiaSidebarNavigation {
         if (mouseX < 0 || mouseX >= WIDTH) return false;
         var destination = destinationAt(mouseX, mouseY, height,
                 SeqClient.getWarPlannerManager() != null && SeqClient.getWarPlannerManager().isAuthorized());
-        if (destination != null && destination != active) open(destination, parent);
+        if (destination != null && destination != active) {
+            open(destination, destination == Destination.MAP ? SeqClient.mc.screen : parent);
+        }
         return true;
     }
 

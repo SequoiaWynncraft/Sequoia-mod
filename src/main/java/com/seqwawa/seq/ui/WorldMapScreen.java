@@ -241,6 +241,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private final Map<String, MapIngredientIcon> ingredientIconCache = new HashMap<>();
     private Map<String, IngredientGuideEntry> cachedIngredientsByName = Map.of();
     private long cachedIngredientSnapshotVersion = -1;
+    private final Screen parent;
     private float nvgMouseX;
     private float nvgMouseY;
 
@@ -275,6 +276,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             GameProfile mapFocusSkinProfile,
             IngredientFarmSpot farmSpot) {
         super(Component.literal("Sequoia Map"));
+        this.parent = parent;
         this.mapFocus = mapFocus;
         this.mapFocusIcon = mapFocusIcon == null ? ItemStack.EMPTY : mapFocusIcon.copy();
         this.mapFocusSkinLookup = mapFocusSkinProfile == null
@@ -3970,6 +3972,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     @Override
+    public void onClose() {
+        SeqClient.mc.setScreen(parent == null || parent instanceof net.minecraft.client.gui.screens.ChatScreen
+                ? new SequoiaScreen() : parent);
+    }
+
+    @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
         float mx = scaledMouseX(click.x());
         float my = scaledMouseY(click.y());
@@ -3979,7 +3987,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
         if (mapModeDropdownLayout().containsClose(mx, my)) {
             if (click.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-                SeqClient.mc.setScreen(new SequoiaScreen());
+                onClose();
             }
             return true;
         }
