@@ -405,6 +405,19 @@ class WarPlannerScreenTest {
     }
 
     @Test
+    void resourceFillsUseQueueTransparencyWithoutChangingThePalette() {
+        for (String resource : List.of("EMERALD", "ORE", "WOOD", "FISH", "CROP")) {
+            Color palette = WarTerritoryPickerScreen.resourceColor(resource);
+            for (long time : new long[] {0, 400, 800, 1200, 1600}) {
+                Color fill = WarTerritoryPickerScreen.resourceFillColor(
+                        palette, WarPlannerScreen.warQueuePulseAlpha(time));
+                assertEquals(palette.getRGB() & 0xffffff, fill.getRGB() & 0xffffff);
+                assertEquals(WarPlannerScreen.warQueuePulseAlpha(time), fill.getAlpha());
+            }
+        }
+    }
+
+    @Test
     void queuedTerritoryDoubleClickRequiresSameQueueTimeWindowAndPointerLocation() {
         WarPlannerScreen.PendingWarQueueClick first =
                 new WarPlannerScreen.PendingWarQueueClick(42, "Alekin", 100, 80, 1_000);

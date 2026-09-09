@@ -377,9 +377,7 @@ public final class WarPlannerScreen extends Screen {
                 y + 1,
                 controls.resourceWidth(),
                 BUTTON_HEIGHT,
-                controls.resourceWidth() < RESOURCE_CONTROL_WIDTH
-                        ? resourceColorsEnabled() ? "Res ✓" : "Resources"
-                        : resourceColorsEnabled() ? "Resources ✓" : "Resource colors",
+                resourceColorsEnabled() ? "Resources" : "War queues",
                 false,
                 false);
         if (manager.canManage()) {
@@ -737,17 +735,13 @@ public final class WarPlannerScreen extends Screen {
         mapBackground.render(canvas, viewport);
         canvas.scissor(x, y, width, height);
         boolean resourceColors = resourceColorsEnabled();
+        long overlayTime = monotonicMillis();
         if (resourceColors) {
-            drawPreviewResources(canvas, coreTerritories, details, coordinateBounds, offsetX, offsetY, scale);
+            drawPreviewResources(canvas, coreTerritories, details, coordinateBounds, offsetX, offsetY, scale,
+                    warQueuePulseAlpha(overlayTime));
+        } else {
+            drawWarQueuePulses(canvas, queueMarkers, coordinateBounds, offsetX, offsetY, scale, overlayTime);
         }
-        drawWarQueuePulses(
-                canvas,
-                queueMarkers,
-                coordinateBounds,
-                offsetX,
-                offsetY,
-                scale,
-                monotonicMillis());
         Set<String> emphasizedTerritories = new java.util.HashSet<>();
         if (selectedWarTerritory != null) emphasizedTerritories.add(selectedWarTerritory.toLowerCase(Locale.ROOT));
         if (hoveredWarMapTerritory != null) emphasizedTerritories.add(hoveredWarMapTerritory.name().toLowerCase(Locale.ROOT));
@@ -1320,7 +1314,8 @@ public final class WarPlannerScreen extends Screen {
             MapBounds fitted,
             float offsetX,
             float offsetY,
-            float scale) {
+            float scale,
+            int alpha) {
         for (GuildTerritory territory : territories) {
             MapBounds bounds = territory.bounds();
             float territoryX = previewX(bounds.minX(), fitted, offsetX, scale);
@@ -1328,7 +1323,7 @@ public final class WarPlannerScreen extends Screen {
             float territoryWidth = Math.max(2, (float) ((bounds.maxX() - bounds.minX()) * scale));
             float territoryHeight = Math.max(2, (float) ((bounds.maxZ() - bounds.minZ()) * scale));
             WarTerritoryPickerScreen.renderResourceFill(
-                    canvas, territoryX, territoryY, territoryWidth, territoryHeight, details.get(territory.name()));
+                    canvas, territoryX, territoryY, territoryWidth, territoryHeight, details.get(territory.name()), alpha);
         }
     }
 

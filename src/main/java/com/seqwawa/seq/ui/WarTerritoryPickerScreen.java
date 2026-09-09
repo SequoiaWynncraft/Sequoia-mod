@@ -754,13 +754,24 @@ public final class WarTerritoryPickerScreen extends Screen {
 
     static void renderResourceFill(
             UiCanvas canvas, float x, float y, float width, float height, WarPlannerSnapshot.TerritoryDetails detail) {
+        renderResourceFill(canvas, x, y, width, height, detail, 255);
+    }
+
+    static void renderResourceFill(
+            UiCanvas canvas, float x, float y, float width, float height,
+            WarPlannerSnapshot.TerritoryDetails detail, int alpha) {
         if (detail == null || detail.resources().isEmpty()) return;
         List<Color> colors = resourceDisplayColors(detail.resources());
         float sliceWidth = width / colors.size();
         for (int index = 0; index < colors.size(); index++) {
             canvas.fillRect(x + index * sliceWidth, y, index == colors.size() - 1 ? width - index * sliceWidth : sliceWidth,
-                    height, colors.get(index));
+                    height, resourceFillColor(colors.get(index), alpha));
         }
+    }
+
+    static Color resourceFillColor(Color paletteColor, int alpha) {
+        return new Color(paletteColor.getRed(), paletteColor.getGreen(), paletteColor.getBlue(),
+                Math.max(0, Math.min(255, alpha)));
     }
 
     static List<Color> resourceDisplayColors(List<String> resources) {
