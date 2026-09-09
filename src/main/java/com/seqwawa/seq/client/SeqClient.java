@@ -337,6 +337,7 @@ public class SeqClient implements ClientModInitializer {
 
     private static KeyMapping openScreenKey;
     private static KeyMapping openPartyFinderKey;
+    private static KeyMapping openWarPlannerKey;
     private static KeyMapping openWorldMapKey;
     private static KeyMapping openIngredientGuideKey;
     private static KeyMapping shareBombsKey;
@@ -405,6 +406,8 @@ public class SeqClient implements ClientModInitializer {
                 new KeyMapping("key.sequoia-mod.open_settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O, category));
         openPartyFinderKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.sequoia-mod.open_party_finder", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
+        openWarPlannerKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                "key.sequoia-mod.open_war_planner", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
         openWorldMapKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.sequoia-mod.open_world_map", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
         openIngredientGuideKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
@@ -424,6 +427,11 @@ public class SeqClient implements ClientModInitializer {
             while (openPartyFinderKey.consumeClick()) {
                 if (client.screen == null) {
                     openPartyFinderScreen();
+                }
+            }
+            while (openWarPlannerKey.consumeClick()) {
+                if (client.screen == null) {
+                    openWarPlannerScreen();
                 }
             }
             while (openWorldMapKey.consumeClick()) {
