@@ -87,6 +87,24 @@ class WarPlannerScreenTest {
     }
 
     @Test
+    void mapToolbarStaysAboveTheCanvasAndFitsNarrowPlannerWidths() {
+        for (float width : new float[] {280, 320, 500, 820, 1780}) {
+            var layout = WarPlannerScreen.warMapLayout(width, 110, 610);
+            var controls = WarPlannerScreen.warMapControls(layout);
+            for (var control : List.of(controls.fit(), controls.queues(), controls.players())) {
+                assertTrue(control.x() >= 12);
+                assertTrue(control.x() + control.width() <= width - 12);
+                assertTrue(control.y() + control.height() < layout.mapY());
+                assertFalse(layout.containsMap(control.x() + 1, control.y() + 1));
+            }
+            var display = WarPlannerScreen.displayControls(width, true);
+            assertTrue(display.opacityX() >= 12);
+            assertTrue(display.lockX() + display.lockWidth() <= width - 12);
+            if (width >= 620) assertTrue(controls.players().x() + controls.players().width() < display.opacityX());
+        }
+    }
+
+    @Test
     void warMapKeepsOneCanvasAndACompactSidebar() {
         assertEquals(220, WarPlannerScreen.warMapSidebarWidth(1200));
         assertEquals(220, WarPlannerScreen.warMapSidebarWidth(900));
@@ -109,8 +127,9 @@ class WarPlannerScreenTest {
         assertTrue(controls.queues().x() + controls.queues().width() <= layout.mapX() + layout.mapWidth());
         assertTrue(controls.players().visible());
         assertEquals(84, controls.players().width());
-        assertTrue(controls.players().y() > controls.queues().y());
-        assertTrue(controls.players().x() + controls.players().width() <= layout.mapX() + layout.mapWidth());
+        assertEquals(controls.queues().y(), controls.players().y());
+        assertTrue(controls.players().y() + controls.players().height() < layout.mapY());
+        assertTrue(controls.players().x() + controls.players().width() <= 320 - 12);
     }
 
     @Test
@@ -120,7 +139,7 @@ class WarPlannerScreenTest {
 
         assertEquals(12, layout.mapX());
         assertEquals(948, layout.mapWidth());
-        assertEquals(500, layout.mapHeight());
+        assertEquals(500 - WarPlannerScreen.warMapToolbarHeight(1200), layout.mapHeight());
         assertEquals(968, layout.sidebarX());
         assertEquals(220, layout.sidebarWidth());
         assertTrue(layout.mapWidth() > layout.sidebarWidth() * 2);

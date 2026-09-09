@@ -125,6 +125,8 @@ public final class WarPlannerScreen extends Screen {
     private float nvgMouseY;
     private int scrollRows;
     private String flashMessage;
+    private String displayedMessage;
+    private long displayedMessageAt;
 
     private Long editingTeamId;
     private TeamEditorBase teamEditorBase;
@@ -261,29 +263,8 @@ public final class WarPlannerScreen extends Screen {
             renderAvailability(canvas, width);
             renderTabs(canvas, width);
             renderContent(canvas, width, height);
-            DisplayControls controls = renderDisplayControls(canvas, width, height);
-
-            if (flashMessage != null && !flashMessage.isBlank()) {
-                boolean stacked = controls.left() < PADDING + 100;
-                float messageY = stacked ? height - 64 : height - 34;
-                float messageWidth = stacked
-                        ? Math.min(width - PADDING * 2, 480)
-                        : Math.max(80, Math.min(480, controls.left() - PADDING - DISPLAY_CONTROL_GAP));
-                canvas.fillRect(PADDING, messageY, messageWidth, 24,
-                        plannerBackground(color(BACKGROUND_POPUP)));
-                text(canvas, truncate(flashMessage, 68), PADDING + 8, messageY + 12, 11,
-                        color(manager.lastError() == null ? TEXT_SECONDARY : CONTROL_WARNING), false);
-            } else if (manager.lastError() != null) {
-                boolean stacked = controls.left() < PADDING + 100;
-                float messageY = stacked ? height - 64 : height - 34;
-                float messageWidth = stacked
-                        ? Math.min(width - PADDING * 2, 480)
-                        : Math.max(80, Math.min(480, controls.left() - PADDING - DISPLAY_CONTROL_GAP));
-                canvas.fillRect(PADDING, messageY, messageWidth, 24,
-                        plannerBackground(color(STATUS_WARNING_BACKGROUND)));
-                text(canvas, truncate(manager.lastError(), 68), PADDING + 8, messageY + 12, 11,
-                        color(TEXT_PRIMARY), false);
-            }
+            if (tab == Tab.ZONES) renderDisplayControls(canvas, width, height);
+            renderFeedback(canvas, width, height);
 
             if (warPingPickerOpen) {
                 renderWarPingPicker(canvas, width, height);
@@ -298,6 +279,21 @@ public final class WarPlannerScreen extends Screen {
             canvas.restore();
             nvgMouseX = screenMouseX;
         }
+    }
+
+    private void renderFeedback(UiCanvas canvas, float width, float height) {
+        String message = manager.lastError() != null ? manager.lastError() : flashMessage;
+        if (!java.util.Objects.equals(message, displayedMessage)) {
+            displayedMessage = message;
+            displayedMessageAt = monotonicMillis();
+        }
+        if (message == null || message.isBlank()
+                || (manager.lastError() == null && monotonicMillis() - displayedMessageAt > 4_000)) return;
+        float messageWidth = Math.min(width - PADDING * 2,
+                UiRenderer.measureText(message, SeqClient.getFontManager().getSelectedFont(), 10).width() + 16);
+        canvas.fillRect(PADDING, height - 32, messageWidth, 24, color(BACKGROUND_POPUP));
+        text(canvas, truncate(message, availableCharacters(0, messageWidth - 16, 10, 90)),
+                PADDING + 8, height - 20, 10, color(TEXT_SECONDARY), false);
     }
 
     private void renderAvailability(UiCanvas canvas, float width) {
@@ -332,14 +328,14 @@ public final class WarPlannerScreen extends Screen {
 
     private DisplayControls renderDisplayControls(UiCanvas canvas, float width, float height) {
         DisplayControls controls = displayControls(width, manager.canManage());
-        float y = height - 34;
+        float y = mapDisplayControlsY(width);
         canvas.fillRect(
                 controls.opacityX(), y, controls.opacityWidth(), 24, plannerBackground(color(BACKGROUND_CONTENT)));
         int opacity = backgroundOpacityPercent();
         float labelWidth = controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? 45 : 65;
         text(
                 canvas,
-                (controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? "BG " : "Opacity ") + opacity + "%",
+                (controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? "UI " : "Panels ") + opacity + "%",
                 controls.opacityX() + 5,
                 y + 12,
                 9,
@@ -411,7 +407,7 @@ public final class WarPlannerScreen extends Screen {
             return;
         }
         float top = contentTop();
-        float bottom = height - 42;
+        float bottom = height - PADDING;
         canvas.scissor(0, top, width, Math.max(0, bottom - top));
         switch (tab) {
             case ROSTER -> renderRoster(canvas, snapshot, width, top, bottom);
@@ -668,7 +664,8 @@ public final class WarPlannerScreen extends Screen {
     private void renderZones(UiCanvas canvas, WarPlannerSnapshot snapshot, float width, float top, float bottom) {
         WarMapLayout layout = warMapLayout(width, top, bottom);
         TerritoryQueue hoveredQueue = renderWarMap(canvas, snapshot, layout);
-        renderWarMapSidebar(canvas, snapshot, layout.sidebarX(), top, layout.sidebarWidth(), bottom);
+        renderWarMapControls(canvas, layout);
+        renderWarMapSidebar(canvas, snapshot, layout.sidebarX(), layout.mapY(), layout.sidebarWidth(), bottom);
         if (hoveredQueue != null) {
             drawWarQueueTooltip(canvas, hoveredQueue, queueManager.serverNow(), layout);
         }
@@ -818,6 +815,10 @@ public final class WarPlannerScreen extends Screen {
         }
         canvas.resetScissor();
         if (warMapPlayersEnabled()) telemetryPlayerOverlay.render(canvas, viewport, territoryIndex);
+        return hoveredQueue;
+    }
+
+    private void renderWarMapControls(UiCanvas canvas, WarMapLayout layout) {
         WarMapControls controls = warMapControls(layout);
         if (controls.fit().visible()) {
             button(canvas, controls.fit().x(), controls.fit().y(), controls.fit().width(), controls.fit().height(),
@@ -846,8 +847,8 @@ public final class WarPlannerScreen extends Screen {
                     false,
                     false);
         }
-        return hoveredQueue;
     }
+
 
     private static void drawHqIcon(
             UiCanvas canvas,
@@ -2038,14 +2039,14 @@ public final class WarPlannerScreen extends Screen {
         if (SequoiaSidebarNavigation.click(mx + viewport.x(), my, height,
                 SequoiaSidebarNavigation.Destination.WAR, parent)) return true;
         DisplayControls controls = displayControls(width, manager.canManage());
-        float controlsY = height - 34;
-        if (hit(mx, my, controls.resourceX(), controlsY + 1, controls.resourceWidth(), BUTTON_HEIGHT)) {
+        float controlsY = mapDisplayControlsY(width);
+        if (tab == Tab.ZONES && hit(mx, my, controls.resourceX(), controlsY + 1, controls.resourceWidth(), BUTTON_HEIGHT)) {
             SeqClient.getWarPlannerResourceColorsSetting()
                     .setValue(!resourceColorsEnabled());
             SeqClient.getConfigManager().save();
             return true;
         }
-        if (manager.canManage()
+        if (tab == Tab.ZONES && manager.canManage()
                 && hit(mx, my, controls.lockX(), controlsY + 1, controls.lockWidth(), BUTTON_HEIGHT)) {
             SeqClient.getWarPlannerLockTerritoriesSetting()
                     .setValue(!territoriesLocked());
@@ -2055,7 +2056,7 @@ public final class WarPlannerScreen extends Screen {
             SeqClient.getConfigManager().save();
             return true;
         }
-        if (hit(
+        if (tab == Tab.ZONES && hit(
                 mx,
                 my,
                 controls.opacityX() + (controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? 40 : 58),
@@ -2102,6 +2103,8 @@ public final class WarPlannerScreen extends Screen {
             if (hit(mx, my, PADDING + tabWidth * index, tabsY, tabWidth - 4, TAB_HEIGHT)) {
                 tab = Tab.values()[index];
                 scrollRows = 0;
+                draggingBackgroundOpacity = false;
+                draggingWarMap = false;
                 pendingWarQueueClick = null;
                 pendingDeleteTeam = null;
                 pendingDeleteZone = null;
@@ -2125,9 +2128,10 @@ public final class WarPlannerScreen extends Screen {
     private boolean rightClickZoneName(
             WarPlannerSnapshot snapshot, float mx, float my, float width, float height) {
         float top = contentTop();
-        WarMapLayout layout = warMapLayout(width, top, height - 42);
+        WarMapLayout layout = warMapLayout(width, top, height - PADDING);
+        top = layout.mapY();
         ZoneSidebarPlacement placement = zoneSidebarPlacementAt(
-                snapshot, collapsedZoneCategoryIds, scrollRows, top, height - 42, my);
+                snapshot, collapsedZoneCategoryIds, scrollRows, top, height - PADDING, my);
         if (placement == null) return false;
         ZoneSidebarEntry entry = placement.entry();
         if (entry.categoryHeader()) {
@@ -2147,7 +2151,7 @@ public final class WarPlannerScreen extends Screen {
 
     private boolean rightClickWarMapTerritory(
             WarPlannerSnapshot snapshot, float mx, float my, float width, float height) {
-        WarMapLayout layout = warMapLayout(width, contentTop(), height - 42);
+        WarMapLayout layout = warMapLayout(width, contentTop(), height - PADDING);
         if (!layout.containsMap(mx, my)) return false;
         boolean locked = manager.canManage() && territoriesLocked();
         List<GuildTerritory> displayedTerritories = warMapDisplayedTerritories(snapshot, locked);
@@ -2167,11 +2171,11 @@ public final class WarPlannerScreen extends Screen {
 
     private boolean clickContent(float mx, float my, float width, float height) {
         WarPlannerSnapshot snapshot = manager.snapshot();
-        if (snapshot == null || my < contentTop() || my > height - 42) {
+        if (snapshot == null || my < contentTop() || my > height - PADDING) {
             return false;
         }
         TeamsLayout teamsLayout = tab == Tab.TEAMS
-                ? teamsLayout(width, contentTop(), height - 42, snapshot.teams().size())
+                ? teamsLayout(width, contentTop(), height - PADDING, snapshot.teams().size())
                 : null;
         if (tab == Tab.TEAMS && manager.canManage()) {
             for (SupportPlacement support : supportPlacements(teamsLayout)) {
@@ -2241,7 +2245,8 @@ public final class WarPlannerScreen extends Screen {
 
     private boolean clickZoneContent(WarPlannerSnapshot snapshot, float mx, float my, float width) {
         float top = contentTop();
-        WarMapLayout layout = warMapLayout(width, top, MinecraftUiRenderer.screenHeight() - 42);
+        WarMapLayout layout = warMapLayout(width, top, MinecraftUiRenderer.screenHeight() - PADDING);
+        top = layout.mapY();
         boolean locked = manager.canManage() && territoriesLocked();
         WarMapControls controls = warMapControls(layout);
         if (controls.fit().contains(mx, my)) {
@@ -2310,7 +2315,7 @@ public final class WarPlannerScreen extends Screen {
                 collapsedZoneCategoryIds,
                 scrollRows,
                 top,
-                MinecraftUiRenderer.screenHeight() - 42,
+                MinecraftUiRenderer.screenHeight() - PADDING,
                 my);
         if (placement == null) return false;
         ZoneSidebarEntry entry = placement.entry();
@@ -2448,7 +2453,7 @@ public final class WarPlannerScreen extends Screen {
             pendingWarQueueClick = null;
             PlannerViewport plannerViewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             WarMapLayout layout = warMapLayout(
-                    plannerViewport.width(), contentTop(), MinecraftUiRenderer.screenHeight() - 42);
+                    plannerViewport.width(), contentTop(), MinecraftUiRenderer.screenHeight() - PADDING);
             applyWarMapViewport(currentWarMapViewport(layout).panByScreenDelta(
                     MinecraftUiRenderer.mouseDelta(deltaX),
                     MinecraftUiRenderer.mouseDelta(deltaY)));
@@ -2522,10 +2527,10 @@ public final class WarPlannerScreen extends Screen {
     private void dropZone(ZoneDrag drag, float mx, float my, float width, float height) {
         WarPlannerSnapshot snapshot = manager.snapshot();
         if (snapshot == null || manager.isMutating()) return;
-        WarMapLayout layout = warMapLayout(width, contentTop(), height - 42);
+        WarMapLayout layout = warMapLayout(width, contentTop(), height - PADDING);
         if (!layout.containsSidebar(mx, my)) return;
         ZoneSidebarPlacement placement = zoneSidebarPlacementAt(
-                snapshot, collapsedZoneCategoryIds, scrollRows, contentTop(), height - 42, my);
+                snapshot, collapsedZoneCategoryIds, scrollRows, layout.mapY(), height - PADDING, my);
         if (placement == null) return;
         ZoneDropTarget target = zoneDropTarget(snapshot, placement, my, drag.zoneId());
         if (target == null) return;
@@ -2816,12 +2821,12 @@ public final class WarPlannerScreen extends Screen {
                     ? teamsLayout(
                             viewport.width(),
                             contentTop(),
-                            MinecraftUiRenderer.screenHeight() - 42,
+                            MinecraftUiRenderer.screenHeight() - PADDING,
                             snapshot.teams().size())
                     : null;
             if (teamsLayout != null && manager.canManage() && !teamsLayout.compactAuxiliary()) {
                 float poolY = contentTop() + UNASSIGNED_POOL_TOP;
-                float contentBottom = MinecraftUiRenderer.screenHeight() - 42;
+                float contentBottom = MinecraftUiRenderer.screenHeight() - PADDING;
                 if (poolY + 34 < contentBottom && hit(
                         localMouseX,
                         localMouseY,
@@ -2836,7 +2841,7 @@ public final class WarPlannerScreen extends Screen {
             }
             if (tab == Tab.ZONES) {
                 WarMapLayout layout = warMapLayout(
-                        viewport.width(), contentTop(), MinecraftUiRenderer.screenHeight() - 42);
+                        viewport.width(), contentTop(), MinecraftUiRenderer.screenHeight() - PADDING);
                 if (layout.containsMap(localMouseX, localMouseY)) {
                     pendingWarQueueClick = null;
                     boolean locked = manager.canManage() && territoriesLocked();
@@ -3156,7 +3161,7 @@ public final class WarPlannerScreen extends Screen {
 
     private MemberDrag teamMemberDragAt(
             WarPlannerSnapshot snapshot, float mouseX, float mouseY, float width, float height) {
-        TeamsLayout layout = teamsLayout(width, contentTop(), height - 42, snapshot.teams().size());
+        TeamsLayout layout = teamsLayout(width, contentTop(), height - PADDING, snapshot.teams().size());
         List<TeamPlacement> placements = teamPlacements(
                 snapshot.teams(), scrollRows, layout, manager.canManage(), snapshot.caller() != null);
         for (TeamPlacement placement : placements) {
@@ -3190,10 +3195,10 @@ public final class WarPlannerScreen extends Screen {
 
     private MemberDrag unassignedMemberDragAt(
             WarPlannerSnapshot snapshot, float mouseX, float mouseY, float width, float height) {
-        TeamsLayout layout = teamsLayout(width, contentTop(), height - 42, snapshot.teams().size());
+        TeamsLayout layout = teamsLayout(width, contentTop(), height - PADDING, snapshot.teams().size());
         if (layout.compactAuxiliary()) return null;
         float rowsTop = contentTop() + UNASSIGNED_POOL_TOP + 36;
-        float bottom = height - 42;
+        float bottom = height - PADDING;
         if (!hit(
                 mouseX,
                 mouseY,
@@ -3223,10 +3228,10 @@ public final class WarPlannerScreen extends Screen {
             return;
         }
 
-        TeamsLayout layout = teamsLayout(width, contentTop(), height - 42, snapshot.teams().size());
+        TeamsLayout layout = teamsLayout(width, contentTop(), height - PADDING, snapshot.teams().size());
         if (layout.compactAuxiliary()) return;
         float poolY = contentTop() + UNASSIGNED_POOL_TOP;
-        float contentBottom = height - 42;
+        float contentBottom = height - PADDING;
         if (drag.sourceTeamId() == null
                 || poolY + 34 >= contentBottom
                 || !hit(
@@ -3259,7 +3264,7 @@ public final class WarPlannerScreen extends Screen {
 
     private TeamPlacement teamPlacementAt(
             WarPlannerSnapshot snapshot, float mouseX, float mouseY, float width, float height) {
-        TeamsLayout layout = teamsLayout(width, contentTop(), height - 42, snapshot.teams().size());
+        TeamsLayout layout = teamsLayout(width, contentTop(), height - PADDING, snapshot.teams().size());
         for (TeamPlacement placement : teamPlacements(
                 snapshot.teams(), scrollRows, layout, manager.canManage(), snapshot.caller() != null)) {
             if (placement.contains(mouseX, mouseY)) return placement;
@@ -3283,14 +3288,14 @@ public final class WarPlannerScreen extends Screen {
     private void showResult(java.util.concurrent.CompletableFuture<WarPlannerManager.ActionResult> future) {
         future.whenComplete((result, error) -> SeqClient.mc.execute(() -> flashMessage = error != null
                 ? "War planner request failed."
-                : result == null ? null : result.message()));
+                : result == null || result.success() ? null : result.message()));
     }
 
     private void showQueueResult(
             java.util.concurrent.CompletableFuture<WarTerritoryQueueManager.ActionResult> future) {
         future.whenComplete((result, error) -> SeqClient.mc.execute(() -> flashMessage = error != null
                 ? "War queue request failed."
-                : result == null ? "No response from the war queue." : result.message()));
+                : result == null ? "No response from the war queue." : result.success() ? null : result.message()));
     }
 
     private String stateLabel() {
@@ -3648,11 +3653,16 @@ public final class WarPlannerScreen extends Screen {
         float opacityWidth = compact ? 100 : OPACITY_CONTROL_WIDTH;
         float resourceWidth = compact ? 82 : RESOURCE_CONTROL_WIDTH;
         float lockWidth = compact ? 94 : LOCK_CONTROL_WIDTH;
+        float scale = Math.min(1, Math.max(0, width - PADDING * 2 - DISPLAY_CONTROL_GAP * (canManage ? 2 : 1))
+                / (opacityWidth + resourceWidth + (canManage ? lockWidth : 0)));
+        opacityWidth *= scale;
+        resourceWidth *= scale;
+        lockWidth *= scale;
         float right = width - PADDING;
         float lockX = canManage ? right - lockWidth : right;
         float resourceRight = canManage ? lockX - DISPLAY_CONTROL_GAP : right;
         float resourceX = resourceRight - resourceWidth;
-        float opacityX = resourceX - DISPLAY_CONTROL_GAP - opacityWidth;
+        float opacityX = Math.max(PADDING, resourceX - DISPLAY_CONTROL_GAP - opacityWidth);
         return new DisplayControls(opacityX, opacityWidth, resourceX, resourceWidth, lockX, lockWidth);
     }
 
@@ -3773,7 +3783,16 @@ public final class WarPlannerScreen extends Screen {
         return Math.min(220, Math.max(150, width * .25f));
     }
 
+    static float warMapToolbarHeight(float width) {
+        return width >= 620 ? 30 : 58;
+    }
+
+    private static float mapDisplayControlsY(float width) {
+        return contentTop() + (width >= 620 ? 0 : 28);
+    }
+
     static WarMapLayout warMapLayout(float width, float top, float bottom) {
+        top += warMapToolbarHeight(width);
         float sidebarWidth = warMapSidebarWidth(width);
         float sidebarX = width - PADDING - sidebarWidth;
         return new WarMapLayout(
@@ -3786,24 +3805,11 @@ public final class WarPlannerScreen extends Screen {
     }
 
     static WarMapControls warMapControls(WarMapLayout layout) {
-        float right = layout.mapX() + layout.mapWidth() - 6;
-        float top = layout.mapY() + 6;
-        WarMapButtonBounds fit = new WarMapButtonBounds(
-                layout.mapX() + 6, top, Math.max(0, Math.min(44, right - layout.mapX() - 6)), BUTTON_HEIGHT);
-        float queueX = fit.x() + fit.width() + 4;
-        WarMapButtonBounds queues = new WarMapButtonBounds(
-                queueX, top, Math.max(0, Math.min(WAR_QUEUE_FILTER_BUTTON_WIDTH, right - queueX)), BUTTON_HEIGHT);
-        float playersX = queues.x() + queues.width() + 6;
-        float playersY = top;
-        if (right - playersX < WAR_MAP_PLAYERS_BUTTON_WIDTH) {
-            playersX = fit.x();
-            playersY += BUTTON_HEIGHT + 6;
-        }
-        WarMapButtonBounds players = new WarMapButtonBounds(
-                playersX,
-                playersY,
-                Math.max(0, Math.min(WAR_MAP_PLAYERS_BUTTON_WIDTH, right - playersX)),
-                BUTTON_HEIGHT);
+        float plannerWidth = layout.sidebarX() + layout.sidebarWidth() + PADDING;
+        float top = layout.mapY() - warMapToolbarHeight(plannerWidth);
+        WarMapButtonBounds fit = new WarMapButtonBounds(PADDING, top, 44, BUTTON_HEIGHT);
+        WarMapButtonBounds queues = new WarMapButtonBounds(PADDING + 48, top, WAR_QUEUE_FILTER_BUTTON_WIDTH, BUTTON_HEIGHT);
+        WarMapButtonBounds players = new WarMapButtonBounds(PADDING + 132, top, WAR_MAP_PLAYERS_BUTTON_WIDTH, BUTTON_HEIGHT);
         return new WarMapControls(fit, queues, players);
     }
 
