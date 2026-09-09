@@ -1024,8 +1024,8 @@ public class SeqClient implements ClientModInitializer {
                 "Show opted-in player heads on the war map.",
                 "War planner display");
         warPlannerBackgroundOpacitySetting.setPresentation(
-                "Background opacity",
-                "Adjust war-planner panels so the in-game chat remains visible behind them.",
+                "Panel opacity %",
+                "Adjust planner panel backgrounds without fading the map or controls.",
                 "War planner display");
         warQueueHudTextSizeSetting.setPresentation(
                 "Queue HUD text size",
