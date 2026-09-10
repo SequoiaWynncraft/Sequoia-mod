@@ -66,11 +66,20 @@ class WarPlannerScreenTest {
 
     @Test
     void headerDropdownAndActionsFitBesideTheTitleAtAllSupportedWidths() {
-        for (float width : new float[] {280, 320, 420, 820, 1780}) {
+        for (float width : new float[] {280, 320, 420, 619, 620, 820, 1780}) {
             var header = WarPlannerScreen.headerControls(width);
             assertTrue(header.section().x() + header.section().width() < header.roles().x());
             assertTrue(header.roles().x() + header.roles().width() < header.refresh().x());
             assertTrue(header.refresh().x() + header.refresh().width() < width - (width < 420 ? 70 : 125));
+            var opacity = header.opacity();
+            assertTrue(opacity.x() >= 0 && opacity.x() + opacity.width() <= width);
+            assertTrue(opacity.y() + opacity.height() <= WarPlannerScreen.headerHeight(width));
+            if (width >= 620) {
+                assertTrue(opacity.x() > header.refresh().x() + header.refresh().width());
+                assertTrue(opacity.x() + opacity.width() < width - 125);
+            } else {
+                assertTrue(opacity.y() > header.refresh().y() + header.refresh().height());
+            }
             for (int row = 0; row < 3; row++) {
                 var option = WarPlannerScreen.dropdownOption(header.section(), row);
                 assertEquals(header.section().x(), option.x());
@@ -105,12 +114,12 @@ class WarPlannerScreenTest {
     }
 
     @Test
-    void mapSwitchesAndSliderStayInTheBottomRightAndColorDropdownStaysInTheSidebar() {
+    void mapSwitchesStayInTheBottomRightAndColorDropdownStaysInTheSidebar() {
         for (float width : new float[] {280, 320, 500, 820, 1780}) {
             var layout = WarPlannerScreen.warMapLayout(width, 86, 610);
             for (boolean manager : new boolean[] {false, true}) {
                 var controls = WarPlannerScreen.warMapControls(layout, manager);
-                for (var control : List.of(controls.fit(), controls.panel(), controls.queues(), controls.players(), controls.opacity())) {
+                for (var control : List.of(controls.fit(), controls.panel(), controls.queues(), controls.players())) {
                     assertTrue(control.x() >= layout.mapX());
                     assertTrue(control.x() + control.width() <= layout.mapX() + layout.mapWidth());
                     assertTrue(control.y() >= layout.mapY());
@@ -120,7 +129,7 @@ class WarPlannerScreenTest {
                 assertTrue(controls.coloring().x() + controls.coloring().width() <= layout.sidebarX() + layout.sidebarWidth());
                 assertEquals(manager, controls.lock().visible());
                 assertEquals(controls.queues().y() + controls.queues().height(), controls.players().y());
-                assertEquals(controls.players().y() + controls.players().height(), controls.opacity().y());
+                assertTrue(controls.players().y() + controls.players().height() <= controls.panel().y() + controls.panel().height());
                 assertTrue(controls.fit().y() + controls.fit().height() < controls.panel().y());
             }
         }
@@ -385,15 +394,12 @@ class WarPlannerScreenTest {
     }
 
     @Test
-    void resourceFillsUseQueueTransparencyWithoutChangingThePalette() {
+    void resourceFillsUseFixedTransparencyWithoutChangingThePalette() {
         for (String resource : List.of("EMERALD", "ORE", "WOOD", "FISH", "CROP")) {
             Color palette = WarTerritoryPickerScreen.resourceColor(resource);
-            for (long time : new long[] {0, 400, 800, 1200, 1600}) {
-                Color fill = WarTerritoryPickerScreen.resourceFillColor(
-                        palette, WarPlannerScreen.warQueuePulseAlpha(time));
-                assertEquals(palette.getRGB() & 0xffffff, fill.getRGB() & 0xffffff);
-                assertEquals(WarPlannerScreen.warQueuePulseAlpha(time), fill.getAlpha());
-            }
+            Color fill = WarTerritoryPickerScreen.resourceFillColor(palette, WarPlannerScreen.RESOURCE_FILL_ALPHA);
+            assertEquals(palette.getRGB() & 0xffffff, fill.getRGB() & 0xffffff);
+            assertEquals(96, fill.getAlpha());
         }
     }
 
