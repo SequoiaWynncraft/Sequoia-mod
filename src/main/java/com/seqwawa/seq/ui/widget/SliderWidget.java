@@ -165,8 +165,8 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
         // Knob
         float knobX = layout.sliderX() + fillWidth;
-        float knobY = layout.sliderY() + SLIDER_HEIGHT / 2f - KNOB_RADIUS / 2f;
-        canvas.fillRect(knobX - KNOB_RADIUS, knobY - KNOB_RADIUS / 2, KNOB_RADIUS * 2, KNOB_RADIUS * 2,
+        float knobY = layout.sliderY() + SLIDER_HEIGHT / 2f;
+        canvas.fillRect(knobX - KNOB_RADIUS, knobY - KNOB_RADIUS, KNOB_RADIUS * 2, KNOB_RADIUS * 2,
                 enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED));
 
         // Text box
@@ -268,12 +268,14 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         float textBoxX = sliderWidthRatio < 1f
                 ? sliderX + sliderWidth + CONTROL_GAP
                 : x + width - TEXT_BOX_WIDTH - 8;
+        // Align the track, thumb and value on one row below the label.
+        float controlCenterY = y + Math.min(26, height - TEXT_BOX_HEIGHT / 2f);
         return new SliderLayout(
                 sliderX,
-                y + 22,
+                controlCenterY - SLIDER_HEIGHT / 2f,
                 sliderWidth,
                 textBoxX,
-                y + (height - TEXT_BOX_HEIGHT) / 2f);
+                controlCenterY - TEXT_BOX_HEIGHT / 2f);
     }
 
     private void updateValueFromMouse(float mouseX, float sliderX, float sliderWidth) {
