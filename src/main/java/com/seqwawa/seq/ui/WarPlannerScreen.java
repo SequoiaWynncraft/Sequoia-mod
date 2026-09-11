@@ -825,6 +825,7 @@ public final class WarPlannerScreen extends Screen {
         if (opacitySlider == null && SeqClient.getWarPlannerBackgroundOpacitySetting() != null) {
             opacitySlider = new SliderWidget(SeqClient.getWarPlannerBackgroundOpacitySetting()) {
                 @Override protected String getDisplayName() { return "Opacity %"; }
+                @Override protected boolean inlineLayout() { return true; }
             };
         }
         if (opacitySlider != null) {
@@ -3922,9 +3923,9 @@ public final class WarPlannerScreen extends Screen {
         var section = new WarMapButtonBounds(PADDING, 6, sectionWidth, 18);
         var roles = new WarMapButtonBounds(section.x() + sectionWidth + 6, 6, actionWidth, 18);
         var refresh = new WarMapButtonBounds(roles.x() + actionWidth + 6, 6, actionWidth, 18);
-        var opacity = width >= 620
-                ? new WarMapButtonBounds(refresh.x() + actionWidth + 12, 0, 200, 34)
-                : new WarMapButtonBounds(PADDING, 32, 200, 40);
+        var opacity = width >= 660
+                ? new WarMapButtonBounds(refresh.x() + actionWidth + 12, 6, 240, 18)
+                : new WarMapButtonBounds(PADDING, 32, 240, 18);
         return new HeaderControls(section, roles, refresh, opacity);
     }
 
@@ -4006,7 +4007,7 @@ public final class WarPlannerScreen extends Screen {
     }
 
     static float headerHeight(float width) {
-        return width >= 620 ? 36 : 72;
+        return width >= 660 ? HEADER_HEIGHT : 56;
     }
 
     static float contentTop(float width) {

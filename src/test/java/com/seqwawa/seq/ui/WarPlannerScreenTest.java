@@ -66,7 +66,7 @@ class WarPlannerScreenTest {
 
     @Test
     void headerDropdownAndActionsFitBesideTheTitleAtAllSupportedWidths() {
-        for (float width : new float[] {280, 320, 420, 619, 620, 820, 1780}) {
+        for (float width : new float[] {280, 320, 420, 659, 660, 820, 1780}) {
             var header = WarPlannerScreen.headerControls(width);
             assertTrue(header.section().x() + header.section().width() < header.roles().x());
             assertTrue(header.roles().x() + header.roles().width() < header.refresh().x());
@@ -74,7 +74,7 @@ class WarPlannerScreenTest {
             var opacity = header.opacity();
             assertTrue(opacity.x() >= 0 && opacity.x() + opacity.width() <= width);
             assertTrue(opacity.y() + opacity.height() <= WarPlannerScreen.headerHeight(width));
-            if (width >= 620) {
+            if (width >= 660) {
                 assertTrue(opacity.x() > header.refresh().x() + header.refresh().width());
                 assertTrue(opacity.x() + opacity.width() < width - 125);
             } else {
