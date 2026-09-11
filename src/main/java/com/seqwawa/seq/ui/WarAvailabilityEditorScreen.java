@@ -68,16 +68,17 @@ final class WarAvailabilityEditorScreen extends Screen {
         float height = canvas.metrics().height();
         float x = (width - PANEL_WIDTH) / 2;
         float y = (height - PANEL_HEIGHT) / 2;
+        if (parent instanceof WarPlannerScreen planner) planner.renderBehindDialog(canvas);
         canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
-        canvas.fillRoundedRect(x, y, PANEL_WIDTH, PANEL_HEIGHT, 6, color(BACKGROUND_BODY_OPAQUE));
+        canvas.fillRect(x, y, PANEL_WIDTH, PANEL_HEIGHT, color(BACKGROUND_BODY_OPAQUE));
         text(canvas, "Custom availability", x + 14, y + 19, 14, color(ACCENT_PRIMARY), false);
-        canvas.fillRoundedRect(x + 14, y + 36, PANEL_WIDTH - 28, 26, 4, color(CONTROL_INPUT));
+        canvas.fillRect(x + 14, y + 36, PANEL_WIDTH - 28, 26, color(CONTROL_INPUT));
         text(canvas, duration + (saving ? "" : "│"), x + 22, y + 49, 11, color(TEXT_PRIMARY), false);
         text(canvas, message == null ? "Examples: 45m, 1hr 30min, 2h · maximum 24h" : message,
                 x + 14, y + 76, 9, color(message == null ? TEXT_MUTED : CONTROL_WARNING), false);
-        button(canvas, x + PANEL_WIDTH - 150, y + PANEL_HEIGHT - 34, 62, "Cancel", false);
+        button(canvas, x + PANEL_WIDTH - 150, y + PANEL_HEIGHT - 34, 62, "Cancel", false, false);
         button(canvas, x + PANEL_WIDTH - 80, y + PANEL_HEIGHT - 34, 66,
-                saving ? "Saving…" : "Set", saving);
+                saving ? "Saving…" : "Set", saving, true);
     }
 
     @Override
@@ -204,10 +205,12 @@ final class WarAvailabilityEditorScreen extends Screen {
         SeqClient.mc.setScreen(parent);
     }
 
-    private void button(UiCanvas canvas, float x, float y, float width, String label, boolean disabled) {
+    private void button(UiCanvas canvas, float x, float y, float width, String label, boolean disabled, boolean primary) {
         boolean hovered = !disabled && hit(mouseX, mouseY, x, y, width, BUTTON_HEIGHT);
-        canvas.fillRoundedRect(x, y, width, BUTTON_HEIGHT, 4,
-                disabled ? color(ACCENT_PRIMARY_DARK) : color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
+        canvas.fillRect(x, y, width, BUTTON_HEIGHT,
+                color(disabled ? ACCENT_PRIMARY_DARK
+                        : primary ? (hovered ? ACCENT_PRIMARY_HOVER : ACCENT_PRIMARY)
+                        : hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
         text(canvas, label, x + width / 2, y + BUTTON_HEIGHT / 2, 10,
                 color(disabled ? TEXT_MUTED : TEXT_PRIMARY), true);
     }

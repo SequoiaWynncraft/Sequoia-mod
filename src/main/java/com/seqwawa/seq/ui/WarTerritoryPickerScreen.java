@@ -265,12 +265,11 @@ public final class WarTerritoryPickerScreen extends Screen {
                     : "Unavailable · assigned to " + unavailableOwner.name();
             float tooltipWidth = Math.min(280,
                     Math.max(150, 14 + Math.max(resourceText.length(), actionText.length()) * 6));
-            canvas.fillRoundedRect(
+            canvas.fillRect(
                     nvgMouseX + 10,
                     nvgMouseY + 10,
                     tooltipWidth,
                     49,
-                    4,
                     WarPlannerScreen.plannerBackground(color(BACKGROUND_POPUP)));
             text(canvas, hoveredTerritory.name(), nvgMouseX + 17, nvgMouseY + 21, 10, color(TEXT_PRIMARY), false);
             text(canvas, resourceText, nvgMouseX + 17, nvgMouseY + 36, 9, color(TEXT_MUTED), false);
@@ -317,8 +316,8 @@ public final class WarTerritoryPickerScreen extends Screen {
                 Color border = color(keyboardFocused
                         ? ACCENT_PRIMARY
                         : assigned ? STATUS_SUCCESS_BORDER : STATUS_DANGER_BORDER);
-                canvas.fillRoundedRect(
-                        teamBounds.x(), teamBounds.y(), teamBounds.width(), teamBounds.height(), 3,
+                canvas.fillRect(
+                        teamBounds.x(), teamBounds.y(), teamBounds.width(), teamBounds.height(),
                         hovered ? brighten(background, 18) : background);
                 canvas.strokeRect(
                         teamBounds.x(), teamBounds.y(), teamBounds.width(), teamBounds.height(),
@@ -755,13 +754,24 @@ public final class WarTerritoryPickerScreen extends Screen {
 
     static void renderResourceFill(
             UiCanvas canvas, float x, float y, float width, float height, WarPlannerSnapshot.TerritoryDetails detail) {
+        renderResourceFill(canvas, x, y, width, height, detail, 255);
+    }
+
+    static void renderResourceFill(
+            UiCanvas canvas, float x, float y, float width, float height,
+            WarPlannerSnapshot.TerritoryDetails detail, int alpha) {
         if (detail == null || detail.resources().isEmpty()) return;
         List<Color> colors = resourceDisplayColors(detail.resources());
         float sliceWidth = width / colors.size();
         for (int index = 0; index < colors.size(); index++) {
             canvas.fillRect(x + index * sliceWidth, y, index == colors.size() - 1 ? width - index * sliceWidth : sliceWidth,
-                    height, colors.get(index));
+                    height, resourceFillColor(colors.get(index), alpha));
         }
+    }
+
+    static Color resourceFillColor(Color paletteColor, int alpha) {
+        return new Color(paletteColor.getRed(), paletteColor.getGreen(), paletteColor.getBlue(),
+                Math.max(0, Math.min(255, alpha)));
     }
 
     static List<Color> resourceDisplayColors(List<String> resources) {
@@ -876,7 +886,7 @@ public final class WarTerritoryPickerScreen extends Screen {
         Color background = disabled ? color(ACCENT_DISABLED)
                 : danger ? color(hovered ? CONTROL_DANGER_HOVER : CONTROL_DANGER)
                 : color(hovered ? MAP_CONTROL_HOVER : MAP_CONTROL);
-        canvas.fillRoundedRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), 4, background);
+        canvas.fillRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), background);
         if (focused && !disabled) {
             canvas.strokeRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), 2, color(ACCENT_PRIMARY));
         }

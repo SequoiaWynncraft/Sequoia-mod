@@ -34,6 +34,7 @@ import com.seqwawa.seq.model.war.WarPlannerSnapshot.ZoneCategory;
 import com.seqwawa.seq.model.war.WarTeamType;
 import com.seqwawa.seq.model.war.WarTerritoryQueueFeed.TerritoryQueue;
 import com.seqwawa.seq.utils.TextInputHelper;
+import com.seqwawa.seq.ui.widget.SliderWidget;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
@@ -61,11 +62,10 @@ import org.lwjgl.glfw.GLFW;
 /** Seq-only war management overlay. Authorization is supplied by protected backend responses. */
 public final class WarPlannerScreen extends Screen {
     private static final float PADDING = 12;
-    private static final float HEADER_HEIGHT = 38;
+    private static final float HEADER_HEIGHT = SequoiaUiStyle.HEADER_HEIGHT;
     private static final float AVAILABILITY_HEIGHT = 48;
-    private static final float TAB_HEIGHT = 24;
     private static final float ROW_HEIGHT = 38;
-    private static final float TEAM_MEMBER_ROW_STEP = 11;
+    private static final float TEAM_MEMBER_ROW_STEP = 16;
     private static final float TEAM_ACTION_TOP = 8;
     private static final float TEAM_SELF_ACTION_WIDTH = 68;
     private static final float SUPPORT_PANEL_HEIGHT = 142;
@@ -73,19 +73,15 @@ public final class WarPlannerScreen extends Screen {
     private static final float SUPPORT_ROW_STEP = 26;
     private static final float SUPPORT_ROW_HEIGHT = 21;
     private static final float UNASSIGNED_POOL_TOP = 150;
-    private static final float UNASSIGNED_ROW_HEIGHT = 20;
+    private static final float UNASSIGNED_ROW_HEIGHT = 24;
     private static final float WAR_MAP_SIDEBAR_GAP = 8;
-    private static final float WAR_MAP_ZONE_ROW_HEIGHT = 62;
-    private static final float WAR_MAP_ZONE_ROW_STEP = 66;
+    private static final float WAR_MAP_ZONE_ROW_HEIGHT = 44;
+    private static final float WAR_MAP_ZONE_ROW_STEP = 48;
     private static final float WAR_MAP_CATEGORY_ROW_HEIGHT = 26;
     private static final float WAR_MAP_CATEGORY_ROW_STEP = 30;
-    private static final float WAR_MAP_SIDEBAR_CONTENT_TOP = 34;
+    private static final float WAR_MAP_SIDEBAR_CONTENT_TOP = 64;
     private static final float WAR_MAP_SIDEBAR_BOTTOM_PADDING = 6;
     private static final float BUTTON_HEIGHT = 22;
-    private static final float MANAGER_ACTION_WIDTH = 92;
-    private static final float MAX_ROSTER_WIDTH = 680;
-    private static final float MAX_TEAMS_WIDTH = 1080;
-    private static final float MAX_ZONES_WIDTH = 1200;
     private static final float COMPOSITION_ICON_SIZE = 12;
     private static final float COMPOSITION_ICON_GAP = 3;
     private static final float TEAM_EDITOR_SEARCH_HEIGHT = 22;
@@ -94,19 +90,15 @@ public final class WarPlannerScreen extends Screen {
     private static final int TEAM_EDITOR_SEARCH_MAX_LENGTH = 64;
     private static final float HQ_ICON_WIDTH = 24;
     private static final float HQ_ICON_HEIGHT = 19.5f;
-    private static final float DISPLAY_CONTROL_GAP = 6;
-    private static final float OPACITY_CONTROL_WIDTH = 132;
-    private static final float RESOURCE_CONTROL_WIDTH = 104;
-    private static final float LOCK_CONTROL_WIDTH = 110;
     private static final long WAR_QUEUE_DOUBLE_CLICK_MILLIS = 350;
     private static final float WAR_QUEUE_DOUBLE_CLICK_MOVE_TOLERANCE = 4;
-    private static final float WAR_QUEUE_FILTER_BUTTON_WIDTH = 78;
-    private static final float WAR_MAP_PLAYERS_BUTTON_WIDTH = 84;
     private static final float WAR_QUEUE_MAP_MAX_FONT_SIZE = 8;
     private static final float WAR_QUEUE_MAP_MIN_FONT_SIZE = 5;
     private static final long WAR_QUEUE_PULSE_PERIOD_MILLIS = 1_600;
     private static final int WAR_QUEUE_PULSE_MIN_ALPHA = 36;
     private static final int WAR_QUEUE_PULSE_MAX_ALPHA = 96;
+    // Resource colors stay steady at the peak opacity used by queue highlights.
+    static final int RESOURCE_FILL_ALPHA = 96;
     private static final float WAR_QUEUE_TOOLTIP_TEXT_SIZE = 9;
     private static final float WAR_QUEUE_TOOLTIP_LINE_HEIGHT = 13;
     private static final float TEAM_CARD_GAP = 6;
@@ -128,6 +120,8 @@ public final class WarPlannerScreen extends Screen {
     private float nvgMouseY;
     private int scrollRows;
     private String flashMessage;
+    private String displayedMessage;
+    private long displayedMessageAt;
 
     private Long editingTeamId;
     private TeamEditorBase teamEditorBase;
@@ -146,8 +140,15 @@ public final class WarPlannerScreen extends Screen {
     private Integer editingSupportSlot;
     private int supportEditorScrollRows;
     private boolean supportEditorSaving;
-    private boolean draggingBackgroundOpacity;
+    private java.util.concurrent.CompletableFuture<WarPlannerManager.ActionResult> availabilityUpdate;
+    private boolean sectionDropdownOpen;
+    private boolean coloringDropdownOpen;
+    private SliderWidget opacitySlider;
     private boolean draggingWarMap;
+    private float mapPressX;
+    private float mapPressY;
+    private boolean mapPressMoved;
+    private String selectedWarTerritory;
     private PendingWarQueueClick pendingWarQueueClick;
     private boolean warMapFitted;
     private double warMapCenterX;
@@ -162,6 +163,8 @@ public final class WarPlannerScreen extends Screen {
     private GuildTerritory hoveredWarMapTerritory;
     private MemberDrag memberDrag;
     private ZoneDrag zoneDrag;
+    private Long zoneActionsId;
+    private WarMapButtonBounds zoneActionsBounds;
     private int unassignedScrollRows;
     private boolean roleEditorOpen;
     private boolean roleEditorSaving;
@@ -233,24 +236,33 @@ public final class WarPlannerScreen extends Screen {
         }
     }
 
+    void renderBehindDialog(UiCanvas canvas) {
+        float savedX = nvgMouseX;
+        float savedY = nvgMouseY;
+        nvgMouseX = Float.NEGATIVE_INFINITY;
+        nvgMouseY = Float.NEGATIVE_INFINITY;
+        try {
+            renderPlanner(canvas);
+        } finally {
+            nvgMouseX = savedX;
+            nvgMouseY = savedY;
+        }
+    }
+
     private void renderPlanner(UiCanvas canvas) {
         float screenWidth = canvas.metrics().width();
         float height = canvas.metrics().height();
-        PlannerViewport viewport = activePlannerViewport(screenWidth);
-        if (tab != Tab.ZONES) {
-            canvas.fillRect(0, 0, screenWidth, height, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
-        }
-        canvas.fillRect(0, 0, screenWidth, HEADER_HEIGHT, plannerBackground(color(BACKGROUND_HEADER)));
+        PlannerViewport viewport = plannerViewport(screenWidth);
+        SequoiaUiStyle.drawPanelFrame(canvas, headerHeight(viewport.width()));
+        SequoiaSidebarNavigation.render(canvas, SequoiaSidebarNavigation.Destination.WAR, nvgMouseX, nvgMouseY);
         float screenMouseX = nvgMouseX;
         nvgMouseX -= viewport.x();
         canvas.save();
         canvas.translate(viewport.x(), 0);
         try {
             float width = viewport.width();
-            text(canvas, "War Planner", PADDING, HEADER_HEIGHT / 2, 19, color(ACCENT_PRIMARY), false);
-            if (width >= 520) {
-                text(canvas, stateLabel(), width - 300, HEADER_HEIGHT / 2, 11, stateColor(), false);
-            }
+            text(canvas, "War Planner", width - PADDING, HEADER_HEIGHT / 2, width < 420 ? 10 : 18,
+                    color(ACCENT_PRIMARY_HOVER), UiCanvas.HorizontalAlign.RIGHT);
             WarPlannerSnapshot current = manager.snapshot();
             RosterMember caller = current == null ? null : current.caller();
             boolean rolesEditable = current != null
@@ -258,36 +270,25 @@ public final class WarPlannerScreen extends Screen {
                     && caller != null
                     && caller.discordId() != null
                     && !caller.discordId().isBlank();
-            button(canvas, width - 158, 8, 70, BUTTON_HEIGHT, "My roles", false,
-                    manager.isMutating() || !rolesEditable);
-            button(canvas, width - 82, 8, 70, BUTTON_HEIGHT, "Refresh", false, manager.isRequestInFlight());
+            HeaderControls header = headerControls(width);
+            renderDropdown(canvas, header.section(), tab.label, sectionDropdownOpen);
+            primaryButton(canvas, header.roles().x(), 6, header.roles().width(), 18, "My roles",
+                    showBusyControls() || !rolesEditable);
+            primaryButton(canvas, header.refresh().x(), 6, header.refresh().width(), 18, "Refresh",
+                    manager.isRequestInFlight() && !availabilityUpdatePending());
 
-            renderAvailability(canvas, width);
-            renderTabs(canvas, width);
-            renderContent(canvas, width, height);
-            DisplayControls controls = renderDisplayControls(canvas, width, height);
-
-            if (flashMessage != null && !flashMessage.isBlank()) {
-                boolean stacked = controls.left() < PADDING + 100;
-                float messageY = stacked ? height - 64 : height - 34;
-                float messageWidth = stacked
-                        ? Math.min(width - PADDING * 2, 480)
-                        : Math.max(80, Math.min(480, controls.left() - PADDING - DISPLAY_CONTROL_GAP));
-                canvas.fillRoundedRect(PADDING, messageY, messageWidth, 24, 5,
-                        plannerBackground(color(BACKGROUND_POPUP)));
-                text(canvas, truncate(flashMessage, 68), PADDING + 8, messageY + 12, 11,
-                        color(manager.lastError() == null ? TEXT_SECONDARY : CONTROL_WARNING), false);
-            } else if (manager.lastError() != null) {
-                boolean stacked = controls.left() < PADDING + 100;
-                float messageY = stacked ? height - 64 : height - 34;
-                float messageWidth = stacked
-                        ? Math.min(width - PADDING * 2, 480)
-                        : Math.max(80, Math.min(480, controls.left() - PADDING - DISPLAY_CONTROL_GAP));
-                canvas.fillRoundedRect(PADDING, messageY, messageWidth, 24, 5,
-                        plannerBackground(color(STATUS_WARNING_BACKGROUND)));
-                text(canvas, truncate(manager.lastError(), 68), PADDING + 8, messageY + 12, 11,
-                        color(TEXT_PRIMARY), false);
+            if (tab == Tab.ZONES) {
+                var slider = prepareOpacitySlider(width);
+                if (slider != null) slider.render(canvas, nvgMouseX, nvgMouseY);
             }
+            renderAvailability(canvas, width);
+            renderSectionAction(canvas, width);
+            renderContent(canvas, width, height);
+            if (tab == Tab.ZONES) {
+                renderZoneActions(canvas);
+            }
+            renderDropdownMenus(canvas, width, height);
+            renderFeedback(canvas, width, height);
 
             if (warPingPickerOpen) {
                 renderWarPingPicker(canvas, width, height);
@@ -304,8 +305,23 @@ public final class WarPlannerScreen extends Screen {
         }
     }
 
+    private void renderFeedback(UiCanvas canvas, float width, float height) {
+        String message = manager.lastError() != null ? manager.lastError() : flashMessage;
+        if (!java.util.Objects.equals(message, displayedMessage)) {
+            displayedMessage = message;
+            displayedMessageAt = monotonicMillis();
+        }
+        if (message == null || message.isBlank()
+                || (manager.lastError() == null && monotonicMillis() - displayedMessageAt > 4_000)) return;
+        float messageWidth = Math.min(width - PADDING * 2,
+                UiRenderer.measureText(message, SeqClient.getFontManager().getSelectedFont(), 10).width() + 16);
+        canvas.fillRect(PADDING, height - 32, messageWidth, 24, color(BACKGROUND_POPUP));
+        text(canvas, truncate(message, availableCharacters(0, messageWidth - 16, 10, 90)),
+                PADDING + 8, height - 20, 10, color(TEXT_SECONDARY), false);
+    }
+
     private void renderAvailability(UiCanvas canvas, float width) {
-        float y = HEADER_HEIGHT;
+        float y = headerHeight(width);
         canvas.fillRect(0, y, width, AVAILABILITY_HEIGHT, plannerBackground(color(BACKGROUND_CONTENT)));
         WarPlannerSnapshot snapshot = manager.snapshot();
         RosterMember caller = snapshot == null ? null : snapshot.caller();
@@ -330,81 +346,17 @@ public final class WarPlannerScreen extends Screen {
                 : new String[] {"30 min", "1 hour", "2 hours", "Custom", "Unavailable"};
         for (int index = 0; index < labels.length; index++) {
             button(canvas, layout.buttonX(index), y + layout.y(), layout.buttonWidth(index), BUTTON_HEIGHT,
-                    labels[index], index == 4, manager.isMutating());
+                    labels[index], index == 4 ? ButtonTone.DANGER : ButtonTone.PRIMARY, showBusyControls());
         }
     }
 
-    private DisplayControls renderDisplayControls(UiCanvas canvas, float width, float height) {
-        DisplayControls controls = displayControls(width, manager.canManage());
-        float y = height - 34;
-        canvas.fillRoundedRect(
-                controls.opacityX(), y, controls.opacityWidth(), 24, 4, plannerBackground(color(BACKGROUND_CONTENT)));
-        int opacity = backgroundOpacityPercent();
-        float labelWidth = controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? 45 : 65;
-        text(
-                canvas,
-                (controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? "BG " : "Opacity ") + opacity + "%",
-                controls.opacityX() + 5,
-                y + 12,
-                9,
-                color(TEXT_SECONDARY),
-                false);
-        float trackX = controls.opacityX() + labelWidth;
-        float trackY = y + 10;
-        float trackWidth = controls.opacityWidth() - labelWidth - 7;
-        canvas.fillRect(trackX, trackY, trackWidth, 4, color(CONTROL_INPUT_SECONDARY));
-        float fillWidth = trackWidth * opacity / 100f;
-        canvas.fillRect(trackX, trackY, fillWidth, 4, color(ACCENT_PRIMARY));
-        canvas.fillCircle(trackX + fillWidth, trackY + 2, 4, color(TEXT_PRIMARY));
-
-        button(
-                canvas,
-                controls.resourceX(),
-                y + 1,
-                controls.resourceWidth(),
-                BUTTON_HEIGHT,
-                controls.resourceWidth() < RESOURCE_CONTROL_WIDTH
-                        ? resourceColorsEnabled() ? "Res ✓" : "Resources"
-                        : resourceColorsEnabled() ? "Resources ✓" : "Resource colors",
-                false,
-                false);
-        if (manager.canManage()) {
-            button(
-                    canvas,
-                    controls.lockX(),
-                    y + 1,
-                    controls.lockWidth(),
-                    BUTTON_HEIGHT,
-                    controls.lockWidth() < LOCK_CONTROL_WIDTH
-                            ? territoriesLocked() ? "Locked ✓" : "Lock terrs"
-                            : territoriesLocked() ? "Territories locked" : "Lock territories",
-                    false,
-                    false);
-        }
-        return controls;
-    }
-
-    private void renderTabs(UiCanvas canvas, float width) {
-        float y = HEADER_HEIGHT + AVAILABILITY_HEIGHT;
-        float tabWidth = tabWidth(width, manager.canManage());
-        int index = 0;
-        for (Tab candidate : Tab.values()) {
-            float x = PADDING + tabWidth * index++;
-            canvas.fillRect(x, y, tabWidth - 4, TAB_HEIGHT,
-                    plannerBackground(color(candidate == tab ? ACCENT_PRIMARY_DARK : CONTROL_INPUT)));
-            text(canvas, candidate.label, x + (tabWidth - 4) / 2, y + TAB_HEIGHT / 2, 12,
-                    color(TEXT_PRIMARY), true);
-        }
-        if (manager.canManage()) {
-            if (tab == Tab.ROSTER) {
-                boolean noTargets = pingCandidates(manager.snapshot(), "").isEmpty();
-                button(canvas, width - 92, y + 1, 80, BUTTON_HEIGHT,
-                        "War ping", false, manager.isMutating() || noTargets);
-            } else if (tab == Tab.TEAMS) {
-                button(canvas, width - 92, y + 1, 80, BUTTON_HEIGHT,
-                        "New team", false, manager.isMutating());
-            }
-        }
+    private void renderSectionAction(UiCanvas canvas, float width) {
+        if (tab == Tab.ZONES) return;
+        text(canvas, stateLabel(), width - PADDING, contentTop(width) + 12, 10, stateColor(), UiCanvas.HorizontalAlign.RIGHT);
+        if (!manager.canManage()) return;
+        primaryButton(canvas, PADDING, contentTop(width), 80, BUTTON_HEIGHT,
+                tab == Tab.ROSTER ? "War ping" : "New team",
+                showBusyControls() || (tab == Tab.ROSTER && pingCandidates(manager.snapshot(), "").isEmpty()));
     }
 
     private void renderContent(UiCanvas canvas, float width, float height) {
@@ -414,8 +366,8 @@ public final class WarPlannerScreen extends Screen {
                     width / 2, 160, 14, color(TEXT_MUTED), true);
             return;
         }
-        float top = contentTop();
-        float bottom = height - 42;
+        float top = contentTop(width) + (tab == Tab.ZONES ? 0 : 28);
+        float bottom = height - PADDING;
         canvas.scissor(0, top, width, Math.max(0, bottom - top));
         switch (tab) {
             case ROSTER -> renderRoster(canvas, snapshot, width, top, bottom);
@@ -467,8 +419,8 @@ public final class WarPlannerScreen extends Screen {
         float h = Math.min(390, height - 44);
         float x = (width - w) / 2;
         float y = (height - h) / 2;
-        canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
-        canvas.fillRoundedRect(x, y, w, h, 7, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
+        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
+        canvas.fillRect(x, y, w, h, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
         text(canvas, "War ping", x + 14, y + 21, 16, color(ACCENT_PRIMARY), false);
         text(canvas, "Notify an online, Discord-linked member in war chat.",
@@ -505,14 +457,14 @@ public final class WarPlannerScreen extends Screen {
                 index < candidates.size() && warPingRowFullyVisible(rowY, listBottom);
                 index++, rowY += 30) {
             RosterMember member = candidates.get(index);
-            canvas.fillRoundedRect(x + 12, rowY + 2, w - 24, 25, 3,
+            canvas.fillRect(x + 12, rowY + 2, w - 24, 25,
                     plannerBackground(color(BACKGROUND_CONTENT)));
             float actionX = x + w - 72;
             int nameCharacters = availableCharacters(x + 18, actionX - 8, 11, 24);
             text(canvas, truncate(member.displayName(), nameCharacters), x + 18, rowY + 14, 11,
                     color(TEXT_PRIMARY), false);
             button(canvas, actionX, rowY + 4, 54, BUTTON_HEIGHT, "Ping", false,
-                    warPingSending || manager.isMutating());
+                    warPingSending || showBusyControls());
         }
         canvas.resetScissor();
     }
@@ -554,7 +506,7 @@ public final class WarPlannerScreen extends Screen {
         if (memberDrag != null && memberDrag.active()) {
             RosterMember member = rosterMember(snapshot, memberDrag.playerUuid());
             String label = member == null ? memberDrag.playerUuid() : member.displayName();
-            canvas.fillRoundedRect(nvgMouseX + 8, nvgMouseY - 10, Math.max(74, label.length() * 6 + 16), 20, 4,
+            canvas.fillRect(nvgMouseX + 8, nvgMouseY - 10, Math.max(74, label.length() * 6 + 16), 20,
                     color(ACCENT_PRIMARY_DARK));
             text(canvas, truncate(label, 22), nvgMouseX + 16, nvgMouseY, 10, color(TEXT_PRIMARY), false);
         }
@@ -572,7 +524,7 @@ public final class WarPlannerScreen extends Screen {
         boolean dropTarget = memberDrag != null
                 && memberDrag.active()
                 && hit(nvgMouseX, nvgMouseY, x, y + 1, width, Math.max(0, visibleHeight - 2));
-        canvas.fillRoundedRect(x, y + 1, width, Math.max(1, visibleHeight - 2), 4,
+        canvas.fillRect(x, y + 1, width, Math.max(1, visibleHeight - 2),
                 plannerBackground(color(dropTarget
                         ? CONTROL_INPUT_HOVER
                         : ownTeam ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT)));
@@ -600,41 +552,40 @@ public final class WarPlannerScreen extends Screen {
             float rightEdge = memberIndex == 0 ? actions.firstMemberRight() : x + width - 8;
             String memberLabel = truncate(
                     displayName,
-                    availableCharacters(textX, rightEdge - iconWidth - 4, 10, 24));
+                    availableCharacters(textX, rightEdge - iconWidth - 4, 11, 24));
             float labelWidth = UiRenderer.measureText(
-                            memberLabel, SeqClient.getFontManager().getSelectedFont(), 10)
+                            memberLabel, SeqClient.getFontManager().getSelectedFont(), 11)
                     .width();
             float rolesX = compactRoleX(textX, labelWidth, rightEdge, iconWidth);
             Color presenceColor = rosterMember != null && rosterMember.available()
                     ? color(CONTROL_SUCCESS)
                     : rosterMember != null && rosterMember.online() ? color(TEXT_SECONDARY) : color(TEXT_MUTED);
             canvas.fillCircle(x + 11, memberY, 2, presenceColor);
-            text(canvas, memberLabel, textX, memberY, 10, presenceColor, false);
+            text(canvas, memberLabel, textX, memberY, 11, presenceColor, false);
             renderCompositionIcons(canvas, roles, rolesX, memberY - COMPOSITION_ICON_SIZE / 2);
             memberY += TEAM_MEMBER_ROW_STEP;
         }
         if (manager.canManage() && placement.fullyShows(actions.managerY(), BUTTON_HEIGHT)) {
             button(canvas, actions.editX(), y + actions.managerY(), actions.editWidth(), BUTTON_HEIGHT,
-                    "Edit", false, manager.isMutating());
+                    "Edit", false, showBusyControls());
             boolean confirming = pendingDeleteTeam != null && pendingDeleteTeam.id() == team.id();
-            button(canvas, actions.deleteX(), y + actions.managerY(), actions.deleteWidth(), BUTTON_HEIGHT,
-                    confirming ? "Confirm" : "Delete", true, manager.isMutating());
+            destructiveButton(canvas, actions.deleteX(), y + actions.managerY(), actions.deleteWidth(), BUTTON_HEIGHT,
+                    confirming ? "Confirm" : "Delete", confirming, showBusyControls());
         }
         if (caller != null && placement.fullyShows(actions.selfY(), BUTTON_HEIGHT)) {
-            button(canvas, actions.selfX(), y + actions.selfY(), actions.selfWidth(), BUTTON_HEIGHT,
-                    teamMembershipActionLabel(snapshot, team), false,
-                    manager.isMutating() || !canChangeOwnTeam(snapshot, team));
+            primaryButton(canvas, actions.selfX(), y + actions.selfY(), actions.selfWidth(), BUTTON_HEIGHT,
+                    teamMembershipActionLabel(snapshot, team),
+                    showBusyControls() || !canChangeOwnTeam(snapshot, team));
         }
     }
 
     private void renderCompactSupportBoard(
             UiCanvas canvas, WarPlannerSnapshot snapshot, TeamsLayout layout) {
-        canvas.fillRoundedRect(
+        canvas.fillRect(
                 layout.supportX(),
                 layout.supportY(),
                 layout.supportWidth(),
                 layout.supportHeight(),
-                5,
                 plannerBackground(color(BACKGROUND_CONTENT)));
         boolean showHeader = layout.supportHeight() > TEAM_SHORT_SUPPORT_HEIGHT;
         if (showHeader) {
@@ -657,7 +608,7 @@ public final class WarPlannerScreen extends Screen {
                     .orElse(null);
             boolean hovered = manager.canManage()
                     && hit(nvgMouseX, nvgMouseY, placement.x(), placement.y(), placement.width(), placement.height());
-            canvas.fillRoundedRect(placement.x(), placement.y(), placement.width(), placement.height(), 3,
+            canvas.fillRect(placement.x(), placement.y(), placement.width(), placement.height(),
                     color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
             String name = slot == null
                     ? "Empty"
@@ -671,10 +622,14 @@ public final class WarPlannerScreen extends Screen {
     }
 
     private void renderZones(UiCanvas canvas, WarPlannerSnapshot snapshot, float width, float top, float bottom) {
+        zoneActionsBounds = null;
         WarMapLayout layout = warMapLayout(width, top, bottom);
         TerritoryQueue hoveredQueue = renderWarMap(canvas, snapshot, layout);
-        renderWarMapSidebar(canvas, snapshot, layout.sidebarX(), top, layout.sidebarWidth(), bottom);
-        if (hoveredQueue != null) {
+        renderWarMapSidebar(canvas, snapshot, layout.sidebarX(), layout.mapY(), layout.sidebarWidth(), bottom);
+        renderWarMapControls(canvas, layout);
+        var controls = warMapControls(layout, manager.canManage());
+        if (hoveredQueue != null && !sectionDropdownOpen && !coloringDropdownOpen
+                && !controls.panel().contains(nvgMouseX, nvgMouseY) && !controls.fit().contains(nvgMouseX, nvgMouseY)) {
             drawWarQueueTooltip(canvas, hoveredQueue, queueManager.serverNow(), layout);
         }
     }
@@ -684,6 +639,7 @@ public final class WarPlannerScreen extends Screen {
         float y = layout.mapY();
         float width = layout.mapWidth();
         float height = layout.mapHeight();
+        canvas.fillRect(x, y, width, height, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         hoveredWarMapTerritory = null;
         List<GuildTerritory> allMapTerritories = territoryIndex.territories();
         boolean locked = manager.canManage() && territoriesLocked();
@@ -714,23 +670,26 @@ public final class WarPlannerScreen extends Screen {
                 .collect(java.util.stream.Collectors.toSet());
         hoveredWarMapTerritory = territoryAt(
                 territoryIndex, viewport, displayedNames, nvgMouseX, nvgMouseY);
+        var mapControls = warMapControls(layout, manager.canManage());
+        if (sectionDropdownOpen || coloringDropdownOpen || mapControls.panel().contains(nvgMouseX, nvgMouseY)
+                || mapControls.fit().contains(nvgMouseX, nvgMouseY)) hoveredWarMapTerritory = null;
         MapBounds coordinateBounds = mapImageBounds();
         float scale = (float) viewport.pixelsPerBlock();
         float offsetX = viewport.worldToScreenX(coordinateBounds.minX());
         float offsetY = viewport.worldToScreenZ(coordinateBounds.minZ());
         mapBackground.render(canvas, viewport);
         canvas.scissor(x, y, width, height);
-        if (resourceColorsEnabled()) {
-            drawPreviewResources(canvas, coreTerritories, details, coordinateBounds, offsetX, offsetY, scale);
+        boolean resourceColors = resourceColorsEnabled();
+        long overlayTime = monotonicMillis();
+        if (resourceColors) {
+            drawPreviewResources(canvas, coreTerritories, details, coordinateBounds, offsetX, offsetY, scale,
+                    RESOURCE_FILL_ALPHA);
+        } else {
+            drawWarQueuePulses(canvas, queueMarkers, coordinateBounds, offsetX, offsetY, scale, overlayTime);
         }
-        drawWarQueuePulses(
-                canvas,
-                queueMarkers,
-                coordinateBounds,
-                offsetX,
-                offsetY,
-                scale,
-                monotonicMillis());
+        Set<String> emphasizedTerritories = new java.util.HashSet<>();
+        if (selectedWarTerritory != null) emphasizedTerritories.add(selectedWarTerritory.toLowerCase(Locale.ROOT));
+        if (hoveredWarMapTerritory != null) emphasizedTerritories.add(hoveredWarMapTerritory.name().toLowerCase(Locale.ROOT));
         drawPreviewConnections(
                 canvas,
                 coreTerritories,
@@ -740,7 +699,9 @@ public final class WarPlannerScreen extends Screen {
                 coordinateBounds,
                 offsetX,
                 offsetY,
-                scale);
+                scale,
+                emphasizedTerritories,
+                resourceColors);
         if (hoveredWarMapTerritory != null) {
             drawPreviewFill(
                     canvas,
@@ -761,7 +722,8 @@ public final class WarPlannerScreen extends Screen {
                 scale,
                 mapColor,
                 .55f,
-                0);
+                0,
+                resourceColors);
         if (!contextTerritories.isEmpty()) {
             drawPreviewOutlines(
                     canvas,
@@ -772,7 +734,8 @@ public final class WarPlannerScreen extends Screen {
                     scale,
                     mapColor,
                     .75f,
-                    0);
+                    0,
+                    resourceColors);
         }
         for (Zone zone : displayedZones) {
             Color zoneColor = parseColor(zone.color(), color(ACCENT_PRIMARY));
@@ -784,8 +747,16 @@ public final class WarPlannerScreen extends Screen {
                     offsetY,
                     scale,
                     zoneColor,
-                    1.8f,
-                    1);
+                    resourceColors ? 1.8f : 1.2f,
+                    resourceColors ? 1 : 0,
+                    resourceColors);
+        }
+        for (String name : emphasizedTerritories) {
+            GuildTerritory territory = byName.get(name);
+            if (territory != null && displayedNames.contains(name)) {
+                drawPreviewOutlines(canvas, List.of(territory), coordinateBounds, offsetX, offsetY, scale,
+                        color(MAP_SELECTED_TERRITORY), 2, 0);
+            }
         }
         GuildTerritory hqTerritory = snapshot.hqTerritory() == null ? null : byName.get(snapshot.hqTerritory());
         if (hqTerritory != null && displayedNames.contains(hqTerritory.name().toLowerCase(Locale.ROOT))) {
@@ -822,36 +793,73 @@ public final class WarPlannerScreen extends Screen {
         }
         canvas.resetScissor();
         if (warMapPlayersEnabled()) telemetryPlayerOverlay.render(canvas, viewport, territoryIndex);
-        WarMapControls controls = warMapControls(layout);
-        if (controls.fit().visible()) {
-            button(canvas, controls.fit().x(), controls.fit().y(), controls.fit().width(), controls.fit().height(),
-                    "Fit", false, false);
-        }
-        if (controls.queues().visible()) {
-            boolean onlyMine = onlyMyWarQueuesEnabled();
-            button(
-                    canvas,
-                    controls.queues().x(),
-                    controls.queues().y(),
-                    controls.queues().width(),
-                    controls.queues().height(),
-                    onlyMine ? "My queues ✓" : "All queues",
-                    false,
-                    SeqClient.getWarQueueHudOnlyOwnedOrJoinedSetting() == null);
-        }
-        if (controls.players().visible()) {
-            button(
-                    canvas,
-                    controls.players().x(),
-                    controls.players().y(),
-                    controls.players().width(),
-                    controls.players().height(),
-                    warMapPlayersEnabled() ? "Players ON" : "Players OFF",
-                    false,
-                    false);
-        }
         return hoveredQueue;
     }
+
+    private void renderWarMapControls(UiCanvas canvas, WarMapLayout layout) {
+        WarMapControls controls = warMapControls(layout, manager.canManage());
+        var fit = controls.fit();
+        primaryButton(canvas, fit.x(), fit.y(), fit.width(), fit.height(), "Fit", false);
+        if (layout.mapWidth() > 180) {
+            text(canvas, stateLabel(), layout.mapX() + layout.mapWidth() - 8, fit.y() + 11,
+                    10, stateColor(), UiCanvas.HorizontalAlign.RIGHT);
+        }
+        var panel = controls.panel();
+        canvas.fillRect(panel.x(), panel.y(), panel.width(), panel.height(), color(BACKGROUND_CONTENT));
+        if (manager.canManage()) renderMapSwitch(canvas, controls.lock(), "Lock territories", "Lock", territoriesLocked());
+        renderMapSwitch(canvas, controls.queues(), "Only show personal queues", "Mine", onlyMyWarQueuesEnabled());
+        renderMapSwitch(canvas, controls.players(), "Display players", "Players", warMapPlayersEnabled());
+        renderDropdown(canvas, controls.coloring(), resourceColorsEnabled() ? "Resources" : "War queues", coloringDropdownOpen);
+    }
+
+    private void renderMapSwitch(UiCanvas canvas, WarMapButtonBounds row, String label, String shortLabel, boolean on) {
+        float switchWidth = row.width() < 150 ? 26 : 36;
+        float switchX = row.x() + row.width() - switchWidth - 6;
+        text(canvas, row.width() < 210 ? shortLabel : label, switchX - 6, row.y() + row.height() / 2,
+                row.width() < 150 ? 8 : 10, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.RIGHT);
+        canvas.fillRect(switchX, row.y() + 3, switchWidth, 18, color(on ? ACCENT_PRIMARY : ACCENT_SECONDARY));
+        canvas.fillRect(switchX + (on ? switchWidth - 16 : 2), row.y() + 5, 14, 14, color(TEXT_PRIMARY));
+    }
+
+    private SliderWidget prepareOpacitySlider(float width) {
+        if (opacitySlider == null && SeqClient.getWarPlannerBackgroundOpacitySetting() != null) {
+            opacitySlider = new SliderWidget(SeqClient.getWarPlannerBackgroundOpacitySetting()) {
+                @Override protected String getDisplayName() { return "Opacity %"; }
+                @Override protected boolean inlineLayout() { return true; }
+            };
+        }
+        if (opacitySlider != null) {
+            var bounds = headerControls(width).opacity();
+            opacitySlider.setPosition(bounds.x(), bounds.y(), bounds.width(), bounds.height());
+        }
+        return opacitySlider;
+    }
+
+    private void renderDropdown(UiCanvas canvas, WarMapButtonBounds bounds, String label, boolean open) {
+        canvas.fillRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), color(CONTROL_INPUT));
+        text(canvas, label, bounds.x() + 8, bounds.y() + bounds.height() / 2, 10, color(TEXT_PRIMARY), false);
+        float x = bounds.x() + bounds.width() - 10, y = bounds.y() + bounds.height() / 2;
+        canvas.strokeLine(x - 3, y + (open ? 2 : -2), x, y + (open ? -2 : 2), 1.5f, color(TEXT_SECONDARY));
+        canvas.strokeLine(x, y + (open ? -2 : 2), x + 3, y + (open ? 2 : -2), 1.5f, color(TEXT_SECONDARY));
+    }
+
+    private void renderDropdownMenus(UiCanvas canvas, float width, float height) {
+        if (sectionDropdownOpen) renderDropdownOptions(canvas, headerControls(width).section(),
+                java.util.Arrays.stream(Tab.values()).map(candidate -> candidate.label).toList(), tab.ordinal());
+        if (coloringDropdownOpen && tab == Tab.ZONES) renderDropdownOptions(canvas,
+                warMapControls(warMapLayout(width, contentTop(width), height - PADDING), manager.canManage()).coloring(),
+                List.of("War queues", "Resources"), resourceColorsEnabled() ? 1 : 0);
+    }
+
+    private void renderDropdownOptions(UiCanvas canvas, WarMapButtonBounds trigger, List<String> labels, int selected) {
+        for (int index = 0; index < labels.size(); index++) {
+            var row = dropdownOption(trigger, index);
+            canvas.fillRect(row.x(), row.y(), row.width(), row.height(), color(index == selected ? ACCENT_PRIMARY_DARK
+                    : row.contains(nvgMouseX, nvgMouseY) ? CONTROL_INPUT_HOVER : BACKGROUND_POPUP));
+            text(canvas, labels.get(index), row.x() + 8, row.y() + row.height() / 2, 10, color(TEXT_PRIMARY), false);
+        }
+    }
+
 
     private static void drawHqIcon(
             UiCanvas canvas,
@@ -986,13 +994,13 @@ public final class WarPlannerScreen extends Screen {
 
     private void renderWarMapSidebar(
             UiCanvas canvas, WarPlannerSnapshot snapshot, float x, float top, float width, float bottom) {
-        canvas.fillRoundedRect(x, top, width, bottom - top, 5, plannerBackground(color(BACKGROUND_CONTENT)));
+        canvas.fillRect(x, top, width, bottom - top, plannerBackground(color(BACKGROUND_CONTENT)));
         if (manager.canManage()) {
             float actionWidth = (width - 18) / 2;
-            button(canvas, x + 6, top + 7, actionWidth, 20, "+ Category", false, manager.isMutating());
-            button(canvas, x + 12 + actionWidth, top + 7, actionWidth, 20, "+ Zone", false, manager.isMutating());
+            primaryButton(canvas, x + 6, top + 37, actionWidth, 20, "+ Category", showBusyControls());
+            primaryButton(canvas, x + 12 + actionWidth, top + 37, actionWidth, 20, "+ Zone", showBusyControls());
         } else {
-            text(canvas, "Click visibility controls", x + 10, top + 16, 8, color(TEXT_MUTED), false);
+            text(canvas, "Click visibility controls", x + 10, top + 46, 8, color(TEXT_MUTED), false);
         }
         List<ZoneSidebarEntry> entries = zoneSidebarEntries(snapshot, collapsedZoneCategoryIds);
         if (entries.isEmpty()) {
@@ -1017,7 +1025,7 @@ public final class WarPlannerScreen extends Screen {
             rowY += entry.step();
         }
         if (zoneDrag != null && zoneDrag.active()) {
-            canvas.fillRoundedRect(nvgMouseX + 8, nvgMouseY - 10, 100, 20, 4, color(ACCENT_PRIMARY_DARK));
+            canvas.fillRect(nvgMouseX + 8, nvgMouseY - 10, 100, 20, color(ACCENT_PRIMARY_DARK));
             text(canvas, truncate(zoneDrag.zoneName(), 15), nvgMouseX + 16, nvgMouseY,
                     10, color(TEXT_PRIMARY), false);
         }
@@ -1027,8 +1035,8 @@ public final class WarPlannerScreen extends Screen {
             UiCanvas canvas, ZoneSidebarEntry entry, float x, float rowY, float width) {
         boolean displayed = !hiddenZoneCategoryIds.contains(entry.categoryId());
         boolean collapsed = containsCategory(collapsedZoneCategoryIds, entry.categoryId());
-        canvas.fillRoundedRect(x + 6, rowY, width - 12, WAR_MAP_CATEGORY_ROW_HEIGHT, 4,
-                plannerBackground(color(CONTROL_INPUT)));
+        canvas.fillRect(x + 6, rowY, width - 12, WAR_MAP_CATEGORY_ROW_HEIGHT,
+                color(CONTROL_INPUT));
         float controlsWidth = manager.canManage() && entry.category() != null ? 74 : 42;
         text(canvas, collapsed ? "▶" : "▼", x + 15, rowY + WAR_MAP_CATEGORY_ROW_HEIGHT / 2, 8,
                 color(TEXT_SECONDARY), true);
@@ -1039,8 +1047,8 @@ public final class WarPlannerScreen extends Screen {
             button(canvas, x + width - 70, rowY + 3, 38, 20, displayed ? "Hide" : "Show", false, false);
             boolean confirming = pendingDeleteZoneCategory != null
                     && pendingDeleteZoneCategory.id() == entry.category().id();
-            button(canvas, x + width - 28, rowY + 3, 22, 20, confirming ? "?" : "X", true,
-                    manager.isMutating());
+            destructiveButton(canvas, x + width - 28, rowY + 3, 22, 20, confirming ? "?" : "X", confirming,
+                    showBusyControls());
         } else {
             button(canvas, x + width - 48, rowY + 3, 42, 20, displayed ? "Hide" : "Show", false, false);
         }
@@ -1051,31 +1059,61 @@ public final class WarPlannerScreen extends Screen {
         boolean categoryDisplayed = !containsCategory(hiddenZoneCategoryIds, zone.categoryId());
         boolean displayed = categoryDisplayed && !hiddenZoneIds.contains(zone.id());
         Color zoneColor = parseColor(zone.color(), color(ACCENT_PRIMARY));
-        canvas.fillRoundedRect(x + 6, rowY, width - 12, WAR_MAP_ZONE_ROW_HEIGHT, 4,
+        canvas.fillRect(x + 6, rowY, width - 12, WAR_MAP_ZONE_ROW_HEIGHT,
                 plannerBackground(color(BACKGROUND_CONTENT_FOCUSED)));
-        canvas.fillRect(x + 11, rowY + 7, 5, 24, displayed ? zoneColor : color(TEXT_DISABLED));
-        text(canvas, truncate(zone.name(), 22), x + 22, rowY + 13, 11,
-                color(displayed ? TEXT_PRIMARY : TEXT_MUTED), false);
-        String assigned = zone.assignedTeamIds().isEmpty()
-                ? "No parties"
-                : zone.assignedTeamIds().stream()
-                        .map(id -> teamName(snapshot, id))
-                        .reduce((left, right) -> left + " + " + right)
-                        .orElse("No parties");
-        text(canvas, truncate(zone.territories().size() + " terrs · " + assigned, 29),
-                x + 22, rowY + 29, 9, color(TEXT_MUTED), false);
+        canvas.fillRect(x + 10, rowY + 6, 3, WAR_MAP_ZONE_ROW_HEIGHT - 12,
+                displayed ? zoneColor : color(TEXT_DISABLED));
+        float actionX = x + width - (manager.canManage() ? 84 : 54);
+        text(canvas, truncate(zone.name(), availableCharacters(x + 20, actionX - 4, 11, 32)),
+                x + 20, rowY + 12, 11, color(displayed ? TEXT_PRIMARY : TEXT_MUTED), false);
+        String assigned = zone.assignedTeamIds().stream().map(id -> teamName(snapshot, id))
+                .reduce((left, right) -> left + " + " + right).orElse("No teams");
+        String detail = zone.territories().size() + " territories · " + assigned;
+        text(canvas, truncate(detail, availableCharacters(x + 20, x + width - 12, 9, 45)),
+                x + 20, rowY + 32, 9, color(TEXT_MUTED), false);
+        button(canvas, actionX, rowY + 3, 44, 20, displayed ? "Hide" : "Show", false, !categoryDisplayed);
         if (manager.canManage()) {
-            float actionWidth = (width - 32) / 3;
-            button(canvas, x + 12, rowY + 35, actionWidth, BUTTON_HEIGHT, "Edit", false, manager.isMutating());
-            button(canvas, x + 16 + actionWidth, rowY + 35, actionWidth, BUTTON_HEIGHT,
-                    categoryDisplayed ? displayed ? "Hide" : "Show" : "Group off", false, !categoryDisplayed);
-            boolean confirming = pendingDeleteZone != null && pendingDeleteZone.id() == zone.id();
-            button(canvas, x + 20 + actionWidth * 2, rowY + 35, actionWidth, BUTTON_HEIGHT,
-                    confirming ? "Sure?" : "Delete", true, manager.isMutating());
-        } else {
-            button(canvas, x + 22, rowY + 35, 56, BUTTON_HEIGHT,
-                    categoryDisplayed ? displayed ? "Hide" : "Show" : "Group off", false, !categoryDisplayed);
+            button(canvas, x + width - 36, rowY + 3, 28, 20, "...", false, showBusyControls());
+            if (java.util.Objects.equals(zoneActionsId, zone.id())) {
+                float menuY = Math.min(rowY + 25, canvas.metrics().height() - 60);
+                zoneActionsBounds = new WarMapButtonBounds(x + width - 120, menuY, 112, 52);
+            }
         }
+    }
+
+    private void renderZoneActions(UiCanvas canvas) {
+        if (zoneActionsId == null || zoneActionsBounds == null || !manager.canManage()) return;
+        var menu = zoneActionsBounds;
+        canvas.fillRect(menu.x(), menu.y(), menu.width(), menu.height(), color(BACKGROUND_BODY_OPAQUE));
+        button(canvas, menu.x() + 2, menu.y() + 2, menu.width() - 4, 22, "Edit zone", false, showBusyControls());
+        boolean confirming = pendingDeleteZone != null && pendingDeleteZone.id() == zoneActionsId;
+        destructiveButton(canvas, menu.x() + 2, menu.y() + 28, menu.width() - 4, 22,
+                confirming ? "Confirm delete" : "Delete zone", confirming, showBusyControls());
+        canvas.strokeRect(menu.x(), menu.y(), menu.width(), menu.height(), 1, color(ACCENT_DIVIDER));
+    }
+
+    private boolean clickZoneActions(float mx, float my) {
+        if (zoneActionsId == null) return false;
+        Zone zone = manager.snapshot() == null ? null : manager.snapshot().zones().stream()
+                .filter(candidate -> candidate.id() == zoneActionsId).findFirst().orElse(null);
+        var menu = zoneActionsBounds;
+        if (!manager.canManage() || zone == null || menu == null || !menu.contains(mx, my)) {
+            zoneActionsId = null;
+            pendingDeleteZone = null;
+            return true;
+        }
+        if (manager.isMutating()) return true;
+        if (my < menu.y() + 26) {
+            zoneActionsId = null;
+            SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, zone));
+        } else if (pendingDeleteZone != null && pendingDeleteZone.id() == zone.id()) {
+            showResult(manager.deleteZone(zone.id(), pendingDeleteZone.version()));
+            pendingDeleteZone = null;
+            zoneActionsId = null;
+        } else {
+            pendingDeleteZone = new PendingDelete(zone.id(), zone.version());
+        }
+        return true;
     }
 
     private static List<GuildTerritory> resolveTerritories(
@@ -1254,7 +1292,8 @@ public final class WarPlannerScreen extends Screen {
             MapBounds fitted,
             float offsetX,
             float offsetY,
-            float scale) {
+            float scale,
+            int alpha) {
         for (GuildTerritory territory : territories) {
             MapBounds bounds = territory.bounds();
             float territoryX = previewX(bounds.minX(), fitted, offsetX, scale);
@@ -1262,7 +1301,7 @@ public final class WarPlannerScreen extends Screen {
             float territoryWidth = Math.max(2, (float) ((bounds.maxX() - bounds.minX()) * scale));
             float territoryHeight = Math.max(2, (float) ((bounds.maxZ() - bounds.minZ()) * scale));
             WarTerritoryPickerScreen.renderResourceFill(
-                    canvas, territoryX, territoryY, territoryWidth, territoryHeight, details.get(territory.name()));
+                    canvas, territoryX, territoryY, territoryWidth, territoryHeight, details.get(territory.name()), alpha);
         }
     }
 
@@ -1395,7 +1434,7 @@ public final class WarPlannerScreen extends Screen {
                 Math.min(centerX - labelWidth / 2, layout.mapX() + layout.mapWidth() - labelWidth - 6));
         float labelY = Math.max(layout.mapY() + 34,
                 Math.min(centerY - 11, layout.mapY() + layout.mapHeight() - 25));
-        canvas.fillRoundedRect(labelX, labelY, labelWidth, 20, 4, color(BACKGROUND_POPUP));
+        canvas.fillRect(labelX, labelY, labelWidth, 20, color(BACKGROUND_POPUP));
         text(canvas, truncate(territory.name(), 34), labelX + labelWidth / 2, labelY + 10,
                 9, color(MAP_TEXT), true);
     }
@@ -1451,12 +1490,11 @@ public final class WarPlannerScreen extends Screen {
         WarQueueLabelBounds labelBounds = warQueueLabelBounds(
                 territory, fitted, offsetX, offsetY, scale, textWidth + 6, fontSize + 4);
         if (labelBounds == null) return;
-        canvas.fillRoundedRect(
+        canvas.fillRect(
                 labelBounds.x(),
                 labelBounds.y(),
                 labelBounds.width(),
                 labelBounds.height(),
-                Math.min(3, labelBounds.height() / 4),
                 color(BACKGROUND_POPUP));
         text(
                 canvas,
@@ -1631,12 +1669,11 @@ public final class WarPlannerScreen extends Screen {
                 tooltipHeight,
                 layout.mapY() + 4,
                 layout.mapY() + layout.mapHeight() - 4);
-        canvas.fillRoundedRect(
+        canvas.fillRect(
                 tooltipX,
                 tooltipY,
                 tooltipWidth,
                 tooltipHeight,
-                4,
                 plannerBackground(color(BACKGROUND_POPUP)));
         canvas.strokeRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight, 1, color(CONTROL_BORDER));
         for (int index = 0; index < wrappedLines.size(); index++) {
@@ -1687,14 +1724,41 @@ public final class WarPlannerScreen extends Screen {
             Color stroke,
             float strokeWidth,
             float outset) {
+        drawPreviewOutlines(canvas, territories, fitted, offsetX, offsetY, scale, stroke, strokeWidth, outset, false);
+    }
+
+    private static void drawPreviewOutlines(
+            UiCanvas canvas, List<GuildTerritory> territories, MapBounds fitted,
+            float offsetX, float offsetY, float scale, Color stroke,
+            float strokeWidth, float outset, boolean resourceColors) {
         for (GuildTerritory territory : territories) {
             MapBounds bounds = territory.bounds();
             float territoryX = previewX(bounds.minX(), fitted, offsetX, scale) - outset;
             float territoryY = previewY(bounds.minZ(), fitted, offsetY, scale) - outset;
             float territoryWidth = Math.max(2, (float) ((bounds.maxX() - bounds.minX()) * scale)) + outset * 2;
             float territoryHeight = Math.max(2, (float) ((bounds.maxZ() - bounds.minZ()) * scale)) + outset * 2;
-            canvas.strokeRect(territoryX, territoryY, territoryWidth, territoryHeight, strokeWidth, stroke);
+            float weight = territoryOutlineWeight(Math.min(territoryWidth, territoryHeight), strokeWidth, resourceColors);
+            if (weight > 0) canvas.strokeRect(territoryX, territoryY, territoryWidth, territoryHeight, weight, stroke);
         }
+    }
+
+    static float territoryOutlineWeight(float projectedSize, float requestedWidth) {
+        return territoryOutlineWeight(projectedSize, requestedWidth, false);
+    }
+
+    static float territoryOutlineWeight(float projectedSize, float requestedWidth, boolean resourceColors) {
+        if (resourceColors) return requestedWidth;
+        if (requestedWidth >= 2) return requestedWidth;
+        if (projectedSize < 5) return 0;
+        return Math.min(requestedWidth, .5f + Math.min(1, projectedSize / 36) * .6f);
+    }
+
+    static boolean warConnectionVisible(float scale, boolean emphasized) {
+        return warConnectionVisible(scale, emphasized, false);
+    }
+
+    static boolean warConnectionVisible(float scale, boolean emphasized, boolean resourceColors) {
+        return resourceColors || emphasized || scale >= .22f;
     }
 
     private static void drawPreviewConnections(
@@ -1706,7 +1770,9 @@ public final class WarPlannerScreen extends Screen {
             MapBounds fitted,
             float offsetX,
             float offsetY,
-            float scale) {
+            float scale,
+            Set<String> emphasizedTerritories,
+            boolean resourceColors) {
         Set<String> drawnConnections = new java.util.HashSet<>();
         Color foreground = color(TEXT_PRIMARY);
         for (GuildTerritory territory : territories) {
@@ -1718,24 +1784,29 @@ public final class WarPlannerScreen extends Screen {
                 String key = territory.name().compareToIgnoreCase(linkedName) < 0
                         ? territory.name() + "\n" + linkedName : linkedName + "\n" + territory.name();
                 if (!drawnConnections.add(key)) continue;
+                boolean emphasized = emphasizedTerritories.contains(territory.name().toLowerCase(Locale.ROOT))
+                        || emphasizedTerritories.contains(linked.name().toLowerCase(Locale.ROOT));
+                if (!warConnectionVisible(scale, emphasized, resourceColors)) continue;
                 float startX = previewX(territory.centerX(), fitted, offsetX, scale);
                 float startY = previewY(territory.centerZ(), fitted, offsetY, scale);
                 float endX = previewX(linked.centerX(), fitted, offsetX, scale);
                 float endY = previewY(linked.centerZ(), fitted, offsetY, scale);
-                canvas.strokeLine(startX, startY, endX, endY, 1.6f, color(BACKGROUND_BODY_OPAQUE));
-                canvas.strokeLine(startX, startY, endX, endY, .75f, foreground);
+                if (resourceColors) {
+                    canvas.strokeLine(startX, startY, endX, endY, 1.6f, color(BACKGROUND_BODY_OPAQUE));
+                }
+                canvas.strokeLine(startX, startY, endX, endY, emphasized ? 1.2f : resourceColors ? .75f : .55f,
+                        emphasized ? color(MAP_SELECTED_TERRITORY) : foreground);
             }
         }
     }
 
     private void renderSupportBoard(
             UiCanvas canvas, WarPlannerSnapshot snapshot, float x, float top, float panelWidth, float bottom) {
-        canvas.fillRoundedRect(
+        canvas.fillRect(
                 x,
                 top + 2,
                 panelWidth,
                 Math.min(bottom - top - 4, SUPPORT_PANEL_HEIGHT),
-                5,
                 plannerBackground(color(BACKGROUND_CONTENT)));
         text(canvas, "Shared support", x + 10, top + 17, 13, color(ACCENT_PRIMARY), false);
         text(canvas, manager.canManage()
@@ -1752,7 +1823,7 @@ public final class WarPlannerScreen extends Screen {
                     .orElse(null);
             boolean hovered = manager.canManage()
                     && hit(nvgMouseX, nvgMouseY, x + 7, y, panelWidth - 14, SUPPORT_ROW_HEIGHT);
-            canvas.fillRoundedRect(x + 7, y, panelWidth - 14, SUPPORT_ROW_HEIGHT, 3,
+            canvas.fillRect(x + 7, y, panelWidth - 14, SUPPORT_ROW_HEIGHT,
                     color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
             text(canvas, index == 0 ? "Lead" : "Eco " + index, x + 13, y + 11, 10, color(TEXT_MUTED), false);
             String name = slot == null ? "Empty" : slot.minecraftUsername() == null ? slot.playerUuid() : slot.minecraftUsername();
@@ -1768,7 +1839,7 @@ public final class WarPlannerScreen extends Screen {
         boolean dropTarget = memberDrag != null
                 && memberDrag.active()
                 && hit(nvgMouseX, nvgMouseY, x, poolY, panelWidth, bottom - poolY);
-        canvas.fillRoundedRect(x, poolY, panelWidth, bottom - poolY, 5,
+        canvas.fillRect(x, poolY, panelWidth, bottom - poolY,
                 plannerBackground(color(dropTarget ? CONTROL_INPUT_HOVER : BACKGROUND_CONTENT)));
         text(canvas, "Unassigned", x + 10, poolY + 16, 12, color(ACCENT_PRIMARY), false);
         text(canvas, "Drag online players into a team", x + 10, poolY + 29, 9, color(TEXT_MUTED), false);
@@ -1779,11 +1850,11 @@ public final class WarPlannerScreen extends Screen {
         for (int index = start; index < members.size() && index - start < visibleRows; index++) {
             float rowY = rowsTop + (index - start) * UNASSIGNED_ROW_HEIGHT;
             RosterMember member = members.get(index);
-            boolean hovered = memberDrag == null && hit(nvgMouseX, nvgMouseY, x + 6, rowY, panelWidth - 12, 18);
-            canvas.fillRoundedRect(x + 6, rowY, panelWidth - 12, 18, 3,
-                    plannerBackground(color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT)));
-            text(canvas, truncate(member.displayName(), 19), x + 12, rowY + 9, 10, color(TEXT_SECONDARY), false);
-            renderCompositionIcons(canvas, member.compositionRoles(), x + panelWidth - 54, rowY + 3);
+            boolean hovered = memberDrag == null && hit(nvgMouseX, nvgMouseY, x + 6, rowY, panelWidth - 12, UNASSIGNED_ROW_HEIGHT - 2);
+            canvas.fillRect(x + 6, rowY, panelWidth - 12, UNASSIGNED_ROW_HEIGHT - 2,
+                    color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
+            text(canvas, truncate(member.displayName(), 19), x + 12, rowY + 11, 11, color(TEXT_SECONDARY), false);
+            renderCompositionIcons(canvas, member.compositionRoles(), x + panelWidth - 54, rowY + 5);
         }
         if (members.size() > visibleRows && visibleRows > 0) {
             text(canvas, (start + 1) + "–" + Math.min(members.size(), start + visibleRows) + "/" + members.size(),
@@ -1799,8 +1870,8 @@ public final class WarPlannerScreen extends Screen {
         float h = Math.min(390, height - 44);
         float x = (width - w) / 2;
         float y = (height - h) / 2;
-        canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
-        canvas.fillRoundedRect(x, y, w, h, 7, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
+        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
+        canvas.fillRect(x, y, w, h, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
         text(canvas, "Assign shared " + label, x + 14, y + 21, 16, color(ACCENT_PRIMARY), false);
         text(canvas, "Support members can also belong to any party.", x + 14, y + 39, 10, color(TEXT_MUTED), false);
@@ -1817,8 +1888,8 @@ public final class WarPlannerScreen extends Screen {
         for (int index = start; index < candidates.size() && rowY + 30 <= listBottom; index++, rowY += 30) {
             RosterMember candidate = candidates.get(index);
             boolean selected = samePlayer(selectedUuid, candidate.playerUuid());
-            canvas.fillRoundedRect(x + 12, rowY + 2, w - 24, 25, 3,
-                    plannerBackground(color(selected ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT)));
+            canvas.fillRect(x + 12, rowY + 2, w - 24, 25,
+                    color(selected ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT));
             text(canvas, truncate(candidate.displayName(), 28), x + 18, rowY + 14, 11, color(TEXT_PRIMARY), false);
             text(canvas, candidate.online() ? "Online" : "Offline · currently assigned", x + w - 150, rowY + 14,
                     9, color(candidate.online() ? CONTROL_SUCCESS : TEXT_MUTED), false);
@@ -1833,8 +1904,8 @@ public final class WarPlannerScreen extends Screen {
         float h = 176;
         float x = (width - w) / 2;
         float y = (height - h) / 2;
-        canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
-        canvas.fillRoundedRect(x, y, w, h, 7, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
+        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
+        canvas.fillRect(x, y, w, h, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
         text(canvas, "Your Discord war roles", x + 14, y + 22, 16, color(ACCENT_PRIMARY), false);
         text(canvas, "Only Solo, DPS, and Tank are changed. Other Discord roles stay untouched.",
@@ -1848,8 +1919,8 @@ public final class WarPlannerScreen extends Screen {
             WarCompositionRole role = roles[index];
             float optionX = x + 14 + index * (optionWidth + optionGap);
             boolean selected = selectedCompositionRoles.contains(role);
-            canvas.fillRoundedRect(optionX, optionY, optionWidth, 42, 4,
-                    plannerBackground(color(selected ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT)));
+            canvas.fillRect(optionX, optionY, optionWidth, 42,
+                    color(selected ? ACCENT_PRIMARY_DARK : BACKGROUND_CONTENT));
             canvas.strokeRect(optionX, optionY, optionWidth, 42, 1,
                     color(selected ? ACCENT_PRIMARY : CONTROL_BORDER));
             renderCompositionIcons(canvas, List.of(role), optionX + 10, optionY + 8);
@@ -1859,8 +1930,8 @@ public final class WarPlannerScreen extends Screen {
                     color(TEXT_MUTED), false);
         }
         button(canvas, x + w - 154, y + h - 34, 66, BUTTON_HEIGHT, "Cancel", false, roleEditorSaving);
-        button(canvas, x + w - 80, y + h - 34, 66, BUTTON_HEIGHT,
-                roleEditorSaving ? "Saving…" : "Save", false, roleEditorSaving);
+        primaryButton(canvas, x + w - 80, y + h - 34, 66, BUTTON_HEIGHT,
+                roleEditorSaving ? "Saving…" : "Save", roleEditorSaving);
     }
 
     private void renderTeamEditor(UiCanvas canvas, float width, float height) {
@@ -1872,8 +1943,8 @@ public final class WarPlannerScreen extends Screen {
         float x = (width - w) / 2;
         float y = 46;
         float h = height - 70;
-        canvas.fillRect(0, 0, width, height, plannerBackground(color(BACKGROUND_MODAL_OVERLAY)));
-        canvas.fillRoundedRect(x, y, w, h, 7, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
+        canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
+        canvas.fillRect(x, y, w, h, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
         text(canvas, editingTeamId == null ? "Create war team" : "Edit war team", x + 12, y + 20, 16,
                 color(ACCENT_PRIMARY), false);
@@ -1940,7 +2011,7 @@ public final class WarPlannerScreen extends Screen {
             RosterMember member = eligible.get(index);
             TeamMemberDraft selected = teamMember(member.playerUuid());
             canvas.fillRect(x + 12, rowY + 2, w - 24, 24,
-                    plannerBackground(color(selected == null ? BACKGROUND_CONTENT : ACCENT_PRIMARY_DARK)));
+                    color(selected == null ? BACKGROUND_CONTENT : ACCENT_PRIMARY_DARK));
             String memberLabel = member.displayName() + (member.online() ? "" : " · Offline");
             text(canvas, truncate(memberLabel, w >= 360 ? 24 : 14), x + 18, rowY + 14, 11,
                     color(TEXT_PRIMARY), false);
@@ -1956,8 +2027,8 @@ public final class WarPlannerScreen extends Screen {
         canvas.resetScissor();
         text(canvas, teamMembers.size() + "/5 slots", x + 12, y + h - 22, 11, color(TEXT_MUTED), false);
         button(canvas, x + w - 148, y + h - 32, 64, BUTTON_HEIGHT, "Cancel", false, teamEditorSaving);
-        button(canvas, x + w - 78, y + h - 32, 66, BUTTON_HEIGHT,
-                teamEditorSaving ? "Saving…" : "Save", false, teamEditorSaving);
+        primaryButton(canvas, x + w - 78, y + h - 32, 66, BUTTON_HEIGHT,
+                teamEditorSaving ? "Saving…" : "Save", teamEditorSaving);
         if (teamTypeMenuOpen) {
             renderTeamTypeMenu(canvas, snapshot, x + 12, fieldY + 25, w - 24);
         }
@@ -1999,9 +2070,20 @@ public final class WarPlannerScreen extends Screen {
 
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
-        if (warPingPickerOpen && click.button() != 0) return true;
+        if (!plannerModalOpen() && click.button() != 0) {
+            float mx = MinecraftUiRenderer.mouseX(click.x()) - plannerViewport(MinecraftUiRenderer.screenWidth()).x();
+            float my = MinecraftUiRenderer.mouseY(click.y());
+            if (sectionDropdownOpen || coloringDropdownOpen) return true;
+            if (tab == Tab.ZONES) {
+                float width = plannerViewport(MinecraftUiRenderer.screenWidth()).width();
+                var layout = warMapLayout(width, contentTop(width), MinecraftUiRenderer.screenHeight() - PADDING);
+                var controls = warMapControls(layout, manager.canManage());
+                if (controls.panel().contains(mx, my) || controls.fit().contains(mx, my) || controls.coloring().contains(mx, my)) return true;
+            }
+        }
+        if ((warPingPickerOpen || zoneActionsId != null) && click.button() != 0) return true;
         if (click.button() == 1) {
-            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
             float my = MinecraftUiRenderer.mouseY(click.y());
             WarPlannerSnapshot snapshot = manager == null ? null : manager.snapshot();
@@ -2024,7 +2106,7 @@ public final class WarPlannerScreen extends Screen {
         if (click.button() != 0) {
             return super.mouseClicked(click, outsideScreen);
         }
-        PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+        PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
         float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
         float my = MinecraftUiRenderer.mouseY(click.y());
         float width = viewport.width();
@@ -2042,47 +2124,28 @@ public final class WarPlannerScreen extends Screen {
         if (editingSupportSlot != null) {
             return clickSupportEditor(mx, my, width, height);
         }
-        DisplayControls controls = displayControls(width, manager.canManage());
-        float controlsY = height - 34;
-        if (hit(mx, my, controls.resourceX(), controlsY + 1, controls.resourceWidth(), BUTTON_HEIGHT)) {
-            SeqClient.getWarPlannerResourceColorsSetting()
-                    .setValue(!resourceColorsEnabled());
-            SeqClient.getConfigManager().save();
+        if (clickPlannerDropdown(mx, my, width, height)) return true;
+        if (clickZoneActions(mx, my)) return true;
+        if (SequoiaSidebarNavigation.click(mx + viewport.x(), my, height,
+                SequoiaSidebarNavigation.Destination.WAR, parent)) return true;
+        HeaderControls header = headerControls(width);
+        if (tab == Tab.ZONES) {
+            var slider = prepareOpacitySlider(width);
+            int opacityBefore = backgroundOpacityPercent();
+            boolean sliderClicked = slider != null && slider.mouseClicked(mx, my, 0);
+            if (opacityBefore != backgroundOpacityPercent()) SeqClient.getConfigManager().save();
+            if (sliderClicked) return true;
+        }
+        if (header.refresh().contains(mx, my)) {
+            if (!manager.isRequestInFlight()) showResult(manager.refreshNow());
             return true;
         }
-        if (manager.canManage()
-                && hit(mx, my, controls.lockX(), controlsY + 1, controls.lockWidth(), BUTTON_HEIGHT)) {
-            SeqClient.getWarPlannerLockTerritoriesSetting()
-                    .setValue(!territoriesLocked());
-            warMapFitted = false;
-            pendingWarQueueClick = null;
-            draggingWarMap = false;
-            SeqClient.getConfigManager().save();
-            return true;
-        }
-        if (hit(
-                mx,
-                my,
-                controls.opacityX() + (controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? 40 : 58),
-                controlsY,
-                controls.opacityWidth() - (controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? 40 : 58),
-                24)) {
-            draggingBackgroundOpacity = true;
-            updateBackgroundOpacity(mx, controls);
-            return true;
-        }
-        if (hit(mx, my, width - 82, 8, 70, BUTTON_HEIGHT)) {
-            if (!manager.isRequestInFlight()) {
-                showResult(manager.refreshNow());
-            }
-            return true;
-        }
-        if (hit(mx, my, width - 158, 8, 70, BUTTON_HEIGHT)) {
+        if (header.roles().contains(mx, my)) {
             beginRoleEdit();
             return true;
         }
         AvailabilityLayout availability = availabilityLayout(width);
-        float availabilityY = HEADER_HEIGHT + availability.y();
+        float availabilityY = headerHeight(width) + availability.y();
         if (hit(mx, my, availability.buttonX(0), availabilityY, availability.buttonWidth(0), BUTTON_HEIGHT)) {
             return setAvailability(30);
         }
@@ -2097,42 +2160,82 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         if (hit(mx, my, availability.buttonX(4), availabilityY, availability.buttonWidth(4), BUTTON_HEIGHT)) {
-            showResult(manager.clearAvailability());
-            return true;
+            return setAvailability(0);
         }
 
-        float tabsY = HEADER_HEIGHT + AVAILABILITY_HEIGHT;
-        float tabWidth = tabWidth(width, manager.canManage());
-        for (int index = 0; index < Tab.values().length; index++) {
-            if (hit(mx, my, PADDING + tabWidth * index, tabsY, tabWidth - 4, TAB_HEIGHT)) {
-                tab = Tab.values()[index];
-                scrollRows = 0;
-                pendingWarQueueClick = null;
-                pendingDeleteTeam = null;
-                pendingDeleteZone = null;
-                pendingDeleteZoneCategory = null;
-                return true;
-            }
-        }
-        if (manager.canManage() && hit(mx, my, width - 92, tabsY + 1, 80, BUTTON_HEIGHT)) {
+        if (manager.canManage() && tab != Tab.ZONES && hit(mx, my, PADDING, contentTop(width), 80, BUTTON_HEIGHT)) {
             if (tab == Tab.ROSTER && !manager.isMutating() && !pingCandidates(manager.snapshot(), "").isEmpty()) {
                 beginWarPingPicker();
-                return true;
-            }
-            if (tab == Tab.TEAMS) {
+            } else if (tab == Tab.TEAMS && !manager.isMutating()) {
                 beginTeamEdit(null);
-                return true;
             }
+            return true;
         }
         return clickContent(mx, my, width, height) || super.mouseClicked(click, outsideScreen);
     }
 
+    private boolean plannerModalOpen() {
+        return warPingPickerOpen || roleEditorOpen || teamEditorOpen || editingSupportSlot != null;
+    }
+
+    private boolean clickPlannerDropdown(float mx, float my, float width, float height) {
+        var section = headerControls(width).section();
+        var coloring = warMapControls(warMapLayout(width, contentTop(width), height - PADDING), manager.canManage()).coloring();
+        if (sectionDropdownOpen) {
+            sectionDropdownOpen = false;
+            for (int index = 0; index < Tab.values().length; index++) {
+                if (dropdownOption(section, index).contains(mx, my)) {
+                    tab = Tab.values()[index];
+                    scrollRows = 0;
+                    draggingWarMap = false;
+                    pendingWarQueueClick = null;
+                    pendingDeleteTeam = null;
+                    pendingDeleteZone = null;
+                    pendingDeleteZoneCategory = null;
+                    zoneActionsId = null;
+                    memberDrag = null;
+                    zoneDrag = null;
+                    if (opacitySlider != null) opacitySlider.onHidden();
+                    break;
+                }
+            }
+            return true;
+        }
+        if (coloringDropdownOpen) {
+            coloringDropdownOpen = false;
+            for (int index = 0; index < 2; index++) {
+                if (dropdownOption(coloring, index).contains(mx, my)) {
+                    var setting = SeqClient.getWarPlannerResourceColorsSetting();
+                    if (setting != null) {
+                        setting.setValue(index == 1);
+                        SeqClient.getConfigManager().save();
+                    }
+                    break;
+                }
+            }
+            return true;
+        }
+        if (section.contains(mx, my)) {
+            sectionDropdownOpen = true;
+        } else if (tab == Tab.ZONES && coloring.contains(mx, my)) {
+            coloringDropdownOpen = true;
+        } else {
+            return false;
+        }
+        draggingWarMap = false;
+        pendingWarQueueClick = null;
+        zoneActionsId = null;
+        if (opacitySlider != null) opacitySlider.onHidden();
+        return true;
+    }
+
     private boolean rightClickZoneName(
             WarPlannerSnapshot snapshot, float mx, float my, float width, float height) {
-        float top = contentTop();
-        WarMapLayout layout = warMapLayout(width, top, height - 42);
+        float top = contentTop(width);
+        WarMapLayout layout = warMapLayout(width, top, height - PADDING);
+        top = layout.mapY();
         ZoneSidebarPlacement placement = zoneSidebarPlacementAt(
-                snapshot, collapsedZoneCategoryIds, scrollRows, top, height - 42, my);
+                snapshot, collapsedZoneCategoryIds, scrollRows, top, height - PADDING, my);
         if (placement == null) return false;
         ZoneSidebarEntry entry = placement.entry();
         if (entry.categoryHeader()) {
@@ -2152,7 +2255,7 @@ public final class WarPlannerScreen extends Screen {
 
     private boolean rightClickWarMapTerritory(
             WarPlannerSnapshot snapshot, float mx, float my, float width, float height) {
-        WarMapLayout layout = warMapLayout(width, contentTop(), height - 42);
+        WarMapLayout layout = warMapLayout(width, contentTop(width), height - PADDING);
         if (!layout.containsMap(mx, my)) return false;
         boolean locked = manager.canManage() && territoriesLocked();
         List<GuildTerritory> displayedTerritories = warMapDisplayedTerritories(snapshot, locked);
@@ -2172,11 +2275,11 @@ public final class WarPlannerScreen extends Screen {
 
     private boolean clickContent(float mx, float my, float width, float height) {
         WarPlannerSnapshot snapshot = manager.snapshot();
-        if (snapshot == null || my < contentTop() || my > height - 42) {
+        if (snapshot == null || my < contentTop(width) + (tab == Tab.ZONES ? 0 : 28) || my > height - PADDING) {
             return false;
         }
         TeamsLayout teamsLayout = tab == Tab.TEAMS
-                ? teamsLayout(width, contentTop(), height - 42, snapshot.teams().size())
+                ? teamsLayout(width, contentTop(width) + 28, height - PADDING, snapshot.teams().size())
                 : null;
         if (tab == Tab.TEAMS && manager.canManage()) {
             for (SupportPlacement support : supportPlacements(teamsLayout)) {
@@ -2245,16 +2348,28 @@ public final class WarPlannerScreen extends Screen {
     }
 
     private boolean clickZoneContent(WarPlannerSnapshot snapshot, float mx, float my, float width) {
-        float top = contentTop();
-        WarMapLayout layout = warMapLayout(width, top, MinecraftUiRenderer.screenHeight() - 42);
+        float top = contentTop(width);
+        WarMapLayout layout = warMapLayout(width, top, MinecraftUiRenderer.screenHeight() - PADDING);
+        top = layout.mapY();
         boolean locked = manager.canManage() && territoriesLocked();
-        WarMapControls controls = warMapControls(layout);
+        WarMapControls controls = warMapControls(layout, manager.canManage());
         if (controls.fit().contains(mx, my)) {
             pendingWarQueueClick = null;
             resetWarMapViewport(
                     layout,
                     warMapFitBounds(warMapDisplayedTerritories(snapshot, locked), locked),
                     locked);
+            return true;
+        }
+        if (manager.canManage() && controls.lock().contains(mx, my)) {
+            var setting = SeqClient.getWarPlannerLockTerritoriesSetting();
+            if (setting != null) {
+                setting.setValue(!territoriesLocked());
+                SeqClient.getConfigManager().save();
+            }
+            warMapFitted = false;
+            pendingWarQueueClick = null;
+            draggingWarMap = false;
             return true;
         }
         if (controls.queues().contains(mx, my)) {
@@ -2280,6 +2395,7 @@ public final class WarPlannerScreen extends Screen {
             draggingWarMap = false;
             return true;
         }
+        if (controls.panel().contains(mx, my)) return true;
         if (layout.containsMap(mx, my)) {
             TerritoryQueue queue = warQueueAtMapPoint(snapshot, layout, locked, mx, my);
             long clickedAt = monotonicMillis();
@@ -2295,17 +2411,20 @@ public final class WarPlannerScreen extends Screen {
                     ? null
                     : new PendingWarQueueClick(queue.id(), queue.territory(), mx, my, clickedAt);
             draggingWarMap = true;
+            mapPressX = mx;
+            mapPressY = my;
+            mapPressMoved = false;
             return true;
         }
         float sidebarWidth = layout.sidebarWidth();
         float sidebarX = layout.sidebarX();
         if (manager.canManage()) {
             float headerActionWidth = (sidebarWidth - 18) / 2;
-            if (hit(mx, my, sidebarX + 6, top + 7, headerActionWidth, 20)) {
+            if (hit(mx, my, sidebarX + 6, top + 37, headerActionWidth, 20)) {
                 SeqClient.mc.setScreen(new WarZoneCategoryEditorScreen(this, null));
                 return true;
             }
-            if (hit(mx, my, sidebarX + 12 + headerActionWidth, top + 7, headerActionWidth, 20)) {
+            if (hit(mx, my, sidebarX + 12 + headerActionWidth, top + 37, headerActionWidth, 20)) {
                 SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, null));
                 return true;
             }
@@ -2315,7 +2434,7 @@ public final class WarPlannerScreen extends Screen {
                 collapsedZoneCategoryIds,
                 scrollRows,
                 top,
-                MinecraftUiRenderer.screenHeight() - 42,
+                MinecraftUiRenderer.screenHeight() - PADDING,
                 my);
         if (placement == null) return false;
         ZoneSidebarEntry entry = placement.entry();
@@ -2348,32 +2467,16 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         Zone zone = entry.zone();
-        if (!manager.canManage()) {
-            if (hit(mx, my, sidebarX + 22, rowY + 35, 56, BUTTON_HEIGHT)) {
-                if (!containsCategory(hiddenZoneCategoryIds, zone.categoryId())) toggleZoneDisplay(zone.id());
-                return true;
-            }
-            return false;
-        }
-        float actionWidth = (sidebarWidth - 32) / 3;
-        if (hit(mx, my, sidebarX + 12, rowY + 35, actionWidth, BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new WarTerritoryPickerScreen(this, zone));
-            return true;
-        }
-        if (hit(mx, my, sidebarX + 16 + actionWidth, rowY + 35, actionWidth, BUTTON_HEIGHT)) {
+        float visibilityX = sidebarX + sidebarWidth - (manager.canManage() ? 84 : 54);
+        if (hit(mx, my, visibilityX, rowY + 3, 44, 20)) {
             if (!containsCategory(hiddenZoneCategoryIds, zone.categoryId())) toggleZoneDisplay(zone.id());
             return true;
         }
-        if (hit(mx, my, sidebarX + 20 + actionWidth * 2, rowY + 35, actionWidth, BUTTON_HEIGHT)) {
-            if (pendingDeleteZone != null && pendingDeleteZone.id() == zone.id()) {
-                showResult(manager.deleteZone(zone.id(), pendingDeleteZone.version()));
-                pendingDeleteZone = null;
-            } else {
-                pendingDeleteZone = new PendingDelete(zone.id(), zone.version());
-            }
+        if (manager.canManage() && hit(mx, my, sidebarX + sidebarWidth - 36, rowY + 3, 28, 20)) {
+            if (!manager.isMutating()) zoneActionsId = zone.id();
             return true;
         }
-        if (!manager.isMutating() && hit(mx, my, sidebarX + 10, rowY + 2, sidebarWidth - 20, 30)) {
+        if (manager.canManage() && !manager.isMutating() && hit(mx, my, sidebarX + 10, rowY + 2, sidebarWidth - 20, 40)) {
             zoneDrag = new ZoneDrag(zone.id(), zone.name(), zone.version(), mx, my, false);
             return true;
         }
@@ -2443,24 +2546,26 @@ public final class WarPlannerScreen extends Screen {
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (warPingPickerOpen) return true;
-        if (draggingBackgroundOpacity && click.button() == 0) {
-            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
-            float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
-            updateBackgroundOpacity(mx, displayControls(viewport.width(), manager.canManage()));
+        if (tab == Tab.ZONES && opacitySlider != null && click.button() == 0 && !plannerModalOpen()
+                && opacitySlider.mouseDragged(MinecraftUiRenderer.mouseX(click.x())
+                        - plannerViewport(MinecraftUiRenderer.screenWidth()).x(), MinecraftUiRenderer.mouseY(click.y()))) {
             return true;
         }
         if (draggingWarMap && click.button() == 0) {
             pendingWarQueueClick = null;
-            PlannerViewport plannerViewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport plannerViewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             WarMapLayout layout = warMapLayout(
-                    plannerViewport.width(), contentTop(), MinecraftUiRenderer.screenHeight() - 42);
+                    plannerViewport.width(), contentTop(plannerViewport.width()), MinecraftUiRenderer.screenHeight() - PADDING);
+            float mx = MinecraftUiRenderer.mouseX(click.x()) - plannerViewport.x();
+            float my = MinecraftUiRenderer.mouseY(click.y());
+            if (Math.hypot(mx - mapPressX, my - mapPressY) >= 4) mapPressMoved = true;
             applyWarMapViewport(currentWarMapViewport(layout).panByScreenDelta(
                     MinecraftUiRenderer.mouseDelta(deltaX),
                     MinecraftUiRenderer.mouseDelta(deltaY)));
             return true;
         }
         if (memberDrag != null && click.button() == 0) {
-            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
             float my = MinecraftUiRenderer.mouseY(click.y());
             if (!memberDrag.active()
@@ -2476,7 +2581,7 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         if (zoneDrag != null && click.button() == 0) {
-            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
             float my = MinecraftUiRenderer.mouseY(click.y());
             if (!zoneDrag.active() && Math.hypot(mx - zoneDrag.startX(), my - zoneDrag.startY()) >= 4) {
@@ -2492,17 +2597,32 @@ public final class WarPlannerScreen extends Screen {
     @Override
     public boolean mouseReleased(@NotNull MouseButtonEvent click) {
         if (warPingPickerOpen) return true;
-        if (click.button() == 0 && draggingBackgroundOpacity) {
-            draggingBackgroundOpacity = false;
+        if (opacitySlider != null && opacitySlider.mouseReleased(
+                MinecraftUiRenderer.mouseX(click.x()) - plannerViewport(MinecraftUiRenderer.screenWidth()).x(),
+                MinecraftUiRenderer.mouseY(click.y()), click.button())) {
             SeqClient.getConfigManager().save();
             return true;
         }
         if (click.button() == 0 && draggingWarMap) {
             draggingWarMap = false;
+            if (!mapPressMoved) {
+                var planner = plannerViewport(MinecraftUiRenderer.screenWidth());
+                var layout = warMapLayout(planner.width(), contentTop(planner.width()), MinecraftUiRenderer.screenHeight() - PADDING);
+                var snapshot = manager.snapshot();
+                if (snapshot != null) {
+                    boolean locked = manager.canManage() && territoriesLocked();
+                    var territories = warMapDisplayedTerritories(snapshot, locked);
+                    var names = territories.stream().map(territory -> territory.name().toLowerCase(Locale.ROOT))
+                            .collect(java.util.stream.Collectors.toSet());
+                    var selected = territoryAt(territoryIndex, warMapViewport(layout, territories, locked), names,
+                            MinecraftUiRenderer.mouseX(click.x()) - planner.x(), MinecraftUiRenderer.mouseY(click.y()));
+                    selectedWarTerritory = selected == null ? null : selected.name();
+                }
+            }
             return true;
         }
         if (click.button() == 0 && memberDrag != null) {
-            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
             float my = MinecraftUiRenderer.mouseY(click.y());
             MemberDrag completed = memberDrag;
@@ -2513,7 +2633,7 @@ public final class WarPlannerScreen extends Screen {
             return true;
         }
         if (click.button() == 0 && zoneDrag != null) {
-            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
             float my = MinecraftUiRenderer.mouseY(click.y());
             ZoneDrag completed = zoneDrag;
@@ -2527,10 +2647,10 @@ public final class WarPlannerScreen extends Screen {
     private void dropZone(ZoneDrag drag, float mx, float my, float width, float height) {
         WarPlannerSnapshot snapshot = manager.snapshot();
         if (snapshot == null || manager.isMutating()) return;
-        WarMapLayout layout = warMapLayout(width, contentTop(), height - 42);
+        WarMapLayout layout = warMapLayout(width, contentTop(width), height - PADDING);
         if (!layout.containsSidebar(mx, my)) return;
         ZoneSidebarPlacement placement = zoneSidebarPlacementAt(
-                snapshot, collapsedZoneCategoryIds, scrollRows, contentTop(), height - 42, my);
+                snapshot, collapsedZoneCategoryIds, scrollRows, layout.mapY(), height - PADDING, my);
         if (placement == null) return;
         ZoneDropTarget target = zoneDropTarget(snapshot, placement, my, drag.zoneId());
         if (target == null) return;
@@ -2730,6 +2850,22 @@ public final class WarPlannerScreen extends Screen {
 
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
+        if (!plannerModalOpen() && (sectionDropdownOpen || coloringDropdownOpen)) {
+            if (keyEvent.key() == GLFW.GLFW_KEY_ESCAPE) {
+                sectionDropdownOpen = false;
+                coloringDropdownOpen = false;
+            }
+            return true;
+        }
+        if (!plannerModalOpen() && tab == Tab.ZONES && opacitySlider != null && opacitySlider.keyPressed(keyEvent)) {
+            SeqClient.getConfigManager().save();
+            return true;
+        }
+        if (keyEvent.key() == GLFW.GLFW_KEY_ESCAPE && zoneActionsId != null) {
+            zoneActionsId = null;
+            pendingDeleteZone = null;
+            return true;
+        }
         if (warPingPickerOpen) {
             int key = keyEvent.key();
             if (key == GLFW.GLFW_KEY_ESCAPE) {
@@ -2771,6 +2907,7 @@ public final class WarPlannerScreen extends Screen {
 
     @Override
     public boolean charTyped(@NotNull CharacterEvent characterEvent) {
+        if (!plannerModalOpen() && tab == Tab.ZONES && opacitySlider != null && opacitySlider.charTyped(characterEvent)) return true;
         if (warPingPickerOpen && warPingSearchFocused) {
             String typedText = TextInputHelper.getTypedText(characterEvent);
             if (typedText != null
@@ -2794,6 +2931,9 @@ public final class WarPlannerScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (!plannerModalOpen() && (sectionDropdownOpen || coloringDropdownOpen)) return true;
+        zoneActionsId = null;
+        pendingDeleteZone = null;
         if (scrollY == 0) return true;
         int delta = scrollY > 0 ? -1 : 1;
         WarPlannerSnapshot snapshot = manager.snapshot();
@@ -2810,19 +2950,24 @@ public final class WarPlannerScreen extends Screen {
             supportEditorScrollRows = clampRows(
                     supportEditorScrollRows + delta, supportCandidates(snapshot, editingSupportSlot).size());
         } else {
-            PlannerViewport viewport = activePlannerViewport(MinecraftUiRenderer.screenWidth());
+            PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
             float localMouseX = MinecraftUiRenderer.mouseX(mouseX) - viewport.x();
             float localMouseY = MinecraftUiRenderer.mouseY(mouseY);
+            float scrollTop = contentTop(viewport.width()) + (tab == Tab.ZONES ? 0 : 28);
+            if (!hit(localMouseX, localMouseY, PADDING, scrollTop,
+                    viewport.width() - PADDING * 2, MinecraftUiRenderer.screenHeight() - scrollTop - PADDING)) {
+                return true;
+            }
             TeamsLayout teamsLayout = tab == Tab.TEAMS
                     ? teamsLayout(
                             viewport.width(),
-                            contentTop(),
-                            MinecraftUiRenderer.screenHeight() - 42,
+                            contentTop(viewport.width()) + 28,
+                            MinecraftUiRenderer.screenHeight() - PADDING,
                             snapshot.teams().size())
                     : null;
             if (teamsLayout != null && manager.canManage() && !teamsLayout.compactAuxiliary()) {
-                float poolY = contentTop() + UNASSIGNED_POOL_TOP;
-                float contentBottom = MinecraftUiRenderer.screenHeight() - 42;
+                float poolY = contentTop(viewport.width()) + 28 + UNASSIGNED_POOL_TOP;
+                float contentBottom = MinecraftUiRenderer.screenHeight() - PADDING;
                 if (poolY + 34 < contentBottom && hit(
                         localMouseX,
                         localMouseY,
@@ -2837,7 +2982,8 @@ public final class WarPlannerScreen extends Screen {
             }
             if (tab == Tab.ZONES) {
                 WarMapLayout layout = warMapLayout(
-                        viewport.width(), contentTop(), MinecraftUiRenderer.screenHeight() - 42);
+                        viewport.width(), contentTop(viewport.width()), MinecraftUiRenderer.screenHeight() - PADDING);
+                if (warMapControls(layout, manager.canManage()).panel().contains(localMouseX, localMouseY)) return true;
                 if (layout.containsMap(localMouseX, localMouseY)) {
                     pendingWarQueueClick = null;
                     boolean locked = manager.canManage() && territoriesLocked();
@@ -2877,6 +3023,10 @@ public final class WarPlannerScreen extends Screen {
 
     @Override
     public void removed() {
+        if (opacitySlider != null) {
+            opacitySlider.onHidden();
+            SeqClient.getConfigManager().save();
+        }
         UiRenderer.renderResource(canvas -> {
             mapBackground.close();
             telemetryPlayerOverlay.close();
@@ -3040,7 +3190,7 @@ public final class WarPlannerScreen extends Screen {
 
     private void beginWarPingPicker() {
         if (!manager.canManage() || manager.isMutating()) return;
-        draggingBackgroundOpacity = false;
+        if (opacitySlider != null) opacitySlider.onHidden();
         draggingWarMap = false;
         memberDrag = null;
         zoneDrag = null;
@@ -3157,7 +3307,7 @@ public final class WarPlannerScreen extends Screen {
 
     private MemberDrag teamMemberDragAt(
             WarPlannerSnapshot snapshot, float mouseX, float mouseY, float width, float height) {
-        TeamsLayout layout = teamsLayout(width, contentTop(), height - 42, snapshot.teams().size());
+        TeamsLayout layout = teamsLayout(width, contentTop(width) + 28, height - PADDING, snapshot.teams().size());
         List<TeamPlacement> placements = teamPlacements(
                 snapshot.teams(), scrollRows, layout, manager.canManage(), snapshot.caller() != null);
         for (TeamPlacement placement : placements) {
@@ -3175,7 +3325,7 @@ public final class WarPlannerScreen extends Screen {
                         ? actions.firstMemberRight()
                         : placement.x() + placement.width() - 8;
                 float memberX = placement.x() + 8;
-                if (hit(mouseX, mouseY, memberX, memberY - 6, Math.max(0, memberRight - memberX), 11)) {
+                if (hit(mouseX, mouseY, memberX, memberY - 6, Math.max(0, memberRight - memberX), TEAM_MEMBER_ROW_STEP)) {
                     return new MemberDrag(
                             members.get(memberIndex).playerUuid(),
                             team.id(),
@@ -3191,10 +3341,10 @@ public final class WarPlannerScreen extends Screen {
 
     private MemberDrag unassignedMemberDragAt(
             WarPlannerSnapshot snapshot, float mouseX, float mouseY, float width, float height) {
-        TeamsLayout layout = teamsLayout(width, contentTop(), height - 42, snapshot.teams().size());
+        TeamsLayout layout = teamsLayout(width, contentTop(width) + 28, height - PADDING, snapshot.teams().size());
         if (layout.compactAuxiliary()) return null;
-        float rowsTop = contentTop() + UNASSIGNED_POOL_TOP + 36;
-        float bottom = height - 42;
+        float rowsTop = contentTop(width) + 28 + UNASSIGNED_POOL_TOP + 36;
+        float bottom = height - PADDING;
         if (!hit(
                 mouseX,
                 mouseY,
@@ -3224,10 +3374,10 @@ public final class WarPlannerScreen extends Screen {
             return;
         }
 
-        TeamsLayout layout = teamsLayout(width, contentTop(), height - 42, snapshot.teams().size());
+        TeamsLayout layout = teamsLayout(width, contentTop(width) + 28, height - PADDING, snapshot.teams().size());
         if (layout.compactAuxiliary()) return;
-        float poolY = contentTop() + UNASSIGNED_POOL_TOP;
-        float contentBottom = height - 42;
+        float poolY = contentTop(width) + 28 + UNASSIGNED_POOL_TOP;
+        float contentBottom = height - PADDING;
         if (drag.sourceTeamId() == null
                 || poolY + 34 >= contentBottom
                 || !hit(
@@ -3260,7 +3410,7 @@ public final class WarPlannerScreen extends Screen {
 
     private TeamPlacement teamPlacementAt(
             WarPlannerSnapshot snapshot, float mouseX, float mouseY, float width, float height) {
-        TeamsLayout layout = teamsLayout(width, contentTop(), height - 42, snapshot.teams().size());
+        TeamsLayout layout = teamsLayout(width, contentTop(width) + 28, height - PADDING, snapshot.teams().size());
         for (TeamPlacement placement : teamPlacements(
                 snapshot.teams(), scrollRows, layout, manager.canManage(), snapshot.caller() != null)) {
             if (placement.contains(mouseX, mouseY)) return placement;
@@ -3276,22 +3426,33 @@ public final class WarPlannerScreen extends Screen {
                 .toList();
     }
 
+    private boolean availabilityUpdatePending() {
+        return availabilityUpdate != null && !availabilityUpdate.isDone();
+    }
+
+    private boolean showBusyControls() {
+        // Availability updates keep the existing button colors; request guards still prevent concurrent edits.
+        return manager.isMutating() && !availabilityUpdatePending();
+    }
+
     private boolean setAvailability(int minutes) {
-        showResult(manager.setAvailability(minutes));
+        if (manager.isRequestInFlight()) return true;
+        availabilityUpdate = minutes == 0 ? manager.clearAvailability() : manager.setAvailability(minutes);
+        showResult(availabilityUpdate);
         return true;
     }
 
     private void showResult(java.util.concurrent.CompletableFuture<WarPlannerManager.ActionResult> future) {
         future.whenComplete((result, error) -> SeqClient.mc.execute(() -> flashMessage = error != null
                 ? "War planner request failed."
-                : result == null ? null : result.message()));
+                : result == null || result.success() ? null : result.message()));
     }
 
     private void showQueueResult(
             java.util.concurrent.CompletableFuture<WarTerritoryQueueManager.ActionResult> future) {
         future.whenComplete((result, error) -> SeqClient.mc.execute(() -> flashMessage = error != null
                 ? "War queue request failed."
-                : result == null ? "No response from the war queue." : result.message()));
+                : result == null ? "No response from the war queue." : result.success() ? null : result.message()));
     }
 
     private String stateLabel() {
@@ -3334,7 +3495,7 @@ public final class WarPlannerScreen extends Screen {
             if (asset != null && asset.getImage() != null) {
                 canvas.drawImage(asset.getImage(), nextX, y, COMPOSITION_ICON_SIZE, COMPOSITION_ICON_SIZE, 1f);
             } else {
-                canvas.fillRoundedRect(nextX, y, COMPOSITION_ICON_SIZE, COMPOSITION_ICON_SIZE, 2,
+                canvas.fillRect(nextX, y, COMPOSITION_ICON_SIZE, COMPOSITION_ICON_SIZE,
                         color(CONTROL_INPUT));
                 text(canvas, role.name().substring(0, 1), nextX + COMPOSITION_ICON_SIZE / 2,
                         y + COMPOSITION_ICON_SIZE / 2, 8, color(TEXT_SECONDARY), true);
@@ -3505,26 +3666,13 @@ public final class WarPlannerScreen extends Screen {
         return clampRows(requested, candidateCount);
     }
 
-    private PlannerViewport activePlannerViewport(float screenWidth) {
-        float maximum = switch (tab) {
-            case ROSTER -> MAX_ROSTER_WIDTH;
-            case TEAMS -> MAX_TEAMS_WIDTH;
-            case ZONES -> MAX_ZONES_WIDTH;
-        };
-        return plannerViewport(screenWidth, maximum);
-    }
-
     static PlannerViewport plannerViewport(float screenWidth) {
-        return plannerViewport(screenWidth, MAX_ZONES_WIDTH);
-    }
-
-    static PlannerViewport plannerViewport(float screenWidth, float maximumWidth) {
-        float width = Math.max(1, Math.min(maximumWidth, screenWidth));
-        return new PlannerViewport(Math.max(0, (screenWidth - width) / 2), width);
+        return new PlannerViewport(SequoiaSidebarNavigation.WIDTH,
+                Math.max(1, screenWidth - SequoiaSidebarNavigation.WIDTH));
     }
 
     static float teamSidebarWidth(float width) {
-        return Math.min(214, Math.max(176, width * .28f));
+        return Math.min(360, Math.max(220, width * .30f));
     }
 
     static TeamsLayout teamsLayout(float width, float top, float bottom, int teamCount) {
@@ -3657,19 +3805,6 @@ public final class WarPlannerScreen extends Screen {
         return new AvailabilityLayout(PADDING, 23, buttonWidth, buttonWidth, gap, true);
     }
 
-    static DisplayControls displayControls(float width, boolean canManage) {
-        boolean compact = width < 420;
-        float opacityWidth = compact ? 100 : OPACITY_CONTROL_WIDTH;
-        float resourceWidth = compact ? 82 : RESOURCE_CONTROL_WIDTH;
-        float lockWidth = compact ? 94 : LOCK_CONTROL_WIDTH;
-        float right = width - PADDING;
-        float lockX = canManage ? right - lockWidth : right;
-        float resourceRight = canManage ? lockX - DISPLAY_CONTROL_GAP : right;
-        float resourceX = resourceRight - resourceWidth;
-        float opacityX = resourceX - DISPLAY_CONTROL_GAP - opacityWidth;
-        return new DisplayControls(opacityX, opacityWidth, resourceX, resourceWidth, lockX, lockWidth);
-    }
-
     static int backgroundOpacityPercent() {
         return SeqClient.getWarPlannerBackgroundOpacitySetting() == null
                 ? 100
@@ -3705,19 +3840,6 @@ public final class WarPlannerScreen extends Screen {
 
     static boolean shouldBlurBackground(int opacityPercent) {
         return opacityPercent >= 100;
-    }
-
-    private static void updateBackgroundOpacity(float mouseX, DisplayControls controls) {
-        if (SeqClient.getWarPlannerBackgroundOpacitySetting() == null) return;
-        SeqClient.getWarPlannerBackgroundOpacitySetting().setValue(opacityPercentForMouse(mouseX, controls));
-    }
-
-    static int opacityPercentForMouse(float mouseX, DisplayControls controls) {
-        float labelWidth = controls.opacityWidth() < OPACITY_CONTROL_WIDTH ? 45 : 65;
-        float trackX = controls.opacityX() + labelWidth;
-        float trackWidth = controls.opacityWidth() - labelWidth - 7;
-        float ratio = Math.max(0, Math.min(1, (mouseX - trackX) / trackWidth));
-        return Math.round(ratio * 100);
     }
 
     static WarTeamType defaultTeamType(WarPlannerSnapshot snapshot) {
@@ -3768,15 +3890,11 @@ public final class WarPlannerScreen extends Screen {
     }
 
     static float teamCardHeight(int memberCount) {
-        return Math.max(48, 34 + Math.max(0, Math.min(5, memberCount)) * TEAM_MEMBER_ROW_STEP);
+        return Math.max(80, 36 + Math.max(0, Math.min(5, memberCount)) * TEAM_MEMBER_ROW_STEP);
     }
 
     static float teamCardHeight(int memberCount, TeamActionLayout actions) {
         return teamCardHeight(memberCount) + (actions == null ? 0 : actions.extraHeight());
-    }
-
-    static float teamMemberRowStep() {
-        return TEAM_MEMBER_ROW_STEP;
     }
 
     static float compactRoleX(float textX, float textWidth, float rightEdge, float iconWidth) {
@@ -3799,34 +3917,34 @@ public final class WarPlannerScreen extends Screen {
                 sidebarWidth);
     }
 
-    static WarMapControls warMapControls(WarMapLayout layout) {
-        float right = layout.mapX() + layout.mapWidth() - 6;
-        float top = layout.mapY() + 6;
-        WarMapButtonBounds fit = new WarMapButtonBounds(
-                layout.mapX() + 6, top, Math.max(0, Math.min(44, right - layout.mapX() - 6)), BUTTON_HEIGHT);
-        float queueX = fit.x() + fit.width() + 4;
-        WarMapButtonBounds queues = new WarMapButtonBounds(
-                queueX, top, Math.max(0, Math.min(WAR_QUEUE_FILTER_BUTTON_WIDTH, right - queueX)), BUTTON_HEIGHT);
-        float playersX = queues.x() + queues.width() + 6;
-        float playersY = top;
-        if (right - playersX < WAR_MAP_PLAYERS_BUTTON_WIDTH) {
-            playersX = fit.x();
-            playersY += BUTTON_HEIGHT + 6;
-        }
-        WarMapButtonBounds players = new WarMapButtonBounds(
-                playersX,
-                playersY,
-                Math.max(0, Math.min(WAR_MAP_PLAYERS_BUTTON_WIDTH, right - playersX)),
-                BUTTON_HEIGHT);
-        return new WarMapControls(fit, queues, players);
+    static HeaderControls headerControls(float width) {
+        float sectionWidth = width < 420 ? 68 : 116;
+        float actionWidth = width < 420 ? 50 : 64;
+        var section = new WarMapButtonBounds(PADDING, 6, sectionWidth, 18);
+        var roles = new WarMapButtonBounds(section.x() + sectionWidth + 6, 6, actionWidth, 18);
+        var refresh = new WarMapButtonBounds(roles.x() + actionWidth + 6, 6, actionWidth, 18);
+        var opacity = width >= 660
+                ? new WarMapButtonBounds(refresh.x() + actionWidth + 12, 6, 240, 18)
+                : new WarMapButtonBounds(PADDING, 32, 240, 18);
+        return new HeaderControls(section, roles, refresh, opacity);
     }
 
-    static int warMapVisibleZoneRows(float height) {
-        return Math.max(1, (int) ((height - 56) / WAR_MAP_ZONE_ROW_STEP));
+    static WarMapButtonBounds dropdownOption(WarMapButtonBounds trigger, int index) {
+        return new WarMapButtonBounds(trigger.x(), trigger.y() + trigger.height() + index * 22, trigger.width(), 22);
     }
 
-    static int warMapScrollStart(int requested, int zoneCount, int visibleRows) {
-        return Math.max(0, Math.min(requested, Math.max(0, zoneCount - Math.max(1, visibleRows))));
+    static WarMapControls warMapControls(WarMapLayout layout, boolean canManage) {
+        float panelWidth = Math.min(240, Math.max(1, layout.mapWidth() - 16));
+        float panelHeight = (canManage ? 3 : 2) * 24 + 8;
+        float x = layout.mapX() + layout.mapWidth() - panelWidth - 8;
+        float y = Math.max(layout.mapY() + 34, layout.mapY() + layout.mapHeight() - panelHeight - 8);
+        var panel = new WarMapButtonBounds(x, y, panelWidth, panelHeight);
+        var lock = new WarMapButtonBounds(x, y, panelWidth, canManage ? 24 : 0);
+        var queues = new WarMapButtonBounds(x, y + (canManage ? 24 : 0), panelWidth, 24);
+        var players = new WarMapButtonBounds(x, queues.y() + 24, panelWidth, 24);
+        var coloring = new WarMapButtonBounds(layout.sidebarX() + 6, layout.mapY() + 2, layout.sidebarWidth() - 12, 22);
+        var fit = new WarMapButtonBounds(layout.mapX() + 8, layout.mapY() + 8, Math.min(44, layout.mapWidth() - 16), 22);
+        return new WarMapControls(fit, queues, players, lock, panel, coloring);
     }
 
     static MapBounds fittedBounds(List<GuildTerritory> territories) {
@@ -3866,11 +3984,6 @@ public final class WarPlannerScreen extends Screen {
         return offsetY + (float) ((worldZ - fitted.minZ()) * scale);
     }
 
-    static float tabWidth(float width, boolean reserveManagerAction) {
-        float reservedWidth = reserveManagerAction ? MANAGER_ACTION_WIDTH : 0;
-        return Math.max(1, Math.min(120, (width - PADDING * 2 - reservedWidth) / Tab.values().length));
-    }
-
     private static String teamName(WarPlannerSnapshot snapshot, Long id) {
         Team team = snapshot.team(id);
         return team == null ? "Team #" + id : team.name();
@@ -3893,24 +4006,44 @@ public final class WarPlannerScreen extends Screen {
         }
     }
 
-    private static float contentTop() {
-        return HEADER_HEIGHT + AVAILABILITY_HEIGHT + TAB_HEIGHT + 8;
+    static float headerHeight(float width) {
+        return width >= 660 ? HEADER_HEIGHT : 56;
+    }
+
+    static float contentTop(float width) {
+        return headerHeight(width) + AVAILABILITY_HEIGHT + 8;
     }
 
     private static int clampRows(int value, int size) {
         return Math.max(0, Math.min(value, Math.max(0, size - 1)));
     }
 
+    private enum ButtonTone { SECONDARY, PRIMARY, DANGER, QUIET_DANGER }
+
+    private void primaryButton(UiCanvas canvas, float x, float y, float width, float height, String label, boolean disabled) {
+        button(canvas, x, y, width, height, label, ButtonTone.PRIMARY, disabled);
+    }
+
+    private void destructiveButton(UiCanvas canvas, float x, float y, float width, float height,
+            String label, boolean confirming, boolean disabled) {
+        button(canvas, x, y, width, height, label, confirming ? ButtonTone.DANGER : ButtonTone.QUIET_DANGER, disabled);
+    }
+
     private void button(UiCanvas canvas, float x, float y, float width, float height, String label, boolean danger, boolean disabled) {
+        button(canvas, x, y, width, height, label, danger ? ButtonTone.DANGER : ButtonTone.SECONDARY, disabled);
+    }
+
+    private void button(UiCanvas canvas, float x, float y, float width, float height, String label, ButtonTone tone, boolean disabled) {
         boolean hovered = !disabled && hit(nvgMouseX, nvgMouseY, x, y, width, height);
-        Color background = disabled
-                ? color(ACCENT_DISABLED)
-                : danger
-                        ? color(hovered ? CONTROL_DANGER_HOVER : CONTROL_DANGER)
-                        : color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT);
-        canvas.fillRoundedRect(x, y, width, height, 4, background);
+        Color background = disabled ? color(ACCENT_DISABLED) : switch (tone) {
+            case PRIMARY -> color(hovered ? ACCENT_PRIMARY_HOVER : ACCENT_PRIMARY);
+            case DANGER -> color(hovered ? CONTROL_DANGER_HOVER : CONTROL_DANGER);
+            case QUIET_DANGER -> color(hovered ? CONTROL_DANGER_HOVER : CONTROL_INPUT);
+            case SECONDARY -> color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT);
+        };
+        canvas.fillRect(x, y, width, height, background);
         text(canvas, label, x + width / 2, y + height / 2, 10,
-                color(disabled ? TEXT_DISABLED : TEXT_PRIMARY), true);
+                color(disabled ? TEXT_DISABLED : tone == ButtonTone.QUIET_DANGER && !hovered ? CONTROL_DANGER_HOVER : TEXT_PRIMARY), true);
     }
 
     private static void text(UiCanvas canvas, String value, float x, float y, float size, Color textColor, boolean centered) {
@@ -3954,18 +4087,6 @@ public final class WarPlannerScreen extends Screen {
     }
 
     record PlannerViewport(float x, float width) {}
-
-    record DisplayControls(
-            float opacityX,
-            float opacityWidth,
-            float resourceX,
-            float resourceWidth,
-            float lockX,
-            float lockWidth) {
-        float left() {
-            return opacityX;
-        }
-    }
 
     record AvailabilityLayout(
             float x, float y, float regularButtonWidth, float actionButtonWidth, float gap, boolean compact) {
@@ -4050,7 +4171,7 @@ public final class WarPlannerScreen extends Screen {
 
     record WarMapButtonBounds(float x, float y, float width, float height) {
         boolean visible() {
-            return width > 0;
+            return width > 0 && height > 0;
         }
 
         boolean contains(float pointX, float pointY) {
@@ -4058,7 +4179,10 @@ public final class WarPlannerScreen extends Screen {
         }
     }
 
-    record WarMapControls(WarMapButtonBounds fit, WarMapButtonBounds queues, WarMapButtonBounds players) {}
+    record HeaderControls(WarMapButtonBounds section, WarMapButtonBounds roles, WarMapButtonBounds refresh, WarMapButtonBounds opacity) {}
+
+    record WarMapControls(WarMapButtonBounds fit, WarMapButtonBounds queues, WarMapButtonBounds players,
+            WarMapButtonBounds lock, WarMapButtonBounds panel, WarMapButtonBounds coloring) {}
 
     record WarQueueLabelBounds(float x, float y, float width, float height) {}
 

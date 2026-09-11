@@ -133,12 +133,12 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         canvas.drawText(
                 getDisplayName(),
                 indentedContentX(8),
-                y + 2,
+                inlineLayout() ? y + height / 2f : y + 2,
                 textStyle(
                         fontName,
                         enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
                         UiCanvas.HorizontalAlign.LEFT,
-                        UiCanvas.VerticalAlign.TOP));
+                        inlineLayout() ? UiCanvas.VerticalAlign.MIDDLE : UiCanvas.VerticalAlign.TOP));
 
         SliderLayout layout = layout();
 
@@ -165,22 +165,23 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
         // Knob
         float knobX = layout.sliderX() + fillWidth;
-        float knobY = layout.sliderY() + SLIDER_HEIGHT / 2f - KNOB_RADIUS / 2f;
-        canvas.fillRect(knobX - KNOB_RADIUS, knobY - KNOB_RADIUS / 2, KNOB_RADIUS * 2, KNOB_RADIUS * 2,
+        float knobY = layout.sliderY() + SLIDER_HEIGHT / 2f;
+        float knobRadius = inlineLayout() ? 4 : KNOB_RADIUS;
+        canvas.fillRect(knobX - knobRadius, knobY - knobRadius, knobRadius * 2, knobRadius * 2,
                 enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED));
 
         // Text box
         Color boxBg = !enabled
                 ? color(CONTROL_INPUT_SECONDARY)
                 : editing ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
-        canvas.fillRect(layout.textBoxX(), layout.textBoxY(), TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, boxBg);
+        canvas.fillRect(layout.textBoxX(), layout.textBoxY(), textBoxWidth(), TEXT_BOX_HEIGHT, boxBg);
         if (enabled && editing) {
-            canvas.strokeRect(layout.textBoxX(), layout.textBoxY(), TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT, 1,
+            canvas.strokeRect(layout.textBoxX(), layout.textBoxY(), textBoxWidth(), TEXT_BOX_HEIGHT, 1,
                     color(CONTROL_BORDER));
         }
 
         String displayText = editing ? editBuffer : formatValue(value);
-        canvas.drawText(displayText, layout.textBoxX() + TEXT_BOX_WIDTH / 2f,
+        canvas.drawText(displayText, layout.textBoxX() + textBoxWidth() / 2f,
                 layout.textBoxY() + TEXT_BOX_HEIGHT / 2f,
                 textStyle(
                         fontName,
@@ -190,18 +191,26 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
 
         // Draw cursor separately so it doesn't affect text width
         if (enabled && editing && (cursorBlink / 1000) % 2 == 0) {
-            float textW = UiRenderer.measureText(editBuffer, fontName, FONT_SIZE).width();
-            float cursorX = layout.textBoxX() + (TEXT_BOX_WIDTH + textW) / 2f + 1;
+            float textW = UiRenderer.measureText(editBuffer, fontName, inlineLayout() ? 10 : FONT_SIZE).width();
+            float cursorX = layout.textBoxX() + (textBoxWidth() + textW) / 2f + 1;
             canvas.fillRect(cursorX, layout.textBoxY() + 3, 1, TEXT_BOX_HEIGHT - 6, color(TEXT_PRIMARY));
         }
     }
 
-    private static UiCanvas.TextStyle textStyle(
+    protected boolean inlineLayout() {
+        return false;
+    }
+
+    private float textBoxWidth() {
+        return inlineLayout() ? 38 : TEXT_BOX_WIDTH;
+    }
+
+    private UiCanvas.TextStyle textStyle(
             String font,
             Color color,
             UiCanvas.HorizontalAlign horizontalAlign,
             UiCanvas.VerticalAlign verticalAlign) {
-        return new UiCanvas.TextStyle(font, FONT_SIZE, color, horizontalAlign, verticalAlign);
+        return new UiCanvas.TextStyle(font, inlineLayout() ? 10 : FONT_SIZE, color, horizontalAlign, verticalAlign);
     }
 
     @Override
@@ -212,7 +221,7 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
         SliderLayout layout = layout();
 
         // Click on text box - enter edit mode
-        if (isHovered(mouseX, mouseY, layout.textBoxX(), layout.textBoxY(), TEXT_BOX_WIDTH, TEXT_BOX_HEIGHT)) {
+        if (isHovered(mouseX, mouseY, layout.textBoxX(), layout.textBoxY(), textBoxWidth(), TEXT_BOX_HEIGHT)) {
             editing = true;
             editBuffer = formatValue(getDoubleValue());
             cursorBlink = 0;
@@ -262,18 +271,21 @@ public class SliderWidget extends SettingWidget<Setting<?>> {
     }
 
     private SliderLayout layout() {
-        float sliderX = indentedContentX(8);
-        float fullSliderWidth = Math.max(1, width - TEXT_BOX_WIDTH - 24 - labelIndent());
+        float labelWidth = inlineLayout() ? 64 : 0;
+        float sliderX = indentedContentX(8) + labelWidth;
+        float fullSliderWidth = Math.max(1, width - textBoxWidth() - 24 - labelIndent() - labelWidth);
         float sliderWidth = fullSliderWidth * sliderWidthRatio;
         float textBoxX = sliderWidthRatio < 1f
                 ? sliderX + sliderWidth + CONTROL_GAP
-                : x + width - TEXT_BOX_WIDTH - 8;
+                : x + width - textBoxWidth() - 8;
+        // Toolbar sliders share a baseline with their label; settings keep the label above.
+        float controlCenterY = y + (inlineLayout() ? height / 2f : Math.min(26, height - TEXT_BOX_HEIGHT / 2f));
         return new SliderLayout(
                 sliderX,
-                y + 22,
+                controlCenterY - SLIDER_HEIGHT / 2f,
                 sliderWidth,
                 textBoxX,
-                y + (height - TEXT_BOX_HEIGHT) / 2f);
+                controlCenterY - TEXT_BOX_HEIGHT / 2f);
     }
 
     private void updateValueFromMouse(float mouseX, float sliderX, float sliderWidth) {

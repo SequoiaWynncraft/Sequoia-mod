@@ -241,6 +241,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private final Map<String, MapIngredientIcon> ingredientIconCache = new HashMap<>();
     private Map<String, IngredientGuideEntry> cachedIngredientsByName = Map.of();
     private long cachedIngredientSnapshotVersion = -1;
+    private final Screen parent;
     private float nvgMouseX;
     private float nvgMouseY;
 
@@ -275,6 +276,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             GameProfile mapFocusSkinProfile,
             IngredientFarmSpot farmSpot) {
         super(Component.literal("Sequoia Map"));
+        this.parent = parent;
         this.mapFocus = mapFocus;
         this.mapFocusIcon = mapFocusIcon == null ? ItemStack.EMPTY : mapFocusIcon.copy();
         this.mapFocusSkinLookup = mapFocusSkinProfile == null
@@ -426,6 +428,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         renderInsightsSidebar(canvas);
     }
 
+    static Color ingredientRadiusFillColor(Color markerColor) {
+        return new Color(markerColor.getRed(), markerColor.getGreen(), markerColor.getBlue(),
+                Math.round(markerColor.getAlpha() * 0.35f));
+    }
+
     private void renderMapFocus(UiCanvas canvas, MapViewport viewport) {
         if (!hasMapFocus()) {
             return;
@@ -460,7 +467,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             boolean hovered = marker.equals(hoveredFocusMarker);
             Color markerColor = selected ? color(MAP_SELECTED_TERRITORY) : color(ACCENT_PRIMARY);
             if (areaRadius >= 4) {
-                drawCircle(canvas, x, y, areaRadius, markerColor);
+                drawCircle(canvas, x, y, areaRadius, ingredientRadiusFillColor(markerColor));
                 drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, markerColor);
             }
             if (mapFocusIcon.isEmpty()) {
@@ -521,7 +528,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             Color markerColor = selected ? color(MAP_SELECTED_TERRITORY) : color(ACCENT_PRIMARY);
             float areaRadius = (float) (spot.radius() * viewport.pixelsPerBlock());
             if (areaRadius >= 4) {
-                drawCircle(canvas, x, y, areaRadius, markerColor);
+                drawCircle(canvas, x, y, areaRadius, ingredientRadiusFillColor(markerColor));
                 drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, markerColor);
             }
             drawTotemMarker(canvas, x, y, selected || hovered ? 22 : 18,
@@ -3965,6 +3972,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     @Override
+    public void onClose() {
+        SeqClient.mc.setScreen(parent == null || parent instanceof net.minecraft.client.gui.screens.ChatScreen
+                ? new SequoiaScreen() : parent);
+    }
+
+    @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
         float mx = scaledMouseX(click.x());
         float my = scaledMouseY(click.y());
@@ -3974,7 +3987,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
         if (mapModeDropdownLayout().containsClose(mx, my)) {
             if (click.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-                SeqClient.mc.setScreen(new SequoiaScreen());
+                onClose();
             }
             return true;
         }

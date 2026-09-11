@@ -49,6 +49,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("check_updates", "Check for updates on startup");
         DISPLAY_NAME_OVERRIDES.put("enable_easter_eggs", "Enable easter eggs");
         DISPLAY_NAME_OVERRIDES.put("startup_video", "Startup video");
+        DISPLAY_NAME_OVERRIDES.put("ui", "UI");
         DISPLAY_NAME_OVERRIDES.put("ui_size_percent", "UI size %");
         DISPLAY_NAME_OVERRIDES.put("enable_radiance_visualiser", "Enable Radiance visualiser");
         DISPLAY_NAME_OVERRIDES.put("radiance_marker_color", "Radiance marker color");

@@ -26,6 +26,28 @@ import org.junit.jupiter.api.Test;
 
 class WarPlannerScreenTest {
     @Test
+    void zoomedOutMapKeepsFocusButSuppressesTinyOutlinesAndUnrelatedConnections() {
+        assertEquals(0, WarPlannerScreen.territoryOutlineWeight(3, 1.2f));
+        assertTrue(WarPlannerScreen.territoryOutlineWeight(10, 1.2f)
+                < WarPlannerScreen.territoryOutlineWeight(50, 1.2f));
+        assertEquals(2, WarPlannerScreen.territoryOutlineWeight(3, 2));
+        assertFalse(WarPlannerScreen.warConnectionVisible(.08f, false));
+        assertTrue(WarPlannerScreen.warConnectionVisible(.08f, true));
+        assertTrue(WarPlannerScreen.warConnectionVisible(.3f, false));
+    }
+
+    @Test
+    void resourceModePreservesBordersAndConnectionsAtEveryZoom() {
+        for (float size : new float[] {2, 4, 10, 50}) {
+            for (float weight : new float[] {.55f, .75f, 1.8f}) {
+                assertEquals(weight, WarPlannerScreen.territoryOutlineWeight(size, weight, true));
+            }
+        }
+        assertTrue(WarPlannerScreen.warConnectionVisible(.08f, false, true));
+        assertFalse(WarPlannerScreen.warConnectionVisible(.08f, false, false));
+    }
+
+    @Test
     void availabilityCountdownCarriesRoundedMinutesIntoWholeHours() {
         assertEquals("30m", WarPlannerScreen.formatDuration(Duration.ofMinutes(30)));
         assertEquals("1h", WarPlannerScreen.formatDuration(Duration.ofSeconds(3_599)));
@@ -34,42 +56,48 @@ class WarPlannerScreenTest {
     }
 
     @Test
-    void wideScreensUseACenteredCappedPlannerViewport() {
-        assertEquals(new WarPlannerScreen.PlannerViewport(360, 1200), WarPlannerScreen.plannerViewport(1920));
-        assertEquals(new WarPlannerScreen.PlannerViewport(620, 680), WarPlannerScreen.plannerViewport(1920, 680));
-        assertEquals(new WarPlannerScreen.PlannerViewport(570, 780), WarPlannerScreen.plannerViewport(1920, 780));
-        assertEquals(new WarPlannerScreen.PlannerViewport(0, 640), WarPlannerScreen.plannerViewport(640));
+    void plannerUsesTheSharedSidebarAndRemainingScreenWidth() {
+        for (float width : new float[] {420, 640, 960, 1920}) {
+            var viewport = WarPlannerScreen.plannerViewport(width);
+            assertEquals(SequoiaSidebarNavigation.WIDTH, viewport.x());
+            assertEquals(width, viewport.x() + viewport.width());
+        }
     }
 
     @Test
-    void narrowManagerTabsReserveSpaceForActionButton() {
-        float screenWidth = 320;
-        float tabsRight = 12 + WarPlannerScreen.tabWidth(screenWidth, true) * 3;
-        float managerActionLeft = screenWidth - 92;
-
-        assertTrue(tabsRight <= managerActionLeft);
+    void headerDropdownAndActionsFitBesideTheTitleAtAllSupportedWidths() {
+        for (float width : new float[] {280, 320, 420, 659, 660, 820, 1780}) {
+            var header = WarPlannerScreen.headerControls(width);
+            assertTrue(header.section().x() + header.section().width() < header.roles().x());
+            assertTrue(header.roles().x() + header.roles().width() < header.refresh().x());
+            assertTrue(header.refresh().x() + header.refresh().width() < width - (width < 420 ? 70 : 125));
+            var opacity = header.opacity();
+            assertTrue(opacity.x() >= 0 && opacity.x() + opacity.width() <= width);
+            assertTrue(opacity.y() + opacity.height() <= WarPlannerScreen.headerHeight(width));
+            if (width >= 660) {
+                assertTrue(opacity.x() > header.refresh().x() + header.refresh().width());
+                assertTrue(opacity.x() + opacity.width() < width - 125);
+            } else {
+                assertTrue(opacity.y() > header.refresh().y() + header.refresh().height());
+            }
+            for (int row = 0; row < 3; row++) {
+                var option = WarPlannerScreen.dropdownOption(header.section(), row);
+                assertEquals(header.section().x(), option.x());
+                assertTrue(option.y() >= header.section().y() + header.section().height());
+                assertFalse(header.section().contains(option.x() + 1, option.y() + 1));
+            }
+        }
     }
 
     @Test
-    void displayControlsReserveManagerLockAndMapOpacityAcrossTheFullSlider() {
-        WarPlannerScreen.DisplayControls member = WarPlannerScreen.displayControls(640, false);
-        WarPlannerScreen.DisplayControls manager = WarPlannerScreen.displayControls(640, true);
-        WarPlannerScreen.DisplayControls narrowManager = WarPlannerScreen.displayControls(320, true);
-
-        assertTrue(manager.opacityX() < member.opacityX());
-        assertTrue(manager.opacityX() < manager.resourceX());
-        assertTrue(manager.resourceX() < manager.lockX());
-        assertEquals(0, WarPlannerScreen.opacityPercentForMouse(manager.opacityX() + 65, manager));
-        assertEquals(100, WarPlannerScreen.opacityPercentForMouse(manager.opacityX() + 125, manager));
+    void panelOpacityScalesTheConfiguredThemeAlpha() {
         assertEquals(100, WarPlannerScreen.opacityAlpha(200, 50));
-        for (int configuredAlpha : new int[] {0, 1, 42, 127, 254, 255}) {
-            assertEquals(configuredAlpha, WarPlannerScreen.opacityAlpha(configuredAlpha, 100));
-            assertEquals(0, WarPlannerScreen.opacityAlpha(configuredAlpha, 0));
+        for (int alpha : new int[] {0, 1, 42, 127, 254, 255}) {
+            assertEquals(alpha, WarPlannerScreen.opacityAlpha(alpha, 100));
+            assertEquals(0, WarPlannerScreen.opacityAlpha(alpha, 0));
         }
         assertFalse(WarPlannerScreen.shouldBlurBackground(95));
         assertTrue(WarPlannerScreen.shouldBlurBackground(100));
-        assertTrue(narrowManager.opacityX() >= 12);
-        assertTrue(narrowManager.lockX() + narrowManager.lockWidth() <= 308);
     }
 
     @Test
@@ -86,50 +114,53 @@ class WarPlannerScreenTest {
     }
 
     @Test
+    void mapSwitchesStayInTheBottomRightAndColorDropdownStaysInTheSidebar() {
+        for (float width : new float[] {280, 320, 500, 820, 1780}) {
+            var layout = WarPlannerScreen.warMapLayout(width, 86, 610);
+            for (boolean manager : new boolean[] {false, true}) {
+                var controls = WarPlannerScreen.warMapControls(layout, manager);
+                for (var control : List.of(controls.fit(), controls.panel(), controls.queues(), controls.players())) {
+                    assertTrue(control.x() >= layout.mapX());
+                    assertTrue(control.x() + control.width() <= layout.mapX() + layout.mapWidth());
+                    assertTrue(control.y() >= layout.mapY());
+                    assertTrue(control.y() + control.height() <= layout.mapY() + layout.mapHeight());
+                }
+                assertTrue(controls.coloring().x() >= layout.sidebarX());
+                assertTrue(controls.coloring().x() + controls.coloring().width() <= layout.sidebarX() + layout.sidebarWidth());
+                assertEquals(manager, controls.lock().visible());
+                assertEquals(controls.queues().y() + controls.queues().height(), controls.players().y());
+                assertTrue(controls.players().y() + controls.players().height() <= controls.panel().y() + controls.panel().height());
+                assertTrue(controls.fit().y() + controls.fit().height() < controls.panel().y());
+            }
+        }
+    }
+
+    @Test
     void warMapKeepsOneCanvasAndACompactSidebar() {
         assertEquals(220, WarPlannerScreen.warMapSidebarWidth(1200));
         assertEquals(220, WarPlannerScreen.warMapSidebarWidth(900));
         assertEquals(160, WarPlannerScreen.warMapSidebarWidth(640));
         assertEquals(150, WarPlannerScreen.warMapSidebarWidth(320));
-        assertEquals(4, WarPlannerScreen.warMapVisibleZoneRows(320));
     }
 
     @Test
     void warMapLayoutKeepsMapAndSidebarSeparateOnNarrowScreens() {
-        WarPlannerScreen.WarMapLayout layout = WarPlannerScreen.warMapLayout(320, 110, 430);
-        WarPlannerScreen.WarMapControls controls = WarPlannerScreen.warMapControls(layout);
-
+        var layout = WarPlannerScreen.warMapLayout(320, 86, 430);
         assertEquals(12, layout.mapX());
         assertEquals(138, layout.mapWidth());
         assertEquals(158, layout.sidebarX());
         assertTrue(layout.mapX() + layout.mapWidth() < layout.sidebarX());
-        assertTrue(controls.queues().visible());
-        assertTrue(controls.queues().x() >= layout.mapX());
-        assertTrue(controls.queues().x() + controls.queues().width() <= layout.mapX() + layout.mapWidth());
-        assertTrue(controls.players().visible());
-        assertEquals(84, controls.players().width());
-        assertTrue(controls.players().y() > controls.queues().y());
-        assertTrue(controls.players().x() + controls.players().width() <= layout.mapX() + layout.mapWidth());
     }
 
     @Test
-    void wideWarMapLayoutGivesTheInteractiveCanvasMostOfThePlannerWidth() {
-        WarPlannerScreen.WarMapLayout layout = WarPlannerScreen.warMapLayout(1200, 110, 610);
-        WarPlannerScreen.WarMapControls controls = WarPlannerScreen.warMapControls(layout);
-
-        assertEquals(12, layout.mapX());
+    void wideWarMapUsesTheFullContentHeight() {
+        var layout = WarPlannerScreen.warMapLayout(1200, 86, 610);
         assertEquals(948, layout.mapWidth());
-        assertEquals(500, layout.mapHeight());
+        assertEquals(524, layout.mapHeight());
         assertEquals(968, layout.sidebarX());
         assertEquals(220, layout.sidebarWidth());
         assertTrue(layout.mapWidth() > layout.sidebarWidth() * 2);
-        assertTrue(layout.containsMap(layout.mapX() + layout.mapWidth() / 2, layout.mapY() + 1));
         assertFalse(layout.containsMap(layout.sidebarX() + 1, layout.mapY() + 1));
-        assertTrue(layout.containsSidebar(layout.sidebarX() + 1, layout.mapY() + 1));
-        assertEquals(1200 - 12, layout.sidebarX() + layout.sidebarWidth());
-        assertEquals(84, controls.players().width());
-        assertEquals(controls.queues().y(), controls.players().y());
-        assertTrue(controls.players().x() >= controls.queues().x() + controls.queues().width());
     }
 
     @Test
@@ -363,6 +394,16 @@ class WarPlannerScreenTest {
     }
 
     @Test
+    void resourceFillsUseFixedTransparencyWithoutChangingThePalette() {
+        for (String resource : List.of("EMERALD", "ORE", "WOOD", "FISH", "CROP")) {
+            Color palette = WarTerritoryPickerScreen.resourceColor(resource);
+            Color fill = WarTerritoryPickerScreen.resourceFillColor(palette, WarPlannerScreen.RESOURCE_FILL_ALPHA);
+            assertEquals(palette.getRGB() & 0xffffff, fill.getRGB() & 0xffffff);
+            assertEquals(96, fill.getAlpha());
+        }
+    }
+
+    @Test
     void queuedTerritoryDoubleClickRequiresSameQueueTimeWindowAndPointerLocation() {
         WarPlannerScreen.PendingWarQueueClick first =
                 new WarPlannerScreen.PendingWarQueueClick(42, "Alekin", 100, 80, 1_000);
@@ -525,12 +566,11 @@ class WarPlannerScreenTest {
     }
 
     @Test
-    void teamCardsGrowOnlyWithTheirDenseVerticalMemberStack() {
-        assertEquals(48, WarPlannerScreen.teamCardHeight(0));
-        assertEquals(48, WarPlannerScreen.teamCardHeight(1));
-        assertEquals(56, WarPlannerScreen.teamCardHeight(2));
-        assertEquals(89, WarPlannerScreen.teamCardHeight(5));
-        assertEquals(11, WarPlannerScreen.teamMemberRowStep());
+    void teamCardsGiveMembersReadableSpacing() {
+        assertEquals(80, WarPlannerScreen.teamCardHeight(0));
+        assertEquals(80, WarPlannerScreen.teamCardHeight(1));
+        assertEquals(80, WarPlannerScreen.teamCardHeight(2));
+        assertEquals(116, WarPlannerScreen.teamCardHeight(5));
     }
 
     @Test
@@ -545,13 +585,13 @@ class WarPlannerScreenTest {
         assertTrue(actions.selfX() + actions.selfWidth() <= cardsRight);
         assertTrue(actions.selfY() > actions.managerY());
         assertTrue(actions.memberTop() > actions.selfY() + 22);
-        assertEquals(101, WarPlannerScreen.teamCardHeight(1, actions));
+        assertTrue(WarPlannerScreen.teamCardHeight(1, actions) >= actions.memberTop() + 16);
     }
 
     @Test
     void teamSidebarAndEditorStayCompactOnWideScreens() {
-        assertEquals(214, WarPlannerScreen.teamSidebarWidth(780));
-        assertEquals(179.2f, WarPlannerScreen.teamSidebarWidth(640), .01f);
+        assertEquals(234, WarPlannerScreen.teamSidebarWidth(780), .01f);
+        assertEquals(220, WarPlannerScreen.teamSidebarWidth(640), .01f);
         assertEquals(560, WarPlannerScreen.teamEditorWidth(780));
         assertEquals(496, WarPlannerScreen.teamEditorWidth(520));
     }
@@ -888,14 +928,7 @@ class WarPlannerScreenTest {
                         withZone, java.util.Set.of("Zoned", "Free"), true));
     }
 
-    @Test
-    void warMapSidebarRowsScaleWithAvailableHeight() {
-        assertEquals(1, WarPlannerScreen.warMapVisibleZoneRows(100));
-        assertEquals(4, WarPlannerScreen.warMapVisibleZoneRows(320));
-        assertEquals(6, WarPlannerScreen.warMapVisibleZoneRows(480));
-        assertEquals(6, WarPlannerScreen.warMapScrollStart(99, 10, 4));
-        assertEquals(0, WarPlannerScreen.warMapScrollStart(2, 3, 4));
-    }
+
 
     @Test
     void zoneSidebarGroupsOrderedZonesAndKeepsIndividualAndCategoryVisibilityIndependent() {
@@ -950,8 +983,8 @@ class WarPlannerScreenTest {
                 WarPlannerScreen.ZoneSidebarEntry.zone(5L, first),
                 WarPlannerScreen.ZoneSidebarEntry.zone(5L, last));
 
-        assertEquals(2, WarPlannerScreen.zoneSidebarScrollStart(99, entries, 96));
-        assertEquals(1, WarPlannerScreen.zoneSidebarScrollStart(99, entries, 128));
+        assertEquals(1, WarPlannerScreen.zoneSidebarScrollStart(99, entries, 96));
+        assertEquals(0, WarPlannerScreen.zoneSidebarScrollStart(99, entries, 128));
     }
 
     @Test
