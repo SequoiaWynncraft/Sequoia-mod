@@ -159,7 +159,7 @@ class WynnPillGlyphsTest {
                 WynnPillGlyphs.findPills(WynnPillGlyphs.encodePlainPill("UPPER STRATEGIST") + " Player: hi");
 
         assertEquals(1, pills.size(), "the run must stay whole");
-        assertEquals("upperstrategist", pills.get(0).label());
+        assertEquals("upper strategist", pills.get(0).label());
     }
 
     @Test
