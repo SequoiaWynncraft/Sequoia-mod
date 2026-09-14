@@ -3,12 +3,13 @@ package com.seqwawa.seq.managers;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.integrations.WynntilsWorldStateAccess;
 import com.seqwawa.seq.model.GuildMemberPresence;
+import com.seqwawa.seq.model.MemberFilter;
+import com.seqwawa.seq.model.RaidTeamProfile;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftGuildClient;
-import java.util.ArrayList;
 import java.util.Collection;
+import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -25,7 +26,7 @@ import java.util.stream.Collectors;
  * Wynncraft's guild API supplies the roster and the world; the Sequoia backend's
  * connected-user list marks who is running the mod; {@link GuildRaidActivityTracker}
  * supplies the busy window. Only the first needs a network round trip, so the
- * roster is what refresh throttling protects — the other two are read live.
+ * roster is what refresh throttling protects, since the other two are read live.
  */
 public final class GuildPresenceManager {
 
@@ -87,9 +88,30 @@ public final class GuildPresenceManager {
                 .toList();
     }
 
-    /** The online members grouped by world, in the order the panel should draw them. */
-    public List<WorldGroup> groupedByWorld() {
-        return groupByWorld(onlineMembers(), currentWorld(), GuildRaidActivityTracker::isBusy);
+    /** The online members in the order the panel draws them, narrowed by {@code filter}. */
+    public List<GuildMemberPresence> membersForDisplay(MemberFilter filter) {
+        return sortByName(filteredMembers(filter));
+    }
+
+    /** The online members that pass {@code filter}, ungrouped. */
+    public List<GuildMemberPresence> filteredMembers(MemberFilter filter) {
+        List<GuildMemberPresence> members = onlineMembers();
+        if (filter == null || !filter.isActive()) {
+            return members;
+        }
+        RaidProfileStore profiles = RaidProfileStore.getInstance();
+        return members.stream()
+                .filter(member -> filter.matches(
+                        member,
+                        profiles.profileFor(member),
+                        GuildRaidActivityTracker.isBusy(member.username()),
+                        profiles.catalog()))
+                .toList();
+    }
+
+    /** The raid profile known for a member, empty when nobody has shared one. */
+    public RaidTeamProfile profileFor(GuildMemberPresence member) {
+        return RaidProfileStore.getInstance().profileFor(member);
     }
 
     public String currentWorld() {
@@ -118,13 +140,17 @@ public final class GuildPresenceManager {
         lastError = null;
 
         requestSequoiaConnectedUsers();
+        // The catalog has to be in hand before the roster is parsed, because reading
+        // clear counts needs the raid names it carries.
+        RaidProfileStore.getInstance().refresh();
 
         return resolveGuildPrefix()
                 .thenCompose(prefix -> {
                     if (prefix == null || prefix.isBlank()) {
                         throw new IllegalStateException("Wynncraft does not list you in a guild.");
                     }
-                    return WynncraftGuildClient.getInstance().fetchRoster(prefix);
+                    return WynncraftGuildClient.getInstance()
+                            .fetchRoster(prefix, RaidProfileStore.getInstance().catalog());
                 })
                 .thenAccept(fetched -> {
                     roster = fetched;
@@ -248,6 +274,57 @@ public final class GuildPresenceManager {
         };
     }
 
+    /**
+     * Invites a whole composition, creating the party first when there is not one.
+     * <p>
+     * Invites are spaced the same way the party finder spaces its bulk invites:
+     * Wynncraft drops commands sent in the same tick, so a burst of four would
+     * arrive as one or two.
+     */
+    public InviteOutcome inviteAllToParty(List<String> usernames) {
+        List<String> targets = inviteTargets(usernames, localUsername(), observedPartyMembers());
+        if (targets.isEmpty()) {
+            return new InviteOutcome(false, "Nobody left to invite, they are already with you.");
+        }
+
+        boolean needsParty = !hasActiveWynnParty();
+        long delay = 0L;
+        if (needsParty) {
+            sendPartyCommand("party create");
+            delay = PARTY_CREATE_SETTLE_MS;
+        }
+
+        for (String target : targets) {
+            String command = "party " + target;
+            if (delay == 0L) {
+                sendPartyCommand(command);
+            } else {
+                scheduleDelayed(() -> sendPartyCommand(command), delay);
+            }
+            delay += INVITE_SPACING_MS;
+        }
+
+        String who = targets.size() == 1 ? targets.get(0) : targets.size() + " members";
+        return new InviteOutcome(
+                true, needsParty ? "Created a party and invited " + who + "." : "Invited " + who + ".");
+    }
+
+    /** Sends {@code /msg username message}, the way the party finder pings people. */
+    public boolean whisper(String username, String message) {
+        if (username == null || message == null || message.isBlank()) {
+            return false;
+        }
+        String target = username.trim();
+        if (!target.matches("[A-Za-z0-9_]{3,16}")) {
+            return false;
+        }
+        sendPartyCommand("msg " + target + " " + message.trim());
+        return true;
+    }
+
+    /** Wynncraft drops commands sent in the same tick, so bulk invites are spaced out. */
+    private static final long INVITE_SPACING_MS = 500L;
+
     /** Wynncraft needs a beat between creating a party and accepting an invite into it. */
     private static final long PARTY_CREATE_SETTLE_MS = 400L;
 
@@ -280,43 +357,54 @@ public final class GuildPresenceManager {
     // ── Pure logic ──
 
     /**
-     * Orders worlds so the panel answers "where is the guild right now" at a glance:
-     * the world you are already on first, then the busiest worlds, then the rest by
-     * name. A group with no world sinks to the bottom — it is the least actionable,
-     * since there is nothing to switch to.
+     * Sorts members by name, ignoring case.
+     * <p>
+     * The list used to be grouped by world, which buried people: to find one person
+     * you had to know where they were first. A flat A to Z list with the world in
+     * its own column answers both questions, and the position of a name stops
+     * moving every time someone switches server.
      */
-    static List<WorldGroup> groupByWorld(
-            List<GuildMemberPresence> members, String localWorld, Predicate<String> busy) {
+    static List<GuildMemberPresence> sortByName(List<GuildMemberPresence> members) {
         if (members == null || members.isEmpty()) {
             return List.of();
         }
+        return members.stream()
+                .sorted(Comparator.comparing(member -> member.username().toLowerCase(Locale.ROOT)))
+                .toList();
+    }
 
-        Map<String, List<GuildMemberPresence>> byWorld = new LinkedHashMap<>();
-        for (GuildMemberPresence member : members) {
-            byWorld.computeIfAbsent(member.hasWorld() ? member.world() : UNKNOWN_WORLD, key -> new ArrayList<>())
-                    .add(member);
+    /**
+     * Who out of {@code usernames} still needs an invite: everyone but the local
+     * player and whoever is already in the party, with duplicates collapsed.
+     */
+    static List<String> inviteTargets(
+            List<String> usernames, String localUsername, Collection<String> partyMembers) {
+        if (usernames == null || usernames.isEmpty()) {
+            return List.of();
         }
 
-        String normalizedLocalWorld = localWorld == null ? null : localWorld.trim().toUpperCase(Locale.ROOT);
-        Predicate<String> busyCheck = busy == null ? name -> false : busy;
-
-        List<WorldGroup> groups = new ArrayList<>(byWorld.size());
-        for (Map.Entry<String, List<GuildMemberPresence>> entry : byWorld.entrySet()) {
-            List<GuildMemberPresence> sorted = entry.getValue().stream()
-                    // Available members come first: the panel exists to find someone to
-                    // pull into a group, and a busy member is not that.
-                    .sorted(Comparator.comparing((GuildMemberPresence member) -> busyCheck.test(member.username()))
-                            .thenComparing(member -> member.username().toLowerCase(Locale.ROOT)))
-                    .toList();
-            groups.add(new WorldGroup(entry.getKey(), sorted));
+        Set<String> skip = new java.util.HashSet<>();
+        if (localUsername != null && !localUsername.isBlank()) {
+            skip.add(localUsername.trim().toLowerCase(Locale.ROOT));
+        }
+        if (partyMembers != null) {
+            partyMembers.stream()
+                    .filter(name -> name != null && !name.isBlank())
+                    .map(name -> name.trim().toLowerCase(Locale.ROOT))
+                    .forEach(skip::add);
         }
 
-        groups.sort(Comparator.comparing((WorldGroup group) -> !group.world().equals(normalizedLocalWorld))
-                .thenComparing(group -> group.world().equals(UNKNOWN_WORLD))
-                .thenComparing(Comparator.comparingInt((WorldGroup group) -> group.members().size()).reversed())
-                .thenComparing(WorldGroup::world));
-
-        return List.copyOf(groups);
+        List<String> targets = new ArrayList<>();
+        for (String username : usernames) {
+            if (username == null || username.isBlank()) {
+                continue;
+            }
+            String trimmed = username.trim();
+            if (skip.add(trimmed.toLowerCase(Locale.ROOT))) {
+                targets.add(trimmed);
+            }
+        }
+        return List.copyOf(targets);
     }
 
     /** What inviting {@code target} should actually do, given the local party state. */
@@ -344,17 +432,6 @@ public final class GuildPresenceManager {
         // A party that exists but currently holds only the local player still counts:
         // Wynncraft rejects "party create" when one is already open.
         return hasActiveParty ? InviteAction.INVITE : InviteAction.CREATE_THEN_INVITE;
-    }
-
-    /** One world's worth of online guild members. */
-    public record WorldGroup(String world, List<GuildMemberPresence> members) {
-        public WorldGroup {
-            members = members == null ? List.of() : List.copyOf(members);
-        }
-
-        public boolean hasSwitchTarget() {
-            return !UNKNOWN_WORLD.equals(world);
-        }
     }
 
     public enum InviteAction {

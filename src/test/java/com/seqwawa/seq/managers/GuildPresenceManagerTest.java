@@ -8,7 +8,6 @@ import com.seqwawa.seq.model.GuildMemberPresence;
 import com.seqwawa.seq.model.GuildMemberPresence.GuildRank;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 
@@ -20,90 +19,58 @@ class GuildPresenceManagerTest {
         return new GuildMemberPresence(username, "uuid-" + username, GuildRank.RECRUIT, world, false);
     }
 
-    // ── Grouping ──
+    // ── Ordering ──
 
     @Test
-    void putsYourOwnWorldFirstThenTheBusiestWorlds() {
+    void sortsMembersByNameIgnoringCase() {
         List<GuildMemberPresence> members = List.of(
-                member("alpha", "NA1"),
-                member("bravo", "NA1"),
-                member("charlie", "NA1"),
-                member("delta", "EU2"),
-                member("echo", "EU2"),
-                member("foxtrot", "AS1"));
-
-        List<GuildPresenceManager.WorldGroup> groups =
-                GuildPresenceManager.groupByWorld(members, "AS1", NOBODY_BUSY);
+                member("zeta", "NA1"),
+                member("Alpha", "EU2"),
+                member("mike", "AS1"),
+                member("BRAVO", "NA1"));
 
         assertEquals(
-                List.of("AS1", "NA1", "EU2"),
-                groups.stream().map(GuildPresenceManager.WorldGroup::world).toList(),
-                "your world leads, then worlds by descending headcount");
-    }
-
-    @Test
-    void sinksTheWorldlessGroupBelowEveryRealWorld() {
-        List<GuildMemberPresence> members = List.of(
-                member("alpha", null),
-                member("bravo", null),
-                member("charlie", null),
-                member("delta", "EU2"));
-
-        List<GuildPresenceManager.WorldGroup> groups =
-                GuildPresenceManager.groupByWorld(members, "NA9", NOBODY_BUSY);
-
-        assertEquals(
-                List.of("EU2", GuildPresenceManager.UNKNOWN_WORLD),
-                groups.stream().map(GuildPresenceManager.WorldGroup::world).toList(),
-                "an unknown world is last even though it holds more members");
-        assertTrue(groups.get(0).hasSwitchTarget());
-        assertFalse(groups.get(1).hasSwitchTarget());
-    }
-
-    @Test
-    void ordersEqualSizedWorldsByName() {
-        List<GuildMemberPresence> members =
-                List.of(member("alpha", "NA3"), member("bravo", "EU1"), member("charlie", "AS2"));
-
-        List<GuildPresenceManager.WorldGroup> groups =
-                GuildPresenceManager.groupByWorld(members, null, NOBODY_BUSY);
-
-        assertEquals(
-                List.of("AS2", "EU1", "NA3"),
-                groups.stream().map(GuildPresenceManager.WorldGroup::world).toList());
-    }
-
-    @Test
-    void listsAvailableMembersBeforeBusyOnesWithinAWorld() {
-        List<GuildMemberPresence> members = List.of(
-                member("alpha", "NA1"), member("bravo", "NA1"), member("charlie", "NA1"), member("delta", "NA1"));
-        Set<String> busy = Set.of("alpha", "charlie");
-
-        List<GuildPresenceManager.WorldGroup> groups =
-                GuildPresenceManager.groupByWorld(members, "NA1", busy::contains);
-
-        assertEquals(
-                List.of("bravo", "delta", "alpha", "charlie"),
-                groups.get(0).members().stream()
+                List.of("Alpha", "BRAVO", "mike", "zeta"),
+                GuildPresenceManager.sortByName(members).stream()
                         .map(GuildMemberPresence::username)
-                        .toList(),
-                "free members first, each half alphabetical");
+                        .toList());
     }
 
     @Test
-    void matchesYourWorldRegardlessOfCase() {
-        List<GuildMemberPresence> members = List.of(member("alpha", "NA1"), member("bravo", "EU2"));
+    void orderingIgnoresTheWorldSoANameStopsMovingWhenSomeoneSwitches() {
+        GuildMemberPresence before = member("mike", "NA1");
+        GuildMemberPresence after = member("mike", "EU9");
+        List<GuildMemberPresence> others = List.of(member("alpha", "AS1"), member("zeta", "AS1"));
 
-        List<GuildPresenceManager.WorldGroup> groups =
-                GuildPresenceManager.groupByWorld(members, "na1", NOBODY_BUSY);
+        List<String> withBefore = GuildPresenceManager.sortByName(
+                        List.of(others.get(0), before, others.get(1)))
+                .stream()
+                .map(GuildMemberPresence::username)
+                .toList();
+        List<String> withAfter = GuildPresenceManager.sortByName(List.of(others.get(0), after, others.get(1)))
+                .stream()
+                .map(GuildMemberPresence::username)
+                .toList();
 
-        assertEquals("NA1", groups.get(0).world());
+        assertEquals(withBefore, withAfter);
+        assertEquals(List.of("alpha", "mike", "zeta"), withBefore);
     }
 
     @Test
-    void returnsNoGroupsForAnEmptyRoster() {
-        assertEquals(List.of(), GuildPresenceManager.groupByWorld(List.of(), "NA1", NOBODY_BUSY));
-        assertEquals(List.of(), GuildPresenceManager.groupByWorld(null, "NA1", NOBODY_BUSY));
+    void aMemberWithNoWorldIsListedLikeAnyOther() {
+        List<GuildMemberPresence> members = List.of(member("zeta", "NA1"), member("alpha", null));
+
+        List<GuildMemberPresence> sorted = GuildPresenceManager.sortByName(members);
+
+        assertEquals(List.of("alpha", "zeta"), sorted.stream().map(GuildMemberPresence::username).toList());
+        assertFalse(sorted.get(0).hasWorld());
+        assertTrue(sorted.get(1).hasWorld());
+    }
+
+    @Test
+    void returnsNoMembersForAnEmptyRoster() {
+        assertEquals(List.of(), GuildPresenceManager.sortByName(List.of()));
+        assertEquals(List.of(), GuildPresenceManager.sortByName(null));
     }
 
     // ── Invite decisions ──
@@ -145,6 +112,41 @@ class GuildPresenceManagerTest {
         assertEquals(
                 GuildPresenceManager.InviteAction.SELF,
                 GuildPresenceManager.decideInviteAction(null, "Visroul", true, List.of()));
+    }
+
+    // ── Bulk invites ──
+
+    @Test
+    void bulkInviteSkipsYourselfAndAnyoneAlreadyInTheParty() {
+        List<String> targets = GuildPresenceManager.inviteTargets(
+                List.of("Blousy", "Visroul", "a3pki", "divvy"), "Visroul", List.of("Visroul", "A3PKI"));
+
+        assertEquals(List.of("Blousy", "divvy"), targets);
+    }
+
+    @Test
+    void bulkInviteCollapsesTheSameNameTypedTwice() {
+        List<String> targets =
+                GuildPresenceManager.inviteTargets(List.of("Blousy", "blousy", " BLOUSY "), null, List.of());
+
+        assertEquals(List.of("Blousy"), targets);
+    }
+
+    @Test
+    void bulkInviteIgnoresBlanksAndEmptyInput() {
+        assertEquals(
+                List.of("Blousy"),
+                GuildPresenceManager.inviteTargets(Arrays.asList("Blousy", "", "   ", null), null, null));
+        assertEquals(List.of(), GuildPresenceManager.inviteTargets(List.of(), "Visroul", List.of()));
+        assertEquals(List.of(), GuildPresenceManager.inviteTargets(null, "Visroul", List.of()));
+    }
+
+    @Test
+    void bulkInviteLeavesNobodyWhenTheWholePartyIsAlreadyThere() {
+        assertEquals(
+                List.of(),
+                GuildPresenceManager.inviteTargets(
+                        List.of("Blousy", "a3pki"), "Visroul", List.of("Visroul", "blousy", "a3pki")));
     }
 
     // ── Connected-user merge ──

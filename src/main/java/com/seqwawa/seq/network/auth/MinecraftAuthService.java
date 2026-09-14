@@ -109,6 +109,37 @@ public class MinecraftAuthService {
         }
     }
 
+    /**
+     * Runs the whole challenge flow against another backend and returns that backend's
+     * session, without storing it or touching this service's state.
+     * <p>
+     * Each backend signs tokens with its own secret, so a feature served from a second
+     * backend needs a sign-in of its own. Keeping it out of the config file and out of
+     * {@link #getState()} means the main session, and the connection screen that
+     * reports it, are unaffected either way.
+     */
+    public CompletableFuture<StoredAuthSession> authenticateAgainst(String apiBaseUrl) {
+        if (apiBaseUrl == null || !apiBaseUrl.startsWith("https://")) {
+            return CompletableFuture.failedFuture(new AuthException(
+                    AuthErrorCode.TRANSPORT_INSECURE, "Refusing Minecraft authentication over insecure transport."));
+        }
+        return ApiClient.getInstance()
+                .requestMinecraftAuthChallenge(apiBaseUrl)
+                .thenApply(MinecraftAuthService::validateChallenge)
+                .thenCompose(challenge -> CompletableFuture
+                        .supplyAsync(() -> joinServer(challenge), executor)
+                        .thenCompose(username -> ApiClient.getInstance()
+                                .completeMinecraftAuthentication(
+                                        apiBaseUrl, new MinecraftAuthCompleteRequest(challenge.challengeId(), username))))
+                .thenApply(response -> toStoredSession(unwrapCompleteResponse(response)))
+                .handle((session, throwable) -> {
+                    if (throwable != null) {
+                        throw new CompletionException(mapException(throwable));
+                    }
+                    return session;
+                });
+    }
+
     static MinecraftAuthChallengeResponse validateChallenge(MinecraftAuthChallengeResponse response) {
         if (response == null
                 || response.challengeId() == null
@@ -133,21 +164,25 @@ public class MinecraftAuthService {
                 .supplyAsync(
                         () -> {
                             setState(AuthState.JOINING_MINECRAFT_SESSION, null);
-                            User user = requireLoggedInUser();
-                            try {
-                                resolveSessionService().joinServer(
-                                        user.getProfileId(), user.getAccessToken(), challenge.serverId());
-                                return user.getName();
-                            } catch (AuthenticationException exception) {
-                                throw new AuthException(
-                                        AuthErrorCode.SESSION_JOIN_FAILED,
-                                        "Minecraft session verification failed. Restart Minecraft and try again.",
-                                        true,
-                                        exception);
-                            }
+                            return joinServer(challenge);
                         },
                         executor)
                 .thenCompose(username -> completeAuthentication(challenge.challengeId(), username));
+    }
+
+    /** Proves to Mojang that this client owns the account, for the backend to check. */
+    private String joinServer(MinecraftAuthChallengeResponse challenge) {
+        User user = requireLoggedInUser();
+        try {
+            resolveSessionService().joinServer(user.getProfileId(), user.getAccessToken(), challenge.serverId());
+            return user.getName();
+        } catch (AuthenticationException exception) {
+            throw new AuthException(
+                    AuthErrorCode.SESSION_JOIN_FAILED,
+                    "Minecraft session verification failed. Restart Minecraft and try again.",
+                    true,
+                    exception);
+        }
     }
 
     private CompletableFuture<MinecraftAuthCompleteResponse> completeAuthentication(String challengeId, String username) {

@@ -17,7 +17,15 @@ public record GuildMemberPresence(
         /** The world the member is on, such as {@code NA6}, or null when Wynncraft does not report one. */
         String world,
         /** Whether this member has the Sequoia mod connected to the backend right now. */
-        boolean sequoiaConnected) {
+        boolean sequoiaConnected,
+        /** Playtime and raid counts read off Wynncraft, never self-declared. */
+        GuildMemberStats stats) {
+
+    /** Convenience for callers that have no Wynncraft stats to attach. */
+    public GuildMemberPresence(
+            String username, String uuid, GuildRank rank, String world, boolean sequoiaConnected) {
+        this(username, uuid, rank, world, sequoiaConnected, GuildMemberStats.unknown());
+    }
 
     public GuildMemberPresence {
         if (username == null || username.isBlank()) {
@@ -25,6 +33,7 @@ public record GuildMemberPresence(
         }
         rank = rank == null ? GuildRank.RECRUIT : rank;
         world = world == null || world.isBlank() ? null : world.trim().toUpperCase(Locale.ROOT);
+        stats = stats == null ? GuildMemberStats.unknown() : stats;
     }
 
     /** Case-insensitive key used to match this member against chat and raid names. */
@@ -37,7 +46,7 @@ public record GuildMemberPresence(
     }
 
     public GuildMemberPresence withSequoiaConnected(boolean connected) {
-        return new GuildMemberPresence(username, uuid, rank, world, connected);
+        return new GuildMemberPresence(username, uuid, rank, world, connected, stats);
     }
 
     /** Wynncraft guild ranks, ordered from most to least senior. */

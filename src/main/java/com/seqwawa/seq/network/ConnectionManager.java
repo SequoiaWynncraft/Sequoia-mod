@@ -112,6 +112,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // Callbacks for new message types
     private static Consumer<DiscordChatMessage> discordChatHandler;
     private static Consumer<PartyFinderUpdateMessage> partyFinderUpdateHandler;
+    private static Consumer<RaidProfileUpdateMessage> raidProfileUpdateHandler;
     private static Consumer<PartyFinderInviteMessage> partyFinderInviteHandler;
     private static Consumer<PartyFinderStaleWarningMessage> partyFinderStaleWarningHandler;
     private static Consumer<BombSharePromptMessage> bombSharePromptHandler;
@@ -1777,6 +1778,20 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         SeqClient.LOGGER.warn("[WebSocket] Received party_finder_update but handler is not registered");
                     }
                 }
+                case "raid_profile_update" -> {
+                    String action = extractPrimitiveString(json, "action");
+                    JsonObject profileJson = json.has("profile") && json.get("profile").isJsonObject()
+                            ? json.getAsJsonObject("profile")
+                            : null;
+                    SeqClient.LOGGER.info(
+                            "[WebSocket] raid_profile_update action={} hasProfile={} handlerPresent={}",
+                            action,
+                            profileJson != null,
+                            raidProfileUpdateHandler != null);
+                    if (raidProfileUpdateHandler != null && profileJson != null) {
+                        raidProfileUpdateHandler.accept(new RaidProfileUpdateMessage(action, profileJson));
+                    }
+                }
                 case "party_finder_invite" -> {
                     if (partyFinderInviteHandler != null) {
                         long listingId = json.get("listing_id").getAsLong();
@@ -1964,6 +1979,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     public static void onPartyFinderUpdate(Consumer<PartyFinderUpdateMessage> handler) {
         SeqClient.LOGGER.info("[WebSocket] Registering party_finder_update handler present={}", handler != null);
         partyFinderUpdateHandler = handler;
+    }
+
+    public static void onRaidProfileUpdate(Consumer<RaidProfileUpdateMessage> handler) {
+        SeqClient.LOGGER.info("[WebSocket] Registering raid_profile_update handler present={}", handler != null);
+        raidProfileUpdateHandler = handler;
     }
 
     public static void onPartyFinderInvite(Consumer<PartyFinderInviteMessage> handler) {
@@ -2513,6 +2533,20 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     public record PartyFinderUpdateMessage(String action, JsonObject listingJson) {}
+
+    /**
+     * One member's raid profile changing.
+     * <p>
+     * {@code action} is {@code updated} or {@code removed}. On a removal the
+     * payload is still shaped like a profile, with its fields set to null rather
+     * than omitted, so only {@code minecraft} is meaningful there.
+     */
+    public record RaidProfileUpdateMessage(String action, JsonObject profileJson) {
+
+        public boolean isRemoval() {
+            return "removed".equalsIgnoreCase(action);
+        }
+    }
 
     public record PartyFinderInviteMessage(
             long listingId, String inviterUUID, String inviteToken, JsonObject listingJson) {}

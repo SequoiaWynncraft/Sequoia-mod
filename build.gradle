@@ -164,7 +164,17 @@ def generateBuildConfig = tasks.register("generateBuildConfig") {
             break
     }
 
+    // Raid profiles can point at a different backend than the rest of the mod, so the
+    // feature can be tried against staging while chat, party finder and sign-in stay
+    // on production. It follows backend_environment unless set, so a release build
+    // cannot ship pointing at staging by accident.
+    def raidProfilesEnv = project.findProperty("raid_profiles_environment") ?: env
+    def raidProfilesApiUrl = raidProfilesEnv == "production"
+            ? "https://api.seqwawa.com/api"
+            : "https://staging.seqwawa.com/api"
+
     inputs.property("env", env)
+    inputs.property("raidProfilesEnv", raidProfilesEnv)
     outputs.dir(buildConfigDir)
 
     doLast {
@@ -179,6 +189,8 @@ public final class BuildConfig {
     public static final String ENVIRONMENT = "${env}";
     public static final String WS_URL = "${wsUrl}";
     public static final String API_URL = "${apiUrl}";
+    public static final String RAID_PROFILES_ENVIRONMENT = "${raidProfilesEnv}";
+    public static final String RAID_PROFILES_API_URL = "${raidProfilesApiUrl}";
 }
 """
     }

@@ -21,8 +21,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * covers everyone else running the mod.</li>
  * </ul>
  * A member counts as busy for {@link #BUSY_WINDOW} after their last completion.
- * That is not a guess at whether they are inside a raid right now — it is the
- * useful question answered instead: someone who cleared minutes ago is looting,
+ * That is not a guess at whether they are inside a raid right now. It answers the
+ * more useful question instead: someone who cleared minutes ago is looting,
  * re-buffing or queueing again, and inviting them cuts that short.
  */
 public final class GuildRaidActivityTracker {

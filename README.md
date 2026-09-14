@@ -20,7 +20,8 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Automatic connection to Sequoia services
 - In-game Discord chat bridge
 - Clickable world names in chat, so a called-out world is one click away
-- Guild members panel: who is online, on which world, and who is mid-raid
+- Guild members panel: who is online, on which world, which raid builds they own, and who is mid-raid
+- Friend list with a one-click "raid ?" whisper, and saved premade parties you can invite in one go
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
 - Raid tracking and announcements
@@ -124,24 +125,131 @@ The Events view shows runs currently visible through the Wynncraft API. Choose A
 ## Guild members
 
 Run `/seq members`, or press `O` and choose **Members**, to see every guild member Wynncraft
-reports as online. Members are grouped by the world they are on: the world you are already on
-comes first, then the worlds holding the most members, so it is obvious where the guild has
-gathered. A member with no world reported — Wynncraft hides the server of anyone who has turned
-off their online status — is listed last under `Unknown`.
+reports as online.
 
-Each row carries two actions:
+### Your raid profile
 
-- **Join** switches you to that member's world.
-- **Invite** invites them to your Wynncraft party, creating the party first when you are not in
-  one yet.
+The first time you open the panel it asks you to fill in a raid profile: which of
+the guild's meta builds you own, whether you can bring auras, your region, and a
+one-line status. It takes about a minute and replaces "who has an ascendancy for
+TNA" in guild chat.
+
+The list of meta builds comes from the backend, not from the mod, so when the
+guild's meta changes everyone sees it on their next refresh instead of their next
+update. Saving sends your profile to the backend; the setup screen stays open and
+shows the reason if that fails, rather than telling you your builds are shared
+when they are not.
+
+You tick builds, not raids: the same build serves several raids, so raid coverage
+is worked out from what you ticked. **Not now** skips setup and is remembered;
+**My profile** in the header reopens it whenever you finish a new set.
+
+### Members
+
+The **Members** tab lists everyone online, sorted by name, with their world in its own
+column, so a name stays where you expect it instead of jumping around every time somebody
+switches server. Your own world is highlighted. A member whose world Wynncraft will not
+report, which happens when they have turned off their online status, shows a `?` there.
+
+Each row leads with the player's head so you can spot who it is at a glance, with a dot on
+its corner for their status: green when they are free, red while they are busy.
+
+The rest of the row is their region, their guild raid count, and the builds they said they
+own. The raid number follows the filter: with no raid selected it is every guild raid they
+have run, and with one selected it narrows to that raid. Counts are **guild raids only**,
+the ones run while in Sequoia. A lifetime total would fold in every raid they did in a
+previous guild, which is not what you are asking when you are picking a group.
+
+Auras are shown separately from builds, as an `AURAS` tag beside the name, because being
+able to bring auras is not a build.
+
+Filter with the raid chips (**All**, then each raid), **Auras**, **Free**, and the name
+search. With a raid selected, the builds column narrows to the builds that are meta for
+that raid, and a member who has not shared a profile is matched on their clear count
+instead, which is weaker evidence but needs nobody to opt in.
+
+Click any row for the full profile: rank, world, playtime, auras, declared builds, guild
+raids per raid, and a **private note** you can keep on that member. Notes never leave your
+client. The same panel has **Add friend**.
+
+Row actions: **Join** switches you to that member's world, and **Invite** invites them to
+your Wynncraft party, creating the party first when you are not in one yet. With a raid
+filter active, the confirmation names the build they bring to it.
+
+### Friends
+
+The **Friends** tab is the people you like raiding with. Add someone from their profile in
+the Members tab; they stay on the list whether or not they are online.
+
+- **Raid ?** sends them `/msg <name> raid ?`.
+- **Invite** pulls them into your party, creating it if you are not in one.
+- **Remove** takes them off the list.
+
+Offline friends stay listed with a grey dot, and their two action buttons are disabled.
+
+### Premade parties
+
+The **Premades** tab holds groups you run with often, so a regular team is one click rather
+than four invites typed out every time.
+
+**New party** opens the editor: give it a name, then add members by username, or press
+**Add my party** to pull in whoever is in your Wynncraft party right now. A party holds up
+to ten, which is Wynncraft's largest raid group.
+
+**Invite all** creates the party when you are not in one, then invites everyone who is not
+already with you, spaced out so Wynncraft does not drop the commands. **Edit** reopens the
+editor, where **Delete** also lives.
+
+### Busy status
 
 A member shows a **Busy** chip with a countdown for eight minutes after finishing a raid. The
 signal is the same raid completion report the mod relays to Discord: Wynncraft announces every
 guild raid in guild chat, so one completion marks its whole party at once, with no server round
 trip. Members running Sequoia are tagged `SEQ`.
 
-The roster comes from Wynncraft's public API, which serves it on a two-minute cache, so the
-panel refreshes at most once a minute; **Refresh** in the header forces the next allowed fetch.
+### Where the data comes from
+
+| What | From |
+| --- | --- |
+| Who is online, their world, playtime, guild raid counts | Wynncraft's public API |
+| The meta builds and raids, and everyone's profile | The Sequoia backend, `GET /raid-profiles` |
+| Your friends, premade parties and private notes | This client only, `config/sequoia/raid-profile.json` |
+
+The last row never leaves your machine. A private note about somebody is not
+something to upload.
+
+The last backend response is cached to `config/sequoia/cache/raid-profiles.json`
+so the panel is not blank while the backend is unreachable. The column header
+says how many profiles are in play, `N SHARED` or `ONLY YOUR PROFILE`, so an empty
+builds column reads as "nobody has shared one" rather than "nobody owns anything".
+
+Raid profiles can be pointed at a different backend than the rest of the mod, to try
+the feature on staging while sign-in, chat and the party finder stay on production:
+
+```
+./gradlew build -Praid_profiles_environment=staging
+```
+
+It follows `backend_environment` when not set, so an ordinary release build is
+unaffected.
+
+Each backend signs its tokens with its own secret, so staging refuses a production
+token. When the two differ, the mod signs in to the raid-profiles backend a second
+time and keeps that token in memory only; the main session is left alone. That
+second sign-in needs your account linked on that backend. If it is not, the mod
+posts a link in chat to its website sign-in
+(`https://staging.seqwawa.com/auth/web/start?return_to=https://staging.seqwawa.com/`),
+which links through Discord and Wynncraft the same way `/link` does. Live
+`raid_profile_update` pushes are ignored in this mode, because the WebSocket still
+belongs to the main backend.
+
+[`docs/raid-profiles-protocol.md`](docs/raid-profiles-protocol.md) is the contract
+the backend implements, and [`backend/`](backend) is a working implementation of
+it in one Python file.
+
+The roster refreshes at most once a minute, matching the two-minute cache
+Wynncraft serves the guild endpoint with; **Refresh** in the header forces the
+next allowed fetch of both the roster and the profiles.
 
 ## Settings
 

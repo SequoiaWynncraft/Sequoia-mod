@@ -4,6 +4,9 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.seqwawa.seq.model.GuildMemberPresence;
+import com.seqwawa.seq.model.GuildMemberStats;
+import com.seqwawa.seq.model.RaidCatalog;
+import com.seqwawa.seq.model.RaidType;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -12,6 +15,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -71,12 +75,17 @@ public final class WynncraftGuildClient {
         return get("/player/" + encode(username)).thenApply(WynncraftGuildClient::parseGuildPrefix);
     }
 
-    /** Every member of the guild, online and offline, keyed by nothing and ordered by rank. */
-    public CompletableFuture<GuildRoster> fetchRoster(String guildPrefix) {
+    /**
+     * Every online member of the guild.
+     * <p>
+     * The catalog is needed to read clear counts: Wynncraft keys them by the raid's
+     * full name, and which name belongs to which raid is the backend's to say.
+     */
+    public CompletableFuture<GuildRoster> fetchRoster(String guildPrefix, RaidCatalog catalog) {
         if (guildPrefix == null || guildPrefix.isBlank()) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("guildPrefix must not be blank"));
         }
-        return get("/guild/prefix/" + encode(guildPrefix)).thenApply(WynncraftGuildClient::parseRoster);
+        return get("/guild/prefix/" + encode(guildPrefix)).thenApply(json -> parseRoster(json, catalog));
     }
 
     private CompletableFuture<JsonObject> get(String path) {
@@ -128,7 +137,7 @@ public final class WynncraftGuildClient {
      * settings reports {@code online: false} with no world, and is indistinguishable
      * from someone genuinely offline. They are left out rather than guessed at.
      */
-    static GuildRoster parseRoster(JsonObject guild) {
+    static GuildRoster parseRoster(JsonObject guild, RaidCatalog catalog) {
         if (guild == null) {
             return GuildRoster.empty();
         }
@@ -160,7 +169,12 @@ public final class WynncraftGuildClient {
                         continue;
                     }
                     online.add(new GuildMemberPresence(
-                            username, optionalString(member, "uuid"), rank, optionalString(member, "server"), false));
+                            username,
+                            optionalString(member, "uuid"),
+                            rank,
+                            optionalString(member, "server"),
+                            false,
+                            parseStats(member, catalog)));
                 }
             }
         }
@@ -172,6 +186,53 @@ public final class WynncraftGuildClient {
                 : online.size();
 
         return new GuildRoster(guildName, guildPrefix, total, List.copyOf(online));
+    }
+
+    /**
+     * Reads playtime and per-raid completions out of the {@code globalData} block
+     * Wynncraft already ships with every guild member, so the panel gets real raid
+     * experience without a request per player.
+     * <p>
+     * The count comes from {@code currentGuildRaids}, not {@code raids}: what the
+     * panel is asked is "has this person run TNA with us", and a lifetime total
+     * would fold in every raid they did in a previous guild.
+     */
+    static GuildMemberStats parseStats(JsonObject member, RaidCatalog catalog) {
+        if (member == null || !member.has("globalData") || !member.get("globalData").isJsonObject()) {
+            return GuildMemberStats.unknown();
+        }
+        JsonObject globalData = member.getAsJsonObject("globalData");
+
+        double playtimeHours = 0d;
+        if (globalData.has("playtime") && globalData.get("playtime").isJsonPrimitive()) {
+            try {
+                playtimeHours = globalData.get("playtime").getAsDouble();
+            } catch (RuntimeException ignored) {
+                playtimeHours = 0d;
+            }
+        }
+
+        Map<String, Integer> completions = new HashMap<>();
+        if (catalog != null
+                && globalData.has("currentGuildRaids")
+                && globalData.get("currentGuildRaids").isJsonObject()) {
+            JsonObject raids = globalData.getAsJsonObject("currentGuildRaids");
+            if (raids.has("list") && raids.get("list").isJsonObject()) {
+                for (Map.Entry<String, JsonElement> entry : raids.getAsJsonObject("list").entrySet()) {
+                    RaidType raid = catalog.raidByApiName(entry.getKey());
+                    if (raid == null || !entry.getValue().isJsonPrimitive()) {
+                        continue;
+                    }
+                    try {
+                        completions.put(raid.key(), entry.getValue().getAsInt());
+                    } catch (RuntimeException ignored) {
+                        // A count that will not parse is simply not shown.
+                    }
+                }
+            }
+        }
+
+        return new GuildMemberStats(playtimeHours, completions);
     }
 
     private static String optionalString(JsonObject object, String key) {

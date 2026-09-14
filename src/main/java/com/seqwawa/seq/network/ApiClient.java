@@ -25,6 +25,8 @@ import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
+import com.seqwawa.seq.model.RaidProfilesResponse;
+import com.seqwawa.seq.model.RaidTeamProfile;
 import com.seqwawa.seq.model.RankProfilesResponse;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.auth.MinecraftAuthChallengeResponse;
@@ -51,6 +53,8 @@ public class ApiClient {
     private final Gson gson;
     private final String baseUrl;
     private final String authBaseUrl;
+    /** Where raid profiles live, which can differ from {@link #baseUrl}. See build.gradle. */
+    private final String raidProfilesBaseUrl;
 
     public static ApiClient getInstance() {
         if (instance == null) {
@@ -77,6 +81,7 @@ public class ApiClient {
                 .create();
         this.baseUrl = BuildConfig.API_URL;
         this.authBaseUrl = resolveAuthBaseUrl(BuildConfig.API_URL);
+        this.raidProfilesBaseUrl = BuildConfig.RAID_PROFILES_API_URL;
     }
 
     // ── Party Finder: Activities ──
@@ -213,6 +218,114 @@ public class ApiClient {
         return patch("/party-finder/members/me/role", body, Listing.class);
     }
 
+    // ── Raid profiles ──
+
+    /**
+     * The meta catalog and every member's raid profile, in one call.
+     * <p>
+     * They arrive together because they are always read together: a profile's
+     * build keys mean nothing without the catalog that names them.
+     */
+    public CompletableFuture<RaidProfilesResponse> getRaidProfiles() {
+        return withRaidProfilesToken(token -> {
+            HttpRequest request = newRequestWithToken(raidProfilesBaseUrl, "/raid-profiles", token)
+                    .GET()
+                    .build();
+            return sendAsync(request, RaidProfilesResponse.class);
+        });
+    }
+
+    /**
+     * Saves the local player's raid profile. The caller is whoever the bearer
+     * token belongs to, so the body carries no username, and {@code updated_at} is
+     * stamped by the server rather than sent from here.
+     */
+    public CompletableFuture<RaidProfilesResponse.Profile> putMyRaidProfile(RaidTeamProfile profile) {
+        JsonObject body = new JsonObject();
+        JsonArray builds = new JsonArray();
+        profile.buildKeys().forEach(builds::add);
+        body.add("builds", builds);
+        body.addProperty("can_bring_auras", profile.canBringAuras());
+        if (profile.region() != null) {
+            body.addProperty("region", profile.region().name());
+        }
+        if (profile.hasStatus()) {
+            body.addProperty("status", profile.status());
+        }
+        return withRaidProfilesToken(token -> {
+            HttpRequest request = newRequestWithToken(raidProfilesBaseUrl, "/raid-profiles/me", token)
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString(gson.toJson(body)))
+                    .build();
+            return sendAsync(request, RaidProfilesResponse.Profile.class);
+        });
+    }
+
+    /** Whether raid profiles are served by a different backend than the rest of the mod. */
+    public static boolean raidProfilesOnSeparateBackend() {
+        return isSeparateBackend(BuildConfig.RAID_PROFILES_API_URL, BuildConfig.API_URL);
+    }
+
+    static boolean isSeparateBackend(String raidProfilesApiUrl, String apiUrl) {
+        return !stripTrailingSlash(raidProfilesApiUrl).equalsIgnoreCase(stripTrailingSlash(apiUrl));
+    }
+
+    private static String stripTrailingSlash(String url) {
+        if (url == null) {
+            return "";
+        }
+        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+    }
+
+    /**
+     * Runs a raid-profile call with the token its backend accepts.
+     * <p>
+     * On the same backend as everything else that is the main session's token. On a
+     * separate one it is a sign-in of its own, since that backend signs tokens with a
+     * different secret and refuses the main one as invalid.
+     */
+    private <T> CompletableFuture<T> withRaidProfilesToken(java.util.function.Function<String, CompletableFuture<T>> call) {
+        if (!raidProfilesOnSeparateBackend()) {
+            return call.apply(SeqClient.getConfigManager().getToken());
+        }
+        return callWithTokenRetry(
+                force -> com.seqwawa.seq.network.auth.RaidProfilesSession.getInstance().ensureToken(force), call);
+    }
+
+    /**
+     * Calls with a token, and if the backend answers 401, signs in again once and
+     * retries. Once, because a second 401 on a token issued seconds ago is not a stale
+     * token, and looping would only hide the real problem.
+     */
+    static <T> CompletableFuture<T> callWithTokenRetry(
+            java.util.function.Function<Boolean, CompletableFuture<String>> tokenFor,
+            java.util.function.Function<String, CompletableFuture<T>> call) {
+        return tokenFor.apply(false)
+                .thenCompose(call)
+                .handle((result, throwable) -> {
+                    if (throwable == null) {
+                        return CompletableFuture.completedFuture(result);
+                    }
+                    if (isUnauthorized(throwable)) {
+                        return tokenFor.apply(true).thenCompose(call);
+                    }
+                    return CompletableFuture.<T>failedFuture(unwrap(throwable));
+                })
+                .thenCompose(future -> future);
+    }
+
+    static boolean isUnauthorized(Throwable throwable) {
+        return unwrap(throwable) instanceof ApiException apiException && apiException.getStatusCode() == 401;
+    }
+
+    private static Throwable unwrap(Throwable throwable) {
+        Throwable cause = throwable;
+        while (cause instanceof java.util.concurrent.CompletionException && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return cause;
+    }
+
     public CompletableFuture<RankProfilesResponse> getRecognizedRankProfiles() {
         return get(authBaseUrl, "/v1/rank-profiles?scope=recognized", RankProfilesResponse.class, false);
     }
@@ -321,17 +434,36 @@ public class ApiClient {
     // ── Minecraft Auth ──
 
     public CompletableFuture<MinecraftAuthChallengeResponse> requestMinecraftAuthChallenge() {
+        return requestMinecraftAuthChallenge(baseUrl);
+    }
+
+    /** Requests a challenge from the backend at {@code apiBaseUrl} rather than the main one. */
+    public CompletableFuture<MinecraftAuthChallengeResponse> requestMinecraftAuthChallenge(String apiBaseUrl) {
         return postWithFallback(
-                authRequestBaseUrls(), "/auth/minecraft/challenge", null, MinecraftAuthChallengeResponse.class, false);
+                authRequestBaseUrlsFor(apiBaseUrl),
+                "/auth/minecraft/challenge",
+                null,
+                MinecraftAuthChallengeResponse.class,
+                false);
     }
 
     public CompletableFuture<MinecraftAuthCompleteResponse> completeMinecraftAuthentication(
             MinecraftAuthCompleteRequest request) {
+        return completeMinecraftAuthentication(baseUrl, request);
+    }
+
+    /** Completes a challenge on the backend at {@code apiBaseUrl} rather than the main one. */
+    public CompletableFuture<MinecraftAuthCompleteResponse> completeMinecraftAuthentication(
+            String apiBaseUrl, MinecraftAuthCompleteRequest request) {
         JsonObject body = new JsonObject();
         body.addProperty("challenge_id", request.challengeId());
         body.addProperty("username", request.username());
         return postWithFallback(
-                authRequestBaseUrls(), "/auth/minecraft/complete", body, MinecraftAuthCompleteResponse.class, false);
+                authRequestBaseUrlsFor(apiBaseUrl),
+                "/auth/minecraft/complete",
+                body,
+                MinecraftAuthCompleteResponse.class,
+                false);
     }
 
     // ── HTTP helpers ──
@@ -447,17 +579,22 @@ public class ApiClient {
     }
 
     private HttpRequest.Builder newRequest(String resolvedBaseUrl, String path, boolean includeAuthHeader) {
+        return newRequestWithToken(
+                resolvedBaseUrl, path, includeAuthHeader ? SeqClient.getConfigManager().getToken() : null);
+    }
+
+    /** A request carrying {@code token} as its bearer, or no Authorization header when it is null. */
+    private HttpRequest.Builder newRequestWithToken(String resolvedBaseUrl, String path, String token) {
         HttpRequest.Builder builder =
                 HttpRequest.newBuilder().uri(URI.create(resolvedBaseUrl + path)).timeout(Duration.ofSeconds(15));
         builder.header(ClientVersion.MOD_VERSION_HEADER, ClientVersion.resolveInstalledVersion());
-        String token = SeqClient.getConfigManager().getToken();
-        if (includeAuthHeader && token != null && !token.isBlank()) {
+        if (token != null && !token.isBlank()) {
             builder.header("Authorization", "Bearer " + token);
         }
         return builder;
     }
 
-    static String resolveAuthBaseUrl(String apiBaseUrl) {
+    public static String resolveAuthBaseUrl(String apiBaseUrl) {
         if (apiBaseUrl == null || apiBaseUrl.isBlank()) {
             return apiBaseUrl;
         }
@@ -491,13 +628,15 @@ public class ApiClient {
                         || normalized.contains("token_expired"));
     }
 
-    private List<String> authRequestBaseUrls() {
+    /** The site root first, then the API root, the order the main sign-in has always tried. */
+    static List<String> authRequestBaseUrlsFor(String apiBaseUrl) {
+        String siteBaseUrl = resolveAuthBaseUrl(apiBaseUrl);
         List<String> baseUrls = new ArrayList<>();
-        if (authBaseUrl != null && !authBaseUrl.isBlank()) {
-            baseUrls.add(authBaseUrl);
+        if (siteBaseUrl != null && !siteBaseUrl.isBlank()) {
+            baseUrls.add(siteBaseUrl);
         }
-        if (baseUrl != null && !baseUrl.isBlank() && !baseUrl.equals(authBaseUrl)) {
-            baseUrls.add(baseUrl);
+        if (apiBaseUrl != null && !apiBaseUrl.isBlank() && !apiBaseUrl.equals(siteBaseUrl)) {
+            baseUrls.add(apiBaseUrl);
         }
         return baseUrls;
     }

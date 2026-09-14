@@ -34,7 +34,7 @@ public class SequoiaScreen extends Screen {
      */
     private final List<MenuEntry> entries = List.of(
             new MenuEntry("Partyfinder", () -> SeqClient.mc.setScreen(new PartyFinderScreen(this))),
-            new MenuEntry("Members", () -> SeqClient.mc.setScreen(new GuildMembersScreen(this))),
+            new MenuEntry("Members", SeqClient::openGuildMembersScreen),
             new MenuEntry("Connection", () -> SeqClient.mc.setScreen(new ConnectionScreen(this))),
             new MenuEntry("Settings", () -> SeqClient.mc.setScreen(new SettingsScreen(this))),
             new MenuEntry("Map", () -> SeqClient.mc.setScreen(new WorldMapScreen(this))),
