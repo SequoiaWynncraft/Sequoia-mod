@@ -89,6 +89,8 @@ public final class RaidProfileStore {
     private volatile boolean setupDismissed;
     private volatile boolean loaded;
     private volatile boolean fetching;
+    private volatile boolean refreshQueued;
+    private volatile CompletableFuture<Void> inFlightRefresh = CompletableFuture.completedFuture(null);
     private volatile String lastError;
     private volatile long lastFetchAtMs;
 
@@ -228,12 +230,16 @@ public final class RaidProfileStore {
      * A failure keeps whatever was already loaded: a panel showing a slightly old
      * roster is worth more than one that empties itself because a request timed out.
      */
-    public CompletableFuture<Void> refresh() {
+    public synchronized CompletableFuture<Void> refresh() {
         if (fetching) {
-            return CompletableFuture.completedFuture(null);
+            // A fetch already in flight may have started before a save, and would then
+            // overwrite it with pre-save data. Run once more after it lands.
+            refreshQueued = true;
+            return inFlightRefresh;
         }
         fetching = true;
-        return fetch.get()
+        refreshQueued = false;
+        CompletableFuture<Void> attempt = fetch.get()
                 .thenAccept(response -> {
                     if (response == null) {
                         return;
@@ -257,7 +263,21 @@ public final class RaidProfileStore {
                             lastError);
                     return null;
                 })
-                .whenComplete((ignored, throwable) -> fetching = false);
+                .whenComplete((ignored, throwable) -> onRefreshFinished());
+        inFlightRefresh = attempt;
+        return attempt;
+    }
+
+    private void onRefreshFinished() {
+        boolean again;
+        synchronized (this) {
+            fetching = false;
+            again = refreshQueued;
+            refreshQueued = false;
+        }
+        if (again) {
+            refresh();
+        }
     }
 
     void apply(RaidProfilesResponse response) {

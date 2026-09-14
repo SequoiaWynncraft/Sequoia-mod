@@ -113,6 +113,13 @@ public class GuildMembersScreen extends Screen {
 
     private final Screen parent;
 
+    /**
+     * Set when the panel opened before any profile had loaded. The first-run setup
+     * cannot be offered then, since "no profile" may only mean "not fetched yet", so
+     * the decision waits for the fetch instead of being skipped for this visit.
+     */
+    private boolean firstRunCheckPending;
+
     private float uiMouseX;
     private float uiMouseY;
     private float scrollOffset;
@@ -161,6 +168,21 @@ public class GuildMembersScreen extends Screen {
         // The throttle turns this into a no-op when it was refreshed moments ago.
         presence().refresh(false);
         profiles().refresh();
+        firstRunCheckPending = !profiles().hasLoadedProfiles();
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (!firstRunCheckPending || !profiles().hasLoadedProfiles()) {
+            return;
+        }
+        firstRunCheckPending = false;
+        // Only now can a missing profile be trusted. Moving to setup is skipped if the
+        // player has already opened someone's card, rather than closing it under them.
+        if (profiles().needsSetup() && selectedMember == null && SeqClient.mc.screen == this) {
+            SeqClient.mc.setScreen(new RaidProfileSetupScreen(parent, true));
+        }
     }
 
     private static GuildPresenceManager presence() {
@@ -1291,9 +1313,15 @@ public class GuildMembersScreen extends Screen {
             return true;
         }
         if (profileButtonBounds != null && profileButtonBounds.contains(mx, my)) {
-            profiles().requestSetup();
+            // Opened directly, so a skip decision is left as it was: clearing it here
+            // would bring the forced setup back after a plain Cancel.
             SeqClient.mc.setScreen(new RaidProfileSetupScreen(parent, false));
             return true;
+        }
+        if (tab != Tab.MEMBERS) {
+            // The filter bar only exists on the Members tab; its last-drawn bounds must
+            // not turn into invisible controls on the others.
+            return handleActionClick(click, outsideScreen, mx, my);
         }
         for (RaidFilterHitbox hitbox : raidFilterHitboxes) {
             if (hitbox.bounds().contains(mx, my)) {
@@ -1317,6 +1345,10 @@ public class GuildMembersScreen extends Screen {
             searchFocused = true;
             return true;
         }
+        return handleActionClick(click, outsideScreen, mx, my);
+    }
+
+    private boolean handleActionClick(MouseButtonEvent click, boolean outsideScreen, float mx, float my) {
         searchFocused = false;
 
         for (ActionHitbox hitbox : actionHitboxes) {

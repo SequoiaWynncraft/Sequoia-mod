@@ -62,8 +62,14 @@ public final class PlayerHeadCache {
         if (bytes != null) {
             UiImage image = UiRenderer.createImage(ByteBuffer.wrap(bytes), true);
             if (image == null) {
-                // The renderer is not up yet. Put the bytes back and try next frame.
-                DOWNLOADED.put(key, bytes);
+                if (UiRenderer.isAvailable()) {
+                    // The renderer is up, so the bytes themselves would not decode.
+                    // Retrying would only re-decode them every frame.
+                    FAILED.add(key);
+                } else {
+                    // The renderer is not up yet. Put the bytes back and try next frame.
+                    DOWNLOADED.put(key, bytes);
+                }
                 return null;
             }
             IMAGES.put(key, image);

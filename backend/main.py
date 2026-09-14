@@ -401,6 +401,12 @@ def save_my_profile(
     """
     stored_at = now_iso()
     with database() as connection:
+        # Rows are keyed by name, so a rename would otherwise leave the old row behind
+        # under the same uuid, and the client (which keys on uuid) could pick it.
+        connection.execute(
+            "DELETE FROM raid_profiles WHERE uuid = ? AND username_key != ?",
+            (caller.uuid, caller.username.lower()),
+        )
         connection.execute(
             """
             INSERT INTO raid_profiles
@@ -440,7 +446,8 @@ def delete_my_profile(caller: Caller = Depends(current_caller)) -> Response:
     """Removes the caller's profile, so they read as "has not shared one" again."""
     with database() as connection:
         connection.execute(
-            "DELETE FROM raid_profiles WHERE username_key = ?", (caller.username.lower(),)
+            "DELETE FROM raid_profiles WHERE username_key = ? OR uuid = ?",
+            (caller.username.lower(), caller.uuid),
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

@@ -33,6 +33,9 @@ public final class GuildPresenceManager {
     /** Worlds are grouped under this heading when Wynncraft reports no server. */
     public static final String UNKNOWN_WORLD = "Unknown";
 
+    /** How long a first roster fetch waits for a raid catalog it does not have yet. */
+    private static final long CATALOG_WAIT_SECONDS = 8L;
+
     private static GuildPresenceManager instance;
 
     private final Map<String, Boolean> sequoiaConnected = new ConcurrentHashMap<>();
@@ -42,6 +45,12 @@ public final class GuildPresenceManager {
     private volatile String lastError;
     private volatile boolean refreshing;
     private volatile long lastRefreshAtMs;
+    /**
+     * Set when the roster was read without a raid catalog, so every clear count came
+     * out as zero. Wynncraft's cache is not the limit then: the same roster read again
+     * with the catalog gives the right numbers, so the throttle is waived.
+     */
+    private volatile boolean readWithoutCatalog;
 
     private GuildPresenceManager() {}
 
@@ -77,7 +86,13 @@ public final class GuildPresenceManager {
 
     /** Whether enough time has passed that another roster fetch would return new data. */
     public boolean canRefresh(long nowMs) {
-        return !refreshing && nowMs - lastRefreshAtMs >= WynncraftGuildClient.MINIMUM_REFRESH_INTERVAL.toMillis();
+        if (refreshing) {
+            return false;
+        }
+        if (readWithoutCatalog && !RaidProfileStore.getInstance().catalog().isEmpty()) {
+            return true;
+        }
+        return nowMs - lastRefreshAtMs >= WynncraftGuildClient.MINIMUM_REFRESH_INTERVAL.toMillis();
     }
 
     /** The online guild members, each carrying whichever extra facts are known. */
@@ -141,10 +156,22 @@ public final class GuildPresenceManager {
 
         requestSequoiaConnectedUsers();
         // The catalog has to be in hand before the roster is parsed, because reading
-        // clear counts needs the raid names it carries.
-        RaidProfileStore.getInstance().refresh();
+        // clear counts needs the raid names it carries. Once one is cached there is
+        // nothing to wait for; the refresh still runs, it just does not hold up the
+        // roster. With no catalog at all the wait is bounded: a slow sign-in to a
+        // separate raid-profiles backend (challenge, Mojang join, fetch) must not keep
+        // the whole member list empty.
+        // refresh() never completes exceptionally, so waiting on it cannot fail the roster.
+        RaidProfileStore profileStore = RaidProfileStore.getInstance();
+        boolean needsCatalog = profileStore.catalog().isEmpty();
+        CompletableFuture<Void> refreshed = profileStore.refresh();
+        CompletableFuture<Void> catalogReady = needsCatalog
+                // copy(), so timing out here does not complete the shared in-flight refresh
+                ? refreshed.copy().completeOnTimeout(null, CATALOG_WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+                : CompletableFuture.completedFuture(null);
 
         return resolveGuildPrefix()
+                .thenCombine(catalogReady, (prefix, ignored) -> prefix)
                 .thenCompose(prefix -> {
                     if (prefix == null || prefix.isBlank()) {
                         throw new IllegalStateException("Wynncraft does not list you in a guild.");
@@ -154,6 +181,7 @@ public final class GuildPresenceManager {
                 })
                 .thenAccept(fetched -> {
                     roster = fetched;
+                    readWithoutCatalog = RaidProfileStore.getInstance().catalog().isEmpty();
                     lastRefreshAtMs = System.currentTimeMillis();
                     SeqClient.LOGGER.info(
                             "[GuildPresence] Roster refreshed guild='{}' online={} total={}",
@@ -232,6 +260,7 @@ public final class GuildPresenceManager {
         lastError = null;
         lastRefreshAtMs = 0L;
         refreshing = false;
+        readWithoutCatalog = false;
     }
 
     // ── Actions ──

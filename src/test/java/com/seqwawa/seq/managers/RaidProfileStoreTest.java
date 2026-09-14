@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonParser;
@@ -13,6 +14,7 @@ import com.seqwawa.seq.model.RaidTeamProfile;
 import com.seqwawa.seq.network.ConnectionManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -184,6 +186,84 @@ class RaidProfileStoreTest {
         assertTrue(store.isFetching());
         pending.complete(RaidProfileStore.parseProfilesResponse(BACKEND_PAYLOAD).orElseThrow());
         assertFalse(store.isFetching());
+    }
+
+    /** The same payload with Blousy's declared builds replaced. */
+    private static RaidProfilesResponse payloadWithBlousyBuild(String buildKey) {
+        String payload = BACKEND_PAYLOAD.replace("\"builds\": [\"HADAL\"]", "\"builds\": [\"" + buildKey + "\"]");
+        return RaidProfileStore.parseProfilesResponse(payload).orElseThrow();
+    }
+
+    /** A store whose every fetch hands back a future the test completes by hand. */
+    private static RaidProfileStore storeWithManualFetches(
+            Path directory, List<CompletableFuture<RaidProfilesResponse>> fetches) {
+        return new RaidProfileStore(
+                directory.resolve("raid-profile.json"), directory.resolve("cache/raid-profiles.json"), () -> {
+                    CompletableFuture<RaidProfilesResponse> next = new CompletableFuture<>();
+                    fetches.add(next);
+                    return next;
+                });
+    }
+
+    @Test
+    void aRefreshAskedForMidFetchRunsAgainSoTheOlderResponseCannotWin(@TempDir Path directory) {
+        // The save race: a fetch is out, the player saves, and the refresh that follows
+        // the save arrives while that older fetch is still pending. Its pre-save data
+        // must not be what the panel ends up showing.
+        List<CompletableFuture<RaidProfilesResponse>> fetches = new ArrayList<>();
+        RaidProfileStore store = storeWithManualFetches(directory, fetches);
+        store.load();
+
+        CompletableFuture<Void> first = store.refresh();
+        CompletableFuture<Void> duringFetch = store.refresh();
+
+        assertEquals(1, fetches.size(), "no second request while one is out");
+        assertSame(first, duringFetch, "the caller waits on the fetch already running");
+
+        fetches.get(0).complete(payloadWithBlousyBuild("HADAL"));
+        assertEquals(2, fetches.size(), "the queued refresh starts once the first one lands");
+        assertEquals(Set.of("HADAL"), store.profileForUuid(BLOUSY_UUID).buildKeys());
+
+        fetches.get(1).complete(payloadWithBlousyBuild("ASCENDANCY"));
+        assertEquals(Set.of("ASCENDANCY"), store.profileForUuid(BLOUSY_UUID).buildKeys());
+        assertFalse(store.isFetching());
+        assertEquals(2, fetches.size(), "and nothing runs after that");
+    }
+
+    @Test
+    void aQueuedRefreshStillRunsWhenTheFetchAheadOfItFails(@TempDir Path directory) {
+        List<CompletableFuture<RaidProfilesResponse>> fetches = new ArrayList<>();
+        RaidProfileStore store = storeWithManualFetches(directory, fetches);
+        store.load();
+
+        store.refresh();
+        store.refresh();
+        fetches.get(0).completeExceptionally(new IllegalStateException("timed out"));
+
+        assertEquals(2, fetches.size(), "a failure ahead of it must not swallow the queued refresh");
+        fetches.get(1).complete(payloadWithBlousyBuild("ASCENDANCY"));
+        assertEquals(Set.of("ASCENDANCY"), store.profileForUuid(BLOUSY_UUID).buildKeys());
+        assertNull(store.lastError(), "the success clears the earlier failure");
+    }
+
+    @Test
+    void aFetchThatFailsImmediatelyDoesNotLeaveTheStoreStuck(@TempDir Path directory) {
+        // A separate raid-profiles backend in its sign-in cooldown answers with an
+        // already failed future, so completion happens inside refresh() itself.
+        AtomicInteger calls = new AtomicInteger();
+        RaidProfileStore store = new RaidProfileStore(
+                directory.resolve("raid-profile.json"), directory.resolve("cache/raid-profiles.json"), () -> {
+                    calls.incrementAndGet();
+                    return CompletableFuture.failedFuture(new IllegalStateException("not linked"));
+                });
+        store.load();
+
+        store.refresh().join();
+        store.refresh().join();
+
+        assertFalse(store.isFetching());
+        assertEquals(2, calls.get(), "each refresh gets its own attempt rather than a stuck flag");
+        assertNotNull(store.lastError());
     }
 
     @Test

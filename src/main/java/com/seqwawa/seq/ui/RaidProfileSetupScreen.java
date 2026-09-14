@@ -64,6 +64,8 @@ public class RaidProfileSetupScreen extends Screen {
     private final boolean firstRun;
 
     private RaidTeamProfile draft;
+    /** Set once the player touches the form, so a late fetch never overwrites their edits. */
+    private boolean edited;
     private String statusInput;
     private boolean statusFocused;
     private String error;
@@ -98,9 +100,26 @@ public class RaidProfileSetupScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        // The screen is nothing without the meta list, so ask for it on the way in.
-        if (catalog().isEmpty()) {
+        // The screen is nothing without the meta list, and the draft has to start from
+        // the stored profile, so ask for both on the way in.
+        if (catalog().isEmpty() || !profiles().hasLoadedProfiles()) {
             profiles().refresh();
+        }
+    }
+
+    /**
+     * Adopts the stored profile when it arrives after the screen opened, as long as
+     * the player has not started editing. Otherwise saving would overwrite an
+     * existing profile with the blank form shown before the fetch landed.
+     */
+    private void syncDraftWithStore() {
+        if (edited || saving) {
+            return;
+        }
+        RaidTeamProfile stored = profiles().selfProfile();
+        if (stored.updatedAtEpochMs() != draft.updatedAtEpochMs()) {
+            draft = stored;
+            statusInput = stored.hasStatus() ? stored.status() : "";
         }
     }
 
@@ -112,6 +131,7 @@ public class RaidProfileSetupScreen extends Screen {
 
         uiMouseX = MinecraftUiRenderer.mouseX(mouseX);
         uiMouseY = MinecraftUiRenderer.mouseY(mouseY);
+        syncDraftWithStore();
         buildHitboxes.clear();
         regionHitboxes.clear();
 
@@ -482,6 +502,7 @@ public class RaidProfileSetupScreen extends Screen {
         for (BuildHitbox hitbox : buildHitboxes) {
             if (hitbox.bounds().contains(mx, my)) {
                 draft = draft.withBuildToggled(hitbox.buildKey());
+                edited = true;
                 statusFocused = false;
                 return true;
             }
@@ -490,12 +511,14 @@ public class RaidProfileSetupScreen extends Screen {
             if (hitbox.bounds().contains(mx, my)) {
                 // Clicking the selected region clears it, so "no region" stays reachable.
                 draft = draft.withRegion(draft.region() == hitbox.region() ? null : hitbox.region());
+                edited = true;
                 statusFocused = false;
                 return true;
             }
         }
         if (aurasBounds != null && aurasBounds.contains(mx, my)) {
             draft = draft.withCanBringAuras(!draft.canBringAuras());
+            edited = true;
             statusFocused = false;
             return true;
         }
@@ -524,10 +547,26 @@ public class RaidProfileSetupScreen extends Screen {
         if (saving) {
             return;
         }
+        if (!profiles().hasLoadedProfiles()) {
+            // Until the fetch lands the form may be the blank one shown on open, not the
+            // stored profile, and saving it would overwrite that profile. The `edited`
+            // flag only protects a form the player has touched; pressing Save straight
+            // away needs this guard as well.
+            profiles().refresh();
+            String failure = profiles().lastError();
+            error = failure == null || failure.isBlank()
+                    ? "Your profile is still loading. Try again in a moment."
+                    : failure;
+            return;
+        }
         saving = true;
         error = null;
         profiles().saveSelfProfile(draft.withStatus(statusInput)).thenAccept(saved -> SeqClient.mc.execute(() -> {
             saving = false;
+            if (SeqClient.mc.screen != this) {
+                // The player already left; do not pull them back into the panel.
+                return;
+            }
             if (saved) {
                 SeqClient.mc.setScreen(new GuildMembersScreen(parent));
             } else {
@@ -555,6 +594,7 @@ public class RaidProfileSetupScreen extends Screen {
             if (key == GLFW.GLFW_KEY_BACKSPACE) {
                 if (!statusInput.isEmpty()) {
                     statusInput = statusInput.substring(0, statusInput.length() - 1);
+                    edited = true;
                 }
                 return true;
             }
@@ -577,6 +617,7 @@ public class RaidProfileSetupScreen extends Screen {
                 && statusInput.length() < RaidTeamProfile.MAX_STATUS_LENGTH
                 && typed.charAt(0) >= ' ') {
             statusInput += typed;
+            edited = true;
         }
         return true;
     }

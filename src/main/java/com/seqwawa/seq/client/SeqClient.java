@@ -630,7 +630,10 @@ public class SeqClient implements ClientModInitializer {
     public static void openGuildMembersScreen() {
         mc.execute(() -> {
             net.minecraft.client.gui.screens.Screen parent = mc.screen;
-            if (RaidProfileStore.getInstance().needsSetup()) {
+            RaidProfileStore store = RaidProfileStore.getInstance();
+            // Until profiles have loaded, "no profile" may only mean "not fetched yet";
+            // forcing setup then would show a blank form to members who already have one.
+            if (store.hasLoadedProfiles() && store.needsSetup()) {
                 mc.setScreen(new RaidProfileSetupScreen(parent, true));
             } else {
                 mc.setScreen(new GuildMembersScreen(parent));
