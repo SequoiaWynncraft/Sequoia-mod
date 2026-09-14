@@ -419,6 +419,7 @@ public class SeqClient implements ClientModInitializer {
                 "key.sequoia-mod.share_bombs", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            ConnectionManager.tickGuildRankObservations();
             while (openScreenKey.consumeClick()) {
                 if (client.screen == null) {
                     openMainScreen();
