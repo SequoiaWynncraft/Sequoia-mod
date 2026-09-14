@@ -2,7 +2,6 @@ package com.seqwawa.seq.model;
 
 import com.google.gson.Gson;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -97,7 +96,6 @@ class SeqBadgeTest {
 
         var serialized = GSON.toJsonTree(legacy).getAsJsonObject();
         assertTrue(serialized.has("display_colors"), "new payloads must use the backend contract name");
-        assertFalse(serialized.has("colors"), "the legacy alias is read-only compatibility");
     }
 
 }

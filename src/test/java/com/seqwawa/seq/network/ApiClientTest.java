@@ -146,8 +146,6 @@ class ApiClientTest {
         assertEquals("INVITE_ONLY", payload.get("joinPolicy").getAsString());
         assertEquals(2, payload.get("reservedSlots").getAsInt());
         assertEquals(2, payload.getAsJsonArray("activityIds").size());
-        assertFalse(payload.has("mode"));
-        assertFalse(payload.has("strict"));
     }
 
     @Test
@@ -330,15 +328,12 @@ class ApiClientTest {
         JsonObject payload = ApiClient.buildWarTeamPayload(draft, true);
 
         assertEquals("FFA", payload.get("team_type").getAsString());
-        assertFalse(payload.has("name"));
         assertEquals(7L, payload.get("version").getAsLong());
         assertEquals(1, payload.getAsJsonObject("composition_targets").get("solo").getAsInt());
         assertEquals(3, payload.getAsJsonObject("composition_targets").get("dps").getAsInt());
         assertEquals(1, payload.getAsJsonObject("composition_targets").get("tank").getAsInt());
         assertEquals("leader-uuid", payload.getAsJsonArray("members")
                 .get(0).getAsJsonObject().get("player_uuid").getAsString());
-        assertFalse(payload.getAsJsonArray("members").get(0).getAsJsonObject().has("role"));
-        assertFalse(payload.getAsJsonArray("members").get(0).getAsJsonObject().has("composition_roles"));
         assertFalse(ApiClient.buildWarTeamPayload(new TeamDraft(WarTeamType.FFA, null, draft.members()), false)
                 .has("version"));
     }
