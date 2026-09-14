@@ -35,7 +35,7 @@ final class ThemeWidgetPreview {
                 new ChoiceWidget(new Setting.ChoiceSetting("dropdown", "preview", "Tank", List.of("DPS", "Healer", "Tank", "Other"), v -> {})),
                 new EnumWidget<>(new Setting.EnumSetting<>("mode", "preview", SampleMode.CASUAL, SampleMode.class)),
                 new ChoiceWidget(disabledChoice),
-                new SliderWidget(new Setting.IntSetting("slider", "preview", 65, 0, 100), true),
+                new SliderWidget(new Setting.IntSetting("slider", "preview", 65, 0, 100)),
                 new SliderWidget(new Setting.DoubleSetting("decimal_slider", "preview", .5, 0, 1, .05)),
                 new StringWidget(new Setting.StringSetting("text_field", "preview", "Sample text")),
                 new ColorWidget(new Setting.ColorSetting("color_picker", "preview", 0xA082DC), null));

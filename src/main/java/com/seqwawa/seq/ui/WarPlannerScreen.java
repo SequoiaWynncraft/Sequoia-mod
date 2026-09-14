@@ -823,10 +823,7 @@ public final class WarPlannerScreen extends Screen {
 
     private SliderWidget prepareOpacitySlider(float width) {
         if (opacitySlider == null && SeqClient.getWarPlannerBackgroundOpacitySetting() != null) {
-            opacitySlider = new SliderWidget(SeqClient.getWarPlannerBackgroundOpacitySetting()) {
-                @Override protected String getDisplayName() { return "Opacity %"; }
-                @Override protected boolean inlineLayout() { return true; }
-            };
+            opacitySlider = new SliderWidget(SeqClient.getWarPlannerBackgroundOpacitySetting(), "Opacity %");
         }
         if (opacitySlider != null) {
             var bounds = headerControls(width).opacity();

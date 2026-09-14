@@ -147,7 +147,7 @@ public class SettingsScreen extends Screen {
         if (setting instanceof Setting.ColorSetting c)
             return createColorWidget(c);
         if (setting instanceof Setting.IntSetting i)
-            return new SliderWidget(i, i == SeqClient.getUiSizePercentSetting());
+            return new SliderWidget(i);
         if (setting instanceof Setting.DoubleSetting d)
             return new SliderWidget(d);
         if (setting instanceof Setting.FloatSetting f)
