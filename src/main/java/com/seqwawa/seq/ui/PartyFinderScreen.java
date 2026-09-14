@@ -340,7 +340,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
             // Role dropdown overlay
             if (roleDropdownOpen && !modalOpen && !inviteModalOpen && !filterScreenOpen) {
-                renderRoleDropdownMenu(canvas, fontName);
+                renderRoleDropdownMenu(canvas);
             }
 
             // Modal overlay
@@ -534,7 +534,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         dropdownRenderX = layout.roleDropdown().x();
         dropdownRenderY = layout.roleDropdown().y();
         dropdownRenderW = layout.roleDropdown().w();
-        renderRoleDropdownButton(canvas, fontName, layout.roleDropdown());
+        renderRoleDropdownButton(canvas, layout.roleDropdown());
     }
 
     private void drawHeaderButton(
@@ -722,54 +722,15 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     // ── Role dropdown ──
 
-    private void renderRoleDropdownButton(UiCanvas canvas, String fontName, HeaderButtonBounds bounds) {
-        float x = bounds.x();
-        float y = bounds.y();
-        float w = bounds.w();
-        float h = bounds.h();
-        boolean hovered = isHovered(uiMouseX, uiMouseY, x, y, w, h);
-        canvas.fillRect(x, y, w, h, hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
-        canvas.strokeRect(x, y, w, h, 1, color(CONTROL_INPUT_SECONDARY));
-
-        String label = selectedRole != null ? selectedRole : "Your role";
-        drawText(
-                canvas,
-                fontName,
-                HEADER_BUTTON_SIZE,
-                color(TEXT_PRIMARY),
-                x + HEADER_BUTTON_HORIZONTAL_PADDING,
-                y + h / 2f,
-                label,
-                UiCanvas.HorizontalAlign.LEFT);
-        drawTriangle(canvas, x + w - 8, y + h / 2f, 5, false, color(ACCENT_SECONDARY));
+    private void renderRoleDropdownButton(UiCanvas canvas, HeaderButtonBounds bounds) {
+        DropdownMenu.trigger(canvas, bounds.x(), bounds.y(), bounds.w(), bounds.h(),
+                selectedRole != null ? selectedRole : "Your role", roleDropdownOpen, true, uiMouseX, uiMouseY);
     }
 
-    private void renderRoleDropdownMenu(UiCanvas canvas, String fontName) {
-        float x = dropdownRenderX;
-        float y = dropdownRenderY + SEARCH_BAR_HEIGHT;
-        float w = dropdownRenderW;
-        float itemH = 20;
-        float totalH = ROLES.length * itemH;
-
-        canvas.fillRect(x, y, w, totalH, color(BACKGROUND_POPUP));
-        canvas.strokeRect(x, y, w, totalH, 1, color(CONTROL_INPUT_SECONDARY));
-
-        for (int i = 0; i < ROLES.length; i++) {
-            float itemY = y + i * itemH;
-            boolean itemHovered = isHovered(uiMouseX, uiMouseY, x, itemY, w, itemH);
-            if (itemHovered) {
-                canvas.fillRect(x, itemY, w, itemH, color(CONTROL_INPUT_HOVER));
-            }
-            drawText(
-                    canvas,
-                    fontName,
-                    MEMBER_FONT_SIZE,
-                    color(TEXT_PRIMARY),
-                    x + 6,
-                    itemY + itemH / 2f,
-                    ROLES[i],
-                    UiCanvas.HorizontalAlign.LEFT);
-        }
+    private void renderRoleDropdownMenu(UiCanvas canvas) {
+        DropdownMenu.list(canvas, dropdownRenderX, dropdownRenderY + SEARCH_BAR_HEIGHT, dropdownRenderW,
+                DropdownMenu.ROW_HEIGHT, java.util.Arrays.asList(ROLES), i -> ROLES[i].equals(selectedRole),
+                0, ROLES.length, uiMouseX, uiMouseY);
     }
 
     // ── Party cards ──
@@ -2104,22 +2065,15 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             return handleModalClick(mx, my, screenWidth, screenHeight);
         }
 
-        // ── Role dropdown menu ──
         if (roleDropdownOpen) {
-            float itemH = 20;
-            float menuY = dropdownRenderY + SEARCH_BAR_HEIGHT;
-            for (int i = 0; i < ROLES.length; i++) {
-                float itemY = menuY + i * itemH;
-                if (isHovered(mx, my, dropdownRenderX, itemY, dropdownRenderW, itemH)) {
-                    selectedRole = ROLES[i].equals(selectedRole) ? null : ROLES[i];
-                    roleDropdownOpen = false;
-                    if (selectedRole != null) {
-                        party().setRole(selectedRole);
-                    }
-                    return true;
-                }
-            }
+            int index = DropdownMenu.optionAt(mx, my, dropdownRenderX, dropdownRenderY + SEARCH_BAR_HEIGHT,
+                    dropdownRenderW, DropdownMenu.ROW_HEIGHT, ROLES.length, 0);
             roleDropdownOpen = false;
+            if (index >= 0) {
+                selectedRole = ROLES[index].equals(selectedRole) ? null : ROLES[index];
+                if (selectedRole != null) party().setRole(selectedRole);
+            }
+            return true;
         }
 
         // ── Sidebar ──
@@ -2795,6 +2749,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
+        if (roleDropdownOpen && keyEvent.key() == GLFW.GLFW_KEY_ESCAPE) {
+            roleDropdownOpen = false;
+            return true;
+        }
+
         if (filterScreenOpen) {
             if (keyEvent.key() == GLFW.GLFW_KEY_ESCAPE) {
                 filterScreenOpen = false;

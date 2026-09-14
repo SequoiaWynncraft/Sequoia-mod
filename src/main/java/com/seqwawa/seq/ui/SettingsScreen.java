@@ -13,6 +13,7 @@ import com.seqwawa.seq.ui.widget.BooleanWidget;
 import com.seqwawa.seq.ui.widget.ChoiceWidget;
 import com.seqwawa.seq.ui.widget.ColorWidget;
 import com.seqwawa.seq.ui.widget.EnumWidget;
+import com.seqwawa.seq.ui.widget.SelectionWidget;
 import com.seqwawa.seq.ui.widget.SettingWidget;
 import com.seqwawa.seq.ui.widget.SliderWidget;
 import com.seqwawa.seq.ui.widget.StringWidget;
@@ -90,6 +91,7 @@ public class SettingsScreen extends Screen {
 
     @Override
     public void removed() {
+        for (var widgets : categories.values()) widgets.forEach(SettingWidget::onHidden);
         deactivateColorPreviews();
         LightRoom.setColorPreviewActive(false);
         HalcyonRingRenderer.setColorPreviewActive(false);
@@ -153,7 +155,7 @@ public class SettingsScreen extends Screen {
         if (setting instanceof Setting.ChoiceSetting c)
             return new ChoiceWidget(c);
         if (setting instanceof Setting.EnumSetting<?> e)
-            return new EnumWidget(e);
+            return new EnumWidget<>(e);
         if (setting instanceof Setting.StringSetting s)
             return new StringWidget(s);
         return null;
@@ -468,6 +470,7 @@ public class SettingsScreen extends Screen {
                         canvas.fillRect(contentX, cursorY, contentWidth, widget.getHeight(), bg);
 
                         widget.setPosition(contentX + PADDING, cursorY, widgetWidth, widget.getHeight());
+                        if (widget instanceof SelectionWidget<?> selection) selection.setViewport(contentY, contentY + contentHeight);
                         widget.render(canvas, nvgMouseX, nvgMouseY);
                         cursorY += widget.getHeight();
                         settingIndex++;
@@ -493,7 +496,21 @@ public class SettingsScreen extends Screen {
                 float thumbY = contentY + (scrollOffset / maxScroll) * (scrollbarHeight - thumbHeight);
                 canvas.fillRect(scrollbarX, thumbY, 4, thumbHeight, color(CONTROL_THUMB));
             }
+            SelectionWidget<?> dropdown = openDropdown();
+            if (dropdown != null) dropdown.renderOverlay(canvas, nvgMouseX, nvgMouseY);
         });
+    }
+
+    private SelectionWidget<?> openDropdown() {
+        for (var widgets : categories.values()) {
+            for (var widget : widgets) {
+                if (widget instanceof SelectionWidget<?> selection && selection.isOpen()) {
+                    if (isWidgetInteractive(widget)) return selection;
+                    selection.onHidden();
+                }
+            }
+        }
+        return null;
     }
 
     private void drawSidebarButton(
@@ -596,6 +613,9 @@ public class SettingsScreen extends Screen {
 
         float mx = MinecraftUiRenderer.mouseX(click.x());
         float my = MinecraftUiRenderer.mouseY(click.y());
+
+        SelectionWidget<?> dropdown = openDropdown();
+        if (dropdown != null && dropdown.mouseClicked(mx, my, click.button())) return true;
 
         float screenWidth = MinecraftUiRenderer.screenWidth();
         float screenHeight = MinecraftUiRenderer.screenHeight();
@@ -805,6 +825,8 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        SelectionWidget<?> dropdown = openDropdown();
+        if (dropdown != null && dropdown.scroll(scrollY)) return true;
         scrollOffset -= (float) scrollY * SCROLL_SPEED;
         scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset));
         return true;
@@ -812,6 +834,8 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
+        SelectionWidget<?> dropdown = openDropdown();
+        if (dropdown != null && dropdown.keyPressed(keyEvent)) return true;
         // Search bar input
         if (searchFocused) {
             int keyCode = keyEvent.key();
@@ -840,6 +864,7 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean charTyped(@NotNull CharacterEvent characterEvent) {
+        if (openDropdown() != null) return true;
         if (searchFocused) {
             String typedText = TextInputHelper.getTypedText(characterEvent);
             if (typedText != null) {
