@@ -25,6 +25,10 @@ import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.events.GameStartEvent;
 import com.seqwawa.seq.events.MinecraftFinishedLoading;
+import com.seqwawa.seq.courage.CourageAlertHudRenderer;
+import com.seqwawa.seq.courage.CourageCoverageHudRenderer;
+import com.seqwawa.seq.courage.CourageOwnRangeHudRenderer;
+import com.seqwawa.seq.courage.CourageRangeClient;
 import com.seqwawa.seq.halcyon.HalcyonRangeVisualiserClient;
 import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.BombShareManager;
@@ -242,6 +246,45 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.ColorSetting lightRoomRingColorSetting;
 
     @Getter
+    public static Setting.BooleanSetting courageRangeSetting;
+
+    @Getter
+    public static Setting.ColorSetting courageRangeColorSetting;
+
+    @Getter
+    public static Setting.BooleanSetting courageOwnRangeHudSetting;
+
+    @Getter
+    public static Setting.BooleanSetting courageCoverageHudSetting;
+
+    @Getter
+    public static Setting.IntSetting courageHudTextSizeSetting;
+
+    @Getter
+    public static Setting.FloatSetting courageOwnRangeHudXSetting;
+
+    @Getter
+    public static Setting.FloatSetting courageOwnRangeHudYSetting;
+
+    @Getter
+    public static Setting.FloatSetting courageCoverageHudXSetting;
+
+    @Getter
+    public static Setting.FloatSetting courageCoverageHudYSetting;
+
+    @Getter
+    public static Setting.BooleanSetting courageAlertSetting;
+
+    @Getter
+    public static Setting.IntSetting courageAlertTextSizeSetting;
+
+    @Getter
+    public static Setting.FloatSetting courageAlertXSetting;
+
+    @Getter
+    public static Setting.FloatSetting courageAlertYSetting;
+
+    @Getter
     public static Setting.ColorSetting craftedScrollRangeColorSetting;
 
     @Getter
@@ -388,6 +431,7 @@ public class SeqClient implements ClientModInitializer {
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
         CraftedScrollRangeVisualiserClient.initialize();
+        CourageRangeClient.initialize();
         IngredientWaypointRenderer.initialize();
         TnaLineupHelper.initialize();
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
@@ -911,6 +955,65 @@ public class SeqClient implements ClientModInitializer {
         lightRoomRingColorSetting = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF)
                 .withValueOverride(PrincessMode::paletteColorOverride);
         lightRoomRingColorSetting.setParentSetting(lightRoomVisualiserSetting);
+        courageRangeSetting = new Setting.BooleanSetting("enable_courage_range", "raids", true);
+        courageRangeSetting.setPresentation(
+                "Courage range",
+                "Draw the 4 block Courage aura around Shamans, the range an Acolyte buffs allies in.",
+                "Raid helpers");
+        courageRangeColorSetting = new Setting.ColorSetting(
+                        "courage_aura_color", "raids", CourageRangeClient.DEFAULT_COLOR_RGB)
+                .withValueOverride(PrincessMode::paletteColorOverride);
+        courageRangeColorSetting.setPresentation("Courage aura color", null, "Raid helpers");
+        courageRangeColorSetting.setParentSetting(courageRangeSetting);
+        courageOwnRangeHudSetting = new Setting.BooleanSetting("courage_own_range_hud", "raids", true);
+        courageOwnRangeHudSetting.setPresentation(
+                "Show players in your range",
+                "Count the players standing inside your own Courage aura.",
+                "Raid helpers");
+        courageOwnRangeHudSetting.setParentSetting(courageRangeSetting);
+        courageCoverageHudSetting = new Setting.BooleanSetting("courage_coverage_hud", "raids", true);
+        courageCoverageHudSetting.setPresentation(
+                "Show when you are in range",
+                "Flag the moment you step into another Shaman's Courage aura.",
+                "Raid helpers");
+        courageCoverageHudSetting.setParentSetting(courageRangeSetting);
+        courageHudTextSizeSetting = new Setting.IntSetting("courage_hud_text_size", "raids", 10, 6, 18);
+        courageHudTextSizeSetting.setPresentation(
+                "Courage readout text size",
+                "Move either readout with the HUD layout button at the top of this screen.",
+                "Raid helpers");
+        courageHudTextSizeSetting.setParentSetting(courageRangeSetting);
+        courageOwnRangeHudXSetting = new Setting.FloatSetting(
+                "courage_own_range_hud_x", "raids", CourageOwnRangeHudRenderer.DEFAULT_X, 0f, 1f, 0.001f);
+        courageOwnRangeHudYSetting = new Setting.FloatSetting(
+                "courage_own_range_hud_y", "raids", CourageOwnRangeHudRenderer.DEFAULT_Y, 0f, 1f, 0.001f);
+        courageCoverageHudXSetting = new Setting.FloatSetting(
+                "courage_coverage_hud_x", "raids", CourageCoverageHudRenderer.DEFAULT_X, 0f, 1f, 0.001f);
+        courageCoverageHudYSetting = new Setting.FloatSetting(
+                "courage_coverage_hud_y", "raids", CourageCoverageHudRenderer.DEFAULT_Y, 0f, 1f, 0.001f);
+        courageOwnRangeHudXSetting.setVisibilityCondition(() -> false);
+        courageOwnRangeHudYSetting.setVisibilityCondition(() -> false);
+        courageCoverageHudXSetting.setVisibilityCondition(() -> false);
+        courageCoverageHudYSetting.setVisibilityCondition(() -> false);
+        courageAlertSetting = new Setting.BooleanSetting("courage_alert", "raids", true);
+        courageAlertSetting.setPresentation(
+                "Courage NOW alert",
+                "Call out the moment Courage is fully charged with the party standing in the aura.",
+                "Raid helpers");
+        courageAlertSetting.setParentSetting(courageRangeSetting);
+        courageAlertTextSizeSetting = new Setting.IntSetting(
+                "courage_alert_text_size", "raids", CourageAlertHudRenderer.DEFAULT_TEXT_SIZE, 12, 48);
+        courageAlertTextSizeSetting.setPresentation(
+                "Courage NOW alert text size",
+                "Move the alert with the HUD layout button at the top of this screen.",
+                "Raid helpers");
+        courageAlertTextSizeSetting.setParentSetting(courageAlertSetting);
+        courageAlertXSetting = new Setting.FloatSetting(
+                "courage_alert_x", "raids", CourageAlertHudRenderer.DEFAULT_X, 0f, 1f, 0.001f);
+        courageAlertYSetting = new Setting.FloatSetting(
+                "courage_alert_y", "raids", CourageAlertHudRenderer.DEFAULT_Y, 0f, 1f, 0.001f);
+        courageAlertXSetting.setVisibilityCondition(() -> false);
+        courageAlertYSetting.setVisibilityCondition(() -> false);
         craftedScrollRangeColorSetting =
                 new Setting.ColorSetting("crafted_scroll_range_color", "raids", 0x00FFFF)
                         .withValueOverride(PrincessMode::paletteColorOverride);
@@ -1075,6 +1178,19 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(halcyonRingColorSetting);
         getConfigManager().register(lightRoomVisualiserSetting);
         getConfigManager().register(lightRoomRingColorSetting);
+        getConfigManager().register(courageRangeSetting);
+        getConfigManager().register(courageRangeColorSetting);
+        getConfigManager().register(courageOwnRangeHudSetting);
+        getConfigManager().register(courageCoverageHudSetting);
+        getConfigManager().register(courageHudTextSizeSetting);
+        getConfigManager().register(courageOwnRangeHudXSetting);
+        getConfigManager().register(courageOwnRangeHudYSetting);
+        getConfigManager().register(courageCoverageHudXSetting);
+        getConfigManager().register(courageCoverageHudYSetting);
+        getConfigManager().register(courageAlertSetting);
+        getConfigManager().register(courageAlertTextSizeSetting);
+        getConfigManager().register(courageAlertXSetting);
+        getConfigManager().register(courageAlertYSetting);
         getConfigManager().register(craftedScrollRangeColorSetting);
         getConfigManager().register(tnaBerryLineupSetting);
         getConfigManager().register(tnaRoomThreeHelperSetting);
