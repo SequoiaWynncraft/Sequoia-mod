@@ -49,9 +49,7 @@ final class ThemeWidgetPreview {
         float y = TOP - scroll;
         canvas.save();
         canvas.scissor(layout.x(), TOP, layout.width(), layout.viewportHeight());
-        label(canvas, layout.x(), y + 7, layout.width(), "Unsaved colors. Try the controls.", TEXT_SECONDARY);
-        label(canvas, layout.x(), y + 21, layout.width(), "Sample values only; no settings changed.", TEXT_MUTED);
-        float controlsY = y + 36;
+        float controlsY = y;
         panel(canvas, layout.x(), controlsY, layout.columnWidth(), controlsHeight(), "Settings controls");
         float rowY = controlsY + 30;
         for (int i = 0; i < widgets.size(); i++) {
@@ -149,7 +147,7 @@ final class ThemeWidgetPreview {
         float available = Math.max(1, width - x - 12);
         boolean twoColumns = available >= 660;
         float columnWidth = twoColumns ? (available - GAP) / 2 : available;
-        float contentHeight = 36 + (twoColumns ? Math.max(controlsHeight(), 446) : controlsHeight() + GAP + 446);
+        float contentHeight = twoColumns ? Math.max(controlsHeight(), 446) : controlsHeight() + GAP + 446;
         return new Layout(x, available, columnWidth, twoColumns, Math.max(0, height - TOP - 8), contentHeight);
     }
 
