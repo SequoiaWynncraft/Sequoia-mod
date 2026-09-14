@@ -207,8 +207,9 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         float scopeWidth = Math.min(108, availableWidth / 2);
         float searchWidth = SequoiaUiStyle.searchWidth(availableWidth - scopeWidth);
         float combinedWidth = searchWidth + scopeWidth;
-        float rowY = x + combinedWidth <= firstRight ? 6 : 6 + SEARCH_HEIGHT + 6;
-        float rowRight = rowY == 6 ? firstRight : width - OUTER_MARGIN;
+        float verticalPadding = (HEADER_HEIGHT - SEARCH_HEIGHT) / 2f;
+        float rowY = x + combinedWidth <= firstRight ? verticalPadding : verticalPadding + SEARCH_HEIGHT + 6;
+        float rowRight = rowY == verticalPadding ? firstRight : width - OUTER_MARGIN;
         Bounds search = new Bounds(x, rowY, searchWidth, SEARCH_HEIGHT);
         Bounds scope = new Bounds(x + searchWidth, rowY, scopeWidth, SEARCH_HEIGHT);
         float nextX = x + combinedWidth + 6;
@@ -226,7 +227,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         }
         Bounds category = controls[0];
         Bounds refresh = controls[1];
-        float headerHeight = Math.max(HEADER_HEIGHT, rowY + SEARCH_HEIGHT + OUTER_MARGIN);
+        float headerHeight = Math.max(HEADER_HEIGHT, rowY + SEARCH_HEIGHT + verticalPadding);
         float top = headerHeight + OUTER_MARGIN;
         top = Math.min(top, Math.max(0, height - OUTER_MARGIN));
         float availableHeight = Math.max(0, height - top - OUTER_MARGIN);

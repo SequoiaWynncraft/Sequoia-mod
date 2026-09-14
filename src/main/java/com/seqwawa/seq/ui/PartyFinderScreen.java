@@ -53,9 +53,9 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float SIDEBAR_PADDING = 10;
     private static final float SIDEBAR_BUTTON_HEIGHT = 22;
     private static final float SIDEBAR_BUTTON_SPACING = 6;
-    private static final float HEADER_HEIGHT = 30;
+    private static final float HEADER_HEIGHT = SequoiaUiStyle.HEADER_HEIGHT;
     private static final float PADDING = 8;
-    private static final float SEARCH_BAR_HEIGHT = 18;
+    private static final float SEARCH_BAR_HEIGHT = SequoiaUiStyle.HEADER_CONTROL_HEIGHT;
     private static final float SEARCH_BAR_MARGIN = 8;
     private static final float HEADER_BUTTON_SPACING = 6;
     private static final float HEADER_BUTTON_HORIZONTAL_PADDING = 8;
@@ -690,7 +690,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             nextButtonX += width + HEADER_BUTTON_SPACING;
         }
 
-        float headerHeight = Math.max(HEADER_HEIGHT, buttonY + SEARCH_BAR_HEIGHT + SEARCH_BAR_MARGIN);
+        float headerHeight = Math.max(HEADER_HEIGHT, buttonY + SEARCH_BAR_HEIGHT + searchY);
         return new HeaderControlsLayout(
                 searchBar,
                 leader ? buttons[0] : null,
