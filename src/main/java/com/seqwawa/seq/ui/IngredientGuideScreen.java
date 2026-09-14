@@ -11,6 +11,7 @@ import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_CONTENT;
 import static com.seqwawa.seq.ui.theme.UiColor.BACKGROUND_CONTENT_FOCUSED;
 import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_BORDER;
 import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_INPUT;
+import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_INPUT_SECONDARY;
 import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_INPUT_HOVER;
 import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_THUMB;
 import static com.seqwawa.seq.ui.theme.UiColor.CONTROL_TRACK;
@@ -65,10 +66,10 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
     private static final float OUTER_MARGIN = SequoiaUiStyle.CONTENT_PADDING;
     private static final float HEADER_HEIGHT = SequoiaUiStyle.HEADER_HEIGHT;
     private static final float SEARCH_HEIGHT = SequoiaUiStyle.HEADER_CONTROL_HEIGHT;
-    private static final float SORT_ROW_HEIGHT = 22;
+    private static final float SORT_ROW_HEIGHT = DropdownMenu.CONTROL_HEIGHT;
     private static final float SORT_ROW_GAP = 4;
     private static final float SORT_DIRECTION_WIDTH = 76;
-    private static final float SORT_OPTION_HEIGHT = 22;
+    private static final float SORT_OPTION_HEIGHT = DropdownMenu.ROW_HEIGHT;
     private static final float ROW_HEIGHT = 52;
     private static final float LIST_ICON_SIZE = 28;
     private static final float FARM_SPOT_ROW_HEIGHT = 58;
@@ -458,15 +459,11 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         boolean enabled = guideCategory == GuideCategory.INGREDIENTS;
         Bounds search = layout.search();
         Bounds scope = layout.scope();
-        float totalWidth = search.width() + scope.width();
-        boolean active = enabled && (searchFocused || searchScopeDropdownOpen);
-        canvas.fillRect(search.x(), search.y(), totalWidth, search.height(), color(CONTROL_INPUT));
-        if (enabled && (searchScopeDropdownOpen || scope.contains(nvgMouseX, nvgMouseY))) {
-            canvas.fillRect(scope.x(), scope.y(), scope.width(), scope.height(), color(CONTROL_INPUT_HOVER));
+        canvas.fillRect(search.x(), search.y(), search.width(), search.height(),
+                color(!enabled ? CONTROL_INPUT_SECONDARY : searchFocused ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
+        if (enabled && searchFocused) {
+            canvas.strokeRect(search.x(), search.y(), search.width(), search.height(), 1, color(CONTROL_BORDER));
         }
-        canvas.strokeRect(search.x(), search.y(), totalWidth, search.height(), 1,
-                active ? color(CONTROL_BORDER) : color(ACCENT_DIVIDER));
-        canvas.fillRect(scope.x(), scope.y() + 3, 1, scope.height() - 6, color(ACCENT_DIVIDER));
         String value = searchQuery.isEmpty() ? "Search..." : searchQuery;
         String visible = ellipsize(value, Math.max(0, search.width() - 12), 12);
         if (enabled && searchQuerySelected && !searchQuery.isEmpty()) {
@@ -479,6 +476,7 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
                 UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.MIDDLE);
         DropdownMenu.trigger(canvas, scope.x(), scope.y(), scope.width(), scope.height(), searchScope.label(),
                 searchScopeDropdownOpen, enabled, nvgMouseX, nvgMouseY);
+        canvas.fillRect(scope.x(), scope.y() + 3, 1, scope.height() - 6, color(ACCENT_DIVIDER));
     }
 
     static Bounds searchScopeMenuBounds(GuideLayout layout) {

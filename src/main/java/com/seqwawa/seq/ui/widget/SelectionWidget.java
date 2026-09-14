@@ -15,6 +15,7 @@ public abstract class SelectionWidget<T extends Setting<?>> extends SettingWidge
     private boolean open;
     private int scroll;
     private int highlighted;
+    private boolean keyboardFocus;
     private float viewportTop;
     private float viewportBottom = 1000;
 
@@ -29,12 +30,12 @@ public abstract class SelectionWidget<T extends Setting<?>> extends SettingWidge
 
     private float buttonWidth() { return Math.min(160, Math.max(1, (width - labelIndent()) * .55f)); }
     private float buttonX() { return x + width - buttonWidth() - 8; }
-    private float buttonY() { return y + (height - 18) / 2; }
+    private float buttonY() { return y + (height - DropdownMenu.CONTROL_HEIGHT) / 2; }
 
     public void setViewport(float top, float bottom) {
         viewportTop = top;
         viewportBottom = bottom;
-        if (buttonY() < top || buttonY() + 18 > bottom) onHidden();
+        if (buttonY() < top || buttonY() + DropdownMenu.CONTROL_HEIGHT > bottom) onHidden();
     }
 
     public boolean isOpen() {
@@ -43,7 +44,7 @@ public abstract class SelectionWidget<T extends Setting<?>> extends SettingWidge
     }
 
     private DropdownMenu.Popup popup() {
-        return DropdownMenu.fit(buttonX(), buttonY(), buttonWidth(), 18, options().size(), viewportTop, viewportBottom);
+        return DropdownMenu.fit(buttonX(), buttonY(), buttonWidth(), DropdownMenu.CONTROL_HEIGHT, options().size(), viewportTop, viewportBottom);
     }
 
     @Override
@@ -55,7 +56,7 @@ public abstract class SelectionWidget<T extends Setting<?>> extends SettingWidge
         List<String> values = options();
         int selected = selectedIndex();
         String label = selected >= 0 && selected < values.size() ? toDisplayName(values.get(selected)) : "None";
-        DropdownMenu.trigger(canvas, buttonX(), buttonY(), buttonWidth(), 18, label, isOpen(), enabled, mouseX, mouseY);
+        DropdownMenu.trigger(canvas, buttonX(), buttonY(), buttonWidth(), DropdownMenu.CONTROL_HEIGHT, label, isOpen(), enabled, mouseX, mouseY);
     }
 
     /** Draw after the settings list restores its scissor, so the popup overlays subsequent rows. */
@@ -66,12 +67,7 @@ public abstract class SelectionWidget<T extends Setting<?>> extends SettingWidge
         scroll = DropdownMenu.clampScroll(scroll, options().size(), bounds.rows());
         DropdownMenu.list(canvas, bounds.x(), bounds.y(), bounds.width(), DropdownMenu.ROW_HEIGHT,
                 options().stream().map(SettingWidget::toDisplayName).toList(), i -> i == selectedIndex(),
-                scroll, bounds.rows(), mouseX, mouseY);
-        if (highlighted >= scroll && highlighted < scroll + bounds.rows()) {
-            // Keep keyboard focus distinct from the current selection.
-            float rowY = bounds.y() + (highlighted - scroll) * DropdownMenu.ROW_HEIGHT;
-            canvas.fillRect(bounds.x(), rowY + 3, 2, DropdownMenu.ROW_HEIGHT - 6, color(ACCENT_PRIMARY));
-        }
+                scroll, bounds.rows(), mouseX, mouseY, keyboardFocus ? highlighted : -1);
     }
 
     @Override
@@ -83,7 +79,7 @@ public abstract class SelectionWidget<T extends Setting<?>> extends SettingWidge
             return true;
         }
         if (button != 0 || !isEnabled() || options().isEmpty()) return false;
-        if (!DropdownMenu.contains(mouseX, mouseY, buttonX(), buttonY(), buttonWidth(), 18)) return false;
+        if (!DropdownMenu.contains(mouseX, mouseY, buttonX(), buttonY(), buttonWidth(), DropdownMenu.CONTROL_HEIGHT)) return false;
         open = true;
         highlighted = Math.max(0, selectedIndex());
         revealHighlighted();
@@ -92,6 +88,7 @@ public abstract class SelectionWidget<T extends Setting<?>> extends SettingWidge
 
     public boolean scroll(double amount) {
         if (!isOpen()) return false;
+        keyboardFocus = false;
         scroll = DropdownMenu.clampScroll(scroll - (int) Math.signum(amount), options().size(), popup().rows());
         return true;
     }
@@ -105,6 +102,7 @@ public abstract class SelectionWidget<T extends Setting<?>> extends SettingWidge
             select(Math.min(highlighted, options().size() - 1));
             onHidden();
         } else if (key == GLFW.GLFW_KEY_DOWN || key == GLFW.GLFW_KEY_UP || key == GLFW.GLFW_KEY_HOME || key == GLFW.GLFW_KEY_END) {
+            keyboardFocus = true;
             highlighted = key == GLFW.GLFW_KEY_HOME ? 0 : key == GLFW.GLFW_KEY_END ? options().size() - 1
                     : Math.floorMod(highlighted + (key == GLFW.GLFW_KEY_DOWN ? 1 : -1), options().size());
             revealHighlighted();
@@ -120,5 +118,5 @@ public abstract class SelectionWidget<T extends Setting<?>> extends SettingWidge
     }
 
     @Override
-    public void onHidden() { open = false; }
+    public void onHidden() { open = false; keyboardFocus = false; }
 }

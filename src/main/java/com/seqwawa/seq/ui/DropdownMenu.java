@@ -12,6 +12,7 @@ import java.util.function.IntPredicate;
 
 /** Shared flat dropdown visuals and row geometry. Screens own their selection and search behavior. */
 public final class DropdownMenu {
+    public static final float CONTROL_HEIGHT = 18;
     public static final float ROW_HEIGHT = 22;
     public static final float FONT_SIZE = 10;
     private DropdownMenu() {}
@@ -38,8 +39,11 @@ public final class DropdownMenu {
 
     public static void row(UiCanvas canvas, float x, float y, float width, float height,
             String label, String detail, boolean selected, boolean hovered, boolean enabled) {
-        canvas.fillRect(x, y, width, height, color(selected ? ACCENT_PRIMARY_DARK
-                : enabled && hovered ? CONTROL_INPUT_HOVER : BACKGROUND_POPUP));
+        // A popup must cover underlying labels, regardless of the panel it opens over.
+        canvas.fillRect(x, y, width, height, new Color(color(BACKGROUND_POPUP).getRGB()));
+        if (selected || enabled && hovered) {
+            canvas.fillRect(x, y, width, height, color(selected ? ACCENT_PRIMARY_DARK : CONTROL_INPUT_HOVER));
+        }
         float detailWidth = detail == null ? 0 : Math.min(120, width * .42f);
         label(canvas, x + 8, y + height / 2, Math.max(0, width - 16 - detailWidth), label,
                 color(enabled ? TEXT_PRIMARY : TEXT_DISABLED));
@@ -49,17 +53,23 @@ public final class DropdownMenu {
 
     public static void list(UiCanvas canvas, float x, float y, float width, float rowHeight,
             List<String> labels, IntPredicate selected, int scroll, int visibleRows, float mouseX, float mouseY) {
+        list(canvas, x, y, width, rowHeight, labels, selected, scroll, visibleRows, mouseX, mouseY, -1);
+    }
+
+    public static void list(UiCanvas canvas, float x, float y, float width, float rowHeight,
+            List<String> labels, IntPredicate selected, int scroll, int visibleRows, float mouseX, float mouseY,
+            int focusedIndex) {
         int count = Math.min(visibleRows, labels.size());
         scroll = clampScroll(scroll, labels.size(), count);
         if (count == 0) {
-            canvas.fillRect(x, y, width, rowHeight, color(BACKGROUND_POPUP));
+            canvas.fillRect(x, y, width, rowHeight, new Color(color(BACKGROUND_POPUP).getRGB()));
             label(canvas, x + 8, y + rowHeight / 2, Math.max(0, width - 16), "No matches", color(TEXT_MUTED));
             return;
         }
         boolean scrolling = labels.size() > count;
         for (int i = 0; i < count; i++) {
             row(canvas, x, y + i * rowHeight, width, rowHeight, labels.get(scroll + i), selected.test(scroll + i),
-                    contains(mouseX, mouseY, x, y + i * rowHeight, width, rowHeight));
+                    scroll + i == focusedIndex || contains(mouseX, mouseY, x, y + i * rowHeight, width, rowHeight));
         }
         if (scrolling) {
             float height = count * rowHeight;
