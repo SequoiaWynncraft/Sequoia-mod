@@ -5,6 +5,7 @@ import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import java.awt.Color;
 import com.seqwawa.seq.LightRoomTnaRange.LightRoom;
+import com.seqwawa.seq.courage.CourageRangeClient;
 import com.seqwawa.seq.halcyon.HalcyonRingRenderer;
 import com.seqwawa.seq.managers.PrincessMode;
 import com.seqwawa.seq.radiance.PingRenderer;
@@ -93,6 +94,7 @@ public class SettingsScreen extends Screen {
         deactivateColorPreviews();
         LightRoom.setColorPreviewActive(false);
         HalcyonRingRenderer.setColorPreviewActive(false);
+        CourageRangeClient.setColorPreviewActive(false);
         PingRenderer.setColorPreviewActive(false);
         CraftedScrollRangeVisualiserClient.setColorPreviewActive(false);
         SeqClient.getConfigManager().save();
@@ -165,6 +167,9 @@ public class SettingsScreen extends Screen {
         }
         if (setting == SeqClient.getHalcyonRingColorSetting()) {
             return new ColorWidget(setting, HalcyonRingRenderer::setColorPreviewActive);
+        }
+        if (setting == SeqClient.getCourageRangeColorSetting()) {
+            return new ColorWidget(setting, CourageRangeClient::setColorPreviewActive);
         }
         if (setting == SeqClient.getRadianceMarkerColorSetting()) {
             return new ColorWidget(setting, PingRenderer::setColorPreviewActive);
