@@ -50,7 +50,12 @@ public final class ThemeEditorScreen extends Screen {
     private static final float BUTTON_WIDTH = 70;
     private static final int MAX_STATUS_TICKS = 240;
 
+    private static final Rect EDITOR_TAB = new Rect(10, 50, SIDEBAR_WIDTH - 20, 22);
+    private static final Rect WIDGET_PREVIEW_TAB = new Rect(10, 78, SIDEBAR_WIDTH - 20, 22);
+
     private final Screen parent;
+    private final ThemeWidgetPreview widgetPreview = new ThemeWidgetPreview();
+    private boolean showingWidgets;
     private final Map<String, List<UiColor>> colorGroups = createColorGroups();
     private final Set<String> collapsedGroups = new HashSet<>();
     private List<String> sourceNames;
@@ -120,8 +125,12 @@ public final class ThemeEditorScreen extends Screen {
                     UiCanvas.HorizontalAlign.RIGHT,
                     screenWidth - PADDING,
                     HEADER_HEIGHT / 2f,
-                    "Theme editor");
+                    showingWidgets ? "Widget preview" : "Theme editor");
 
+            if (showingWidgets) {
+                widgetPreview.render(canvas, nvgMouseX, nvgMouseY);
+                return;
+            }
             renderToolbar(canvas, font, layout);
             renderColorGroups(canvas, font, layout);
             renderScrollbar(canvas, layout);
@@ -132,34 +141,32 @@ public final class ThemeEditorScreen extends Screen {
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(BACKGROUND_SIDEBAR));
         SequoiaUiStyle.drawSidebarTitle(canvas, font, SIDEBAR_WIDTH);
         canvas.fillRect(10, 40, SIDEBAR_WIDTH - 20, 1, color(ACCENT_PRIMARY_DARK));
-        canvas.fillRect(10, 50, SIDEBAR_WIDTH - 20, 22, SequoiaUiStyle.sidebarButtonColor(true, false));
-        drawText(
-                canvas,
-                font,
-                FONT_SIZE,
-                color(TEXT_PRIMARY),
-                UiCanvas.HorizontalAlign.CENTER,
-                SIDEBAR_WIDTH / 2f,
-                61,
-                "Theme editor");
-        drawText(
-                canvas,
-                font,
-                11,
-                color(TEXT_MUTED),
-                UiCanvas.HorizontalAlign.CENTER,
-                SIDEBAR_WIDTH / 2f,
-                90,
-                "Live UI preview");
-        drawText(
-                canvas,
-                font,
-                11,
-                color(TEXT_MUTED),
-                UiCanvas.HorizontalAlign.CENTER,
-                SIDEBAR_WIDTH / 2f,
-                105,
-                "RGBA controls");
+        drawSidebarTab(canvas, font, EDITOR_TAB, "Theme editor", !showingWidgets);
+        drawSidebarTab(canvas, font, WIDGET_PREVIEW_TAB, "Widget preview", showingWidgets);
+    }
+
+    private void drawSidebarTab(UiCanvas canvas, String font, Rect bounds, String label, boolean active) {
+        canvas.fillRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(),
+                SequoiaUiStyle.sidebarButtonColor(active, bounds.contains(nvgMouseX, nvgMouseY)));
+        drawText(canvas, font, FONT_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
+                bounds.x() + bounds.width() / 2, bounds.y() + bounds.height() / 2, label);
+    }
+
+    private void showWidgets(boolean show) {
+        finishColorEditing();
+        nameFocused = false;
+        draggingSaturationValue = null;
+        draggingHue = null;
+        draggingAlpha = null;
+        scrollbarDragging = false;
+        showingWidgets = show;
+        widgetPreview.onHidden();
+        if (show || previewActive) applyPreview();
+        else restoreConfiguredTheme();
+    }
+
+    private void restoreConfiguredTheme() {
+        if (!ThemeManager.setCurrentTheme(configuredThemeName)) ThemeManager.setCurrentTheme("default");
     }
 
     private void renderToolbar(UiCanvas canvas, String font, Layout layout) {
@@ -400,16 +407,26 @@ public final class ThemeEditorScreen extends Screen {
 
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
-        if (click.button() != 0) {
+        if (click.button() != 0 && !showingWidgets) {
             return super.mouseClicked(click, outsideScreen);
         }
         float mx = MinecraftUiRenderer.mouseX(click.x());
         float my = MinecraftUiRenderer.mouseY(click.y());
         Layout layout = layout(MinecraftUiRenderer.screenWidth(), MinecraftUiRenderer.screenHeight());
 
+        if (click.button() == 0 && (EDITOR_TAB.contains(mx, my) || WIDGET_PREVIEW_TAB.contains(mx, my))) {
+            showWidgets(WIDGET_PREVIEW_TAB.contains(mx, my));
+            return true;
+        }
         finishColorEditing();
-        if (layout.backButton().contains(mx, my)) {
+        if (click.button() == 0 && layout.backButton().contains(mx, my)) {
             onClose();
+            return true;
+        }
+        if (showingWidgets) {
+            if (mx >= SIDEBAR_WIDTH && my >= HEADER_HEIGHT && my < layout.screenHeight() - 8) {
+                widgetPreview.mouseClicked(mx, my, click.button());
+            }
             return true;
         }
         if (layout.sourceField().contains(mx, my)) {
@@ -497,6 +514,10 @@ public final class ThemeEditorScreen extends Screen {
 
     @Override
     public boolean mouseReleased(@NotNull MouseButtonEvent click) {
+        if (showingWidgets) {
+            widgetPreview.mouseReleased(MinecraftUiRenderer.mouseX(click.x()), MinecraftUiRenderer.mouseY(click.y()), click.button());
+            return true;
+        }
         scrollbarDragging = false;
         draggingSaturationValue = null;
         draggingHue = null;
@@ -509,6 +530,7 @@ public final class ThemeEditorScreen extends Screen {
         float mx = MinecraftUiRenderer.mouseX(click.x());
         float my = MinecraftUiRenderer.mouseY(click.y());
         Layout layout = layout(MinecraftUiRenderer.screenWidth(), MinecraftUiRenderer.screenHeight());
+        if (showingWidgets) return widgetPreview.mouseDragged(mx, my);
         if (scrollbarDragging && maxScroll > 0) {
             float thumbRatio = layout.contentHeight() / (layout.contentHeight() + maxScroll);
             float thumbHeight = Math.max(20, layout.contentHeight() * thumbRatio);
@@ -537,12 +559,17 @@ public final class ThemeEditorScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (showingWidgets) { widgetPreview.scroll(scrollY); return true; }
         scrollOffset = clamp(scrollOffset - (float) scrollY * SCROLL_SPEED, 0, maxScroll);
         return true;
     }
 
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
+        if (showingWidgets) {
+            if (widgetPreview.keyPressed(keyEvent)) return true;
+            return super.keyPressed(keyEvent);
+        }
         int key = keyEvent.key();
         boolean shortcut = (keyEvent.modifiers() & (GLFW.GLFW_MOD_CONTROL | GLFW.GLFW_MOD_SUPER)) != 0;
         if (nameFocused) {
@@ -606,6 +633,7 @@ public final class ThemeEditorScreen extends Screen {
 
     @Override
     public boolean charTyped(@NotNull CharacterEvent characterEvent) {
+        if (showingWidgets) return widgetPreview.charTyped(characterEvent);
         String typedText = TextInputHelper.getTypedText(characterEvent);
         if (nameFocused) {
             if (typedText != null
@@ -632,16 +660,14 @@ public final class ThemeEditorScreen extends Screen {
 
     @Override
     public void onClose() {
+        if (showingWidgets) { showWidgets(false); return; }
         SeqClient.mc.setScreen(parent);
     }
 
     @Override
     public void removed() {
-        if (previewActive) {
-            if (!ThemeManager.setCurrentTheme(configuredThemeName)) {
-                ThemeManager.setCurrentTheme("default");
-            }
-        }
+        widgetPreview.onHidden();
+        if (previewActive || showingWidgets) restoreConfiguredTheme();
         super.removed();
     }
 
