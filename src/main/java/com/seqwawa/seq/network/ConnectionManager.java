@@ -38,6 +38,7 @@ import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.model.ChatItemPreview;
+import com.seqwawa.seq.managers.GuildRankEventParser;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.model.BombShareType;
@@ -89,6 +90,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     @Getter
     private boolean authenticated = false;
+    private volatile boolean guildRankTrackingSupported;
+    private static final GuildRankObservationQueue guildRankObservations = new GuildRankObservationQueue();
 
     @Getter
     private boolean authFailed = false;
@@ -1029,6 +1032,31 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return true;
     }
 
+    public static void observeGuildRankEvent(GuildRankEventParser.Event event) {
+        Minecraft client = Minecraft.getInstance();
+        if (WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN || client.getUser() == null) return;
+        SeqClient.LOGGER.debug(
+                "[GuildRank] Observed assignment actor='{}' target='{}' oldRank='{}' newRank='{}'",
+                event.actor().displayName(), event.target().displayName(), event.oldRank(), event.newRank());
+        guildRankObservations.add(event, client.getUser().getProfileId(), Instant.now());
+        tickGuildRankObservations();
+    }
+
+    public static void tickGuildRankObservations() {
+        ConnectionManager current = instance;
+        Minecraft client = Minecraft.getInstance();
+        if (current == null || !current.guildRankTrackingSupported || !current.isOpen() || !current.authenticated
+                || client.getUser() == null || current.membershipProbePending || current.memberFeaturesDisabled
+                || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) return;
+        Instant now = Instant.now();
+        for (JsonObject payload : guildRankObservations.due(client.getUser().getProfileId(), now)) {
+            if (current.send("guild_rank_event", payload)) {
+                guildRankObservations.sent(payload.get("observation_id").getAsString(), now);
+                SeqClient.LOGGER.info("[GuildRank] Sent observation id={}", payload.get("observation_id").getAsString());
+            }
+        }
+    }
+
     public boolean sendGuildMembershipEvent(String action, String actor, String target) {
         String safeAction = action == null ? "" : action.trim().toLowerCase(Locale.ROOT);
         String safeActor = sanitizeMinecraftUsername(actor);
@@ -1826,6 +1854,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         return;
                     }
                     authenticated = true;
+                    guildRankTrackingSupported = json.has("guild_rank_tracking_supported")
+                            && json.get("guild_rank_tracking_supported").isJsonPrimitive()
+                            && json.get("guild_rank_tracking_supported").getAsBoolean();
+                    if (guildRankTrackingSupported) {
+                        SeqClient.LOGGER.info("[GuildRank] Backend supports rank tracking");
+                    } else {
+                        SeqClient.LOGGER.warn(
+                                "[GuildRank] Backend did not advertise rank tracking; observations are held for up to "
+                                        + "10 minutes. Reconnect after the backend deployment finishes.");
+                    }
                     authFailed = false;
                     notInGuild = false;
                     memberFeaturesDisabled = false;
@@ -1845,6 +1883,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     sendPrepared("get_connected", null);
                     flushPendingGuildWarSubmissions();
                     sendLocalPartyClassUpdate();
+                }
+                case "guild_rank_recorded" -> {
+                    String observationId = extractPrimitiveString(json, "observation_id");
+                    guildRankObservations.acknowledge(observationId);
+                    SeqClient.LOGGER.info("[GuildRank] Backend recorded observation id={}", observationId);
                 }
                 case "connected_users" -> {
                     boolean wasMembershipProbe = membershipProbePending;
@@ -2378,6 +2421,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "bomb_share_submit".equals(type)
                 || "guild_chat".equals(type)
                 || "guild_membership_event".equals(type)
+                || "guild_rank_event".equals(type)
                 || "guild_alliance_update".equals(type)
                 || "guild_alliance_snapshot".equals(type)
                 || "guild_raid_announcement".equals(type)
@@ -2398,6 +2442,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "treasury_out".equals(type)
                 || "guild_chat".equals(type)
                 || "guild_membership_event".equals(type)
+                || "guild_rank_event".equals(type)
                 || "guild_alliance_update".equals(type)
                 || "guild_alliance_snapshot".equals(type)
                 || "guild_raid_announcement".equals(type)
@@ -2421,6 +2466,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || "treasury_out".equals(type)
                 || "guild_chat".equals(type)
                 || "guild_membership_event".equals(type)
+                || "guild_rank_event".equals(type)
                 || "guild_alliance_update".equals(type)
                 || "guild_raid_announcement".equals(type)
                 || "guild_bank_event".equals(type)

@@ -143,6 +143,11 @@ public class ChatManager {
             }
         }
 
+        GuildRankEventParser.Event rankEvent = GuildRankEventParser.parse(message, currentMinecraftUsername());
+        if (rankEvent != null && shouldRelayForLocalGuild()) {
+            ConnectionManager.observeGuildRankEvent(rankEvent);
+        }
+
         ParsedGuildMembershipEvent membershipEvent = parseGuildMembershipEvent(message, currentMinecraftUsername());
         if (membershipEvent != null && ConnectionManager.isConnected() && shouldRelayForLocalGuild()) {
             if (isDuplicateGuildMembershipEvent(membershipEvent)) {
