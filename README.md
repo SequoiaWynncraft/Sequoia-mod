@@ -21,6 +21,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - In-game Discord chat bridge
 - Wynntils item links rendered in Discord with item-encoding-v3 stats, major IDs, crafted details, and mounts
 - Clickable world names in chat, so a called-out world is one click away
+- Sequoia ranks on member nametags, replacing the Wynncraft rank badge above their head and coloring the name to match (off by default)
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
 - Seq-only war planner with timed availability, shared five-player territory queues, exclusive 1–5 player parties, a shared Lead + three Eco board, and collaborative territory zones
