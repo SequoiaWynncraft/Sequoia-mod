@@ -62,11 +62,18 @@ public final class IngredientWaypointRenderer {
             return;
         }
 
+        // This event runs before the frame installs its matrix stack, so the first
+        // frame of a world has none yet and simply goes unringed.
+        PoseStack matrices = context.matrices();
+        if (matrices == null) {
+            return;
+        }
+
         Vec3 camera = client.gameRenderer.getMainCamera().position();
         Vec3 playerPosition = client.player.position();
         boolean colorByProximity =
                 WorldMapSettings.getInstance().colorIngredientWaypointRadiiByProximity();
-        PoseStack.Pose pose = context.matrices().last();
+        PoseStack.Pose pose = matrices.last();
         VertexConsumer vertices = context.consumers().getBuffer(RenderTypes.debugQuads());
         for (Waypoint waypoint : IngredientWaypointManager.getInstance().waypoints()) {
             Vec3 center = new Vec3(waypoint.x(), waypoint.y(), waypoint.z());
