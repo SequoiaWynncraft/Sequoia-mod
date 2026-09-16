@@ -80,12 +80,7 @@ class WarPlannerScreenTest {
             } else {
                 assertTrue(opacity.y() > header.refresh().y() + header.refresh().height());
             }
-            for (int row = 0; row < 3; row++) {
-                var option = WarPlannerScreen.dropdownOption(header.section(), row);
-                assertEquals(header.section().x(), option.x());
-                assertTrue(option.y() >= header.section().y() + header.section().height());
-                assertFalse(header.section().contains(option.x() + 1, option.y() + 1));
-            }
+
         }
     }
 

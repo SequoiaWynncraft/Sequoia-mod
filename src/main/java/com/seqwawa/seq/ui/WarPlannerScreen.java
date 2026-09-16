@@ -823,10 +823,7 @@ public final class WarPlannerScreen extends Screen {
 
     private SliderWidget prepareOpacitySlider(float width) {
         if (opacitySlider == null && SeqClient.getWarPlannerBackgroundOpacitySetting() != null) {
-            opacitySlider = new SliderWidget(SeqClient.getWarPlannerBackgroundOpacitySetting()) {
-                @Override protected String getDisplayName() { return "Opacity %"; }
-                @Override protected boolean inlineLayout() { return true; }
-            };
+            opacitySlider = new SliderWidget(SeqClient.getWarPlannerBackgroundOpacitySetting(), "Opacity %");
         }
         if (opacitySlider != null) {
             var bounds = headerControls(width).opacity();
@@ -836,11 +833,8 @@ public final class WarPlannerScreen extends Screen {
     }
 
     private void renderDropdown(UiCanvas canvas, WarMapButtonBounds bounds, String label, boolean open) {
-        canvas.fillRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), color(CONTROL_INPUT));
-        text(canvas, label, bounds.x() + 8, bounds.y() + bounds.height() / 2, 10, color(TEXT_PRIMARY), false);
-        float x = bounds.x() + bounds.width() - 10, y = bounds.y() + bounds.height() / 2;
-        canvas.strokeLine(x - 3, y + (open ? 2 : -2), x, y + (open ? -2 : 2), 1.5f, color(TEXT_SECONDARY));
-        canvas.strokeLine(x, y + (open ? -2 : 2), x + 3, y + (open ? 2 : -2), 1.5f, color(TEXT_SECONDARY));
+        DropdownMenu.trigger(canvas, bounds.x(), bounds.y(), bounds.width(), bounds.height(), label, open, true,
+                nvgMouseX, nvgMouseY);
     }
 
     private void renderDropdownMenus(UiCanvas canvas, float width, float height) {
@@ -852,12 +846,8 @@ public final class WarPlannerScreen extends Screen {
     }
 
     private void renderDropdownOptions(UiCanvas canvas, WarMapButtonBounds trigger, List<String> labels, int selected) {
-        for (int index = 0; index < labels.size(); index++) {
-            var row = dropdownOption(trigger, index);
-            canvas.fillRect(row.x(), row.y(), row.width(), row.height(), color(index == selected ? ACCENT_PRIMARY_DARK
-                    : row.contains(nvgMouseX, nvgMouseY) ? CONTROL_INPUT_HOVER : BACKGROUND_POPUP));
-            text(canvas, labels.get(index), row.x() + 8, row.y() + row.height() / 2, 10, color(TEXT_PRIMARY), false);
-        }
+        DropdownMenu.list(canvas, trigger.x(), trigger.y() + trigger.height(), trigger.width(), DropdownMenu.ROW_HEIGHT,
+                labels, i -> i == selected, 0, labels.size(), nvgMouseX, nvgMouseY);
     }
 
 
@@ -1951,14 +1941,10 @@ public final class WarPlannerScreen extends Screen {
         button(canvas, x + w - 34, y + 8, 24, BUTTON_HEIGHT, "×", true, teamEditorSaving);
 
         float fieldY = y + 34;
-        boolean typeHovered = hit(nvgMouseX, nvgMouseY, x + 12, fieldY, w - 24, 24);
-        canvas.fillRect(x + 12, fieldY, w - 24, 24, color(typeHovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
-        canvas.strokeRect(x + 12, fieldY, w - 24, 24, 1, color(CONTROL_BORDER));
-        text(canvas, "Type", x + 18, fieldY + 12, 9, color(TEXT_MUTED), false);
-        text(canvas, teamType.label(), x + 54, fieldY + 12, 12, color(TEXT_PRIMARY), false);
         String automaticName = automaticTeamName(snapshot, teamType, editingTeamId);
-        text(canvas, "Creates " + automaticName, x + w - 188, fieldY + 12, 9, color(TEXT_MUTED), false);
-        text(canvas, teamTypeMenuOpen ? "▲" : "▼", x + w - 24, fieldY + 12, 8, color(TEXT_SECONDARY), true);
+        DropdownMenu.trigger(canvas, x + 12, fieldY, w - 24, 24,
+                "Type: " + teamType.label() + " · Creates " + automaticName,
+                teamTypeMenuOpen, !teamEditorSaving, nvgMouseX, nvgMouseY);
         renderCompositionTargetControls(canvas, x, fieldY + 32, w);
         text(canvas, "Targets warn about missing capabilities; they do not block saving.", x + 12, fieldY + 64, 9,
                 color(TEXT_MUTED), false);
@@ -2030,7 +2016,7 @@ public final class WarPlannerScreen extends Screen {
         primaryButton(canvas, x + w - 78, y + h - 32, 66, BUTTON_HEIGHT,
                 teamEditorSaving ? "Saving…" : "Save", teamEditorSaving);
         if (teamTypeMenuOpen) {
-            renderTeamTypeMenu(canvas, snapshot, x + 12, fieldY + 25, w - 24);
+            renderTeamTypeMenu(canvas, snapshot, x + 12, fieldY + 24, w - 24);
         }
     }
 
@@ -2053,18 +2039,12 @@ public final class WarPlannerScreen extends Screen {
         List<WarTeamType> options = WarTeamType.editableValues();
         for (int index = 0; index < options.size(); index++) {
             WarTeamType option = options.get(index);
-            float optionY = y + index * 24;
-            boolean selectable = teamTypeSelectable(snapshot, option, editingTeamId);
-            boolean hovered = selectable && hit(nvgMouseX, nvgMouseY, x, optionY, menuWidth, 23);
-            canvas.fillRect(x, optionY, menuWidth, 23,
-                    color(hovered || option == teamType ? CONTROL_INPUT_HOVER : BACKGROUND_BODY_OPAQUE));
-            canvas.strokeRect(x, optionY, menuWidth, 23, 1, color(CONTROL_BORDER));
-            text(canvas, option.label(), x + 8, optionY + 12, 11,
-                    color(selectable ? TEXT_PRIMARY : TEXT_MUTED), false);
+            float optionY = y + index * DropdownMenu.ROW_HEIGHT;
+            boolean selectable = !teamEditorSaving && teamTypeSelectable(snapshot, option, editingTeamId);
             String preview = option == WarTeamType.HQ && !selectable
-                    ? "Already assigned"
-                    : automaticTeamName(snapshot, option, editingTeamId);
-            text(canvas, preview, x + menuWidth - 110, optionY + 12, 9, color(TEXT_MUTED), false);
+                    ? "Already assigned" : automaticTeamName(snapshot, option, editingTeamId);
+            DropdownMenu.row(canvas, x, optionY, menuWidth, DropdownMenu.ROW_HEIGHT, option.label(), preview,
+                    option == teamType, hit(nvgMouseX, nvgMouseY, x, optionY, menuWidth, DropdownMenu.ROW_HEIGHT), selectable);
         }
     }
 
@@ -2183,34 +2163,32 @@ public final class WarPlannerScreen extends Screen {
         var coloring = warMapControls(warMapLayout(width, contentTop(width), height - PADDING), manager.canManage()).coloring();
         if (sectionDropdownOpen) {
             sectionDropdownOpen = false;
-            for (int index = 0; index < Tab.values().length; index++) {
-                if (dropdownOption(section, index).contains(mx, my)) {
-                    tab = Tab.values()[index];
-                    scrollRows = 0;
-                    draggingWarMap = false;
-                    pendingWarQueueClick = null;
-                    pendingDeleteTeam = null;
-                    pendingDeleteZone = null;
-                    pendingDeleteZoneCategory = null;
-                    zoneActionsId = null;
-                    memberDrag = null;
-                    zoneDrag = null;
-                    if (opacitySlider != null) opacitySlider.onHidden();
-                    break;
-                }
+            int index = DropdownMenu.optionAt(mx, my, section.x(), section.y() + section.height(), section.width(),
+                    DropdownMenu.ROW_HEIGHT, Tab.values().length, 0);
+            if (index >= 0) {
+                tab = Tab.values()[index];
+                scrollRows = 0;
+                draggingWarMap = false;
+                pendingWarQueueClick = null;
+                pendingDeleteTeam = null;
+                pendingDeleteZone = null;
+                pendingDeleteZoneCategory = null;
+                zoneActionsId = null;
+                memberDrag = null;
+                zoneDrag = null;
+                if (opacitySlider != null) opacitySlider.onHidden();
             }
             return true;
         }
         if (coloringDropdownOpen) {
             coloringDropdownOpen = false;
-            for (int index = 0; index < 2; index++) {
-                if (dropdownOption(coloring, index).contains(mx, my)) {
-                    var setting = SeqClient.getWarPlannerResourceColorsSetting();
-                    if (setting != null) {
-                        setting.setValue(index == 1);
-                        SeqClient.getConfigManager().save();
-                    }
-                    break;
+            int index = DropdownMenu.optionAt(mx, my, coloring.x(), coloring.y() + coloring.height(), coloring.width(),
+                    DropdownMenu.ROW_HEIGHT, 2, 0);
+            if (index >= 0) {
+                var setting = SeqClient.getWarPlannerResourceColorsSetting();
+                if (setting != null) {
+                    setting.setValue(index == 1);
+                    SeqClient.getConfigManager().save();
                 }
             }
             return true;
@@ -2696,15 +2674,16 @@ public final class WarPlannerScreen extends Screen {
         if (!searchClicked || teamTypeMenuOpen) {
             teamEditorSearchFocused = false;
         }
-        if (hit(mx, my, x + 12, fieldY, w - 24, 24)) {
+        if (DropdownMenu.contains(mx, my, x + 12, fieldY, w - 24, 24)) {
             teamTypeMenuOpen = !teamTypeMenuOpen;
             return true;
         }
         if (teamTypeMenuOpen) {
             List<WarTeamType> options = WarTeamType.editableValues();
-            for (int index = 0; index < options.size(); index++) {
-                float optionY = fieldY + 25 + index * 24;
-                if (!hit(mx, my, x + 12, optionY, w - 24, 23)) continue;
+            int index = DropdownMenu.optionAt(mx, my, x + 12, fieldY + 24, w - 24,
+                    DropdownMenu.ROW_HEIGHT, options.size(), 0);
+            teamTypeMenuOpen = false;
+            if (index >= 0) {
                 WarTeamType option = options.get(index);
                 if (teamTypeSelectable(snapshot, option, editingTeamId)) {
                     teamType = option;
@@ -2712,10 +2691,8 @@ public final class WarPlannerScreen extends Screen {
                 } else {
                     flashMessage = "Only one HQ Team can exist.";
                 }
-                teamTypeMenuOpen = false;
-                return true;
             }
-            teamTypeMenuOpen = false;
+            return true;
         }
         if (hit(mx, my, x + w - 78, y + h - 32, 66, BUTTON_HEIGHT)) {
             saveTeam();
@@ -2850,6 +2827,11 @@ public final class WarPlannerScreen extends Screen {
 
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
+        if (teamTypeMenuOpen && keyEvent.key() == GLFW.GLFW_KEY_ESCAPE) {
+            teamTypeMenuOpen = false;
+            return true;
+        }
+
         if (!plannerModalOpen() && (sectionDropdownOpen || coloringDropdownOpen)) {
             if (keyEvent.key() == GLFW.GLFW_KEY_ESCAPE) {
                 sectionDropdownOpen = false;
@@ -3927,10 +3909,6 @@ public final class WarPlannerScreen extends Screen {
                 ? new WarMapButtonBounds(refresh.x() + actionWidth + 12, 6, 240, 18)
                 : new WarMapButtonBounds(PADDING, 32, 240, 18);
         return new HeaderControls(section, roles, refresh, opacity);
-    }
-
-    static WarMapButtonBounds dropdownOption(WarMapButtonBounds trigger, int index) {
-        return new WarMapButtonBounds(trigger.x(), trigger.y() + trigger.height() + index * 22, trigger.width(), 22);
     }
 
     static WarMapControls warMapControls(WarMapLayout layout, boolean canManage) {

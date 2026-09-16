@@ -2307,14 +2307,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         canvas.save();
         canvas.scissor(layout.x(), layout.y(), layout.width(),
                 layout.rowHeight() * (MapDisplayMode.values().length + 1));
-        drawButton(canvas, layout.x(), layout.y(), layout.width(), layout.rowHeight(),
-                displayMode.label() + (mapModeDropdownOpen ? "  ^" : "  v"), mapModeDropdownOpen);
+        DropdownMenu.trigger(canvas, layout.x(), layout.y(), layout.width(), layout.rowHeight(),
+                displayMode.label(), mapModeDropdownOpen, true, nvgMouseX, nvgMouseY);
         if (mapModeDropdownOpen) {
-            for (int index = 0; index < MapDisplayMode.values().length; index++) {
-                MapDisplayMode mode = MapDisplayMode.values()[index];
-                drawButton(canvas, layout.x(), layout.y() + layout.rowHeight() * (index + 1),
-                        layout.width(), layout.rowHeight(), mode.label(), displayMode == mode);
-            }
+            DropdownMenu.list(canvas, layout.x(), layout.y() + layout.rowHeight(), layout.width(), layout.rowHeight(),
+                    java.util.Arrays.stream(MapDisplayMode.values()).map(MapDisplayMode::label).toList(),
+                    i -> MapDisplayMode.values()[i] == displayMode, 0, MapDisplayMode.values().length, nvgMouseX, nvgMouseY);
         }
         canvas.restore();
         canvas.save();
@@ -2838,26 +2836,17 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 MAX_PIXELS_PER_BLOCK);
     }
 
-    private void renderSearchInput(
-            UiCanvas canvas,
-            float y,
-            boolean dropdownOpen,
-            boolean inputFocused,
-            String search,
-            String unfocusedValue) {
+    private void renderSearchInput(UiCanvas canvas, float y, boolean dropdownOpen,
+            boolean inputFocused, String search, String unfocusedValue) {
         float width = SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2);
-        canvas.fillRect(PADDING, y, width, INPUT_HEIGHT, dropdownOpen ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
-        canvas.strokeRect(PADDING, y, width, INPUT_HEIGHT, 1, color(MAP_BORDER));
         String value = inputFocused ? search : unfocusedValue;
-        Color valueColor = value == null || value.isBlank() ? color(MAP_SUBTEXT) : color(MAP_TEXT);
-        String displayValue = value == null || value.isBlank() ? "Search" : value;
-        float inputTextWidth = Math.max(0, width - 30);
-        drawFittedText(canvas, PADDING + 8, y + INPUT_HEIGHT / 2f, 12, displayValue, valueColor, inputTextWidth, TextAlignment.LEFT);
+        String displayValue = value == null || value.isBlank() ? "Search..." : value;
+        DropdownMenu.trigger(canvas, PADDING, y, width, INPUT_HEIGHT, displayValue,
+                dropdownOpen, true, nvgMouseX, nvgMouseY);
         if (inputFocused) {
-            float cursorX = PADDING + 10 + Math.min(textWidth(value, 12), inputTextWidth);
-            drawText(canvas, cursorX, y + INPUT_HEIGHT / 2f, 12, "|", color(MAP_TEXT), TextAlignment.LEFT);
+            float cursorX = PADDING + 8 + Math.min(textWidth(search, DropdownMenu.FONT_SIZE), Math.max(0, width - 30));
+            drawText(canvas, cursorX, y + INPUT_HEIGHT / 2f, DropdownMenu.FONT_SIZE, "|", color(TEXT_PRIMARY), TextAlignment.LEFT);
         }
-        drawText(canvas, PADDING + width - 10, y + INPUT_HEIGHT / 2f, 12, dropdownOpen ? "^" : "v", color(MAP_SUBTEXT), TextAlignment.CENTER);
     }
 
     private void drawScopeControl(UiCanvas canvas, float y) {
@@ -2960,111 +2949,28 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private void renderResourceDropdown(UiCanvas canvas, float y) {
         List<String> resources = resourceDropdownOptions();
-        int visibleRows = Math.min(RESOURCE_DROPDOWN_VISIBLE_ROWS, resources.size());
         resourceDropdownScroll = clampResourceDropdownScroll(resourceDropdownScroll, resources.size());
-        float x = PADDING;
-        float width = SIDEBAR_WIDTH - PADDING * 2;
-        float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
-        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY));
-        canvas.strokeRect(x, y, width, height, 1, color(MAP_BORDER));
-        if (resources.isEmpty()) {
-            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", color(MAP_SUBTEXT), TextAlignment.LEFT);
-            return;
-        }
-        for (int index = 0; index < visibleRows; index++) {
-            String resource = resources.get(resourceDropdownScroll + index);
-            boolean selected = resource.isBlank()
-                    ? selectedResourceFilters.isEmpty()
-                    : selectedResourceFilters.contains(resource);
-            boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT, width, RESOURCE_DROPDOWN_ROW_HEIGHT);
-            if (selected || hovered) {
-                canvas.fillRect(x + 1, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1, width - 2, RESOURCE_DROPDOWN_ROW_HEIGHT - 2, selected ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL_HOVER));
-            }
-            String label = resource.isBlank() ? "All resources" : resource;
-            drawFittedText(canvas, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, label, resource.isBlank() ? color(MAP_SUBTEXT) : color(MAP_TEXT), width - 16, TextAlignment.LEFT);
-        }
-        if (resources.size() > visibleRows) {
-            String range = (resourceDropdownScroll + 1) + "-" + (resourceDropdownScroll + visibleRows) + "/" + resources.size();
-            drawText(canvas, x + width - 8, y + height - 7, 9, range, color(MAP_SUBTEXT), TextAlignment.RIGHT);
-        }
+        DropdownMenu.list(canvas, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, RESOURCE_DROPDOWN_ROW_HEIGHT,
+                resources.stream().map(value -> value.isBlank() ? "All resources" : value).toList(),
+                i -> resources.get(i).isBlank() ? selectedResourceFilters.isEmpty() : selectedResourceFilters.contains(resources.get(i)),
+                resourceDropdownScroll, RESOURCE_DROPDOWN_VISIBLE_ROWS, nvgMouseX, nvgMouseY);
     }
 
     private void renderTerritoryDropdown(UiCanvas canvas, float y) {
         List<GuildTerritory> territories = territoryDropdownOptions();
-        int visibleRows = Math.min(TERRITORY_DROPDOWN_VISIBLE_ROWS, territories.size());
         territoryDropdownScroll = clampDropdownScroll(territoryDropdownScroll, territories.size(), TERRITORY_DROPDOWN_VISIBLE_ROWS);
-        float x = PADDING;
-        float width = SIDEBAR_WIDTH - PADDING * 2;
-        float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
-        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY));
-        canvas.strokeRect(x, y, width, height, 1, color(MAP_BORDER));
-        if (territories.isEmpty()) {
-            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", color(MAP_SUBTEXT), TextAlignment.LEFT);
-            return;
-        }
-        for (int index = 0; index < visibleRows; index++) {
-            GuildTerritory territory = territories.get(territoryDropdownScroll + index);
-            boolean selected = territory.equals(selectedTerritory);
-            boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT, width, RESOURCE_DROPDOWN_ROW_HEIGHT);
-            if (selected || hovered) {
-                canvas.fillRect(x + 1, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1, width - 2, RESOURCE_DROPDOWN_ROW_HEIGHT - 2, selected ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL_HOVER));
-            }
-            drawFittedText(canvas, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, territory.name(), color(MAP_TEXT), width - 16, TextAlignment.LEFT);
-        }
-        if (territories.size() > visibleRows) {
-            String range = (territoryDropdownScroll + 1) + "-" + (territoryDropdownScroll + visibleRows) + "/" + territories.size();
-            drawText(canvas, x + width - 8, y + height - 7, 9, range, color(MAP_SUBTEXT), TextAlignment.RIGHT);
-        }
+        DropdownMenu.list(canvas, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, RESOURCE_DROPDOWN_ROW_HEIGHT,
+                territories.stream().map(GuildTerritory::name).toList(), i -> territories.get(i).equals(selectedTerritory),
+                territoryDropdownScroll, TERRITORY_DROPDOWN_VISIBLE_ROWS, nvgMouseX, nvgMouseY);
     }
 
     private void renderWorldEventDropdown(UiCanvas canvas, float y) {
         List<WorldEventDefinition> events = worldEventDropdownOptions();
-        int visibleRows = Math.min(WORLD_EVENT_DROPDOWN_VISIBLE_ROWS, events.size());
-        worldEventDropdownScroll = clampDropdownScroll(
-                worldEventDropdownScroll,
-                events.size(),
-                WORLD_EVENT_DROPDOWN_VISIBLE_ROWS);
-        float x = PADDING;
-        float width = SIDEBAR_WIDTH - PADDING * 2;
-        float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
-        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY));
-        canvas.strokeRect(x, y, width, height, 1, color(MAP_BORDER));
-        if (events.isEmpty()) {
-            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", color(MAP_SUBTEXT), TextAlignment.LEFT);
-            return;
-        }
-        for (int index = 0; index < visibleRows; index++) {
-            WorldEventDefinition event = events.get(worldEventDropdownScroll + index);
-            boolean selected = cachedTrackedWorldEventIds.contains(event.internalName());
-            boolean hovered = isHovered(
-                    nvgMouseX,
-                    nvgMouseY,
-                    x,
-                    y + index * RESOURCE_DROPDOWN_ROW_HEIGHT,
-                    width,
-                    RESOURCE_DROPDOWN_ROW_HEIGHT);
-            if (selected || hovered) {
-                canvas.fillRect(x + 1,
-                        y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1,
-                        width - 2,
-                        RESOURCE_DROPDOWN_ROW_HEIGHT - 2,
-                        selected ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL_HOVER));
-            }
-            String label = (selected ? "[x] " : "[ ] ") + event.name();
-            drawFittedText(
-                    canvas,
-                    x + 8,
-                    y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f,
-                    11,
-                    label,
-                    event.isVisible() ? color(MAP_TEXT) : color(MAP_SUBTEXT),
-                    width - 16,
-                    TextAlignment.LEFT);
-        }
-        if (events.size() > visibleRows) {
-            String range = (worldEventDropdownScroll + 1) + "-" + (worldEventDropdownScroll + visibleRows) + "/" + events.size();
-            drawText(canvas, x + width - 8, y + height - 7, 9, range, color(MAP_SUBTEXT), TextAlignment.RIGHT);
-        }
+        worldEventDropdownScroll = clampDropdownScroll(worldEventDropdownScroll, events.size(), WORLD_EVENT_DROPDOWN_VISIBLE_ROWS);
+        DropdownMenu.list(canvas, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, RESOURCE_DROPDOWN_ROW_HEIGHT,
+                events.stream().map(event -> (cachedTrackedWorldEventIds.contains(event.internalName()) ? "[x] " : "[ ] ") + event.name()).toList(),
+                i -> cachedTrackedWorldEventIds.contains(events.get(i).internalName()),
+                worldEventDropdownScroll, WORLD_EVENT_DROPDOWN_VISIBLE_ROWS, nvgMouseX, nvgMouseY);
     }
 
     private void renderSidebarScrollbar(UiCanvas canvas, float screenHeight) {
@@ -4052,9 +3958,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             List<GuildTerritory> territories = territoryDropdownOptions();
             int visibleRows = Math.min(TERRITORY_DROPDOWN_VISIBLE_ROWS, territories.size());
             float dropdownY = layout.territoryInputY() - sidebarScroll + INPUT_HEIGHT;
-            if (visibleRows > 0 && isHovered(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2, visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
-                int optionIndex = Math.min(visibleRows - 1, Math.max(0, (int) ((my - dropdownY) / RESOURCE_DROPDOWN_ROW_HEIGHT)));
-                selectTerritory(territories.get(territoryDropdownScroll + optionIndex), true);
+            int optionIndex = DropdownMenu.optionAt(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2,
+                    RESOURCE_DROPDOWN_ROW_HEIGHT, visibleRows, territoryDropdownScroll);
+            if (optionIndex >= 0 && optionIndex < territories.size()) {
+                selectTerritory(territories.get(optionIndex), true);
                 closeTerritorySearch();
                 return true;
             }
@@ -4063,9 +3970,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             List<String> resources = resourceDropdownOptions();
             int visibleRows = Math.min(RESOURCE_DROPDOWN_VISIBLE_ROWS, resources.size());
             float dropdownY = layout.resourceInputY() - sidebarScroll + INPUT_HEIGHT;
-            if (visibleRows > 0 && isHovered(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2, visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
-                int optionIndex = Math.min(visibleRows - 1, Math.max(0, (int) ((my - dropdownY) / RESOURCE_DROPDOWN_ROW_HEIGHT)));
-                toggleResourceFilter(resources.get(resourceDropdownScroll + optionIndex), true);
+            int optionIndex = DropdownMenu.optionAt(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2,
+                    RESOURCE_DROPDOWN_ROW_HEIGHT, visibleRows, resourceDropdownScroll);
+            if (optionIndex >= 0 && optionIndex < resources.size()) {
+                toggleResourceFilter(resources.get(optionIndex), true);
                 return true;
             }
         }
@@ -4507,18 +4415,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             List<WorldEventDefinition> events = worldEventDropdownOptions();
             int visibleRows = Math.min(WORLD_EVENT_DROPDOWN_VISIBLE_ROWS, events.size());
             float dropdownY = layout.eventInputY() - sidebarScroll + INPUT_HEIGHT;
-            if (visibleRows > 0
-                    && isHovered(
-                            mx,
-                            my,
-                            PADDING,
-                            dropdownY,
-                            SIDEBAR_WIDTH - PADDING * 2,
-                            visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
-                int optionIndex = Math.min(
-                        visibleRows - 1,
-                        Math.max(0, (int) ((my - dropdownY) / RESOURCE_DROPDOWN_ROW_HEIGHT)));
-                toggleTrackedWorldEvent(events.get(worldEventDropdownScroll + optionIndex), true);
+            int optionIndex = DropdownMenu.optionAt(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2,
+                    RESOURCE_DROPDOWN_ROW_HEIGHT, visibleRows, worldEventDropdownScroll);
+            if (optionIndex >= 0 && optionIndex < events.size()) {
+                toggleTrackedWorldEvent(events.get(optionIndex), true);
                 return true;
             }
         }
@@ -5242,7 +5142,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private static int clampDropdownScroll(int scroll, int optionCount, int visibleRows) {
-        return Math.max(0, Math.min(scroll, Math.max(0, optionCount - visibleRows)));
+        return DropdownMenu.clampScroll(scroll, optionCount, visibleRows);
     }
 
     private float clampSidebarScroll(float scroll, float screenHeight) {

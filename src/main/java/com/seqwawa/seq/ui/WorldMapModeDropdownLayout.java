@@ -25,9 +25,7 @@ record WorldMapModeDropdownLayout(float x, float y, float width, float rowHeight
     }
 
     int optionAt(float mouseX, float mouseY) {
-        if (!contains(mouseX, mouseY, true) || mouseY < y + rowHeight) {
-            return -1;
-        }
-        return (int) ((mouseY - y) / rowHeight) - 1;
+        return DropdownMenu.optionAt(mouseX, mouseY, x, y + rowHeight, width,
+                rowHeight, MapDisplayMode.values().length, 0);
     }
 }

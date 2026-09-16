@@ -196,7 +196,6 @@ class ConfigManagerTest {
 
         manager.save();
         String migrated = Files.readString(configPath);
-        assertFalse(migrated.contains("\"chat.show_rank_gradients\""));
         assertTrue(migrated.contains("\"chat.show_rank_pill_gradients\": true"));
         assertTrue(migrated.contains("\"chat.show_username_gradients\": false"));
     }

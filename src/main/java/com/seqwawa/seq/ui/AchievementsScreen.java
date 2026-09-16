@@ -32,6 +32,8 @@ import org.lwjgl.glfw.GLFW;
 
 public final class AchievementsScreen extends Screen {
 
+    private static final List<SeqRaid> RAID_ORDER = List.of(SeqRaid.NOTG, SeqRaid.NOL, SeqRaid.TCC, SeqRaid.TNA, SeqRaid.TWP);
+
     private static final float MARGIN = SequoiaUiStyle.CONTENT_PADDING;
     private static final float HEADER_HEIGHT = SequoiaUiStyle.HEADER_HEIGHT;
     private static final float CARD_GAP = 6;
@@ -72,8 +74,8 @@ public final class AchievementsScreen extends Screen {
     }
 
     static List<Row> buildRows(GuildRaidProgress progress) {
-        List<Row> rows = new ArrayList<>(SeqRaid.values().length + 1);
-        for (SeqRaid raid : SeqRaid.values()) {
+        List<Row> rows = new ArrayList<>(RAID_ORDER.size() + 1);
+        for (SeqRaid raid : RAID_ORDER) {
             rows.add(row(
                     raid.displayName(),
                     raid.code(),

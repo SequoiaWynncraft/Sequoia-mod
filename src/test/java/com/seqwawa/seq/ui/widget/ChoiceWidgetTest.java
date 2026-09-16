@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 class ChoiceWidgetTest {
 
     @Test
-    void disabledDependentChoiceCannotCycle() {
+    void disabledDependentChoiceCannotOpenDropdown() {
         Setting.BooleanSetting parent = new Setting.BooleanSetting("parent", "test", false);
         Setting.ChoiceSetting setting =
                 new Setting.ChoiceSetting("choice", "test", "alpha", List.of("alpha", "beta"), ignored -> {});
@@ -24,6 +24,8 @@ class ChoiceWidgetTest {
 
         parent.setValue(true);
         assertTrue(widget.mouseClicked(200, 14, 0));
+        assertEquals("alpha", setting.getValue(), "opening must not cycle the value");
+        assertTrue(widget.mouseClicked(200, 56, 0));
         assertEquals("beta", setting.getValue());
     }
 }

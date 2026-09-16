@@ -12,7 +12,7 @@ import com.seqwawa.seq.utils.rendering.UiRenderer;
 final class SequoiaUiStyle {
     static final float HEADER_HEIGHT = 30;
     static final float CONTENT_PADDING = 8;
-    static final float HEADER_CONTROL_HEIGHT = 18;
+    static final float HEADER_CONTROL_HEIGHT = DropdownMenu.CONTROL_HEIGHT;
     private static final float SEARCH_BAR_WIDTH = 140;
 
     private SequoiaUiStyle() {}
