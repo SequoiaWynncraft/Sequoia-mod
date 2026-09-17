@@ -3,12 +3,19 @@ package com.seqwawa.seq.managers;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.integrations.WynntilsWorldStateAccess;
 import com.seqwawa.seq.model.GuildMemberPresence;
+import com.seqwawa.seq.model.KnownGuildMember;
 import com.seqwawa.seq.model.MemberFilter;
+import com.seqwawa.seq.model.MemberSort;
+import com.seqwawa.seq.model.PartyFinderSpot;
+import com.seqwawa.seq.model.PartyRole;
+import com.seqwawa.seq.model.RaidProfilesResponse;
 import com.seqwawa.seq.model.RaidTeamProfile;
+import com.seqwawa.seq.model.RaidType;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftGuildClient;
-import java.util.Collection;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -16,22 +23,18 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
- * Keeps one view of who in the guild is online, where they are, and whether they
- * are mid-raid, assembled from three sources that each know a different part.
+ * One view of who in the guild is online, where they are and whether they are
+ * mid-raid.
  * <p>
- * Wynncraft's guild API supplies the roster and the world; the Sequoia backend's
- * connected-user list marks who is running the mod; {@link GuildRaidActivityTracker}
- * supplies the busy window. Only the first needs a network round trip, so the
- * roster is what refresh throttling protects, since the other two are read live.
+ * Wynncraft's guild API supplies the roster and the world, the backend's
+ * connected-user list marks who runs the mod, and {@link GuildRaidActivityTracker}
+ * supplies the busy window. Only the roster needs a request, so it is what the
+ * refresh throttle protects.
  */
 public final class GuildPresenceManager {
-
-    /** Worlds are grouped under this heading when Wynncraft reports no server. */
-    public static final String UNKNOWN_WORLD = "Unknown";
 
     /** How long a first roster fetch waits for a raid catalog it does not have yet. */
     private static final long CATALOG_WAIT_SECONDS = 8L;
@@ -46,9 +49,8 @@ public final class GuildPresenceManager {
     private volatile boolean refreshing;
     private volatile long lastRefreshAtMs;
     /**
-     * Set when the roster was read without a raid catalog, so every clear count came
-     * out as zero. Wynncraft's cache is not the limit then: the same roster read again
-     * with the catalog gives the right numbers, so the throttle is waived.
+     * Set when the roster was read with no catalog, so every clear count came out as
+     * zero. Reading it again with one gives the right numbers, so the throttle is waived.
      */
     private volatile boolean readWithoutCatalog;
 
@@ -69,10 +71,6 @@ public final class GuildPresenceManager {
 
     public String lastError() {
         return lastError;
-    }
-
-    public long lastRefreshAtMs() {
-        return lastRefreshAtMs;
     }
 
     public String guildDisplayName() {
@@ -108,6 +106,21 @@ public final class GuildPresenceManager {
         return sortByName(filteredMembers(filter));
     }
 
+    /** Filtered, and ordered by the column the player clicked. {@code raid} is the filtered raid. */
+    public List<GuildMemberPresence> membersForDisplay(
+            MemberFilter filter, MemberSort sort, boolean descending, RaidType raid) {
+        if (sort == null || sort == MemberSort.NAME && !descending) {
+            return membersForDisplay(filter);
+        }
+        return MemberSort.sort(filteredMembers(filter), sort, descending, raid, this::lastLogin);
+    }
+
+    /** When this member's Wynncraft session started, or null when they hide it. */
+    public Instant lastLogin(GuildMemberPresence member) {
+        KnownGuildMember known = member == null ? null : knownMember(member.username());
+        return known == null ? null : known.lastJoin();
+    }
+
     /** The online members that pass {@code filter}, ungrouped. */
     public List<GuildMemberPresence> filteredMembers(MemberFilter filter) {
         List<GuildMemberPresence> members = onlineMembers();
@@ -127,6 +140,89 @@ public final class GuildPresenceManager {
     /** The raid profile known for a member, empty when nobody has shared one. */
     public RaidTeamProfile profileFor(GuildMemberPresence member) {
         return RaidProfileStore.getInstance().profileFor(member);
+    }
+
+    /** Anyone in the guild by name, online or not, or null when unknown. */
+    public KnownGuildMember knownMember(String username) {
+        return roster.member(username);
+    }
+
+    // ── Party finder ──
+
+    private List<PartyListing> indexedListings;
+    private Map<String, PartyFinderSpot> partyFinderIndex = Map.of();
+
+    /**
+     * The party finder listing a member sits in, or null. Rebuilt only when the party
+     * finder hands back a new list, and called from the render thread like its own screen.
+     */
+    public PartyFinderSpot partyFinderSpotFor(GuildMemberPresence member) {
+        String uuid = member == null ? null : RaidProfilesResponse.normalizeUuid(member.uuid());
+        if (uuid == null) {
+            return null;
+        }
+        return partyFinderIndex().get(uuid);
+    }
+
+    private Map<String, PartyFinderSpot> partyFinderIndex() {
+        PartyFinderManager manager = SeqClient.partyFinderManager;
+        if (manager == null) {
+            return Map.of();
+        }
+        List<PartyListing> listings = manager.getParties();
+        if (listings != indexedListings) {
+            List<PartyFinderSpot> spots = new ArrayList<>();
+            for (PartyListing listing : listings) {
+                spots.add(toSpot(listing));
+            }
+            partyFinderIndex = PartyFinderSpot.indexByMember(spots);
+            indexedListings = listings;
+        }
+        return partyFinderIndex;
+    }
+
+    private static PartyFinderSpot toSpot(PartyListing listing) {
+        List<String> raids = listing.getRaidTags().stream()
+                .filter(name -> !"Unknown Activity".equals(name))
+                .map(PartyListing::displayNameToBackendName)
+                .toList();
+        List<String> uuids = listing.members.stream()
+                .filter(member -> !member.isReserved && member.playerUUID != null)
+                .map(member -> member.playerUUID)
+                .toList();
+        return new PartyFinderSpot(listing.id, raids, listing.occupiedSlots, listing.maxSize, listing.isJoinable(), uuids);
+    }
+
+    /** Whether the local player already sits in a listing, which rules out joining one. */
+    public boolean isInPartyFinderListing() {
+        PartyFinderManager manager = SeqClient.partyFinderManager;
+        return manager != null && manager.isInParty();
+    }
+
+    /** Loads listings for a session where the party finder screen was never opened. */
+    public void refreshPartyFinder() {
+        PartyFinderManager manager = SeqClient.partyFinderManager;
+        if (manager == null || !ConnectionManager.isConnected()) {
+            return;
+        }
+        try {
+            manager.refreshListingsQuietly();
+        } catch (RuntimeException e) {
+            SeqClient.LOGGER.debug("[GuildPresence] Could not refresh party finder listings", e);
+        }
+    }
+
+    /** Joins a member's listing as DPS, the party finder's default, and reports its message. */
+    public CompletableFuture<String> joinPartyFinder(PartyFinderSpot spot) {
+        PartyFinderManager manager = SeqClient.partyFinderManager;
+        if (manager == null || spot == null) {
+            return CompletableFuture.completedFuture("The party finder is not ready yet.");
+        }
+        return manager.joinPartyFromCommand(spot.listingId(), PartyRole.DPS)
+                .thenApply(result -> result.message() == null || result.message().isBlank()
+                        ? (result.success() ? "Joined the party." : "Could not join that party.")
+                        : result.message())
+                .exceptionally(throwable -> "Could not join that party.");
     }
 
     public String currentWorld() {
@@ -155,13 +251,9 @@ public final class GuildPresenceManager {
         lastError = null;
 
         requestSequoiaConnectedUsers();
-        // The catalog has to be in hand before the roster is parsed, because reading
-        // clear counts needs the raid names it carries. Once one is cached there is
-        // nothing to wait for; the refresh still runs, it just does not hold up the
-        // roster. With no catalog at all the wait is bounded: a slow sign-in to a
-        // separate raid-profiles backend (challenge, Mojang join, fetch) must not keep
-        // the whole member list empty.
-        // refresh() never completes exceptionally, so waiting on it cannot fail the roster.
+        // Clear counts are keyed by the raid names the catalog carries, so it has to be
+        // in hand before the roster is parsed. With one cached there is nothing to wait
+        // for; without one the wait is bounded so a slow sign-in cannot keep the list empty.
         RaidProfileStore profileStore = RaidProfileStore.getInstance();
         boolean needsCatalog = profileStore.catalog().isEmpty();
         CompletableFuture<Void> refreshed = profileStore.refresh();
@@ -215,11 +307,7 @@ public final class GuildPresenceManager {
         });
     }
 
-    /**
-     * Marks which members are running Sequoia. This is best effort and deliberately
-     * off the refresh's critical path: the roster is what the panel is for, and a
-     * missing badge is a smaller loss than a panel that fails to load.
-     */
+    /** Best effort, and off the refresh's critical path: a missing badge beats a panel that fails. */
     private void requestSequoiaConnectedUsers() {
         if (!ConnectionManager.isConnected()) {
             sequoiaConnected.clear();
@@ -277,12 +365,8 @@ public final class GuildPresenceManager {
     }
 
     /**
-     * Invites a member to the local player's Wynncraft party, creating the party
-     * first when there is not one yet.
-     * <p>
-     * The two commands cannot be sent back to back: Wynncraft has to acknowledge the
-     * party before it will accept an invite into it, so the invite is delayed by one
-     * short beat, the same way the party finder paces its bulk invites.
+     * Invites a member, creating the party first when there is not one. The two
+     * commands cannot go back to back: Wynncraft has to acknowledge the party first.
      */
     public InviteOutcome inviteToParty(String username) {
         InviteAction action = decideInviteAction(
@@ -303,13 +387,7 @@ public final class GuildPresenceManager {
         };
     }
 
-    /**
-     * Invites a whole composition, creating the party first when there is not one.
-     * <p>
-     * Invites are spaced the same way the party finder spaces its bulk invites:
-     * Wynncraft drops commands sent in the same tick, so a burst of four would
-     * arrive as one or two.
-     */
+    /** Invites a whole composition, spacing the commands so Wynncraft does not drop them. */
     public InviteOutcome inviteAllToParty(List<String> usernames) {
         List<String> targets = inviteTargets(usernames, localUsername(), observedPartyMembers());
         if (targets.isEmpty()) {
@@ -338,7 +416,7 @@ public final class GuildPresenceManager {
                 true, needsParty ? "Created a party and invited " + who + "." : "Invited " + who + ".");
     }
 
-    /** Sends {@code /msg username message}, the way the party finder pings people. */
+    /** Sends {@code /msg username message}. */
     public boolean whisper(String username, String message) {
         if (username == null || message == null || message.isBlank()) {
             return false;
@@ -385,14 +463,7 @@ public final class GuildPresenceManager {
 
     // ── Pure logic ──
 
-    /**
-     * Sorts members by name, ignoring case.
-     * <p>
-     * The list used to be grouped by world, which buried people: to find one person
-     * you had to know where they were first. A flat A to Z list with the world in
-     * its own column answers both questions, and the position of a name stops
-     * moving every time someone switches server.
-     */
+    /** Sorts members by name, ignoring case. */
     static List<GuildMemberPresence> sortByName(List<GuildMemberPresence> members) {
         if (members == null || members.isEmpty()) {
             return List.of();
@@ -402,10 +473,7 @@ public final class GuildPresenceManager {
                 .toList();
     }
 
-    /**
-     * Who out of {@code usernames} still needs an invite: everyone but the local
-     * player and whoever is already in the party, with duplicates collapsed.
-     */
+    /** Who still needs an invite: everyone but you and the party, duplicates collapsed. */
     static List<String> inviteTargets(
             List<String> usernames, String localUsername, Collection<String> partyMembers) {
         if (usernames == null || usernames.isEmpty()) {

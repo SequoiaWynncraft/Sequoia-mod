@@ -3,20 +3,16 @@ package com.seqwawa.seq.model;
 import java.util.Locale;
 
 /**
- * The narrowing applied to the members list: "who here can run TNA", "who has an
- * ascendancy", "who can bring auras", "who is free right now".
+ * The narrowing applied to the members list: raid, auras, availability, name.
  * <p>
- * The raid and build are held as keys, so a filter stays valid across a catalog
- * refresh rather than pointing at an object that no longer exists.
+ * The raid is held as a key, so a filter stays valid across a catalog refresh.
  */
-public record MemberFilter(
-        String raidKey, String buildKey, boolean aurasOnly, boolean availableOnly, String search) {
+public record MemberFilter(String raidKey, boolean aurasOnly, boolean availableOnly, String search) {
 
-    private static final MemberFilter NONE = new MemberFilter(null, null, false, false, null);
+    private static final MemberFilter NONE = new MemberFilter(null, false, false, null);
 
     public MemberFilter {
         raidKey = blankToNull(raidKey == null ? null : raidKey.trim().toUpperCase(Locale.ROOT));
-        buildKey = blankToNull(RaidBuild.normalizeKey(buildKey));
         search = blankToNull(search == null ? null : search.trim().toLowerCase(Locale.ROOT));
     }
 
@@ -25,7 +21,7 @@ public record MemberFilter(
     }
 
     public boolean isActive() {
-        return raidKey != null || buildKey != null || aurasOnly || availableOnly || search != null;
+        return raidKey != null || aurasOnly || availableOnly || search != null;
     }
 
     public boolean hasRaid() {
@@ -33,23 +29,19 @@ public record MemberFilter(
     }
 
     public MemberFilter withRaid(RaidType value) {
-        return new MemberFilter(value == null ? null : value.key(), buildKey, aurasOnly, availableOnly, search);
-    }
-
-    public MemberFilter withBuild(String value) {
-        return new MemberFilter(raidKey, value, aurasOnly, availableOnly, search);
+        return new MemberFilter(value == null ? null : value.key(), aurasOnly, availableOnly, search);
     }
 
     public MemberFilter withAurasOnly(boolean value) {
-        return new MemberFilter(raidKey, buildKey, value, availableOnly, search);
+        return new MemberFilter(raidKey, value, availableOnly, search);
     }
 
     public MemberFilter withAvailableOnly(boolean value) {
-        return new MemberFilter(raidKey, buildKey, aurasOnly, value, search);
+        return new MemberFilter(raidKey, aurasOnly, value, search);
     }
 
     public MemberFilter withSearch(String value) {
-        return new MemberFilter(raidKey, buildKey, aurasOnly, availableOnly, value);
+        return new MemberFilter(raidKey, aurasOnly, availableOnly, value);
     }
 
     /** The raid this filter names, resolved against the current catalog. */
@@ -60,13 +52,9 @@ public record MemberFilter(
     /**
      * Whether a member passes this filter.
      * <p>
-     * The raid clause has two ways to be satisfied, because the two sources of
-     * truth are uneven. A member who has filled in a profile is matched on what
-     * they declared they own. A member who has not is matched on Wynncraft's
-     * measured clear count for that raid, which is weaker evidence but real:
-     * someone with 3566 TNA clears can run TNA whether or not they ever opened the
-     * setup screen. Builds and auras have no such fallback, because Wynncraft does
-     * not know them, so those clauses only ever match a declared profile.
+     * The raid clause is satisfied two ways: a member with a profile is matched on
+     * the builds they declared, one without is matched on their clear count for that
+     * raid. Auras have no such fallback, since Wynncraft does not know them.
      */
     public boolean matches(
             GuildMemberPresence member, RaidTeamProfile profile, boolean busy, RaidCatalog catalog) {
@@ -82,9 +70,6 @@ public record MemberFilter(
 
         RaidTeamProfile known = profile == null ? RaidTeamProfile.empty() : profile;
 
-        if (buildKey != null && !known.hasBuild(buildKey)) {
-            return false;
-        }
         if (aurasOnly && !known.canBringAuras()) {
             return false;
         }
@@ -100,30 +85,6 @@ public record MemberFilter(
             return declaredCover || measuredCover;
         }
         return true;
-    }
-
-    /** Why a member matched a raid filter, so the row can say which it was. */
-    public enum RaidMatchBasis {
-        /** The member ticked a meta build for this raid in their profile. */
-        DECLARED,
-        /** No profile, but Wynncraft records clears of this raid. */
-        MEASURED,
-        NONE
-    }
-
-    public static RaidMatchBasis raidMatchBasis(
-            GuildMemberPresence member, RaidTeamProfile profile, RaidType raid) {
-        if (member == null || raid == null) {
-            return RaidMatchBasis.NONE;
-        }
-        RaidTeamProfile known = profile == null ? RaidTeamProfile.empty() : profile;
-        if (known.isComplete() && known.coversRaid(raid)) {
-            return RaidMatchBasis.DECLARED;
-        }
-        if (member.stats().completions(raid) > 0) {
-            return RaidMatchBasis.MEASURED;
-        }
-        return RaidMatchBasis.NONE;
     }
 
     private static String blankToNull(String value) {

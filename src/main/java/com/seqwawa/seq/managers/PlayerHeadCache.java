@@ -15,18 +15,16 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Player heads for the members panel, so a row is recognisable at a glance
- * instead of read letter by letter.
+ * Player heads for the members panel.
  * <p>
- * Downloading happens off the render thread, but turning the bytes into a
- * drawable image needs the render context, so that step is deferred to the first
- * {@link #headFor} call that happens during a frame. A head that is still on its
- * way returns null and the row draws a placeholder, which is why nothing here
- * ever blocks.
+ * Downloading happens off the render thread, but turning the bytes into an image
+ * needs the render context, so that step is deferred to the first {@link #headFor}
+ * call in a frame. A head still on its way returns null and the row draws a
+ * placeholder, so nothing here ever blocks.
  */
 public final class PlayerHeadCache {
 
-    /** Size requested from the service. Rows draw at 16px, so this is one to one. */
+    /** Rows draw at 16px, so this is one to one. */
     private static final int HEAD_PIXELS = 16;
 
     private static final String HEAD_URL = "https://mc-heads.net/avatar/%s/" + HEAD_PIXELS;
@@ -42,11 +40,7 @@ public final class PlayerHeadCache {
 
     private PlayerHeadCache() {}
 
-    /**
-     * The head for a player, or null while it is still loading or if it could not
-     * be fetched. Safe to call every frame; call it from the render thread, since
-     * that is where the image gets created.
-     */
+    /** The head for a player, or null while it loads or if it failed. Render thread only. */
     public static UiImage headFor(String uuid) {
         String key = normalize(uuid);
         if (key == null || FAILED.contains(key)) {

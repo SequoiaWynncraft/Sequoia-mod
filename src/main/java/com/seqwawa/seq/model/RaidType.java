@@ -5,14 +5,10 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * One raid, with the builds the guild considers meta for it.
+ * One raid and the builds the guild considers meta for it, published by the backend.
  * <p>
- * Like {@link RaidBuild} this comes from the backend rather than from the jar,
- * so the guild can change what counts as meta for a raid without a release.
- * <p>
- * {@link #apiName} is the exact string Wynncraft uses as a key under a player's
- * {@code globalData.currentGuildRaids.list}, which is how clear counts are read
- * off the roster. The backend owns that mapping because it owns the raid list.
+ * {@link #apiName} is the key Wynncraft uses under a player's
+ * {@code globalData.currentGuildRaids.list}, which is how clear counts are read.
  */
 public record RaidType(String key, String shortName, String apiName, int position, Set<String> buildKeys) {
 
@@ -31,7 +27,7 @@ public record RaidType(String key, String shortName, String apiName, int positio
         return !key.isEmpty();
     }
 
-    /** Whether owning any of {@code ownedBuildKeys} makes someone useful here. */
+    /** Whether any of {@code ownedBuildKeys} is meta for this raid. */
     public boolean isCoveredBy(Set<String> ownedBuildKeys) {
         if (ownedBuildKeys == null || ownedBuildKeys.isEmpty()) {
             return false;

@@ -98,11 +98,9 @@ class RaidCatalogTest {
     }
 
     @Test
-    void unknownKeysAreDroppedSoAStaleProfileStaysUsable() {
+    void aKeyTheCatalogNoLongerListsIsNotAKnownBuild() {
         RaidCatalog catalog = sequoiaCatalog();
 
-        assertEquals(Set.of("HERO"), catalog.retainKnown(Set.of("HERO", "SOME_REMOVED_BUILD")));
-        assertEquals(Set.of(), catalog.retainKnown(Set.of()));
         assertFalse(catalog.hasBuild("SOME_REMOVED_BUILD"));
         assertTrue(catalog.hasBuild("hero"));
     }

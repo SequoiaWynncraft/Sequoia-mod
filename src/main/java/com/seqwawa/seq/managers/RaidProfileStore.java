@@ -35,18 +35,15 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
 
 /**
- * Owns the raid meta and every member's profile, both of which come from the
- * backend, plus the handful of things that are the player's alone.
+ * Owns the raid meta and every member's profile, both from the backend, plus what
+ * is the player's alone.
  * <p>
- * The split is deliberate. The catalog of meta builds and the profiles are guild
- * data: they are fetched, cached to disk so the panel is not blank while offline,
- * and never authored here. Friends, premade parties, private notes and whether
- * the setup screen has been dismissed are personal, so they live in a local file
- * and are never sent anywhere.
+ * Catalog and profiles are guild data: fetched, cached to disk so the panel is not
+ * blank offline, never authored here. Friends, premades, notes and the setup
+ * dismissal are personal and stay in a local file.
  * <p>
- * Your own profile is read back from the same fetch as everyone else's rather
- * than kept locally, which is what stops your client from showing a version of
- * yourself that the rest of the guild cannot see.
+ * Your own profile is read back from the same fetch as everyone else's, so you
+ * cannot see a version of yourself the guild cannot.
  */
 public final class RaidProfileStore {
 
@@ -68,7 +65,7 @@ public final class RaidProfileStore {
 
     private static final int SCHEMA_VERSION = 1;
 
-    /** Notes are a reminder to yourself, not an essay. */
+    /** A note is a reminder, not an essay. */
     public static final int MAX_NOTE_LENGTH = 120;
 
     private static RaidProfileStore instance;
@@ -98,7 +95,7 @@ public final class RaidProfileStore {
         this(localPath, cachePath, () -> ApiClient.getInstance().getRaidProfiles());
     }
 
-    /** Test seam, so cache and fetch behaviour can be exercised without a network. */
+    /** Test seam, so cache and fetch behaviour can run without a network. */
     RaidProfileStore(
             Path localPath, Path cachePath, Supplier<CompletableFuture<RaidProfilesResponse>> fetch) {
         this.localPath = localPath;
@@ -116,10 +113,8 @@ public final class RaidProfileStore {
     }
 
     /**
-     * Applies pushes so a panel left open does not go stale.
-     * <p>
-     * Optional on the backend's side: without the push the panel still refreshes
-     * when it opens, when Refresh is pressed, and after a save.
+     * Applies pushes so a panel left open does not go stale. Optional on the
+     * backend's side: the panel still refreshes on open, on Refresh and after a save.
      */
     private void subscribeToLiveUpdates() {
         ConnectionManager.onRaidProfileUpdate(this::onLiveUpdate);
@@ -131,8 +126,7 @@ public final class RaidProfileStore {
         }
         if (ApiClient.raidProfilesOnSeparateBackend()) {
             // The socket belongs to the main backend, so its pushes describe that
-            // backend's profiles. Mixing them into ones fetched from elsewhere would
-            // show members who never saved a profile where this panel reads from.
+            // backend's profiles and must not mix into ones fetched elsewhere.
             return;
         }
         RaidProfilesResponse.Profile profile;
@@ -149,8 +143,8 @@ public final class RaidProfileStore {
         }
 
         if (message.isRemoval()) {
-            // A removal payload has a profile's shape with null fields. Storing it
-            // would read as "shared an empty profile" instead of "shared none".
+            // A removal has a profile's shape with null fields, and storing it would
+            // read as "shared an empty profile" rather than "shared none".
             removeProfile(uuid);
             return;
         }
@@ -164,12 +158,7 @@ public final class RaidProfileStore {
         return catalog;
     }
 
-    /**
-     * The profile for a roster member, matched on their UUID.
-     * <p>
-     * Always prefer this over the by-name lookup: a member who renamed keeps the
-     * same UUID, so this cannot return a stale entry or miss a fresh one.
-     */
+    /** The profile for a roster member, matched on UUID. Prefer this to the by-name lookup. */
     public RaidTeamProfile profileFor(GuildMemberPresence member) {
         return member == null ? RaidTeamProfile.empty() : profileForUuid(member.uuid());
     }
@@ -180,9 +169,8 @@ public final class RaidProfileStore {
     }
 
     /**
-     * The profile for a bare username, for the friends list where the member may
-     * be offline and a name is all there is. Best effort: the name index can be a
-     * rename behind, which is exactly why nothing with a roster row uses it.
+     * The profile for a bare username, for the friends list where a name is all there
+     * is. Best effort: the name index can be a rename behind.
      */
     public RaidTeamProfile profileForUsername(String username) {
         String key = normalizeKey(username);
@@ -193,11 +181,7 @@ public final class RaidProfileStore {
         return uuid == null ? RaidTeamProfile.empty() : profiles.getOrDefault(uuid, RaidTeamProfile.empty());
     }
 
-    public boolean hasProfileFor(GuildMemberPresence member) {
-        return profileFor(member).isComplete();
-    }
-
-    /** Your own profile, read back from the backend like everybody else's. */
+    /** Your own profile, read back from the backend like everyone else's. */
     public RaidTeamProfile selfProfile() {
         String uuid = localUuid();
         return uuid == null ? profileForUsername(localUsername()) : profileForUuid(uuid);
@@ -225,15 +209,13 @@ public final class RaidProfileStore {
     }
 
     /**
-     * Fetches the catalog and every profile, then caches the response.
-     * <p>
-     * A failure keeps whatever was already loaded: a panel showing a slightly old
-     * roster is worth more than one that empties itself because a request timed out.
+     * Fetches the catalog and every profile, then caches the response. A failure keeps
+     * whatever was already loaded rather than emptying the panel.
      */
     public synchronized CompletableFuture<Void> refresh() {
         if (fetching) {
-            // A fetch already in flight may have started before a save, and would then
-            // overwrite it with pre-save data. Run once more after it lands.
+            // A fetch in flight may predate a save and would overwrite it, so run once
+            // more after it lands.
             refreshQueued = true;
             return inFlightRefresh;
         }
@@ -282,19 +264,16 @@ public final class RaidProfileStore {
 
     void apply(RaidProfilesResponse response) {
         RaidCatalog fetched = response.toCatalog();
-        // An empty catalog would blank every build chip in the panel, so a response
-        // that carries none keeps the last one that worked.
+        // A response with no catalog keeps the last one that worked, rather than
+        // blanking every build chip.
         catalog = fetched.isEmpty() ? catalog : fetched;
         profiles = response.toDomain(catalog);
         uuidByUsername = response.uuidByUsername();
     }
 
     /**
-     * Applies one member's profile from a {@code raid_profile_update} push.
-     * <p>
-     * Only ever called for the {@code updated} action. A removal carries a payload
-     * shaped like a profile but filled with nulls, and storing that would show the
-     * member as having shared an empty profile instead of none.
+     * Applies one member's profile from a {@code raid_profile_update} push. Only for
+     * the {@code updated} action: a removal carries nulls, which would store as empty.
      */
     public void applyProfileUpdate(RaidProfilesResponse.Profile profile) {
         String uuid = RaidProfilesResponse.identityKey(profile);
@@ -337,10 +316,8 @@ public final class RaidProfileStore {
     }
 
     /**
-     * Saves your profile to the backend and applies what it stored.
-     * <p>
-     * The stored profile is read back rather than assumed, so what you see is what
-     * the rest of the guild will see, including any normalising the server did.
+     * Saves your profile and applies what the backend stored, so what you see is what
+     * the guild sees, including any normalising the server did.
      */
     public CompletableFuture<Boolean> saveSelfProfile(RaidTeamProfile profile) {
         RaidTeamProfile toSave = profile == null ? RaidTeamProfile.empty() : profile;
@@ -349,11 +326,11 @@ public final class RaidProfileStore {
                 .thenApply(saved -> {
                     setupDismissed = false;
                     persist();
-                    // The response is authoritative, including the username, which can be
-                    // a rename ahead of what the token says.
+                    // The response is authoritative, including a username that may be a
+                    // rename ahead of the token.
                     applyProfileUpdate(saved);
-                    // Pull the authoritative copy in the background; the optimistic entry
-                    // above is what keeps the panel responsive in the meantime.
+                    // Pull the authoritative copy in the background; the entry above keeps
+                    // the panel responsive meanwhile.
                     refresh();
                     lastError = null;
                     return true;
@@ -371,28 +348,20 @@ public final class RaidProfileStore {
 
     // ── Setup gating ──
 
-    /**
-     * Whether the setup screen should open instead of the members list. True until
-     * the backend holds a profile for you, or you explicitly skip it.
-     */
+    /** Whether setup should open instead of the list: until you have a profile, or skip it. */
     public boolean needsSetup() {
         return !selfProfile().isComplete() && !setupDismissed;
     }
 
-    /** Records that the player closed setup without filling anything in. */
+    /** Records that setup was closed without filling anything in. */
     public void dismissSetup() {
         setupDismissed = true;
         persist();
     }
 
-    /** Reopens the setup screen on the next visit, for "edit my profile". */
-    public void requestSetup() {
-        setupDismissed = false;
-    }
-
     // ── Friends ──
 
-    /** People the player likes raiding with, in the order they added them. */
+    /** Friends, in the order they were added. */
     public List<String> friends() {
         return List.copyOf(friends);
     }
@@ -454,7 +423,7 @@ public final class RaidProfileStore {
 
     // ── Private notes ──
 
-    /** The player's own note about a member, or null. Never leaves this client. */
+    /** Your own note about a member, or null. Never leaves this client. */
     public String noteFor(String username) {
         String key = normalizeKey(username);
         return key == null ? null : notes.get(key);
@@ -492,8 +461,7 @@ public final class RaidProfileStore {
                 applyLocalDocument(parsed.getAsJsonObject());
             }
         } catch (IOException | RuntimeException e) {
-            // A corrupt file is recoverable by filling things in again; refusing to open
-            // the panel over it would not be.
+            // A corrupt file can be filled in again; refusing to open the panel cannot.
             SeqClient.LOGGER.warn("[RaidProfiles] Could not read {}: {}", localPath, e.toString());
         }
     }

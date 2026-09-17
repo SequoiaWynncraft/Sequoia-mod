@@ -71,15 +71,8 @@ class MemberFilterTest {
     }
 
     @Test
-    void buildAndAuraFiltersNeverFallBackBecauseWynncraftDoesNotKnowThem() {
+    void theAuraFilterNeverFallsBackBecauseWynncraftDoesNotKnowIt() {
         GuildMemberPresence veteran = member("alpha", Map.of("TNA", 3566));
-
-        assertFalse(MemberFilter.none()
-                .withBuild("ASCENDANCY")
-                .matches(veteran, RaidTeamProfile.empty(), false, CATALOG));
-        assertTrue(MemberFilter.none()
-                .withBuild("ascendancy")
-                .matches(veteran, profileWith("ASCENDANCY"), false, CATALOG));
 
         assertFalse(
                 MemberFilter.none().withAurasOnly(true).matches(veteran, RaidTeamProfile.empty(), false, CATALOG));
@@ -129,28 +122,11 @@ class MemberFilterTest {
 
     @Test
     void theFilterHoldsKeysSoItSurvivesACatalogRefresh() {
-        MemberFilter filter = MemberFilter.none().withRaid(raid("TNA")).withBuild("hadal");
+        MemberFilter filter = MemberFilter.none().withRaid(raid("TNA"));
 
         assertEquals("TNA", filter.raidKey());
-        assertEquals("HADAL", filter.buildKey());
         assertTrue(filter.hasRaid());
         assertEquals("TNA", filter.raid(CATALOG).key());
         assertEquals(null, filter.raid(RaidCatalog.empty()));
-    }
-
-    @Test
-    void raidMatchBasisSaysWhichKindOfEvidenceMatched() {
-        GuildMemberPresence veteran = member("alpha", Map.of("TNA", 3566));
-
-        assertEquals(
-                MemberFilter.RaidMatchBasis.DECLARED,
-                MemberFilter.raidMatchBasis(veteran, profileWith("RESONANCE"), raid("TNA")));
-        assertEquals(
-                MemberFilter.RaidMatchBasis.MEASURED,
-                MemberFilter.raidMatchBasis(veteran, RaidTeamProfile.empty(), raid("TNA")));
-        assertEquals(
-                MemberFilter.RaidMatchBasis.NONE,
-                MemberFilter.raidMatchBasis(veteran, RaidTeamProfile.empty(), raid("WTP")));
-        assertEquals(MemberFilter.RaidMatchBasis.NONE, MemberFilter.raidMatchBasis(null, null, raid("TNA")));
     }
 }

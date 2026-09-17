@@ -28,12 +28,9 @@ import org.lwjgl.glfw.GLFW;
 /**
  * Asks a member, once, which meta raid builds they own.
  * <p>
- * Everything here is a claim about the member's own gear, which is exactly the
- * part no API can answer: Wynncraft publishes how many raids someone has cleared
- * but nothing about what they can bring to the next one.
- * <p>
- * Keeping it to eight toggles, one aura check and a region is the whole point. A
- * form that takes a minute gets filled in. One that takes ten does not.
+ * This is the part no API can answer: Wynncraft publishes how many raids someone
+ * cleared, not what they can bring to the next one. Keeping it to a handful of
+ * toggles, an aura check and a region is what gets it filled in.
  */
 public class RaidProfileSetupScreen extends Screen {
 
@@ -64,7 +61,7 @@ public class RaidProfileSetupScreen extends Screen {
     private final boolean firstRun;
 
     private RaidTeamProfile draft;
-    /** Set once the player touches the form, so a late fetch never overwrites their edits. */
+    /** Set once the form is touched, so a late fetch cannot overwrite the edits. */
     private boolean edited;
     private String statusInput;
     private boolean statusFocused;
@@ -100,17 +97,15 @@ public class RaidProfileSetupScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        // The screen is nothing without the meta list, and the draft has to start from
-        // the stored profile, so ask for both on the way in.
+        // The form needs the meta list, and the draft starts from the stored profile.
         if (catalog().isEmpty() || !profiles().hasLoadedProfiles()) {
             profiles().refresh();
         }
     }
 
     /**
-     * Adopts the stored profile when it arrives after the screen opened, as long as
-     * the player has not started editing. Otherwise saving would overwrite an
-     * existing profile with the blank form shown before the fetch landed.
+     * Adopts the stored profile when it lands after the screen opened, unless the form
+     * has been edited. Without this, saving would overwrite it with the blank form.
      */
     private void syncDraftWithStore() {
         if (edited || saving) {
@@ -190,7 +185,7 @@ public class RaidProfileSetupScreen extends Screen {
         });
     }
 
-    /** Height is derived from the same constants the sections lay themselves out with. */
+    /** Height derived from the constants the sections lay themselves out with. */
     private float panelHeight() {
         int buildCount = Math.max(1, catalog().builds().size());
         int buildRows = (buildCount + BUILD_COLUMNS - 1) / BUILD_COLUMNS;
@@ -293,7 +288,7 @@ public class RaidProfileSetupScreen extends Screen {
         canvas.strokeRect(
                 x, y, CHECKBOX_SIZE, CHECKBOX_SIZE, 1, checked ? color(ACCENT_PRIMARY_HOVER) : color(CONTROL_BORDER));
         if (checked) {
-            // A short tick drawn as two strokes reads at this size where a glyph would not.
+            // Two strokes read at this size where a glyph would not.
             float inset = 3f;
             canvas.strokeLine(
                     x + inset,
@@ -481,7 +476,7 @@ public class RaidProfileSetupScreen extends Screen {
         return label.toString();
     }
 
-    /** Says why the build list is empty, which is almost always the connection. */
+    /** Why the build list is empty, which is almost always the connection. */
     private String metaUnavailableMessage() {
         String failure = profiles().lastError();
         return failure == null || failure.isBlank()
@@ -539,19 +534,15 @@ public class RaidProfileSetupScreen extends Screen {
         return super.mouseClicked(click, outsideScreen);
     }
 
-    /**
-     * Sends the profile to the backend and only leaves once it landed. Closing on
-     * a failed save would tell the player their builds are shared when they are not.
-     */
+    /** Sends the profile and only leaves once it landed, so a failed save is not silent. */
     private void save() {
         if (saving) {
             return;
         }
         if (!profiles().hasLoadedProfiles()) {
-            // Until the fetch lands the form may be the blank one shown on open, not the
-            // stored profile, and saving it would overwrite that profile. The `edited`
-            // flag only protects a form the player has touched; pressing Save straight
-            // away needs this guard as well.
+            // Before the fetch lands the form may still be the blank one shown on open,
+            // and saving that would overwrite the stored profile. The edited flag only
+            // covers a form that was touched, so Save needs this guard too.
             profiles().refresh();
             String failure = profiles().lastError();
             error = failure == null || failure.isBlank()
@@ -577,7 +568,7 @@ public class RaidProfileSetupScreen extends Screen {
 
     private void skip() {
         if (firstRun) {
-            // Only a first run is a decision to record; cancelling an edit is not.
+            // Only a first run records a decision; cancelling an edit does not.
             RaidProfileStore.getInstance().dismissSetup();
         }
         SeqClient.mc.setScreen(new GuildMembersScreen(parent));

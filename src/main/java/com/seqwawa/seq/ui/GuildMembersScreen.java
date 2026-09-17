@@ -9,10 +9,15 @@ import com.seqwawa.seq.managers.GuildRaidActivityTracker;
 import com.seqwawa.seq.managers.PlayerHeadCache;
 import com.seqwawa.seq.managers.RaidProfileStore;
 import com.seqwawa.seq.model.GuildMemberPresence;
+import com.seqwawa.seq.model.GuildMemberStats;
+import com.seqwawa.seq.model.KnownGuildMember;
 import com.seqwawa.seq.model.MemberFilter;
+import com.seqwawa.seq.model.MemberSort;
+import com.seqwawa.seq.model.PartyFinderSpot;
+import com.seqwawa.seq.model.PremadeAvailability;
 import com.seqwawa.seq.model.PremadeParty;
-import com.seqwawa.seq.model.RaidBuild;
 import com.seqwawa.seq.model.RaidCatalog;
+import com.seqwawa.seq.model.RaidPerformance;
 import com.seqwawa.seq.model.RaidTeamProfile;
 import com.seqwawa.seq.model.RaidType;
 import com.seqwawa.seq.utils.TextInputHelper;
@@ -21,6 +26,7 @@ import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiImage;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 import java.awt.Color;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -35,14 +41,12 @@ import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * Every guild member Wynncraft says is online, sorted by name, with what each of
- * them can bring to a raid group and the two things you would do about it: go to
- * their world, or pull them into a party.
+ * The guild members panel: who is online, what they bring to a raid, and the two
+ * things you would do about it, join their world or invite them.
  * <p>
- * Two kinds of evidence sit side by side and are drawn differently on purpose.
- * A member who filled in a raid profile shows the builds they said they own. A
- * member who has not shows how many times they have run that raid with the guild,
- * which answers a weaker question but answers it without anyone opting in.
+ * A member with a raid profile shows the builds they declared; one without shows
+ * how many times they have run that raid with the guild, which is weaker evidence
+ * but needs nobody to opt in.
  */
 public class GuildMembersScreen extends Screen {
 
@@ -51,7 +55,7 @@ public class GuildMembersScreen extends Screen {
     private static final float TAB_STRIP_HEIGHT = 24;
     private static final float FILTER_BAR_HEIGHT = 30;
     private static final float COLUMN_HEADER_HEIGHT = 16;
-    /** Breathing room kept between a column heading and the next column's. */
+    /** Kept between a column heading and the next column. */
     private static final float COLUMN_LABEL_GAP = 6;
     private static final float PADDING = 10;
     private static final float ROW_HEIGHT = 26;
@@ -63,10 +67,11 @@ public class GuildMembersScreen extends Screen {
     // Column offsets from the content's left edge, so every row lines up.
     private static final float COL_HEAD = 8;
     private static final float COL_NAME = 30;
-    private static final float COL_WORLD = 186;
-    private static final float COL_REGION = 230;
-    private static final float COL_RAIDS = 268;
-    private static final float COL_EVIDENCE = 320;
+    private static final float COL_WORLD = 172;
+    private static final float COL_ONLINE = 212;
+    private static final float COL_RAIDS = 252;
+    private static final float COL_WARS = 298;
+    private static final float COL_EVIDENCE = 344;
 
     private static final float HEAD_SIZE = 16;
     private static final float STATUS_DOT_RADIUS = 3.5f;
@@ -81,6 +86,8 @@ public class GuildMembersScreen extends Screen {
 
     private static final float BUSY_CHIP_W = 62;
     private static final float BUSY_CHIP_H = 15;
+    /** A party finder chip may outgrow the busy one, but not enough to reach the builds. */
+    private static final float PF_CHIP_MAX_W = 80;
     private static final float CHIP_H = 14;
     private static final float CHIP_GAP = 4;
     private static final int MAX_VISIBLE_CHIPS = 3;
@@ -95,9 +102,14 @@ public class GuildMembersScreen extends Screen {
     private static final float PREMADE_BUTTON_W = 72;
     private static final float NEW_PARTY_BUTTON_W = 88;
 
-    private static final float MODAL_WIDTH = 380;
+    private static final float MODAL_WIDTH = 420;
+    private static final float PREMADE_MODAL_WIDTH = 470;
+    private static final float PREMADE_SEAT_H = 22;
     private static final float MODAL_PADDING = 18;
     private static final float MODAL_ROW_H = 18;
+    /** Fact rows above the per-raid block: seven shared lines and the builds line. */
+    private static final int MODAL_FACT_ROWS = 8;
+    private static final float MODAL_PAIR_GAP = 14;
     private static final float MODAL_HEAD_SIZE = 28;
     private static final float NOTE_INPUT_H = 22;
 
@@ -114,11 +126,13 @@ public class GuildMembersScreen extends Screen {
     private final Screen parent;
 
     /**
-     * Set when the panel opened before any profile had loaded. The first-run setup
-     * cannot be offered then, since "no profile" may only mean "not fetched yet", so
-     * the decision waits for the fetch instead of being skipped for this visit.
+     * Set when the panel opened before profiles had loaded, since "no profile" may
+     * then only mean "not fetched yet". The first-run decision waits for the fetch.
      */
     private boolean firstRunCheckPending;
+
+    /** init() runs again on every resize, and the fetches are wanted only on open. */
+    private boolean dataRequested;
 
     private float uiMouseX;
     private float uiMouseY;
@@ -127,6 +141,9 @@ public class GuildMembersScreen extends Screen {
 
     private Tab tab = Tab.MEMBERS;
     private MemberFilter filter = MemberFilter.none();
+    /** Which column the list is ordered by, and which way round. */
+    private MemberSort sort = MemberSort.NAME;
+    private boolean sortDescending;
     private String searchInput = "";
     private boolean searchFocused;
 
@@ -134,8 +151,11 @@ public class GuildMembersScreen extends Screen {
     private String noteInput = "";
     private boolean noteFocused;
 
-    private String statusBannerMessage;
-    private long statusBannerExpiresAtMs;
+    /** The premade whose seats are open in the modal, or null. */
+    private PremadeParty selectedPremade;
+
+    private volatile String statusBannerMessage;
+    private volatile long statusBannerExpiresAtMs;
 
     /** Rebuilt every frame so clicks test against exactly what was drawn. */
     private final List<ActionHitbox> actionHitboxes = new ArrayList<>();
@@ -143,6 +163,11 @@ public class GuildMembersScreen extends Screen {
     private final List<TabHitbox> tabHitboxes = new ArrayList<>();
     private final List<FriendHitbox> friendHitboxes = new ArrayList<>();
     private final List<PremadeHitbox> premadeHitboxes = new ArrayList<>();
+    private final List<PartyFinderHitbox> partyFinderHitboxes = new ArrayList<>();
+    private final List<SortHitbox> sortHitboxes = new ArrayList<>();
+    private Rect premadeInviteBounds;
+    private boolean premadeInviteEnabled;
+    private Rect premadeEditBounds;
     private Rect newPartyBounds;
     private Rect friendToggleBounds;
     private Rect refreshButtonBounds;
@@ -164,10 +189,15 @@ public class GuildMembersScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        // Opening the panel is the moment the roster matters, so ask for a fresh one.
-        // The throttle turns this into a no-op when it was refreshed moments ago.
+        if (dataRequested) {
+            return;
+        }
+        dataRequested = true;
+        // The throttle turns this into a no-op when the roster was just fetched.
         presence().refresh(false);
         profiles().refresh();
+        // Listings only load when the party finder screen opens, so ask for them here.
+        presence().refreshPartyFinder();
         firstRunCheckPending = !profiles().hasLoadedProfiles();
     }
 
@@ -178,9 +208,8 @@ public class GuildMembersScreen extends Screen {
             return;
         }
         firstRunCheckPending = false;
-        // Only now can a missing profile be trusted. Moving to setup is skipped if the
-        // player has already opened someone's card, rather than closing it under them.
-        if (profiles().needsSetup() && selectedMember == null && SeqClient.mc.screen == this) {
+        // Only now can a missing profile be trusted, and only if no card is open.
+        if (profiles().needsSetup() && selectedMember == null && selectedPremade == null && SeqClient.mc.screen == this) {
             SeqClient.mc.setScreen(new RaidProfileSetupScreen(parent, true));
         }
     }
@@ -215,6 +244,8 @@ public class GuildMembersScreen extends Screen {
         tabHitboxes.clear();
         friendHitboxes.clear();
         premadeHitboxes.clear();
+        partyFinderHitboxes.clear();
+        sortHitboxes.clear();
 
         UiRenderer.renderScreen(this, canvas -> {
             float screenWidth = canvas.metrics().width();
@@ -259,8 +290,14 @@ public class GuildMembersScreen extends Screen {
                 canvas.fillRect(trackX, thumbY, SCROLLBAR_WIDTH, thumbHeight, color(CONTROL_THUMB));
             }
 
+            premadeInviteBounds = null;
+            premadeEditBounds = null;
+            premadeInviteEnabled = false;
             if (selectedMember != null) {
                 renderDetailModal(canvas, fontName, screenWidth, screenHeight);
+            } else if (selectedPremade != null) {
+                noteBounds = null;
+                renderPremadeModal(canvas, fontName, screenWidth, screenHeight);
             } else {
                 modalBounds = null;
                 modalCloseBounds = null;
@@ -282,7 +319,6 @@ public class GuildMembersScreen extends Screen {
             boolean hovered = bounds.contains(uiMouseX, uiMouseY);
             if (selected) {
                 canvas.fillRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), color(BACKGROUND_BODY));
-                // The underline is what marks the tab, so the fill can stay quiet.
                 canvas.fillRect(bounds.x(), bounds.y() + bounds.height() - 2, bounds.width(), 2, color(ACCENT_PRIMARY));
             } else if (hovered) {
                 canvas.fillRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), color(CONTROL_INPUT));
@@ -304,10 +340,7 @@ public class GuildMembersScreen extends Screen {
     private String tabLabel(Tab candidate) {
         return switch (candidate) {
             case MEMBERS -> "Members";
-            case FRIENDS -> {
-                int count = profiles().friends().size();
-                yield count == 0 ? "Friends" : "Friends " + count;
-            }
+            case FRIENDS -> "Friends";
             case PREMADES -> {
                 int count = profiles().premades().size();
                 yield count == 0 ? "Premades" : "Premades " + count;
@@ -317,7 +350,8 @@ public class GuildMembersScreen extends Screen {
 
     private void renderMembersTab(
             UiCanvas canvas, String fontName, float contentX, float contentY, float contentWidth, float contentHeight) {
-        List<GuildMemberPresence> members = presence().membersForDisplay(filter);
+        List<GuildMemberPresence> members =
+                presence().membersForDisplay(filter, sort, sortDescending, filteredRaid());
         if (members.isEmpty()) {
             renderEmptyState(canvas, fontName, contentX, contentY, contentWidth, contentHeight);
             maxScroll = 0;
@@ -354,8 +388,7 @@ public class GuildMembersScreen extends Screen {
             return;
         }
 
-        // Resolved once for the whole tab rather than per row, which would rebuild the
-        // roster view ten times a frame.
+        // Resolved once for the tab: per row would rebuild the roster view every frame.
         List<GuildMemberPresence> online = presence().onlineMembers();
         float cursorY = contentY - scrollOffset;
         for (String friend : friends) {
@@ -385,7 +418,10 @@ public class GuildMembersScreen extends Screen {
         canvas.fillRect(x, y, width, ROW_HEIGHT, rowHovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_BODY));
 
         float centerY = y + ROW_HEIGHT / 2f;
-        renderHead(canvas, x + COL_HEAD, y + (ROW_HEIGHT - HEAD_SIZE) / 2f, online == null ? null : online.uuid(), busy, isOnline);
+        // The roster lists offline members too, so an offline friend still has a head.
+        KnownGuildMember known = presence().knownMember(friend);
+        String headUuid = online != null ? online.uuid() : known == null ? null : known.uuid();
+        renderHead(canvas, x + COL_HEAD, y + (ROW_HEIGHT - HEAD_SIZE) / 2f, headUuid, busy, isOnline, isOnline ? 1f : 0.45f);
 
         drawText(
                 canvas,
@@ -397,6 +433,13 @@ public class GuildMembersScreen extends Screen {
                 friend,
                 UiCanvas.HorizontalAlign.LEFT);
 
+        // lastJoin is the start of the session, so it reads as time online for someone
+        // on, and as time since they were last on for someone off.
+        String lastLogin = known == null ? null : known.lastLoginLabel(Instant.now());
+        String where = isOnline ? (online.hasWorld() ? online.world() : "?") : "offline";
+        if (lastLogin != null) {
+            where += ", " + lastLogin;
+        }
         drawText(
                 canvas,
                 fontName,
@@ -404,7 +447,7 @@ public class GuildMembersScreen extends Screen {
                 isOnline ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
                 x + COL_WORLD,
                 centerY,
-                isOnline ? (online.hasWorld() ? online.world() : "?") : "offline",
+                fitToWidth(where, fontName, SMALL_FONT_SIZE, width - COL_WORLD - 10 - (FRIEND_BUTTON_W + ACTION_BUTTON_GAP) * 3),
                 UiCanvas.HorizontalAlign.LEFT);
 
         float buttonY = y + (ROW_HEIGHT - ACTION_BUTTON_H) / 2f;
@@ -443,7 +486,7 @@ public class GuildMembersScreen extends Screen {
                 color(TEXT_MUTED),
                 contentX + 8,
                 barY + FILTER_BAR_HEIGHT / 2f,
-                "Groups you run with often. Invite all creates the party if you are not in one.",
+                "Groups you run with often. Click one to see who can come.",
                 UiCanvas.HorizontalAlign.LEFT);
 
         newPartyBounds = new Rect(
@@ -471,9 +514,13 @@ public class GuildMembersScreen extends Screen {
             return;
         }
 
+        List<GuildMemberPresence> online = presence().onlineMembers();
+        String localUsername = presence().localUsername();
         float cursorY = contentY - scrollOffset;
         for (PremadeParty party : parties) {
-            renderPremadeRow(canvas, fontName, contentX, cursorY, contentWidth, party);
+            PremadeAvailability availability =
+                    PremadeAvailability.of(party, online, GuildRaidActivityTracker::isBusy, localUsername);
+            renderPremadeRow(canvas, fontName, contentX, cursorY, contentWidth, party, availability);
             cursorY += ROW_HEIGHT + ROW_SPACING;
         }
         maxScroll = Math.max(0, cursorY + scrollOffset - contentY - contentHeight);
@@ -481,7 +528,13 @@ public class GuildMembersScreen extends Screen {
     }
 
     private void renderPremadeRow(
-            UiCanvas canvas, String fontName, float x, float y, float width, PremadeParty party) {
+            UiCanvas canvas,
+            String fontName,
+            float x,
+            float y,
+            float width,
+            PremadeParty party,
+            PremadeAvailability availability) {
         boolean clickable = isRowVisible(y);
         boolean rowHovered = uiMouseX >= x && uiMouseX <= x + width && uiMouseY >= y && uiMouseY <= y + ROW_HEIGHT;
         canvas.fillRect(x, y, width, ROW_HEIGHT, rowHovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_BODY));
@@ -494,27 +547,32 @@ public class GuildMembersScreen extends Screen {
                 color(TEXT_PRIMARY),
                 x + 10,
                 centerY,
-                party.name(),
+                fitToWidth(party.name(), fontName, ROW_FONT_SIZE, COL_WORLD - 16),
                 UiCanvas.HorizontalAlign.LEFT);
 
+        // Green only when the whole group can go.
+        Color availabilityColor = availability.everyoneFree()
+                ? color(CONTROL_SUCCESS)
+                : availability.onlineCount() == 0 ? color(TEXT_DISABLED) : color(TEXT_SECONDARY);
+        drawText(
+                canvas,
+                fontName,
+                SMALL_FONT_SIZE,
+                availabilityColor,
+                x + COL_WORLD,
+                centerY,
+                fitToWidth(availability.summary(), fontName, SMALL_FONT_SIZE, COL_EVIDENCE - COL_WORLD - 8),
+                UiCanvas.HorizontalAlign.LEFT);
+
+        float buttonsWidth = PREMADE_BUTTON_W * 2 + ACTION_BUTTON_GAP + 20;
         drawText(
                 canvas,
                 fontName,
                 SMALL_FONT_SIZE,
                 color(TEXT_MUTED),
-                x + COL_WORLD,
+                x + COL_EVIDENCE,
                 centerY,
-                party.members().size() + "/" + PremadeParty.MAX_MEMBERS,
-                UiCanvas.HorizontalAlign.LEFT);
-
-        drawText(
-                canvas,
-                fontName,
-                SMALL_FONT_SIZE,
-                color(TEXT_SECONDARY),
-                x + COL_RAIDS,
-                centerY,
-                fitToWidth(party.summary(), fontName, SMALL_FONT_SIZE, width - COL_RAIDS - 175),
+                fitToWidth(party.summary(), fontName, SMALL_FONT_SIZE, width - COL_EVIDENCE - buttonsWidth),
                 UiCanvas.HorizontalAlign.LEFT);
 
         float buttonY = y + (ROW_HEIGHT - ACTION_BUTTON_H) / 2f;
@@ -523,15 +581,175 @@ public class GuildMembersScreen extends Screen {
         Rect editBounds = new Rect(cursorX, buttonY, PREMADE_BUTTON_W, ACTION_BUTTON_H);
         renderButton(canvas, fontName, editBounds, "Edit", true, false);
         if (clickable) {
-            premadeHitboxes.add(new PremadeHitbox(editBounds, false, party));
+            premadeHitboxes.add(new PremadeHitbox(editBounds, PremadeAction.EDIT, party));
         }
         cursorX -= PREMADE_BUTTON_W + ACTION_BUTTON_GAP;
 
+        int free = availability.freeToInvite().size();
         Rect inviteBounds = new Rect(cursorX, buttonY, PREMADE_BUTTON_W, ACTION_BUTTON_H);
-        renderButton(canvas, fontName, inviteBounds, "Invite all", true, true);
-        if (clickable) {
-            premadeHitboxes.add(new PremadeHitbox(inviteBounds, true, party));
+        renderButton(canvas, fontName, inviteBounds, premadeInviteLabel(availability), free > 0, true);
+        if (clickable && free > 0) {
+            premadeHitboxes.add(new PremadeHitbox(inviteBounds, PremadeAction.INVITE, party));
         }
+
+        if (clickable) {
+            Rect rowBounds = new Rect(x, y, width - buttonsWidth, ROW_HEIGHT);
+            premadeHitboxes.add(new PremadeHitbox(rowBounds, PremadeAction.OPEN, party));
+        }
+    }
+
+    /** "Invite all" when everyone can come, "Invite 2" when only some can. */
+    private static String premadeInviteLabel(PremadeAvailability availability) {
+        int free = availability.freeToInvite().size();
+        if (free == 0) {
+            return "Invite";
+        }
+        return availability.everyoneFree() ? "Invite all" : "Invite " + free;
+    }
+
+    /** Invites the free seats only, and says who was left out. */
+    private String invitePremade(PremadeParty party) {
+        PremadeAvailability availability = PremadeAvailability.of(
+                party, presence().onlineMembers(), GuildRaidActivityTracker::isBusy, presence().localUsername());
+        List<String> free = availability.freeToInvite();
+        if (free.isEmpty()) {
+            return "Nobody in " + party.name() + " is free right now.";
+        }
+        GuildPresenceManager.InviteOutcome outcome = presence().inviteAllToParty(free);
+        String leftOut = availability.leftOutSummary();
+        return leftOut == null ? outcome.message() : outcome.message() + " " + capitalize(leftOut) + ".";
+    }
+
+    private static String capitalize(String text) {
+        return text == null || text.isEmpty() ? text : Character.toUpperCase(text.charAt(0)) + text.substring(1);
+    }
+
+    // ── Premade modal ──
+
+    private void renderPremadeModal(UiCanvas canvas, String fontName, float screenWidth, float screenHeight) {
+        PremadeParty party = profiles().premade(selectedPremade.name());
+        if (party == null) {
+            // Deleted from the editor while the modal was open.
+            selectedPremade = null;
+            modalBounds = null;
+            modalCloseBounds = null;
+            return;
+        }
+        selectedPremade = party;
+        PremadeAvailability availability = PremadeAvailability.of(
+                party, presence().onlineMembers(), GuildRaidActivityTracker::isBusy, presence().localUsername());
+
+        float height = MODAL_PADDING * 2
+                + MODAL_HEAD_SIZE
+                + 10
+                + PREMADE_SEAT_H * availability.size()
+                + 12
+                + ACTION_BUTTON_H;
+        float width = Math.min(PREMADE_MODAL_WIDTH, screenWidth - 24);
+        float x = (screenWidth - width) / 2f;
+        float y = Math.max(12, (screenHeight - height) / 2f);
+        modalBounds = new Rect(x, y, width, height);
+
+        canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY, 170));
+        canvas.fillRoundedRect(x, y, width, height, 6, color(BACKGROUND_POPUP));
+        canvas.fillRect(x, y, 3, height, color(ACCENT_PRIMARY));
+
+        float contentX = x + MODAL_PADDING;
+        float contentWidth = width - MODAL_PADDING * 2;
+        float cursorY = y + MODAL_PADDING;
+
+        drawText(
+                canvas,
+                fontName,
+                TITLE_FONT_SIZE,
+                color(TEXT_PRIMARY),
+                contentX,
+                cursorY + MODAL_HEAD_SIZE / 2f - 5,
+                party.name(),
+                UiCanvas.HorizontalAlign.LEFT);
+        drawText(
+                canvas,
+                fontName,
+                SMALL_FONT_SIZE,
+                availability.everyoneFree() ? color(CONTROL_SUCCESS) : color(TEXT_MUTED),
+                contentX,
+                cursorY + MODAL_HEAD_SIZE / 2f + 11,
+                availability.summary(),
+                UiCanvas.HorizontalAlign.LEFT);
+
+        modalCloseBounds = new Rect(x + width - 26, y + 10, 16, 16);
+        drawText(
+                canvas,
+                fontName,
+                ROW_FONT_SIZE,
+                modalCloseBounds.contains(uiMouseX, uiMouseY) ? color(TEXT_PRIMARY) : color(TEXT_MUTED),
+                modalCloseBounds.x() + 8,
+                modalCloseBounds.y() + 8,
+                "x",
+                UiCanvas.HorizontalAlign.CENTER);
+        cursorY += MODAL_HEAD_SIZE + 10;
+
+        Instant now = Instant.now();
+        for (PremadeAvailability.Seat seat : availability.seats()) {
+            cursorY = renderPremadeSeat(canvas, fontName, contentX, cursorY, contentWidth, seat, now);
+        }
+
+        cursorY += 12;
+        int free = availability.freeToInvite().size();
+        premadeInviteEnabled = free > 0;
+        premadeInviteBounds = new Rect(contentX, cursorY, 110, ACTION_BUTTON_H);
+        renderButton(
+                canvas,
+                fontName,
+                premadeInviteBounds,
+                free == 0 ? "Nobody free" : availability.everyoneFree() ? "Invite all" : "Invite the " + free + " free",
+                free > 0,
+                true);
+        premadeEditBounds = new Rect(contentX + 110 + ACTION_BUTTON_GAP, cursorY, PREMADE_BUTTON_W, ACTION_BUTTON_H);
+        renderButton(canvas, fontName, premadeEditBounds, "Edit", true, false);
+    }
+
+    private float renderPremadeSeat(
+            UiCanvas canvas,
+            String fontName,
+            float x,
+            float y,
+            float width,
+            PremadeAvailability.Seat seat,
+            Instant now) {
+        float centerY = y + PREMADE_SEAT_H / 2f;
+        boolean offline = seat.state() == PremadeAvailability.State.OFFLINE;
+        boolean busy = seat.state() == PremadeAvailability.State.BUSY;
+        KnownGuildMember known = presence().knownMember(seat.username());
+        String uuid = seat.presence() != null ? seat.presence().uuid() : known == null ? null : known.uuid();
+        renderHead(canvas, x, y + (PREMADE_SEAT_H - HEAD_SIZE) / 2f, uuid, busy, !offline, offline ? 0.45f : 1f);
+
+        drawText(
+                canvas,
+                fontName,
+                ROW_FONT_SIZE,
+                seat.self() ? color(ACCENT_PRIMARY) : offline ? color(TEXT_DISABLED) : color(TEXT_PRIMARY),
+                x + HEAD_SIZE + 8,
+                centerY,
+                seat.self() ? seat.username() + " (you)" : seat.username(),
+                UiCanvas.HorizontalAlign.LEFT);
+
+        String state;
+        Color stateColor;
+        if (busy) {
+            state = "busy " + formatCountdown(GuildRaidActivityTracker.busyRemainingMillis(seat.username()));
+            stateColor = color(CONTROL_DANGER);
+        } else if (offline) {
+            String lastLogin = known == null ? null : known.lastLoginLabel(now);
+            state = lastLogin == null ? "offline" : "offline, " + lastLogin;
+            stateColor = color(TEXT_DISABLED);
+        } else {
+            GuildMemberPresence presence = seat.presence();
+            state = presence != null && presence.hasWorld() ? "free on " + presence.world() : "free";
+            stateColor = color(CONTROL_SUCCESS);
+        }
+        drawText(canvas, fontName, SMALL_FONT_SIZE, stateColor, x + width, centerY, state, UiCanvas.HorizontalAlign.RIGHT);
+        return y + PREMADE_SEAT_H;
     }
 
     /** Trims a summary so a long member list cannot run under the buttons. */
@@ -706,20 +924,28 @@ public class GuildMembersScreen extends Screen {
         canvas.fillRect(contentX, y, contentWidth, COLUMN_HEADER_HEIGHT, color(BACKGROUND_BODY));
         float centerY = y + COLUMN_HEADER_HEIGHT / 2f;
 
-        // Every label is clipped to the gap before the next column, so a longer word
-        // or a wider font can never run one header into its neighbour.
-        drawLabel(canvas, fontName, contentX + COL_NAME, centerY, "MEMBER", COL_WORLD - COL_NAME);
-        drawLabel(canvas, fontName, contentX + COL_WORLD, centerY, "WORLD", COL_REGION - COL_WORLD);
-        drawLabel(canvas, fontName, contentX + COL_REGION, centerY, "REGION", COL_RAIDS - COL_REGION);
-        drawLabel(
+        // Labels are clipped to the gap before the next column so they cannot collide.
+        // The five comparable ones are buttons: clicking one orders the list by it.
+        sortLabel(canvas, fontName, contentX + COL_NAME, y, "MEMBER", COL_WORLD - COL_NAME, MemberSort.NAME);
+        sortLabel(canvas, fontName, contentX + COL_WORLD, y, "WORLD", COL_ONLINE - COL_WORLD, MemberSort.WORLD);
+        sortLabel(
+                canvas,
+                fontName,
+                contentX + COL_ONLINE,
+                y,
+                "ONLINE",
+                COL_RAIDS - COL_ONLINE,
+                MemberSort.ONLINE_SINCE);
+        sortLabel(
                 canvas,
                 fontName,
                 contentX + COL_RAIDS,
-                centerY,
-                // "GRAIDS" is what the guild says out loud, and the full words do not fit
-                // in the gap before the builds column.
+                y,
+                // "GRAIDS" is what the guild says, and it fits where the full words do not.
                 filter.hasRaid() ? shortRaidName() + " GR" : "GRAIDS",
-                COL_EVIDENCE - COL_RAIDS);
+                COL_WARS - COL_RAIDS,
+                MemberSort.GUILD_RAIDS);
+        sortLabel(canvas, fontName, contentX + COL_WARS, y, "WARS", COL_EVIDENCE - COL_WARS, MemberSort.WARS);
         drawLabel(
                 canvas,
                 fontName,
@@ -728,8 +954,7 @@ public class GuildMembersScreen extends Screen {
                 filter.hasRaid() ? "READY FOR " + shortRaidName() : "BUILDS",
                 contentWidth - ACTIONS_ZONE_W - COL_EVIDENCE);
 
-        // Says plainly how many profiles are in play, so an empty builds column reads
-        // as "nobody has shared one" rather than "nobody owns anything".
+        // How many profiles are in play, so an empty builds column reads as "none shared".
         int shared = profiles().sharedProfileCount();
         drawText(
                 canvas,
@@ -740,6 +965,31 @@ public class GuildMembersScreen extends Screen {
                 centerY,
                 shared == 0 ? "ONLY YOUR PROFILE" : shared + " SHARED",
                 UiCanvas.HorizontalAlign.RIGHT);
+    }
+
+    /**
+     * A column heading you can click to sort by, arrowed when it is the one in force.
+     * The hitbox covers the whole column, not just the label.
+     */
+    private void sortLabel(
+            UiCanvas canvas, String fontName, float x, float y, String label, float columnWidth, MemberSort key) {
+        boolean active = sort == key;
+        Rect bounds = new Rect(x - 4, y, Math.max(20, columnWidth), COLUMN_HEADER_HEIGHT);
+        boolean hovered = bounds.contains(uiMouseX, uiMouseY);
+        if (hovered) {
+            canvas.fillRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), color(BACKGROUND_CONTENT));
+        }
+        String text = active ? label + (sortDescending ? " v" : " ^") : label;
+        drawText(
+                canvas,
+                fontName,
+                TINY_FONT_SIZE,
+                active ? color(ACCENT_PRIMARY) : hovered ? color(TEXT_SECONDARY) : color(TEXT_MUTED),
+                x,
+                y + COLUMN_HEADER_HEIGHT / 2f,
+                fitToWidth(text, fontName, TINY_FONT_SIZE, columnWidth - COLUMN_LABEL_GAP),
+                UiCanvas.HorizontalAlign.LEFT);
+        sortHitboxes.add(new SortHitbox(bounds, key));
     }
 
     /** Draws a column heading, clipped to the room it has before the next column. */
@@ -815,8 +1065,10 @@ public class GuildMembersScreen extends Screen {
                 member.username(),
                 UiCanvas.HorizontalAlign.LEFT);
 
+        // Tags ride behind the name; a name that fills the column keeps them off.
         float afterName = nameX + textWidth(member.username(), fontName, ROW_FONT_SIZE) + 6;
-        if (member.sequoiaConnected()) {
+        float tagLimit = x + COL_WORLD - COLUMN_LABEL_GAP;
+        if (member.sequoiaConnected() && afterName + textWidth("SEQ", fontName, TINY_FONT_SIZE) <= tagLimit) {
             drawText(
                     canvas,
                     fontName,
@@ -828,7 +1080,7 @@ public class GuildMembersScreen extends Screen {
                     UiCanvas.HorizontalAlign.LEFT);
             afterName += 22;
         }
-        if (profile.canBringAuras()) {
+        if (profile.canBringAuras() && afterName + textWidth("AURAS", fontName, TINY_FONT_SIZE) <= tagLimit) {
             drawText(
                     canvas,
                     fontName,
@@ -850,18 +1102,19 @@ public class GuildMembersScreen extends Screen {
                 member.hasWorld() ? member.world() : "?",
                 UiCanvas.HorizontalAlign.LEFT);
 
+        // Time on this session. A member who hides their status has none.
+        String onlineFor = KnownGuildMember.formatElapsedShort(presence().lastLogin(member), Instant.now());
         drawText(
                 canvas,
                 fontName,
                 SMALL_FONT_SIZE,
-                color(TEXT_SECONDARY),
-                x + COL_REGION,
+                onlineFor == null ? color(TEXT_DISABLED) : color(TEXT_SECONDARY),
+                x + COL_ONLINE,
                 centerY,
-                profile.region() == null ? "?" : profile.region().name(),
+                onlineFor == null ? "?" : onlineFor,
                 UiCanvas.HorizontalAlign.LEFT);
 
-        // The number tracks the raid being filtered on, because "has this person run
-        // TNA with us" is the question the column is there to answer.
+        // The count tracks the filtered raid, which is the question the column answers.
         RaidType filtered = filteredRaid();
         int raidCount = filtered == null
                 ? member.stats().totalRaidCompletions()
@@ -876,7 +1129,19 @@ public class GuildMembersScreen extends Screen {
                 String.valueOf(raidCount),
                 UiCanvas.HorizontalAlign.LEFT);
 
-        renderEvidence(canvas, fontName, x + COL_EVIDENCE, y, member, profile);
+        int wars = member.stats().wars();
+        drawText(
+                canvas,
+                fontName,
+                SMALL_FONT_SIZE,
+                wars > 0 ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                x + COL_WARS,
+                centerY,
+                wars > 0 ? GuildMemberStats.formatCount(wars) : "?",
+                UiCanvas.HorizontalAlign.LEFT);
+
+        renderEvidence(
+                canvas, fontName, x + COL_EVIDENCE, y, member, profile, width - ACTIONS_ZONE_W - COL_EVIDENCE);
 
         // Actions are laid out right to left so they stay pinned to the row's edge.
         float buttonY = y + (ROW_HEIGHT - ACTION_BUTTON_H) / 2f;
@@ -899,7 +1164,11 @@ public class GuildMembersScreen extends Screen {
         }
         cursorX -= BUSY_CHIP_W + ACTION_BUTTON_GAP;
 
-        if (busy) {
+        // A listing says more than the busy timer, and the red dot still carries busy.
+        PartyFinderSpot spot = presence().partyFinderSpotFor(member);
+        if (spot != null) {
+            renderPartyFinderChip(canvas, fontName, cursorX + BUSY_CHIP_W, y, spot, isLocalPlayer, clickable);
+        } else if (busy) {
             float chipY = y + (ROW_HEIGHT - BUSY_CHIP_H) / 2f;
             canvas.fillRoundedRect(cursorX, chipY, BUSY_CHIP_W, BUSY_CHIP_H, 3, color(STATUS_DANGER_BACKGROUND));
             drawText(
@@ -921,14 +1190,53 @@ public class GuildMembersScreen extends Screen {
     }
 
     /**
-     * Draws the player's head with their availability as a dot on its corner, the
-     * way a Discord avatar carries a presence badge. The head is what you actually
-     * recognise someone by, and the dot rides along instead of taking its own column.
+     * "PF TNA 2/4", right-aligned to {@code rightEdge}. It is a join button only when
+     * joining could work: open listing with room, not you, and you are in none yourself.
      */
+    private void renderPartyFinderChip(
+            UiCanvas canvas,
+            String fontName,
+            float rightEdge,
+            float rowY,
+            PartyFinderSpot spot,
+            boolean isLocalPlayer,
+            boolean clickable) {
+        String label = spot.label();
+        float chipW = Math.min(PF_CHIP_MAX_W, Math.max(BUSY_CHIP_W, textWidth(label, fontName, SMALL_FONT_SIZE) + 12));
+        float chipX = rightEdge - chipW;
+        float chipY = rowY + (ROW_HEIGHT - BUSY_CHIP_H) / 2f;
+        Rect bounds = new Rect(chipX, chipY, chipW, BUSY_CHIP_H);
+
+        boolean joinable = spot.isJoinable() && !isLocalPlayer && !presence().isInPartyFinderListing();
+        boolean hovered = joinable && bounds.contains(uiMouseX, uiMouseY);
+        Color background = !joinable
+                ? color(CONTROL_INPUT)
+                : hovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY_DARK);
+        canvas.fillRoundedRect(chipX, chipY, chipW, BUSY_CHIP_H, 3, background);
+        drawText(
+                canvas,
+                fontName,
+                SMALL_FONT_SIZE,
+                joinable ? color(TEXT_PRIMARY) : color(TEXT_MUTED),
+                chipX + chipW / 2f,
+                chipY + BUSY_CHIP_H / 2f,
+                fitToWidth(hovered ? "Join " + spot.occupiedSlots() + "/" + spot.maxSize() : label, fontName, SMALL_FONT_SIZE, chipW - 4),
+                UiCanvas.HorizontalAlign.CENTER);
+        if (joinable && clickable) {
+            partyFinderHitboxes.add(new PartyFinderHitbox(bounds, spot));
+        }
+    }
+
+    /** The player's head, with availability as a dot on its corner. */
     private void renderHead(UiCanvas canvas, float x, float y, String uuid, boolean busy, boolean online) {
+        renderHead(canvas, x, y, uuid, busy, online, 1f);
+    }
+
+    private void renderHead(
+            UiCanvas canvas, float x, float y, String uuid, boolean busy, boolean online, float alpha) {
         UiImage head = PlayerHeadCache.headFor(uuid);
         if (head != null) {
-            canvas.drawImage(head, x, y, HEAD_SIZE, HEAD_SIZE, 1f);
+            canvas.drawImage(head, x, y, HEAD_SIZE, HEAD_SIZE, alpha);
         } else {
             // Still loading, or the player has no UUID on the roster.
             canvas.fillRoundedRect(x, y, HEAD_SIZE, HEAD_SIZE, 2, color(CONTROL_INPUT));
@@ -936,24 +1244,21 @@ public class GuildMembersScreen extends Screen {
 
         float dotX = x + HEAD_SIZE - 1f;
         float dotY = y + HEAD_SIZE - 1f;
-        // A ring in the row colour separates the dot from the skin behind it.
+        // A ring in the row colour separates the dot from the skin.
         canvas.fillCircle(dotX, dotY, STATUS_DOT_RADIUS + 1.5f, color(BACKGROUND_BODY_OPAQUE));
         Color dot = !online ? color(ACCENT_DISABLED) : busy ? color(CONTROL_DANGER) : color(CONTROL_SUCCESS);
         canvas.fillCircle(dotX, dotY, STATUS_DOT_RADIUS, dot);
     }
 
-    /**
-     * Draws the builds this member said they own. The raid count lives in its own
-     * column now, so this one only ever carries declared builds, and a member with
-     * no profile reads as unanswered rather than as owning nothing.
-     */
+    /** The builds this member declared. A member with no profile reads as unanswered. */
     private void renderEvidence(
             UiCanvas canvas,
             String fontName,
             float x,
             float rowY,
             GuildMemberPresence member,
-            RaidTeamProfile profile) {
+            RaidTeamProfile profile,
+            float maxWidth) {
 
         float centerY = rowY + ROW_HEIGHT / 2f;
 
@@ -985,17 +1290,20 @@ public class GuildMembersScreen extends Screen {
                     UiCanvas.HorizontalAlign.LEFT);
             return;
         }
-        renderBuildChips(canvas, fontName, x, rowY, shown);
+        renderBuildChips(canvas, fontName, x, rowY, shown, maxWidth);
     }
 
-    private void renderBuildChips(UiCanvas canvas, String fontName, float x, float rowY, Set<String> builds) {
+    private void renderBuildChips(
+            UiCanvas canvas, String fontName, float x, float rowY, Set<String> builds, float maxWidth) {
         float chipY = rowY + (ROW_HEIGHT - CHIP_H) / 2f;
         float cursorX = x;
         int drawn = 0;
         RaidCatalog catalog = catalog();
 
         for (String buildKey : catalog.orderKeys(builds)) {
-            if (drawn == MAX_VISIBLE_CHIPS) {
+            String nextLabel = catalog.labelFor(buildKey);
+            boolean outOfRoom = cursorX + textWidth(nextLabel, fontName, TINY_FONT_SIZE) + 12 > x + maxWidth;
+            if (drawn == MAX_VISIBLE_CHIPS || (drawn > 0 && outOfRoom)) {
                 drawText(
                         canvas,
                         fontName,
@@ -1003,11 +1311,11 @@ public class GuildMembersScreen extends Screen {
                         color(TEXT_MUTED),
                         cursorX,
                         rowY + ROW_HEIGHT / 2f,
-                        "+" + (builds.size() - MAX_VISIBLE_CHIPS),
+                        "+" + (builds.size() - drawn),
                         UiCanvas.HorizontalAlign.LEFT);
                 return;
             }
-            String label = catalog.labelFor(buildKey);
+            String label = nextLabel;
             float width = textWidth(label, fontName, TINY_FONT_SIZE) + 12;
             canvas.fillRoundedRect(cursorX, chipY, width, CHIP_H, 3, color(ACCENT_PRIMARY_DARK));
             drawText(
@@ -1033,7 +1341,7 @@ public class GuildMembersScreen extends Screen {
         float height = MODAL_PADDING * 2
                 + MODAL_HEAD_SIZE
                 + 10
-                + MODAL_ROW_H * (5 + Math.max(1, catalog().raids().size()))
+                + MODAL_ROW_H * (MODAL_FACT_ROWS + Math.max(1, catalog().raids().size()))
                 + 10
                 + ACTION_BUTTON_H
                 + 22
@@ -1092,24 +1400,83 @@ public class GuildMembersScreen extends Screen {
                 UiCanvas.HorizontalAlign.CENTER);
         cursorY += MODAL_HEAD_SIZE + 10;
 
-        cursorY = modalRow(canvas, fontName, contentX, cursorY, contentWidth, "Rank", member.rank().displayName());
-        cursorY = modalRow(
+        // Wynncraft's numbers, already in the roster payload. Two to a line, so the
+        // note still fits on screen.
+        GuildMemberStats stats = member.stats();
+        RaidPerformance raids = stats.raidPerformance();
+        String lastLogin = KnownGuildMember.formatElapsedShort(presence().lastLogin(member), Instant.now());
+
+        cursorY = modalPairRow(
+                canvas,
+                fontName,
+                contentX,
+                cursorY,
+                contentWidth,
+                "Rank",
+                member.rank().displayName(),
+                "In guild since",
+                stats.joinedGuildLabel());
+        cursorY = modalPairRow(
                 canvas,
                 fontName,
                 contentX,
                 cursorY,
                 contentWidth,
                 "World",
-                member.hasWorld() ? member.world() : "not reported");
-        cursorY = modalRow(
-                canvas, fontName, contentX, cursorY, contentWidth, "Playtime", member.stats().playtimeLabel());
-        // Auras is a thing you can bring, not a build, so it gets its own line.
-        cursorY = modalRow(
+                member.hasWorld() ? member.world() : "not reported",
+                "Online for",
+                lastLogin == null ? "?" : lastLogin);
+        cursorY = modalPairRow(
                 canvas,
                 fontName,
                 contentX,
                 cursorY,
                 contentWidth,
+                "Playtime",
+                stats.playtimeLabel(),
+                "Total level",
+                stats.totalLevelLabel());
+        cursorY = modalPairRow(
+                canvas,
+                fontName,
+                contentX,
+                cursorY,
+                contentWidth,
+                "Wars",
+                stats.warsLabel(),
+                "Guild XP",
+                stats.contributedXp() > 0L
+                        ? stats.contributedXpLabel() + ", " + stats.contributionRankLabel()
+                        : "?");
+        cursorY = modalPairRow(
+                canvas,
+                fontName,
+                contentX,
+                cursorY,
+                contentWidth,
+                "Raid damage",
+                raids.isKnown() ? GuildMemberStats.formatCompact(raids.damageDealt()) : "?",
+                "Raid healing",
+                raids.isKnown() ? GuildMemberStats.formatCompact(raids.healthHealed()) : "?");
+        cursorY = modalPairRow(
+                canvas,
+                fontName,
+                contentX,
+                cursorY,
+                contentWidth,
+                "Raid deaths",
+                raids.isKnown() ? GuildMemberStats.formatCount(raids.deaths()) : "?",
+                "Gambits used",
+                raids.isKnown() ? GuildMemberStats.formatCount(raids.gambitsUsed()) : "?");
+        // Declared, not measured. Auras is something you bring, not a build.
+        cursorY = modalPairRow(
+                canvas,
+                fontName,
+                contentX,
+                cursorY,
+                contentWidth,
+                "Region",
+                profile.region() == null ? "unknown" : profile.region().name(),
                 "Auras",
                 !profile.isComplete() ? "unknown" : profile.canBringAuras() ? "yes" : "no");
         cursorY = modalRow(canvas, fontName, contentX, cursorY, contentWidth, "Builds", profileSummary(profile));
@@ -1188,10 +1555,28 @@ public class GuildMembersScreen extends Screen {
         return raid == null ? String.valueOf(filter.raidKey()) : raid.shortName();
     }
 
+    /** Two label and value pairs side by side. */
+    private float modalPairRow(
+            UiCanvas canvas,
+            String fontName,
+            float x,
+            float y,
+            float width,
+            String leftLabel,
+            String leftValue,
+            String rightLabel,
+            String rightValue) {
+        float half = (width - MODAL_PAIR_GAP) / 2f;
+        modalRow(canvas, fontName, x, y, half, leftLabel, leftValue);
+        modalRow(canvas, fontName, x + half + MODAL_PAIR_GAP, y, half, rightLabel, rightValue);
+        return y + MODAL_ROW_H;
+    }
+
     private float modalRow(
             UiCanvas canvas, String fontName, float x, float y, float width, String label, String value) {
         float centerY = y + MODAL_ROW_H / 2f;
         drawText(canvas, fontName, SMALL_FONT_SIZE, color(TEXT_MUTED), x, centerY, label, UiCanvas.HorizontalAlign.LEFT);
+        float room = width - textWidth(label, fontName, SMALL_FONT_SIZE) - 8;
         drawText(
                 canvas,
                 fontName,
@@ -1199,12 +1584,12 @@ public class GuildMembersScreen extends Screen {
                 color(TEXT_SECONDARY),
                 x + width,
                 centerY,
-                value,
+                fitToWidth(value, fontName, SMALL_FONT_SIZE, room),
                 UiCanvas.HorizontalAlign.RIGHT);
         return y + MODAL_ROW_H;
     }
 
-    /** Whether a row sits inside the scissored viewport, and so is genuinely on screen. */
+    /** Whether a row sits inside the scissored viewport, and so is really on screen. */
     private boolean isRowVisible(float rowY) {
         if (listViewport == null) {
             return false;
@@ -1268,7 +1653,7 @@ public class GuildMembersScreen extends Screen {
         statusBannerExpiresAtMs = System.currentTimeMillis() + STATUS_BANNER_DURATION_MS;
     }
 
-    /** Remaining busy time as {@code m:ss}, which is how long it reads as a wait. */
+    /** Remaining busy time as {@code m:ss}. */
     static String formatCountdown(long remainingMs) {
         long totalSeconds = Math.max(0L, (remainingMs + 999L) / 1000L);
         return String.format(Locale.ROOT, "%d:%02d", totalSeconds / 60L, totalSeconds % 60L);
@@ -1288,6 +1673,9 @@ public class GuildMembersScreen extends Screen {
         if (selectedMember != null) {
             return handleModalClick(mx, my);
         }
+        if (selectedPremade != null) {
+            return handlePremadeModalClick(mx, my);
+        }
 
         for (TabHitbox hitbox : tabHitboxes) {
             if (hitbox.bounds().contains(mx, my)) {
@@ -1297,7 +1685,10 @@ public class GuildMembersScreen extends Screen {
                 return true;
             }
         }
-        if (handleFriendClick(mx, my) || handlePremadeClick(mx, my)) {
+        // Party finder chips come first: a wide one reaches past the actions zone.
+        if (handleFriendClick(mx, my)
+                || handlePremadeClick(mx, my)
+                || handlePartyFinderClick(mx, my)) {
             return true;
         }
 
@@ -1313,15 +1704,28 @@ public class GuildMembersScreen extends Screen {
             return true;
         }
         if (profileButtonBounds != null && profileButtonBounds.contains(mx, my)) {
-            // Opened directly, so a skip decision is left as it was: clearing it here
-            // would bring the forced setup back after a plain Cancel.
+            // A skip decision is left as it was, or Cancel would bring setup back.
             SeqClient.mc.setScreen(new RaidProfileSetupScreen(parent, false));
             return true;
         }
         if (tab != Tab.MEMBERS) {
-            // The filter bar only exists on the Members tab; its last-drawn bounds must
-            // not turn into invisible controls on the others.
+            // The filter bar only exists here, and its last bounds must not stay live.
             return handleActionClick(click, outsideScreen, mx, my);
+        }
+        for (SortHitbox hitbox : sortHitboxes) {
+            if (!hitbox.bounds().contains(mx, my)) {
+                continue;
+            }
+            // The column in force flips; a new one starts on its "best first" direction.
+            if (sort == hitbox.key()) {
+                sortDescending = !sortDescending;
+            } else {
+                sort = hitbox.key();
+                sortDescending = hitbox.key().descendingByDefault();
+            }
+            scrollOffset = 0;
+            searchFocused = false;
+            return true;
         }
         for (RaidFilterHitbox hitbox : raidFilterHitboxes) {
             if (hitbox.bounds().contains(mx, my)) {
@@ -1357,8 +1761,7 @@ public class GuildMembersScreen extends Screen {
             }
             switch (hitbox.type()) {
                 case SWITCH -> {
-                    // Closing straight away puts the loading screen in front of the player,
-                    // and a banner behind it would never be read.
+                    // Closing puts the loading screen up; a banner behind it is never read.
                     presence().switchToWorld(hitbox.member().world());
                     onClose();
                 }
@@ -1401,20 +1804,57 @@ public class GuildMembersScreen extends Screen {
             if (!hitbox.bounds().contains(mx, my)) {
                 continue;
             }
-            if (hitbox.inviteAll()) {
-                showStatusBanner(presence().inviteAllToParty(hitbox.party().members()).message());
-            } else {
-                SeqClient.mc.setScreen(new PremadePartyEditorScreen(this, hitbox.party()));
+            switch (hitbox.action()) {
+                case INVITE -> showStatusBanner(invitePremade(hitbox.party()));
+                case EDIT -> SeqClient.mc.setScreen(new PremadePartyEditorScreen(this, hitbox.party()));
+                case OPEN -> selectedPremade = hitbox.party();
             }
             return true;
         }
         return false;
     }
 
-    /**
-     * Invites the member and reports it, naming the raid when one is being filtered
-     * on so the confirmation says what the invite was for.
-     */
+    private boolean handlePremadeModalClick(float mx, float my) {
+        if (modalCloseBounds != null && modalCloseBounds.contains(mx, my)) {
+            selectedPremade = null;
+            return true;
+        }
+        if (premadeInviteBounds != null && premadeInviteBounds.contains(mx, my)) {
+            if (premadeInviteEnabled) {
+                showStatusBanner(invitePremade(selectedPremade));
+            }
+            return true;
+        }
+        if (premadeEditBounds != null && premadeEditBounds.contains(mx, my)) {
+            PremadeParty party = selectedPremade;
+            // Closed first: the editor may rename or delete the party we would reopen.
+            selectedPremade = null;
+            SeqClient.mc.setScreen(new PremadePartyEditorScreen(this, party));
+            return true;
+        }
+        if (modalBounds != null && !modalBounds.contains(mx, my)) {
+            selectedPremade = null;
+        }
+        return true;
+    }
+
+    private boolean handlePartyFinderClick(float mx, float my) {
+        for (PartyFinderHitbox hitbox : partyFinderHitboxes) {
+            if (!hitbox.bounds().contains(mx, my)) {
+                continue;
+            }
+            List<String> raids = hitbox.spot().raidShortNames();
+            showStatusBanner(raids.isEmpty()
+                    ? "Joining their party as DPS"
+                    : "Joining their " + String.join("/", raids) + " party as DPS");
+            presence().joinPartyFinder(hitbox.spot())
+                    .thenAccept(message -> SeqClient.mc.execute(() -> showStatusBanner(message)));
+            return true;
+        }
+        return false;
+    }
+
+    /** Invites the member, naming the filtered raid so the confirmation says what for. */
     private String inviteMessage(GuildMemberPresence member) {
         GuildPresenceManager.InviteOutcome outcome = presence().inviteToParty(member.username());
         RaidType filtered = filteredRaid();
@@ -1466,7 +1906,7 @@ public class GuildMembersScreen extends Screen {
         return true;
     }
 
-    /** Saving on close is what makes the note a one-line action rather than a form. */
+    /** The note is saved on close, which is what keeps it a one-line action. */
     private void closeProfile() {
         if (selectedMember != null) {
             profiles().setNote(selectedMember.username(), noteInput);
@@ -1478,7 +1918,7 @@ public class GuildMembersScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (selectedMember == null && maxScroll > 0) {
+        if (selectedMember == null && selectedPremade == null && maxScroll > 0) {
             scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset - (float) scrollY * SCROLL_SPEED));
             return true;
         }
@@ -1499,6 +1939,12 @@ public class GuildMembersScreen extends Screen {
                     noteInput = noteInput.substring(0, noteInput.length() - 1);
                 }
                 return true;
+            }
+            return true;
+        }
+        if (selectedPremade != null) {
+            if (key == GLFW.GLFW_KEY_ESCAPE) {
+                selectedPremade = null;
             }
             return true;
         }
@@ -1613,5 +2059,16 @@ public class GuildMembersScreen extends Screen {
 
     private record FriendHitbox(Rect bounds, FriendAction action, String friend) {}
 
-    private record PremadeHitbox(Rect bounds, boolean inviteAll, PremadeParty party) {}
+    private enum PremadeAction {
+        OPEN,
+        INVITE,
+        EDIT
+    }
+
+    private record PremadeHitbox(Rect bounds, PremadeAction action, PremadeParty party) {}
+
+    private record PartyFinderHitbox(Rect bounds, PartyFinderSpot spot) {}
+
+    private record SortHitbox(Rect bounds, MemberSort key) {}
+
 }

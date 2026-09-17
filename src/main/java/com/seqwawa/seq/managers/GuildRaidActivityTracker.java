@@ -8,30 +8,17 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Remembers when each guild member last finished a raid, so the members panel can
- * show who is mid-session rather than free to pull into a group.
+ * When each guild member last finished a raid, so the panel can mark who is still
+ * mid-session.
  * <p>
- * The signal is the raid completion report already built for the Discord relay:
- * every announcement names its whole party, so one completion marks four to ten
- * members at once. Two paths feed it, and both write the same entries:
- * <ul>
- * <li>{@link RaidTracker} for a completion the local client witnessed, which
- * covers the local player's own party without any server round trip;</li>
- * <li>an incoming {@code guild_raid_announcement} relayed by the backend, which
- * covers everyone else running the mod.</li>
- * </ul>
- * A member counts as busy for {@link #BUSY_WINDOW} after their last completion.
- * That is not a guess at whether they are inside a raid right now. It answers the
- * more useful question instead: someone who cleared minutes ago is looting,
- * re-buffing or queueing again, and inviting them cuts that short.
+ * The signal is the raid completion report already built for the Discord relay, and
+ * every announcement names its whole party. Two paths feed it: {@link RaidTracker}
+ * for completions this client witnessed, and {@code guild_raid_announcement}
+ * relayed by the backend for everyone else running the mod.
  */
 public final class GuildRaidActivityTracker {
 
-    /**
-     * How long a completion keeps someone marked busy. A raid clear is followed by
-     * the reward chest, aspect handout and a regroup; eight minutes covers that
-     * without holding the mark so long that it stops meaning anything.
-     */
+    /** How long a completion keeps someone marked busy: chest, aspects and a regroup. */
     public static final Duration BUSY_WINDOW = Duration.ofMinutes(8);
 
     /** Entries older than this are dropped, so the map cannot grow without bound. */

@@ -13,23 +13,17 @@ import java.util.Locale;
 /**
  * Turns a raid-profile API failure into a line worth showing the player.
  * <p>
- * The first job is saying <em>which side</em> failed, because "it does not work"
- * is the least useful thing a message can say. A request that never left the
- * machine, an endpoint that is not deployed, and a backend that answered with an
- * error are three different problems with three different fixes, and they used to
- * produce the same sentence.
- * <p>
- * When the backend does send a {@code message} it is used as written: it is
- * composed for a player to read and caps how much of the submitted input it
- * echoes back.
+ * The point is saying which side failed: a request that never left the machine, an
+ * endpoint that is not deployed and a backend that answered with an error are
+ * three different problems. A {@code message} from the backend is used as written.
  */
 public final class RaidProfileApiError {
 
     private RaidProfileApiError() {}
 
     public static String describe(Throwable throwable, String fallback) {
-        // A failed sign-in wraps the backend's answer, so it is checked first: read as a
-        // plain 403 it would claim the player is not in the guild.
+        // A failed sign-in wraps the backend's answer, and read as a plain 403 it would
+        // claim the player is not in the guild.
         AuthException signIn = findAuthException(throwable);
         if (signIn != null) {
             return describeSignIn(signIn);
@@ -54,8 +48,8 @@ public final class RaidProfileApiError {
         int status = api.getStatusCode();
         return switch (status) {
             case 400, 422 -> orElse(backendMessage, "The backend rejected that. Check your builds and region.");
-                // Rare but real: the backend holds no Minecraft identity for this
-                // account, so a profile saved now could never be listed.
+                // The backend holds no Minecraft identity for this account, so a profile
+                // saved now could never be listed.
             case 409 -> orElse(
                     backendMessage,
                     "identity_unknown".equals(extractField(body, "code"))
@@ -75,11 +69,7 @@ public final class RaidProfileApiError {
         };
     }
 
-    /**
-     * A one-line summary for the log: the status and a slice of the body, so a
-     * report of "it says it cannot reach the backend" can be resolved from the log
-     * rather than from guesswork.
-     */
+    /** A one-line summary for the log: the status and a slice of the body. */
     public static String describeForLog(Throwable throwable) {
         AuthException signIn = findAuthException(throwable);
         ApiClient.ApiException api = findApiException(throwable);
@@ -98,7 +88,7 @@ public final class RaidProfileApiError {
         return "HTTP " + api.getStatusCode() + " body=" + truncate(api.getResponseBody());
     }
 
-    /** The error code the backend sent, or null. Exposed so callers can branch on it. */
+    /** The error code the backend sent, or null. */
     public static String code(Throwable throwable) {
         ApiClient.ApiException api = findApiException(throwable);
         return api == null ? null : extractField(api.getResponseBody(), "code");
@@ -130,8 +120,8 @@ public final class RaidProfileApiError {
             String value = object.get(field).getAsString();
             return value == null || value.isBlank() ? null : value;
         } catch (RuntimeException ignored) {
-            // A body that is not JSON, such as a proxy's HTML error page, is not
-            // worth putting in front of a player raw.
+            // A body that is not JSON, such as a proxy's HTML error page, is not worth
+            // showing raw.
             return null;
         }
     }
@@ -140,15 +130,12 @@ public final class RaidProfileApiError {
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    /**
-     * What to show when signing in to the raid-profiles backend failed, which only
-     * happens when that backend is a separate one from the rest of the mod.
-     */
+    /** What to show when signing in to a separate raid-profiles backend failed. */
     static String describeSignIn(AuthException failure) {
         String host = RaidProfilesSession.hostOf(BuildConfig.RAID_PROFILES_API_URL);
         if (failure.getCode() == AuthErrorCode.ACCOUNT_NOT_LINKED) {
-            // The backend's own wording points at the Discord bot, which links the main
-            // database. The chat link opens the website flow of this backend instead.
+            // The backend's wording points at the Discord bot, which links the main
+            // database; the chat link opens this backend's website flow instead.
             return "Your account is not linked on " + host + " yet. Use the link sent in chat, then press Refresh.";
         }
         String reason = failure.getMessage();

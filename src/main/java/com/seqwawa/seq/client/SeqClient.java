@@ -30,6 +30,7 @@ import com.seqwawa.seq.managers.ChatManager;
 import com.seqwawa.seq.managers.ChatRegexFilterManager;
 import com.seqwawa.seq.managers.FontManager;
 import com.seqwawa.seq.managers.GameManager;
+import com.seqwawa.seq.managers.GuildPresenceManager;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
@@ -484,6 +485,7 @@ public class SeqClient implements ClientModInitializer {
             wynnPartySyncManager.reset();
         }
         RaidPartySnapshotTracker.reset();
+        GuildPresenceManager.getInstance().reset();
         if (guildWarTracker != null) {
             guildWarTracker.reset();
         }

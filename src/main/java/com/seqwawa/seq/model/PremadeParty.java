@@ -7,16 +7,14 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * A group you run with often, saved by name so it can be pulled together in one
- * click instead of four invites typed out every time.
+ * A group you run with often, saved by name.
  * <p>
- * Members are stored as plain usernames, not as roster entries: a premade has to
- * survive the people in it being offline, which is the state they are usually in
- * when you go to invite them.
+ * Members are plain usernames rather than roster entries, so a premade survives
+ * the people in it being offline.
  */
 public record PremadeParty(String name, List<String> members, long updatedAtEpochMs) {
 
-    /** Wynncraft's largest raid group. Anything past this cannot all fit anyway. */
+    /** Wynncraft's largest raid group. */
     public static final int MAX_MEMBERS = 10;
 
     public static final int MAX_NAME_LENGTH = 24;
@@ -42,7 +40,7 @@ public record PremadeParty(String name, List<String> members, long updatedAtEpoc
         return members.stream().anyMatch(member -> member.toLowerCase(Locale.ROOT).equals(key));
     }
 
-    /** Case-insensitive key, so renaming the display case does not create a duplicate. */
+    /** Case-insensitive key, so changing the casing does not create a duplicate. */
     public String key() {
         return name.toLowerCase(Locale.ROOT);
     }
@@ -117,8 +115,7 @@ public record PremadeParty(String name, List<String> members, long updatedAtEpoc
         if (value == null || value.isEmpty()) {
             return List.of();
         }
-        // A LinkedHashSet on the lowercase key keeps insertion order while making the
-        // same person typed twice a single entry.
+        // Insertion order is kept, and the same person typed twice is one entry.
         Set<String> seen = new LinkedHashSet<>();
         List<String> normalized = new ArrayList<>();
         for (String member : value) {

@@ -3,25 +3,24 @@ package com.seqwawa.seq.model;
 import java.util.Locale;
 
 /**
- * One guild member as the members panel shows them.
+ * One guild member as the panel shows them, from the Wynncraft guild API.
  * <p>
- * The facts here come from the Wynncraft guild API and change only when the
- * roster is refreshed. Raid state is deliberately absent: it expires on a timer
- * and is read live from {@link com.seqwawa.seq.managers.GuildRaidActivityTracker}
- * at render time, so a countdown ticks down between refreshes.
+ * Busy state is absent on purpose: it expires on a timer and is read live from
+ * {@link com.seqwawa.seq.managers.GuildRaidActivityTracker} while rendering, so a
+ * countdown keeps ticking between roster refreshes.
  */
 public record GuildMemberPresence(
         String username,
         String uuid,
         GuildRank rank,
-        /** The world the member is on, such as {@code NA6}, or null when Wynncraft does not report one. */
+        /** The world they are on, such as {@code NA6}, or null when not reported. */
         String world,
-        /** Whether this member has the Sequoia mod connected to the backend right now. */
+        /** Whether this member has the mod connected to the backend. */
         boolean sequoiaConnected,
-        /** Playtime and raid counts read off Wynncraft, never self-declared. */
+        /** Wynncraft's own numbers, never self-declared. */
         GuildMemberStats stats) {
 
-    /** Convenience for callers that have no Wynncraft stats to attach. */
+    /** For callers with no Wynncraft stats to attach. */
     public GuildMemberPresence(
             String username, String uuid, GuildRank rank, String world, boolean sequoiaConnected) {
         this(username, uuid, rank, world, sequoiaConnected, GuildMemberStats.unknown());
@@ -36,7 +35,7 @@ public record GuildMemberPresence(
         stats = stats == null ? GuildMemberStats.unknown() : stats;
     }
 
-    /** Case-insensitive key used to match this member against chat and raid names. */
+    /** Case-insensitive key, for matching against chat and raid names. */
     public String key() {
         return username.toLowerCase(Locale.ROOT);
     }

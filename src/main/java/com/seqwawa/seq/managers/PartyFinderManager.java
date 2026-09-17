@@ -2027,6 +2027,16 @@ public class PartyFinderManager implements NotificationAccessor {
         loadActivities().thenRun(() -> loadListings(null, null));
     }
 
+    /**
+     * Reloads listings for a screen that only reads them, such as the guild members
+     * panel. A failure is logged, not pushed to the party finder's error banner,
+     * which would otherwise greet the player the next time they open that screen.
+     */
+    public CompletableFuture<List<Listing>> refreshListingsQuietly() {
+        return refreshListingsSnapshot(null, null, (message, error) ->
+                SeqClient.LOGGER.debug("[PartyFinder] Quiet listings refresh failed: {}", message, error));
+    }
+
     CompletableFuture<List<Listing>> refreshListingsForAnnouncements() {
         return refreshListingsSnapshot(null, null, (message, error) ->
                 SeqClient.LOGGER.warn("[PartyFinderWS] Failed to refresh listings for open-party reminders: {}", message, error));

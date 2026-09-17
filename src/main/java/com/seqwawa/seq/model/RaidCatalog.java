@@ -2,22 +2,16 @@ package com.seqwawa.seq.model;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
 /**
- * The guild's meta as the backend publishes it: which builds exist, which raids
- * exist, and which builds are meta for which raid.
+ * The guild's meta as the backend publishes it: the builds, the raids, and which
+ * builds are meta for which raid. Every screen reads both lists from here.
  * <p>
- * Every screen reads its raid list and its build list from here rather than from
- * a hardcoded enum, so a change to the meta reaches players on their next
- * refresh instead of their next update.
- * <p>
- * An empty catalog is a real state, not an error: it is what the panel has
- * before the first fetch lands, and the screens say so rather than pretending
- * nobody owns anything.
+ * An empty catalog is a real state, not an error: it is what the panel holds
+ * before the first fetch lands, and the screens say so.
  */
 public record RaidCatalog(List<RaidBuild> builds, List<RaidType> raids) {
 
@@ -92,20 +86,6 @@ public record RaidCatalog(List<RaidBuild> builds, List<RaidType> raids) {
     /** The raids covered by owning {@code ownedBuildKeys}, in catalog order. */
     public List<RaidType> coveredRaids(Set<String> ownedBuildKeys) {
         return raids.stream().filter(raid -> raid.isCoveredBy(ownedBuildKeys)).toList();
-    }
-
-    /** Drops keys this catalog does not know, so a stale profile stays usable. */
-    public Set<String> retainKnown(Set<String> buildKeys) {
-        if (buildKeys == null || buildKeys.isEmpty()) {
-            return Set.of();
-        }
-        LinkedHashSet<String> known = new LinkedHashSet<>();
-        for (RaidBuild build : builds) {
-            if (buildKeys.stream().anyMatch(build::matches)) {
-                known.add(build.key());
-            }
-        }
-        return Set.copyOf(known);
     }
 
     /** Orders build keys the way the catalog does, for stable chips and lists. */

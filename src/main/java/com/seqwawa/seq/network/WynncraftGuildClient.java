@@ -5,7 +5,9 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.seqwawa.seq.model.GuildMemberPresence;
 import com.seqwawa.seq.model.GuildMemberStats;
+import com.seqwawa.seq.model.KnownGuildMember;
 import com.seqwawa.seq.model.RaidCatalog;
+import com.seqwawa.seq.model.RaidPerformance;
 import com.seqwawa.seq.model.RaidType;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -14,6 +16,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -24,16 +28,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Reads the guild roster from Wynncraft's own public API.
- * <p>
- * The Sequoia backend only knows who has the mod connected, which is a fraction
- * of the guild. Wynncraft publishes every member with an {@code online} flag and
- * the world they are on, so the panel can list the whole guild rather than the
- * subset running Sequoia.
+ * Reads the guild roster from Wynncraft's public API, which lists the whole guild
+ * rather than the subset running the mod.
  * <p>
  * The guild endpoint is served with a two-minute cache and a bucket limit of 50
- * requests per minute, so {@link #MINIMUM_REFRESH_INTERVAL} is what the upstream
- * cache makes worth asking for; polling faster returns the same bytes.
+ * requests per minute; polling faster than {@link #MINIMUM_REFRESH_INTERVAL}
+ * returns the same bytes.
  */
 public final class WynncraftGuildClient {
 
@@ -75,12 +75,7 @@ public final class WynncraftGuildClient {
         return get("/player/" + encode(username)).thenApply(WynncraftGuildClient::parseGuildPrefix);
     }
 
-    /**
-     * Every online member of the guild.
-     * <p>
-     * The catalog is needed to read clear counts: Wynncraft keys them by the raid's
-     * full name, and which name belongs to which raid is the backend's to say.
-     */
+    /** The roster. The catalog is needed to read clear counts, which Wynncraft keys by raid name. */
     public CompletableFuture<GuildRoster> fetchRoster(String guildPrefix, RaidCatalog catalog) {
         if (guildPrefix == null || guildPrefix.isBlank()) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("guildPrefix must not be blank"));
@@ -128,14 +123,12 @@ public final class WynncraftGuildClient {
     }
 
     /**
-     * Flattens the guild payload, whose members arrive grouped under one object per
-     * rank, into a single list. Offline members are dropped here: the panel exists
-     * to answer "who can I play with right now", and a 150-member guild is mostly
-     * offline at any hour.
+     * Flattens the members, which arrive grouped by rank. Online members get a full
+     * presence; everyone else is kept as a {@link KnownGuildMember} so an offline
+     * friend still has a head and a last login.
      * <p>
-     * A member who has hidden their online status through Wynncraft's privacy
-     * settings reports {@code online: false} with no world, and is indistinguishable
-     * from someone genuinely offline. They are left out rather than guessed at.
+     * A member hiding their online status reports {@code online: false} with no
+     * world, which is indistinguishable from being offline, so they are left out.
      */
     static GuildRoster parseRoster(JsonObject guild, RaidCatalog catalog) {
         if (guild == null) {
@@ -145,6 +138,7 @@ public final class WynncraftGuildClient {
         String guildName = optionalString(guild, "name");
         String guildPrefix = optionalString(guild, "prefix");
         List<GuildMemberPresence> online = new ArrayList<>();
+        Map<String, KnownGuildMember> everyone = new HashMap<>();
 
         if (guild.has("members") && guild.get("members").isJsonObject()) {
             JsonObject members = guild.getAsJsonObject("members");
@@ -161,11 +155,14 @@ public final class WynncraftGuildClient {
                         continue;
                     }
                     JsonObject member = memberEntry.getValue().getAsJsonObject();
-                    if (!optionalBoolean(member, "online")) {
-                        continue;
-                    }
                     String username = memberEntry.getKey();
                     if (username == null || username.isBlank()) {
+                        continue;
+                    }
+                    KnownGuildMember known = new KnownGuildMember(
+                            username, optionalString(member, "uuid"), optionalInstant(member, "lastJoin"));
+                    everyone.put(known.key(), known);
+                    if (!optionalBoolean(member, "online")) {
                         continue;
                     }
                     online.add(new GuildMemberPresence(
@@ -185,21 +182,28 @@ public final class WynncraftGuildClient {
                 ? optionalInt(guild.getAsJsonObject("members"), "total")
                 : online.size();
 
-        return new GuildRoster(guildName, guildPrefix, total, List.copyOf(online));
+        return new GuildRoster(guildName, guildPrefix, total, List.copyOf(online), everyone);
     }
 
     /**
-     * Reads playtime and per-raid completions out of the {@code globalData} block
-     * Wynncraft already ships with every guild member, so the panel gets real raid
-     * experience without a request per player.
+     * Everything the card shows, out of the payload the roster already carries.
      * <p>
-     * The count comes from {@code currentGuildRaids}, not {@code raids}: what the
-     * panel is asked is "has this person run TNA with us", and a lifetime total
-     * would fold in every raid they did in a previous guild.
+     * Contribution and the join date sit on the member; playtime, wars, level, clears
+     * and raid totals sit under {@code globalData}, which a member hiding their
+     * profile does not have. Clears come from {@code currentGuildRaids} rather than
+     * {@code raids}, so a previous guild's raids are not counted as ours.
      */
     static GuildMemberStats parseStats(JsonObject member, RaidCatalog catalog) {
-        if (member == null || !member.has("globalData") || !member.get("globalData").isJsonObject()) {
+        if (member == null) {
             return GuildMemberStats.unknown();
+        }
+        long contributedXp = optionalLong(member, "contributed");
+        int contributionRank = optionalInt(member, "contributionRank");
+        Instant joinedGuildAt = optionalInstant(member, "joined");
+
+        if (!member.has("globalData") || !member.get("globalData").isJsonObject()) {
+            return new GuildMemberStats(
+                    0d, Map.of(), 0, 0, contributedXp, contributionRank, joinedGuildAt, RaidPerformance.unknown());
         }
         JsonObject globalData = member.getAsJsonObject("globalData");
 
@@ -232,7 +236,28 @@ public final class WynncraftGuildClient {
             }
         }
 
-        return new GuildMemberStats(playtimeHours, completions);
+        return new GuildMemberStats(
+                playtimeHours,
+                completions,
+                optionalInt(globalData, "wars"),
+                optionalInt(globalData, "totalLevel"),
+                contributedXp,
+                contributionRank,
+                joinedGuildAt,
+                parseRaidPerformance(globalData));
+    }
+
+    /** Lifetime raid damage, healing, deaths and gambits, all optional. */
+    private static RaidPerformance parseRaidPerformance(JsonObject globalData) {
+        if (!globalData.has("raidStats") || !globalData.get("raidStats").isJsonObject()) {
+            return RaidPerformance.unknown();
+        }
+        JsonObject raidStats = globalData.getAsJsonObject("raidStats");
+        return new RaidPerformance(
+                optionalLong(raidStats, "damageDealt"),
+                optionalLong(raidStats, "healthHealed"),
+                optionalLong(raidStats, "deaths"),
+                optionalLong(raidStats, "gambitsUsed"));
     }
 
     private static String optionalString(JsonObject object, String key) {
@@ -243,12 +268,36 @@ public final class WynncraftGuildClient {
         return value == null || value.isBlank() ? null : value;
     }
 
+    /** An ISO timestamp such as {@code 2026-09-15T18:02:11.845000Z}, or null. */
+    private static Instant optionalInstant(JsonObject object, String key) {
+        String value = optionalString(object, key);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (DateTimeParseException ignored) {
+            return null;
+        }
+    }
+
     private static boolean optionalBoolean(JsonObject object, String key) {
         return object != null
                 && object.has(key)
                 && object.get(key).isJsonPrimitive()
                 && object.get(key).getAsJsonPrimitive().isBoolean()
                 && object.get(key).getAsBoolean();
+    }
+
+    private static long optionalLong(JsonObject object, String key) {
+        if (object == null || !object.has(key) || !object.get(key).isJsonPrimitive()) {
+            return 0L;
+        }
+        try {
+            return object.get(key).getAsLong();
+        } catch (RuntimeException ignored) {
+            return 0L;
+        }
     }
 
     private static int optionalInt(JsonObject object, String key) {
@@ -266,15 +315,33 @@ public final class WynncraftGuildClient {
         return URLEncoder.encode(value.trim(), StandardCharsets.UTF_8);
     }
 
-    /** The online half of a guild, plus the guild's own identity for the panel header. */
-    public record GuildRoster(String guildName, String guildPrefix, int totalMembers, List<GuildMemberPresence> online) {
+    /** The online members in full, everyone by lowercase username, and the guild's identity. */
+    public record GuildRoster(
+            String guildName,
+            String guildPrefix,
+            int totalMembers,
+            List<GuildMemberPresence> online,
+            Map<String, KnownGuildMember> everyone) {
 
         public GuildRoster {
             online = online == null ? List.of() : List.copyOf(online);
+            everyone = everyone == null ? Map.of() : Map.copyOf(everyone);
+        }
+
+        public GuildRoster(String guildName, String guildPrefix, int totalMembers, List<GuildMemberPresence> online) {
+            this(guildName, guildPrefix, totalMembers, online, Map.of());
         }
 
         public static GuildRoster empty() {
             return new GuildRoster(null, null, 0, List.of());
+        }
+
+        /** The member called {@code username} whatever their status, or null. */
+        public KnownGuildMember member(String username) {
+            if (username == null || username.isBlank()) {
+                return null;
+            }
+            return everyone.get(username.trim().toLowerCase(Locale.ROOT));
         }
 
         public String displayName() {
@@ -285,7 +352,7 @@ public final class WynncraftGuildClient {
         }
     }
 
-    /** A Wynncraft API failure worth showing to the player rather than logging alone. */
+    /** A Wynncraft API failure worth showing to the player. */
     public static class WynncraftApiException extends RuntimeException {
         public WynncraftApiException(String message) {
             super(message);

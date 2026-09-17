@@ -5,23 +5,20 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * What a member brings to a raid: the meta builds they own, whether they can
- * bring auras, the region they play in, and a short status line.
+ * What a member brings to a raid: meta builds, auras, region and a status line.
  * <p>
- * Builds are held as keys rather than as {@link RaidBuild} objects. The catalog
- * that gives a key its label lives on the backend and can change; a profile that
- * stored the label would go stale the moment someone renamed a build, while a
- * profile that stored the key never does.
+ * Builds are held as keys rather than {@link RaidBuild} objects, so renaming a
+ * build on the backend does not stale every saved profile.
  */
 public record RaidTeamProfile(
         Set<String> buildKeys,
         boolean canBringAuras,
         PartyRegion region,
-        /** A short free-text line, the way a Discord status reads. May be blank. */
+        /** A short free-text line, like a Discord status. May be blank. */
         String status,
         long updatedAtEpochMs) {
 
-    /** Status lines are a glance, not a paragraph; longer ones are cut on save. */
+    /** Longer status lines are cut on save. */
     public static final int MAX_STATUS_LENGTH = 64;
 
     public RaidTeamProfile {
@@ -33,7 +30,7 @@ public record RaidTeamProfile(
         return new RaidTeamProfile(Set.of(), false, null, null, 0L);
     }
 
-    /** True once the member has actually filled the profile in. */
+    /** True once the member has filled the profile in. */
     public boolean isComplete() {
         return updatedAtEpochMs > 0L;
     }
@@ -84,7 +81,7 @@ public record RaidTeamProfile(
         return new RaidTeamProfile(buildKeys, canBringAuras, region, value, updatedAtEpochMs);
     }
 
-    /** Stamps the profile as saved now, which is what marks it complete. */
+    /** Stamps the profile as saved, which is what marks it complete. */
     public RaidTeamProfile savedAt(long epochMs) {
         return new RaidTeamProfile(buildKeys, canBringAuras, region, status, epochMs);
     }

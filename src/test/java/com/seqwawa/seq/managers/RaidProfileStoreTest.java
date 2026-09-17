@@ -388,17 +388,6 @@ class RaidProfileStoreTest {
         assertFalse(reloaded.needsSetup());
     }
 
-    @Test
-    void editingTheProfileReopensSetup(@TempDir Path directory) {
-        RaidProfileStore store = store(directory);
-        store.load();
-        store.dismissSetup();
-
-        store.requestSetup();
-
-        assertTrue(store.needsSetup());
-    }
-
     // ── Friends ──
 
     @Test

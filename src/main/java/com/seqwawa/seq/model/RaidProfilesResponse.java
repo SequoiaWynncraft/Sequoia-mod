@@ -13,13 +13,10 @@ import java.util.Set;
 
 /**
  * The wire shape of the raid profiles endpoint, modelled on
- * {@link RankProfilesResponse} so the backend has one convention to follow for
- * "the catalog plus every member's X" rather than two.
+ * {@link RankProfilesResponse}.
  * <p>
- * Catalog and profiles arrive together on purpose. They are always read as a
- * pair, and a profile whose build keys the catalog does not explain is not worth
- * rendering, so shipping them apart would only create a window where they
- * disagree.
+ * Catalog and profiles arrive together: they are always read as a pair, and a
+ * profile whose build keys the catalog cannot explain is not worth rendering.
  */
 public record RaidProfilesResponse(
         @SerializedName("schema_version") int schemaVersion, Catalog catalog, List<Profile> profiles) {
@@ -28,8 +25,8 @@ public record RaidProfilesResponse(
     public static final int CURRENT_SCHEMA_VERSION = 1;
 
     public RaidProfilesResponse {
-        // A null entry is what a stray comma in the payload produces. Dropping it here
-        // keeps one malformed row from failing the whole response.
+        // A stray comma in the payload produces a null entry; one malformed row must
+        // not fail the whole response.
         profiles = profiles == null ? List.of() : profiles.stream().filter(Objects::nonNull).toList();
     }
 
@@ -91,18 +88,12 @@ public record RaidProfilesResponse(
     }
 
     /**
-     * The profiles keyed by Minecraft UUID.
+     * The profiles keyed by Minecraft UUID, which survives a rename where a username
+     * does not.
      * <p>
-     * UUID rather than username, because a token outlives a rename: a member who
-     * renames comes back under a new name, and a panel keyed by name would show
-     * their old entry alongside the new one instead of replacing it. The UUID is
-     * stable across renames and rides along on every profile the panel ever sees,
-     * from the fetch and from both WebSocket actions.
-     * <p>
-     * Entries without a UUID are dropped, since they cannot be matched to a
-     * roster row. Build keys the catalog does not know are skipped rather than
-     * failing the whole response, which is what lets a client keep working while
-     * the meta is being edited.
+     * An entry with no UUID is dropped, since it cannot be matched to a roster row,
+     * and a build key the catalog does not know is skipped rather than failing the
+     * response, so a client keeps working while the meta is edited.
      */
     public Map<String, RaidTeamProfile> toDomain() {
         return toDomain(toCatalog());
@@ -120,9 +111,8 @@ public record RaidProfilesResponse(
             if (profile.builds() != null) {
                 for (String key : profile.builds()) {
                     String normalized = RaidBuild.normalizeKey(key);
-                    // An empty catalog means the meta has not arrived yet, and dropping
-                    // every build then would make each profile look empty rather than
-                    // unloaded, so the keys are kept as sent.
+                    // With no catalog yet, keys are kept as sent: dropping them would make
+                    // every profile look empty rather than unloaded.
                     if (!normalized.isEmpty()
                             && (catalog == null || catalog.isEmpty() || catalog.hasBuild(normalized))) {
                         buildKeys.add(normalized);
@@ -139,8 +129,8 @@ public record RaidProfilesResponse(
                 }
             }
 
-            // A profile that reached us has been filled in by its owner, so it counts as
-            // complete even when the timestamp is missing.
+            // A profile that reached us was filled in by its owner, so it counts as
+            // complete even with no timestamp.
             long updatedAt = profile.updatedAt() != null
                     ? profile.updatedAt().toEpochMilli()
                     : System.currentTimeMillis();
@@ -154,11 +144,8 @@ public record RaidProfilesResponse(
     }
 
     /**
-     * Lowercase username to UUID, so a lookup that only has a name still lands.
-     * <p>
-     * This index is the one place a stale name can linger, which is why nothing
-     * that has a roster row uses it: it exists for the friends list, where a
-     * member may be offline and a name is all there is.
+     * Lowercase username to UUID, for lookups that only have a name. A stale name can
+     * linger here, which is why anything with a roster row uses the UUID instead.
      */
     public Map<String, String> uuidByUsername() {
         Map<String, String> index = new LinkedHashMap<>();
@@ -182,10 +169,7 @@ public record RaidProfilesResponse(
                 : normalizeUuid(profile.minecraft().uuid());
     }
 
-    /**
-     * UUIDs compare lowercase and without dashes, so the dashed form Wynncraft
-     * sends and any undashed form the backend might use are the same key.
-     */
+    /** UUIDs compare lowercase and undashed, so both forms are the same key. */
     public static String normalizeUuid(String uuid) {
         if (uuid == null) {
             return null;
