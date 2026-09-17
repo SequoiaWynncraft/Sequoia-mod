@@ -181,6 +181,11 @@ public class GuildMembersScreen extends Screen {
     /** The scissored list viewport, so a scrolled-away row cannot still be clicked. */
     private Rect listViewport;
 
+    /** The roster as this frame sees it, read once and shared by header, counts and rows. */
+    private List<GuildMemberPresence> onlineThisFrame = List.of();
+
+    private List<GuildMemberPresence> visibleThisFrame = List.of();
+
     public GuildMembersScreen(Screen parent) {
         super(Component.literal("Guild Members"));
         this.parent = parent;
@@ -195,7 +200,7 @@ public class GuildMembersScreen extends Screen {
         dataRequested = true;
         // The throttle turns this into a no-op when the roster was just fetched.
         presence().refresh(false);
-        profiles().refresh();
+        profiles().refreshIfStale();
         // Listings only load when the party finder screen opens, so ask for them here.
         presence().refreshPartyFinder();
         firstRunCheckPending = !profiles().hasLoadedProfiles();
@@ -256,6 +261,10 @@ public class GuildMembersScreen extends Screen {
 
             float contentWidth = Math.min(CONTENT_MAX_WIDTH, screenWidth - PADDING * 2);
             float contentX = (screenWidth - contentWidth) / 2f;
+
+            onlineThisFrame = presence().onlineMembers();
+            visibleThisFrame = presence()
+                    .membersForDisplay(onlineThisFrame, filter, sort, sortDescending, filteredRaid());
 
             renderHeader(canvas, fontName, screenWidth, contentX, contentWidth);
             renderTabStrip(canvas, fontName, contentX, contentWidth);
@@ -350,8 +359,7 @@ public class GuildMembersScreen extends Screen {
 
     private void renderMembersTab(
             UiCanvas canvas, String fontName, float contentX, float contentY, float contentWidth, float contentHeight) {
-        List<GuildMemberPresence> members =
-                presence().membersForDisplay(filter, sort, sortDescending, filteredRaid());
+        List<GuildMemberPresence> members = visibleThisFrame;
         if (members.isEmpty()) {
             renderEmptyState(canvas, fontName, contentX, contentY, contentWidth, contentHeight);
             maxScroll = 0;
@@ -388,8 +396,7 @@ public class GuildMembersScreen extends Screen {
             return;
         }
 
-        // Resolved once for the tab: per row would rebuild the roster view every frame.
-        List<GuildMemberPresence> online = presence().onlineMembers();
+        List<GuildMemberPresence> online = onlineThisFrame;
         float cursorY = contentY - scrollOffset;
         for (String friend : friends) {
             renderFriendRow(canvas, fontName, contentX, cursorY, contentWidth, friend, online);
@@ -514,7 +521,7 @@ public class GuildMembersScreen extends Screen {
             return;
         }
 
-        List<GuildMemberPresence> online = presence().onlineMembers();
+        List<GuildMemberPresence> online = onlineThisFrame;
         String localUsername = presence().localUsername();
         float cursorY = contentY - scrollOffset;
         for (PremadeParty party : parties) {
@@ -636,8 +643,8 @@ public class GuildMembersScreen extends Screen {
             return;
         }
         selectedPremade = party;
-        PremadeAvailability availability = PremadeAvailability.of(
-                party, presence().onlineMembers(), GuildRaidActivityTracker::isBusy, presence().localUsername());
+        PremadeAvailability availability =
+                PremadeAvailability.of(party, onlineThisFrame, GuildRaidActivityTracker::isBusy, presence().localUsername());
 
         float height = MODAL_PADDING * 2
                 + MODAL_HEAD_SIZE
@@ -815,11 +822,11 @@ public class GuildMembersScreen extends Screen {
         if (error != null && !error.isBlank()) {
             return error;
         }
-        List<GuildMemberPresence> all = presence().onlineMembers();
+        List<GuildMemberPresence> all = onlineThisFrame;
         if (all.isEmpty()) {
             return presence().hasLoaded() ? "nobody online" : "loading";
         }
-        int shown = presence().filteredMembers(filter).size();
+        int shown = visibleThisFrame.size();
         long busy = all.stream()
                 .filter(member -> GuildRaidActivityTracker.isBusy(member.username()))
                 .count();

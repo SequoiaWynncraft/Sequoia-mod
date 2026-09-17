@@ -15,7 +15,7 @@ import java.util.function.Function;
 public enum MemberSort {
     NAME(false),
     WORLD(false),
-    /** When the member's session started. */
+    /** How long the member has been on, from when their session started. */
     ONLINE_SINCE(true),
     GUILD_RAIDS(true),
     WARS(true);
@@ -60,8 +60,11 @@ public enum MemberSort {
             MemberSort key, RaidType raid, Function<GuildMemberPresence, Instant> lastLogin, boolean descending) {
         Comparator<GuildMemberPresence> ascending = switch (key) {
             case WORLD -> Comparator.comparing(MemberSort::worldPrefix).thenComparingInt(MemberSort::worldNumber);
+            // The column shows time online, so it grows as the login instant gets older:
+            // ordering it like the other numbers means reversing the instant.
             case ONLINE_SINCE -> Comparator.comparing(
-                    member -> loginOrEpoch(member, lastLogin), Comparator.naturalOrder());
+                            (GuildMemberPresence member) -> loginOrEpoch(member, lastLogin))
+                    .reversed();
             case GUILD_RAIDS -> Comparator.comparingInt(member -> raid == null
                     ? member.stats().totalRaidCompletions()
                     : member.stats().completions(raid));

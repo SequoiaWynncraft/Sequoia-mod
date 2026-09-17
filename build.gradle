@@ -168,10 +168,17 @@ def generateBuildConfig = tasks.register("generateBuildConfig") {
     // feature can be tried against staging while chat, party finder and sign-in stay
     // on production. It follows backend_environment unless set, so a release build
     // cannot ship pointing at staging by accident.
+    // "production", "staging", or the base URL of a backend of your own, which is
+    // how you point the mod at a deployment of backend/ without touching this file.
     def raidProfilesEnv = project.findProperty("raid_profiles_environment") ?: env
-    def raidProfilesApiUrl = raidProfilesEnv == "production"
-            ? "https://api.seqwawa.com/api"
-            : "https://staging.seqwawa.com/api"
+    def raidProfilesApiUrl
+    if (raidProfilesEnv.toString().startsWith("https://")) {
+        raidProfilesApiUrl = raidProfilesEnv.toString().replaceAll("/+\$", "")
+    } else if (raidProfilesEnv == "production") {
+        raidProfilesApiUrl = "https://api.seqwawa.com/api"
+    } else {
+        raidProfilesApiUrl = "https://staging.seqwawa.com/api"
+    }
 
     inputs.property("env", env)
     inputs.property("raidProfilesEnv", raidProfilesEnv)

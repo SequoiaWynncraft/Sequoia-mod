@@ -3,9 +3,11 @@ Raid profiles service for the Sequoia mod.
 
 Implements the contract in docs/raid-profiles-protocol.md:
 
-    GET    /raid-profiles      the meta catalog plus every member's profile
-    PUT    /raid-profiles/me   save the caller's profile
-    DELETE /raid-profiles/me   clear the caller's profile
+    POST   /auth/minecraft/challenge  start a Minecraft ownership check
+    POST   /auth/minecraft/complete   finish it and get a token back
+    GET    /raid-profiles             the meta catalog plus every member's profile
+    PUT    /raid-profiles/me          save the caller's profile
+    DELETE /raid-profiles/me          clear the caller's profile
 
 The catalog of meta builds lives in catalog.json next to this file. Editing that
 file changes what the mod shows, with no redeploy and no client update: the mod
@@ -26,11 +28,17 @@ endpoint by hand, without writing a client.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import os
+import secrets
 import sqlite3
+import urllib.parse
+import urllib.request
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterator, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
@@ -45,11 +53,26 @@ from pydantic import BaseModel, Field, field_validator
 DATABASE_PATH = os.environ.get("RAID_PROFILES_DB", "raid-profiles.db")
 
 # How the service decides who is calling. See the README for the trade-off.
-#   "trust-header" reads the caller from request headers. Fine on your machine
-#                  and inside the guild, and NOT safe on the open internet.
+#   "minecraft"    what the mod speaks: the client proves it owns the account
+#                  against Mojang, this service checks that with Mojang too, and
+#                  hands back a token it signs itself. The only mode the mod can
+#                  use, and the only one safe to expose.
+#   "trust-header" reads the caller from request headers, for calling the service
+#                  by hand with curl. NOT safe on the open internet.
 #   "disabled"     every request is rejected. Use it to be sure you have made a
 #                  deliberate choice before exposing the service.
-AUTH_MODE = os.environ.get("RAID_PROFILES_AUTH", "trust-header")
+AUTH_MODE = os.environ.get("RAID_PROFILES_AUTH", "minecraft")
+
+# Signs the tokens this service issues in "minecraft" mode. Any string, kept
+# secret: anyone holding it can mint a token for any member.
+AUTH_SECRET = os.environ.get("RAID_PROFILES_SECRET", "")
+
+TOKEN_TTL_SECONDS = int(os.environ.get("RAID_PROFILES_TOKEN_TTL", str(7 * 24 * 3600)))
+
+# How long the client has to join the "server" before the challenge is useless.
+CHALLENGE_TTL_SECONDS = 120
+
+MOJANG_HAS_JOINED = "https://sessionserver.mojang.com/session/minecraft/hasJoined"
 
 # The guild's meta: which builds exist, which raids exist, and which builds are
 # meta for which raid. Edit this file to change the meta; nothing else needs to
@@ -202,17 +225,21 @@ class Caller(BaseModel):
 
 
 def current_caller(
+    authorization: Optional[str] = Header(default=None),
     x_minecraft_username: Optional[str] = Header(default=None),
     x_minecraft_uuid: Optional[str] = Header(default=None),
 ) -> Caller:
     """
     Resolves the caller from the request.
 
-    In "trust-header" mode this believes what the client says it is. That is
-    enough for local development and for a guild-internal deployment, and it is
-    not enough on the open internet: anyone who can reach the service could
-    write to anyone's profile. The README explains what to replace this with.
+    In "minecraft" mode the caller is whoever the bearer token belongs to, which
+    is what the mod sends. In "trust-header" mode this believes what the client
+    says it is, which is enough for curl on your own machine and not enough on
+    the open internet.
     """
+    if AUTH_MODE == "minecraft":
+        return caller_from_token(authorization)
+
     if AUTH_MODE == "disabled":
         raise ApiError(
             status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -358,6 +385,134 @@ def now_iso() -> str:
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
+
+
+# ── Minecraft ownership check ────────────────────────────────────────────────
+#
+# The mod never sends a password. It asks for a challenge, tells Mojang it joined
+# a server with the id we hand it, and we ask Mojang whether that really happened.
+# Mojang answers with the uuid, which is the part we could not have made up.
+
+# challenge_id -> (server_id, expires_at). In memory on purpose: a challenge is
+# worthless two minutes after it is issued, so it is not worth a table.
+CHALLENGES: dict[str, tuple[str, datetime]] = {}
+
+
+class CompleteIn(BaseModel):
+    challenge_id: str
+    username: str
+
+
+def require_auth_secret() -> str:
+    if not AUTH_SECRET:
+        raise ApiError(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "auth_not_configured",
+            "Set RAID_PROFILES_SECRET to sign tokens with.",
+        )
+    return AUTH_SECRET
+
+
+def b64(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def unb64(value: str) -> bytes:
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def issue_token(username: str, uuid: str) -> tuple[str, datetime]:
+    """A signed payload. The mod treats it as opaque and only hands it back."""
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=TOKEN_TTL_SECONDS)
+    payload = b64(json.dumps({"username": username, "uuid": uuid, "exp": expires_at.timestamp()}).encode("utf-8"))
+    signature = b64(hmac.new(require_auth_secret().encode("utf-8"), payload.encode("ascii"), hashlib.sha256).digest())
+    return f"{payload}.{signature}", expires_at
+
+
+def caller_from_token(authorization: Optional[str]) -> Caller:
+    header = (authorization or "").strip()
+    token = header[len("Bearer "):].strip() if header.startswith("Bearer ") else ""
+    if not token:
+        raise ApiError(status.HTTP_401_UNAUTHORIZED, "token_invalid", "Missing bearer token.")
+
+    payload, _, signature = token.partition(".")
+    expected = b64(hmac.new(require_auth_secret().encode("utf-8"), payload.encode("ascii"), hashlib.sha256).digest())
+    # compare_digest, so a wrong token cannot be guessed one character at a time.
+    if not signature or not hmac.compare_digest(signature, expected):
+        raise ApiError(status.HTTP_401_UNAUTHORIZED, "token_invalid", "That token was not issued by this service.")
+
+    try:
+        claims = json.loads(unb64(payload))
+    except (ValueError, json.JSONDecodeError):
+        raise ApiError(status.HTTP_401_UNAUTHORIZED, "token_invalid", "That token is unreadable.")
+
+    if float(claims.get("exp", 0)) <= datetime.now(timezone.utc).timestamp():
+        raise ApiError(status.HTTP_401_UNAUTHORIZED, "token_expired", "That token has expired. Sign in again.")
+    return Caller(username=str(claims["username"]), uuid=str(claims["uuid"]))
+
+
+def dashed(uuid: str) -> str:
+    plain = uuid.replace("-", "")
+    if len(plain) != 32:
+        return uuid
+    return f"{plain[0:8]}-{plain[8:12]}-{plain[12:16]}-{plain[16:20]}-{plain[20:]}"
+
+
+def ask_mojang(username: str, server_id: str) -> Optional[dict]:
+    """Mojang answers with the profile when that player really joined, else nothing."""
+    query = urllib.parse.urlencode({"username": username, "serverId": server_id})
+    try:
+        with urllib.request.urlopen(f"{MOJANG_HAS_JOINED}?{query}", timeout=10) as response:
+            body = response.read()
+    except OSError as error:
+        raise ApiError(
+            status.HTTP_502_BAD_GATEWAY, "upstream_unavailable", f"Could not reach Mojang: {error}"
+        ) from error
+    if not body:
+        return None
+    return json.loads(body)
+
+
+@app.post("/auth/minecraft/challenge")
+def minecraft_challenge() -> dict:
+    require_auth_secret()
+    # The mod requires 40 lowercase hex characters, the shape Mojang's server ids
+    # have, and refuses the challenge otherwise.
+    server_id = secrets.token_hex(20)
+    challenge_id = secrets.token_urlsafe(24)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=CHALLENGE_TTL_SECONDS)
+    CHALLENGES[challenge_id] = (server_id, expires_at)
+    return {"challenge_id": challenge_id, "server_id": server_id, "expires_at": expires_at.isoformat()}
+
+
+@app.post("/auth/minecraft/complete")
+def minecraft_complete(request: CompleteIn) -> dict:
+    require_auth_secret()
+    # One use each, expired or not, so a replay cannot ride on someone else's join.
+    issued = CHALLENGES.pop(request.challenge_id, None)
+    if issued is None:
+        raise ApiError(status.HTTP_401_UNAUTHORIZED, "challenge_unknown", "That challenge is unknown or already used.")
+
+    server_id, expires_at = issued
+    if expires_at <= datetime.now(timezone.utc):
+        raise ApiError(status.HTTP_401_UNAUTHORIZED, "challenge_expired", "That challenge expired. Try again.")
+
+    profile = ask_mojang(request.username.strip(), server_id)
+    if not profile or not profile.get("id"):
+        raise ApiError(
+            status.HTTP_401_UNAUTHORIZED,
+            "session_invalid",
+            "Mojang did not confirm that join. Restart Minecraft and try again.",
+        )
+
+    username = str(profile.get("name") or request.username.strip())
+    uuid = dashed(str(profile["id"]))
+    token, token_expires_at = issue_token(username, uuid)
+    return {
+        "token": token,
+        "expires_at": token_expires_at.isoformat(),
+        "user": {"minecraft_uuid": uuid, "minecraft_username": username},
+    }
 
 
 @app.get("/raid-profiles", response_model=ProfilesResponse)

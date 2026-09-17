@@ -13,8 +13,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
@@ -91,7 +93,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     @Getter
     private Instant connectedSince;
 
-    private Consumer<List<String>> connectedUsersCallback;
+    /** Everyone waiting on a get_connected reply, so the members panel and /seq connected can overlap. */
+    private final Queue<Consumer<List<String>>> connectedUsersCallbacks = new ConcurrentLinkedQueue<>();
     private volatile boolean membershipProbePending;
     private volatile boolean memberFeaturesDisabled;
     private volatile long nextAllowedAuthAttemptAtMs;
@@ -806,7 +809,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             callback.accept(List.of());
             return;
         }
-        this.connectedUsersCallback = callback;
+        connectedUsersCallbacks.add(callback);
         send("get_connected", null);
     }
 
@@ -1665,13 +1668,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     List<String> users = new ArrayList<>();
                     json.getAsJsonArray("users").forEach(el -> users.add(el.getAsString()));
                     SeqClient.LOGGER.info(
-                            "[WebSocket] connected_users received count={} callbackPresent={}",
+                            "[WebSocket] connected_users received count={} waiting={}",
                             users.size(),
-                            connectedUsersCallback != null);
-                    if (connectedUsersCallback != null) {
-                        connectedUsersCallback.accept(users);
-                        connectedUsersCallback = null;
-                    } else if (!wasMembershipProbe) {
+                            connectedUsersCallbacks.size());
+                    boolean delivered = false;
+                    Consumer<List<String>> waiting;
+                    while ((waiting = connectedUsersCallbacks.poll()) != null) {
+                        delivered = true;
+                        waiting.accept(users);
+                    }
+                    if (!delivered && !wasMembershipProbe) {
                         SeqClient.LOGGER.warn("[WebSocket] connected_users had no callback listener");
                     }
                 }

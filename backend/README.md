@@ -13,41 +13,45 @@ The endpoints match [`../docs/raid-profiles-protocol.md`](../docs/raid-profiles-
 exactly, and `RaidProfilesBackendContractTest` in the mod parses a captured
 response from this service, so the two are held together by a test.
 
-## Read this part before you deploy it
+## Who is allowed to write
 
-The mod signs in against `api.seqwawa.com` and gets a token back. That token is
-opaque: only the service that issued it can say who it belongs to. **This
-service cannot check it**, so it cannot prove that a request claiming to be
-`ArcLeRetour` really is.
+A token from `api.seqwawa.com` is opaque: only the service that issued it can say
+who it belongs to. So this service does not try to read one. It signs in members
+itself, the same way the mod expects, and issues its own tokens:
 
-What it does instead is read the caller from two headers:
+1. The mod asks `POST /auth/minecraft/challenge` and gets a `server_id` back.
+2. The mod tells Mojang it joined a server with that id, which only the real owner
+   of the account can do.
+3. The mod calls `POST /auth/minecraft/complete`, and this service asks Mojang
+   whether that join happened. Mojang answers with the uuid.
+4. This service hands back a token it signed with `RAID_PROFILES_SECRET`, and the
+   mod sends it as `Authorization: Bearer <token>` on every write.
 
+That is the default, `RAID_PROFILES_AUTH=minecraft`, and it is the only mode the
+mod can use. Set `RAID_PROFILES_SECRET` to any long random string and keep it
+secret: whoever holds it can mint a token for any member.
+
+Two other modes exist:
+
+- `RAID_PROFILES_AUTH=trust-header` reads the caller from `X-Minecraft-Username`
+  and `X-Minecraft-Uuid`, which is how you call the service by hand with curl. The
+  mod never sends those headers, and anyone who reaches the service could overwrite
+  anybody's profile, so this is for your own machine only.
+- `RAID_PROFILES_AUTH=disabled` refuses every write, so the service cannot be
+  exposed by accident before you have decided.
+
+### Pointing the mod at it
+
+The mod refuses to sign in over plain HTTP, so it can only reach a deployment
+served over HTTPS. Once yours is, build the mod against it:
+
+```powershell
+./gradlew build -Praid_profiles_environment=https://raid-profiles.example.com/api
 ```
-X-Minecraft-Username: ArcLeRetour
-X-Minecraft-Uuid: 66efb975-31b4-499e-9b46-a34980edd8ee
-```
 
-That is fine while you develop, and fine on a machine only the guild can reach.
-It is **not** fine on the open internet: anyone who finds the URL could overwrite
-anybody's profile. Nothing here is a secret and nothing can be stolen, so the
-worst case is vandalism rather than a breach, but it is still a real hole.
-
-You have three ways out, in order of how much work they are:
-
-1. **Keep it private.** Run it somewhere only the guild reaches, or put a
-   reverse proxy in front asking for a password. Nothing to change in this file.
-2. **Move these three endpoints into the Sequoia backend** at `api.seqwawa.com`.
-   That backend already knows who each token belongs to, so the problem
-   disappears. This file becomes the spec for whoever maintains it.
-3. **Have this service ask the Sequoia backend who the caller is** on each
-   request. That needs an endpoint on the Sequoia side that answers "who does
-   this token belong to". There isn't one today, so this is option 2 with extra
-   steps.
-
-Option 2 is the right destination. Option 1 gets you running this week.
-
-Setting `RAID_PROFILES_AUTH=disabled` makes the service refuse every write, so
-you cannot expose it by accident before you have decided.
+Everything else in the mod stays on the Sequoia backend. Moving these endpoints
+into `api.seqwawa.com` later makes that flag unnecessary, and this file is then
+the spec for whoever maintains them.
 
 ## Running it on your machine
 

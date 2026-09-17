@@ -109,10 +109,24 @@ public final class GuildPresenceManager {
     /** Filtered, and ordered by the column the player clicked. {@code raid} is the filtered raid. */
     public List<GuildMemberPresence> membersForDisplay(
             MemberFilter filter, MemberSort sort, boolean descending, RaidType raid) {
+        return membersForDisplay(onlineMembers(), filter, sort, descending, raid);
+    }
+
+    /**
+     * The same, over a roster the caller already has. A frame reads the members list
+     * more than once, and rebuilding it each time allocates a record per member.
+     */
+    public List<GuildMemberPresence> membersForDisplay(
+            List<GuildMemberPresence> members,
+            MemberFilter filter,
+            MemberSort sort,
+            boolean descending,
+            RaidType raid) {
+        List<GuildMemberPresence> matching = filteredMembers(members, filter);
         if (sort == null || sort == MemberSort.NAME && !descending) {
-            return membersForDisplay(filter);
+            return sortByName(matching);
         }
-        return MemberSort.sort(filteredMembers(filter), sort, descending, raid, this::lastLogin);
+        return MemberSort.sort(matching, sort, descending, raid, this::lastLogin);
     }
 
     /** When this member's Wynncraft session started, or null when they hide it. */
@@ -123,7 +137,15 @@ public final class GuildPresenceManager {
 
     /** The online members that pass {@code filter}, ungrouped. */
     public List<GuildMemberPresence> filteredMembers(MemberFilter filter) {
-        List<GuildMemberPresence> members = onlineMembers();
+        return filteredMembers(onlineMembers(), filter);
+    }
+
+    /** The same, over a roster the caller already has. */
+    public List<GuildMemberPresence> filteredMembers(
+            List<GuildMemberPresence> members, MemberFilter filter) {
+        if (members == null || members.isEmpty()) {
+            return List.of();
+        }
         if (filter == null || !filter.isActive()) {
             return members;
         }

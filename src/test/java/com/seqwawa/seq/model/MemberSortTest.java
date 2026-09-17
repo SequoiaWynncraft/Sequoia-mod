@@ -90,7 +90,7 @@ class MemberSortTest {
     }
 
     @Test
-    void lastLoginPutsWhoeverJustCameOnFirst() {
+    void theOnlineColumnSortsOnTimeOnlineLikeTheNumberItShows() {
         LOGINS.clear();
         LOGINS.put("JustOn", NOW.minusSeconds(120));
         LOGINS.put("AllDay", NOW.minusSeconds(6 * 3600));
@@ -98,10 +98,13 @@ class MemberSortTest {
                 List.of(member("AllDay", "NA1", 0, 0), member("JustOn", "NA1", 0, 0), member("Hidden", "NA1", 0, 0));
 
         assertEquals(
-                List.of("JustOn", "AllDay", "Hidden"),
+                List.of("AllDay", "JustOn", "Hidden"),
                 sorted(members, MemberSort.ONLINE_SINCE, true),
-                "a member who hides their status has no login time and stays last");
-        assertEquals(List.of("AllDay", "JustOn", "Hidden"), sorted(members, MemberSort.ONLINE_SINCE, false));
+                "descending is the longest online first, as it is for wars and guild raids");
+        assertEquals(
+                List.of("JustOn", "AllDay", "Hidden"),
+                sorted(members, MemberSort.ONLINE_SINCE, false),
+                "a member who hides their status has no login time and stays last either way");
     }
 
     @Test

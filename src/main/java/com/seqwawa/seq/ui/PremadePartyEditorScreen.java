@@ -5,8 +5,9 @@ import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.PlayerHeadCache;
+import com.seqwawa.seq.managers.GuildPresenceManager;
 import com.seqwawa.seq.managers.RaidProfileStore;
-import com.seqwawa.seq.model.GuildMemberPresence;
+import com.seqwawa.seq.model.KnownGuildMember;
 import com.seqwawa.seq.model.PremadeParty;
 import com.seqwawa.seq.utils.TextInputFilters;
 import com.seqwawa.seq.utils.TextInputHelper;
@@ -237,13 +238,10 @@ public class PremadePartyEditorScreen extends Screen {
         memberHitboxes.add(new MemberHitbox(removeBounds, member));
     }
 
-    /** The roster knows UUIDs, so a head shows for anyone currently online. */
+    /** The roster knows UUIDs, so a head shows for anyone in the guild, online or not. */
     private static String uuidFor(String username) {
-        return com.seqwawa.seq.managers.GuildPresenceManager.getInstance().onlineMembers().stream()
-                .filter(member -> member.username().equalsIgnoreCase(username))
-                .map(GuildMemberPresence::uuid)
-                .findFirst()
-                .orElse(null);
+        KnownGuildMember known = GuildPresenceManager.getInstance().knownMember(username);
+        return known == null ? null : known.uuid();
     }
 
     private void renderFooter(UiCanvas canvas, String fontName, float x, float y, float width) {

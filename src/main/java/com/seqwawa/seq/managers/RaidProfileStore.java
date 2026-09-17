@@ -65,6 +65,9 @@ public final class RaidProfileStore {
 
     private static final int SCHEMA_VERSION = 1;
 
+    /** How long a fetched copy is treated as fresh enough to reuse. */
+    private static final long FETCH_FRESHNESS_MS = 60_000L;
+
     /** A note is a reminder, not an essay. */
     public static final int MAX_NOTE_LENGTH = 120;
 
@@ -206,6 +209,14 @@ public final class RaidProfileStore {
 
     public String lastError() {
         return lastError;
+    }
+
+    /** Fetches only when the loaded copy is old enough to be worth replacing. */
+    public CompletableFuture<Void> refreshIfStale() {
+        if (lastFetchAtMs > 0L && System.currentTimeMillis() - lastFetchAtMs < FETCH_FRESHNESS_MS) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return refresh();
     }
 
     /**
