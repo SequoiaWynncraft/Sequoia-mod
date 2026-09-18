@@ -100,7 +100,7 @@ public class PremadePartyEditorScreen extends Screen {
             float panelX = (screenWidth - panelWidth) / 2f;
             float panelY = Math.max(12, (screenHeight - panelHeight) / 2f);
 
-            canvas.fillRoundedRect(panelX, panelY, panelWidth, panelHeight, 6, color(BACKGROUND_POPUP));
+            canvas.fillRect(panelX, panelY, panelWidth, panelHeight, color(BACKGROUND_POPUP));
             canvas.fillRect(panelX, panelY, 3, panelHeight, color(ACCENT_PRIMARY));
 
             float contentX = panelX + PANEL_PADDING;
@@ -204,7 +204,7 @@ public class PremadePartyEditorScreen extends Screen {
             UiCanvas canvas, String fontName, float x, float y, float width, String member) {
         boolean hovered = uiMouseX >= x && uiMouseX <= x + width && uiMouseY >= y && uiMouseY <= y + MEMBER_ROW_HEIGHT;
         if (hovered) {
-            canvas.fillRoundedRect(x - 4, y, width + 8, MEMBER_ROW_HEIGHT, 3, color(CONTROL_INPUT));
+            canvas.fillRect(x - 4, y, width + 8, MEMBER_ROW_HEIGHT, color(CONTROL_INPUT));
         }
 
         UiImage head = PlayerHeadCache.headFor(uuidFor(member));
@@ -212,7 +212,7 @@ public class PremadePartyEditorScreen extends Screen {
         if (head != null) {
             canvas.drawImage(head, x, headY, HEAD_SIZE, HEAD_SIZE, 1f);
         } else {
-            canvas.fillRoundedRect(x, headY, HEAD_SIZE, HEAD_SIZE, 2, color(CONTROL_INPUT_SECONDARY));
+            canvas.fillRect(x, headY, HEAD_SIZE, HEAD_SIZE, color(CONTROL_INPUT_SECONDARY));
         }
 
         drawText(
@@ -255,12 +255,11 @@ public class PremadePartyEditorScreen extends Screen {
         if (!isNew()) {
             deleteBounds = new Rect(x, y, buttonWidth, FOOTER_BUTTON_H);
             boolean hovered = deleteBounds.contains(uiMouseX, uiMouseY);
-            canvas.fillRoundedRect(
+            canvas.fillRect(
                     deleteBounds.x(),
                     deleteBounds.y(),
                     deleteBounds.width(),
                     deleteBounds.height(),
-                    4,
                     hovered ? color(CONTROL_DANGER_HOVER) : color(CONTROL_DANGER));
             drawText(
                     canvas,
@@ -282,12 +281,11 @@ public class PremadePartyEditorScreen extends Screen {
 
     private void renderInput(
             UiCanvas canvas, String fontName, Rect bounds, String value, String placeholder, boolean isFocused) {
-        canvas.fillRoundedRect(
+        canvas.fillRect(
                 bounds.x(),
                 bounds.y(),
                 bounds.width(),
                 bounds.height(),
-                3,
                 isFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
         if (isFocused) {
             canvas.strokeRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), 1, color(ACCENT_PRIMARY));
@@ -315,7 +313,7 @@ public class PremadePartyEditorScreen extends Screen {
         } else {
             background = hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
         }
-        canvas.fillRoundedRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), 3, background);
+        canvas.fillRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), background);
         drawText(
                 canvas,
                 fontName,

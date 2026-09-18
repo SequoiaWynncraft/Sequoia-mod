@@ -181,7 +181,7 @@ fetches: rank, when they joined the guild, world, how long they have been online
 total level, wars, guild XP contributed and where that places them, and how their raids have
 gone (damage, healing, deaths, gambits). Then what they told us: region, auras, declared
 builds and guild raids per raid. A **private note** you can keep on that member sits at the
-bottom and never leaves your client. The same card has **Add friend**.
+bottom and never leaves your client. The same card has **Add friend**, except on your own.
 
 Row actions: **Join** switches you to that member's world, and **Invite** invites them to
 your Wynncraft party, creating the party first when you are not in one yet. With a raid

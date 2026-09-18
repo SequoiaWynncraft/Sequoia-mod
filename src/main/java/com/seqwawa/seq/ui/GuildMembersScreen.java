@@ -102,14 +102,26 @@ public class GuildMembersScreen extends Screen {
     private static final float PREMADE_BUTTON_W = 72;
     private static final float NEW_PARTY_BUTTON_W = 88;
 
-    private static final float MODAL_WIDTH = 420;
+    private static final float MODAL_WIDTH = 580;
+    /** The stat tiles need less room than the raid table and its build chips. */
+    private static final float MODAL_LEFT_SHARE = 0.45f;
+    /** Below this inner width the card's two columns stack. */
+    private static final float MODAL_TWO_COLUMN_MIN = 480;
+    private static final float MODAL_COLUMN_GAP = 18;
+    private static final float MODAL_SECTION_GAP = 12;
+    private static final float MODAL_HEADER_H = 46;
+    private static final float MEMBER_HEAD_SIZE = 32;
+    private static final float SECTION_TITLE_H = 18;
+    private static final float TILE_H = 32;
+    private static final float TILE_GAP = 4;
+    private static final float INFO_LINE_H = 16;
+    private static final float RAID_LINE_H = 17;
+    private static final float RAID_NAME_W = 40;
+    private static final float RAID_COUNT_W = 44;
+    private static final float FRIEND_TOGGLE_W = 104;
     private static final float PREMADE_MODAL_WIDTH = 470;
     private static final float PREMADE_SEAT_H = 22;
     private static final float MODAL_PADDING = 18;
-    private static final float MODAL_ROW_H = 18;
-    /** Fact rows above the per-raid block: seven shared lines and the builds line. */
-    private static final int MODAL_FACT_ROWS = 8;
-    private static final float MODAL_PAIR_GAP = 14;
     private static final float MODAL_HEAD_SIZE = 28;
     private static final float NOTE_INPUT_H = 22;
 
@@ -658,7 +670,7 @@ public class GuildMembersScreen extends Screen {
         modalBounds = new Rect(x, y, width, height);
 
         canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY, 170));
-        canvas.fillRoundedRect(x, y, width, height, 6, color(BACKGROUND_POPUP));
+        canvas.fillRect(x, y, width, height, color(BACKGROUND_POPUP));
         canvas.fillRect(x, y, 3, height, color(ACCENT_PRIMARY));
 
         float contentX = x + MODAL_PADDING;
@@ -774,6 +786,21 @@ public class GuildMembersScreen extends Screen {
         return trimmed.isEmpty() ? "" : trimmed + "...";
     }
 
+    /** Like {@link #fitToWidth}, but keeps the end of the text, for an input being typed into. */
+    static String fitTail(String text, String fontName, float fontSize, float maxWidth) {
+        if (text == null || text.isEmpty() || maxWidth <= 0) {
+            return "";
+        }
+        if (textWidth(text, fontName, fontSize) <= maxWidth) {
+            return text;
+        }
+        String trimmed = text;
+        while (!trimmed.isEmpty() && textWidth("..." + trimmed, fontName, fontSize) > maxWidth) {
+            trimmed = trimmed.substring(1);
+        }
+        return trimmed.isEmpty() ? "" : "..." + trimmed;
+    }
+
     private void renderHeader(
             UiCanvas canvas, String fontName, float screenWidth, float contentX, float contentWidth) {
         canvas.fillRect(0, 0, screenWidth, HEADER_HEIGHT, color(BACKGROUND_HEADER));
@@ -858,12 +885,11 @@ public class GuildMembersScreen extends Screen {
         // Search sits at the far right of the bar.
         float searchX = contentX + contentWidth - SEARCH_W - 8;
         searchBounds = new Rect(searchX, chipY, SEARCH_W, FILTER_CHIP_H);
-        canvas.fillRoundedRect(
+        canvas.fillRect(
                 searchX,
                 chipY,
                 SEARCH_W,
                 FILTER_CHIP_H,
-                3,
                 searchFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
         if (searchFocused) {
             canvas.strokeRect(searchX, chipY, SEARCH_W, FILTER_CHIP_H, 1, color(ACCENT_PRIMARY));
@@ -886,12 +912,11 @@ public class GuildMembersScreen extends Screen {
         Rect bounds = new Rect(x, y, width, FILTER_CHIP_H);
         boolean selected = raid == null ? !filter.hasRaid() : raid.key().equals(filter.raidKey());
         boolean hovered = bounds.contains(uiMouseX, uiMouseY);
-        canvas.fillRoundedRect(
+        canvas.fillRect(
                 x,
                 y,
                 width,
                 FILTER_CHIP_H,
-                3,
                 selected ? color(ACCENT_PRIMARY, 210) : hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
         drawText(
                 canvas,
@@ -908,12 +933,11 @@ public class GuildMembersScreen extends Screen {
 
     private void renderToggleChip(UiCanvas canvas, String fontName, Rect bounds, String label, boolean active) {
         boolean hovered = bounds.contains(uiMouseX, uiMouseY);
-        canvas.fillRoundedRect(
+        canvas.fillRect(
                 bounds.x(),
                 bounds.y(),
                 bounds.width(),
                 bounds.height(),
-                3,
                 active ? color(CONTROL_SUCCESS, 200) : hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
         drawText(
                 canvas,
@@ -1177,7 +1201,7 @@ public class GuildMembersScreen extends Screen {
             renderPartyFinderChip(canvas, fontName, cursorX + BUSY_CHIP_W, y, spot, isLocalPlayer, clickable);
         } else if (busy) {
             float chipY = y + (ROW_HEIGHT - BUSY_CHIP_H) / 2f;
-            canvas.fillRoundedRect(cursorX, chipY, BUSY_CHIP_W, BUSY_CHIP_H, 3, color(STATUS_DANGER_BACKGROUND));
+            canvas.fillRect(cursorX, chipY, BUSY_CHIP_W, BUSY_CHIP_H, color(STATUS_DANGER_BACKGROUND));
             drawText(
                     canvas,
                     fontName,
@@ -1219,7 +1243,7 @@ public class GuildMembersScreen extends Screen {
         Color background = !joinable
                 ? color(CONTROL_INPUT)
                 : hovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY_DARK);
-        canvas.fillRoundedRect(chipX, chipY, chipW, BUSY_CHIP_H, 3, background);
+        canvas.fillRect(chipX, chipY, chipW, BUSY_CHIP_H, background);
         drawText(
                 canvas,
                 fontName,
@@ -1246,7 +1270,7 @@ public class GuildMembersScreen extends Screen {
             canvas.drawImage(head, x, y, HEAD_SIZE, HEAD_SIZE, alpha);
         } else {
             // Still loading, or the player has no UUID on the roster.
-            canvas.fillRoundedRect(x, y, HEAD_SIZE, HEAD_SIZE, 2, color(CONTROL_INPUT));
+            canvas.fillRect(x, y, HEAD_SIZE, HEAD_SIZE, color(CONTROL_INPUT));
         }
 
         float dotX = x + HEAD_SIZE - 1f;
@@ -1297,12 +1321,19 @@ public class GuildMembersScreen extends Screen {
                     UiCanvas.HorizontalAlign.LEFT);
             return;
         }
-        renderBuildChips(canvas, fontName, x, rowY, shown, maxWidth);
+        renderChips(canvas, fontName, x, rowY + ROW_HEIGHT / 2f, shown, maxWidth, MAX_VISIBLE_CHIPS);
     }
 
-    private void renderBuildChips(
-            UiCanvas canvas, String fontName, float x, float rowY, Set<String> builds, float maxWidth) {
-        float chipY = rowY + (ROW_HEIGHT - CHIP_H) / 2f;
+    /** Build chips in catalog order, cut to {@code maxChips} or to the room, whichever comes first. */
+    private void renderChips(
+            UiCanvas canvas,
+            String fontName,
+            float x,
+            float centerY,
+            Set<String> builds,
+            float maxWidth,
+            int maxChips) {
+        float chipY = centerY - CHIP_H / 2f;
         float cursorX = x;
         int drawn = 0;
         RaidCatalog catalog = catalog();
@@ -1310,21 +1341,21 @@ public class GuildMembersScreen extends Screen {
         for (String buildKey : catalog.orderKeys(builds)) {
             String nextLabel = catalog.labelFor(buildKey);
             boolean outOfRoom = cursorX + textWidth(nextLabel, fontName, TINY_FONT_SIZE) + 12 > x + maxWidth;
-            if (drawn == MAX_VISIBLE_CHIPS || (drawn > 0 && outOfRoom)) {
+            if (drawn == maxChips || (drawn > 0 && outOfRoom)) {
                 drawText(
                         canvas,
                         fontName,
                         SMALL_FONT_SIZE,
                         color(TEXT_MUTED),
                         cursorX,
-                        rowY + ROW_HEIGHT / 2f,
+                        centerY,
                         "+" + (builds.size() - drawn),
                         UiCanvas.HorizontalAlign.LEFT);
                 return;
             }
             String label = nextLabel;
             float width = textWidth(label, fontName, TINY_FONT_SIZE) + 12;
-            canvas.fillRoundedRect(cursorX, chipY, width, CHIP_H, 3, color(ACCENT_PRIMARY_DARK));
+            canvas.fillRect(cursorX, chipY, width, CHIP_H, color(ACCENT_PRIMARY_DARK));
             drawText(
                     canvas,
                     fontName,
@@ -1341,59 +1372,50 @@ public class GuildMembersScreen extends Screen {
 
     // ── Detail modal ──
 
+    private record StatTile(String value, String label) {}
+
     private void renderDetailModal(UiCanvas canvas, String fontName, float screenWidth, float screenHeight) {
         GuildMemberPresence member = selectedMember;
         RaidTeamProfile profile = profiles().profileFor(member);
+        List<RaidType> raids = catalog().raids();
+        String localUsername = presence().localUsername();
+        boolean self = localUsername != null && localUsername.equalsIgnoreCase(member.username());
 
-        float height = MODAL_PADDING * 2
-                + MODAL_HEAD_SIZE
-                + 10
-                + MODAL_ROW_H * (MODAL_FACT_ROWS + Math.max(1, catalog().raids().size()))
-                + 10
-                + ACTION_BUTTON_H
-                + 22
-                + NOTE_INPUT_H
-                + 14;
         float width = Math.min(MODAL_WIDTH, screenWidth - 24);
+        float innerWidth = width - MODAL_PADDING * 2;
+        // Two columns side by side when there is room, stacked on a narrow window.
+        boolean twoColumns = innerWidth >= MODAL_TWO_COLUMN_MIN;
+        float leftWidth = twoColumns ? (innerWidth - MODAL_COLUMN_GAP) * MODAL_LEFT_SHARE : innerWidth;
+        float rightWidth = twoColumns ? innerWidth - MODAL_COLUMN_GAP - leftWidth : innerWidth;
+
+        float statsHeight = (SECTION_TITLE_H + TILE_H) * 2 + MODAL_SECTION_GAP;
+        float raidHeight = SECTION_TITLE_H
+                + INFO_LINE_H * 2
+                + MODAL_SECTION_GAP
+                + SECTION_TITLE_H
+                + RAID_LINE_H * Math.max(1, raids.size());
+        float bodyHeight =
+                twoColumns ? Math.max(statsHeight, raidHeight) : statsHeight + MODAL_SECTION_GAP + raidHeight;
+        float height = MODAL_PADDING
+                + MODAL_HEADER_H
+                + MODAL_SECTION_GAP
+                + bodyHeight
+                + MODAL_SECTION_GAP
+                + SECTION_TITLE_H
+                + NOTE_INPUT_H
+                + MODAL_PADDING;
+
         float x = (screenWidth - width) / 2f;
         float y = Math.max(12, (screenHeight - height) / 2f);
         modalBounds = new Rect(x, y, width, height);
 
         canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY, 170));
-        canvas.fillRoundedRect(x, y, width, height, 6, color(BACKGROUND_POPUP));
+        canvas.fillRect(x, y, width, height, color(BACKGROUND_POPUP));
         canvas.fillRect(x, y, 3, height, color(ACCENT_PRIMARY));
 
         float contentX = x + MODAL_PADDING;
-        float contentWidth = width - MODAL_PADDING * 2;
         float cursorY = y + MODAL_PADDING;
-
-        UiImage head = PlayerHeadCache.headFor(member.uuid());
-        if (head != null) {
-            canvas.drawImage(head, contentX, cursorY, MODAL_HEAD_SIZE, MODAL_HEAD_SIZE, 1f);
-        } else {
-            canvas.fillRoundedRect(contentX, cursorY, MODAL_HEAD_SIZE, MODAL_HEAD_SIZE, 3, color(CONTROL_INPUT));
-        }
-
-        drawText(
-                canvas,
-                fontName,
-                TITLE_FONT_SIZE,
-                color(TEXT_PRIMARY),
-                contentX + MODAL_HEAD_SIZE + 10,
-                cursorY + MODAL_HEAD_SIZE / 2f - 5,
-                member.username(),
-                UiCanvas.HorizontalAlign.LEFT);
-        if (profile.hasStatus()) {
-            drawText(
-                    canvas,
-                    fontName,
-                    SMALL_FONT_SIZE,
-                    color(TEXT_MUTED),
-                    contentX + MODAL_HEAD_SIZE + 10,
-                    cursorY + MODAL_HEAD_SIZE / 2f + 9,
-                    profile.status(),
-                    UiCanvas.HorizontalAlign.LEFT);
-        }
+        renderModalHeader(canvas, fontName, contentX, cursorY, innerWidth, member, profile);
 
         modalCloseBounds = new Rect(x + width - 26, y + 10, 16, 16);
         drawText(
@@ -1405,195 +1427,312 @@ public class GuildMembersScreen extends Screen {
                 modalCloseBounds.y() + 8,
                 "x",
                 UiCanvas.HorizontalAlign.CENTER);
-        cursorY += MODAL_HEAD_SIZE + 10;
+        cursorY += MODAL_HEADER_H + MODAL_SECTION_GAP;
 
-        // Wynncraft's numbers, already in the roster payload. Two to a line, so the
-        // note still fits on screen.
-        GuildMemberStats stats = member.stats();
-        RaidPerformance raids = stats.raidPerformance();
-        String lastLogin = KnownGuildMember.formatElapsedShort(presence().lastLogin(member), Instant.now());
+        float rightX = twoColumns ? contentX + leftWidth + MODAL_COLUMN_GAP : contentX;
+        float rightY = twoColumns ? cursorY : cursorY + statsHeight + MODAL_SECTION_GAP;
+        renderStatsColumn(canvas, fontName, contentX, cursorY, leftWidth, member.stats());
+        renderRaidColumn(canvas, fontName, rightX, rightY, rightWidth, member, profile, raids);
 
-        cursorY = modalPairRow(
-                canvas,
-                fontName,
-                contentX,
-                cursorY,
-                contentWidth,
-                "Rank",
-                member.rank().displayName(),
-                "In guild since",
-                stats.joinedGuildLabel());
-        cursorY = modalPairRow(
-                canvas,
-                fontName,
-                contentX,
-                cursorY,
-                contentWidth,
-                "World",
-                member.hasWorld() ? member.world() : "not reported",
-                "Online for",
-                lastLogin == null ? "?" : lastLogin);
-        cursorY = modalPairRow(
-                canvas,
-                fontName,
-                contentX,
-                cursorY,
-                contentWidth,
-                "Playtime",
-                stats.playtimeLabel(),
-                "Total level",
-                stats.totalLevelLabel());
-        cursorY = modalPairRow(
-                canvas,
-                fontName,
-                contentX,
-                cursorY,
-                contentWidth,
-                "Wars",
-                stats.warsLabel(),
-                "Guild XP",
-                stats.contributedXp() > 0L
-                        ? stats.contributedXpLabel() + ", " + stats.contributionRankLabel()
-                        : "?");
-        cursorY = modalPairRow(
-                canvas,
-                fontName,
-                contentX,
-                cursorY,
-                contentWidth,
-                "Raid damage",
-                raids.isKnown() ? GuildMemberStats.formatCompact(raids.damageDealt()) : "?",
-                "Raid healing",
-                raids.isKnown() ? GuildMemberStats.formatCompact(raids.healthHealed()) : "?");
-        cursorY = modalPairRow(
-                canvas,
-                fontName,
-                contentX,
-                cursorY,
-                contentWidth,
-                "Raid deaths",
-                raids.isKnown() ? GuildMemberStats.formatCount(raids.deaths()) : "?",
-                "Gambits used",
-                raids.isKnown() ? GuildMemberStats.formatCount(raids.gambitsUsed()) : "?");
-        // Declared, not measured. Auras is something you bring, not a build.
-        cursorY = modalPairRow(
-                canvas,
-                fontName,
-                contentX,
-                cursorY,
-                contentWidth,
-                "Region",
-                profile.region() == null ? "unknown" : profile.region().name(),
-                "Auras",
-                !profile.isComplete() ? "unknown" : profile.canBringAuras() ? "yes" : "no");
-        cursorY = modalRow(canvas, fontName, contentX, cursorY, contentWidth, "Builds", profileSummary(profile));
+        cursorY += bodyHeight + MODAL_SECTION_GAP;
+        renderNoteRow(canvas, fontName, contentX, cursorY, innerWidth, member, self);
+    }
 
-        RaidCatalog catalog = catalog();
-        if (catalog.raids().isEmpty()) {
-            cursorY = modalRow(
-                    canvas, fontName, contentX, cursorY, contentWidth, "Raids", "meta not loaded");
-        }
-        for (RaidType raid : catalog.raids()) {
-            Set<String> matching =
-                    profile.isComplete() ? raid.matchingBuildKeys(profile.buildKeys()) : Set.of();
-            String value = member.stats().raidCountLabel(raid);
-            if (!matching.isEmpty()) {
-                value += "   " + catalog.joinLabels(matching);
-            }
-            cursorY = modalRow(canvas, fontName, contentX, cursorY, contentWidth, raid.shortName(), value);
+    /** Head, name, and one quiet line saying who they are in the guild and where. */
+    private void renderModalHeader(
+            UiCanvas canvas,
+            String fontName,
+            float x,
+            float y,
+            float width,
+            GuildMemberPresence member,
+            RaidTeamProfile profile) {
+        UiImage head = PlayerHeadCache.headFor(member.uuid());
+        if (head != null) {
+            canvas.drawImage(head, x, y, MEMBER_HEAD_SIZE, MEMBER_HEAD_SIZE, 1f);
+        } else {
+            canvas.fillRect(x, y, MEMBER_HEAD_SIZE, MEMBER_HEAD_SIZE, color(CONTROL_INPUT));
         }
 
-        cursorY += 10;
-        boolean isFriend = profiles().isFriend(member.username());
-        friendToggleBounds = new Rect(contentX, cursorY, 108, ACTION_BUTTON_H);
-        renderButton(
-                canvas,
-                fontName,
-                friendToggleBounds,
-                isFriend ? "Remove friend" : "Add friend",
-                true,
-                !isFriend);
-        cursorY += ACTION_BUTTON_H + 8;
-
+        float textX = x + MEMBER_HEAD_SIZE + 12;
+        // Room is kept on the right for the close cross.
+        float textRoom = width - MEMBER_HEAD_SIZE - 12 - 24;
         drawText(
                 canvas,
                 fontName,
-                TINY_FONT_SIZE,
-                color(ACCENT_PRIMARY),
-                contentX,
-                cursorY + 7,
-                "YOUR NOTE, ONLY YOU SEE IT",
+                TITLE_FONT_SIZE,
+                color(TEXT_PRIMARY),
+                textX,
+                y + 8,
+                member.username(),
                 UiCanvas.HorizontalAlign.LEFT);
-        cursorY += 18;
 
-        noteBounds = new Rect(contentX, cursorY, contentWidth, NOTE_INPUT_H);
-        canvas.fillRoundedRect(
-                contentX,
-                cursorY,
-                contentWidth,
-                NOTE_INPUT_H,
-                3,
-                noteFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+        List<String> facts = new ArrayList<>();
+        facts.add(member.rank().displayName());
+        facts.add(member.hasWorld() ? member.world() : "world hidden");
+        String onlineFor = KnownGuildMember.formatElapsedShort(presence().lastLogin(member), Instant.now());
+        if (onlineFor != null) {
+            facts.add("now".equals(onlineFor) ? "just logged in" : "online for " + onlineFor);
+        }
+        drawText(
+                canvas,
+                fontName,
+                SMALL_FONT_SIZE,
+                color(TEXT_SECONDARY),
+                textX,
+                y + 26,
+                fitToWidth(String.join("  ·  ", facts), fontName, SMALL_FONT_SIZE, textRoom),
+                UiCanvas.HorizontalAlign.LEFT);
+
+        if (profile.hasStatus()) {
+            drawText(
+                    canvas,
+                    fontName,
+                    SMALL_FONT_SIZE,
+                    color(TEXT_MUTED),
+                    textX,
+                    y + 40,
+                    fitToWidth("\"" + profile.status() + "\"", fontName, SMALL_FONT_SIZE, textRoom),
+                    UiCanvas.HorizontalAlign.LEFT);
+        }
+    }
+
+    /** What Wynncraft measures: the guild side, then how their raids have gone. */
+    private void renderStatsColumn(
+            UiCanvas canvas, String fontName, float x, float y, float width, GuildMemberStats stats) {
+        renderSectionTitle(
+                canvas,
+                fontName,
+                x,
+                y,
+                width,
+                "GUILD",
+                stats.joinedGuildAt() == null ? null : "member since " + stats.joinedGuildLabel());
+        y += SECTION_TITLE_H;
+        renderStatTiles(
+                canvas,
+                fontName,
+                x,
+                y,
+                width,
+                List.of(
+                        new StatTile(stats.playtimeLabel(), "PLAYTIME"),
+                        new StatTile(stats.totalLevelLabel(), "LEVEL"),
+                        new StatTile(stats.warsLabel(), "WARS"),
+                        new StatTile(
+                                stats.contributedXpLabel(),
+                                stats.contributionRank() > 0 ? "XP " + stats.contributionRankLabel() : "GUILD XP")));
+        y += TILE_H + MODAL_SECTION_GAP;
+
+        RaidPerformance record = stats.raidPerformance();
+        boolean known = record.isKnown();
+        renderSectionTitle(canvas, fontName, x, y, width, "RAID RECORD", "all raids, lifetime");
+        y += SECTION_TITLE_H;
+        renderStatTiles(
+                canvas,
+                fontName,
+                x,
+                y,
+                width,
+                List.of(
+                        new StatTile(known ? GuildMemberStats.formatCompact(record.damageDealt()) : "?", "DAMAGE"),
+                        new StatTile(known ? GuildMemberStats.formatCompact(record.healthHealed()) : "?", "HEALING"),
+                        new StatTile(known ? GuildMemberStats.formatCount(record.deaths()) : "?", "DEATHS"),
+                        new StatTile(known ? GuildMemberStats.formatCount(record.gambitsUsed()) : "?", "GAMBITS")));
+    }
+
+    /** What they declared, then their guild clears raid by raid with the builds they bring to each. */
+    private void renderRaidColumn(
+            UiCanvas canvas,
+            String fontName,
+            float x,
+            float y,
+            float width,
+            GuildMemberPresence member,
+            RaidTeamProfile profile,
+            List<RaidType> raids) {
+        renderSectionTitle(canvas, fontName, x, y, width, "RAID PROFILE", profile.isComplete() ? null : "not shared");
+        y += SECTION_TITLE_H;
+        renderInfoPair(canvas, fontName, x, y, "Region", profile.region() == null ? "?" : profile.region().name());
+        renderInfoPair(
+                canvas,
+                fontName,
+                x + width / 2f,
+                y,
+                "Auras",
+                !profile.isComplete() ? "?" : profile.canBringAuras() ? "yes" : "no");
+        y += INFO_LINE_H;
+        if (profile.isComplete() && !profile.buildKeys().isEmpty()) {
+            renderChips(canvas, fontName, x, y + INFO_LINE_H / 2f, profile.buildKeys(), width, Integer.MAX_VALUE);
+        } else {
+            drawText(
+                    canvas,
+                    fontName,
+                    SMALL_FONT_SIZE,
+                    color(TEXT_DISABLED),
+                    x,
+                    y + INFO_LINE_H / 2f,
+                    profile.isComplete() ? "no meta build ticked" : "hasn't filled in a profile",
+                    UiCanvas.HorizontalAlign.LEFT);
+        }
+        y += INFO_LINE_H + MODAL_SECTION_GAP;
+
+        renderSectionTitle(canvas, fontName, x, y, width, "GUILD RAIDS", "clears in the guild");
+        y += SECTION_TITLE_H;
+        if (raids.isEmpty()) {
+            drawText(
+                    canvas,
+                    fontName,
+                    SMALL_FONT_SIZE,
+                    color(TEXT_DISABLED),
+                    x,
+                    y + RAID_LINE_H / 2f,
+                    "raid meta not loaded",
+                    UiCanvas.HorizontalAlign.LEFT);
+            return;
+        }
+
+        float chipsX = x + RAID_NAME_W + RAID_COUNT_W + 10;
+        for (int index = 0; index < raids.size(); index++) {
+            RaidType raid = raids.get(index);
+            if (index % 2 == 0) {
+                // Light striping keeps the eye on one raid across the row.
+                canvas.fillRect(x - 4, y, width + 8, RAID_LINE_H, color(CONTROL_INPUT, 120));
+            }
+            float centerY = y + RAID_LINE_H / 2f;
+            int clears = member.stats().completions(raid);
+            drawText(
+                    canvas,
+                    fontName,
+                    SMALL_FONT_SIZE,
+                    color(TEXT_MUTED),
+                    x,
+                    centerY,
+                    raid.shortName(),
+                    UiCanvas.HorizontalAlign.LEFT);
+            drawText(
+                    canvas,
+                    fontName,
+                    SMALL_FONT_SIZE,
+                    clears > 0 ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
+                    x + RAID_NAME_W + RAID_COUNT_W,
+                    centerY,
+                    GuildMemberStats.formatCount(clears),
+                    UiCanvas.HorizontalAlign.RIGHT);
+            Set<String> matching = profile.isComplete() ? raid.matchingBuildKeys(profile.buildKeys()) : Set.of();
+            renderChips(canvas, fontName, chipsX, centerY, matching, x + width - chipsX, Integer.MAX_VALUE);
+            y += RAID_LINE_H;
+        }
+    }
+
+    /** The private note, with the friend toggle beside it for anyone but yourself. */
+    private void renderNoteRow(
+            UiCanvas canvas, String fontName, float x, float y, float width, GuildMemberPresence member, boolean self) {
+        renderSectionTitle(canvas, fontName, x, y, width, "YOUR NOTE", "only you see it");
+        y += SECTION_TITLE_H;
+
+        float inputWidth = self ? width : width - FRIEND_TOGGLE_W - 8;
+        noteBounds = new Rect(x, y, inputWidth, NOTE_INPUT_H);
+        canvas.fillRect(x, y, inputWidth, NOTE_INPUT_H, noteFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
         if (noteFocused) {
-            canvas.strokeRect(contentX, cursorY, contentWidth, NOTE_INPUT_H, 1, color(ACCENT_PRIMARY));
+            canvas.strokeRect(x, y, inputWidth, NOTE_INPUT_H, 1, color(ACCENT_PRIMARY));
         }
         boolean noteEmpty = noteInput.isEmpty();
+        String shown;
+        if (noteEmpty) {
+            shown = "solid tna aco, knows the lineup";
+        } else if (noteFocused) {
+            // While typing, the end of the note is the part that matters.
+            shown = fitTail(noteInput + "_", fontName, SMALL_FONT_SIZE, inputWidth - 14);
+        } else {
+            shown = fitToWidth(noteInput, fontName, SMALL_FONT_SIZE, inputWidth - 14);
+        }
         drawText(
                 canvas,
                 fontName,
                 SMALL_FONT_SIZE,
                 noteEmpty ? color(TEXT_DISABLED) : color(TEXT_PRIMARY),
-                contentX + 7,
-                cursorY + NOTE_INPUT_H / 2f,
-                noteEmpty ? "solid tna aco, knows the lineup" : (noteFocused ? noteInput + "_" : noteInput),
+                x + 7,
+                y + NOTE_INPUT_H / 2f,
+                shown,
                 UiCanvas.HorizontalAlign.LEFT);
+
+        if (self) {
+            friendToggleBounds = null;
+            return;
+        }
+        boolean isFriend = profiles().isFriend(member.username());
+        friendToggleBounds = new Rect(x + width - FRIEND_TOGGLE_W, y, FRIEND_TOGGLE_W, NOTE_INPUT_H);
+        renderButton(canvas, fontName, friendToggleBounds, isFriend ? "Remove friend" : "Add friend", true, !isFriend);
     }
 
-    private String profileSummary(RaidTeamProfile profile) {
-        if (!profile.isComplete()) {
-            return "hasn't shared a profile";
+    /** A small uppercase title over a thin rule, with an optional aside on the right. */
+    private void renderSectionTitle(
+            UiCanvas canvas, String fontName, float x, float y, float width, String title, String aside) {
+        drawText(canvas, fontName, TINY_FONT_SIZE, color(ACCENT_PRIMARY), x, y + 6, title, UiCanvas.HorizontalAlign.LEFT);
+        if (aside != null) {
+            float room = width - textWidth(title, fontName, TINY_FONT_SIZE) - 12;
+            drawText(
+                    canvas,
+                    fontName,
+                    TINY_FONT_SIZE,
+                    color(TEXT_MUTED),
+                    x + width,
+                    y + 6,
+                    fitToWidth(aside, fontName, TINY_FONT_SIZE, room),
+                    UiCanvas.HorizontalAlign.RIGHT);
         }
-        return profile.buildKeys().isEmpty() ? "none ticked" : catalog().joinLabels(profile.buildKeys());
+        canvas.fillRect(x, y + 12, width, 1, color(ACCENT_PRIMARY, 60));
+    }
+
+    /** A row of equal tiles, each a number over its label. */
+    private void renderStatTiles(
+            UiCanvas canvas, String fontName, float x, float y, float width, List<StatTile> tiles) {
+        float tileWidth = (width - TILE_GAP * (tiles.size() - 1)) / tiles.size();
+        float cursorX = x;
+        for (StatTile tile : tiles) {
+            canvas.fillRect(cursorX, y, tileWidth, TILE_H, color(CONTROL_INPUT));
+            boolean known = !"?".equals(tile.value());
+            drawText(
+                    canvas,
+                    fontName,
+                    ROW_FONT_SIZE,
+                    known ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
+                    cursorX + tileWidth / 2f,
+                    y + 12,
+                    fitToWidth(tile.value(), fontName, ROW_FONT_SIZE, tileWidth - 6),
+                    UiCanvas.HorizontalAlign.CENTER);
+            drawText(
+                    canvas,
+                    fontName,
+                    TINY_FONT_SIZE,
+                    color(TEXT_MUTED),
+                    cursorX + tileWidth / 2f,
+                    y + 25,
+                    fitToWidth(tile.label(), fontName, TINY_FONT_SIZE, tileWidth - 6),
+                    UiCanvas.HorizontalAlign.CENTER);
+            cursorX += tileWidth + TILE_GAP;
+        }
+    }
+
+    private void renderInfoPair(UiCanvas canvas, String fontName, float x, float y, String label, String value) {
+        float centerY = y + INFO_LINE_H / 2f;
+        drawText(canvas, fontName, SMALL_FONT_SIZE, color(TEXT_MUTED), x, centerY, label, UiCanvas.HorizontalAlign.LEFT);
+        drawText(
+                canvas,
+                fontName,
+                SMALL_FONT_SIZE,
+                color(TEXT_PRIMARY),
+                x + textWidth(label, fontName, SMALL_FONT_SIZE) + 8,
+                centerY,
+                value,
+                UiCanvas.HorizontalAlign.LEFT);
     }
 
     /** The filtered raid's abbreviation, or a placeholder while the meta loads. */
     private String shortRaidName() {
         RaidType raid = filteredRaid();
         return raid == null ? String.valueOf(filter.raidKey()) : raid.shortName();
-    }
-
-    /** Two label and value pairs side by side. */
-    private float modalPairRow(
-            UiCanvas canvas,
-            String fontName,
-            float x,
-            float y,
-            float width,
-            String leftLabel,
-            String leftValue,
-            String rightLabel,
-            String rightValue) {
-        float half = (width - MODAL_PAIR_GAP) / 2f;
-        modalRow(canvas, fontName, x, y, half, leftLabel, leftValue);
-        modalRow(canvas, fontName, x + half + MODAL_PAIR_GAP, y, half, rightLabel, rightValue);
-        return y + MODAL_ROW_H;
-    }
-
-    private float modalRow(
-            UiCanvas canvas, String fontName, float x, float y, float width, String label, String value) {
-        float centerY = y + MODAL_ROW_H / 2f;
-        drawText(canvas, fontName, SMALL_FONT_SIZE, color(TEXT_MUTED), x, centerY, label, UiCanvas.HorizontalAlign.LEFT);
-        float room = width - textWidth(label, fontName, SMALL_FONT_SIZE) - 8;
-        drawText(
-                canvas,
-                fontName,
-                SMALL_FONT_SIZE,
-                color(TEXT_SECONDARY),
-                x + width,
-                centerY,
-                fitToWidth(value, fontName, SMALL_FONT_SIZE, room),
-                UiCanvas.HorizontalAlign.RIGHT);
-        return y + MODAL_ROW_H;
     }
 
     /** Whether a row sits inside the scissored viewport, and so is really on screen. */
@@ -1615,7 +1754,7 @@ public class GuildMembersScreen extends Screen {
         } else {
             background = hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
         }
-        canvas.fillRoundedRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), 3, background);
+        canvas.fillRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), background);
         drawText(
                 canvas,
                 fontName,
@@ -1639,7 +1778,7 @@ public class GuildMembersScreen extends Screen {
         float width = Math.max(STATUS_BANNER_MIN_W, textWidth(statusBannerMessage, fontName, ROW_FONT_SIZE) + 32);
         float x = (screenWidth - width) / 2f;
         float y = screenHeight - STATUS_BANNER_H - 16;
-        canvas.fillRoundedRect(x, y, width, STATUS_BANNER_H, 4, color(BACKGROUND_POPUP));
+        canvas.fillRect(x, y, width, STATUS_BANNER_H, color(BACKGROUND_POPUP));
         canvas.fillRect(x, y, 2, STATUS_BANNER_H, color(ACCENT_PRIMARY));
         drawText(
                 canvas,

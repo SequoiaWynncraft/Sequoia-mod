@@ -142,7 +142,7 @@ public class RaidProfileSetupScreen extends Screen {
             float panelX = (screenWidth - panelWidth) / 2f;
             float panelY = Math.max(12, (screenHeight - panelHeight) / 2f);
 
-            canvas.fillRoundedRect(panelX, panelY, panelWidth, panelHeight, 6, color(BACKGROUND_POPUP));
+            canvas.fillRect(panelX, panelY, panelWidth, panelHeight, color(BACKGROUND_POPUP));
             canvas.fillRect(panelX, panelY, 3, panelHeight, color(ACCENT_PRIMARY));
 
             float contentX = panelX + PANEL_PADDING;
@@ -248,8 +248,8 @@ public class RaidProfileSetupScreen extends Screen {
             boolean hovered = bounds.contains(uiMouseX, uiMouseY);
 
             if (hovered) {
-                canvas.fillRoundedRect(
-                        bounds.x() - 4, bounds.y(), bounds.width() + 8, bounds.height(), 3, color(CONTROL_INPUT));
+                canvas.fillRect(
+                        bounds.x() - 4, bounds.y(), bounds.width() + 8, bounds.height(), color(CONTROL_INPUT));
             }
 
             float checkboxY = cellY + (BUILD_ROW_HEIGHT - 4 - CHECKBOX_SIZE) / 2f;
@@ -283,8 +283,8 @@ public class RaidProfileSetupScreen extends Screen {
     }
 
     private void renderCheckbox(UiCanvas canvas, float x, float y, boolean checked) {
-        canvas.fillRoundedRect(
-                x, y, CHECKBOX_SIZE, CHECKBOX_SIZE, 3, checked ? color(ACCENT_PRIMARY) : color(CONTROL_INPUT));
+        canvas.fillRect(
+                x, y, CHECKBOX_SIZE, CHECKBOX_SIZE, checked ? color(ACCENT_PRIMARY) : color(CONTROL_INPUT));
         canvas.strokeRect(
                 x, y, CHECKBOX_SIZE, CHECKBOX_SIZE, 1, checked ? color(ACCENT_PRIMARY_HOVER) : color(CONTROL_BORDER));
         if (checked) {
@@ -311,8 +311,8 @@ public class RaidProfileSetupScreen extends Screen {
         aurasBounds = new Rect(x, y, width, TOGGLE_ROW_HEIGHT - 4);
         boolean hovered = aurasBounds.contains(uiMouseX, uiMouseY);
         if (hovered) {
-            canvas.fillRoundedRect(
-                    x - 4, y, width + 8, TOGGLE_ROW_HEIGHT - 4, 3, color(CONTROL_INPUT));
+            canvas.fillRect(
+                    x - 4, y, width + 8, TOGGLE_ROW_HEIGHT - 4, color(CONTROL_INPUT));
         }
         float checkboxY = y + (TOGGLE_ROW_HEIGHT - 4 - CHECKBOX_SIZE) / 2f;
         renderCheckbox(canvas, x, checkboxY, draft.canBringAuras());
@@ -345,12 +345,11 @@ public class RaidProfileSetupScreen extends Screen {
             Rect bounds = new Rect(cursorX, buttonY, REGION_BUTTON_W, REGION_BUTTON_H);
             boolean selected = draft.region() == region;
             boolean hovered = bounds.contains(uiMouseX, uiMouseY);
-            canvas.fillRoundedRect(
+            canvas.fillRect(
                     bounds.x(),
                     bounds.y(),
                     bounds.width(),
                     bounds.height(),
-                    3,
                     selected ? color(ACCENT_PRIMARY, 210) : hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
             drawText(
                     canvas,
@@ -369,8 +368,8 @@ public class RaidProfileSetupScreen extends Screen {
 
     private float renderStatusInput(UiCanvas canvas, String fontName, float x, float y, float width) {
         statusBounds = new Rect(x, y, width, INPUT_HEIGHT);
-        canvas.fillRoundedRect(
-                x, y, width, INPUT_HEIGHT, 3, statusFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+        canvas.fillRect(
+                x, y, width, INPUT_HEIGHT, statusFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
         if (statusFocused) {
             canvas.strokeRect(x, y, width, INPUT_HEIGHT, 1, color(ACCENT_PRIMARY));
         }
@@ -418,12 +417,11 @@ public class RaidProfileSetupScreen extends Screen {
 
         saveBounds = new Rect(x + width - FOOTER_BUTTON_W, y, FOOTER_BUTTON_W, FOOTER_BUTTON_H);
         boolean saveHovered = saveBounds.contains(uiMouseX, uiMouseY);
-        canvas.fillRoundedRect(
+        canvas.fillRect(
                 saveBounds.x(),
                 saveBounds.y(),
                 saveBounds.width(),
                 saveBounds.height(),
-                4,
                 saving
                         ? color(ACCENT_DISABLED)
                         : saveHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
@@ -440,12 +438,11 @@ public class RaidProfileSetupScreen extends Screen {
         float skipWidth = 84;
         skipBounds = new Rect(saveBounds.x() - skipWidth - 8, y, skipWidth, FOOTER_BUTTON_H);
         boolean skipHovered = skipBounds.contains(uiMouseX, uiMouseY);
-        canvas.fillRoundedRect(
+        canvas.fillRect(
                 skipBounds.x(),
                 skipBounds.y(),
                 skipBounds.width(),
                 skipBounds.height(),
-                4,
                 skipHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
         drawText(
                 canvas,

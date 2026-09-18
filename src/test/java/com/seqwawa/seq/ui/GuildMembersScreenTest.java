@@ -39,4 +39,12 @@ class GuildMembersScreenTest {
         assertEquals("", GuildMembersScreen.fitToWidth(null, "font", 9f, 100f));
         assertEquals("", GuildMembersScreen.fitToWidth("", "font", 9f, 100f));
     }
+
+    @Test
+    void theTailFirstVariantDropsTextWithNoRoomAndKeepsEmptyInputEmpty() {
+        assertEquals("", GuildMembersScreen.fitTail("a long note", "font", 10f, 0f));
+        assertEquals("", GuildMembersScreen.fitTail("a long note", "font", 10f, -5f));
+        assertEquals("", GuildMembersScreen.fitTail(null, "font", 10f, 100f));
+        assertEquals("", GuildMembersScreen.fitTail("", "font", 10f, 100f));
+    }
 }
