@@ -34,7 +34,6 @@ import com.seqwawa.seq.managers.FontManager;
 import com.seqwawa.seq.managers.GameManager;
 import com.seqwawa.seq.managers.GlobalSoundListener;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
-import com.seqwawa.seq.managers.AchievementAnnouncementManager;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
@@ -457,7 +456,6 @@ public class SeqClient implements ClientModInitializer {
             WynncraftServerPolicy.Scope previousServerScope = lastServerScope;
             logServerScopeChange(serverScope, currentHost);
             boolean minecraftAccountChanged = handleMinecraftAccountChange();
-            AchievementAnnouncementManager.getInstance().tick();
             if (worldEventManager != null) {
                 worldEventManager.tick(
                         client,

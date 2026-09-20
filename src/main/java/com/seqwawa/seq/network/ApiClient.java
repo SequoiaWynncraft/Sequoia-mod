@@ -23,7 +23,7 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.Activity;
-import com.seqwawa.seq.model.AchievementAnnouncementClaim;
+import com.seqwawa.seq.managers.ChatManager;
 import com.seqwawa.seq.model.AllyRaidReport;
 import com.seqwawa.seq.model.CreateInviteResponse;
 import com.seqwawa.seq.model.GuildRaidProgress;
@@ -240,14 +240,16 @@ public class ApiClient {
     public CompletableFuture<GuildRaidProgress> getGuildRaidProgress() {
         return afterValidToken(
                 SeqClient.getAuthService().ensureValidToken(false),
-                () -> get(ACHIEVEMENTS_PATH, GuildRaidProgress.class));
-    }
-
-    public CompletableFuture<AchievementAnnouncementClaim> claimAchievementAnnouncement() {
-        return afterValidToken(
-                SeqClient.getAuthService().ensureValidToken(false),
-                () -> post("/achievements/announcements/claim", null,
-                        AchievementAnnouncementClaim.class));
+                () -> ChatManager.canAnnounceAchievements()
+                        ? this.<GuildRaidProgress>post(ACHIEVEMENTS_PATH, null, GuildRaidProgress.class)
+                                .exceptionallyCompose(failure -> {
+                                    Throwable cause = failure.getCause() == null ? failure : failure.getCause();
+                                    if (cause instanceof ApiException api && (api.getStatusCode() == 404 || api.getStatusCode() == 405)) {
+                                        return get(ACHIEVEMENTS_PATH, GuildRaidProgress.class);
+                                    }
+                                    return CompletableFuture.failedFuture(failure);
+                                })
+                        : get(ACHIEVEMENTS_PATH, GuildRaidProgress.class));
     }
 
     public CompletableFuture<AllyRaidReport> getAllyRaidReport(int cutoffMinutes) {

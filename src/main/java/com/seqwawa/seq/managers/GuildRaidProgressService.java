@@ -5,9 +5,11 @@ import com.seqwawa.seq.model.GuildRaidProgress;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.ConnectionManager;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
@@ -30,6 +32,7 @@ public final class GuildRaidProgressService {
     private final LongSupplier clock;
     private final BooleanSupplier connected;
     private final Consumer<Runnable> raidDelay;
+    private final BiConsumer<List<String>, BooleanSupplier> announcer;
 
     private volatile GuildRaidProgress progress = GuildRaidProgress.EMPTY;
     private volatile State state = State.LOADING;
@@ -44,10 +47,20 @@ public final class GuildRaidProgressService {
             LongSupplier clock,
             BooleanSupplier connected,
             Consumer<Runnable> raidDelay) {
+        this(fetcher, clock, connected, raidDelay, (messages, valid) -> {});
+    }
+
+    GuildRaidProgressService(
+            Supplier<CompletableFuture<GuildRaidProgress>> fetcher,
+            LongSupplier clock,
+            BooleanSupplier connected,
+            Consumer<Runnable> raidDelay,
+            BiConsumer<List<String>, BooleanSupplier> announcer) {
         this.fetcher = fetcher;
         this.clock = clock;
         this.connected = connected;
         this.raidDelay = raidDelay;
+        this.announcer = announcer;
         this.wasConnected = connected.getAsBoolean();
     }
 
@@ -57,7 +70,8 @@ public final class GuildRaidProgressService {
                     () -> ApiClient.getInstance().getGuildRaidProgress(),
                     System::currentTimeMillis,
                     ConnectionManager::isConnected,
-                    GuildRaidProgressService::runAfterSettleDelay);
+                    GuildRaidProgressService::runAfterSettleDelay,
+                    ChatManager::announceAchievements);
         }
         return instance;
     }
@@ -168,6 +182,9 @@ public final class GuildRaidProgressService {
         }
         progress = fetched;
         state = State.READY;
+        if (!fetched.announcements().isEmpty()) {
+            announcer.accept(fetched.announcements(), () -> startedFor == generation && connected.getAsBoolean());
+        }
         runPendingForceRefresh();
     }
 

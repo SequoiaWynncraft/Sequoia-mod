@@ -9,12 +9,15 @@ import com.seqwawa.seq.model.GuildRaidProgress;
 import com.seqwawa.seq.model.GuildRaidProgress.Entry;
 import com.seqwawa.seq.model.SeqRaid;
 import java.util.Map;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 
 class GuildRaidProgressServiceTest {
@@ -404,5 +407,48 @@ class GuildRaidProgressServiceTest {
 
     private static GuildRaidProgress progress(int tnaCount) {
         return new GuildRaidProgress(1, Map.of("TNA", new Entry(tnaCount)));
+    }
+
+    @Test
+    void existingRefreshDeliversAnnouncementsWithoutAnExtraPoll() {
+        List<String> sent = new ArrayList<>();
+        var response = new GuildRaidProgress(1, Map.of("TNA", new Entry(1000, "diamond")),
+                List.of("Baptiste reached Diamond (1,000 raids) in TNA!"));
+        var service = new GuildRaidProgressService(
+                () -> { calls.incrementAndGet(); return CompletableFuture.completedFuture(response); },
+                now::get, connected::get, Runnable::run,
+                (messages, valid) -> { if (valid.getAsBoolean()) sent.addAll(messages); });
+        service.tick();
+        service.tick();
+        assertEquals(1, calls.get());
+        assertEquals(response.announcements(), sent);
+        assertEquals(1000, service.progress().totalCount());
+    }
+
+    @Test
+    void delayedAnnouncementsAreInvalidatedByDisconnectOrAccountReset() {
+        AtomicReference<BooleanSupplier> valid = new AtomicReference<>();
+        var response = new GuildRaidProgress(1, Map.of(), List.of("Baptiste earned the Gold Insignia badge!"));
+        var service = new GuildRaidProgressService(() -> CompletableFuture.completedFuture(response),
+                now::get, connected::get, Runnable::run, (messages, check) -> valid.set(check));
+        service.tick();
+        assertTrue(valid.get().getAsBoolean());
+        connected.set(false);
+        assertFalse(valid.get().getAsBoolean());
+        connected.set(true);
+        service.reset();
+        assertFalse(valid.get().getAsBoolean());
+    }
+
+    @Test
+    void aPreviousAccountsResponseNeverSchedulesAnnouncements() {
+        CompletableFuture<GuildRaidProgress> pending = new CompletableFuture<>();
+        List<String> scheduled = new ArrayList<>();
+        var service = new GuildRaidProgressService(() -> pending, now::get, connected::get, Runnable::run,
+                (messages, valid) -> scheduled.addAll(messages));
+        service.tick();
+        service.reset();
+        pending.complete(new GuildRaidProgress(1, Map.of(), List.of("Previous player reached Gold!")));
+        assertTrue(scheduled.isEmpty());
     }
 }

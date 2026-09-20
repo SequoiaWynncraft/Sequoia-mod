@@ -4,10 +4,16 @@ import com.google.gson.annotations.SerializedName;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.List;
 
 public record GuildRaidProgress(
         @SerializedName("schema_version") int schemaVersion,
-        Map<String, Entry> progress) {
+        Map<String, Entry> progress,
+        List<String> announcements) {
+
+    public GuildRaidProgress(int schemaVersion, Map<String, Entry> progress) {
+        this(schemaVersion, progress, List.of());
+    }
 
     private static final String TOTAL_KEY = "TOTAL";
 
@@ -22,6 +28,7 @@ public record GuildRaidProgress(
 
     public GuildRaidProgress {
         progress = normalizeKeys(progress);
+        announcements = announcements == null ? List.of() : List.copyOf(announcements);
     }
 
     public int count(SeqRaid raid) {
