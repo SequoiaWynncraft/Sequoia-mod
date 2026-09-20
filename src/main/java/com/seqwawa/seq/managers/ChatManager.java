@@ -15,6 +15,7 @@ import com.seqwawa.seq.integrations.WynntilsItemPreviewAccess;
 import com.seqwawa.seq.model.ChatItemPreview;
 import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.utils.ChatIdentityResolver;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 import com.seqwawa.seq.utils.RankGradientAnimation;
@@ -27,6 +28,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.regex.Matcher;
@@ -53,6 +57,44 @@ public class ChatManager {
      */
     private static final int GUILD_CHAT_COLOR = 0x55FFFF;
     private static final String BACKEND_GUILD_NAME = "Sequoia";
+    private static long nextAchievementSendAt;
+
+    public static boolean canAnnounceAchievements() {
+        if (mc.player == null || mc.level == null || mc.getUser() == null
+                || !ConnectionManager.isConnected()
+                || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
+            return false;
+        }
+        var session = SeqClient.getConfigManager().getStoredAuthSession();
+        return session != null && mc.getUser().getProfileId().toString().equalsIgnoreCase(session.minecraftUuid())
+                && shouldRelayForGuild(WynntilsGuildRankAccess.guildMembership(BACKEND_GUILD_NAME));
+    }
+
+    /** The normal guild-chat bridge relays these /g messages to Campfire. */
+    static void announceAchievements(List<String> messages, BooleanSupplier currentSession) {
+        mc.execute(() -> {
+            if (!currentSession.getAsBoolean() || !canAnnounceAchievements()) {
+                return;
+            }
+            var connection = mc.player.connection;
+            var player = mc.getUser().getProfileId();
+            for (String message : messages) {
+                if (message.isBlank() || message.length() > 240
+                        || message.chars().anyMatch(c -> Character.isISOControl(c) || c == '§')) {
+                    continue;
+                }
+                long now = System.currentTimeMillis();
+                long delay = Math.max(0, nextAchievementSendAt - now);
+                nextAchievementSendAt = now + delay + 3_000;
+                CompletableFuture.delayedExecutor(delay, TimeUnit.MILLISECONDS).execute(() -> mc.execute(() -> {
+                    if (currentSession.getAsBoolean() && canAnnounceAchievements()
+                            && mc.player.connection == connection && mc.getUser().getProfileId().equals(player)) {
+                        connection.sendCommand("g " + message);
+                    }
+                }));
+            }
+        });
+    }
     // Nicknames may contain spaces (e.g. "Emanant Force"), so allow spaces in the
     // display-name capture group. DOTALL so the message group captures across \n.
     // Packet-level normalization strips the icon/banner glyph spam before matching.
