@@ -1,5 +1,7 @@
 package com.seqwawa.seq.courage;
 
+import static com.seqwawa.seq.halcyon.HalcyonRingRenderer.renderRingWall;
+
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.seqwawa.seq.client.SeqClient;
@@ -22,8 +24,8 @@ import net.minecraft.world.phys.Vec3;
 /** Draws the Courage aura around Shamans and counts the players standing inside it. */
 public final class CourageRangeClient {
     public static final int DEFAULT_COLOR_RGB = 0xFF0000;
-    /** Half opacity, so the fill reads as an overlay rather than repainting the ground. */
-    private static final int AURA_ALPHA = 128;
+    /** The Light range ring's own opacity, so the two rings read identically. */
+    private static final int RING_ALPHA = 230;
 
     private static boolean colorPreviewActive;
 
@@ -103,14 +105,14 @@ public final class CourageRangeClient {
         int color = ringColor();
 
         if (colorPreviewActive) {
-            CourageAuraRenderer.render(
+            renderRingWall(
                     vertices,
                     pose,
                     client.player.getPosition(tickDelta),
                     camera,
                     CourageRangeTracker.RADIUS,
                     color,
-                    AURA_ALPHA);
+                    RING_ALPHA);
             return;
         }
 
@@ -118,14 +120,14 @@ public final class CourageRangeClient {
             if (!shouldDraw(circle)) {
                 continue;
             }
-            CourageAuraRenderer.render(
+            renderRingWall(
                     vertices,
                     pose,
                     circle.player().getPosition(tickDelta),
                     camera,
                     CourageRangeTracker.RADIUS,
                     color,
-                    AURA_ALPHA);
+                    RING_ALPHA);
         }
     }
 
