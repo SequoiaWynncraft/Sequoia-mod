@@ -26,7 +26,7 @@ class TnaLineupHelperTest {
     }
 
     @Test
-    void detectsBerryAndRoomThreeChallengeProgress() {
+    void detectsTnaChallengeProgress() {
         assertEquals(0, TnaLineupHelper.detectChallengeProgress(
                 List.of("The Nameless Anomaly", "Challenges: 0/4", "Prepare")));
         assertEquals(2, TnaLineupHelper.detectChallengeProgress(List.of("§dChallenge   2 / 4§r")));
@@ -42,28 +42,6 @@ class TnaLineupHelperTest {
         assertTrue(TnaLineupHelper.shouldRender(0, 0, radiusSquared));
         assertFalse(TnaLineupHelper.shouldRender(0, 2, 0.0));
         assertFalse(TnaLineupHelper.shouldRender(0, 0, radiusSquared + 0.01));
-    }
-
-    @Test
-    void berryRoomUsesItsUniqueCoordinatesInsteadOfRaidTitleState() {
-        double radiusSquared = TnaLineupHelper.DISPLAY_RADIUS * TnaLineupHelper.DISPLAY_RADIUS;
-
-        assertTrue(TnaLineupHelper.isWithinDisplayRadius(radiusSquared));
-        assertFalse(TnaLineupHelper.isWithinDisplayRadius(radiusSquared + 0.01));
-    }
-
-    @Test
-    void berryMarkersUseTheSuppliedCoordinates() {
-        Vec3 standCenter = TnaLineupHelper.floorMarkerCenter(TnaLineupHelper.BERRY_STAND_POINT);
-        Vec3 aimCenter =
-                TnaLineupHelper.wallMarkerCenter(TnaLineupHelper.BERRY_STAND_POINT, TnaLineupHelper.BERRY_AIM_POINT);
-
-        assertEquals(27_758.2, standCenter.x);
-        assertTrue(standCenter.y > 6.0);
-        assertEquals(-22_049.5, standCenter.z);
-        assertTrue(aimCenter.x > 27_739.0);
-        assertEquals(9.0, aimCenter.y);
-        assertEquals(-22_049.6, aimCenter.z);
     }
 
     @Test
