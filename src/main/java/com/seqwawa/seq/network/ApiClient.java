@@ -23,6 +23,7 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.Activity;
+import com.seqwawa.seq.model.AchievementAnnouncementClaim;
 import com.seqwawa.seq.model.AllyRaidReport;
 import com.seqwawa.seq.model.CreateInviteResponse;
 import com.seqwawa.seq.model.GuildRaidProgress;
@@ -240,6 +241,13 @@ public class ApiClient {
         return afterValidToken(
                 SeqClient.getAuthService().ensureValidToken(false),
                 () -> get(ACHIEVEMENTS_PATH, GuildRaidProgress.class));
+    }
+
+    public CompletableFuture<AchievementAnnouncementClaim> claimAchievementAnnouncement() {
+        return afterValidToken(
+                SeqClient.getAuthService().ensureValidToken(false),
+                () -> post("/achievements/announcements/claim", null,
+                        AchievementAnnouncementClaim.class));
     }
 
     public CompletableFuture<AllyRaidReport> getAllyRaidReport(int cutoffMinutes) {
