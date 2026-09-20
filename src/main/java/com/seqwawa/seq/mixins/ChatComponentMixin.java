@@ -2,6 +2,7 @@ package com.seqwawa.seq.mixins;
 
 import com.seqwawa.seq.managers.DiscordRankChatDecorator;
 import com.seqwawa.seq.managers.WorldSwitchChatDecorator;
+import com.seqwawa.seq.managers.PrivateMessageGuildTagDecorator;
 import com.seqwawa.seq.utils.ChatBridgeLineWrapping;
 import java.util.List;
 import net.minecraft.client.GuiMessage;
@@ -10,6 +11,7 @@ import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -27,6 +29,11 @@ import org.spongepowered.asm.mixin.injection.Redirect;
  */
 @Mixin(ChatComponent.class)
 public class ChatComponentMixin {
+
+    @Shadow
+    private void refreshTrimmedMessages() {
+        throw new AssertionError();
+    }
 
     /**
      * Rank decoration runs first: it rebuilds guild lines around the pill it
@@ -59,6 +66,10 @@ public class ChatComponentMixin {
                     target = "Lnet/minecraft/client/GuiMessage;splitLines(Lnet/minecraft/client/gui/Font;I)Ljava/util/List;"))
     private List<FormattedCharSequence> seq$wrapBridgeContinuations(
             GuiMessage message, Font font, int maxWidth) {
+        Component tagged = PrivateMessageGuildTagDecorator.decorate(message.content(), this::refreshTrimmedMessages);
+        if (tagged != message.content()) {
+            message = new GuiMessage(message.addedTime(), tagged, message.signature(), message.tag());
+        }
         List<FormattedCharSequence> initialLines = message.splitLines(font, maxWidth);
         Component continuationPrefix = DiscordRankChatDecorator.bridgeContinuationPrefixFor(message.content());
         if (continuationPrefix == null) {
