@@ -26,8 +26,6 @@ import net.minecraft.world.scores.Scoreboard;
 
 /** World-space standing and aiming markers for TNA lineups. */
 public final class TnaLineupHelper {
-    static final Vec3 BERRY_STAND_POINT = new Vec3(27_758.2, 6.0, -22_049.5);
-    static final Vec3 BERRY_AIM_POINT = new Vec3(27_739.0, 9.0, -22_049.6);
     static final Vec3 ROOM_THREE_STAND_POINT = new Vec3(25_586.0, 31.0, -23_539.4);
     static final Vec3 ROOM_THREE_AIM_POINT = new Vec3(25_591.4, 32.8, -23_548.0);
     static final double DISPLAY_RADIUS = 12.0;
@@ -43,7 +41,6 @@ public final class TnaLineupHelper {
     private static final double CROSS_HALF_SIZE = 0.35;
     private static final double STRIP_HALF_WIDTH = 0.04;
     private static final double FLOOR_MARKER_OFFSET = 0.03;
-    private static final double WALL_MARKER_OFFSET = 0.03;
     private static final int STAND_RED = 0x55;
     private static final int STAND_GREEN = 0xFF;
     private static final int STAND_BLUE = 0x80;
@@ -154,26 +151,9 @@ public final class TnaLineupHelper {
             return;
         }
 
-        if (isBerryEnabled()) {
-            renderBerry(context, client);
-        }
         if (activeChallenge == ROOM_THREE_CHALLENGE && isRoomThreeEnabled()) {
             renderRoomThree(context, client);
         }
-    }
-
-    private static void renderBerry(WorldRenderContext context, Minecraft client) {
-        if (!isWithinDisplayRadius(client.player.position().distanceToSqr(BERRY_STAND_POINT))) {
-            return;
-        }
-
-        RenderState state = renderState(context, client);
-        renderFloorCross(state.lines(), state.pose(), state.camera(), BERRY_STAND_POINT);
-        renderAimCross(state.lines(), state.pose(), state.camera(), BERRY_STAND_POINT, BERRY_AIM_POINT);
-    }
-
-    static boolean isWithinDisplayRadius(double distanceSquared) {
-        return distanceSquared <= DISPLAY_RADIUS * DISPLAY_RADIUS;
     }
 
     private static void renderRoomThree(WorldRenderContext context, Minecraft client) {
@@ -231,47 +211,8 @@ public final class TnaLineupHelper {
                 STAND_BLUE);
     }
 
-    private static void renderAimCross(
-            VertexConsumer lines, PoseStack.Pose pose, Vec3 camera, Vec3 standPoint, Vec3 aimPoint) {
-        Vec3 center = wallMarkerCenter(standPoint, aimPoint);
-        Vec3 direction = aimPoint.subtract(standPoint).normalize();
-        Vec3 side = new Vec3(-direction.z, 0.0, direction.x).normalize();
-        if (side.lengthSqr() == 0.0) {
-            side = new Vec3(0.0, 0.0, 1.0);
-        }
-        Vec3 thinSide = side.scale(STRIP_HALF_WIDTH);
-        Vec3 wideSide = side.scale(CROSS_HALF_SIZE);
-        addDoubleSidedQuad(
-                lines,
-                pose,
-                camera,
-                center.add(0.0, -CROSS_HALF_SIZE, 0.0).subtract(thinSide),
-                center.add(0.0, CROSS_HALF_SIZE, 0.0).subtract(thinSide),
-                center.add(0.0, CROSS_HALF_SIZE, 0.0).add(thinSide),
-                center.add(0.0, -CROSS_HALF_SIZE, 0.0).add(thinSide),
-                AIM_RED,
-                AIM_GREEN,
-                AIM_BLUE);
-        addDoubleSidedQuad(
-                lines,
-                pose,
-                camera,
-                center.subtract(wideSide).add(0.0, -STRIP_HALF_WIDTH, 0.0),
-                center.subtract(wideSide).add(0.0, STRIP_HALF_WIDTH, 0.0),
-                center.add(wideSide).add(0.0, STRIP_HALF_WIDTH, 0.0),
-                center.add(wideSide).add(0.0, -STRIP_HALF_WIDTH, 0.0),
-                AIM_RED,
-                AIM_GREEN,
-                AIM_BLUE);
-    }
-
     static Vec3 floorMarkerCenter(Vec3 point) {
         return point.add(0.0, FLOOR_MARKER_OFFSET, 0.0);
-    }
-
-    static Vec3 wallMarkerCenter(Vec3 standPoint, Vec3 aimPoint) {
-        double direction = Math.signum(standPoint.x - aimPoint.x);
-        return aimPoint.add(direction * WALL_MARKER_OFFSET, 0.0, 0.0);
     }
 
     private static void renderBeam(
@@ -319,10 +260,6 @@ public final class TnaLineupHelper {
             VertexConsumer lines, PoseStack.Pose pose, Vec3 point, int red, int green, int blue) {
         lines.addVertex(pose, (float) point.x, (float) point.y, (float) point.z)
                 .setColor(red, green, blue, MARKER_ALPHA);
-    }
-
-    private static boolean isBerryEnabled() {
-        return SeqClient.getTnaBerryLineupSetting() == null || SeqClient.getTnaBerryLineupSetting().getValue();
     }
 
     private static boolean isRoomThreeEnabled() {
