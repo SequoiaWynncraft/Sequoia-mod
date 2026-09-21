@@ -1,5 +1,6 @@
 package com.seqwawa.seq.managers;
 
+import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.utils.ChatIdentityResolver;
 import com.seqwawa.seq.utils.ComponentTextEditor;
@@ -23,6 +24,7 @@ public final class PrivateMessageGuildTagDecorator {
     private static final Pattern TIMESTAMP = Pattern.compile("\\s*(?:\\[\\d{1,2}:\\d{2}(?::\\d{2})?\\]\\s*)?");
     private static final Pattern HEADER = Pattern.compile("\\s*(.+?)\\s+\uE003\\s+(.+?):\\s");
     private static final Pattern REVEALED_NAME = Pattern.compile(".*\\(([a-zA-Z0-9_]{3,16})\\)");
+    private static final Pattern GUILD_TAG = Pattern.compile("[A-Za-z0-9]{1,5}");
     private static final Map<String, CachedTag> TAGS = new LinkedHashMap<>();
     private static final long CACHE_MILLIS = TimeUnit.MINUTES.toMillis(5);
 
@@ -31,6 +33,10 @@ public final class PrivateMessageGuildTagDecorator {
     private PrivateMessageGuildTagDecorator() {}
 
     public static Component decorate(Component message, Runnable refreshChat) {
+        if (SeqClient.getShowPrivateMessageGuildTagsSetting() != null
+                && !SeqClient.getShowPrivateMessageGuildTagsSetting().getValue()) {
+            return message;
+        }
         Minecraft client = Minecraft.getInstance();
         if (message == null || client.player == null || !WynncraftServerPolicy.isCurrentServerAllowed()) {
             return message;
@@ -91,8 +97,9 @@ public final class PrivateMessageGuildTagDecorator {
         String other = fromLocal ? to : from;
         if (!ChatIdentityResolver.isValidUsername(other)) return message;
         String tag = guildLookup.apply(other);
-        if (tag == null || !tag.matches("[A-Za-z0-9]{1,5}")) return message;
-        Component prefix = Component.literal("[" + tag + "] ").withStyle(styleAt(fragments, header.start(group)));
+        if (tag == null || !GUILD_TAG.matcher(tag).matches()) return message;
+        Component prefix = Component.literal("[" + tag + "] ")
+                .withStyle(styleAt(fragments, header.start(group)));
         return ComponentTextEditor.toComponent(ComponentTextEditor.insertAt(fragments, header.start(group), prefix));
     }
 

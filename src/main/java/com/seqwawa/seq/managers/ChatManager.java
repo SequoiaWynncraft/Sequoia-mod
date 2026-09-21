@@ -60,6 +60,10 @@ public class ChatManager {
     private static long nextAchievementSendAt;
 
     public static boolean canAnnounceAchievements() {
+        if (SeqClient.getAnnounceAchievementsSetting() != null
+                && !SeqClient.getAnnounceAchievementsSetting().getValue()) {
+            return false;
+        }
         if (mc.player == null || mc.level == null || mc.getUser() == null
                 || !ConnectionManager.isConnected()
                 || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {

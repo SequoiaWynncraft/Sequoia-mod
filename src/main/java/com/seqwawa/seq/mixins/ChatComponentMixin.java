@@ -1,8 +1,8 @@
 package com.seqwawa.seq.mixins;
 
 import com.seqwawa.seq.managers.DiscordRankChatDecorator;
-import com.seqwawa.seq.managers.WorldSwitchChatDecorator;
 import com.seqwawa.seq.managers.PrivateMessageGuildTagDecorator;
+import com.seqwawa.seq.managers.WorldSwitchChatDecorator;
 import com.seqwawa.seq.utils.ChatBridgeLineWrapping;
 import java.util.List;
 import net.minecraft.client.GuiMessage;

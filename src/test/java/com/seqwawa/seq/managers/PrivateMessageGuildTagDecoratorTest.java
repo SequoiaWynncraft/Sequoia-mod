@@ -32,7 +32,7 @@ class PrivateMessageGuildTagDecoratorTest {
 
     @Test
     void preservesTimestampNicknameAndInteractiveStyles() {
-        Style playerStyle = Style.EMPTY.withColor(0xDDCC99).withInsertion("Baptiste")
+        Style playerStyle = Style.EMPTY.withColor(0xDDCC99).withItalic(true).withInsertion("Baptiste")
                 .withHoverEvent(new HoverEvent.ShowText(Component.literal("Real username: Baptiste")))
                 .withClickEvent(new ClickEvent.SuggestCommand("/msg Baptiste "));
         Component message = Component.literal("[12:34:56] " + MARKER)
@@ -45,6 +45,8 @@ class PrivateMessageGuildTagDecoratorTest {
         assertEquals("[12:34:56] " + MARKER + "[SEQ] Nick Name" + ARROW + "You: hi Baptiste", result.getString());
         assertEquals(playerStyle, ComponentTextEditor.flatten(result).stream()
                 .filter(fragment -> fragment.text().equals("Nick Name")).findFirst().orElseThrow().style());
+        assertEquals(playerStyle, ComponentTextEditor.flatten(result).stream()
+                .filter(fragment -> fragment.text().equals("[SEQ] ")).findFirst().orElseThrow().style());
     }
 
     @Test

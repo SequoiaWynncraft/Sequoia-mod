@@ -132,6 +132,12 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting showDiscordChatSetting;
 
     @Getter
+    public static Setting.BooleanSetting showPrivateMessageGuildTagsSetting;
+
+    @Getter
+    public static Setting.BooleanSetting announceAchievementsSetting;
+
+    @Getter
     public static Setting.BooleanSetting showDiscordRanksSetting;
 
     @Getter
@@ -795,6 +801,16 @@ public class SeqClient implements ClientModInitializer {
         // Network settings
         autoConnectSetting = new Setting.BooleanSetting("auto_connect", "network", true);
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
+        showPrivateMessageGuildTagsSetting = new Setting.BooleanSetting("show_private_message_guild_tags", "chat", true);
+        announceAchievementsSetting = new Setting.BooleanSetting("announce_achievements", "chat", true);
+        showPrivateMessageGuildTagsSetting.setPresentation(
+                "Show guild tags in private messages",
+                "Show the other player's guild tag before their name in /msg conversations.",
+                "Private messages");
+        announceAchievementsSetting.setPresentation(
+                "Announce new Sequoia badges tiers",
+                "Let this client announce your newly earned badges and raid tiers to guild chat and Campfire.",
+                "Achievements");
         showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", true);
         showDiscordRankPillsSetting = new Setting.BooleanSetting("show_discord_rank_pills", "chat", true);
         showChatInsigniasSetting = new Setting.BooleanSetting("show_chat_insignias", "chat", false);
@@ -1046,6 +1062,8 @@ public class SeqClient implements ClientModInitializer {
                 () -> warPlannerManager != null && warPlannerManager.canManage());
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
+        getConfigManager().register(showPrivateMessageGuildTagsSetting);
+        getConfigManager().register(announceAchievementsSetting);
         getConfigManager().register(colorDiscordBridgeSetting);
         getConfigManager().register(discordChatTextColorSetting);
         getConfigManager().register(inGameGuildChatTextColorSetting);
