@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
@@ -14,6 +15,24 @@ import org.junit.jupiter.api.Test;
 class PrivateMessageGuildTagDecoratorTest {
     private static final String MARKER = "\uDAFF\uDFFC\uE007\uDAFF\uDFFF\uE002\uDAFF\uDFFE ";
     private static final String ARROW = " \uE003 ";
+
+    @Test
+    void completedLookupRefreshesEveryWaitingChatViewOnce() {
+        var lookup = new CompletableFuture<String>();
+        var cached = new PrivateMessageGuildTagDecorator.CachedTag(0, lookup);
+        List<String> refreshed = new ArrayList<>();
+        Runnable allChat = () -> refreshed.add("all");
+        Runnable privateChat = () -> refreshed.add("private");
+        assertEquals("", cached.read(allChat));
+        assertEquals("", cached.read(privateChat));
+        assertEquals("", cached.read(privateChat));
+        lookup.complete("VERNA");
+        cached.refreshWaitingViews();
+        assertEquals(List.of("all", "private"), refreshed);
+        assertEquals("VERNA", cached.read(privateChat));
+        cached.refreshWaitingViews();
+        assertEquals(List.of("all", "private"), refreshed);
+    }
 
     @Test
     void tagsOnlyTheOtherPlayerInBothDirections() {

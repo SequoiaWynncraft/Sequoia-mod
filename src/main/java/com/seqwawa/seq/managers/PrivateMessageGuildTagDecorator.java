@@ -6,9 +6,11 @@ import com.seqwawa.seq.utils.ChatIdentityResolver;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.wynntils.core.components.Models;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -28,7 +30,22 @@ public final class PrivateMessageGuildTagDecorator {
     private static final Map<String, CachedTag> TAGS = new LinkedHashMap<>();
     private static final long CACHE_MILLIS = TimeUnit.MINUTES.toMillis(5);
 
-    private record CachedTag(long fetchedAt, CompletableFuture<String> value) {}
+    record CachedTag(long fetchedAt, CompletableFuture<String> value, Set<Runnable> waitingViews) {
+        CachedTag(long fetchedAt, CompletableFuture<String> value) {
+            this(fetchedAt, value, new LinkedHashSet<>());
+        }
+
+        String read(Runnable refreshChat) {
+            if (!value.isDone()) waitingViews.add(refreshChat);
+            return value.getNow("");
+        }
+
+        void refreshWaitingViews() {
+            List<Runnable> refreshes = List.copyOf(waitingViews);
+            waitingViews.clear();
+            refreshes.forEach(Runnable::run);
+        }
+    }
 
     private PrivateMessageGuildTagDecorator() {}
 
@@ -55,7 +72,8 @@ public final class PrivateMessageGuildTagDecorator {
                             .map(guild -> guild.guildPrefix()).orElse(""))
                     .completeOnTimeout("", 5, TimeUnit.SECONDS)
                     .exceptionally(error -> "");
-            TAGS.put(key, new CachedTag(now, value));
+            CachedTag pending = new CachedTag(now, value);
+            TAGS.put(key, pending);
             if (TAGS.size() > 128) {
                 TAGS.remove(TAGS.keySet().iterator().next());
             }
@@ -65,13 +83,16 @@ public final class PrivateMessageGuildTagDecorator {
                 if (!tag.isBlank()) {
                     // Always queue: an already cached Wynntils response may complete inside splitLines.
                     client.schedule(() -> {
-                        if (client.getConnection() == connection) refreshChat.run();
+                        if (client.getConnection() == connection) pending.refreshWaitingViews();
+                        else pending.waitingViews().clear();
                     });
+                } else {
+                    client.schedule(() -> pending.waitingViews().clear());
                 }
             });
             cached = TAGS.get(key);
         }
-        return cached.value().getNow("");
+        return cached.read(refreshChat);
     }
 
     static Component decorate(Component message, String localUsername, Function<String, String> guildLookup) {

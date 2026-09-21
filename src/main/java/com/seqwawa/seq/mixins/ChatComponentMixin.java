@@ -12,6 +12,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.util.FormattedCharSequence;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -29,6 +30,9 @@ import org.spongepowered.asm.mixin.injection.Redirect;
  */
 @Mixin(ChatComponent.class)
 public class ChatComponentMixin {
+
+    @Unique
+    private final Runnable seq$refreshGuildTags = this::refreshTrimmedMessages;
 
     @Shadow
     private void refreshTrimmedMessages() {
@@ -66,7 +70,7 @@ public class ChatComponentMixin {
                     target = "Lnet/minecraft/client/GuiMessage;splitLines(Lnet/minecraft/client/gui/Font;I)Ljava/util/List;"))
     private List<FormattedCharSequence> seq$wrapBridgeContinuations(
             GuiMessage message, Font font, int maxWidth) {
-        Component tagged = PrivateMessageGuildTagDecorator.decorate(message.content(), this::refreshTrimmedMessages);
+        Component tagged = PrivateMessageGuildTagDecorator.decorate(message.content(), seq$refreshGuildTags);
         if (tagged != message.content()) {
             message = new GuiMessage(message.addedTime(), tagged, message.signature(), message.tag());
         }
