@@ -324,6 +324,11 @@ public final class RankGradientAnimation {
         return color != null && (stops.containsKey(color) || fixedDecorationColors.containsKey(color));
     }
 
+    /** Shared foreground lettering, drawn slightly in front of a nametag pill's fill. */
+    public static boolean isBadgeLabelColor(TextColor color) {
+        return color != null && fixedDecorationColors.containsKey(color);
+    }
+
     /**
      * Whether {@code color} belongs to a rank badge rather than to a decorated name.
      * A badge is built by laying glyphs on top of one another and a name is not, so

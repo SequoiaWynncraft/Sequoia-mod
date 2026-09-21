@@ -1,57 +1,36 @@
 package com.seqwawa.seq.mixins;
 
-import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.seqwawa.seq.render.NametagGlyphVisitor;
 import com.seqwawa.seq.utils.NametagTextPass;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.network.chat.Component;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
 
-/**
- * Tells {@link NametagTextPass} when the text being laid out is the copy of a
- * nametag that shows through terrain, which is the only place a Sequoia decoration
- * would otherwise be drawn at a different opacity than the pass drawn on top of it.
- */
+/** Keeps layered nametag pills depth-tested, with their letters in front of the fill. */
 @Mixin(Font.class)
 public abstract class FontMixin {
-
-    @WrapMethod(
+    @WrapOperation(
             method =
-                    "drawInBatch(Lnet/minecraft/network/chat/Component;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/gui/Font$DisplayMode;II)V")
-    private void seq$drawInTextPass(
-            Component text,
-            float x,
-            float y,
-            int color,
-            boolean dropShadow,
+                    "drawInBatch(Lnet/minecraft/network/chat/Component;FFIZLorg/joml/Matrix4f;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/client/gui/Font$DisplayMode;II)V",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/Font$GlyphVisitor;forMultiBufferSource(Lnet/minecraft/client/renderer/MultiBufferSource;Lorg/joml/Matrix4f;Lnet/minecraft/client/gui/Font$DisplayMode;I)Lnet/minecraft/client/gui/Font$GlyphVisitor;"))
+    private Font.GlyphVisitor seq$layerNametagPill(
+            MultiBufferSource buffers,
             Matrix4f pose,
-            MultiBufferSource bufferSource,
             Font.DisplayMode displayMode,
-            int backgroundColor,
             int lightCoords,
-            Operation<Void> original) {
-        boolean seeThrough = displayMode == Font.DisplayMode.SEE_THROUGH;
-        if (seeThrough) {
-            NametagTextPass.beginSeeThrough();
+            Operation<Font.GlyphVisitor> original) {
+        Font.GlyphVisitor ordinary = original.call(buffers, pose, displayMode, lightCoords);
+        if (!NametagTextPass.isStylingNametags()) {
+            return ordinary;
         }
-        try {
-            original.call(
-                    text,
-                    x,
-                    y,
-                    color,
-                    dropShadow,
-                    pose,
-                    bufferSource,
-                    displayMode,
-                    backgroundColor,
-                    lightCoords);
-        } finally {
-            if (seeThrough) {
-                NametagTextPass.endSeeThrough();
-            }
-        }
+        Font.GlyphVisitor foreground = original.call(
+                buffers, NametagGlyphVisitor.foregroundPose(pose), displayMode, lightCoords);
+        return new NametagGlyphVisitor(ordinary, foreground);
     }
 }
