@@ -70,7 +70,7 @@ public class ChatManager {
                 && shouldRelayForGuild(WynntilsGuildRankAccess.guildMembership(BACKEND_GUILD_NAME));
     }
 
-    /** The normal guild-chat bridge relays these /g messages to Campfire. */
+    /** Sends the guild copy; the backend independently posts earned achievements to Campfire. */
     static void announceAchievements(List<String> messages, BooleanSupplier currentSession) {
         mc.execute(() -> {
             if (!currentSession.getAsBoolean() || !canAnnounceAchievements()) {

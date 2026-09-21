@@ -246,9 +246,6 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.ColorSetting craftedScrollRangeColorSetting;
 
     @Getter
-    public static Setting.BooleanSetting tnaBerryLineupSetting;
-
-    @Getter
     public static Setting.BooleanSetting tnaRoomThreeHelperSetting;
 
     @Getter
@@ -930,9 +927,6 @@ public class SeqClient implements ClientModInitializer {
                         .withValueOverride(PrincessMode::paletteColorOverride);
         craftedScrollRangeColorSetting.setPresentation(
                 "Crafted scroll range color", null, "Raid helpers");
-        tnaBerryLineupSetting = new Setting.BooleanSetting("enable_tna_berry_lineup", "raids", true);
-        tnaBerryLineupSetting.setPresentation(
-                "Berry lineup", null, "Raid helpers");
         tnaRoomThreeHelperSetting = new Setting.BooleanSetting("enable_tna_room_3_helper", "raids", true);
         tnaRoomThreeHelperSetting.setPresentation(
                 "VM lineup", null, "Raid helpers");
@@ -1090,7 +1084,6 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(lightRoomVisualiserSetting);
         getConfigManager().register(lightRoomRingColorSetting);
         getConfigManager().register(craftedScrollRangeColorSetting);
-        getConfigManager().register(tnaBerryLineupSetting);
         getConfigManager().register(tnaRoomThreeHelperSetting);
         getConfigManager().register(tnaBeamIndicatorSetting);
         getConfigManager().register(tnaBeamIndicatorSizeSetting);
