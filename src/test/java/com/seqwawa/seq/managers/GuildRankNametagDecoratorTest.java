@@ -24,7 +24,10 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.function.Function;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.FontDescription;
+import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
+import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -43,6 +46,11 @@ class GuildRankNametagDecoratorTest {
 
     /** A private-use glyph standing for another mod's nametag decoration. */
     private static final String OTHER_MOD_GLYPH = "\uE0A0";
+
+    private static final String WYNNTILS_LOGO = "\uE100";
+    private static final Style WYNNTILS_LOGO_STYLE = Style.EMPTY
+            .withFont(new FontDescription.Resource(Identifier.fromNamespaceAndPath("wynntils", "nametag")))
+            .withColor(0x55FFFF);
 
     /** Gold, as Wynncraft draws an account rank badge. */
     private static final int WYNNCRAFT_BADGE_COLOR = 0xFFAA00;
@@ -133,6 +141,43 @@ class GuildRankNametagDecoratorTest {
 
         assertTrue(decorated.getString().startsWith(OTHER_MOD_GLYPH + " "), decorated.getString());
         assertEquals(List.of("dryad"), badgeLabels(decorated));
+    }
+
+    @Test
+    void keepsTheWynntilsLogoWhenTheAccountHasNoBadge() {
+        assertWynntilsLogoSurvives(" ", "");
+    }
+
+    @Test
+    void keepsTheWynntilsLogoWhenReplacingAnAccountBadge() {
+        assertWynntilsLogoSurvives(" ", CHAMPION_BADGE + " ");
+    }
+
+    @Test
+    void keepsTheWynntilsLogoWhenReplacingALayeredAccountBadge() {
+        assertWynntilsLogoSurvives(" ", layeredBadge("champion") + " ");
+    }
+
+    @Test
+    void keepsTheWynntilsLogoEvenWithoutASeparatingSpace() {
+        assertWynntilsLogoSurvives("", layeredBadge("champion") + " ");
+    }
+
+    private void assertWynntilsLogoSurvives(String separator, String badge) {
+        Component nameTag = Component.empty()
+                .append(Component.literal(WYNNTILS_LOGO).withStyle(WYNNTILS_LOGO_STYLE))
+                .append(separator)
+                .append(Component.literal(badge + "ArcLeRetour"));
+
+        Component decorated = decorate(nameTag);
+
+        assertTrue(decorated.getString().startsWith(WYNNTILS_LOGO + separator));
+        ComponentTextEditor.Fragment logo = ComponentTextEditor.flatten(decorated).getFirst();
+        assertEquals(WYNNTILS_LOGO, logo.text());
+        assertEquals(WYNNTILS_LOGO_STYLE, logo.style(), "the logo keeps its font and colour");
+        assertEquals(List.of("dryad"), badgeLabels(decorated));
+        assertTrue(decorated.getString().endsWith(" ArcLeRetour"));
+        assertSame(decorated, decorate(decorated), "a second pass must not duplicate the rank");
     }
 
     /** A badge another mod appends after the name is not a rank badge either. */

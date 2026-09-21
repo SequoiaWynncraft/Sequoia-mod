@@ -17,8 +17,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.TextColor;
+import net.minecraft.resources.Identifier;
 
 /**
  * Swaps the Wynncraft rank badge on a player's in-world nametag for the member's
@@ -44,6 +46,9 @@ public final class GuildRankNametagDecorator {
 
     private static final int MIN_NAME_LENGTH = 3;
     private static final int MAX_NAME_LENGTH = 16;
+
+    private static final FontDescription WYNNTILS_NAMETAG_FONT =
+            new FontDescription.Resource(Identifier.fromNamespaceAndPath("wynntils", "nametag"));
 
     /** What was last published for a player, so an unchanged frame costs one lookup. */
     private static final Map<UUID, Registration> REGISTRATIONS = boundedMap(MAX_REMEMBERED_PLAYERS);
@@ -134,7 +139,7 @@ public final class GuildRankNametagDecorator {
 
         Member member = name.member();
         String label = PrincessRankEasterEgg.pillLabel(member.rank().pillLabel(), member.username());
-        Badge badge = badgeBefore(text, name.start());
+        Badge badge = badgeBefore(fragments, text, name.start());
         if (alreadyDecorated(text, name.start(), label, badge)) {
             return Decoration.unchanged(nameTag);
         }
@@ -271,17 +276,31 @@ public final class GuildRankNametagDecorator {
      * supplementary-plane characters that break a badge into several runs. Replacing
      * one run leaves the other layers behind as a ghost of the old rank.
      * <p>
-     * A real space ends the search, so a marker another mod puts in front of the
-     * badge is not swallowed with it.
+     * A real space ends the search. Wynntils' logo font also forms a boundary:
+     * its private-use glyph is a decoration even when no account badge follows it,
+     * or when the logo and badge have no separating space.
      */
-    static Badge badgeBefore(String text, int nameStart) {
+    private static Badge badgeBefore(
+            List<ComponentTextEditor.Fragment> fragments, String text, int nameStart) {
+        int lowerBound = 0;
+        int cursor = 0;
+        for (ComponentTextEditor.Fragment fragment : fragments) {
+            if (cursor >= nameStart) {
+                break;
+            }
+            cursor += fragment.text().length();
+            if (WYNNTILS_NAMETAG_FONT.equals(fragment.style().getFont())) {
+                lowerBound = Math.min(cursor, nameStart);
+            }
+        }
+
         int end = nameStart;
-        while (end > 0 && Character.isWhitespace(text.charAt(end - 1))) {
+        while (end > lowerBound && Character.isWhitespace(text.charAt(end - 1))) {
             end--;
         }
 
         int start = end;
-        while (start > 0) {
+        while (start > lowerBound) {
             int codePoint = text.codePointBefore(start);
             if (!isBadgeCharacter(codePoint)) {
                 break;
@@ -307,12 +326,11 @@ public final class GuildRankNametagDecorator {
         if (badge == null) {
             return null;
         }
-        for (WynnPillGlyphs.Pill pill : WynnPillGlyphs.findPills(text)) {
-            if (pill.start() >= badge.start() && pill.endExclusive() <= badge.endExclusive()) {
-                return pill.label();
-            }
-        }
-        return null;
+        // Decode only the badge span: an adjacent logo in another font must not
+        // become part of this glyph run and hide an already-decorated rank.
+        List<WynnPillGlyphs.Pill> pills =
+                WynnPillGlyphs.findPills(text.substring(badge.start(), badge.endExclusive()));
+        return pills.isEmpty() ? null : pills.getFirst().label();
     }
 
     /** Every name on {@code text} that could be a Minecraft account name. */
