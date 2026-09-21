@@ -1,12 +1,10 @@
 package com.seqwawa.seq.ui;
 
 import static com.seqwawa.seq.managers.ThemeManager.color;
-import static com.seqwawa.seq.managers.ThemeManager.withAlpha;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import com.mojang.authlib.GameProfile;
 import java.awt.Color;
-import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -64,6 +62,7 @@ import com.seqwawa.seq.map.MapBounds;
 import com.seqwawa.seq.map.MapDisplayMode;
 import com.seqwawa.seq.map.MapFocus;
 import com.seqwawa.seq.map.MapViewport;
+import com.seqwawa.seq.map.MapPlayerHeadRenderer;
 import com.seqwawa.seq.map.WorldEventDefinition;
 import com.seqwawa.seq.map.WorldEventDisplayFilter;
 import com.seqwawa.seq.map.WorldEventFilters;
@@ -71,12 +70,11 @@ import com.seqwawa.seq.map.WorldEventLocation;
 import com.seqwawa.seq.map.WorldEventMarkerHitTester;
 import com.seqwawa.seq.map.WorldEventService;
 import com.seqwawa.seq.map.WorldMapSettings;
+import com.seqwawa.seq.map.WorldMapBackgroundRenderer;
 import com.seqwawa.seq.map.WorldMapSidebarPanel;
 import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.IngredientGuideManager;
 import com.seqwawa.seq.managers.IngredientItemIconFactory;
-import com.seqwawa.seq.map.GatheringMapImageService.TileKey;
-import com.seqwawa.seq.map.GatheringMapImageService.TileSet;
 import com.seqwawa.seq.model.IngredientGuideEntry;
 import com.seqwawa.seq.render.MinecraftGuiOverlay;
 import com.seqwawa.seq.utils.TextInputHelper;
@@ -97,7 +95,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final float TOGGLE_HEIGHT = 22;
     private static final float INPUT_HEIGHT = 24;
     private static final float SIDEBAR_HEADER_HEIGHT = 44;
-    private static final float SIDEBAR_PANEL_TOP = 166;
+    private static final float SIDEBAR_PANEL_TOP = 92;
     private static final float SIDEBAR_SCROLL_STEP = 28;
     private static final float PANEL_HEADER_HEIGHT = 28;
     private static final float PANEL_GAP = 10;
@@ -113,12 +111,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final int TERRITORY_DROPDOWN_VISIBLE_ROWS = 8;
     private static final int WORLD_EVENT_DROPDOWN_VISIBLE_ROWS = 8;
     private static final float WORLD_EVENT_DETAIL_HEIGHT = 122;
-    private static final String WORLD_EVENT_MARKER_ASSET = "world_event";
+    private static final String WORLD_EVENT_MARKER_ASSET = "world_event_icon";
     private static final float MIN_HULL_PADDING_PX = 4f;
     private static final float MAX_HULL_PADDING_PX = 12f;
     private static final int HULL_SMOOTHING_PASSES = 2;
-    private static final double MIN_PIXELS_PER_BLOCK = 0.035;
-    private static final double MAX_PIXELS_PER_BLOCK = 2.5;
+    private static final double MIN_PIXELS_PER_BLOCK = MapViewport.MIN_PIXELS_PER_BLOCK;
+    private static final double MAX_PIXELS_PER_BLOCK = MapViewport.MAX_PIXELS_PER_BLOCK;
     private static final double TWO_PI = Math.PI * 2.0;
     private static final double NODE_DETAIL_PIXELS_PER_BLOCK = 0.42;
     private static final double CLUSTER_BADGE_PIXELS_PER_BLOCK = 0.65;
@@ -133,9 +131,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private static final float INGREDIENT_FARM_SPOT_ICON_GAP = 3;
     private static final float INGREDIENT_OPTION_HEIGHT = 18;
     private static final float INGREDIENT_CHECKBOX_SIZE = 12;
-    private static final ItemStack TOTEM_MAP_ICON = new ItemStack(Items.TOTEM_OF_UNDYING);
     private static final long TOTEM_SOLVE_DEBOUNCE_MS = 200;
-    private final Screen parent;
     private final MapFocus mapFocus;
     private final ItemStack mapFocusIcon;
     private final Supplier<PlayerSkin> mapFocusSkinLookup;
@@ -143,6 +139,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private final GatheringNodeService nodeService = GatheringNodeService.getInstance();
     private final GuildTerritoryService territoryService = GuildTerritoryService.getInstance();
     private final GatheringMapImageService mapImageService = GatheringMapImageService.getInstance();
+    private final WorldMapBackgroundRenderer mapBackground = new WorldMapBackgroundRenderer(mapImageService);
+    private final MapPlayerHeadRenderer playerHeads = new MapPlayerHeadRenderer();
     private final WorldMapSettings mapSettings = WorldMapSettings.getInstance();
     private final IngredientGuideManager ingredientGuideManager = IngredientGuideManager.getInstance();
     private final GatheringClusterCache clusterCache = GatheringClusterCache.getInstance();
@@ -183,6 +181,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private GuildTerritory hoveredTerritory;
     private GuildTerritory selectedTerritory;
     private boolean showClusters = true;
+    private static final List<String> TOTEM_LAYER_LABELS = List.of(
+            "Placement areas", "Player range (50)", "Node reach (52)", "Covered nodes", "Other placements");
+    private static final float TOTEM_LAYER_GAP = 4;
+
     private boolean gatheringTotemSolverEnabled;
     private boolean showGatheringTotemHulls = true;
     private boolean showGatheringTotemPlayerRadius = true;
@@ -196,6 +198,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private GatheringAnalysisScope gatheringAnalysisScope = GatheringAnalysisScope.ALL;
     private GatheringTotemSearchTarget gatheringTotemSearchTarget = GatheringTotemSearchTarget.ALL_FILTERED;
     private MapDisplayMode displayMode = MapDisplayMode.GATHERING;
+    private boolean mapModeDropdownOpen;
     private WorldEventDisplayFilter worldEventDisplayFilter = WorldEventDisplayFilter.ALL;
     private List<WorldEventDefinition> allWorldEvents = List.of();
     private List<WorldEventDefinition> visibleWorldEvents = List.of();
@@ -235,20 +238,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private String cachedClusterKey = "";
     private long cachedSettingsVersion = -1;
     private long gatheringAnalysisVersion;
-    private UiImage mapImage;
-    private boolean mapImageLoadAttempted;
-    private long loadedMapImageVersion = -1;
-    private final Map<TileKey, UiImage> tileImages = new HashMap<>();
     private final Map<String, MapIngredientIcon> ingredientIconCache = new HashMap<>();
     private Map<String, IngredientGuideEntry> cachedIngredientsByName = Map.of();
     private long cachedIngredientSnapshotVersion = -1;
-    private String loadedTileVersion = "";
-    private long loadedTileContentVersion = -1;
-    private TileRange cachedVisibleTileRange;
-    private TileRange cachedPrefetchTileRange;
-    private List<TileKey> cachedVisibleTiles = List.of();
-    private List<TileKey> cachedPrefetchTiles = List.of();
-    private long lastTileRequestAtMs;
+    private final Screen parent;
     private float nvgMouseX;
     private float nvgMouseY;
 
@@ -332,11 +325,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     public void removed() {
         resetGatheringTotemSolve();
         UiRenderer.renderResource(canvas -> {
-            if (mapImage != null) {
-                UiRenderer.deleteImage(mapImage);
-                mapImage = null;
-            }
-            clearTileImages();
+            mapBackground.close();
+            playerHeads.close();
         });
         super.removed();
     }
@@ -374,7 +364,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             refreshWorldEvents();
         }
         MapViewport viewport = new MapViewport(centerX, centerZ, pixelsPerBlock, mapX, mapY, mapW, mapH);
-        UiRenderer.renderScreen(this, canvas -> renderNvg(canvas, viewport));
+        UiRenderer.renderScreen(this, canvas -> {
+            renderNvg(canvas, viewport);
+            drawMapModeControl(canvas);
+        });
     }
 
     private void renderNvg(UiCanvas canvas, MapViewport viewport) {
@@ -382,7 +375,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         hoveredIngredientFarmSpot = null;
         focusIconOverlays.clear();
         renderMapBackground(canvas, viewport);
-        canvas.fillRect(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight(), color(MAP_TINT));
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             renderWorldEvents(canvas, viewport);
             renderPlayer(canvas, viewport);
@@ -436,6 +428,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         renderInsightsSidebar(canvas);
     }
 
+    static Color ingredientRadiusFillColor(Color markerColor) {
+        return new Color(markerColor.getRed(), markerColor.getGreen(), markerColor.getBlue(),
+                Math.round(markerColor.getAlpha() * 0.35f));
+    }
+
     private void renderMapFocus(UiCanvas canvas, MapViewport viewport) {
         if (!hasMapFocus()) {
             return;
@@ -443,12 +440,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
         MapBounds visibleBounds = viewport.visibleBounds();
         if (!draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY)) {
-            double closestDistance = 10;
+            double closestDistance = 12;
             for (MapFocus.Marker marker : mapFocus.markers()) {
                 if (!visibleBounds.contains(marker.x(), marker.z())) {
                     continue;
                 }
-                double distance = Math.hypot(
+                double distance = markerDistance(
                         nvgMouseX - viewport.worldToScreenX(marker.x()),
                         nvgMouseY - viewport.worldToScreenZ(marker.z()));
                 if (distance <= closestDistance) {
@@ -470,19 +467,19 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             boolean hovered = marker.equals(hoveredFocusMarker);
             Color markerColor = selected ? color(MAP_SELECTED_TERRITORY) : color(ACCENT_PRIMARY);
             if (areaRadius >= 4) {
-                drawCircle(canvas, x, y, areaRadius, withAlpha(markerColor, selected ? 34 : 20));
-                drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, withAlpha(markerColor, 145));
+                drawCircle(canvas, x, y, areaRadius, ingredientRadiusFillColor(markerColor));
+                drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, markerColor);
             }
             if (mapFocusIcon.isEmpty()) {
                 float markerRadius = selected || hovered ? 4 : 3;
-                drawCircle(canvas, x, y, markerRadius + 1.5f, color(BACKGROUND_MODAL_OVERLAY, 190));
-                drawCircle(canvas, x, y, markerRadius, markerColor);
+                drawSquareMarker(canvas, x, y, markerRadius + 1.5f, color(BACKGROUND_MODAL_OVERLAY));
+                drawSquareMarker(canvas, x, y, markerRadius, markerColor);
             } else {
                 float iconSize = selected || hovered ? 22 : 18;
                 float outlineRadius = iconSize / 2f + 1;
-                drawCircle(canvas, x, y, outlineRadius, color(BACKGROUND_MODAL_OVERLAY, 145));
+                drawSquareMarker(canvas, x, y, outlineRadius, color(BACKGROUND_MODAL_OVERLAY));
                 if (selected || hovered) {
-                    drawCircleOutline(canvas, x, y, outlineRadius, 1, markerColor);
+                    drawSquareMarkerOutline(canvas, x, y, outlineRadius, 1, markerColor);
                 }
                 focusIconOverlays.add(new FocusIconOverlay(
                         x - iconSize / 2f,
@@ -504,12 +501,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         List<IngredientFarmSpot> spots = IngredientFarmSpotCatalog.all();
         MapBounds visibleBounds = viewport.visibleBounds();
         if (!draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY)) {
-            double closestDistance = 11;
+            double closestDistance = 12;
             for (IngredientFarmSpot spot : spots) {
                 if (!visibleBounds.contains(spot.x(), spot.z())) {
                     continue;
                 }
-                double distance = Math.hypot(
+                double distance = markerDistance(
                         nvgMouseX - viewport.worldToScreenX(spot.x()),
                         nvgMouseY - viewport.worldToScreenZ(spot.z()));
                 if (distance <= closestDistance) {
@@ -531,19 +528,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             Color markerColor = selected ? color(MAP_SELECTED_TERRITORY) : color(ACCENT_PRIMARY);
             float areaRadius = (float) (spot.radius() * viewport.pixelsPerBlock());
             if (areaRadius >= 4) {
-                drawCircle(canvas, x, y, areaRadius, withAlpha(markerColor, selected ? 34 : 20));
-                drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, withAlpha(markerColor, 145));
+                drawCircle(canvas, x, y, areaRadius, ingredientRadiusFillColor(markerColor));
+                drawCircleOutline(canvas, x, y, areaRadius, selected ? 1.5f : 1, markerColor);
             }
-            float iconSize = selected || hovered ? 22 : 18;
-            float outlineRadius = iconSize / 2f + 1;
-            drawCircle(canvas, x, y, outlineRadius, color(BACKGROUND_MODAL_OVERLAY, 190));
-            drawCircleOutline(canvas, x, y, outlineRadius, selected || hovered ? 1.5f : 1, markerColor);
-            focusIconOverlays.add(new FocusIconOverlay(
-                    x - iconSize / 2f,
-                    y - iconSize / 2f,
-                    iconSize,
-                    TOTEM_MAP_ICON,
-                    null));
+            drawTotemMarker(canvas, x, y, selected || hovered ? 22 : 18,
+                    markerColor, selected || hovered);
         }
         canvas.resetScissor();
 
@@ -599,7 +588,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float width = Math.min(260, Math.max(170, textWidth(title, 12) + 32));
         float x = viewport.screenX() + (viewport.screenWidth() - width) / 2f;
         float y = viewport.screenY() + 10;
-        canvas.fillRoundedRect(x, y, width, 42, 6, color(MAP_SIDEBAR, 235));
+        canvas.fillRoundedRect(x, y, width, 42, 6, color(MAP_SIDEBAR));
         canvas.strokeRect(x, y, width, 42, 1, color(MAP_BORDER));
         drawFittedText(canvas, x + 10, y + 14, 12, title, color(MAP_TEXT), width - 20, TextAlignment.LEFT);
         drawFittedText(canvas, x + 10, y + 30, 10, subtitle, color(MAP_SUBTEXT), width - 20, TextAlignment.LEFT);
@@ -640,15 +629,14 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             boolean hovered = territory.equals(hoveredTerritory);
             Color color = selected ? color(MAP_SELECTED_TERRITORY) : color(MAP_TERRITORY);
             if (selected || hovered) {
-                int alpha = selected ? 38 : 24;
-                canvas.fillRect(x, y, width, height, withAlpha(color, alpha));
+                canvas.fillRect(x, y, width, height, color);
             }
             canvas.strokeRect(x,
                     y,
                     width,
                     height,
                     selected || hovered ? 1.8f : 0.8f,
-                    withAlpha(color, selected || hovered ? 235 : 115));
+                    color);
         }
         canvas.resetScissor();
     }
@@ -692,7 +680,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                     candidates.add(new WorldEventMarkerHitTester.Candidate(
                             event,
                             locationIndex,
-                            Math.hypot(nvgMouseX - x, nvgMouseY - y)));
+                            markerDistance(nvgMouseX - x, nvgMouseY - y)));
                 }
             }
             WorldEventMarkerHitTester.Candidate closest = WorldEventMarkerHitTester.closest(candidates, 9);
@@ -716,19 +704,19 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 float areaRadius = (float) (location.radius() * viewport.pixelsPerBlock());
                 if (areaRadius >= 5) {
                     Color areaColor = eventTracked ? color(MAP_TRACKED_WORLD_EVENT) : color(MAP_WORLD_EVENT);
-                    drawCircleOutline(canvas, x, y, areaRadius, 1, withAlpha(areaColor, eventSelected ? 150 : 65));
+                    drawCircleOutline(canvas, x, y, areaRadius, 1, areaColor);
                 }
 
                 Color markerColor = eventTracked ? color(MAP_TRACKED_WORLD_EVENT) : color(MAP_WORLD_EVENT);
                 boolean highlighted = eventSelected || (event.equals(hoveredWorldEvent) && locationIndex == hoveredWorldEventLocationIndex);
                 if (markerAsset == null) {
-                    drawCircle(canvas, x, y, highlighted ? 8 : 7, color(BACKGROUND_MODAL_OVERLAY, 190));
-                    drawCircle(canvas, x, y, highlighted ? 5.5f : 4.5f, eventSelected ? color(MAP_PLAYER) : markerColor);
+                    drawSquareMarker(canvas, x, y, highlighted ? 8 : 7, color(BACKGROUND_MODAL_OVERLAY));
+                    drawSquareMarker(canvas, x, y, highlighted ? 5.5f : 4.5f, eventSelected ? color(MAP_PLAYER) : markerColor);
                 } else {
                     float outerRadius = highlighted ? 9 : 8;
                     float assetSize = highlighted ? 12 : 11;
-                    drawCircle(canvas, x, y, outerRadius, color(BACKGROUND_MODAL_OVERLAY, 210));
-                    drawCircle(canvas, x, y, outerRadius - 1.5f, markerColor);
+                    drawSquareMarker(canvas, x, y, outerRadius, color(BACKGROUND_MODAL_OVERLAY));
+                    drawSquareMarker(canvas, x, y, outerRadius - 1.5f, markerColor);
                     canvas.drawImage(
                             markerAsset.getImage(),
                             x - assetSize / 2,
@@ -737,7 +725,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                             assetSize,
                             1f);
                     if (eventSelected) {
-                        drawCircleOutline(canvas, x, y, outerRadius + 1, 1.5f, color(MAP_PLAYER));
+                        drawSquareMarkerOutline(canvas, x, y, outerRadius + 1, 1.5f, color(MAP_PLAYER));
                     }
                 }
             }
@@ -789,7 +777,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                         lineY + 1,
                         label.fontSize(),
                         line,
-                        color(BACKGROUND_MODAL_OVERLAY, 210),
+                        color(BACKGROUND_MODAL_OVERLAY),
                         TextAlignment.CENTER);
                 drawText(
                         canvas,
@@ -884,218 +872,39 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderMapBackground(UiCanvas canvas, MapViewport viewport) {
-        UiImage image = mapImage();
-        if (image != null) {
-            renderFullMapImage(canvas, viewport, image);
-        }
-        renderMapTiles(canvas, viewport);
+        mapBackground.render(canvas, viewport);
+        mapImageService.unavailableMessage()
+                .ifPresent(message -> renderMapUnavailable(canvas, viewport, message));
     }
 
-    private void renderFullMapImage(UiCanvas canvas, MapViewport viewport, UiImage image) {
-        float x = viewport.worldToScreenX(MapCalibration.MIN_WORLD_X);
-        float y = viewport.worldToScreenZ(MapCalibration.MIN_WORLD_Z);
-        float width = viewport.worldToScreenX(MapCalibration.MAX_WORLD_X) - x;
-        float height = viewport.worldToScreenZ(MapCalibration.MAX_WORLD_Z) - y;
-        if (width <= 0 || height <= 0) {
-            return;
+    private void renderMapUnavailable(UiCanvas canvas, MapViewport viewport, String message) {
+        float panelWidth = Math.min(430, Math.max(220, viewport.screenWidth() - 64));
+        float contentWidth = panelWidth - 32;
+        List<String> lines = wrapText(message, contentWidth, 11);
+        float panelHeight = 48 + lines.size() * 16;
+        float x = viewport.screenX() + (viewport.screenWidth() - panelWidth) / 2;
+        float y = viewport.screenY() + (viewport.screenHeight() - panelHeight) / 2;
+
+        canvas.fillRoundedRect(x, y, panelWidth, panelHeight, 6, color(STATUS_DANGER_BACKGROUND));
+        canvas.strokeRect(x, y, panelWidth, panelHeight, 1, color(STATUS_DANGER_BORDER));
+        drawText(
+                canvas,
+                x + panelWidth / 2,
+                y + 18,
+                14,
+                "Map unavailable",
+                color(TEXT_PRIMARY),
+                TextAlignment.CENTER);
+        for (int index = 0; index < lines.size(); index++) {
+            drawText(
+                    canvas,
+                    x + 16,
+                    y + 42 + index * 16,
+                    11,
+                    lines.get(index),
+                    color(TEXT_SECONDARY),
+                    TextAlignment.LEFT);
         }
-
-        try {
-            canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
-            canvas.drawImage(image, x, y, width, height, 1f);
-        } finally {
-            canvas.resetScissor();
-        }
-    }
-
-    private void renderMapTiles(UiCanvas canvas, MapViewport viewport) {
-        var manifest = mapImageService.manifest().orElse(null);
-        TileSet tileSet = manifest == null ? null : manifest.tiles();
-        if (tileSet == null || !"tiles".equalsIgnoreCase(manifest.preferredMode())) {
-            if (!tileImages.isEmpty()) {
-                clearTileImages();
-                loadedTileVersion = "";
-            }
-            resetTileRangeCache();
-            return;
-        }
-        if (!manifest.version().equals(loadedTileVersion)) {
-            clearTileImages();
-            loadedTileVersion = manifest.version();
-            resetTileRangeCache();
-        }
-
-        TileRange visibleRange = visibleTileRange(viewport, tileSet, 0);
-        TileRange prefetchRange = visibleTileRange(viewport, tileSet, 1);
-        boolean visibleRangeChanged = !visibleRange.equals(cachedVisibleTileRange);
-        boolean prefetchRangeChanged = !prefetchRange.equals(cachedPrefetchTileRange);
-        if (visibleRangeChanged) {
-            cachedVisibleTileRange = visibleRange;
-            cachedVisibleTiles = tilesInRange(visibleRange);
-        }
-        if (prefetchRangeChanged) {
-            cachedPrefetchTileRange = prefetchRange;
-            cachedPrefetchTiles = tilesInRange(prefetchRange);
-        }
-
-        long now = System.currentTimeMillis();
-        if (visibleRangeChanged || prefetchRangeChanged || now - lastTileRequestAtMs >= 1_000L) {
-            mapImageService.requestTiles(cachedVisibleTiles, cachedPrefetchTiles);
-            lastTileRequestAtMs = now;
-        }
-
-        long tileContentVersion = mapImageService.tileVersion();
-        boolean loadMissingTileHandles = visibleRangeChanged || tileContentVersion != loadedTileContentVersion;
-
-        canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
-        try {
-            for (TileKey key : cachedVisibleTiles) {
-                UiImage tileImage = tileImage(key, loadMissingTileHandles);
-                if (tileImage != null) {
-                    renderTile(canvas, viewport, tileSet, key, tileImage);
-                }
-            }
-        } finally {
-            canvas.resetScissor();
-        }
-        loadedTileContentVersion = tileContentVersion;
-    }
-
-    private UiImage tileImage(TileKey key, boolean loadMissing) {
-        UiImage existing = tileImages.get(key);
-        if (existing != null) {
-            return existing;
-        }
-        if (!loadMissing) {
-            return null;
-        }
-        byte[] imageBytes = mapImageService.cachedTileBytes(key);
-        if (imageBytes == null || imageBytes.length == 0) {
-            return null;
-        }
-        try {
-            UiImage image = UiRenderer.createImage(ByteBuffer.wrap(imageBytes), true);
-            if (image != null) {
-                tileImages.put(key, image);
-            }
-            return image;
-        } catch (RuntimeException exception) {
-            SeqClient.LOGGER.warn("[GatheringMap] Could not load map tile {}.", key.id(), exception);
-            return null;
-        }
-    }
-
-    private void renderTile(UiCanvas canvas, MapViewport viewport, TileSet tileSet, TileKey key, UiImage image) {
-        int pixelX0 = key.x() * tileSet.tileSize();
-        int pixelY0 = key.y() * tileSet.tileSize();
-        int pixelX1 = Math.min(tileSet.width(), pixelX0 + tileSet.tileSize());
-        int pixelY1 = Math.min(tileSet.height(), pixelY0 + tileSet.tileSize());
-        double worldX0 = imageToWorldX(pixelX0, tileSet.width());
-        double worldZ0 = imageToWorldZ(pixelY0, tileSet.height());
-        double worldX1 = imageToWorldX(pixelX1, tileSet.width());
-        double worldZ1 = imageToWorldZ(pixelY1, tileSet.height());
-        float x = viewport.worldToScreenX(worldX0);
-        float y = viewport.worldToScreenZ(worldZ0);
-        float width = viewport.worldToScreenX(worldX1) - x;
-        float height = viewport.worldToScreenZ(worldZ1) - y;
-        if (width <= 0 || height <= 0) {
-            return;
-        }
-
-        canvas.drawImage(image, x, y, width, height, 1f);
-    }
-
-    private static TileRange visibleTileRange(MapViewport viewport, TileSet tileSet, int margin) {
-        double minImageX = clampImageX(MapCalibration.worldToImageX(viewport.minWorldX(), tileSet.width()), tileSet);
-        double maxImageX = clampImageX(MapCalibration.worldToImageX(viewport.maxWorldX(), tileSet.width()), tileSet);
-        double minImageY = clampImageY(MapCalibration.worldToImageZ(viewport.minWorldZ(), tileSet.height()), tileSet);
-        double maxImageY = clampImageY(MapCalibration.worldToImageZ(viewport.maxWorldZ(), tileSet.height()), tileSet);
-        int minX = clampTile((int) Math.floor(minImageX / tileSet.tileSize()) - margin, tileSet.columns());
-        int maxX = clampTile((int) Math.floor(maxImageX / tileSet.tileSize()) + margin, tileSet.columns());
-        int minY = clampTile((int) Math.floor(minImageY / tileSet.tileSize()) - margin, tileSet.rows());
-        int maxY = clampTile((int) Math.floor(maxImageY / tileSet.tileSize()) + margin, tileSet.rows());
-        return new TileRange(minX, maxX, minY, maxY);
-    }
-
-    private static List<TileKey> tilesInRange(TileRange range) {
-        List<TileKey> tiles = new ArrayList<>();
-        for (int y = range.minY(); y <= range.maxY(); y++) {
-            for (int x = range.minX(); x <= range.maxX(); x++) {
-                tiles.add(new TileKey(x, y));
-            }
-        }
-        return tiles;
-    }
-
-    private static double imageToWorldX(double imageX, int imageWidth) {
-        return MapCalibration.MIN_WORLD_X
-                + (imageX / imageWidth) * (MapCalibration.MAX_WORLD_X - MapCalibration.MIN_WORLD_X);
-    }
-
-    private static double imageToWorldZ(double imageY, int imageHeight) {
-        return MapCalibration.MIN_WORLD_Z
-                + (imageY / imageHeight) * (MapCalibration.MAX_WORLD_Z - MapCalibration.MIN_WORLD_Z);
-    }
-
-    private static double clampImageX(double value, TileSet tileSet) {
-        return Math.max(0, Math.min(tileSet.width() - 1, value));
-    }
-
-    private static double clampImageY(double value, TileSet tileSet) {
-        return Math.max(0, Math.min(tileSet.height() - 1, value));
-    }
-
-    private static int clampTile(int value, int count) {
-        return Math.max(0, Math.min(count - 1, value));
-    }
-
-    private void clearTileImages() {
-        for (UiImage image : tileImages.values()) {
-            UiRenderer.deleteImage(image);
-        }
-        tileImages.clear();
-    }
-
-    private void resetTileRangeCache() {
-        cachedVisibleTileRange = null;
-        cachedPrefetchTileRange = null;
-        cachedVisibleTiles = List.of();
-        cachedPrefetchTiles = List.of();
-        loadedTileContentVersion = -1;
-        lastTileRequestAtMs = 0;
-    }
-
-    private UiImage mapImage() {
-        long imageVersion = mapImageService.version();
-        if (mapImage != null && loadedMapImageVersion == imageVersion) {
-            return mapImage;
-        }
-        if (mapImage != null) {
-            UiRenderer.deleteImage(mapImage);
-            mapImage = null;
-        }
-        if (mapImageLoadAttempted && loadedMapImageVersion == imageVersion) {
-            return null;
-        }
-        mapImageLoadAttempted = true;
-
-        try {
-            byte[] imageBytes = mapImageService.imageBytes();
-            if (imageBytes.length == 0) {
-                loadedMapImageVersion = imageVersion;
-                return null;
-            }
-            mapImage = UiRenderer.createImage(ByteBuffer.wrap(imageBytes), true);
-            loadedMapImageVersion = imageVersion;
-        } catch (RuntimeException exception) {
-            SeqClient.LOGGER.warn(
-                    "[GatheringMap] Could not load {} map image.",
-                    mapImageService.imageSource().name().toLowerCase(Locale.ROOT),
-                    exception);
-            mapImage = null;
-            loadedMapImageVersion = imageVersion;
-        }
-        return mapImage;
     }
 
     private void renderClusterHulls(UiCanvas canvas, MapViewport viewport, boolean allowHover) {
@@ -1112,7 +921,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 continue;
             }
             float radius = clusterRadius(cluster);
-            float distance = allowHover ? (float) Math.hypot(nvgMouseX - x, nvgMouseY - y) : Float.MAX_VALUE;
+            float distance = allowHover ? (float) markerDistance(nvgMouseX - x, nvgMouseY - y) : Float.MAX_VALUE;
             boolean hovered = allowHover
                     && (distance <= Math.max(12, radius + 3)
                             || isPointInsideCluster(outline, x, y, nvgMouseX, nvgMouseY));
@@ -1182,6 +991,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         canvas.resetScissor();
     }
 
+    // Explicit cluster-hull-only alpha override requested for the map (35%, rounded to 8-bit alpha).
+    private static Color clusterHullColor(Color source) {
+        return new Color(source.getRed(), source.getGreen(), source.getBlue(), Math.round(255 * 0.35f));
+    }
+
     private void renderClusterOutline(
             UiCanvas canvas,
             MapViewport viewport,
@@ -1191,27 +1005,40 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float centerScreenY,
             boolean selected,
             boolean highlighted) {
-        Color color = selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color();
-        Color fill = withAlpha(color, highlighted ? 48 : 18);
-        Color stroke = withAlpha(color, highlighted ? 220 : 105);
-
+        Color color = clusterHullColor(selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color());
         List<UiCanvas.Point> points = outline.points().stream()
                 .map(point -> new UiCanvas.Point(centerScreenX + point.x(), centerScreenY + point.y()))
                 .toList();
         boolean closed = points.size() > 2;
         canvas.fillAndStrokePolygon(
                 points,
-                closed ? fill : null,
-                stroke,
+                closed ? color : null,
+                color,
                 hullStrokeWidthForZoom(viewport.pixelsPerBlock(), highlighted),
                 closed);
     }
 
     private void drawClusterMarker(UiCanvas canvas, float x, float y, float radius, GatheringNodeCluster cluster, boolean selected, boolean highlighted) {
         Color color = selected ? color(MAP_SELECTED_CLUSTER) : cluster.profession().color();
-        drawCircle(canvas, x, y, radius + 3, color(BACKGROUND_MODAL_OVERLAY, highlighted ? 205 : 150));
-        drawCircle(canvas, x, y, radius, withAlpha(color, highlighted ? 250 : 220));
-        drawText(canvas, x, y + 1, clusterCountTextSize(cluster), String.valueOf(cluster.nodeCount()), color(MAP_TEXT), TextAlignment.CENTER);
+        drawSquareMarker(canvas, x, y, radius, color);
+        Color border = color(BACKGROUND_MODAL_OVERLAY);
+        // A thin, softer border; the badge fill keeps its normal theme opacity.
+        border = new Color(border.getRed(), border.getGreen(), border.getBlue(), Math.round(255 * 0.35f));
+        drawSquareMarkerOutline(canvas, x, y, radius + 0.5f, 1, border);
+
+        String count = String.valueOf(cluster.nodeCount());
+        String font = SeqClient.getFontManager().getSelectedFont();
+        float size = clusterCountTextSize(cluster);
+        var bounds = UiRenderer.measureText(count, font, size);
+        float availableSize = radius * 2 - 2;
+        float textSize = Math.max(bounds.width(), bounds.height());
+        if (textSize > availableSize) {
+            size *= availableSize / textSize;
+            bounds = UiRenderer.measureText(count, font, size);
+        }
+        canvas.drawText(count, x - (bounds.minX() + bounds.maxX()) / 2f,
+                y - (bounds.minY() + bounds.maxY()) / 2f, new UiCanvas.TextStyle(
+                        font, size, color(MAP_TEXT), UiCanvas.HorizontalAlign.LEFT, UiCanvas.VerticalAlign.BASELINE));
     }
 
     private void renderNodes(UiCanvas canvas, MapViewport viewport, List<GatheringNode> nodes) {
@@ -1227,7 +1054,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float x = viewport.worldToScreenX(node.x());
             float y = viewport.worldToScreenZ(node.z());
             float radius = (float) Math.max(1.5, Math.min(4.0, pixelsPerBlock * 12.0));
-            float distance = allowHover ? (float) Math.hypot(nvgMouseX - x, nvgMouseY - y) : Float.MAX_VALUE;
+            float distance = allowHover ? (float) markerDistance(nvgMouseX - x, nvgMouseY - y) : Float.MAX_VALUE;
             boolean hovered = allowHover && distance <= Math.max(8, radius + 3);
             if (hovered && distance < bestHoverDistance) {
                 bestHoverDistance = distance;
@@ -1235,9 +1062,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             }
             boolean selected = selectedNode == node || (selectedCluster != null && selectedCluster.nodes().contains(node));
             Color color = selected ? color(MAP_PLAYER) : node.profession().color();
-            drawCircle(canvas, x, y, selected || hovered ? Math.min(radius + 1.8f, 5.6f) : radius,
-                    color(BACKGROUND_MODAL_OVERLAY, 160));
-            drawCircle(canvas, x, y, radius, color);
+            drawSquareMarker(canvas, x, y, selected || hovered ? Math.min(radius + 1.8f, 5.6f) : radius,
+                    color(BACKGROUND_MODAL_OVERLAY));
+            drawSquareMarker(canvas, x, y, radius, color);
         }
         canvas.resetScissor();
         if (hoveredNode != null) {
@@ -1318,11 +1145,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (showGatheringTotemHulls) {
             Color hullColor = selected ? color(MAP_TOTEM) : color(MAP_TOTEM_MUTED);
             if (screenHull.size() == 1) {
-                drawCircle(canvas, screenHull.getFirst().x(), screenHull.getFirst().y(), hovered ? 7 : 5, hullColor);
+                drawSquareMarker(canvas, screenHull.getFirst().x(), screenHull.getFirst().y(), hovered ? 7 : 5, hullColor);
             } else {
                 boolean closed = screenHull.size() > 2;
                 Color fill = selected && closed
-                        ? withAlpha(color(MAP_TOTEM), hovered ? 76 : 44)
+                        ? color(MAP_TOTEM)
                         : null;
                 canvas.fillAndStrokePolygon(
                         screenHull,
@@ -1338,7 +1165,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 if (!viewport.visibleBounds().contains(node.x(), node.z())) {
                     continue;
                 }
-                drawCircle(
+                drawSquareMarker(
                         canvas,
                         viewport.worldToScreenX(node.x()),
                         viewport.worldToScreenZ(node.z()),
@@ -1346,10 +1173,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                         color(MAP_TOTEM));
             }
         }
-        float markerRadius = selected ? 6 : 4.5f;
-        drawCircle(canvas, x, z, markerRadius + 2, color(BACKGROUND_MODAL_OVERLAY, selected ? 220 : 165));
-        drawCircle(canvas, x, z, markerRadius, selected ? color(MAP_PLAYER) : color(MAP_TOTEM_MUTED));
-        drawCircle(canvas, x, z, selected ? 3 : 2.25f, color(MAP_TOTEM));
+        drawTotemMarker(canvas, x, z, selected || hovered ? 22 : 18,
+                selected ? color(MAP_PLAYER) : color(MAP_TOTEM_MUTED), selected || hovered);
         canvas.resetScissor();
     }
 
@@ -1377,19 +1202,17 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderPlayer(UiCanvas canvas, MapViewport viewport) {
-        if (SeqClient.mc.player == null) {
-            return;
-        }
-        double x = SeqClient.mc.player.getX();
-        double z = SeqClient.mc.player.getZ();
-        MapBounds visibleBounds = viewport.visibleBounds();
-        if (!visibleBounds.contains(x, z)) {
-            return;
-        }
-        float sx = viewport.worldToScreenX(x);
-        float sy = viewport.worldToScreenZ(z);
-        drawCircle(canvas, sx, sy, 8, color(BACKGROUND_MODAL_OVERLAY, 180));
-        drawCircle(canvas, sx, sy, 5, color(MAP_PLAYER));
+        playerHeads.renderLocalPlayer(canvas, viewport);
+    }
+
+    private void renderSidebarHeader(UiCanvas canvas) {
+        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
+        String font = SeqClient.getFontManager().getSelectedFont();
+        String title = displayMode.mapTitle();
+        float titleWidth = UiRenderer.measureText(title, font, 18).width();
+        float availableTextWidth = SIDEBAR_WIDTH - 2 * PADDING - 30;
+        float titleSize = titleWidth > 0 ? Math.min(18, 18 * availableTextWidth / titleWidth) : 18;
+        SequoiaUiStyle.drawSidebarTitle(canvas, font, SIDEBAR_WIDTH, title, titleSize, color(MAP_TITLE));
     }
 
     private void renderSidebar(UiCanvas canvas) {
@@ -1405,12 +1228,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         SidebarLayout layout = sidebarLayout();
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(MAP_SIDEBAR));
-        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
-        drawText(canvas, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", color(MAP_TITLE), TextAlignment.CENTER);
+        renderSidebarHeader(canvas);
 
-        drawButton(canvas, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
         drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
-        drawMapModeControl(canvas, layout.modeY());
         canvas.scissor(0, SIDEBAR_PANEL_TOP, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_PANEL_TOP));
         renderPanelHeader(
                 canvas,
@@ -1470,7 +1290,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 canvas,
                 sidebarY(layout.totemPanelY()),
                 "Totem Solver",
-                gatheringTotemPanelSummary(),
+                gatheringTotemSolverEnabled ? "On" : "Off",
                 WorldMapSidebarPanel.TOTEM_SOLVER);
         if (panelExpanded(WorldMapSidebarPanel.TOTEM_SOLVER)) {
             renderGatheringTotemControls(canvas, totemSolverLayout(layout.totemPanelY()));
@@ -1493,12 +1313,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         WorldEventSidebarLayout layout = worldEventSidebarLayout();
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(MAP_SIDEBAR));
-        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
-        drawText(canvas, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", color(MAP_TITLE), TextAlignment.CENTER);
+        renderSidebarHeader(canvas);
 
-        drawButton(canvas, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
         drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
-        drawMapModeControl(canvas, layout.modeY());
         canvas.scissor(0, SIDEBAR_PANEL_TOP, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_PANEL_TOP));
 
         renderPanelHeader(
@@ -1544,11 +1361,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         sidebarContentHeight = ingredientSidebarContentHeight(layout);
         sidebarScroll = clampSidebarScroll(sidebarScroll, screenHeight);
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(MAP_SIDEBAR));
-        canvas.fillRect(0, 0, SIDEBAR_WIDTH, SIDEBAR_HEADER_HEIGHT, color(MAP_HEADER));
-        drawText(canvas, SIDEBAR_WIDTH / 2f, 22, 18, "Sequoia Map", color(MAP_TITLE), TextAlignment.CENTER);
-        drawButton(canvas, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, "Back", false);
+        renderSidebarHeader(canvas);
         drawButton(canvas, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT, centerPlayerButtonLabel(), false);
-        drawMapModeControl(canvas, layout.modeY());
 
         float contentWidth = SIDEBAR_WIDTH - PADDING * 2;
         canvas.scissor(0, SIDEBAR_PANEL_TOP, SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_PANEL_TOP));
@@ -2027,7 +1841,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private void renderIngredientTotemInsights(
             UiCanvas canvas, float contentX, float contentWidth, float overlayOffsetY) {
         if (selectedIngredientFarmSpot == null) {
-            canvas.fillRoundedRect(contentX, 60, contentWidth, 78, 5, color(MAP_HEADER, 210));
+            canvas.fillRoundedRect(contentX, 60, contentWidth, 78, 5, color(MAP_HEADER));
             canvas.strokeRect(contentX, 60, contentWidth, 78, 1, color(MAP_BORDER));
             drawText(
                     canvas,
@@ -2053,7 +1867,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         drawInsightsSectionTitle(canvas, contentX, 60, "Selected Spot");
         float spotCardY = 72;
         float spotCardHeight = selectedTotemSpotCardHeight(contentWidth);
-        canvas.fillRoundedRect(contentX, spotCardY, contentWidth, spotCardHeight, 5, color(MAP_HEADER, 210));
+        canvas.fillRoundedRect(contentX, spotCardY, contentWidth, spotCardHeight, 5, color(MAP_HEADER));
         canvas.strokeRect(contentX, spotCardY, contentWidth, spotCardHeight, 1, color(MAP_BORDER));
         float spotTextY = drawWrappedText(
                 canvas,
@@ -2326,8 +2140,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float thumbHeight = Math.max(24, trackHeight * viewportHeight / contentHeight);
         float thumbY = trackY + (trackHeight - thumbHeight) * (ingredientTotemInsightsScroll / maxScroll);
         float trackX = x + INSIGHTS_SIDEBAR_WIDTH - 5;
-        canvas.fillRect(trackX, trackY, 3, trackHeight, color(MAP_TEXT, 28));
-        canvas.fillRect(trackX, thumbY, 3, thumbHeight, color(MAP_TEXT, 110));
+        canvas.fillRect(trackX, trackY, 3, trackHeight, color(CONTROL_TRACK));
+        canvas.fillRect(trackX, thumbY, 3, thumbHeight, color(CONTROL_THUMB));
     }
 
     private void renderGatheringInsights(UiCanvas canvas, float x, float screenHeight, InsightsLayout layout) {
@@ -2435,7 +2249,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderClusterDetail(UiCanvas canvas, float x, float y, float width, GatheringNodeCluster cluster) {
-        canvas.fillRect(x, y, width, CLUSTER_DETAIL_HEIGHT, color(MAP_HEADER, 210));
+        canvas.fillRect(x, y, width, CLUSTER_DETAIL_HEIGHT, color(MAP_HEADER));
         canvas.strokeRect(x, y, width, CLUSTER_DETAIL_HEIGHT, 1, color(MAP_BORDER));
         float textWidth = width - 16;
         drawFittedText(canvas, x + 8, y + 17, 14, cluster.resource(), color(MAP_TEXT), textWidth, TextAlignment.LEFT);
@@ -2446,7 +2260,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderNodeDetail(UiCanvas canvas, float x, float y, float width, GatheringNode node) {
-        canvas.fillRect(x, y, width, NODE_DETAIL_HEIGHT, color(MAP_HEADER, 210));
+        canvas.fillRect(x, y, width, NODE_DETAIL_HEIGHT, color(MAP_HEADER));
         canvas.strokeRect(x, y, width, NODE_DETAIL_HEIGHT, 1, color(MAP_BORDER));
         drawFittedText(canvas, x + 8, y + 17, 14, node.resource(), color(MAP_TEXT), width - 16, TextAlignment.LEFT);
         drawFittedText(canvas, x + 8, y + 38, 12, nodeCoords(node), color(MAP_SUBTEXT), width - 16, TextAlignment.LEFT);
@@ -2460,7 +2274,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             WorldEventDefinition event,
             boolean allowTrackingButton) {
         float textWidth = width - 16;
-        canvas.fillRect(x, y, width, WORLD_EVENT_DETAIL_HEIGHT, color(MAP_HEADER, 220));
+        canvas.fillRect(x, y, width, WORLD_EVENT_DETAIL_HEIGHT, color(MAP_HEADER));
         canvas.strokeRect(x, y, width, WORLD_EVENT_DETAIL_HEIGHT, 1, color(MAP_BORDER));
         drawFittedText(canvas, x + 8, y + 16, 14, event.name(), color(MAP_TEXT), textWidth, TextAlignment.LEFT);
         String metadata = worldEventMetadata(event);
@@ -2483,18 +2297,54 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         }
     }
 
-    private void drawMapModeControl(UiCanvas canvas, float y) {
-        float width = SIDEBAR_WIDTH - PADDING * 2;
-        float segmentWidth = width / MapDisplayMode.values().length;
-        for (int index = 0; index < MapDisplayMode.values().length; index++) {
-            MapDisplayMode mode = MapDisplayMode.values()[index];
-            float x = PADDING + index * segmentWidth;
-            boolean active = displayMode == mode;
-            boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
-            canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
-            canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, color(MAP_BORDER));
-            drawText(canvas, x + segmentWidth / 2f, y + BUTTON_HEIGHT / 2f, 11, mode.label(), color(MAP_TEXT), TextAlignment.CENTER);
+    private WorldMapModeDropdownLayout mapModeDropdownLayout() {
+        MapViewport viewport = mapViewport(uiScreenWidth(), uiScreenHeight());
+        return WorldMapModeDropdownLayout.fit(viewport.screenX(), viewport.screenWidth());
+    }
+
+    private void drawMapModeControl(UiCanvas canvas) {
+        var layout = mapModeDropdownLayout();
+        canvas.save();
+        canvas.scissor(layout.x(), layout.y(), layout.width(),
+                layout.rowHeight() * (MapDisplayMode.values().length + 1));
+        DropdownMenu.trigger(canvas, layout.x(), layout.y(), layout.width(), layout.rowHeight(),
+                displayMode.label(), mapModeDropdownOpen, true, nvgMouseX, nvgMouseY);
+        if (mapModeDropdownOpen) {
+            DropdownMenu.list(canvas, layout.x(), layout.y() + layout.rowHeight(), layout.width(), layout.rowHeight(),
+                    java.util.Arrays.stream(MapDisplayMode.values()).map(MapDisplayMode::label).toList(),
+                    i -> MapDisplayMode.values()[i] == displayMode, 0, MapDisplayMode.values().length, nvgMouseX, nvgMouseY);
         }
+        canvas.restore();
+        canvas.save();
+        canvas.scissor(layout.closeX(), layout.y(), layout.width(), layout.rowHeight());
+        boolean closeHovered = isHovered(nvgMouseX, nvgMouseY,
+                layout.closeX(), layout.y(), layout.width(), layout.rowHeight());
+        canvas.fillRect(layout.closeX(), layout.y(), layout.width(), layout.rowHeight(),
+                closeHovered ? color(CONTROL_DANGER_HOVER) : color(CONTROL_DANGER));
+        canvas.strokeRect(layout.closeX(), layout.y(), layout.width(), layout.rowHeight(), 1, color(MAP_BORDER));
+        drawText(canvas, layout.closeX() + layout.width() / 2f, layout.y() + layout.rowHeight() / 2f,
+                12, "Close Map", color(MAP_TEXT), TextAlignment.CENTER);
+        canvas.restore();
+    }
+
+    private boolean clickMapModeDropdown(float mx, float my) {
+        var layout = mapModeDropdownLayout();
+        if (layout.contains(mx, my, false)) {
+            mapModeDropdownOpen = !mapModeDropdownOpen;
+            closeSearchDropdowns();
+            draggingMap = false;
+            return true;
+        }
+        if (mapModeDropdownOpen) {
+            int option = layout.optionAt(mx, my);
+            mapModeDropdownOpen = false;
+            if (option >= 0) {
+                setDisplayMode(MapDisplayMode.values()[option]);
+            }
+            // Dismissing the menu must not select or drag the map underneath it.
+            return true;
+        }
+        return false;
     }
 
     private void drawWorldEventFilterControl(UiCanvas canvas, float y) {
@@ -2557,7 +2407,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 y,
                 SIDEBAR_WIDTH - PADDING * 2,
                 PANEL_HEADER_HEIGHT,
-                hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL_INACTIVE));
+                hovered ? color(MAP_CONTROL_HOVER)
+                        : panel == WorldMapSidebarPanel.TOTEM_SOLVER && expanded
+                                ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL_INACTIVE));
         canvas.strokeRect(PADDING,
                 y,
                 SIDEBAR_WIDTH - PADDING * 2,
@@ -2597,6 +2449,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void togglePanel(WorldMapSidebarPanel panel) {
+        if (panel == WorldMapSidebarPanel.TOTEM_SOLVER) {
+            gatheringTotemSolverEnabled = !gatheringTotemSolverEnabled;
+            mapSettings.setGatheringTotemSolverEnabled(gatheringTotemSolverEnabled);
+            resetGatheringTotemSolve();
+            return;
+        }
         boolean expanded = !panelExpanded(panel);
         mapSettings.setSidebarPanelExpanded(panel, expanded);
         sidebarScroll = 0;
@@ -2656,14 +2514,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderGatheringTotemControls(UiCanvas canvas, TotemSolverLayout layout) {
-        drawButton(
-                canvas,
-                PADDING,
-                sidebarY(layout.enabledY()),
-                SIDEBAR_WIDTH - PADDING * 2,
-                BUTTON_HEIGHT,
-                gatheringTotemSolverEnabled ? "Totem Solver On" : "Totem Solver Off",
-                gatheringTotemSolverEnabled);
         drawGatheringTotemTargetControl(canvas, sidebarY(layout.targetY()));
         drawFittedText(
                 canvas,
@@ -2758,32 +2608,30 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderGatheringTotemLayerButtons(UiCanvas canvas, float startY) {
-        String[] labels = {"Hulls", "50 Range", "+2 Reach", "Nodes", "Other Spots"};
-        float gap = 4;
-        float width = (SIDEBAR_WIDTH - PADDING * 2 - gap) / 2f;
-        for (int index = 0; index < labels.length; index++) {
-            int column = index % 2;
-            int row = index / 2;
-            drawButton(
-                    canvas,
-                    PADDING + column * (width + gap),
-                    startY + row * (TOGGLE_HEIGHT + gap),
-                    width,
-                    TOGGLE_HEIGHT,
-                    labels[index],
-                    gatheringTotemLayerEnabled(index));
+        float width = SIDEBAR_WIDTH - PADDING * 2;
+        for (int index = 0; index < TOTEM_LAYER_LABELS.size(); index++) {
+            float y = startY + index * (TOGGLE_HEIGHT + TOTEM_LAYER_GAP);
+            boolean enabled = gatheringTotemLayerEnabled(index);
+            boolean hovered = isHovered(nvgMouseX, nvgMouseY, PADDING, y, width, TOGGLE_HEIGHT);
+            canvas.fillRect(PADDING, y, width, TOGGLE_HEIGHT,
+                    hovered ? color(MAP_CONTROL_HOVER) : enabled ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL));
+            canvas.strokeRect(PADDING, y, width, TOGGLE_HEIGHT, 1, color(MAP_BORDER));
+            drawFittedText(canvas, PADDING + 8, y + TOGGLE_HEIGHT / 2, 11, TOTEM_LAYER_LABELS.get(index),
+                    color(MAP_TEXT), width - 42, TextAlignment.LEFT);
+            drawText(canvas, PADDING + width - 8, y + TOGGLE_HEIGHT / 2, 10,
+                    enabled ? "On" : "Off", color(MAP_SUBTEXT), TextAlignment.RIGHT);
         }
     }
 
     private void renderGatheringTotemLegend(UiCanvas canvas, float y) {
-        drawCircle(canvas, PADDING + 5, y, 3.5f, color(MAP_TOTEM));
-        drawText(canvas, PADDING + 14, y, 9, "amber hull = valid totem positions", color(MAP_SUBTEXT), TextAlignment.LEFT);
+        drawSquareMarker(canvas, PADDING + 5, y, 3.5f, color(MAP_TOTEM));
+        drawText(canvas, PADDING + 14, y, 9, "filled area = valid positions", color(MAP_SUBTEXT), TextAlignment.LEFT);
         drawCircleOutline(canvas, PADDING + 5, y + 13, 4, 1.5f, color(MAP_TOTEM_RANGE));
-        drawText(canvas, PADDING + 14, y + 13, 9, "solid cyan = 50 player range", color(MAP_SUBTEXT), TextAlignment.LEFT);
+        drawText(canvas, PADDING + 14, y + 13, 9, "solid ring = player range (50)", color(MAP_SUBTEXT), TextAlignment.LEFT);
         drawText(canvas, PADDING + 5, y + 26, 10, "--", color(MAP_TOTEM_REACH), TextAlignment.CENTER);
-        drawText(canvas, PADDING + 14, y + 26, 9, "dashed cyan = 52 node reach", color(MAP_SUBTEXT), TextAlignment.LEFT);
-        drawCircle(canvas, PADDING + 5, y + 39, 3.5f, color(MAP_PLAYER));
-        drawText(canvas, PADDING + 14, y + 39, 9, "bright marker = best integer spot", color(MAP_SUBTEXT), TextAlignment.LEFT);
+        drawText(canvas, PADDING + 14, y + 26, 9, "dashed ring = node reach (52)", color(MAP_SUBTEXT), TextAlignment.LEFT);
+        drawTotemMarker(canvas, PADDING + 5, y + 39, 8, color(MAP_PLAYER), true);
+        drawText(canvas, PADDING + 14, y + 39, 9, "bright marker = best spot", color(MAP_SUBTEXT), TextAlignment.LEFT);
     }
 
     private void renderGatheringTotemResults(UiCanvas canvas, float startY) {
@@ -2843,22 +2691,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                     SIDEBAR_WIDTH - PADDING * 2 - 14,
                     TextAlignment.LEFT);
         }
-    }
-
-    private String gatheringTotemPanelSummary() {
-        if (!gatheringTotemSolverEnabled) {
-            return "Off";
-        }
-        if (gatheringTotemSearchTarget == GatheringTotemSearchTarget.SELECTED_CLUSTER && selectedCluster == null) {
-            return "No cluster";
-        }
-        if (gatheringTotemOptimizing()) {
-            return "Working";
-        }
-        if (gatheringTotemPlacement == null) {
-            return gatheringTotemSolveError == null ? "No results" : "Failed";
-        }
-        return gatheringTotemPlacement.nodeCount() + " x" + gatheringTotemPlacements.size();
     }
 
     private String gatheringTotemStatus() {
@@ -3004,25 +2836,17 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 MAX_PIXELS_PER_BLOCK);
     }
 
-    private void renderSearchInput(
-            UiCanvas canvas,
-            float y,
-            boolean dropdownOpen,
-            boolean inputFocused,
-            String search,
-            String unfocusedValue) {
-        canvas.fillRect(PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, dropdownOpen ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
-        canvas.strokeRect(PADDING, y, SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT, 1, color(MAP_BORDER));
+    private void renderSearchInput(UiCanvas canvas, float y, boolean dropdownOpen,
+            boolean inputFocused, String search, String unfocusedValue) {
+        float width = SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2);
         String value = inputFocused ? search : unfocusedValue;
-        Color valueColor = value == null || value.isBlank() ? color(MAP_SUBTEXT) : color(MAP_TEXT);
-        String displayValue = value == null || value.isBlank() ? "Search" : value;
-        float inputTextWidth = SIDEBAR_WIDTH - PADDING * 2 - 30;
-        drawFittedText(canvas, PADDING + 8, y + INPUT_HEIGHT / 2f, 12, displayValue, valueColor, inputTextWidth, TextAlignment.LEFT);
+        String displayValue = value == null || value.isBlank() ? "Search..." : value;
+        DropdownMenu.trigger(canvas, PADDING, y, width, INPUT_HEIGHT, displayValue,
+                dropdownOpen, true, nvgMouseX, nvgMouseY);
         if (inputFocused) {
-            float cursorX = PADDING + 10 + Math.min(textWidth(value, 12), inputTextWidth);
-            drawText(canvas, cursorX, y + INPUT_HEIGHT / 2f, 12, "|", color(MAP_TEXT), TextAlignment.LEFT);
+            float cursorX = PADDING + 8 + Math.min(textWidth(search, DropdownMenu.FONT_SIZE), Math.max(0, width - 30));
+            drawText(canvas, cursorX, y + INPUT_HEIGHT / 2f, DropdownMenu.FONT_SIZE, "|", color(TEXT_PRIMARY), TextAlignment.LEFT);
         }
-        drawText(canvas, SIDEBAR_WIDTH - PADDING - 10, y + INPUT_HEIGHT / 2f, 12, dropdownOpen ? "^" : "v", color(MAP_SUBTEXT), TextAlignment.CENTER);
     }
 
     private void drawScopeControl(UiCanvas canvas, float y) {
@@ -3034,10 +2858,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             boolean enabled = scope != GatheringAnalysisScope.SELECTED_TERRITORY || selectedTerritory != null;
             boolean active = gatheringAnalysisScope == scope;
             boolean hovered = enabled && isHovered(nvgMouseX, nvgMouseY, x, y, segmentWidth, BUTTON_HEIGHT);
-            Color background = active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL);
-            if (!enabled) {
-                background = withAlpha(background, 105);
-            }
+            Color background = !enabled ? color(MAP_CONTROL_INACTIVE)
+                    : active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL);
             canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, background);
             canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, color(MAP_BORDER));
             drawFittedText(
@@ -3058,7 +2880,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float y,
             float width,
             GuildTerritory territory) {
-        canvas.fillRect(x, y, width, TERRITORY_DETAIL_HEIGHT, color(MAP_HEADER, 210));
+        canvas.fillRect(x, y, width, TERRITORY_DETAIL_HEIGHT, color(MAP_HEADER));
         canvas.strokeRect(x, y, width, TERRITORY_DETAIL_HEIGHT, 1, color(MAP_SELECTED_TERRITORY));
         float detailWidth = width - 16;
         int totalNodes = cachedTerritoryNodeCounts.getOrDefault(territory.name(), 0);
@@ -3122,116 +2944,33 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private void drawToggle(UiCanvas canvas, float x, float y, float w, float h, GatheringProfession profession, boolean active) {
         drawButton(canvas, x, y, w, h, displayProfession(profession), active);
-        drawCircle(canvas, x + 13, y + h / 2f, 4, profession.color());
+        drawSquareMarker(canvas, x + 13, y + h / 2f, 4, profession.color());
     }
 
     private void renderResourceDropdown(UiCanvas canvas, float y) {
         List<String> resources = resourceDropdownOptions();
-        int visibleRows = Math.min(RESOURCE_DROPDOWN_VISIBLE_ROWS, resources.size());
         resourceDropdownScroll = clampResourceDropdownScroll(resourceDropdownScroll, resources.size());
-        float x = PADDING;
-        float width = SIDEBAR_WIDTH - PADDING * 2;
-        float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
-        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY, 248));
-        canvas.strokeRect(x, y, width, height, 1, color(MAP_BORDER));
-        if (resources.isEmpty()) {
-            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", color(MAP_SUBTEXT), TextAlignment.LEFT);
-            return;
-        }
-        for (int index = 0; index < visibleRows; index++) {
-            String resource = resources.get(resourceDropdownScroll + index);
-            boolean selected = resource.isBlank()
-                    ? selectedResourceFilters.isEmpty()
-                    : selectedResourceFilters.contains(resource);
-            boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT, width, RESOURCE_DROPDOWN_ROW_HEIGHT);
-            if (selected || hovered) {
-                canvas.fillRect(x + 1, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1, width - 2, RESOURCE_DROPDOWN_ROW_HEIGHT - 2, selected ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL_HOVER));
-            }
-            String label = resource.isBlank() ? "All resources" : resource;
-            drawFittedText(canvas, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, label, resource.isBlank() ? color(MAP_SUBTEXT) : color(MAP_TEXT), width - 16, TextAlignment.LEFT);
-        }
-        if (resources.size() > visibleRows) {
-            String range = (resourceDropdownScroll + 1) + "-" + (resourceDropdownScroll + visibleRows) + "/" + resources.size();
-            drawText(canvas, x + width - 8, y + height - 7, 9, range, color(MAP_SUBTEXT), TextAlignment.RIGHT);
-        }
+        DropdownMenu.list(canvas, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, RESOURCE_DROPDOWN_ROW_HEIGHT,
+                resources.stream().map(value -> value.isBlank() ? "All resources" : value).toList(),
+                i -> resources.get(i).isBlank() ? selectedResourceFilters.isEmpty() : selectedResourceFilters.contains(resources.get(i)),
+                resourceDropdownScroll, RESOURCE_DROPDOWN_VISIBLE_ROWS, nvgMouseX, nvgMouseY);
     }
 
     private void renderTerritoryDropdown(UiCanvas canvas, float y) {
         List<GuildTerritory> territories = territoryDropdownOptions();
-        int visibleRows = Math.min(TERRITORY_DROPDOWN_VISIBLE_ROWS, territories.size());
         territoryDropdownScroll = clampDropdownScroll(territoryDropdownScroll, territories.size(), TERRITORY_DROPDOWN_VISIBLE_ROWS);
-        float x = PADDING;
-        float width = SIDEBAR_WIDTH - PADDING * 2;
-        float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
-        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY, 248));
-        canvas.strokeRect(x, y, width, height, 1, color(MAP_BORDER));
-        if (territories.isEmpty()) {
-            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", color(MAP_SUBTEXT), TextAlignment.LEFT);
-            return;
-        }
-        for (int index = 0; index < visibleRows; index++) {
-            GuildTerritory territory = territories.get(territoryDropdownScroll + index);
-            boolean selected = territory.equals(selectedTerritory);
-            boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT, width, RESOURCE_DROPDOWN_ROW_HEIGHT);
-            if (selected || hovered) {
-                canvas.fillRect(x + 1, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1, width - 2, RESOURCE_DROPDOWN_ROW_HEIGHT - 2, selected ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL_HOVER));
-            }
-            drawFittedText(canvas, x + 8, y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, territory.name(), color(MAP_TEXT), width - 16, TextAlignment.LEFT);
-        }
-        if (territories.size() > visibleRows) {
-            String range = (territoryDropdownScroll + 1) + "-" + (territoryDropdownScroll + visibleRows) + "/" + territories.size();
-            drawText(canvas, x + width - 8, y + height - 7, 9, range, color(MAP_SUBTEXT), TextAlignment.RIGHT);
-        }
+        DropdownMenu.list(canvas, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, RESOURCE_DROPDOWN_ROW_HEIGHT,
+                territories.stream().map(GuildTerritory::name).toList(), i -> territories.get(i).equals(selectedTerritory),
+                territoryDropdownScroll, TERRITORY_DROPDOWN_VISIBLE_ROWS, nvgMouseX, nvgMouseY);
     }
 
     private void renderWorldEventDropdown(UiCanvas canvas, float y) {
         List<WorldEventDefinition> events = worldEventDropdownOptions();
-        int visibleRows = Math.min(WORLD_EVENT_DROPDOWN_VISIBLE_ROWS, events.size());
-        worldEventDropdownScroll = clampDropdownScroll(
-                worldEventDropdownScroll,
-                events.size(),
-                WORLD_EVENT_DROPDOWN_VISIBLE_ROWS);
-        float x = PADDING;
-        float width = SIDEBAR_WIDTH - PADDING * 2;
-        float height = Math.max(1, visibleRows) * RESOURCE_DROPDOWN_ROW_HEIGHT;
-        canvas.fillRect(x, y, width, height, color(BACKGROUND_BODY, 248));
-        canvas.strokeRect(x, y, width, height, 1, color(MAP_BORDER));
-        if (events.isEmpty()) {
-            drawText(canvas, x + 8, y + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f, 11, "No matches", color(MAP_SUBTEXT), TextAlignment.LEFT);
-            return;
-        }
-        for (int index = 0; index < visibleRows; index++) {
-            WorldEventDefinition event = events.get(worldEventDropdownScroll + index);
-            boolean selected = cachedTrackedWorldEventIds.contains(event.internalName());
-            boolean hovered = isHovered(
-                    nvgMouseX,
-                    nvgMouseY,
-                    x,
-                    y + index * RESOURCE_DROPDOWN_ROW_HEIGHT,
-                    width,
-                    RESOURCE_DROPDOWN_ROW_HEIGHT);
-            if (selected || hovered) {
-                canvas.fillRect(x + 1,
-                        y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + 1,
-                        width - 2,
-                        RESOURCE_DROPDOWN_ROW_HEIGHT - 2,
-                        selected ? color(MAP_CONTROL_ACTIVE) : color(MAP_CONTROL_HOVER));
-            }
-            String label = (selected ? "[x] " : "[ ] ") + event.name();
-            drawFittedText(
-                    canvas,
-                    x + 8,
-                    y + index * RESOURCE_DROPDOWN_ROW_HEIGHT + RESOURCE_DROPDOWN_ROW_HEIGHT / 2f,
-                    11,
-                    label,
-                    event.isVisible() ? color(MAP_TEXT) : color(MAP_SUBTEXT),
-                    width - 16,
-                    TextAlignment.LEFT);
-        }
-        if (events.size() > visibleRows) {
-            String range = (worldEventDropdownScroll + 1) + "-" + (worldEventDropdownScroll + visibleRows) + "/" + events.size();
-            drawText(canvas, x + width - 8, y + height - 7, 9, range, color(MAP_SUBTEXT), TextAlignment.RIGHT);
-        }
+        worldEventDropdownScroll = clampDropdownScroll(worldEventDropdownScroll, events.size(), WORLD_EVENT_DROPDOWN_VISIBLE_ROWS);
+        DropdownMenu.list(canvas, PADDING, y, SIDEBAR_WIDTH - PADDING * 2, RESOURCE_DROPDOWN_ROW_HEIGHT,
+                events.stream().map(event -> (cachedTrackedWorldEventIds.contains(event.internalName()) ? "[x] " : "[ ] ") + event.name()).toList(),
+                i -> cachedTrackedWorldEventIds.contains(events.get(i).internalName()),
+                worldEventDropdownScroll, WORLD_EVENT_DROPDOWN_VISIBLE_ROWS, nvgMouseX, nvgMouseY);
     }
 
     private void renderSidebarScrollbar(UiCanvas canvas, float screenHeight) {
@@ -3246,8 +2985,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float scrollableContentHeight = Math.max(viewportHeight, sidebarContentHeight - SIDEBAR_PANEL_TOP);
         float thumbHeight = Math.max(24, trackHeight * (viewportHeight / scrollableContentHeight));
         float thumbY = trackY + (trackHeight - thumbHeight) * (sidebarScroll / maxScroll);
-        canvas.fillRect(trackX, trackY, 3, trackHeight, color(MAP_TEXT, 28));
-        canvas.fillRect(trackX, thumbY, 3, thumbHeight, color(MAP_TEXT, 110));
+        canvas.fillRect(trackX, trackY, 3, trackHeight, color(CONTROL_TRACK));
+        canvas.fillRect(trackX, thumbY, 3, thumbHeight, color(CONTROL_THUMB));
     }
 
     private String centerPlayerButtonLabel() {
@@ -3364,11 +3103,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float mouseX,
             float mouseY) {
         Placement closestMarker = null;
-        double closestMarkerDistance = 9;
+        double closestMarkerDistance = 12;
         for (Placement placement : placements) {
             float bestX = viewport.worldToScreenX(placement.x());
             float bestZ = viewport.worldToScreenZ(placement.z());
-            double distance = Math.hypot(mouseX - bestX, mouseY - bestZ);
+            double distance = markerDistance(mouseX - bestX, mouseY - bestZ);
             if (distance <= closestMarkerDistance) {
                 closestMarker = placement;
                 closestMarkerDistance = distance;
@@ -4012,9 +3751,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void fitFullMap(float mapW, float mapH) {
-        double xScale = mapW / (MapCalibration.MAX_WORLD_X - MapCalibration.MIN_WORLD_X);
-        double zScale = mapH / (MapCalibration.MAX_WORLD_Z - MapCalibration.MIN_WORLD_Z);
-        pixelsPerBlock = clamp(Math.min(xScale, zScale) * 0.92, MIN_PIXELS_PER_BLOCK, MAX_PIXELS_PER_BLOCK);
+        pixelsPerBlock = MapViewport.fitPixelsPerBlock(
+                MapCalibration.fullBounds(), mapW, mapH, MapViewport.FULL_MAP_FIT_SCALE);
     }
 
     private boolean hasMapFocus() {
@@ -4140,6 +3878,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     @Override
+    public void onClose() {
+        SeqClient.mc.setScreen(parent == null || parent instanceof net.minecraft.client.gui.screens.ChatScreen
+                ? new SequoiaScreen() : parent);
+    }
+
+    @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
         float mx = scaledMouseX(click.x());
         float my = scaledMouseY(click.y());
@@ -4147,6 +3891,18 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float screenWidth = uiScreenWidth();
         float screenHeight = uiScreenHeight();
 
+        if (mapModeDropdownLayout().containsClose(mx, my)) {
+            if (click.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                onClose();
+            }
+            return true;
+        }
+        if (click.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT && clickMapModeDropdown(mx, my)) {
+            return true;
+        }
+        if (mapModeDropdownLayout().contains(mx, my, mapModeDropdownOpen)) {
+            return true;
+        }
         if (click.button() == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
             if (copyHoveredCoordinates(mx, my, sidebarMy, screenWidth, screenHeight)) {
                 return true;
@@ -4202,9 +3958,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             List<GuildTerritory> territories = territoryDropdownOptions();
             int visibleRows = Math.min(TERRITORY_DROPDOWN_VISIBLE_ROWS, territories.size());
             float dropdownY = layout.territoryInputY() - sidebarScroll + INPUT_HEIGHT;
-            if (visibleRows > 0 && isHovered(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2, visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
-                int optionIndex = Math.min(visibleRows - 1, Math.max(0, (int) ((my - dropdownY) / RESOURCE_DROPDOWN_ROW_HEIGHT)));
-                selectTerritory(territories.get(territoryDropdownScroll + optionIndex), true);
+            int optionIndex = DropdownMenu.optionAt(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2,
+                    RESOURCE_DROPDOWN_ROW_HEIGHT, visibleRows, territoryDropdownScroll);
+            if (optionIndex >= 0 && optionIndex < territories.size()) {
+                selectTerritory(territories.get(optionIndex), true);
                 closeTerritorySearch();
                 return true;
             }
@@ -4213,25 +3970,18 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             List<String> resources = resourceDropdownOptions();
             int visibleRows = Math.min(RESOURCE_DROPDOWN_VISIBLE_ROWS, resources.size());
             float dropdownY = layout.resourceInputY() - sidebarScroll + INPUT_HEIGHT;
-            if (visibleRows > 0 && isHovered(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2, visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
-                int optionIndex = Math.min(visibleRows - 1, Math.max(0, (int) ((my - dropdownY) / RESOURCE_DROPDOWN_ROW_HEIGHT)));
-                toggleResourceFilter(resources.get(resourceDropdownScroll + optionIndex), true);
+            int optionIndex = DropdownMenu.optionAt(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2,
+                    RESOURCE_DROPDOWN_ROW_HEIGHT, visibleRows, resourceDropdownScroll);
+            if (optionIndex >= 0 && optionIndex < resources.size()) {
+                toggleResourceFilter(resources.get(optionIndex), true);
                 return true;
             }
         }
 
-        if (isHovered(mx, my, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(parent);
-            return true;
-        }
         if (isHovered(mx, my, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
             if (!centerOnPlayer()) {
                 centerPlayerWarningUntilMs = System.currentTimeMillis() + CENTER_PLAYER_WARNING_DURATION_MS;
             }
-            return true;
-        }
-        if (isHovered(mx, my, PADDING, layout.modeY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
-            setDisplayMode(mapModeAt(mx));
             return true;
         }
         if (isHovered(mx, sidebarMy, PADDING, layout.mapPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)) {
@@ -4282,7 +4032,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return true;
         }
         if (layout.territoryInputY() >= 0
-                && isHovered(mx, sidebarMy, PADDING, layout.territoryInputY(), SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT)) {
+                && isHovered(mx, sidebarMy, PADDING, layout.territoryInputY(), SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2), INPUT_HEIGHT)) {
             boolean shouldOpen = !territoryDropdownOpen;
             closeResourceSearch();
             territoryInputFocused = shouldOpen;
@@ -4316,19 +4066,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return true;
         }
         TotemSolverLayout totemLayout = totemSolverLayout(layout.totemPanelY());
-        if (totemLayout.enabledY() >= 0) {
-            if (isHovered(
-                    mx,
-                    sidebarMy,
-                    PADDING,
-                    totemLayout.enabledY(),
-                    SIDEBAR_WIDTH - PADDING * 2,
-                    BUTTON_HEIGHT)) {
-                gatheringTotemSolverEnabled = !gatheringTotemSolverEnabled;
-                mapSettings.setGatheringTotemSolverEnabled(gatheringTotemSolverEnabled);
-                resetGatheringTotemSolve();
-                return true;
-            }
+        if (totemLayout.targetY() >= 0) {
             if (isHovered(
                     mx,
                     sidebarMy,
@@ -4357,17 +4095,13 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                 return true;
             }
 
-            float layerGap = 4;
-            float layerWidth = (SIDEBAR_WIDTH - PADDING * 2 - layerGap) / 2f;
-            for (int index = 0; index < 5; index++) {
-                int column = index % 2;
-                int row = index / 2;
+            for (int index = 0; index < TOTEM_LAYER_LABELS.size(); index++) {
                 if (isHovered(
                         mx,
                         sidebarMy,
-                        PADDING + column * (layerWidth + layerGap),
-                        totemLayout.layerStartY() + row * (TOGGLE_HEIGHT + layerGap),
-                        layerWidth,
+                        PADDING,
+                        totemLayout.layerStartY() + index * (TOGGLE_HEIGHT + TOTEM_LAYER_GAP),
+                        SIDEBAR_WIDTH - PADDING * 2,
                         TOGGLE_HEIGHT)) {
                     toggleGatheringTotemLayer(index);
                     return true;
@@ -4416,7 +4150,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             }
         }
         if (layout.resourceInputY() >= 0
-                && isHovered(mx, sidebarMy, PADDING, layout.resourceInputY(), SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT)) {
+                && isHovered(mx, sidebarMy, PADDING, layout.resourceInputY(), SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2), INPUT_HEIGHT)) {
             boolean shouldOpen = !resourceDropdownOpen;
             closeTerritorySearch();
             resourceInputFocused = shouldOpen;
@@ -4479,18 +4213,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private boolean mouseClickedIngredients(float mx, float my, float screenWidth, float screenHeight) {
         IngredientSidebarLayout layout = ingredientSidebarLayout();
         float buttonWidth = SIDEBAR_WIDTH - PADDING * 2;
-        if (isHovered(mx, my, PADDING, layout.backY(), buttonWidth, BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(parent);
-            return true;
-        }
         if (isHovered(mx, my, PADDING, layout.centerY(), buttonWidth, BUTTON_HEIGHT)) {
             if (!centerOnPlayer()) {
                 centerPlayerWarningUntilMs = System.currentTimeMillis() + CENTER_PLAYER_WARNING_DURATION_MS;
             }
-            return true;
-        }
-        if (isHovered(mx, my, PADDING, layout.modeY(), buttonWidth, BUTTON_HEIGHT)) {
-            setDisplayMode(mapModeAt(mx));
             return true;
         }
         boolean insideScrollablePanel = my >= SIDEBAR_PANEL_TOP && my <= screenHeight;
@@ -4689,33 +4415,17 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             List<WorldEventDefinition> events = worldEventDropdownOptions();
             int visibleRows = Math.min(WORLD_EVENT_DROPDOWN_VISIBLE_ROWS, events.size());
             float dropdownY = layout.eventInputY() - sidebarScroll + INPUT_HEIGHT;
-            if (visibleRows > 0
-                    && isHovered(
-                            mx,
-                            my,
-                            PADDING,
-                            dropdownY,
-                            SIDEBAR_WIDTH - PADDING * 2,
-                            visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
-                int optionIndex = Math.min(
-                        visibleRows - 1,
-                        Math.max(0, (int) ((my - dropdownY) / RESOURCE_DROPDOWN_ROW_HEIGHT)));
-                toggleTrackedWorldEvent(events.get(worldEventDropdownScroll + optionIndex), true);
+            int optionIndex = DropdownMenu.optionAt(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2,
+                    RESOURCE_DROPDOWN_ROW_HEIGHT, visibleRows, worldEventDropdownScroll);
+            if (optionIndex >= 0 && optionIndex < events.size()) {
+                toggleTrackedWorldEvent(events.get(optionIndex), true);
                 return true;
             }
-        }
-        if (isHovered(mx, my, PADDING, layout.backY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(parent);
-            return true;
         }
         if (isHovered(mx, my, PADDING, layout.centerY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
             if (!centerOnPlayer()) {
                 centerPlayerWarningUntilMs = System.currentTimeMillis() + CENTER_PLAYER_WARNING_DURATION_MS;
             }
-            return true;
-        }
-        if (isHovered(mx, my, PADDING, layout.modeY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
-            setDisplayMode(mapModeAt(mx));
             return true;
         }
         if (isHovered(mx, sidebarMy, PADDING, layout.displayPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)) {
@@ -4751,7 +4461,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return true;
         }
         if (layout.eventInputY() >= 0
-                && isHovered(mx, sidebarMy, PADDING, layout.eventInputY(), SIDEBAR_WIDTH - PADDING * 2, INPUT_HEIGHT)) {
+                && isHovered(mx, sidebarMy, PADDING, layout.eventInputY(), SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2), INPUT_HEIGHT)) {
             boolean shouldOpen = !worldEventDropdownOpen;
             closeResourceSearch();
             closeTerritorySearch();
@@ -4817,6 +4527,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         float mx = scaledMouseX(mouseX);
         float my = scaledMouseY(mouseY);
+        if (mapModeDropdownLayout().contains(mx, my, mapModeDropdownOpen)
+                || mapModeDropdownLayout().containsClose(mx, my)) {
+            return true;
+        }
         if (displayMode == MapDisplayMode.WORLD_EVENTS && worldEventDropdownOpen) {
             WorldEventSidebarLayout eventLayout = worldEventSidebarLayout();
             List<WorldEventDefinition> events = worldEventDropdownOptions();
@@ -4908,18 +4622,21 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (!viewport.isInsideScreen(mx, my)) {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
-        double worldX = viewport.screenToWorldX(mx);
-        double worldZ = viewport.screenToWorldZ(my);
-        double factor = scrollY > 0 ? 1.15 : 1.0 / 1.15;
-        pixelsPerBlock = clamp(pixelsPerBlock * factor, MIN_PIXELS_PER_BLOCK, MAX_PIXELS_PER_BLOCK);
-        centerX = worldX - (mx - (viewport.screenX() + viewport.screenWidth() / 2.0)) / pixelsPerBlock;
-        centerZ = worldZ - (my - (viewport.screenY() + viewport.screenHeight() / 2.0)) / pixelsPerBlock;
+        double factor = scrollY > 0 ? MapViewport.SCROLL_ZOOM_FACTOR : 1 / MapViewport.SCROLL_ZOOM_FACTOR;
+        MapViewport zoomed = viewport.zoomAt(mx, my, factor);
+        centerX = zoomed.centerX();
+        centerZ = zoomed.centerZ();
+        pixelsPerBlock = zoomed.pixelsPerBlock();
         return true;
     }
 
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
         int keyCode = keyEvent.key();
+        if (mapModeDropdownOpen && keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            mapModeDropdownOpen = false;
+            return true;
+        }
         if (worldEventInputFocused) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 closeWorldEventSearch();
@@ -5033,6 +4750,41 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return true;
         }
         return super.charTyped(characterEvent);
+    }
+
+    private static boolean drawMapAsset(UiCanvas canvas, String assetName, float x, float y, float size) {
+        AssetManager.Asset asset = AssetManager.getAssetsMap().get(assetName);
+        if (asset == null || asset.getImage() == null) {
+            return false;
+        }
+        float scale = size / Math.max(asset.getWidth(), asset.getHeight());
+        float width = asset.getWidth() * scale;
+        float height = asset.getHeight() * scale;
+        canvas.drawImage(asset.getImage(), x - width / 2f, y - height / 2f, width, height, 1f);
+        return true;
+    }
+
+    private static void drawTotemMarker(
+            UiCanvas canvas, float x, float y, float size, Color border, boolean highlighted) {
+        float halfSize = size / 2f + 1;
+        drawSquareMarker(canvas, x, y, halfSize, color(BACKGROUND_MODAL_OVERLAY));
+        drawSquareMarkerOutline(canvas, x, y, halfSize, highlighted ? 1.5f : 1, border);
+        if (!drawMapAsset(canvas, "shaman", x, y, size)) {
+            drawSquareMarker(canvas, x, y, size / 4f, color(MAP_TOTEM));
+        }
+    }
+
+    private static double markerDistance(double deltaX, double deltaY) {
+        return Math.max(Math.abs(deltaX), Math.abs(deltaY));
+    }
+
+    private static void drawSquareMarker(UiCanvas canvas, float x, float y, float halfSize, Color color) {
+        canvas.fillRect(x - halfSize, y - halfSize, halfSize * 2, halfSize * 2, color);
+    }
+
+    private static void drawSquareMarkerOutline(
+            UiCanvas canvas, float x, float y, float halfSize, float width, Color color) {
+        canvas.strokeRect(x - halfSize, y - halfSize, halfSize * 2, halfSize * 2, width, color);
     }
 
     private static void drawCircle(UiCanvas canvas, float x, float y, float radius, Color color) {
@@ -5153,7 +4905,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private String displayMapImageSource() {
         return switch (mapImageService.imageSource()) {
             case NONE -> "none";
-            case FALLBACK -> "fallback";
+            case CACHED_TILES -> "cached tiles";
             case CACHED_HQ -> "cached HQ";
         };
     }
@@ -5288,12 +5040,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         return GatheringAnalysisScope.values()[index];
     }
 
-    private MapDisplayMode mapModeAt(float mouseX) {
-        float segmentWidth = (SIDEBAR_WIDTH - PADDING * 2) / MapDisplayMode.values().length;
-        int index = (int) ((mouseX - PADDING) / segmentWidth);
-        return index >= 0 && index < MapDisplayMode.values().length ? MapDisplayMode.values()[index] : null;
-    }
-
     private IngredientMapCategory ingredientMapCategoryAt(float mouseX) {
         float segmentWidth = (SIDEBAR_WIDTH - PADDING * 2) / IngredientMapCategory.values().length;
         int index = (int) ((mouseX - PADDING) / segmentWidth);
@@ -5396,7 +5142,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private static int clampDropdownScroll(int scroll, int optionCount, int visibleRows) {
-        return Math.max(0, Math.min(scroll, Math.max(0, optionCount - visibleRows)));
+        return DropdownMenu.clampScroll(scroll, optionCount, visibleRows);
     }
 
     private float clampSidebarScroll(float scroll, float screenHeight) {
@@ -5476,10 +5222,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private IngredientSidebarLayout ingredientSidebarLayout() {
-        float backY = 58;
-        float centerY = backY + BUTTON_HEIGHT + 8;
-        float modeY = centerY + BUTTON_HEIGHT + 18;
-        float titleY = modeY + BUTTON_HEIGHT + 18;
+        float centerY = 58;
+        float titleY = centerY + BUTTON_HEIGHT + 18;
         float renderWaypointsY = titleY + BUTTON_HEIGHT + 10;
         float radiusToggleY = renderWaypointsY + BUTTON_HEIGHT + 6;
         float radiusColorToggleY = radiusToggleY + INGREDIENT_OPTION_HEIGHT + 2;
@@ -5491,9 +5235,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float selectedDetailY = selectedTitleY + 24;
         float copyY = selectedDetailY + 44;
         return new IngredientSidebarLayout(
-                backY,
                 centerY,
-                modeY,
                 titleY,
                 renderWaypointsY,
                 radiusToggleY,
@@ -5509,11 +5251,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private SidebarLayout sidebarLayout() {
         float y = 58;
-        float backY = y;
-        y += BUTTON_HEIGHT + 8;
         float centerY = y;
-        y += BUTTON_HEIGHT + 18;
-        float modeY = y;
         y += BUTTON_HEIGHT + 18;
         float mapPanelY = y;
         y += PANEL_HEADER_HEIGHT;
@@ -5566,9 +5304,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float totemPanelY = y;
         y = totemSolverLayout(totemPanelY).endY();
         return new SidebarLayout(
-                backY,
                 centerY,
-                modeY,
                 mapPanelY,
                 territoryToggleY,
                 scopeLabelY,
@@ -5589,11 +5325,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private TotemSolverLayout totemSolverLayout(float panelY) {
         float y = panelY + PANEL_HEADER_HEIGHT;
         if (!panelExpanded(WorldMapSidebarPanel.TOTEM_SOLVER)) {
-            return new TotemSolverLayout(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, y);
+            return new TotemSolverLayout(-1, -1, -1, -1, -1, -1, -1, -1, -1, y);
         }
         y += 8;
-        float enabledY = y;
-        y += BUTTON_HEIGHT + 6;
         float targetY = y;
         y += BUTTON_HEIGHT + 8;
         float filterSummaryY = y + 5;
@@ -5603,7 +5337,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float layerLabelY = y + 5;
         y += 14;
         float layerStartY = y;
-        y += 3 * (TOGGLE_HEIGHT + 4);
+        y += TOTEM_LAYER_LABELS.size() * (TOGGLE_HEIGHT + TOTEM_LAYER_GAP);
         float legendY = y + 2;
         y += 52;
         float resultsLabelY = y + 5;
@@ -5613,7 +5347,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         float actionsY = y;
         y += BUTTON_HEIGHT + 8;
         return new TotemSolverLayout(
-                enabledY,
                 targetY,
                 filterSummaryY,
                 refreshY,
@@ -5628,11 +5361,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private WorldEventSidebarLayout worldEventSidebarLayout() {
         float y = 58;
-        float backY = y;
-        y += BUTTON_HEIGHT + 8;
         float centerY = y;
-        y += BUTTON_HEIGHT + 18;
-        float modeY = y;
         y += BUTTON_HEIGHT + 18;
         float displayPanelY = y;
         y += PANEL_HEADER_HEIGHT;
@@ -5658,9 +5387,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             y += INPUT_HEIGHT + 8;
         }
         return new WorldEventSidebarLayout(
-                backY,
                 centerY,
-                modeY,
                 displayPanelY,
                 filterLabelY,
                 filterY,
@@ -5693,9 +5420,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private record TerritoryLabelLayout(List<String> lines, float fontSize, float lineHeight) {}
 
     private record IngredientSidebarLayout(
-            float backY,
             float centerY,
-            float modeY,
             float titleY,
             float renderWaypointsY,
             float radiusToggleY,
@@ -5709,9 +5434,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float copyY) {}
 
     private record SidebarLayout(
-            float backY,
             float centerY,
-            float modeY,
             float mapPanelY,
             float territoryToggleY,
             float scopeLabelY,
@@ -5729,7 +5452,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float endY) {}
 
     private record TotemSolverLayout(
-            float enabledY,
             float targetY,
             float filterSummaryY,
             float refreshY,
@@ -5742,9 +5464,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             float endY) {}
 
     private record WorldEventSidebarLayout(
-            float backY,
             float centerY,
-            float modeY,
             float displayPanelY,
             float filterLabelY,
             float filterY,
@@ -5790,8 +5510,6 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
                     && centerScreenY + minY <= viewport.screenY() + viewport.screenHeight();
         }
     }
-
-    private record TileRange(int minX, int maxX, int minY, int maxY) {}
 
     @Override
     public boolean isPauseScreen() {

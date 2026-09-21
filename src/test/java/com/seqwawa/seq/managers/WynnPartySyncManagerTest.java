@@ -3,8 +3,10 @@ package com.seqwawa.seq.managers;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import net.minecraft.network.chat.Component;
@@ -66,6 +68,14 @@ class WynnPartySyncManagerTest {
     }
 
     @Test
+    void inactiveSnapshotIsSentOnlyForTheListingWhereItWasObserved() {
+        assertTrue(WynnPartySyncManager.shouldSendSnapshotForListing(false, 42L, 42L));
+        assertFalse(WynnPartySyncManager.shouldSendSnapshotForListing(false, 41L, 42L));
+        assertFalse(WynnPartySyncManager.shouldSendSnapshotForListing(false, null, 42L));
+        assertTrue(WynnPartySyncManager.shouldSendSnapshotForListing(true, null, 42L));
+    }
+
+    @Test
     void authoritativeMembersSnapshotClearsLeaderWhenCurrentLeaderMissing() throws Exception {
         WynnPartySyncManager manager = new WynnPartySyncManager();
 
@@ -86,6 +96,69 @@ class WynnPartySyncManagerTest {
         manager.onSystemChat(Component.literal("Party members: SophiaChan, Guildsman, and C0INZS"));
 
         assertEquals("Guildsman", leaderUsername(manager));
+    }
+
+    @Test
+    void observedMemberLookupIsCaseInsensitive() {
+        WynnPartySyncManager manager = new WynnPartySyncManager();
+
+        manager.onSystemChat(Component.literal("Party members: SophiaChan, and Guildsman"));
+
+        assertEquals(true, manager.isObservedMember("sophiachan"));
+        assertFalse(manager.isObservedMember("SomeoneElse"));
+    }
+
+    @Test
+    void manualScanResponseIsAcceptedOnlyForRequestedListingBeforeDeadline() throws Exception {
+        WynnPartySyncManager manager = new WynnPartySyncManager();
+        setBooleanField(manager, "manualScanPending", true);
+        setField(manager, "manualScanListingId", 42L);
+        setField(manager, "manualScanDeadline", Instant.parse("2026-08-13T12:00:05Z"));
+
+        assertFalse(manager.shouldDiscardPartyListResponse(42L, Instant.parse("2026-08-13T12:00:04Z")));
+        assertEquals(true, manager.shouldDiscardPartyListResponse(43L, Instant.parse("2026-08-13T12:00:04Z")));
+        assertFalse(booleanField(manager, "manualScanPending"));
+    }
+
+    @Test
+    void unansweredManualScanExpires() throws Exception {
+        WynnPartySyncManager manager = new WynnPartySyncManager();
+        setBooleanField(manager, "manualScanPending", true);
+        setField(manager, "manualScanListingId", 42L);
+        setField(manager, "manualScanDeadline", Instant.parse("2026-08-13T12:00:05Z"));
+
+        assertEquals(true, manager.shouldDiscardPartyListResponse(42L, Instant.parse("2026-08-13T12:00:05Z")));
+        assertFalse(booleanField(manager, "manualScanPending"));
+        assertNull(field(manager, "manualScanListingId"));
+        assertFalse(manager.shouldDiscardPartyListResponse(42L, Instant.parse("2026-08-13T12:00:06Z")));
+    }
+
+    @Test
+    void unrelatedNoPartyResponseDoesNotOverwriteObservedState() throws Exception {
+        WynnPartySyncManager manager = new WynnPartySyncManager();
+        manager.onSystemChat(Component.literal("Party members: SophiaChan, and Guildsman"));
+
+        manager.onSystemChat(Component.literal("You must be in a party to use this."));
+
+        assertEquals(true, isActive(manager));
+        assertEquals(List.of("SophiaChan", "Guildsman"), memberUsernames(manager));
+    }
+
+    @Test
+    void manualNoPartyResponsePreservesListingSnapshotState() throws Exception {
+        WynnPartySyncManager manager = new WynnPartySyncManager();
+        manager.onSystemChat(Component.literal("Party members: SophiaChan, and Guildsman"));
+        setBooleanField(manager, "manualScanPending", true);
+        setField(manager, "manualScanListingId", 42L);
+        setField(manager, "manualScanDeadline", Instant.parse("2026-08-13T12:00:05Z"));
+
+        manager.handleNoPartyScanResponse();
+
+        assertEquals(true, isActive(manager));
+        assertEquals(List.of("SophiaChan", "Guildsman"), memberUsernames(manager));
+        assertFalse(booleanField(manager, "manualScanPending"));
+        assertFalse(booleanField(manager, "manualSnapshotReady"));
+        assertNull(field(manager, "manualScanListingId"));
     }
 
     private boolean isInitialized(WynnPartySyncManager manager) throws Exception {
@@ -115,6 +188,30 @@ class WynnPartySyncManagerTest {
         Field leaderField = observedState.getClass().getDeclaredField("leaderUsername");
         leaderField.setAccessible(true);
         return (String) leaderField.get(observedState);
+    }
+
+    private boolean booleanField(WynnPartySyncManager manager, String fieldName) throws Exception {
+        Field field = WynnPartySyncManager.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return field.getBoolean(manager);
+    }
+
+    private void setBooleanField(WynnPartySyncManager manager, String fieldName, boolean value) throws Exception {
+        Field field = WynnPartySyncManager.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.setBoolean(manager, value);
+    }
+
+    private Object field(WynnPartySyncManager manager, String fieldName) throws Exception {
+        Field field = WynnPartySyncManager.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return field.get(manager);
+    }
+
+    private void setField(WynnPartySyncManager manager, String fieldName, Object value) throws Exception {
+        Field field = WynnPartySyncManager.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(manager, value);
     }
 
     private Object observedState(WynnPartySyncManager manager) throws Exception {

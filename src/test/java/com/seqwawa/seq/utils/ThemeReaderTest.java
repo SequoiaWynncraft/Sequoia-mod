@@ -13,6 +13,7 @@ import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -107,13 +108,20 @@ class ThemeReaderTest {
     }
 
     @Test
-    void createsAlphaVariantsWithoutMutatingTheThemeColor() {
-        Theme theme = Theme.defaults();
+    void preservesEveryConfiguredRgbaValueAcrossThemeSerializationAndLookup() throws IOException {
+        for (int alpha : new int[] {0, 1, 42, 127, 254, 255}) {
+            EnumMap<UiColor, Color> colors = new EnumMap<>(UiColor.class);
+            for (UiColor token : UiColor.values()) {
+                colors.put(token, new Color(token.ordinal(), 96, 160, alpha));
+            }
+            Theme source = new Theme("alpha-check", colors);
+            Theme loaded = ThemeReader.fromReader(
+                    new StringReader(ThemeWriter.toYaml(source)), "alpha-check.theme.yml");
 
-        Color translucent = theme.color(UiColor.ACCENT_PRIMARY, 42);
-
-        assertEquals(42, translucent.getAlpha());
-        assertEquals(255, theme.color(UiColor.ACCENT_PRIMARY).getAlpha());
+            for (UiColor token : UiColor.values()) {
+                assertEquals(colors.get(token), loaded.color(token), token.key() + " alpha=" + alpha);
+            }
+        }
     }
 
     private static Theme bundledDefaultTheme() throws IOException {

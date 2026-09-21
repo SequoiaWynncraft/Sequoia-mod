@@ -1,14 +1,45 @@
 package com.seqwawa.seq.managers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import org.junit.jupiter.api.Test;
 
 class GuildBankTrackerTest {
+
+    @Test
+    void forwardsGuildBankEventsForSequoiaMembers() {
+        WynntilsGuildRankAccess.GuildMembership membership =
+                new WynntilsGuildRankAccess.GuildMembership(true, true, "Sequoia");
+
+        assertTrue(GuildBankTracker.shouldForwardForGuild(membership));
+    }
+
+    @Test
+    void dropsGuildBankEventsFromOtherGuilds() {
+        WynntilsGuildRankAccess.GuildMembership membership =
+                new WynntilsGuildRankAccess.GuildMembership(true, false, "Other Guild");
+
+        assertFalse(GuildBankTracker.shouldForwardForGuild(membership));
+    }
+
+    @Test
+    void preservesGuildBankRelayWhenOptionalGuildLookupIsUnavailable() {
+        WynntilsGuildRankAccess.GuildMembership unavailable =
+                new WynntilsGuildRankAccess.GuildMembership(false, false, null);
+        WynntilsGuildRankAccess.GuildMembership notInitialized =
+                new WynntilsGuildRankAccess.GuildMembership(true, false, null);
+
+        assertTrue(GuildBankTracker.shouldForwardForGuild(unavailable));
+        assertTrue(GuildBankTracker.shouldForwardForGuild(notInitialized));
+        assertTrue(GuildBankTracker.shouldForwardForGuild(null));
+    }
 
     @Test
     void parseDepositMessageExtractsStructuredFields() {

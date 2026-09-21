@@ -4,10 +4,6 @@ import java.awt.*;
 
 public class ColorUtils {
 
-    public static Color convertAlpha(Color color, int alpha) {
-        return new Color(color.getRed(), color.getGreen(), color.getBlue(), alpha);
-    }
-
     public static String[] colors() {
         return new String[]{"White", "Blue", "Black", "Cyan", "DarkGray", "Gray", "Green", "LightGray", "Magenta", "Orange", "Pink", "Yellow", "Red"};
     }

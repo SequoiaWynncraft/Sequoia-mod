@@ -135,7 +135,7 @@ public class RaidProfileSetupScreen extends Screen {
             float screenHeight = canvas.metrics().height();
             String fontName = SeqClient.getFontManager().getSelectedFont();
 
-            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY, 190));
+            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
 
             float panelWidth = Math.min(PANEL_WIDTH, screenWidth - 24);
             float panelHeight = panelHeight();
@@ -350,7 +350,7 @@ public class RaidProfileSetupScreen extends Screen {
                     bounds.y(),
                     bounds.width(),
                     bounds.height(),
-                    selected ? color(ACCENT_PRIMARY, 210) : hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+                    selected ? color(ACCENT_PRIMARY_DARK) : hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
             drawText(
                     canvas,
                     fontName,

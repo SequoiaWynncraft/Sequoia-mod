@@ -53,19 +53,14 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float SIDEBAR_PADDING = 10;
     private static final float SIDEBAR_BUTTON_HEIGHT = 22;
     private static final float SIDEBAR_BUTTON_SPACING = 6;
-    private static final float HEADER_HEIGHT = 30;
+    private static final float HEADER_HEIGHT = SequoiaUiStyle.HEADER_HEIGHT;
     private static final float PADDING = 8;
-    private static final float SEARCH_BAR_HEIGHT = 18;
-    private static final float SEARCH_BAR_WIDTH = 140;
+    private static final float SEARCH_BAR_HEIGHT = SequoiaUiStyle.HEADER_CONTROL_HEIGHT;
     private static final float SEARCH_BAR_MARGIN = 8;
     private static final float HEADER_BUTTON_SPACING = 6;
-    private static final float HEADER_MANAGE_BUTTON_W = 88;
-    private static final float HEADER_INVITE_BUTTON_W = 56;
-    private static final float HEADER_OPEN_CLOSE_BUTTON_W = 84;
-    private static final float HEADER_DELIST_BUTTON_W = 72;
-    private static final float HEADER_INVITE_ALL_BUTTON_W = 68;
-    private static final float HEADER_NEW_PARTY_BUTTON_W = 80;
-    private static final float HEADER_ROLE_DROPDOWN_W = 80;
+    private static final float HEADER_BUTTON_HORIZONTAL_PADDING = 8;
+    private static final float HEADER_ROLE_DROPDOWN_MIN_W = 80;
+    private static final float HEADER_ROLE_DROPDOWN_TRAILING_SPACE = 24;
     private static final float SCROLL_SPEED = 12;
     private static final long LOADING_NAME_REFRESH_MS = 1500L;
 
@@ -93,6 +88,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float MODAL_DROPDOWN_H = 20;
     private static final float MODAL_BUTTON_W = 80;
     private static final float MODAL_BUTTON_H = 24;
+    private static final float MODAL_BUTTON_HORIZONTAL_PADDING = 10;
     private static final float REGION_BUTTON_W = 40;
     private static final float REGION_BUTTON_SPACING = 8;
     private static final float JOIN_POLICY_BUTTON_W = 88;
@@ -111,8 +107,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float STATUS_BANNER_H = 26;
     private static final long STATUS_BANNER_DURATION_MS = 3500L;
 
-    // Leader management icon sizes
-    private static final float LEADER_ICON_SIZE = 14;
+    // Leader member-management buttons
+    private static final float LEADER_ACTION_BUTTON_HEIGHT = 20;
+    private static final float LEADER_ACTION_BUTTON_SPACING = 4;
+    private static final float LEADER_ACTION_BUTTON_HORIZONTAL_PADDING = 8;
 
     // ── Font sizes ──
     private static final float TITLE_FONT_SIZE = 18;
@@ -129,7 +127,6 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private static final float MODAL_LABEL_SIZE = 12;
     private static final float TAG_CHIP_FONT_SIZE = 11;
 
-    private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
     private static final String GAZ_EARS_ASSET = "gaz_ears";
     private static final String GAZ_EARS_UUID = "66efb975-31b4-499e-9b46-a34980edd8ee";
     private static final String LEA_UUID = "7792daec-00d8-49ce-b44e-fe97c5ec4e75";
@@ -164,7 +161,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private final Set<String> modalSelectedRaids = new LinkedHashSet<>();
     private int modalReservedSlots = 0;
     private PartyRegion modalSelectedRegion = PartyRegion.NA;
-    private PartyJoinPolicy modalJoinPolicy = PartyJoinPolicy.INVITE_ONLY;
+    private PartyJoinPolicy modalJoinPolicy = PartyJoinPolicy.DEFAULT_CREATE_POLICY;
     private boolean reservedSlotsFocused = false;
     private String reservedSlotsInput = "0";
     private long nextLoadingNameRefreshAtMs = 0L;
@@ -181,12 +178,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private final List<TagChipHitbox> renderedFilterInactiveChipBounds = new ArrayList<>();
 
     // ── Leader member management ──
-    private int hoveredMemberPartyIndex = -1;
-    private int hoveredMemberIndex = -1;
-    private float hoveredPromoteIconX = -1;
-    private float hoveredPromoteIconY = -1;
-    private float hoveredKickIconX = -1;
-    private float hoveredKickIconY = -1;
+    private final List<MemberActionHitbox> renderedMemberActionBounds = new ArrayList<>();
     private String activeStatusBannerMessage;
     private long activeStatusBannerExpiresAtMs;
 
@@ -210,17 +202,32 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
     }
 
-    private record HeaderButtonBounds(float x, float y, float w, float h) {}
+    private enum MemberAction {
+        PROMOTE,
+        KICK
+    }
 
-    private record HeaderControlsLayout(
+    private record MemberActionHitbox(
+            MemberAction action, int partyIndex, int memberIndex, float x, float y, float w, float h) {
+        private boolean contains(float mouseX, float mouseY) {
+            return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
+        }
+    }
+
+    record HeaderButtonBounds(float x, float y, float w, float h) {}
+
+    record HeaderControlsLayout(
             HeaderButtonBounds searchBar,
             HeaderButtonBounds manageButton,
             HeaderButtonBounds inviteButton,
             HeaderButtonBounds openCloseButton,
             HeaderButtonBounds delistButton,
             HeaderButtonBounds inviteAllButton,
+            HeaderButtonBounds scanButton,
             HeaderButtonBounds newPartyButton,
-            HeaderButtonBounds roleDropdown) {}
+            HeaderButtonBounds roleDropdown,
+            float titleRight,
+            float height) {}
 
     public PartyFinderScreen(Screen parent) {
         this(parent, false);
@@ -266,33 +273,20 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
             float panelX = SIDEBAR_WIDTH;
             float panelWidth = screenWidth - SIDEBAR_WIDTH;
+            HeaderControlsLayout headerLayout = computeHeaderControlsLayout(panelX, panelWidth, fontName);
+            float headerHeight = headerLayout.height();
 
             canvas.fillRect(panelX, 0, panelWidth, screenHeight, color(BACKGROUND_BODY));
-            canvas.fillRect(panelX, 0, panelWidth, HEADER_HEIGHT, color(BACKGROUND_HEADER));
-            renderHeaderControls(canvas, fontName, panelX, panelWidth);
-            drawText(
-                    canvas,
-                    fontName,
-                    TITLE_FONT_SIZE,
-                    color(ACCENT_PRIMARY),
-                    panelX + panelWidth - SEARCH_BAR_MARGIN,
-                    HEADER_HEIGHT / 2f,
-                    "Party Finder",
-                    UiCanvas.HorizontalAlign.RIGHT);
+            canvas.fillRect(panelX, 0, panelWidth, headerHeight, color(BACKGROUND_HEADER));
+            renderHeaderControls(canvas, fontName, headerLayout);
 
             // Content area
             float contentX = panelX;
-            float contentY = HEADER_HEIGHT;
+            float contentY = headerHeight;
             float contentWidth = panelWidth;
-            float contentHeight = screenHeight - HEADER_HEIGHT;
+            float contentHeight = screenHeight - headerHeight;
 
-            // Update hovered member tracking
-            hoveredMemberPartyIndex = -1;
-            hoveredMemberIndex = -1;
-            hoveredPromoteIconX = -1;
-            hoveredPromoteIconY = -1;
-            hoveredKickIconX = -1;
-            hoveredKickIconY = -1;
+            renderedMemberActionBounds.clear();
 
             canvas.save();
             canvas.scissor(contentX, contentY, contentWidth, contentHeight);
@@ -333,7 +327,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     filterY,
                     FILTER_BUTTON_W,
                     FILTER_BUTTON_H,
-                    filterHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
+                    filterHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
             drawText(
                     canvas,
                     fontName,
@@ -346,7 +340,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
             // Role dropdown overlay
             if (roleDropdownOpen && !modalOpen && !inviteModalOpen && !filterScreenOpen) {
-                renderRoleDropdownMenu(canvas, fontName);
+                renderRoleDropdownMenu(canvas);
             }
 
             // Modal overlay
@@ -408,7 +402,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float popupX = panelX + (panelWidth - popupW) / 2f;
         float popupY = screenHeight - STATUS_BANNER_H - 10;
 
-        canvas.fillRect(popupX, popupY, popupW, STATUS_BANNER_H, color(ACCENT_PRIMARY_DARK, 235));
+        canvas.fillRect(popupX, popupY, popupW, STATUS_BANNER_H, color(ACCENT_PRIMARY_DARK));
         canvas.strokeRect(popupX, popupY, popupW, STATUS_BANNER_H, 1, color(ACCENT_PRIMARY));
         drawText(
                 canvas,
@@ -425,85 +419,51 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     private void renderSidebar(UiCanvas canvas, String fontName, float screenHeight) {
         canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(BACKGROUND_SIDEBAR));
-        drawText(
-                canvas,
-                fontName,
-                SIDEBAR_TITLE_SIZE,
-                color(ACCENT_PRIMARY),
-                SIDEBAR_WIDTH / 2f,
-                22,
-                "Sequoia",
-                UiCanvas.HorizontalAlign.CENTER);
-        canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_DIVIDER));
+        SequoiaUiStyle.drawSidebarTitle(canvas, fontName, SIDEBAR_WIDTH);
+        canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_PRIMARY_DARK));
 
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-        float btnY = 50;
 
-        drawSidebarButton(canvas, fontName, btnX, btnY, btnW, "Partyfinder", true);
-        drawSidebarButton(
-                canvas,
-                fontName,
-                btnX,
-                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING),
-                btnW,
-                "Connection",
-                false);
-        drawSidebarButton(
-                canvas,
-                fontName,
-                btnX,
-                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
-                btnW,
-                "Settings",
-                false);
-        drawSidebarButton(
-                canvas,
-                fontName,
-                btnX,
-                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
-                btnW,
-                "Map",
-                false);
-        drawSidebarButton(
-                canvas,
-                fontName,
-                btnX,
-                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
-                btnW,
-                "Ingredients",
-                false);
-        drawSidebarButton(
-                canvas,
-                fontName,
-                btnX,
-                btnY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5,
-                btnW,
-                "Github",
-                false);
+        var destinations = SequoiaSidebarNavigation.destinations();
+        var layout = SequoiaSidebarNavigation.sidebarLayout(
+                screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
+        for (int row = 0; row < destinations.size(); row++) {
+            var destination = destinations.get(row);
+            drawSidebarButton(
+                    canvas,
+                    fontName,
+                    btnX,
+                    layout.buttonY(row),
+                    btnW,
+                    layout.buttonHeight(),
+                    destination.label(),
+                    destination == SequoiaSidebarNavigation.Destination.PARTY_FINDER);
+        }
     }
 
     private void drawSidebarButton(
-            UiCanvas canvas, String fontName, float x, float y, float w, String label, boolean active) {
-        boolean hovered = isHovered(uiMouseX, uiMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
-        Color bg = active ? color(ACCENT_PRIMARY_DARK) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
-        canvas.fillRect(x, y, w, SIDEBAR_BUTTON_HEIGHT, bg);
+            UiCanvas canvas, String fontName, float x, float y, float w, float h, String label, boolean active) {
+        boolean hovered = isHovered(uiMouseX, uiMouseY, x, y, w, h);
+        Color bg = SequoiaUiStyle.sidebarButtonColor(active, hovered);
+        canvas.fillRect(x, y, w, h, bg);
         drawText(
                 canvas,
                 fontName,
-                SIDEBAR_BUTTON_SIZE,
+                Math.min(SIDEBAR_BUTTON_SIZE, Math.max(8, h - 2)),
                 color(TEXT_PRIMARY),
                 x + w / 2f,
-                y + SIDEBAR_BUTTON_HEIGHT / 2f,
+                y + h / 2f,
                 label,
                 UiCanvas.HorizontalAlign.CENTER);
     }
 
     // ── Header ──
 
-    private void renderHeaderControls(UiCanvas canvas, String fontName, float panelX, float panelWidth) {
+    private void renderHeaderControls(UiCanvas canvas, String fontName, HeaderControlsLayout layout) {
+        drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY_HOVER),
+                layout.titleRight(), HEADER_HEIGHT / 2f, "Party Finder", UiCanvas.HorizontalAlign.RIGHT);
         searchCursorBlink++;
-        HeaderControlsLayout layout = computeHeaderControlsLayout(panelX);
         HeaderButtonBounds searchBar = layout.searchBar();
         float searchX = searchBar.x();
         float searchY = searchBar.y();
@@ -541,17 +501,18 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         if (searchFocused && (searchCursorBlink / 1000) % 2 == 0) {
             float textW = searchQuery.isEmpty() ? 0 : textWidth(searchQuery, fontName, SEARCH_FONT_SIZE);
-            canvas.fillRect(searchX + 6 + textW + 1, searchY + 3, 1, searchBar.h() - 6, color(TEXT_PRIMARY));
+            canvas.fillRect(Math.min(searchX + 6 + textW + 1, searchX + searchBar.w() - 1),
+                    searchY + 3, 1, searchBar.h() - 6, color(TEXT_PRIMARY));
         }
 
         if (party().isPartyLeader()) {
             String manageLabel = party().hasListedParty() ? "Manage Party" : "New party +";
-            drawHeaderButton(canvas, fontName, layout.manageButton(), manageLabel, color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
-            drawHeaderButton(canvas, fontName, layout.inviteButton(), "Invite", color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
+            drawHeaderButton(canvas, fontName, layout.manageButton(), manageLabel, color(ACCENT_PRIMARY), color(ACCENT_PRIMARY_HOVER));
+            drawHeaderButton(canvas, fontName, layout.inviteButton(), "Invite", color(ACCENT_PRIMARY), color(ACCENT_PRIMARY_HOVER));
             boolean autoClosed = isCurrentListingAutoClosed();
             String openCloseLabel = autoClosed ? "Auto-closed" : (isCurrentListingClosed() ? "Open party" : "Close party");
-            Color openCloseBg = autoClosed ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_DARK_HOVER, 200);
-            Color openCloseHover = autoClosed ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_DARK_HOVER, 220);
+            Color openCloseBg = autoClosed ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_DARK);
+            Color openCloseHover = autoClosed ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_DARK_HOVER);
             drawHeaderButton(
                     canvas,
                     fontName,
@@ -560,19 +521,20 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     openCloseBg,
                     openCloseHover);
             drawHeaderButton(
-                    canvas, fontName, layout.delistButton(), "Delist party", color(CONTROL_DANGER, 200), color(CONTROL_DANGER_HOVER));
-            drawHeaderButton(canvas, fontName, layout.inviteAllButton(), "Invite all", color(ACCENT_PRIMARY, 200), color(ACCENT_PRIMARY_HOVER, 220));
+                    canvas, fontName, layout.delistButton(), "Delist party", color(CONTROL_DANGER), color(CONTROL_DANGER_HOVER));
+            drawHeaderButton(canvas, fontName, layout.inviteAllButton(), "Invite all", color(ACCENT_PRIMARY), color(ACCENT_PRIMARY_HOVER));
+            drawHeaderButton(canvas, fontName, layout.scanButton(), "Scan party", color(ACCENT_PRIMARY), color(ACCENT_PRIMARY_HOVER));
         } else {
             boolean inPartyAsMember = party().getJoinedPartyIndex() >= 0;
-            Color newBg = inPartyAsMember ? color(ACCENT_DISABLED, 180) : color(ACCENT_PRIMARY, 200);
-            Color newHover = inPartyAsMember ? color(ACCENT_DISABLED, 180) : color(ACCENT_PRIMARY_HOVER, 220);
+            Color newBg = inPartyAsMember ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY);
+            Color newHover = inPartyAsMember ? color(ACCENT_DISABLED) : color(ACCENT_PRIMARY_HOVER);
             drawHeaderButton(canvas, fontName, layout.newPartyButton(), "New party +", newBg, newHover);
         }
 
         dropdownRenderX = layout.roleDropdown().x();
         dropdownRenderY = layout.roleDropdown().y();
         dropdownRenderW = layout.roleDropdown().w();
-        renderRoleDropdownButton(canvas, fontName, layout.roleDropdown());
+        renderRoleDropdownButton(canvas, layout.roleDropdown());
     }
 
     private void drawHeaderButton(
@@ -676,104 +638,99 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         };
     }
 
-    private HeaderControlsLayout computeHeaderControlsLayout(float panelX) {
-        float searchX = panelX + SEARCH_BAR_MARGIN;
-        float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
-        HeaderButtonBounds searchBar = new HeaderButtonBounds(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT);
-
-        float nextButtonX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
-        HeaderButtonBounds manageButton = null;
-        HeaderButtonBounds inviteButton = null;
-        HeaderButtonBounds openCloseButton = null;
-        HeaderButtonBounds delistButton = null;
-        HeaderButtonBounds inviteAllButton = null;
-        HeaderButtonBounds newPartyButton = null;
-
+    private HeaderControlsLayout computeHeaderControlsLayout(float panelX, float panelWidth, String fontName) {
+        List<Float> widths = new ArrayList<>();
         if (party().isPartyLeader()) {
-            manageButton = new HeaderButtonBounds(nextButtonX, searchY, HEADER_MANAGE_BUTTON_W, SEARCH_BAR_HEIGHT);
-            nextButtonX += HEADER_MANAGE_BUTTON_W + HEADER_BUTTON_SPACING;
-
-            inviteButton = new HeaderButtonBounds(nextButtonX, searchY, HEADER_INVITE_BUTTON_W, SEARCH_BAR_HEIGHT);
-            nextButtonX += HEADER_INVITE_BUTTON_W + HEADER_BUTTON_SPACING;
-
-            openCloseButton =
-                    new HeaderButtonBounds(nextButtonX, searchY, HEADER_OPEN_CLOSE_BUTTON_W, SEARCH_BAR_HEIGHT);
-            nextButtonX += HEADER_OPEN_CLOSE_BUTTON_W + HEADER_BUTTON_SPACING;
-
-            delistButton = new HeaderButtonBounds(nextButtonX, searchY, HEADER_DELIST_BUTTON_W, SEARCH_BAR_HEIGHT);
-            nextButtonX += HEADER_DELIST_BUTTON_W + HEADER_BUTTON_SPACING;
-
-            inviteAllButton =
-                    new HeaderButtonBounds(nextButtonX, searchY, HEADER_INVITE_ALL_BUTTON_W, SEARCH_BAR_HEIGHT);
-            nextButtonX += HEADER_INVITE_ALL_BUTTON_W + HEADER_BUTTON_SPACING;
+            widths.add(paddedHeaderButtonWidth(party().hasListedParty() ? "Manage Party" : "New party +", fontName));
+            widths.add(paddedHeaderButtonWidth("Invite", fontName));
+            widths.add(paddedHeaderButtonWidth(
+                    isCurrentListingAutoClosed()
+                            ? "Auto-closed"
+                            : (isCurrentListingClosed() ? "Open party" : "Close party"),
+                    fontName));
+            widths.add(paddedHeaderButtonWidth("Delist party", fontName));
+            widths.add(paddedHeaderButtonWidth("Invite all", fontName));
+            widths.add(paddedHeaderButtonWidth("Scan party", fontName));
         } else {
-            newPartyButton = new HeaderButtonBounds(nextButtonX, searchY, HEADER_NEW_PARTY_BUTTON_W, SEARCH_BAR_HEIGHT);
-            nextButtonX += HEADER_NEW_PARTY_BUTTON_W + HEADER_BUTTON_SPACING;
+            widths.add(paddedHeaderButtonWidth("New party +", fontName));
         }
 
-        HeaderButtonBounds roleDropdown =
-                new HeaderButtonBounds(nextButtonX, searchY, HEADER_ROLE_DROPDOWN_W, SEARCH_BAR_HEIGHT);
+        return computeHeaderControlsLayout(panelX, panelWidth, widths, roleDropdownWidth(fontName),
+                textWidth("Party Finder", fontName, TITLE_FONT_SIZE), party().isPartyLeader());
+    }
+
+    static HeaderControlsLayout computeHeaderControlsLayout(
+            float panelX, float panelWidth, List<Float> actionWidths, float preferredRoleWidth,
+            float titleWidth, boolean leader) {
+        float searchX = panelX + SEARCH_BAR_MARGIN;
+        float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
+        float rightEdge = panelX + panelWidth - SEARCH_BAR_MARGIN;
+        float availableWidth = Math.max(0, rightEdge - searchX);
+        float rowRightEdge = Math.max(searchX, rightEdge - titleWidth - HEADER_BUTTON_SPACING);
+        float searchWidth = SequoiaUiStyle.searchWidth(rowRightEdge - searchX - HEADER_BUTTON_SPACING);
+        HeaderButtonBounds searchBar = new HeaderButtonBounds(searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT);
+        float roleWidth = Math.min(preferredRoleWidth, Math.max(50f, panelWidth * 0.3f));
+        List<Float> widths = new ArrayList<>(actionWidths);
+        widths.add(1, roleWidth);
+
+        float nextButtonX = searchX + searchWidth + HEADER_BUTTON_SPACING;
+        float buttonY = searchY;
+        HeaderButtonBounds[] buttons = new HeaderButtonBounds[widths.size()];
+        for (int index = 0; index < widths.size(); index++) {
+            float width = Math.min(widths.get(index), availableWidth);
+            // Keep New/Manage Party and Your role together whenever a full row can fit both.
+            float groupWidth = index == 0 ? width + HEADER_BUTTON_SPACING + roleWidth : width;
+            float requiredWidth = groupWidth <= availableWidth ? groupWidth : width;
+            if (nextButtonX + requiredWidth > rowRightEdge) {
+                buttonY += SEARCH_BAR_HEIGHT + HEADER_BUTTON_SPACING;
+                nextButtonX = searchX;
+                rowRightEdge = rightEdge;
+            }
+            buttons[index] = new HeaderButtonBounds(nextButtonX, buttonY, width, SEARCH_BAR_HEIGHT);
+            nextButtonX += width + HEADER_BUTTON_SPACING;
+        }
+
+        float headerHeight = Math.max(HEADER_HEIGHT, buttonY + SEARCH_BAR_HEIGHT + searchY);
         return new HeaderControlsLayout(
                 searchBar,
-                manageButton,
-                inviteButton,
-                openCloseButton,
-                delistButton,
-                inviteAllButton,
-                newPartyButton,
-                roleDropdown);
+                leader ? buttons[0] : null,
+                leader ? buttons[2] : null,
+                leader ? buttons[3] : null,
+                leader ? buttons[4] : null,
+                leader ? buttons[5] : null,
+                leader ? buttons[6] : null,
+                leader ? null : buttons[0],
+                buttons[1],
+                rightEdge,
+                headerHeight);
+    }
+
+    private static float paddedHeaderButtonWidth(String label, String fontName) {
+        return (float) Math.ceil(textWidth(label, fontName, HEADER_BUTTON_SIZE))
+                + HEADER_BUTTON_HORIZONTAL_PADDING * 2;
+    }
+
+    private static float roleDropdownWidth(String fontName) {
+        float widestLabel = textWidth("Your role", fontName, HEADER_BUTTON_SIZE);
+        for (String role : ROLES) {
+            widestLabel = Math.max(widestLabel, textWidth(role, fontName, HEADER_BUTTON_SIZE));
+        }
+        return Math.max(
+                HEADER_ROLE_DROPDOWN_MIN_W,
+                (float) Math.ceil(widestLabel) + HEADER_BUTTON_HORIZONTAL_PADDING + HEADER_ROLE_DROPDOWN_TRAILING_SPACE);
     }
 
     // ── Role dropdown ──
 
-    private void renderRoleDropdownButton(UiCanvas canvas, String fontName, HeaderButtonBounds bounds) {
-        float x = bounds.x();
-        float y = bounds.y();
-        float w = bounds.w();
-        float h = bounds.h();
-        boolean hovered = isHovered(uiMouseX, uiMouseY, x, y, w, h);
-        canvas.fillRect(x, y, w, h, hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
-        canvas.strokeRect(x, y, w, h, 1, color(CONTROL_INPUT_SECONDARY));
-
-        String label = selectedRole != null ? selectedRole : "Your role";
-        drawText(
-                canvas,
-                fontName,
-                HEADER_BUTTON_SIZE,
-                color(TEXT_PRIMARY),
-                x + 6,
-                y + h / 2f,
-                label,
-                UiCanvas.HorizontalAlign.LEFT);
-        drawTriangle(canvas, x + w - 8, y + h / 2f, 5, false, color(ACCENT_SECONDARY));
+    private void renderRoleDropdownButton(UiCanvas canvas, HeaderButtonBounds bounds) {
+        DropdownMenu.trigger(canvas, bounds.x(), bounds.y(), bounds.w(), bounds.h(),
+                selectedRole != null ? selectedRole : "Your role", roleDropdownOpen, true, uiMouseX, uiMouseY);
     }
 
-    private void renderRoleDropdownMenu(UiCanvas canvas, String fontName) {
-        float x = dropdownRenderX;
-        float y = dropdownRenderY + SEARCH_BAR_HEIGHT;
-        float w = dropdownRenderW;
-        float itemH = 20;
-        float totalH = ROLES.length * itemH;
-
-        canvas.fillRect(x, y, w, totalH, color(BACKGROUND_POPUP));
-        canvas.strokeRect(x, y, w, totalH, 1, color(CONTROL_INPUT_SECONDARY));
-
-        for (int i = 0; i < ROLES.length; i++) {
-            float itemY = y + i * itemH;
-            boolean itemHovered = isHovered(uiMouseX, uiMouseY, x, itemY, w, itemH);
-            if (itemHovered) {
-                canvas.fillRect(x, itemY, w, itemH, color(CONTROL_INPUT_HOVER));
-            }
-            drawText(
-                    canvas,
-                    fontName,
-                    MEMBER_FONT_SIZE,
-                    color(TEXT_PRIMARY),
-                    x + 6,
-                    itemY + itemH / 2f,
-                    ROLES[i],
-                    UiCanvas.HorizontalAlign.LEFT);
-        }
+    private void renderRoleDropdownMenu(UiCanvas canvas) {
+        DropdownMenu.list(canvas, dropdownRenderX, dropdownRenderY + SEARCH_BAR_HEIGHT, dropdownRenderW,
+                DropdownMenu.ROW_HEIGHT, java.util.Arrays.asList(ROLES), i -> ROLES[i].equals(selectedRole),
+                0, ROLES.length, uiMouseX, uiMouseY);
     }
 
     // ── Party cards ──
@@ -867,35 +824,45 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         float lastMemberCenterY = memberY - MEMBER_ROW_HEIGHT / 2f;
 
-        // Join/Leave/Joined
+        // Join/Leave. Leaders already know they are in their own party, and keeping
+        // this area free gives their member-management buttons a stable home.
         float joinX = x + w - CARD_PADDING - JOIN_BUTTON_WIDTH;
         float joinY = memberY - MEMBER_ROW_HEIGHT + (MEMBER_ROW_HEIGHT - BUTTON_HEIGHT) / 2f;
-        boolean showJoinedDisabled = isMyParty;
         boolean alreadyInParty = party().getJoinedPartyIndex() >= 0 && !isJoined;
         boolean listingUnavailable = !isJoined && !party.isJoinable();
-        boolean buttonDisabled = showJoinedDisabled || alreadyInParty || listingUnavailable;
-        boolean joinHovered =
-                !buttonDisabled && isHovered(uiMouseX, uiMouseY, joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT);
-        Color joinBg =
-                buttonDisabled ? color(ACCENT_DISABLED) : (joinHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
-        canvas.fillRect(joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT, joinBg);
+        if (!isMyParty) {
+            boolean buttonDisabled = alreadyInParty || listingUnavailable;
+            boolean joinHovered =
+                    !buttonDisabled && isHovered(uiMouseX, uiMouseY, joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT);
+            Color joinBg = buttonDisabled
+                    ? color(ACCENT_DISABLED)
+                    : (joinHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
+            canvas.fillRect(joinX, joinY, JOIN_BUTTON_WIDTH, BUTTON_HEIGHT, joinBg);
 
-        Color textCol = buttonDisabled ? color(TEXT_DISABLED) : color(TEXT_PRIMARY);
-        String actionText = showJoinedDisabled
-                ? "Joined"
-                : (isJoined ? "Leave" : partyActionLabel(party));
-        drawText(
-                canvas,
-                fontName,
-                MEMBER_FONT_SIZE,
-                textCol,
-                joinX + JOIN_BUTTON_WIDTH / 2f,
-                joinY + BUTTON_HEIGHT / 2f,
-                actionText,
-                UiCanvas.HorizontalAlign.CENTER);
+            Color textCol = buttonDisabled ? color(TEXT_DISABLED) : color(TEXT_PRIMARY);
+            String actionText = isJoined ? "Leave" : partyActionLabel(party);
+            drawText(
+                    canvas,
+                    fontName,
+                    MEMBER_FONT_SIZE,
+                    textCol,
+                    joinX + JOIN_BUTTON_WIDTH / 2f,
+                    joinY + BUTTON_HEIGHT / 2f,
+                    actionText,
+                    UiCanvas.HorizontalAlign.CENTER);
+        }
 
         // Tag label
-        float labelRightX = x + w - CARD_PADDING - JOIN_BUTTON_WIDTH - 8;
+        PartyMember lastMember = party.members.isEmpty() ? null : party.members.getLast();
+        boolean lastMemberHasLeaderActions = amLeaderOfThisParty
+                && lastMember != null
+                && !lastMember.isLeader
+                && !lastMember.isReserved
+                && !lastMember.isObserved;
+        float rightSideWidth = isMyParty
+                ? (lastMemberHasLeaderActions ? leaderActionButtonsWidth(fontName) + 8 : 0)
+                : JOIN_BUTTON_WIDTH + 8;
+        float labelRightX = x + w - CARD_PADDING - rightSideWidth;
         drawText(
                 canvas,
                 fontName,
@@ -947,12 +914,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         rowX += STATUS_BADGE_W + 8;
 
         float rightX = x + w - CARD_PADDING;
-        float reservedRightWidth = 22;
-        for (int j = 0; j < party.members.size(); j++) {
-            if (getClassIcon(party.members.get(j).className) != null) {
-                reservedRightWidth += CLASS_ICON_SIZE + 4;
-            }
-        }
+        List<AssetManager.Asset> classIcons = party.members.stream()
+                .map(this::getMemberClassIcon)
+                .filter(Objects::nonNull)
+                .toList();
+        float reservedRightWidth = 22 + classIcons.size() * (CLASS_ICON_SIZE + 4);
         reservedRightWidth += 6;
         reservedRightWidth += textWidth(getPartyCardLabel(party), fontName, TYPE_FONT_SIZE);
         float leaderTextMaxX = rightX - reservedRightWidth;
@@ -994,14 +960,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 UiCanvas.HorizontalAlign.RIGHT);
         rightX -= 22;
 
-        for (int j = party.members.size() - 1; j >= 0; j--) {
-            AssetManager.Asset icon = getClassIcon(party.members.get(j).className);
-            if (icon != null) {
-                float iconX = rightX - CLASS_ICON_SIZE;
-                float iconY = y + (COLLAPSED_ROW_HEIGHT - CLASS_ICON_SIZE) / 2f;
-                drawImage(canvas, icon, iconX, iconY, CLASS_ICON_SIZE, CLASS_ICON_SIZE, 255);
-                rightX -= CLASS_ICON_SIZE + 4;
-            }
+        for (int j = classIcons.size() - 1; j >= 0; j--) {
+            float iconX = rightX - CLASS_ICON_SIZE;
+            float iconY = centerY - CLASS_ICON_SIZE / 2f;
+            drawImage(canvas, classIcons.get(j), iconX, iconY, CLASS_ICON_SIZE, CLASS_ICON_SIZE, 255);
+            rightX -= CLASS_ICON_SIZE + 4;
         }
 
         rightX -= 6;
@@ -1055,15 +1018,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         float rowX = x;
         float centerY = y + MEMBER_ROW_HEIGHT / 2f;
 
-        // Hover detection for leader management
-        boolean isHoveredMember = false;
-        if (amLeaderOfThisParty && !member.isLeader && !member.isReserved) {
-            if (isHovered(uiMouseX, uiMouseY, x, y, w, MEMBER_ROW_HEIGHT)) {
-                isHoveredMember = true;
-                hoveredMemberPartyIndex = partyIndex;
-                hoveredMemberIndex = memberIndex;
-            }
-        }
+        boolean showLeaderActions =
+                amLeaderOfThisParty && !member.isLeader && !member.isReserved && !member.isObserved;
 
         if (member.isLeader) {
             AssetManager.Asset starIcon = getClassIcon("star");
@@ -1074,14 +1030,18 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
         rowX += STAR_ICON_SIZE + 4;
 
-        // Member name - dimmed if hovered for management
-        Color nameColor = isHoveredMember ? color(TEXT_DISABLED, 180) : color(TEXT_SECONDARY);
-        String memberName = member.displayName();
+        float actionButtonsWidth = showLeaderActions ? leaderActionButtonsWidth(fontName) + 8 : 0;
+        float memberSuffixWidth = memberSuffixWidth(member, fontName);
+        String memberName = fitTextToWidth(
+                member.displayName(),
+                fontName,
+                MEMBER_FONT_SIZE,
+                Math.max(0, x + w - actionButtonsWidth - memberSuffixWidth - rowX));
         drawText(
                 canvas,
                 fontName,
                 MEMBER_FONT_SIZE,
-                nameColor,
+                color(TEXT_SECONDARY),
                 rowX,
                 centerY,
                 memberName,
@@ -1089,37 +1049,20 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         float nameW = textWidth(memberName, fontName, MEMBER_FONT_SIZE);
 
-        // Draw promote/kick icons on hover
-        if (isHoveredMember) {
-            AssetManager.Asset starupIcon = getClassIcon("starup");
-            AssetManager.Asset crossIcon = getClassIcon("cross");
-            float iconY = centerY - LEADER_ICON_SIZE / 2f;
-            float promoteX = rowX;
-            float crossX = rowX + nameW - LEADER_ICON_SIZE;
-
-            hoveredPromoteIconX = promoteX;
-            hoveredPromoteIconY = iconY;
-            hoveredKickIconX = crossX;
-            hoveredKickIconY = iconY;
-
-            if (starupIcon != null) {
-                drawImage(canvas, starupIcon, promoteX, iconY, LEADER_ICON_SIZE, LEADER_ICON_SIZE, 255);
-            }
-            if (crossIcon != null) {
-                drawImage(canvas, crossIcon, crossX, iconY, LEADER_ICON_SIZE, LEADER_ICON_SIZE, 255);
-            }
+        if (showLeaderActions) {
+            renderLeaderMemberActions(canvas, fontName, x, y, w, partyIndex, memberIndex);
         }
 
         rowX += nameW + 8;
 
-        AssetManager.Asset icon = getClassIcon(member.className);
+        AssetManager.Asset icon = getMemberClassIcon(member);
         if (icon != null) {
             float iconY = y + (MEMBER_ROW_HEIGHT - CLASS_ICON_SIZE) / 2f;
             drawImage(canvas, icon, rowX, iconY, CLASS_ICON_SIZE, CLASS_ICON_SIZE, 255);
             rowX += CLASS_ICON_SIZE + 6;
         }
 
-        if (!member.isReserved) {
+        if (!member.isReserved && !member.isObserved) {
             drawText(
                     canvas,
                     fontName,
@@ -1130,6 +1073,102 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     "(" + member.role + ")",
                     UiCanvas.HorizontalAlign.LEFT);
         }
+    }
+
+    private float memberSuffixWidth(PartyMember member, String fontName) {
+        float width = 8;
+        if (getMemberClassIcon(member) != null) {
+            width += CLASS_ICON_SIZE + 6;
+        }
+        if (!member.isReserved && !member.isObserved) {
+            width += textWidth("(" + member.role + ")", fontName, ROLE_FONT_SIZE);
+        }
+        return width;
+    }
+
+    private void renderLeaderMemberActions(
+            UiCanvas canvas, String fontName, float rowX, float rowY, float rowWidth, int partyIndex, int memberIndex) {
+        float promoteButtonWidth = leaderActionButtonWidth("Promote", fontName);
+        float kickButtonWidth = leaderActionButtonWidth("Kick", fontName);
+        float buttonY = rowY + (MEMBER_ROW_HEIGHT - LEADER_ACTION_BUTTON_HEIGHT) / 2f;
+        float kickX = rowX + rowWidth - kickButtonWidth;
+        float promoteX = kickX - LEADER_ACTION_BUTTON_SPACING - promoteButtonWidth;
+        boolean promoteHovered = isHovered(
+                uiMouseX,
+                uiMouseY,
+                promoteX,
+                buttonY,
+                promoteButtonWidth,
+                LEADER_ACTION_BUTTON_HEIGHT);
+        boolean kickHovered = isHovered(
+                uiMouseX, uiMouseY, kickX, buttonY, kickButtonWidth, LEADER_ACTION_BUTTON_HEIGHT);
+
+        canvas.fillRect(
+                promoteX,
+                buttonY,
+                promoteButtonWidth,
+                LEADER_ACTION_BUTTON_HEIGHT,
+                promoteHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
+        drawText(
+                canvas,
+                fontName,
+                HEADER_BUTTON_SIZE,
+                color(TEXT_PRIMARY),
+                promoteX + promoteButtonWidth / 2f,
+                buttonY + LEADER_ACTION_BUTTON_HEIGHT / 2f,
+                "Promote",
+                UiCanvas.HorizontalAlign.CENTER);
+
+        canvas.fillRect(
+                kickX,
+                buttonY,
+                kickButtonWidth,
+                LEADER_ACTION_BUTTON_HEIGHT,
+                kickHovered ? color(CONTROL_DANGER_HOVER) : color(CONTROL_DANGER));
+        drawText(
+                canvas,
+                fontName,
+                HEADER_BUTTON_SIZE,
+                color(TEXT_PRIMARY),
+                kickX + kickButtonWidth / 2f,
+                buttonY + LEADER_ACTION_BUTTON_HEIGHT / 2f,
+                "Kick",
+                UiCanvas.HorizontalAlign.CENTER);
+
+        renderedMemberActionBounds.add(new MemberActionHitbox(
+                MemberAction.PROMOTE,
+                partyIndex,
+                memberIndex,
+                promoteX,
+                buttonY,
+                promoteButtonWidth,
+                LEADER_ACTION_BUTTON_HEIGHT));
+        renderedMemberActionBounds.add(new MemberActionHitbox(
+                MemberAction.KICK,
+                partyIndex,
+                memberIndex,
+                kickX,
+                buttonY,
+                kickButtonWidth,
+                LEADER_ACTION_BUTTON_HEIGHT));
+    }
+
+    private static float leaderActionButtonsWidth(String fontName) {
+        return leaderActionButtonWidth("Promote", fontName)
+                + LEADER_ACTION_BUTTON_SPACING
+                + leaderActionButtonWidth("Kick", fontName);
+    }
+
+    private static float leaderActionButtonWidth(String label, String fontName) {
+        return (float) Math.ceil(textWidth(label, fontName, HEADER_BUTTON_SIZE))
+                + LEADER_ACTION_BUTTON_HORIZONTAL_PADDING * 2;
+    }
+
+    private static float modalActionButtonWidth(String label, String fontName) {
+        return Math.max(
+                MODAL_BUTTON_W,
+                (float) Math.ceil(textWidth(label, fontName, MODAL_LABEL_SIZE))
+                        + MODAL_BUTTON_HORIZONTAL_PADDING * 2);
     }
 
     // ── Small triangle arrow (pointing up or down) ──
@@ -1255,7 +1294,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 if (raidIcon != null) {
                     canvas.fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
                 } else {
-                    canvas.fillPath(color(ACCENT_PRIMARY, 120));
+                    canvas.fillPath(color(ACCENT_PRIMARY));
                 }
                 canvas.restore();
             } else {
@@ -1270,7 +1309,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     canvas.fillCurrentPathWithImage(raidIcon.getImage(), x, y, size, size, 1.0f);
                 } else {
                     // Fallback solid color for missing icon
-                    canvas.fillPath(color(ACCENT_PRIMARY, 120));
+                    canvas.fillPath(color(ACCENT_PRIMARY));
                 }
                 canvas.restore();
             }
@@ -1281,13 +1320,13 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 float splitAngle = startAngle;
                 float dx = radius * (float) Math.cos(splitAngle);
                 float dy = radius * (float) Math.sin(splitAngle);
-                canvas.strokeLine(cx - dx, cy - dy, cx + dx, cy + dy, 1.25f, color(ACCENT_DIVIDER));
+                canvas.strokeLine(cx - dx, cy - dy, cx + dx, cy + dy, 1.25f, color(ACCENT_PRIMARY_DARK));
             } else {
                 for (int i = 0; i < count; i++) {
                     float splitAngle = startAngle + i * anglePerSlice;
                     float edgeX = cx + radius * (float) Math.cos(splitAngle);
                     float edgeY = cy + radius * (float) Math.sin(splitAngle);
-                    canvas.strokeLine(cx, cy, edgeX, edgeY, 1.25f, color(ACCENT_DIVIDER));
+                    canvas.strokeLine(cx, cy, edgeX, edgeY, 1.25f, color(ACCENT_PRIMARY_DARK));
                 }
             }
         }
@@ -1340,7 +1379,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
             // Selection highlight behind icon
             if (selected) {
-                canvas.fillCircle(rcx, rcy, RAID_CIRCLE_SIZE / 2f - 2, color(ACCENT_PRIMARY, 120));
+                canvas.fillCircle(rcx, rcy, RAID_CIRCLE_SIZE / 2f - 2, color(ACCENT_PRIMARY));
             }
 
             // Draw raid icon image (or text fallback for raids without an asset)
@@ -1466,7 +1505,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     regionButtonsY,
                     REGION_BUTTON_W,
                     MODAL_DROPDOWN_H,
-                    regionSelected ? color(ACCENT_PRIMARY, 120) : (regionHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT)));
+                    regionSelected ? color(ACCENT_PRIMARY) : (regionHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT)));
             canvas.strokeRect(
                     regionX,
                     regionButtonsY,
@@ -1520,7 +1559,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                     JOIN_POLICY_BUTTON_W,
                     MODAL_DROPDOWN_H,
                     joinPolicySelected
-                            ? color(ACCENT_PRIMARY, 120)
+                            ? color(ACCENT_PRIMARY)
                             : (joinPolicyHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT)));
             canvas.strokeRect(
                     joinPolicyX,
@@ -1542,23 +1581,25 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         // Create/Update button
-        float createBtnX = modalX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
-        float createBtnY = modalY + PARTY_MODAL_HEIGHT - MODAL_BUTTON_H - 14;
         String createLabel = party().hasListedParty() ? "Update party" : "Create party";
-        boolean createHovered = isHovered(uiMouseX, uiMouseY, createBtnX, createBtnY, MODAL_BUTTON_W, MODAL_BUTTON_H);
+        float createButtonWidth = modalActionButtonWidth(createLabel, fontName);
+        float createBtnX = modalX + (MODAL_WIDTH - createButtonWidth) / 2f;
+        float createBtnY = modalY + PARTY_MODAL_HEIGHT - MODAL_BUTTON_H - 14;
+        boolean createHovered =
+                isHovered(uiMouseX, uiMouseY, createBtnX, createBtnY, createButtonWidth, MODAL_BUTTON_H);
         canvas.fillRect(
                 createBtnX,
                 createBtnY,
-                MODAL_BUTTON_W,
+                createButtonWidth,
                 MODAL_BUTTON_H,
-                createHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
+                createHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
 
         drawText(
                 canvas,
                 fontName,
                 MODAL_LABEL_SIZE,
                 color(TEXT_PRIMARY),
-                createBtnX + MODAL_BUTTON_W / 2f,
+                createBtnX + createButtonWidth / 2f,
                 createBtnY + MODAL_BUTTON_H / 2f,
                 createLabel,
                 UiCanvas.HorizontalAlign.CENTER);
@@ -1597,7 +1638,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Active filters box
         float activeBoxY = filterY + 34;
-        canvas.fillRect(boxX, activeBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
+        canvas.fillRect(boxX, activeBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE));
         drawText(
                 canvas,
                 fontName,
@@ -1622,7 +1663,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
         // Inactive filters box
         float inactiveBoxY = activeBoxY + boxH + 8;
-        canvas.fillRect(boxX, inactiveBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE, 240));
+        canvas.fillRect(boxX, inactiveBoxY, boxW, boxH, color(BACKGROUND_BODY_OPAQUE));
         drawText(
                 canvas,
                 fontName,
@@ -1656,7 +1697,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 backY,
                 backW,
                 backH,
-                backHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
+                backHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
         drawText(
                 canvas,
                 fontName,
@@ -1725,13 +1766,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             }
 
             boolean chipHovered = isHovered(uiMouseX, uiMouseY, curX, curY, chipW, chipH);
-            canvas.fillRoundedRect(
+            canvas.fillRect(
                     curX,
                     curY,
                     chipW,
                     chipH,
-                    4,
-                    chipHovered ? color(CONTROL_INPUT_HOVER) : color(ACCENT_DIVIDER, 220));
+                    chipHovered ? color(CONTROL_INPUT_HOVER) : color(ACCENT_DIVIDER));
 
             drawText(
                     canvas,
@@ -1761,6 +1801,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     }
 
     // ── Helpers ──
+
+    private AssetManager.Asset getMemberClassIcon(PartyMember member) {
+        AssetManager.Asset icon = getClassIcon(member.classIconKey());
+        return icon != null && icon.getImage() != null ? icon : null;
+    }
 
     private AssetManager.Asset getClassIcon(String className) {
         if (className == null || SeqClient.assetManager == null) return null;
@@ -2020,80 +2065,31 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             return handleModalClick(mx, my, screenWidth, screenHeight);
         }
 
-        // ── Role dropdown menu ──
         if (roleDropdownOpen) {
-            float itemH = 20;
-            float menuY = dropdownRenderY + SEARCH_BAR_HEIGHT;
-            for (int i = 0; i < ROLES.length; i++) {
-                float itemY = menuY + i * itemH;
-                if (isHovered(mx, my, dropdownRenderX, itemY, dropdownRenderW, itemH)) {
-                    selectedRole = ROLES[i].equals(selectedRole) ? null : ROLES[i];
-                    roleDropdownOpen = false;
-                    if (selectedRole != null) {
-                        party().setRole(selectedRole);
-                    }
-                    return true;
-                }
-            }
+            int index = DropdownMenu.optionAt(mx, my, dropdownRenderX, dropdownRenderY + SEARCH_BAR_HEIGHT,
+                    dropdownRenderW, DropdownMenu.ROW_HEIGHT, ROLES.length, 0);
             roleDropdownOpen = false;
+            if (index >= 0) {
+                selectedRole = ROLES[index].equals(selectedRole) ? null : ROLES[index];
+                if (selectedRole != null) party().setRole(selectedRole);
+            }
+            return true;
         }
 
         // ── Sidebar ──
         float btnX = SIDEBAR_PADDING;
         float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-        float btnStartY = 50;
 
-        if (isHovered(mx, my, btnX, btnStartY, btnW, SIDEBAR_BUTTON_HEIGHT)) return true;
-        if (isHovered(
-                mx,
-                my,
-                btnX,
-                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING),
-                btnW,
-                SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new ConnectionScreen(this));
-            return true;
-        }
-        if (isHovered(
-                mx,
-                my,
-                btnX,
-                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
-                btnW,
-                SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new SettingsScreen(this));
-            return true;
-        }
-        if (isHovered(
-                mx,
-                my,
-                btnX,
-                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
-                btnW,
-                SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new WorldMapScreen(this));
-            return true;
-        }
-        if (isHovered(
-                mx,
-                my,
-                btnX,
-                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
-                btnW,
-                SIDEBAR_BUTTON_HEIGHT)) {
-            SeqClient.mc.setScreen(new IngredientGuideScreen(this));
-            return true;
-        }
-        if (isHovered(
-                mx,
-                my,
-                btnX,
-                btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5,
-                btnW,
-                SIDEBAR_BUTTON_HEIGHT)) {
-            try {
-                java.awt.Desktop.getDesktop().browse(java.net.URI.create(GITHUB_URL));
-            } catch (Exception ignored) {
+        var destinations = SequoiaSidebarNavigation.destinations();
+        var layout = SequoiaSidebarNavigation.sidebarLayout(
+                screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
+        for (int row = 0; row < destinations.size(); row++) {
+            if (!isHovered(mx, my, btnX, layout.buttonY(row), btnW, layout.buttonHeight())) {
+                continue;
+            }
+            var destination = destinations.get(row);
+            if (destination != SequoiaSidebarNavigation.Destination.PARTY_FINDER) {
+                SequoiaSidebarNavigation.open(destination, this);
             }
             return true;
         }
@@ -2101,7 +2097,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         // ── Header ──
         float panelX = SIDEBAR_WIDTH;
         float panelWidth = screenWidth - SIDEBAR_WIDTH;
-        HeaderControlsLayout headerLayout = computeHeaderControlsLayout(panelX);
+        String fontName = SeqClient.getFontManager().getSelectedFont();
+        HeaderControlsLayout headerLayout = computeHeaderControlsLayout(panelX, panelWidth, fontName);
 
         if (isHovered(mx, my, headerLayout.searchBar())) {
             searchFocused = true;
@@ -2143,6 +2140,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                                 SeqClient.mc.execute(() -> showStatusBanner(inviteAllResult.message())));
                 return true;
             }
+            if (isHovered(mx, my, headerLayout.scanButton())) {
+                var result = party().scanCurrentWynnParty();
+                showStatusBanner(result.message());
+                return true;
+            }
         } else {
             if (isHovered(mx, my, headerLayout.newPartyButton())) {
                 if (party().getJoinedPartyIndex() < 0) {
@@ -2166,8 +2168,8 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         // ── Scrollbar ──
-        float contentY = HEADER_HEIGHT;
-        float contentHeight = screenHeight - HEADER_HEIGHT;
+        float contentY = headerLayout.height();
+        float contentHeight = screenHeight - contentY;
 
         if (maxScroll > 0) {
             float scrollbarX = panelX + panelWidth - 5;
@@ -2182,17 +2184,17 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         if (mx < panelX || my < contentY || my > contentY + contentHeight)
             return super.mouseClicked(click, outsideScreen);
 
-        // ── Leader management icon clicks ──
-        if (hoveredMemberPartyIndex >= 0 && hoveredMemberIndex >= 0) {
-            if (isHovered(mx, my, hoveredPromoteIconX, hoveredPromoteIconY, LEADER_ICON_SIZE, LEADER_ICON_SIZE)) {
-                party().promoteMember(hoveredMemberPartyIndex, hoveredMemberIndex);
-                return true;
+        // ── Leader member-management buttons ──
+        for (MemberActionHitbox action : renderedMemberActionBounds) {
+            if (!action.contains(mx, my)) {
+                continue;
             }
-
-            if (isHovered(mx, my, hoveredKickIconX, hoveredKickIconY, LEADER_ICON_SIZE, LEADER_ICON_SIZE)) {
-                party().kickMember(hoveredMemberPartyIndex, hoveredMemberIndex);
-                return true;
+            if (action.action() == MemberAction.PROMOTE) {
+                party().promoteMember(action.partyIndex(), action.memberIndex());
+            } else {
+                party().kickMember(action.partyIndex(), action.memberIndex());
             }
+            return true;
         }
 
         // ── Party cards ──
@@ -2260,7 +2262,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
     private void applyDefaultModalSelections() {
         modalSelectedRaids.clear();
         modalSelectedRegion = PartyRegion.NA;
-        modalJoinPolicy = PartyJoinPolicy.INVITE_ONLY;
+        modalJoinPolicy = PartyJoinPolicy.DEFAULT_CREATE_POLICY;
     }
 
     private Set<String> getCurrentListingRaidTags() {
@@ -2290,7 +2292,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 : PartyRegion.NA;
         modalJoinPolicy = party().getCurrentListing() != null
                 ? party().getCurrentListing().resolvedJoinPolicy()
-                : PartyJoinPolicy.INVITE_ONLY;
+                : PartyJoinPolicy.DEFAULT_CREATE_POLICY;
     }
 
     private static String joinPolicyLabel(PartyJoinPolicy joinPolicy) {
@@ -2377,7 +2379,7 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
                 sendBtnY,
                 MODAL_BUTTON_W,
                 MODAL_BUTTON_H,
-                sendHovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200));
+                sendHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
 
         drawText(
                 canvas,
@@ -2396,7 +2398,10 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         if (listing.reservedSlots() != null) {
-            return listing.reservedSlots().size();
+            return (int) listing.reservedSlots().stream()
+                    .filter(Objects::nonNull)
+                    .filter(slot -> !slot.isObservedWynnMember())
+                    .count();
         }
 
         if (listing.members() == null) {
@@ -2581,9 +2586,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         }
 
         // Create/Update button
-        float createBtnX = mX + (MODAL_WIDTH - MODAL_BUTTON_W) / 2f;
+        String fontName = SeqClient.getFontManager().getSelectedFont();
+        String createLabel = party().hasListedParty() ? "Update party" : "Create party";
+        float createButtonWidth = modalActionButtonWidth(createLabel, fontName);
+        float createBtnX = mX + (MODAL_WIDTH - createButtonWidth) / 2f;
         float createBtnY = mY + PARTY_MODAL_HEIGHT - MODAL_BUTTON_H - 14;
-        if (isHovered(mx, my, createBtnX, createBtnY, MODAL_BUTTON_W, MODAL_BUTTON_H)) {
+        if (isHovered(mx, my, createBtnX, createBtnY, createButtonWidth, MODAL_BUTTON_H)) {
             boolean updatingParty = party().getMyPartyIndex() >= 0;
 
             Set<String> selectedRaids = new LinkedHashSet<>(modalSelectedRaids);
@@ -2714,7 +2722,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
             float my = MinecraftUiRenderer.mouseY(click.y());
 
             float screenHeight = MinecraftUiRenderer.screenHeight();
-            float contentHeight = screenHeight - HEADER_HEIGHT;
+            float panelWidth = MinecraftUiRenderer.screenWidth() - SIDEBAR_WIDTH;
+            float headerHeight = computeHeaderControlsLayout(
+                            SIDEBAR_WIDTH, panelWidth, SeqClient.getFontManager().getSelectedFont())
+                    .height();
+            float contentHeight = screenHeight - headerHeight;
             float thumbRatio = contentHeight / (contentHeight + maxScroll);
             float thumbH = Math.max(20, contentHeight * thumbRatio);
             float scrollRange = contentHeight - thumbH;
@@ -2737,6 +2749,11 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
 
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
+        if (roleDropdownOpen && keyEvent.key() == GLFW.GLFW_KEY_ESCAPE) {
+            roleDropdownOpen = false;
+            return true;
+        }
+
         if (filterScreenOpen) {
             if (keyEvent.key() == GLFW.GLFW_KEY_ESCAPE) {
                 filterScreenOpen = false;

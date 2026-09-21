@@ -669,7 +669,7 @@ public class GuildMembersScreen extends Screen {
         float y = Math.max(12, (screenHeight - height) / 2f);
         modalBounds = new Rect(x, y, width, height);
 
-        canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY, 170));
+        canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
         canvas.fillRect(x, y, width, height, color(BACKGROUND_POPUP));
         canvas.fillRect(x, y, 3, height, color(ACCENT_PRIMARY));
 
@@ -917,7 +917,7 @@ public class GuildMembersScreen extends Screen {
                 y,
                 width,
                 FILTER_CHIP_H,
-                selected ? color(ACCENT_PRIMARY, 210) : hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+                selected ? color(ACCENT_PRIMARY_DARK) : hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
         drawText(
                 canvas,
                 fontName,
@@ -938,7 +938,7 @@ public class GuildMembersScreen extends Screen {
                 bounds.y(),
                 bounds.width(),
                 bounds.height(),
-                active ? color(CONTROL_SUCCESS, 200) : hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+                active ? color(CONTROL_SUCCESS) : hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
         drawText(
                 canvas,
                 fontName,
@@ -1242,7 +1242,7 @@ public class GuildMembersScreen extends Screen {
         boolean hovered = joinable && bounds.contains(uiMouseX, uiMouseY);
         Color background = !joinable
                 ? color(CONTROL_INPUT)
-                : hovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY_DARK);
+                : hovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY_DARK);
         canvas.fillRect(chipX, chipY, chipW, BUSY_CHIP_H, background);
         drawText(
                 canvas,
@@ -1409,7 +1409,7 @@ public class GuildMembersScreen extends Screen {
         float y = Math.max(12, (screenHeight - height) / 2f);
         modalBounds = new Rect(x, y, width, height);
 
-        canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY, 170));
+        canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
         canvas.fillRect(x, y, width, height, color(BACKGROUND_POPUP));
         canvas.fillRect(x, y, 3, height, color(ACCENT_PRIMARY));
 
@@ -1597,7 +1597,7 @@ public class GuildMembersScreen extends Screen {
             RaidType raid = raids.get(index);
             if (index % 2 == 0) {
                 // Light striping keeps the eye on one raid across the row.
-                canvas.fillRect(x - 4, y, width + 8, RAID_LINE_H, color(CONTROL_INPUT, 120));
+                canvas.fillRect(x - 4, y, width + 8, RAID_LINE_H, color(BACKGROUND_CONTENT));
             }
             float centerY = y + RAID_LINE_H / 2f;
             int clears = member.stats().completions(raid);
@@ -1682,7 +1682,7 @@ public class GuildMembersScreen extends Screen {
                     fitToWidth(aside, fontName, TINY_FONT_SIZE, room),
                     UiCanvas.HorizontalAlign.RIGHT);
         }
-        canvas.fillRect(x, y + 12, width, 1, color(ACCENT_PRIMARY, 60));
+        canvas.fillRect(x, y + 12, width, 1, color(ACCENT_PRIMARY_DARK));
     }
 
     /** A row of equal tiles, each a number over its label. */
@@ -1748,9 +1748,9 @@ public class GuildMembersScreen extends Screen {
         boolean hovered = enabled && bounds.contains(uiMouseX, uiMouseY);
         Color background;
         if (!enabled) {
-            background = color(ACCENT_DISABLED, 140);
+            background = color(ACCENT_DISABLED);
         } else if (accent) {
-            background = hovered ? color(ACCENT_PRIMARY_HOVER, 220) : color(ACCENT_PRIMARY, 200);
+            background = hovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY);
         } else {
             background = hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
         }

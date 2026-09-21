@@ -8,13 +8,10 @@
   "contact": {},
   "license": "MIT",
   "icon": "assets/seq/icon.png",
-  "environment": "*",
+  "environment": "client",
   "entrypoints": {
     "client": [
       "com.seqwawa.seq.client.SeqClient"
-    ],
-    "main": [
-      "com.seqwawa.seq.Seq"
     ]
   },
   "mixins": [

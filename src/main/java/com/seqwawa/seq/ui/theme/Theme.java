@@ -26,11 +26,6 @@ public final class Theme {
         return colors.get(Objects.requireNonNull(token, "token"));
     }
 
-    public Color color(UiColor token, int alpha) {
-        Color color = color(token);
-        return new Color(color.getRed(), color.getGreen(), color.getBlue(), alpha);
-    }
-
     public Map<UiColor, Color> colors() {
         return colors;
     }

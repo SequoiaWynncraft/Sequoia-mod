@@ -5,7 +5,9 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MinecraftAuthServiceTest {
 
@@ -53,5 +55,13 @@ class MinecraftAuthServiceTest {
         assertEquals("backend-token", session.token());
         assertEquals("123e4567-e89b-12d3-a456-426614174000", session.minecraftUuid());
         assertEquals("VerifiedPlayer", session.minecraftUsername());
+    }
+
+    @Test
+    void clearedSessionInvalidatesADeferredAuthenticationAttempt() {
+        long startedFor = 7;
+
+        assertTrue(MinecraftAuthService.isCurrentAuthenticationAttempt(startedFor, 7));
+        assertFalse(MinecraftAuthService.isCurrentAuthenticationAttempt(startedFor, 8));
     }
 }

@@ -105,6 +105,24 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void canKeepTheWynncraftRankOnTheColoredPill() {
+        Setting.BooleanSetting previous = SeqClient.showDiscordRankPillsSetting;
+        try {
+            SeqClient.showDiscordRankPillsSetting =
+                    new Setting.BooleanSetting("show_discord_rank_pills", "chat", false);
+
+            Component decorated = DiscordRankChatDecorator.decorateGuildChat(
+                    guildLine("RECRUITER", "ArcLeRetour", "ArcLeRetour", "hi"),
+                    DiscordRankChatDecoratorTest::lookup);
+
+            assertEquals(List.of("recruiter"), pillLabels(decorated));
+            assertEquals("Sequoia rank: Sapling", hoverText(decorated));
+        } finally {
+            SeqClient.showDiscordRankPillsSetting = previous;
+        }
+    }
+
+    @Test
     void guildPillContainingPartyGlyphStillUsesGuildDecoration() {
         Component message = Component.empty()
                 .append(Component.literal(CONTINUATION_GLYPHS)
@@ -182,24 +200,6 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void fallsBackToBadgePositionWhenTheLabelCannotBeDecoded() {
-        // Glyphs outside the known letter range: unreadable, but still a badge.
-        Component message = Component.empty()
-                .append(Component.literal("[13:43:41] "))
-                .append(Component.literal("\uE07A\uE0FF\uE07B "))
-                .append(Component.literal("ArcLeRetour")
-                        .withStyle(Style.EMPTY.withColor(GUILD_AQUA).withInsertion("ArcLeRetour")))
-                .append(Component.literal(": t").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
-
-        Component decorated =
-                DiscordRankChatDecorator.decorateGuildChat(message, DiscordRankChatDecoratorTest::lookup);
-
-        assertEquals(List.of("sapling"), pillLabels(decorated));
-        assertTrue(decorated.getString().contains("ArcLeRetour: t"));
-        assertEquals("In-game rank: Unknown", hoverText(decorated));
-    }
-
-    @Test
     void showsTheRankDecodedFromACapturedLayeredBadge() {
         Component message = Component.empty()
                 .append(Component.literal("[23:38:16] "))
@@ -254,12 +254,44 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void positionFallbackStaysOffChatThatIsNotGuildChat() {
-        // Same shape without the guild aqua: a global-chat account badge must survive.
+    void leavesUnknownPrivateUsePillsAlone() {
+        // Unknown private-use glyphs can belong to another channel or system marker.
         Component message = Component.empty()
                 .append(Component.literal("\uE07A\uE0FF\uE07B "))
                 .append(Component.literal("ArcLeRetour").withStyle(Style.EMPTY.withInsertion("ArcLeRetour")))
                 .append(Component.literal(": selling stuff"));
+
+        assertSame(message, DiscordRankChatDecorator.decorateGuildChat(message, DiscordRankChatDecoratorTest::lookup));
+    }
+
+    @Test
+    void configuredGuildColorDoesNotRecolorUnknownPill() {
+        Setting.ColorSetting previous = SeqClient.inGameGuildChatTextColorSetting;
+        try {
+            SeqClient.inGameGuildChatTextColorSetting =
+                    new Setting.ColorSetting("in_game_guild_chat_text_color", "chat", 0xA1B2C3);
+            Component message = wynncraftGuildLine("UNKNOWN", "EightySix", "ArcLeRetour", "hello");
+
+            assertSame(message, DiscordRankChatDecorator.decorateGuildChat(message));
+        } finally {
+            SeqClient.inGameGuildChatTextColorSetting = previous;
+        }
+    }
+
+    @Test
+    void leavesPartyFinderSystemMessagesWithLaterGuildAquaAlone() {
+        // Captured Party Finder prefix. Its private-use icon looks like an unreadable
+        // badge, while the activity name later in the line can be guild aqua. Only a
+        // decoded guild-rank pill may trigger decoration, regardless of inherited
+        // player metadata on the system label.
+        Component message = Component.empty()
+                .append(Component.literal("󏿼󏿿󏿾 Party Finder: ")
+                        .withStyle(Style.EMPTY.withColor(0xAA00AA).withInsertion("pat_crafter07")))
+                .append(Component.literal("Hey theoplegends, over here! Join the ")
+                        .withStyle(Style.EMPTY.withColor(0xFF55FF)))
+                .append(Component.literal("The Nameless Anomaly").withStyle(Style.EMPTY.withColor(GUILD_AQUA)))
+                .append(Component.literal(" queue and match up with 2 other players!")
+                        .withStyle(Style.EMPTY.withColor(0xFF55FF)));
 
         assertSame(message, DiscordRankChatDecorator.decorateGuildChat(message, DiscordRankChatDecoratorTest::lookup));
     }
@@ -438,6 +470,22 @@ class DiscordRankChatDecoratorTest {
         assertTrue(WynnPillGlyphs.findPills(decorated.getString()).isEmpty());
         assertEquals(0x4CB4FA, colorOfFragmentContaining(fragments, "ArcLeRetour"));
         assertEquals(PARTY_YELLOW, colorOfFragmentContaining(fragments, "ready"));
+    }
+
+    @Test
+    void partyChatColoringCanBeDisabledIndependently() {
+        Setting.BooleanSetting previous = SeqClient.colorPartyChatSetting;
+        Component message = partyLine("ArcLeRetour", "ArcLeRetour", "ready");
+        try {
+            SeqClient.colorPartyChatSetting = new Setting.BooleanSetting("color_party_chat", "chat", false);
+
+            Component decorated = DiscordRankChatDecorator.decorateSupportedChat(
+                    message, DiscordRankChatDecoratorTest::lookup, true, true);
+
+            assertSame(message, decorated);
+        } finally {
+            SeqClient.colorPartyChatSetting = previous;
+        }
     }
 
     @Test
@@ -890,6 +938,41 @@ class DiscordRankChatDecoratorTest {
         RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x123456, 0xFFFFFF);
 
         assertEquals(0x123456, DiscordRankChatDecorator.colorFor(gradient).getValue());
+    }
+
+    @Test
+    void primaryColourHelperAvoidsWynncraftShaderMarkers() {
+        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x00F000, 0x72D400);
+
+        assertEquals(0x00F400, DiscordRankChatDecorator.colorFor(gradient).getValue());
+    }
+
+    @Test
+    void avoidsWynncraftShaderMarkersCrossedByAUsernameGradient() {
+        String username = "ABCDEFGHIJKLMNOPQR";
+        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x25FF00, 0x72D400);
+
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(
+                DiscordRankChatDecorator.colouredName(username, gradient, Style.EMPTY.withInsertion(username)));
+
+        assertEquals(username, fragments.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
+        assertEquals(0x49EC00, fragments.get(8).style().getColor().getValue());
+        assertEquals(0x4EEC00, fragments.get(9).style().getColor().getValue());
+        assertTrue(fragments.stream().allMatch(fragment -> username.equals(fragment.style().getInsertion())));
+    }
+
+    @Test
+    void avoidsMovementShadowMarkersCrossedByTheAlternateGreenGradient() {
+        String username = "ABCDEFGHIJKLMNOPQR";
+        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x40FF40, 0xC0E100);
+
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(
+                DiscordRankChatDecorator.colouredName(username, gradient, Style.EMPTY.withInsertion(username)));
+
+        assertEquals(username, fragments.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
+        assertEquals(0x9AEC13, fragments.get(12).style().getColor().getValue());
+        assertEquals(0xA2EC0F, fragments.get(13).style().getColor().getValue());
+        assertTrue(fragments.stream().allMatch(fragment -> username.equals(fragment.style().getInsertion())));
     }
 
     @Test

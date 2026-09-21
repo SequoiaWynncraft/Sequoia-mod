@@ -2,6 +2,7 @@ package com.seqwawa.seq.ui;
 
 import com.seqwawa.seq.managers.PrincessMode;
 import java.util.List;
+import java.util.UUID;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -25,7 +26,7 @@ public final class PrincessRaidCelebration {
             "011111110",
             "001111100");
 
-    private static volatile long startedAtMs = Long.MIN_VALUE;
+    private static volatile CelebrationState celebration;
 
     private PrincessRaidCelebration() {}
 
@@ -37,20 +38,38 @@ public final class PrincessRaidCelebration {
 
     /** Starts the celebration only when the hidden Princess mode is active. */
     public static void triggerIfEnabled() {
+        triggerIfEnabled(UUID.randomUUID(), 0);
+    }
+
+    /** Starts a celebration tied to one completion so only its response may update the count. */
+    public static void triggerIfEnabled(UUID eventId, long displayedRaidCount) {
         if (PrincessMode.isEnabled()) {
-            startedAtMs = monotonicMillis();
+            celebration = new CelebrationState(
+                    eventId == null ? UUID.randomUUID() : eventId,
+                    monotonicMillis(),
+                    Math.max(0L, displayedRaidCount));
         }
     }
 
-    private static void render(GuiGraphics graphics, long nowMs) {
-        long started = startedAtMs;
-        if (started == Long.MIN_VALUE) {
+    /** Applies the backend-confirmed total only to the matching active celebration. */
+    public static void updateRaidCount(UUID eventId, long raidCount) {
+        CelebrationState current = celebration;
+        if (current == null || eventId == null || !eventId.equals(current.eventId())) {
             return;
         }
-        AnimationFrame frame = frameAt(nowMs - started);
+        celebration = new CelebrationState(current.eventId(), current.startedAtMs(), Math.max(0L, raidCount));
+    }
+
+    private static void render(GuiGraphics graphics, long nowMs) {
+        CelebrationState current = celebration;
+        if (current == null) {
+            return;
+        }
+        long elapsedMs = nowMs - current.startedAtMs();
+        AnimationFrame frame = frameAt(elapsedMs);
         if (!frame.active()) {
-            if (started != Long.MIN_VALUE && nowMs - started >= DURATION_MS) {
-                startedAtMs = Long.MIN_VALUE;
+            if (elapsedMs >= DURATION_MS && celebration == current) {
+                celebration = null;
             }
             return;
         }
@@ -63,7 +82,7 @@ public final class PrincessRaidCelebration {
         int width = graphics.guiWidth();
         int height = graphics.guiHeight();
         int centerX = width / 2;
-        int bannerY = Math.min(height - 26, Math.max(54, height / 2 + 12))
+        int bannerY = Math.min(height - 32, Math.max(54, height / 2 + 12))
                 + Math.round(frame.bannerOffset());
         int bannerWidth = Math.max(96, Math.min(250, width - 24));
         int bannerLeft = centerX - bannerWidth / 2;
@@ -72,27 +91,33 @@ public final class PrincessRaidCelebration {
         if (frame.flashOpacity() > 0f) {
             graphics.fill(0, 0, width, height, argb(Math.round(frame.flashOpacity() * 255f), PINK));
         }
-        drawEdgeGlow(graphics, width, height, alpha, nowMs - started);
-        drawConfetti(graphics, width, height, nowMs - started, frame.confettiIntensity());
+        drawEdgeGlow(graphics, width, height, alpha, elapsedMs);
+        drawConfetti(graphics, width, height, elapsedMs, frame.confettiIntensity());
 
         graphics.fill(
                 bannerLeft - 3,
                 bannerY - 13,
                 bannerLeft + bannerWidth + 3,
-                bannerY + 25,
+                bannerY + 31,
                 argb(Math.round(alpha * 0.25f), PINK));
         graphics.fill(
                 bannerLeft,
                 bannerY - 10,
                 bannerLeft + bannerWidth,
-                bannerY + 22,
+                bannerY + 28,
                 argb(Math.round(alpha * 0.82f), 0x2A0D32));
-        drawOutline(graphics, bannerLeft, bannerY - 10, bannerWidth, 32, argb(alpha, PINK));
-        drawOutline(graphics, bannerLeft + 3, bannerY - 7, bannerWidth - 6, 26, argb(alpha, GOLD));
+        drawOutline(graphics, bannerLeft, bannerY - 10, bannerWidth, 38, argb(alpha, PINK));
+        drawOutline(graphics, bannerLeft + 3, bannerY - 7, bannerWidth - 6, 32, argb(alpha, GOLD));
 
         drawCrown(graphics, centerX, bannerY - 51, alpha);
         drawCenteredScaledText(
                 graphics, client.font, "Raid conquered", centerX, bannerY - 1, 1.5f, argb(alpha, 0xFFF7FC));
+        graphics.drawCenteredString(
+                client.font,
+                raidCountText(current.raidCount()),
+                centerX,
+                bannerY + 13,
+                argb(alpha, PALE_PINK));
     }
 
     private static void drawEdgeGlow(GuiGraphics graphics, int width, int height, int alpha, long elapsedMs) {
@@ -221,6 +246,15 @@ public final class PrincessRaidCelebration {
     private static long monotonicMillis() {
         return System.nanoTime() / 1_000_000L;
     }
+
+    static String raidCountText(long raidCount) {
+        if (raidCount <= 0) {
+            return "Counting Princess graids…";
+        }
+        return raidCount + (raidCount == 1 ? " Princess graid" : " Princess graids");
+    }
+
+    private record CelebrationState(UUID eventId, long startedAtMs, long raidCount) {}
 
     record AnimationFrame(
             boolean active,

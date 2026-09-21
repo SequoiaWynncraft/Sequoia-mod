@@ -1,8 +1,11 @@
 package com.seqwawa.seq.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
@@ -25,6 +28,45 @@ class RankGradientAnimationTest {
             assertEquals(0xFFFFFF, animated(first, 0.5d), "half a turn later the far stop has arrived");
             assertEquals(0x000000, animated(first, 1d), "and a full turn is where it started");
         });
+    }
+
+    @Test
+    void avoidsWynncraftShaderMarkersInStaticAndAnimatedSamples() {
+        ColorRamp ramp = ColorRamp.of(List.of(0x25FF00, 0x72D400));
+        TextColor staticCrossing = RankGradientAnimation.colorAt(ramp, 8d / 17d);
+        TextColor animatedCrossing = RankGradientAnimation.colorAt(ramp, 0d);
+
+        assertEquals(0x49EC00, staticCrossing.getValue());
+        withAnimation(true, () -> assertEquals(0x49EC00, animated(animatedCrossing, 4d / 17d)));
+    }
+
+    @Test
+    void avoidsShaderMarkersWhenSettingsSelectAlternatePalettePaths() {
+        ColorRamp dangerousGradient = ColorRamp.of(List.of(0x40EB00, 0x72D400));
+        TextColor flattened = RankGradientAnimation.colorAt(dangerousGradient, 1d);
+        TextColor switchedSolid = RankGradientAnimation.colorAt(
+                ColorRamp.of(0x123456),
+                ColorRamp.of(0x40EB00),
+                0d,
+                RankGradientAnimation.Target.USERNAME,
+                null);
+        TextColor switchedGradient = RankGradientAnimation.colorAt(
+                ColorRamp.of(0x123456),
+                dangerousGradient,
+                0d,
+                RankGradientAnimation.Target.USERNAME,
+                null);
+
+        withGradientSettings(
+                false,
+                true,
+                false,
+                false,
+                () -> assertEquals(0x40EC00, animated(flattened, 0d), "flattened gradient"));
+        withGradientSettings(true, true, false, false, () -> withPerUserColors(false, () -> {
+            assertEquals(0x40EC00, animated(switchedSolid, 0d), "switched solid palette");
+            assertEquals(0x40EC00, animated(switchedGradient, 0d), "switched gradient palette");
+        }));
     }
 
     @Test
@@ -75,7 +117,7 @@ class RankGradientAnimationTest {
 
     @Test
     void restoresEachTargetsBaseColorImmediatelyWhenRoleColoringIsDisabled() {
-        TextColor pillBase = TextColor.fromRgb(0x00AA00);
+        TextColor pillBase = TextColor.fromRgb(0x40EB00);
         TextColor usernameBase = TextColor.fromRgb(0xFFFFFF);
         TextColor badge = RankGradientAnimation.colorAt(
                 ColorRamp.of(0x4CB4FA), 0d, RankGradientAnimation.Target.RANK_BADGE, pillBase);
@@ -125,9 +167,14 @@ class RankGradientAnimationTest {
     void leavesEveryOtherColourInTheGameAlone() {
         // The lookup runs on every glyph drawn, so ordinary text must come straight back.
         TextColor chatColor = TextColor.fromRgb(0x55FFFF);
+        TextColor intentionalShaderColor = TextColor.fromRgb(0x40EB00);
 
         withAnimation(true, () -> {
             assertSame(chatColor, RankGradientAnimation.animate(chatColor, 0.5d));
+            assertSame(
+                    intentionalShaderColor,
+                    RankGradientAnimation.animate(intentionalShaderColor, 0.5d),
+                    "unregistered Wynncraft shader text remains intentional");
             assertNull(RankGradientAnimation.animate(null, 0.5d), "an unstyled glyph has no colour to move");
         });
     }
@@ -161,6 +208,37 @@ class RankGradientAnimationTest {
                 RankGradientAnimation.publicationCount(),
                 "all glyph stops should share one copy-on-write publication");
         assertEquals(4096, RankGradientAnimation.rememberedStopCount(), "the registry remains bounded");
+    }
+
+    @Test
+    void rejectsAPinNestedInsideAnEvictableBatch() {
+        assertThrows(
+                IllegalStateException.class,
+                () -> RankGradientAnimation.batchRegistrations(
+                        () -> RankGradientAnimation.pin(() -> RankGradientAnimation.colorAt(GRADIENT, 0d))));
+    }
+
+    @Test
+    void releasesSeveralPinnedDecorationsWithOnePublication() {
+        RankGradientAnimation.Pinned<TextColor> first =
+                RankGradientAnimation.pin(() -> RankGradientAnimation.colorAt(GRADIENT, 0d));
+        RankGradientAnimation.Pinned<TextColor> second =
+                RankGradientAnimation.pin(() -> RankGradientAnimation.colorAt(GRADIENT, 1d));
+        long publicationsBefore = RankGradientAnimation.publicationCount();
+
+        RankGradientAnimation.releaseAll(List.of(first.colors(), second.colors()));
+
+        assertEquals(publicationsBefore + 1, RankGradientAnimation.publicationCount());
+        assertFalse(RankGradientAnimation.isDecorationColor(first.value()));
+        assertFalse(RankGradientAnimation.isDecorationColor(second.value()));
+    }
+
+    @Test
+    void recognisesMarkedFixedDecorationColors() {
+        TextColor fixed = RankGradientAnimation.markDecorationColor(TextColor.fromRgb(0x1F2126));
+
+        assertTrue(RankGradientAnimation.isDecorationColor(fixed));
+        assertSame(fixed, RankGradientAnimation.animate(fixed, 0.5d));
     }
 
     private static int animated(TextColor color, double phase) {

@@ -2,10 +2,12 @@ package com.seqwawa.seq.command;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.seqwawa.seq.model.PartyRole;
+import com.seqwawa.seq.client.SeqClient;
 import java.util.concurrent.atomic.AtomicReference;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import org.junit.jupiter.api.Test;
@@ -36,6 +38,55 @@ class SeqCommandTest {
 
         assertNotNull(dispatcher.getRoot().getChild("a"));
         assertNotNull(dispatcher.getRoot().getChild("a").getCommand());
+    }
+
+    @Test
+    void registersAllyRaidCommandAndSeqAlias() {
+        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+
+        SeqCommand.registerCommands(dispatcher, null);
+
+        assertNotNull(dispatcher.getRoot().getChild("allyraids"));
+        assertNotNull(dispatcher.getRoot().getChild("allyraids").getChild("cutoff"));
+        assertNotNull(dispatcher.getRoot().getChild("seq").getChild("allyraids"));
+    }
+
+    @Test
+    void registersSettingsScreenCommand() {
+        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+
+        SeqCommand.registerCommands(dispatcher, null);
+
+        var settings = dispatcher.getRoot().getChild("seq").getChild("settings");
+        assertNotNull(settings);
+        assertNotNull(settings.getCommand());
+    }
+
+    @Test
+    void registersMapRefreshCommand() {
+        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+
+        SeqCommand.registerCommands(dispatcher, null);
+
+        var refresh = dispatcher.getRoot().getChild("seq").getChild("map").getChild("refresh");
+        assertNotNull(refresh);
+        assertNotNull(refresh.getCommand());
+    }
+
+    @Test
+    void warSubtreeExistsButFailsClosedBeforeAuthorizedSnapshot() {
+        CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
+        var previous = SeqClient.warPlannerManager;
+        try {
+            SeqClient.warPlannerManager = null;
+            SeqCommand.registerCommands(dispatcher, null);
+
+            var war = dispatcher.getRoot().getChild("seq").getChild("war");
+            assertNotNull(war);
+            assertFalse(war.canUse(null));
+        } finally {
+            SeqClient.warPlannerManager = previous;
+        }
     }
 
     @Test

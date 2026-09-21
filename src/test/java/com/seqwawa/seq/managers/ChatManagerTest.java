@@ -238,14 +238,11 @@ class ChatManagerTest {
     }
 
     @Test
-    void parsesTargetFirstGuildRemoval() {
-        ChatManager.ParsedGuildMembershipEvent parsed = ChatManager.parseGuildMembershipEvent(
-                Component.literal("NewMember has been kicked from the guild by GaztheCat."), "Observer");
-
-        assertNotNull(parsed);
-        assertEquals("removed", parsed.action());
-        assertEquals("GaztheCat", parsed.actor());
-        assertEquals("NewMember", parsed.target());
+    void ignoresGuildMemberKicksAndRemovals() {
+        assertNull(ChatManager.parseGuildMembershipEvent(
+                Component.literal("NewMember has been kicked from the guild by GaztheCat."), "Observer"));
+        assertNull(ChatManager.parseGuildMembershipEvent(
+                Component.literal("GaztheCat removed NewMember from the guild."), "Observer"));
     }
 
     @Test
@@ -269,7 +266,7 @@ class ChatManagerTest {
                 "GaztheCat");
 
         assertNotNull(parsed);
-        assertEquals("removed", parsed.action());
+        assertEquals("uninvited", parsed.action());
         assertEquals("GaztheCat", parsed.actor());
         assertEquals("NewMember", parsed.target());
     }
@@ -394,6 +391,38 @@ class ChatManagerTest {
         assertEquals("Name", name.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
         assertEquals(0x123456, name.getFirst().style().getColor().getValue());
         assertEquals(0xFFFFFF, name.getLast().style().getColor().getValue());
+    }
+
+    @Test
+    void rankedBridgeSenderOmitsTheRoleLabelAlreadyShownInThePill() {
+        RankPresentation treant = new RankPresentation(
+                new DiscordRank("rank.treant", "Treant", 80), ColorRamp.of(0x55AA55));
+
+        MutableComponent line = ChatManager.bridgeSenderLine(
+                new ConnectionManager.DiscordChatMessage("Treant OwORawr", "wharffff"),
+                "Replying to a3pki/rice field worker: wharffff",
+                treant);
+
+        assertTrue(line.getString().endsWith(" OwORawr: Replying to a3pki/rice field worker: wharffff"));
+        assertFalse(line.getString().contains(" Treant OwORawr:"));
+        assertEquals(
+                "OwORawr",
+                ComponentTextEditor.flatten(line).stream()
+                        .filter(fragment -> "OwORawr".equals(fragment.text()))
+                        .findFirst()
+                        .orElseThrow()
+                        .style()
+                        .getInsertion());
+    }
+
+    @Test
+    void bridgeDisplayNameOnlyRemovesACompleteMatchingRankPrefix() {
+        RankPresentation treant = new RankPresentation(
+                new DiscordRank("rank.treant", "Treant", 80), ColorRamp.of(0x55AA55));
+
+        assertEquals("OwORawr", ChatManager.bridgeDisplayName("treant OwORawr", treant));
+        assertEquals("Treantor", ChatManager.bridgeDisplayName("Treantor", treant));
+        assertEquals("Treant", ChatManager.bridgeDisplayName("Treant", treant));
     }
 
     @Test

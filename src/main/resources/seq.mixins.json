@@ -3,21 +3,23 @@
   "minVersion": "0.8",
   "package": "com.seqwawa.seq.mixins",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [
-    "MinecraftMixin"
-  ],
   "client": [
+    "MinecraftMixin",
     "AbstractContainerScreenMixin",
     "AvatarRendererMixin",
     "AvatarRenderStateMixin",
     "ChatComponentMixin",
     "ChatScreenMixin",
     "ClientPacketListenerMixin",
+    "EntityRendererMixin",
+    "FontMixin",
     "FontPreparedTextBuilderMixin",
     "GameRendererMixin",
     "GuildAllianceSnapshotPacketMixin",
     "InGameHudMixin",
+    "NameTagFeatureRendererMixin",
     "ParticleEngineMixin",
+    "SubmitNodeCollectionMixin",
     "TitleScreenMixin"
   ],
   "injectors": {

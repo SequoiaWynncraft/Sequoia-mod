@@ -93,7 +93,7 @@ public class PremadePartyEditorScreen extends Screen {
             float screenHeight = canvas.metrics().height();
             String fontName = SeqClient.getFontManager().getSelectedFont();
 
-            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY, 190));
+            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
 
             float panelWidth = Math.min(PANEL_WIDTH, screenWidth - 24);
             float panelHeight = panelHeight();
@@ -307,7 +307,7 @@ public class PremadePartyEditorScreen extends Screen {
         boolean hovered = enabled && bounds.contains(uiMouseX, uiMouseY);
         Color background;
         if (!enabled) {
-            background = color(ACCENT_DISABLED, 140);
+            background = color(ACCENT_DISABLED);
         } else if (accent) {
             background = hovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY);
         } else {
