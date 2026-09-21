@@ -39,20 +39,44 @@ public class WynnPartySyncManager {
             Pattern.compile("^Your party has been disbanded\\.?$", Pattern.CASE_INSENSITIVE);
     private static final Pattern PARTY_MEMBERS_PATTERN =
             Pattern.compile("^Party members:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern NOT_IN_PARTY_PATTERN =
+            Pattern.compile("^You must be in a party to use this[.!]?$", Pattern.CASE_INSENSITIVE);
     private static final Pattern MC_USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final Duration DUPLICATE_WINDOW = Duration.ofMillis(750);
     private static final Duration HEARTBEAT_RESEND_INTERVAL = Duration.ofSeconds(60);
+    private static final Duration MANUAL_SCAN_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration LATE_SCAN_RESPONSE_WINDOW = Duration.ofSeconds(30);
     private static final String OPEN_CREATE_UI_COMMAND = "/seq party create-ui";
+    private static final String PARTY_LIST_COMMAND = "party list";
 
     private final ObservedWynnPartyState observedState = new ObservedWynnPartyState();
     private String lastSentSnapshotKey;
     private Instant lastSentSnapshotAt = Instant.EPOCH;
     private String lastEventKey;
     private Instant lastEventAt = Instant.EPOCH;
+    private boolean manualScanPending;
+    private boolean manualSnapshotReady;
+    private Long manualScanListingId;
+    private Instant manualScanDeadline = Instant.EPOCH;
+    private Instant ignoreLateScanResponseUntil = Instant.EPOCH;
 
     public void onSystemChat(Component message) {
         String normalized = PacketTextNormalizer.normalizeForParsing(message == null ? null : message.getString());
         if (normalized.isBlank()) {
+            return;
+        }
+        Instant now = Instant.now();
+        if (NOT_IN_PARTY_PATTERN.matcher(normalized).matches()) {
+            boolean expectedManualResponse = manualScanPending;
+            if (shouldDiscardPartyListResponse(currentListingId(), now)) {
+                return;
+            }
+            if (!expectedManualResponse) {
+                return;
+            }
+            SeqClient.LOGGER.info(
+                    "[WynnPartySync] Manual scan found no active Wynn party; preserving the Sequoia listing");
+            handleNoPartyScanResponse();
             return;
         }
         if (isDuplicateEvent(normalized)) {
@@ -118,6 +142,9 @@ public class WynnPartySyncManager {
 
         Matcher membersMatcher = PARTY_MEMBERS_PATTERN.matcher(normalized);
         if (membersMatcher.matches()) {
+            if (shouldDiscardPartyListResponse(currentListingId(), now)) {
+                return;
+            }
             List<String> snapshotMembers = parseAuthoritativeMembersSnapshot(membersMatcher.group(1));
             if (!snapshotMembers.isEmpty()) {
                 SeqClient.LOGGER.info(
@@ -136,17 +163,29 @@ public class WynnPartySyncManager {
     }
 
     public void tick() {
+        expireManualScan(Instant.now());
         if (!ConnectionManager.isConnected()) {
             lastSentSnapshotKey = null;
             lastSentSnapshotAt = Instant.EPOCH;
             return;
         }
-        if (SeqClient.getSyncWynnPartySetting() == null || !SeqClient.getSyncWynnPartySetting().getValue()) {
+        boolean automaticSyncEnabled = SeqClient.getSyncWynnPartySetting() != null
+                && SeqClient.getSyncWynnPartySetting().getValue();
+        if (!automaticSyncEnabled && !manualSnapshotReady) {
             return;
         }
 
         Listing currentListing =
                 SeqClient.getPartyFinderManager() != null ? SeqClient.getPartyFinderManager().getCurrentListing() : null;
+        if (manualSnapshotReady && !matchesManualScanListing(currentListing)) {
+            SeqClient.LOGGER.info(
+                    "[WynnPartySync] Discarded manual snapshot for stale listingId={} currentListingId={}",
+                    manualScanListingId,
+                    currentListing == null ? null : currentListing.id());
+            observedState.reset();
+            clearManualScan();
+            return;
+        }
         if (currentListing == null) {
             SeqClient.LOGGER.debug(
                     "[WynnPartySync] Skipping snapshot send: no active Sequoia listing active={} leader={} members={}",
@@ -158,6 +197,14 @@ public class WynnPartySyncManager {
         if (!observedState.initialized) {
             SeqClient.LOGGER.debug(
                     "[WynnPartySync] Skipping snapshot send: observed party state is still unknown for listingId={}",
+                    currentListing.id());
+            return;
+        }
+        if (!shouldSendSnapshotForListing(
+                observedState.active, observedState.inactiveListingId, currentListing.id())) {
+            SeqClient.LOGGER.debug(
+                    "[WynnPartySync] Skipping stale inactive snapshot observedForListingId={} currentListingId={}",
+                    observedState.inactiveListingId,
                     currentListing.id());
             return;
         }
@@ -193,11 +240,16 @@ public class WynnPartySyncManager {
                     observedState.memberUsernames);
             lastSentSnapshotKey = snapshotKey;
             lastSentSnapshotAt = now;
+            clearManualScan();
         }
     }
 
     static boolean shouldDeferOverCapacitySnapshot(int observedMemberCount, int maxPartySize) {
         return maxPartySize > 0 && observedMemberCount > maxPartySize;
+    }
+
+    static boolean shouldSendSnapshotForListing(boolean active, Long inactiveListingId, long currentListingId) {
+        return active || Objects.equals(inactiveListingId, currentListingId);
     }
 
     public void reset() {
@@ -206,10 +258,39 @@ public class WynnPartySyncManager {
         lastSentSnapshotAt = Instant.EPOCH;
         lastEventKey = null;
         lastEventAt = Instant.EPOCH;
+        manualScanPending = false;
+        manualSnapshotReady = false;
+        manualScanListingId = null;
+        manualScanDeadline = Instant.EPOCH;
+        ignoreLateScanResponseUntil = Instant.EPOCH;
     }
 
     public List<String> getObservedMemberUsernames() {
         return List.copyOf(observedState.memberUsernames);
+    }
+
+    public boolean isObservedMember(String username) {
+        return username != null
+                && observedState.memberUsernames.stream().anyMatch(member -> member.equalsIgnoreCase(username));
+    }
+
+    public boolean requestCurrentPartySnapshot() {
+        LocalPlayer player = SeqClient.mc != null ? SeqClient.mc.player : null;
+        Listing listing = SeqClient.getPartyFinderManager() == null
+                ? null
+                : SeqClient.getPartyFinderManager().getCurrentListing();
+        if (player == null || player.connection == null || listing == null) {
+            return false;
+        }
+
+        manualScanPending = true;
+        manualSnapshotReady = false;
+        manualScanListingId = listing.id();
+        manualScanDeadline = Instant.now().plus(MANUAL_SCAN_TIMEOUT);
+        lastEventKey = null;
+        lastEventAt = Instant.EPOCH;
+        player.connection.sendCommand(PARTY_LIST_COMMAND);
+        return true;
     }
 
     private void handlePartyCreated() {
@@ -236,7 +317,7 @@ public class WynnPartySyncManager {
             SeqClient.LOGGER.warn("[WynnPartySync] Ignoring join event because username could not be resolved");
             return;
         }
-        observedState.active = true;
+        markObservedPartyActive();
         observedState.memberUsernames.add(username);
         logObservedState("join");
     }
@@ -256,7 +337,7 @@ public class WynnPartySyncManager {
             observedState.leaderUsername = null;
         }
         if (observedState.memberUsernames.isEmpty()) {
-            observedState.active = false;
+            markObservedPartyInactive();
         }
         sendExplicitRemoval(username, "left");
         logObservedState("leave");
@@ -277,7 +358,7 @@ public class WynnPartySyncManager {
             observedState.leaderUsername = null;
         }
         if (observedState.memberUsernames.isEmpty()) {
-            observedState.active = false;
+            markObservedPartyInactive();
         }
         sendExplicitRemoval(username, "kicked");
         logObservedState("kick");
@@ -293,7 +374,7 @@ public class WynnPartySyncManager {
             SeqClient.LOGGER.warn("[WynnPartySync] Ignoring leader event because username could not be resolved");
             return;
         }
-        observedState.active = true;
+        markObservedPartyActive();
         observedState.memberUsernames.add(username);
         observedState.leaderUsername = username;
         logObservedState("leader");
@@ -302,7 +383,7 @@ public class WynnPartySyncManager {
     private void handleAuthoritativeMembersSnapshot(List<String> usernames) {
         RaidPartySnapshotTracker.onPartyChanged();
         observedState.initialized = true;
-        observedState.active = true;
+        markObservedPartyActive();
 
         String preservedLeader = findMatchingUsername(usernames, observedState.leaderUsername);
         observedState.memberUsernames.clear();
@@ -311,7 +392,59 @@ public class WynnPartySyncManager {
         // previously observed leader when possible, otherwise wait for an
         // explicit leader event instead of transferring a listing by guesswork.
         observedState.leaderUsername = preservedLeader;
+        if (manualScanPending) {
+            manualScanPending = false;
+            manualSnapshotReady = true;
+            lastSentSnapshotKey = null;
+        }
         logObservedState("members_snapshot");
+    }
+
+    void handleNoPartyScanResponse() {
+        clearManualScan();
+    }
+
+    boolean shouldDiscardPartyListResponse(Long currentListingId, Instant now) {
+        expireManualScan(now);
+        if (manualScanPending) {
+            if (manualScanListingId == null || !manualScanListingId.equals(currentListingId)) {
+                clearManualScan();
+                return true;
+            }
+            return false;
+        }
+        if (now.isBefore(ignoreLateScanResponseUntil)) {
+            ignoreLateScanResponseUntil = Instant.EPOCH;
+            return true;
+        }
+        return false;
+    }
+
+    private void expireManualScan(Instant now) {
+        if (manualScanPending && !now.isBefore(manualScanDeadline)) {
+            SeqClient.LOGGER.info("[WynnPartySync] Manual party scan timed out for listingId={}", manualScanListingId);
+            clearManualScan();
+            ignoreLateScanResponseUntil = now.plus(LATE_SCAN_RESPONSE_WINDOW);
+        }
+    }
+
+    private boolean matchesManualScanListing(Listing listing) {
+        return listing != null && manualScanListingId != null && listing.id() == manualScanListingId;
+    }
+
+    private Long currentListingId() {
+        Listing listing = SeqClient.getPartyFinderManager() == null
+                ? null
+                : SeqClient.getPartyFinderManager().getCurrentListing();
+        return listing == null ? null : listing.id();
+    }
+
+    private void clearManualScan() {
+        manualScanPending = false;
+        manualSnapshotReady = false;
+        manualScanListingId = null;
+        manualScanDeadline = Instant.EPOCH;
+        ignoreLateScanResponseUntil = Instant.EPOCH;
     }
 
     private void handlePartyDisbanded() {
@@ -321,7 +454,7 @@ public class WynnPartySyncManager {
             return;
         }
         observedState.initialized = true;
-        observedState.active = false;
+        markObservedPartyInactive();
         observedState.leaderUsername = null;
         observedState.memberUsernames.clear();
         logObservedState("disbanded");
@@ -329,6 +462,25 @@ public class WynnPartySyncManager {
 
     private void handleLocalPartyLeft() {
         handlePartyDisbanded();
+    }
+
+    private void markObservedPartyActive() {
+        observedState.active = true;
+        observedState.inactiveListingId = null;
+    }
+
+    private void markObservedPartyInactive() {
+        observedState.active = false;
+        observedState.inactiveListingId = currentLeaderListingId();
+    }
+
+    private Long currentLeaderListingId() {
+        PartyFinderManager partyFinderManager = SeqClient.getPartyFinderManager();
+        if (partyFinderManager == null) {
+            return null;
+        }
+        Listing listing = partyFinderManager.getCurrentListing();
+        return listing != null && partyFinderManager.isPartyLeader() ? listing.id() : null;
     }
 
     private void maybeShowCreatePrompt() {
@@ -488,6 +640,7 @@ public class WynnPartySyncManager {
     static final class ObservedWynnPartyState {
         private boolean initialized;
         private boolean active;
+        private Long inactiveListingId;
         private String leaderUsername;
         private final Set<String> memberUsernames = new LinkedHashSet<>();
         private boolean createPromptShown;
@@ -495,6 +648,7 @@ public class WynnPartySyncManager {
         private void reset() {
             initialized = false;
             active = false;
+            inactiveListingId = null;
             leaderUsername = null;
             memberUsernames.clear();
             createPromptShown = false;
@@ -502,7 +656,8 @@ public class WynnPartySyncManager {
 
         @Override
         public int hashCode() {
-            return Objects.hash(initialized, active, leaderUsername, memberUsernames, createPromptShown);
+            return Objects.hash(
+                    initialized, active, inactiveListingId, leaderUsername, memberUsernames, createPromptShown);
         }
     }
 }

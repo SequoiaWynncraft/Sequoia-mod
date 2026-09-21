@@ -5,6 +5,7 @@ import com.collarmc.pounce.Preference;
 import com.collarmc.pounce.Subscribe;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.logging.LogUtils;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -13,6 +14,7 @@ import lombok.Getter;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientWorldEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -30,6 +32,8 @@ import com.seqwawa.seq.managers.ChatManager;
 import com.seqwawa.seq.managers.ChatRegexFilterManager;
 import com.seqwawa.seq.managers.FontManager;
 import com.seqwawa.seq.managers.GameManager;
+import com.seqwawa.seq.managers.GlobalSoundListener;
+import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
@@ -37,10 +41,12 @@ import com.seqwawa.seq.managers.GuildWarTrackers;
 import com.seqwawa.seq.managers.DiscordRankService;
 import com.seqwawa.seq.managers.IngredientGuideManager;
 import com.seqwawa.seq.managers.LeaderboardBadgeService;
+import com.seqwawa.seq.managers.MinecraftWarTowerTracker;
 import com.seqwawa.seq.managers.RankProfileRoster;
 import com.seqwawa.seq.managers.PartyHealthCache;
 import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.PrincessMode;
+import com.seqwawa.seq.managers.PrincessRaidStatsManager;
 import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
@@ -48,6 +54,8 @@ import com.seqwawa.seq.managers.ThemeManager;
 import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.managers.WorldEventManager;
+import com.seqwawa.seq.managers.WarPlannerManager;
+import com.seqwawa.seq.managers.WarTerritoryQueueManager;
 import com.seqwawa.seq.map.IngredientWaypointRenderer;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
@@ -55,11 +63,17 @@ import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
+import com.seqwawa.seq.raids.tna.TnaLineupHelper;
+import com.seqwawa.seq.raids.tna.TnaSahurSoundDetector;
+import com.seqwawa.seq.scroll.CraftedScrollRangeVisualiserClient;
 import com.seqwawa.seq.ui.IngredientGuideScreen;
+import com.seqwawa.seq.ui.AchievementsScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.ui.PrincessRaidCelebration;
 import com.seqwawa.seq.ui.SequoiaScreen;
+import com.seqwawa.seq.ui.SettingsScreen;
 import com.seqwawa.seq.ui.WorldMapScreen;
+import com.seqwawa.seq.ui.WarPlannerScreen;
 import com.seqwawa.seq.update.UpdateManager;
 import com.seqwawa.seq.utils.WynnClassCache;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
@@ -88,6 +102,15 @@ public class SeqClient implements ClientModInitializer {
     public static PartyFinderManager partyFinderManager;
 
     @Getter
+    public static WarPlannerManager warPlannerManager;
+
+    @Getter
+    public static WarTerritoryQueueManager warTerritoryQueueManager;
+
+    @Getter
+    public static PrincessRaidStatsManager princessRaidStatsManager;
+
+    @Getter
     public static MinecraftAuthService authService;
 
     public static ChatManager chatManager;
@@ -109,7 +132,16 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting showDiscordChatSetting;
 
     @Getter
+    public static Setting.BooleanSetting showPrivateMessageGuildTagsSetting;
+
+    @Getter
+    public static Setting.BooleanSetting announceAchievementsSetting;
+
+    @Getter
     public static Setting.BooleanSetting showDiscordRanksSetting;
+
+    @Getter
+    public static Setting.BooleanSetting showDiscordRankPillsSetting;
 
     @Getter
     public static Setting.BooleanSetting showChatInsigniasSetting;
@@ -137,6 +169,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static Setting.BooleanSetting colorUsernamesSetting;
+
+    @Getter
+    public static Setting.BooleanSetting colorPartyChatSetting;
 
     @Getter
     public static Setting.BooleanSetting animateRankGradientsSetting;
@@ -214,6 +249,24 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.ColorSetting lightRoomRingColorSetting;
 
     @Getter
+    public static Setting.ColorSetting craftedScrollRangeColorSetting;
+
+    @Getter
+    public static Setting.BooleanSetting tnaRoomThreeHelperSetting;
+
+    @Getter
+    public static Setting.BooleanSetting tnaBeamIndicatorSetting;
+
+    @Getter
+    public static Setting.IntSetting tnaBeamIndicatorSizeSetting;
+
+    @Getter
+    public static Setting.FloatSetting tnaBeamIndicatorXSetting;
+
+    @Getter
+    public static Setting.FloatSetting tnaBeamIndicatorYSetting;
+
+    @Getter
     public static Setting.BooleanSetting showRaidBadgesSetting;
 
     @Getter
@@ -230,6 +283,36 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static Setting.BooleanSetting notifyTrackedWorldEventsSetting;
+
+    @Getter
+    public static Setting.BooleanSetting warPlannerResourceColorsSetting;
+
+    @Getter
+    public static Setting.BooleanSetting warPlannerShowPlayersSetting;
+
+    @Getter
+    public static Setting.IntSetting warPlannerBackgroundOpacitySetting;
+
+    @Getter
+    public static Setting.IntSetting warQueueHudTextSizeSetting;
+
+    @Getter
+    public static Setting.FloatSetting warQueueHudXSetting;
+
+    @Getter
+    public static Setting.FloatSetting warQueueHudYSetting;
+
+    @Getter
+    public static Setting.BooleanSetting warQueueHudOnlyOwnedOrJoinedSetting;
+
+    @Getter
+    public static Setting.BooleanSetting warQueueMissMessagesSetting;
+
+    @Getter
+    public static Setting.IntSetting warQueueHudMaxRowsSetting;
+
+    @Getter
+    public static Setting.BooleanSetting warPlannerLockTerritoriesSetting;
 
     @Getter
     public static WynnPartySyncManager wynnPartySyncManager;
@@ -260,6 +343,7 @@ public class SeqClient implements ClientModInitializer {
 
     private static KeyMapping openScreenKey;
     private static KeyMapping openPartyFinderKey;
+    private static KeyMapping openWarPlannerKey;
     private static KeyMapping openWorldMapKey;
     private static KeyMapping openIngredientGuideKey;
     private static KeyMapping shareBombsKey;
@@ -275,14 +359,18 @@ public class SeqClient implements ClientModInitializer {
         try {
             eventBus = new EventBus(mc::execute);
             eventBus.subscribe(this);
+            TnaSahurSoundDetector.initialize(eventBus);
         } catch (Exception e) {
             LOGGER.warn("Event bus failed to initialize.");
         }
         fontManager = new FontManager();
         gameManager = new GameManager();
         partyFinderManager = new PartyFinderManager();
+        warPlannerManager = new WarPlannerManager();
+        warTerritoryQueueManager = new WarTerritoryQueueManager();
+        princessRaidStatsManager = new PrincessRaidStatsManager();
         wynnPartySyncManager = new WynnPartySyncManager();
-        guildWarTracker = GuildWarTrackers.createIfAvailable();
+        guildWarTracker = GuildWarTrackers.create();
         guildStorageTracker = GuildStorageTracker.getInstance();
         guildRewardAutomationManager = new GuildRewardAutomationManager();
         chatManager = new ChatManager();
@@ -307,8 +395,14 @@ public class SeqClient implements ClientModInitializer {
         PrincessRaidCelebration.initialize();
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
+        CraftedScrollRangeVisualiserClient.initialize();
         IngredientWaypointRenderer.initialize();
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> MinecraftUiRenderer.shutdown());
+        TnaLineupHelper.initialize();
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            GlobalSoundListener.shutdown();
+            MinecraftUiRenderer.shutdown();
+        });
+        ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> resetWarTrackingState());
         LightRoom.init();
 
         KeyMapping.Category category =
@@ -318,6 +412,8 @@ public class SeqClient implements ClientModInitializer {
                 new KeyMapping("key.sequoia-mod.open_settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O, category));
         openPartyFinderKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.sequoia-mod.open_party_finder", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
+        openWarPlannerKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
+                "key.sequoia-mod.open_war_planner", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
         openWorldMapKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
                 "key.sequoia-mod.open_world_map", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
         openIngredientGuideKey = KeyBindingHelper.registerKeyBinding(new KeyMapping(
@@ -329,6 +425,7 @@ public class SeqClient implements ClientModInitializer {
                 "key.sequoia-mod.share_bombs", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            ConnectionManager.tickGuildRankObservations();
             while (openScreenKey.consumeClick()) {
                 if (client.screen == null) {
                     openMainScreen();
@@ -337,6 +434,11 @@ public class SeqClient implements ClientModInitializer {
             while (openPartyFinderKey.consumeClick()) {
                 if (client.screen == null) {
                     openPartyFinderScreen();
+                }
+            }
+            while (openWarPlannerKey.consumeClick()) {
+                if (client.screen == null) {
+                    openWarPlannerScreen();
                 }
             }
             while (openWorldMapKey.consumeClick()) {
@@ -359,6 +461,7 @@ public class SeqClient implements ClientModInitializer {
             String currentHost = WynncraftServerPolicy.currentNormalizedHost();
             WynncraftServerPolicy.Scope previousServerScope = lastServerScope;
             logServerScopeChange(serverScope, currentHost);
+            boolean minecraftAccountChanged = handleMinecraftAccountChange();
             if (worldEventManager != null) {
                 worldEventManager.tick(
                         client,
@@ -374,26 +477,41 @@ public class SeqClient implements ClientModInitializer {
                     wynnPartySyncManager.reset();
                 }
                 RaidPartySnapshotTracker.onServerUnavailable();
-                if (guildWarTracker != null) {
-                    guildWarTracker.reset();
-                }
+                resetWarTrackingState();
                 if (guildStorageTracker != null) {
                     guildStorageTracker.reset();
                 }
+                if (currentHost == null) {
+                    resetWarPlanningStateForWorldTransition();
+                } else {
+                    resetWarPlanningState();
+                }
+                GuildRaidProgressService.getInstance().tick(false);
                 return;
             }
             if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
                 RadianceCheckerClient.reset();
                 RaidPartySnapshotTracker.onServerUnavailable();
                 ConnectionManager.flushPendingOutbound();
+                resetWarTrackingState();
+                resetWarPlanningStateForWorldTransition();
+                GuildRaidProgressService.getInstance().tick(false);
                 return;
             }
 
-            if (handleMinecraftAccountChange()) {
+            GuildRaidProgressService.getInstance().tick();
+            if (minecraftAccountChanged) {
                 return;
             }
 
             maybeRecoverProductionConnection(serverScope, previousServerScope, currentHost);
+
+            if (warPlannerManager != null) {
+                warPlannerManager.tick();
+            }
+            if (warTerritoryQueueManager != null) {
+                warTerritoryQueueManager.tick();
+            }
 
             if (partyFinderManager != null) {
                 partyFinderManager.tickOpenPartyAnnouncements();
@@ -475,7 +593,7 @@ public class SeqClient implements ClientModInitializer {
         if (!preserveOperatorSession) {
             ConnectionManager.resetForAccountChange();
             if (authService != null) {
-                authService.clearSessionIfNotActiveProfile(currentProfileId);
+                authService.clearSession();
             }
         }
         wasInPartyFinder = false;
@@ -484,13 +602,42 @@ public class SeqClient implements ClientModInitializer {
             wynnPartySyncManager.reset();
         }
         RaidPartySnapshotTracker.reset();
-        if (guildWarTracker != null) {
-            guildWarTracker.reset();
-        }
+        GuildRaidProgressService.getInstance().reset();
+        resetWarTrackingState();
         if (guildStorageTracker != null) {
             guildStorageTracker.reset();
         }
+        resetWarPlanningState();
+        if (princessRaidStatsManager != null) {
+            princessRaidStatsManager.reset();
+        }
         return true;
+    }
+
+    private static void resetWarTrackingState() {
+        if (guildWarTracker != null) {
+            guildWarTracker.reset();
+        } else {
+            MinecraftWarTowerTracker.getInstance().reset();
+        }
+    }
+
+    private static void resetWarPlanningState() {
+        if (warPlannerManager != null) {
+            warPlannerManager.reset();
+        }
+        if (warTerritoryQueueManager != null) {
+            warTerritoryQueueManager.reset();
+        }
+    }
+
+    private static void resetWarPlanningStateForWorldTransition() {
+        if (warTerritoryQueueManager != null) {
+            warTerritoryQueueManager.resetForWorldTransition();
+        }
+        if (warPlannerManager != null) {
+            warPlannerManager.reset();
+        }
     }
 
     private static UUID currentMinecraftProfileId() {
@@ -614,8 +761,28 @@ public class SeqClient implements ClientModInitializer {
         mc.execute(() -> mc.setScreen(new PartyFinderScreen(mc.screen)));
     }
 
+    public static void openSettingsScreen() {
+        mc.execute(() -> mc.setScreen(new SettingsScreen(mc.screen)));
+    }
+
+    public static void openWarPlannerScreen() {
+        WarPlannerManager manager = getWarPlannerManager();
+        if (manager == null || !manager.isAuthorized()) {
+            return;
+        }
+        mc.execute(() -> {
+            WarPlannerScreen screen = new WarPlannerScreen(mc.screen);
+            mc.setScreen(screen);
+            screen.refreshPlanner();
+        });
+    }
+
     public static void openWorldMapScreen() {
         mc.execute(() -> mc.setScreen(new WorldMapScreen(mc.screen)));
+    }
+
+    public static void openAchievementsScreen() {
+        mc.execute(() -> mc.setScreen(new AchievementsScreen(mc.screen)));
     }
 
     public static void openIngredientGuideScreen() {
@@ -629,6 +796,7 @@ public class SeqClient implements ClientModInitializer {
     @Subscribe(Preference.CALLER) // to stay in thread
     public void onMinecraftFinishedLoading(MinecraftFinishedLoading ignored) {
         // after minecraft done loading
+        GlobalSoundListener.initialize();
         MinecraftUiRenderer.initialize();
         SeqClient.gameManager.loadFont();
         SeqClient.assetManager = new AssetManager();
@@ -636,7 +804,18 @@ public class SeqClient implements ClientModInitializer {
         // Network settings
         autoConnectSetting = new Setting.BooleanSetting("auto_connect", "network", true);
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
+        showPrivateMessageGuildTagsSetting = new Setting.BooleanSetting("show_private_message_guild_tags", "chat", true);
+        announceAchievementsSetting = new Setting.BooleanSetting("announce_achievements", "chat", true);
+        showPrivateMessageGuildTagsSetting.setPresentation(
+                "Show guild tags in private messages",
+                "Show the other player's guild tag before their name in /msg conversations.",
+                "Private messages");
+        announceAchievementsSetting.setPresentation(
+                "Announce new Sequoia badges tiers",
+                "Let this client announce your newly earned badges and raid tiers to guild chat and Campfire.",
+                "Achievements");
         showDiscordRanksSetting = new Setting.BooleanSetting("show_discord_ranks", "chat", true);
+        showDiscordRankPillsSetting = new Setting.BooleanSetting("show_discord_rank_pills", "chat", true);
         showChatInsigniasSetting = new Setting.BooleanSetting("show_chat_insignias", "chat", false);
         usePerUserColorsSetting = new Setting.BooleanSetting("use_per_user_colors", "chat", true);
         colorDiscordBridgeSetting = new Setting.BooleanSetting("color_discord_bridge", "chat", true);
@@ -647,6 +826,7 @@ public class SeqClient implements ClientModInitializer {
                         .withValueOverride(PrincessMode::paletteColorOverride);
         colorRankPillsSetting = new Setting.BooleanSetting("color_rank_pills", "chat", true);
         colorUsernamesSetting = new Setting.BooleanSetting("color_usernames", "chat", true);
+        colorPartyChatSetting = new Setting.BooleanSetting("color_party_chat", "chat", true);
         showRankPillGradientsSetting = new Setting.BooleanSetting("show_rank_pill_gradients", "chat", true);
         showUsernameGradientsSetting = new Setting.BooleanSetting("show_username_gradients", "chat", true);
         // Off by default: moving colour draws the eye away from what is being said, and
@@ -685,6 +865,11 @@ public class SeqClient implements ClientModInitializer {
                 "Show Discord ranks and colors",
                 "Show Sequoia Discord ranks in guild chat and member colors in supported chat channels.",
                 "Discord ranks");
+        showDiscordRankPillsSetting.setPresentation(
+                "Show Discord rank on pills",
+                "Use the Sequoia Discord rank instead of the Wynncraft guild rank on in-game chat pills.",
+                "Rank pills");
+        showDiscordRankPillsSetting.setParentSetting(showDiscordRanksSetting);
         showChatInsigniasSetting.setPresentation(
                 "Show insignias", "Display a member's Sequoia insignia beside their chat name.", "Discord ranks");
         showChatInsigniasSetting.setParentSetting(showDiscordRanksSetting);
@@ -713,6 +898,11 @@ public class SeqClient implements ClientModInitializer {
                 "Use each member's Discord role color on guild, party and Discord bridge names.",
                 "Usernames");
         colorUsernamesSetting.setParentSetting(showDiscordRanksSetting);
+        colorPartyChatSetting.setPresentation(
+                "Color party chat",
+                "Apply Sequoia member colors to player names in Wynncraft party chat.",
+                "Usernames");
+        colorPartyChatSetting.setParentSetting(colorUsernamesSetting);
         showUsernameGradientsSetting.setPresentation(
                 "Use gradients",
                 "Show the complete gradient or holographic role palette on usernames.",
@@ -742,15 +932,39 @@ public class SeqClient implements ClientModInitializer {
         radianceCheckerSetting = new Setting.BooleanSetting("enable_radiance_visualiser", "raids", true);
         radianceMarkerColorSetting = new Setting.ColorSetting("radiance_marker_color", "raids", 0xFF0000)
                 .withValueOverride(PrincessMode::paletteColorOverride);
-        radianceMarkerColorSetting.setVisibilityCondition(() -> radianceCheckerSetting.getValue());
+        radianceMarkerColorSetting.setParentSetting(radianceCheckerSetting);
         halcyonRangeVisualiserSetting = new Setting.BooleanSetting("enable_halcyon_range_visualiser", "raids", true);
         halcyonRingColorSetting = new Setting.ColorSetting("halcyon_ring_color", "raids", 0x00FFFF)
                 .withValueOverride(PrincessMode::paletteColorOverride);
-        halcyonRingColorSetting.setVisibilityCondition(() -> halcyonRangeVisualiserSetting.getValue());
+        halcyonRingColorSetting.setParentSetting(halcyonRangeVisualiserSetting);
         lightRoomVisualiserSetting = new Setting.BooleanSetting("enable_light_room_visualiser", "raids", true);
         lightRoomRingColorSetting = new Setting.ColorSetting("light_room_ring_color", "raids", 0x00FFFF)
                 .withValueOverride(PrincessMode::paletteColorOverride);
-        lightRoomRingColorSetting.setVisibilityCondition(() -> lightRoomVisualiserSetting.getValue());
+        lightRoomRingColorSetting.setParentSetting(lightRoomVisualiserSetting);
+        craftedScrollRangeColorSetting =
+                new Setting.ColorSetting("crafted_scroll_range_color", "raids", 0x00FFFF)
+                        .withValueOverride(PrincessMode::paletteColorOverride);
+        craftedScrollRangeColorSetting.setPresentation(
+                "Crafted scroll range color", null, "Raid helpers");
+        tnaRoomThreeHelperSetting = new Setting.BooleanSetting("enable_tna_room_3_helper", "raids", true);
+        tnaRoomThreeHelperSetting.setPresentation(
+                "VM lineup", null, "Raid helpers");
+        tnaBeamIndicatorSetting = new Setting.BooleanSetting("enable_tna_beam_indicator", "raids", true);
+        tnaBeamIndicatorSetting.setPresentation(
+                "TNA beam indicator",
+                "Show the predicted beam countdown during Challenges: 3/4.",
+                "Raid helpers");
+        tnaBeamIndicatorSizeSetting =
+                new Setting.IntSetting("tna_beam_indicator_size_percent", "raids", 100, 25, 400, 5);
+        tnaBeamIndicatorSizeSetting.setPresentation(
+                "TNA beam indicator size", "Scale the beam countdown.", "Raid helpers");
+        tnaBeamIndicatorSizeSetting.setParentSetting(tnaBeamIndicatorSetting);
+        tnaBeamIndicatorXSetting =
+                new Setting.FloatSetting("tna_beam_indicator_x", "raids", 0.5f, 0f, 1f, 0.001f);
+        tnaBeamIndicatorYSetting =
+                new Setting.FloatSetting("tna_beam_indicator_y", "raids", 0.58f, 0f, 1f, 0.001f);
+        tnaBeamIndicatorXSetting.setVisibilityCondition(() -> false);
+        tnaBeamIndicatorYSetting.setVisibilityCondition(() -> false);
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
@@ -758,6 +972,8 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.IntSetting("guild_storage_emerald_threshold_percent", "guild_storage", 100, 0, 100);
         guildStorageAspectNotifyValueSetting =
                 new Setting.IntSetting("guild_storage_aspect_threshold_percent", "guild_storage", 100, 0, 100);
+        guildStorageEmeraldNotifyValueSetting.setParentSetting(trackGuildStorageSetting);
+        guildStorageAspectNotifyValueSetting.setParentSetting(trackGuildStorageSetting);
         easterEggsSetting = new Setting.BooleanSetting("enable_easter_eggs", "ui", true);
         startupVideoSetting = new Setting.BooleanSetting("startup_video", "ui", false);
         uiSizePercentSetting = new Setting.IntSetting("ui_size_percent", "ui", 100, 75, 150, 5)
@@ -771,6 +987,7 @@ public class SeqClient implements ClientModInitializer {
         announceOpenPartiesSetting = new Setting.BooleanSetting("announce_open_parties", "party_finder", true);
         announceOpenPartiesIntervalMinutesSetting =
                 new Setting.IntSetting("announce_open_parties_interval_minutes", "party_finder", 5, 1, 60);
+        announceOpenPartiesIntervalMinutesSetting.setParentSetting(announceOpenPartiesSetting);
         syncWynnPartySetting = new Setting.BooleanSetting("sync_with_wynn_party", "party_finder", true);
         receiveBombShareRequestsSetting = new Setting.BooleanSetting("receive_bomb_share_requests", "network", true);
         showRaidBadgesSetting =
@@ -789,18 +1006,86 @@ public class SeqClient implements ClientModInitializer {
         showPartyHealthBarsSetting = new Setting.BooleanSetting("show_party_healthbars", "raids", true);
         notifyTrackedWorldEventsSetting =
                 new Setting.BooleanSetting("notify_tracked_world_events", "world_events", false);
+        warPlannerResourceColorsSetting =
+                new Setting.BooleanSetting("resource_colors", "war_planner", false);
+        warPlannerShowPlayersSetting =
+                new Setting.BooleanSetting("show_players", "war_planner", true);
+        warPlannerBackgroundOpacitySetting =
+                new Setting.IntSetting("background_opacity_percent", "war_planner", 100, 0, 100, 5);
+        warQueueHudTextSizeSetting =
+                new Setting.IntSetting("queue_hud_text_size", "war_planner", 9, 6, 18);
+        warQueueHudXSetting = new Setting.FloatSetting("queue_hud_x", "war_planner", 1f, 0f, 1f, 0.001f);
+        warQueueHudYSetting = new Setting.FloatSetting("queue_hud_y", "war_planner", 0f, 0f, 1f, 0.001f);
+        warQueueHudXSetting.setVisibilityCondition(() -> false);
+        warQueueHudYSetting.setVisibilityCondition(() -> false);
+        warQueueHudOnlyOwnedOrJoinedSetting =
+                new Setting.BooleanSetting("queue_hud_only_owned_or_joined", "war_planner", false);
+        warQueueMissMessagesSetting =
+                new Setting.BooleanSetting("queue_miss_messages", "war_planner", false);
+        warQueueHudMaxRowsSetting =
+                new Setting.IntSetting("queue_hud_max_rows", "war_planner", 6, 1, 20);
+        warPlannerLockTerritoriesSetting =
+                new Setting.BooleanSetting("lock_territories", "war_planner", false);
+        List.of(
+                        warPlannerResourceColorsSetting,
+                        warPlannerShowPlayersSetting,
+                        warPlannerBackgroundOpacitySetting,
+                        warQueueHudTextSizeSetting,
+                        warQueueHudOnlyOwnedOrJoinedSetting,
+                        warQueueMissMessagesSetting,
+                        warQueueHudMaxRowsSetting,
+                        warPlannerLockTerritoriesSetting)
+                .forEach(setting -> setting.setPresentationCategory("guild_wars"));
+        warPlannerResourceColorsSetting.setPresentation(
+                "Color by resource type",
+                "Fill map territories using their resource production colors.",
+                "War planner display");
+        warPlannerShowPlayersSetting.setPresentation(
+                "Show telemetry players",
+                "Show opted-in player heads on the war map.",
+                "War planner display");
+        warPlannerBackgroundOpacitySetting.setPresentation(
+                "Panel opacity %",
+                "Adjust planner panel backgrounds without fading the map or controls.",
+                "War planner display");
+        warQueueHudTextSizeSetting.setPresentation(
+                "Queue HUD text size",
+                "Adjust the territory queue text shown at the top right of the game HUD.",
+                "War queue HUD");
+        warQueueHudOnlyOwnedOrJoinedSetting.setPresentation(
+                "Only show my queues",
+                "Only show territories you queued or joined on the war map and top-right queue HUD.",
+                "War queue HUD");
+        warQueueMissMessagesSetting.setPresentation(
+                "Queue miss messages",
+                "Show a blame message when nobody enters a queued territory war.",
+                "War queue messages");
+        warQueueHudMaxRowsSetting.setPresentation(
+                "Maximum queue rows",
+                "Set how many territory queues can appear in the top-right HUD.",
+                "War queue HUD");
+        warPlannerLockTerritoriesSetting.setPresentation(
+                "Lock territories",
+                "Manager-only view that hides territories not assigned to a zone.",
+                "War planner display");
+        warPlannerLockTerritoriesSetting.setVisibilityCondition(
+                () -> warPlannerManager != null && warPlannerManager.canManage());
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
+        getConfigManager().register(showPrivateMessageGuildTagsSetting);
+        getConfigManager().register(announceAchievementsSetting);
         getConfigManager().register(colorDiscordBridgeSetting);
         getConfigManager().register(discordChatTextColorSetting);
         getConfigManager().register(inGameGuildChatTextColorSetting);
         getConfigManager().register(showDiscordRanksSetting);
+        getConfigManager().register(showDiscordRankPillsSetting);
         getConfigManager().register(showChatInsigniasSetting);
         getConfigManager().register(usePerUserColorsSetting);
         getConfigManager().register(colorRankPillsSetting);
         getConfigManager().registerWithLegacyKeys(showRankPillGradientsSetting, "chat.show_rank_gradients");
         getConfigManager().register(animateRankGradientsSetting);
         getConfigManager().register(colorUsernamesSetting);
+        getConfigManager().register(colorPartyChatSetting);
         getConfigManager().registerWithLegacyKeys(showUsernameGradientsSetting, "chat.show_rank_gradients");
         getConfigManager().register(animateUsernameGradientsSetting);
         getConfigManager().register(profileOnShiftClickSetting);
@@ -826,12 +1111,28 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(halcyonRingColorSetting);
         getConfigManager().register(lightRoomVisualiserSetting);
         getConfigManager().register(lightRoomRingColorSetting);
+        getConfigManager().register(craftedScrollRangeColorSetting);
+        getConfigManager().register(tnaRoomThreeHelperSetting);
+        getConfigManager().register(tnaBeamIndicatorSetting);
+        getConfigManager().register(tnaBeamIndicatorSizeSetting);
+        getConfigManager().register(tnaBeamIndicatorXSetting);
+        getConfigManager().register(tnaBeamIndicatorYSetting);
         getConfigManager().register(showRaidBadgesSetting);
         getConfigManager().register(showInsigniaBadgesSetting);
         getConfigManager().register(showOwnLeaderboardBadgeSetting);
         getConfigManager().register(showNametagRanksSetting);
         getConfigManager().register(showPartyHealthBarsSetting);
         getConfigManager().register(notifyTrackedWorldEventsSetting);
+        getConfigManager().register(warPlannerResourceColorsSetting);
+        getConfigManager().register(warPlannerShowPlayersSetting);
+        getConfigManager().register(warPlannerBackgroundOpacitySetting);
+        getConfigManager().register(warPlannerLockTerritoriesSetting);
+        getConfigManager().register(warQueueHudOnlyOwnedOrJoinedSetting);
+        getConfigManager().register(warQueueHudMaxRowsSetting);
+        getConfigManager().register(warQueueHudTextSizeSetting);
+        getConfigManager().register(warQueueHudXSetting);
+        getConfigManager().register(warQueueHudYSetting);
+        getConfigManager().register(warQueueMissMessagesSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.

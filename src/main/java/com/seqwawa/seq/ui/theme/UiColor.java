@@ -41,6 +41,14 @@ public enum UiColor {
     CONTROL_WARNING("control.warning", rgba(220, 176, 88, 255), true),
     CONTROL_SUCCESS("control.success", rgba(88, 196, 122, 255), true),
 
+    ACHIEVEMENT_BRONZE("achievement.bronze", rgba(200, 129, 60, 255)),
+    ACHIEVEMENT_SILVER("achievement.silver", rgba(196, 204, 216, 255)),
+    ACHIEVEMENT_GOLD("achievement.gold", rgba(242, 192, 68, 255)),
+    ACHIEVEMENT_PLATINUM("achievement.platinum", rgba(95, 220, 196, 255)),
+    ACHIEVEMENT_DIAMOND("achievement.diamond", rgba(107, 182, 255, 255)),
+    ACHIEVEMENT_OBSIDIAN("achievement.obsidian", rgba(169, 155, 209, 255)),
+    ACHIEVEMENT_MYTHRIL("achievement.mythril", rgba(226, 244, 255, 255)),
+
     STATUS_SUCCESS_BACKGROUND("status.success_background", rgba(56, 140, 88, 220)),
     STATUS_SUCCESS_BORDER("status.success_border", rgba(88, 196, 122, 255)),
     STATUS_WARNING_BACKGROUND("status.warning_background", rgba(148, 108, 44, 220)),

@@ -19,12 +19,16 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Automatic backend authentication
 - Automatic connection to Sequoia services
 - In-game Discord chat bridge
+- Wynntils item links rendered in Discord with item-encoding-v3 stats, major IDs, crafted details, and mounts
 - Clickable world names in chat, so a called-out world is one click away
 - Sequoia ranks on member nametags, replacing the Wynncraft rank badge above their head and coloring the name to match (off by default)
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
+- Seq-only war planner with timed availability, shared five-player territory queues, exclusive 1–5 player parties, a shared Lead + three Eco board, and collaborative territory zones
 - Raid tracking and announcements
 - Per-player raid gambit counts parsed natively from the raid-start roster
+- Sequoia achievements: guild-raid completion counts ranked from Bronze to Mythril
+- A playful Princess-mode guild-raid count, compact leaderboard, and numbered raid celebration
 - Interactive world map with gathering nodes analysis and active world events
 - Guild-specific settings and status screens
 
@@ -34,7 +38,9 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Fabric Loader `0.18.4` or newer
 - Fabric API `0.141.2+1.21.11`
 - Java `21`
-- Wynntils (Optional)
+- Wynntils (optional; version 4.2.9 or newer enables item-encoding-v3 Discord previews and also adds legacy
+  completed-war and queue lifecycle reporting, while live war telemetry and active-class detection use bounded
+  vanilla fallbacks)
 
 ## First-time setup
 
@@ -52,14 +58,19 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 
 ## Common commands
 
-- `/seq`: open the main Sequoia screen
+- `/seq`: open the main menu with Partyfinder, Settings, Connection, Ingredients, and Map
 - `/seq p`: open the Sequoia party finder UI
+- `/seq achievement`: open your guild raid achievements
 - `/seq map`: open the Sequoia world map
+- `/seq war`: open the Seq-only war planner after the backend authorizes the current member
+- `/seq war available <minutes>`: advertise war availability for 1–1440 minutes
+- `/seq war unavailable`: clear your war availability
 - `/seq connect`: connect to the backend
 - `/seq status`: show connection state
 - `/seq logout`: clear the current backend session
 - `/seq request aspects`: request aspects from the guild reward queue
 - `/seq request tome <reason>`: request a tome from the guild reward queue
+- `/allyraids [minutes]`: show recent shared raids with current allies (Sequoia members only)
 - `/seq ignore <IGN>`: hide incoming Discord bridge messages from a Minecraft username
 - `/seq unignore <IGN>`: show incoming Discord bridge messages from that username again
 
@@ -74,14 +85,20 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq logout`
 - `/seq request aspects`
 - `/seq request tome <reason>`
+- `/allyraids [minutes]`
+- `/seq allyraids [minutes]`
 - `/seq ignore <IGN>`
 - `/seq unignore <IGN>`
+- `/seq achievement`
 - `/seq map`
 - `/seq map params`
 - `/seq map eps <blocks>`
 - `/seq map minSamples <count>`
 - `/seq map reset`
 - `/seq map debug`
+- `/seq war`
+- `/seq war available <minutes>`
+- `/seq war unavailable`
 - `/seq party`
 - `/seq p`
 - `/seq party list`
@@ -102,21 +119,79 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq party role <role>`
 - `/seq party kick <username>`
 - `/seq party promote <username>`
+- `/seq party scan`
 - `/seq party game create`
 - `/seq party game invite <username>`
 - `/seq party game invite-all`
 
 </details>
 
+The navigation sidebars also include Achievements and, for authorized members, War Planner. The main menu and sidebars start with Partyfinder and Settings, followed by all remaining entries in alphabetical order.
+
+## Party finder
+
+Party Finder shows known class icons beside members in expanded cards and as an icon row in collapsed cards.
+Cached cards pick up newly detected local classes and class switches; remote classes use listing data.
+Wynntils class detection continues while Party Finder is open and reads canonical class identifiers,
+so combined class/reskin display labels do not prevent icons or class updates.
+
+`/seq party scan` imports the leader's current Wynn party into the active Sequoia listing. Scanned usernames that
+match verified linked players with Party Finder access become regular listing members, which enables role, kick, and
+leadership actions. Unlinked, ineligible, conflicting, or recently kicked players remain visible as observed
+username-only occupancy without receiving Sequoia member privileges.
+
+## War planner
+
+The planner uses backend schema v3: party membership is separate from the
+shared Lead/Eco support slots, so support players may also join a party. The
+zone map provides palette colors, multi-party assignment, territory routes,
+responsive full-map zone previews, and production-based resource coloring. Stored
+resources do not affect color. Ordinary 9k emerald income is treated as the
+baseline; territories with 18k base emerald production are highlighted as
+emerald generators.
+
+The War Planner sidebar entry and `/seq war` command only appear after a compact protected backend access check confirms
+that the current account is a Sequoia member. The full planner snapshot is fetched only when the player opens or
+explicitly refreshes the screen. Members can advertise timed availability and see their own team immediately;
+authorized managers can atomically create or edit parties of one to five people, while one shared Lead and three Eco
+slots remain independent of party membership. Managers choose `HQ Team`, `VLow Munch`, or `FFA` from the team editor;
+the backend keeps HQ unique and assigns the numeric VLow/FFA suffixes. The Teams view adapts from full-width cards
+to a one-column rail and then a balanced two-column grid, while keeping shared support, presence, composition roles,
+actions, dragging, and scrolling on the same visible layout. The Zones view assigns named, colored groups of
+territories to teams and previews each zone against the complete territory map.
+Composition capabilities, eligibility, team exclusivity, versions, and all mutations remain server-authoritative.
+
+
 ## World map
 
-Run `/seq map` to open the world map. Use the Gathering / Events control to switch between gathering analysis with guild territories and API-visible world events.
+Run `/seq map` to open the world map. Use the dropdown near the top-left of the map view to select Gathering, Events, or Ingredients. The sidebar title follows the selected mode.
 
-Navigation and map mode controls remain pinned in the left sidebar. Its map, analysis, filter, display, and tracking groups can be folded independently, while selection details and map insights are available from the collapsible right sidebar.
+The Close Map button at the top-right of the map view returns to the `/seq` menu, including when the map was opened directly with `/seq map`.
+Navigation remains pinned in the left sidebar; the map mode dropdown stays over the map view, clear of the right sidebar. Its map, analysis, filter, display, and tracking groups can be folded independently, while selection details and map insights are available from the collapsible right sidebar.
 
 Gathering analysis supports three scopes: all bundled gathering nodes, nodes inside any guild territory, or nodes inside the selected territory. Resource, profession, cluster, and score controls continue to refine the active scope.
 
 The Events view shows runs currently visible through the Wynncraft API. Choose All or Tracked to filter the markers, click a marker for event details, and use Track Event or the searchable tracking dropdown to manage persistent tracking. The management list can be limited to Tracked Only for quick removal. Tracked-event detection messages can be enabled in the World Events settings category.
+
+## Achievements
+
+Open **Achievements** with `/seq achievement` or from the navigation sidebar.
+
+The screen uses Party Finder's compact rows and theme backgrounds, with a badge-colored ring around each icon.
+It shows one row per guild raid with the authenticated Minecraft account's completions,
+current tier, and progress toward the next tier, plus a combined line for all guild raids. Tiers run
+from Bronze to Mythril, each with its own theme colour; combined tiers require twice as many runs as
+a single-raid tier.
+
+Counts and current tiers come from the Sequoia backend. Progress follows the same Minecraft account
+across machines; linked alternate accounts retain separate totals. The backend counts recorded raid
+announcements from 14 August 2026 at 18:12:02 UTC onward. The mod keeps the thresholds needed to show
+the next target, polls periodically, and refreshes shortly after a locally detected completion. If
+there is no cached result and the backend is unavailable, the screen reports that state rather than
+presenting missing data as zero completions.
+
+Tier colours use the `achievement.bronze` through `achievement.mythril` theme keys. See
+[`docs/theme-template.theme.yml`](docs/theme-template.theme.yml) for the complete palette schema.
 
 ## Settings
 
@@ -130,6 +205,16 @@ The settings screen includes controls for:
 - Global Sequoia UI size
 - UI theme selection
 - Update checks on startup
+- Draggable war queue HUD position through **HUD layout**, text size, maximum rows, and an only-my-queues filter shared with the war planner map
+- Toggleable TNA beam countdown with a draggable position in **HUD layout**
+- Optional queue-miss blame messages, disabled by default
+
+War tracking, planner display, and queue controls share one **Wars** category. Settings that depend on another
+control remain visible underneath it and are indented and disabled while their parent is off.
+Major category headings and their fold indicators use the theme's light primary accent (`accent.primary_hover`).
+Setting titles and enabled control labels use primary text; subcategory headings use secondary text. Categories and subcategories start folded. Click their
+headers to expand or fold them. Search reveals matching controls without changing the saved
+expansion choices for the current screen. Folding stops hidden input and color previews.
 
 Sequoia includes Default and High Contrast themes. Open **Theme editor** from the Settings
 screen to copy a theme, edit its full RGBA palette, preview changes live, and save a personal
@@ -137,12 +222,37 @@ theme without restarting. Personal themes are stored as `*.theme.yml` files unde
 `config/sequoia/themes`. Files added manually are discovered when the client starts.
 The complete supported schema is available in [`docs/theme-template.theme.yml`](docs/theme-template.theme.yml).
 
+Map cluster hulls explicitly override alpha to 35% (89/255), including selected clusters; markers use their normal theme opacity.
+Map point markers use squares, while world-space radius indicators remain circular. Gathering, Events, Ingredients,
+and the territory picker show your player head using the same cached 20-unit renderer as the war map.
+A square fallback remains visible while a head image loads or if it is unavailable. Totem map markers use `shaman.png`,
+and Close Map returns to the main menu. Cluster counts are centered by their
+text bounds, with a 1-unit border at 35% opacity.
+Other themed screens and controls preserve the alpha values from the active theme, including
+fully transparent colors. Top-right header text uses the light primary accent (`accent.primary_hover`),
+and dividers use the dark primary accent (`accent.primary_dark`). Party Finder places the role selector
+next to New/Manage Party on the left and its title on the right; controls wrap when space is limited.
+Sidebar headers center the Sequoia icon and title together. The `/seq` menu fits `seqmod_bg.png`
+proportionally along its left side at 35% opacity.
+Sidebar navigation shares Partyfinder's active, hover, and idle colors.
+Search fields share its 140-unit width and shrink to fit when space is limited; drawing, text
+clipping, and click targets use the same width. Map search dropdown results may be wider to fit names.
+The War Planner's opacity control scales panel backgrounds and preserves their configured alpha at 100%.
+Map imagery in the planner and territory picker stays at full opacity independently of that slider. The Theme editor's RGBA controls remain the way to change individual alphas.
+
+When changing the UI, use `ThemeManager.color(token)` and the shared `SequoiaUiStyle` conventions.
+Do not replace a configured alpha with a constant or force a theme color opaque. Use the appropriate
+theme token for disabled, active, and hover states. Add alpha adjustments only when explicitly requested.
+
+
 ## Installation
 
 1. Install Fabric for Minecraft `1.21.11`.
 2. Put the Sequoia mod jar in your Minecraft `mods` folder.
 3. Install Fabric API.
-4. Install [Wynntils](https://wynntils.com) for improved class detection.
+4. Optionally install [Wynntils](https://wynntils.com) 4.2.9 or newer for item-encoding-v3 Discord
+   previews plus legacy completed-war and queue lifecycle reporting. Sequoia's core UI, live war telemetry, and
+   active-class detection do not require it.
 5. Start the game and press `O`, or run `/seq`.
 
 ## License

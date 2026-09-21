@@ -17,6 +17,10 @@ import com.mojang.brigadier.tree.LiteralCommandNode;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -41,10 +45,12 @@ import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.PartyListing;
 import com.seqwawa.seq.managers.RankProfileRoster;
 import com.seqwawa.seq.managers.TreasuryOutManager;
+import com.seqwawa.seq.managers.WarPlannerManager;
 import com.seqwawa.seq.map.GatheringClusterCache;
 import com.seqwawa.seq.map.GatheringMapImageService;
 import com.seqwawa.seq.map.WorldMapSettings;
 import com.seqwawa.seq.model.Activity;
+import com.seqwawa.seq.model.AllyRaidReport;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.network.ApiClient;
@@ -63,7 +69,10 @@ public class SeqCommand {
                         "50s",
                         "2stx5le",
                         "2stx5le+1stx5le+4stx4le");
-        private static final Set<String> CASE_INSENSITIVE_ROOTS = Set.of("seq", "e", "a");
+        private static final int DEFAULT_ALLY_RAID_CUTOFF_MINUTES = 30;
+        private static final DateTimeFormatter ALLY_RAID_TIME_FORMAT =
+                        DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault());
+        private static final Set<String> CASE_INSENSITIVE_ROOTS = Set.of("seq", "allyraids", "e", "a");
         private static volatile CommandNode<FabricClientCommandSource> commandRoot;
 
         public static void register() {
@@ -116,7 +125,10 @@ public class SeqCommand {
                                 .then(ClientCommandManager.literal("logout")
                                                 .executes(ctx -> {
                                                         ConnectionManager.getInstance().disconnect();
-                                                        SeqClient.getConfigManager().clearToken();
+                                                        SeqClient.getAuthService().clearSession();
+                                                        if (SeqClient.getWarPlannerManager() != null) {
+                                                                SeqClient.getWarPlannerManager().reset();
+                                                        }
                                                         sendFeedback(ctx.getSource(), "Logged out and token cleared.");
                                                         return 1;
                                                 }))
@@ -133,7 +145,19 @@ public class SeqCommand {
                                 .then(buildBadgeCommand("badge"))
                                 .then(buildRankCommand("ranks"))
                                 .then(buildRankCommand("rank"))
+                                .then(ClientCommandManager.literal("settings")
+                                                .executes(ctx -> {
+                                                        SeqClient.openSettingsScreen();
+                                                        return 1;
+                                                }))
+                                .then(ClientCommandManager.literal("achievement")
+                                                .executes(ctx -> {
+                                                        SeqClient.openAchievementsScreen();
+                                                        return 1;
+                                                }))
                                 .then(buildMapCommand())
+                                .then(buildWarCommand())
+                                .then(buildAllyRaidsCommand("allyraids"))
                                 .then(ClientCommandManager.literal("ingredients")
                                                 .executes(SeqCommand::openIngredientGuideScreen))
                                 .then(ClientCommandManager.literal("ingredient")
@@ -142,6 +166,7 @@ public class SeqCommand {
                                 .then(buildPartyCommand("p"));
 
                 dispatcher.register(root);
+                dispatcher.register(buildAllyRaidsCommand("allyraids"));
                 dispatcher.register(buildEmeraldRewardCommand("e"));
                 dispatcher.register(ClientCommandManager.literal("a")
                                 .executes(ctx -> runQueuedGuildReward(
@@ -323,7 +348,157 @@ public class SeqCommand {
                                                 .executes(ctx -> relayCommandResult(
                                                                 ctx,
                                                                 SeqClient.getPartyFinderManager()
-                                                                                .inviteAllCurrentMembersFromCommand())));
+                                                                                .inviteAllCurrentMembersFromCommand())))
+                                .then(ClientCommandManager.literal("scan")
+                                                .executes(ctx -> relayCommandResult(
+                                                                ctx,
+                                                                SeqClient.getPartyFinderManager()
+                                                                                .scanCurrentWynnPartyFromCommand())));
+        }
+
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildWarCommand() {
+                return ClientCommandManager.literal("war")
+                                .requires(source -> isWarPlannerAuthorized())
+                                .executes(SeqCommand::openWarPlanner)
+                                .then(ClientCommandManager.literal("available")
+                                                .then(ClientCommandManager.argument(
+                                                                "minutes", IntegerArgumentType.integer(1, 1440))
+                                                                .executes(SeqCommand::setWarAvailability)))
+                                .then(ClientCommandManager.literal("unavailable")
+                                                .executes(SeqCommand::clearWarAvailability));
+        }
+
+        private static LiteralArgumentBuilder<FabricClientCommandSource> buildAllyRaidsCommand(String literalName) {
+                return ClientCommandManager.literal(literalName)
+                                .executes(ctx -> runAllyRaids(ctx, DEFAULT_ALLY_RAID_CUTOFF_MINUTES))
+                                .then(ClientCommandManager.argument(
+                                                "cutoff", IntegerArgumentType.integer(20, 120))
+                                                .executes(ctx -> runAllyRaids(
+                                                                ctx,
+                                                                IntegerArgumentType.getInteger(ctx, "cutoff"))));
+        }
+
+        private static int runAllyRaids(CommandContext<FabricClientCommandSource> ctx, int cutoffMinutes) {
+                FabricClientCommandSource source = ctx.getSource();
+                ApiClient.getInstance().getAllyRaidReport(cutoffMinutes).whenComplete((report, error) -> {
+                        if (error != null) {
+                                sendFeedback(source, "Could not load ally raid coverage: "
+                                                + describeApiFailure(error, "Backend request failed."));
+                                return;
+                        }
+                        renderAllyRaidReport(source, report);
+                });
+                return 1;
+        }
+
+        private static void renderAllyRaidReport(
+                        FabricClientCommandSource source, AllyRaidReport report) {
+                sendFeedback(
+                                source,
+                                "Ally raid coverage | Cutoff " + report.cutoffMinutes() + "m | Recent "
+                                                + report.recent().size() + " | Permanent "
+                                                + report.protectedAllies().size() + " | Review "
+                                                + report.safeToReview().size());
+                renderAllyRaidSection(source, "Permanent allies / do not remove", report.protectedAllies(), report);
+                renderAllyRaidSection(source, "Raided recently", report.recent(), report);
+                renderAllyRaidSection(source, "Safe to unally review", report.safeToReview(), report);
+                if (!report.unavailable().isEmpty()) {
+                        renderAllyRaidSection(source, "Not assessed", report.unavailable(), report);
+                }
+                sendFeedback(source, "Mod reports only. Review before changing alliances.");
+        }
+
+        private static void renderAllyRaidSection(
+                        FabricClientCommandSource source,
+                        String title,
+                        List<AllyRaidReport.GuildActivity> activities,
+                        AllyRaidReport report) {
+                sendFeedback(source, title + " (" + activities.size() + ")");
+                if (activities.isEmpty()) {
+                        sendFeedback(source, "• None");
+                        return;
+                }
+                for (AllyRaidReport.GuildActivity activity : activities) {
+                        sendFeedback(source, "• " + formatAllyRaidActivity(activity, report.cutoffMinutes()));
+                }
+        }
+
+        private static String formatAllyRaidActivity(
+                        AllyRaidReport.GuildActivity activity, int cutoffMinutes) {
+                String guild = activity.guildName();
+                if (activity.guildPrefix() != null && !activity.guildPrefix().isBlank()) {
+                        guild += " [" + activity.guildPrefix() + "]";
+                }
+                if (!activity.rosterAvailable()) {
+                        return guild + ": roster unavailable";
+                }
+                if (activity.lastRaidedAt() == null) {
+                        return guild + ": no shared raid observed inside the " + cutoffMinutes + "m cutoff";
+                }
+                String runs = activity.raidCount() == 1 ? "1 observed run" : activity.raidCount() + " observed runs";
+                return guild + ": " + formatAllyRaidTime(activity.lastRaidedAt()) + " • " + runs;
+        }
+
+        private static String formatAllyRaidTime(Instant lastRaidedAt) {
+                Duration elapsed = Duration.between(lastRaidedAt, Instant.now());
+                if (elapsed.isNegative() || elapsed.toMinutes() < 1) {
+                        return "just now (" + ALLY_RAID_TIME_FORMAT.format(lastRaidedAt) + ")";
+                }
+                long minutes = elapsed.toMinutes();
+                String relative = minutes < 60
+                                ? minutes + "m ago"
+                                : minutes < 1_440
+                                                ? minutes / 60 + "h " + minutes % 60 + "m ago"
+                                                : minutes / 1_440 + "d ago";
+                return relative + " (" + ALLY_RAID_TIME_FORMAT.format(lastRaidedAt) + ")";
+        }
+
+        private static boolean isWarPlannerAuthorized() {
+                WarPlannerManager manager = SeqClient.getWarPlannerManager();
+                return manager != null && manager.isAuthorized();
+        }
+
+        private static int openWarPlanner(CommandContext<FabricClientCommandSource> ctx) {
+                if (authorizedWarPlannerManager(ctx) == null) return 0;
+                SeqClient.openWarPlannerScreen();
+                return 1;
+        }
+
+        private static int setWarAvailability(CommandContext<FabricClientCommandSource> ctx) {
+                WarPlannerManager manager = authorizedWarPlannerManager(ctx);
+                if (manager == null) return 0;
+                int minutes = IntegerArgumentType.getInteger(ctx, "minutes");
+                relayWarPlannerResult(ctx, manager.setAvailability(minutes));
+                return 1;
+        }
+
+        private static int clearWarAvailability(CommandContext<FabricClientCommandSource> ctx) {
+                WarPlannerManager manager = authorizedWarPlannerManager(ctx);
+                if (manager == null) return 0;
+                relayWarPlannerResult(ctx, manager.clearAvailability());
+                return 1;
+        }
+
+        private static WarPlannerManager authorizedWarPlannerManager(
+                        CommandContext<FabricClientCommandSource> ctx) {
+                WarPlannerManager manager = SeqClient.getWarPlannerManager();
+                if (manager == null || !manager.isAuthorized()) {
+                        sendFeedback(ctx.getSource(), "War planner access is limited to authorized Sequoia members.");
+                        return null;
+                }
+                return manager;
+        }
+
+        private static void relayWarPlannerResult(
+                        CommandContext<FabricClientCommandSource> ctx,
+                        CompletableFuture<WarPlannerManager.ActionResult> future) {
+                future.whenComplete((result, error) -> {
+                        if (error != null) {
+                                sendFeedback(ctx.getSource(), "War planner request failed.");
+                        } else if (result != null && result.message() != null && !result.message().isBlank()) {
+                                sendFeedback(ctx.getSource(), result.message());
+                        }
+                });
         }
 
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildIgnoreCommand() {
@@ -478,6 +653,8 @@ public class SeqCommand {
         private static LiteralArgumentBuilder<FabricClientCommandSource> buildMapCommand() {
                 return ClientCommandManager.literal("map")
                                 .executes(SeqCommand::openWorldMapScreen)
+                                .then(ClientCommandManager.literal("refresh")
+                                                .executes(SeqCommand::runMapImageRefresh))
                                 .then(ClientCommandManager.literal("params")
                                                 .executes(SeqCommand::runMapParams))
                                 .then(ClientCommandManager.literal("eps")
@@ -718,6 +895,11 @@ public class SeqCommand {
 
         private static int runMapImageCacheStatus(CommandContext<FabricClientCommandSource> ctx) {
                 sendFeedback(ctx.getSource(), GatheringMapImageService.getInstance().cacheStatus());
+                return 1;
+        }
+
+        private static int runMapImageRefresh(CommandContext<FabricClientCommandSource> ctx) {
+                sendFeedback(ctx.getSource(), GatheringMapImageService.getInstance().refresh());
                 return 1;
         }
 
@@ -1262,7 +1444,7 @@ public class SeqCommand {
         private static String displayMapImageSource(GatheringMapImageService.Source source) {
                 return switch (source) {
                         case NONE -> "none";
-                        case FALLBACK -> "fallback";
+                        case CACHED_TILES -> "cached tiles";
                         case CACHED_HQ -> "cached HQ";
                 };
         }

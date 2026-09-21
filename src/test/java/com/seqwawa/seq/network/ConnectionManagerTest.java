@@ -3,15 +3,49 @@ package com.seqwawa.seq.network;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.model.ChatItemPreview;
 import com.seqwawa.seq.model.GuildWarSubmission;
+import com.seqwawa.seq.model.WarStatusUpdate;
+import com.seqwawa.seq.model.WarTowerUpdate;
+import com.seqwawa.seq.model.WynnClassType;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class ConnectionManagerTest {
+
+    @Test
+    void itemPreviewPayloadIncludesV3Sections() {
+        var sections = List.of(
+                new ChatItemPreview.Section("Mount Stats", List.of("Speed: 12/20", "Jump Height: 4/8")),
+                new ChatItemPreview.Section("Major ID: Hawkeye", List.of("Arrow Storm fires five arrows.")));
+        var preview = new ChatItemPreview(
+                "Gale's Force",
+                "Mythic • Bow • Lv. 95",
+                0xAA00AA,
+                List.of("3 rerolls"),
+                List.of("+26% Walk Speed"),
+                List.of(),
+                null,
+                sections);
+
+        var payload = ConnectionManager.itemPreviewArray(List.of(preview)).get(0).getAsJsonObject();
+
+        assertEquals(2, payload.getAsJsonArray("sections").size());
+        assertEquals("Mount Stats", payload.getAsJsonArray("sections").get(0).getAsJsonObject()
+                .get("title")
+                .getAsString());
+        assertEquals("Jump Height: 4/8", payload.getAsJsonArray("sections")
+                .get(0)
+                .getAsJsonObject()
+                .getAsJsonArray("lines")
+                .get(1)
+                .getAsString());
+    }
 
     @Test
     void raidAnnouncementIncludesObservedPartyGambitCounts() {
@@ -50,9 +84,9 @@ class ConnectionManagerTest {
 
     @Test
     void guildMembershipEventPayloadIdentifiesActionActorAndTarget() {
-        var payload = ConnectionManager.buildGuildMembershipEventPayload("invited", "GaztheCat", "NewMember");
+        var payload = ConnectionManager.buildGuildMembershipEventPayload("uninvited", "GaztheCat", "NewMember");
 
-        assertEquals("invited", payload.get("action").getAsString());
+        assertEquals("uninvited", payload.get("action").getAsString());
         assertEquals("GaztheCat", payload.get("actor").getAsString());
         assertEquals("NewMember", payload.get("target").getAsString());
     }
@@ -72,6 +106,14 @@ class ConnectionManagerTest {
 
         assertEquals(1, headers.size());
         assertEquals("0.1.3", headers.get(ClientVersion.MOD_VERSION_HEADER));
+    }
+
+    @Test
+    void supersededAuthenticationCannotStartAWebsocket() {
+        assertTrue(ConnectionManager.shouldContinueAuthenticatedConnection(4, 4, true, true));
+        assertFalse(ConnectionManager.shouldContinueAuthenticatedConnection(4, 5, true, true));
+        assertFalse(ConnectionManager.shouldContinueAuthenticatedConnection(4, 4, false, true));
+        assertFalse(ConnectionManager.shouldContinueAuthenticatedConnection(4, 4, true, false));
     }
 
     @Test
@@ -117,6 +159,60 @@ class ConnectionManagerTest {
         assertEquals(0.35, payload.getAsJsonObject("results").getAsJsonObject("stats").get("defence").getAsDouble());
         assertEquals(410, payload.get("sr").getAsInt());
         assertEquals("2026-03-28T00:58:00Z", payload.get("completed_at").getAsString());
+    }
+
+    @Test
+    void liveWarStatusPayloadUsesStatusBecauseTypeIsTheWebsocketDiscriminator() {
+        var world = ConnectionManager.buildWarStatusPayload(
+                WarStatusUpdate.world(WynnClassType.MAGE, -1517, -5130));
+        assertEquals("WORLD", world.get("status").getAsString());
+        assertEquals("MAGE", world.get("class").getAsString());
+        assertEquals(-1517, world.get("x").getAsInt());
+        assertEquals(-5130, world.get("z").getAsInt());
+        assertFalse(world.has("territory"));
+        assertFalse(world.has("type"));
+
+        var war = ConnectionManager.buildWarStatusPayload(
+                WarStatusUpdate.war(WynnClassType.WARRIOR, "Entrance to Olux"));
+        assertEquals("WAR", war.get("status").getAsString());
+        assertEquals("Entrance to Olux", war.get("territory").getAsString());
+        assertFalse(war.has("x"));
+        assertFalse(war.has("z"));
+
+        var remove = ConnectionManager.buildWarStatusPayload(WarStatusUpdate.remove());
+        assertEquals("REMOVE", remove.get("status").getAsString());
+        assertFalse(remove.has("class"));
+        assertFalse(remove.has("territory"));
+        assertFalse(remove.has("x"));
+        assertFalse(remove.has("z"));
+    }
+
+    @Test
+    void liveWarTowerPayloadPreservesLongMetrics() {
+        var payload = ConnectionManager.buildWarTowerUpdatePayload(
+                new WarTowerUpdate("Entrance to Olux", 0.8731f, 24_135_275L, 32_143L));
+
+        assertEquals("Entrance to Olux", payload.get("territory").getAsString());
+        assertEquals(0.8731f, payload.get("health").getAsFloat());
+        assertEquals(24_135_275L, payload.get("ehp").getAsLong());
+        assertEquals(32_143L, payload.get("dps").getAsLong());
+    }
+
+    @Test
+    void liveWarTowerModelRejectsInvalidMetrics() {
+        assertThrows(IllegalArgumentException.class, () -> new WarTowerUpdate("Olux", Float.NaN, 1L, 1L));
+        assertThrows(IllegalArgumentException.class, () -> new WarTowerUpdate("Olux", -0.1f, 1L, 1L));
+        assertThrows(IllegalArgumentException.class, () -> new WarTowerUpdate("Olux", 1.1f, 1L, 1L));
+        assertThrows(IllegalArgumentException.class, () -> new WarTowerUpdate("Olux", 0.5f, -1L, 1L));
+        assertThrows(IllegalArgumentException.class, () -> new WarTowerUpdate("Olux", 0.5f, 1L, -1L));
+    }
+
+    @Test
+    void liveWarTelemetryTreatsSocketCloseRaceAsFailedSend() {
+        assertFalse(ConnectionManager.tryLiveTelemetrySend(() -> {
+            throw new IllegalStateException("socket closed");
+        }));
+        assertTrue(ConnectionManager.tryLiveTelemetrySend(() -> true));
     }
 
     @Test
@@ -175,6 +271,8 @@ class ConnectionManagerTest {
     void guildStorageMessagesAreServerScopedAuthenticatedOutbound() {
         assertTrue(ConnectionManager.isServerScopedType("guild_storage_snapshot"));
         assertTrue(ConnectionManager.isServerScopedType("guild_storage_reward"));
+        assertTrue(ConnectionManager.isServerScopedType("guild_war_queue"));
+        assertTrue(ConnectionManager.isServerScopedType("guild_war_queue_cancel"));
         assertTrue(ConnectionManager.isServerScopedType("guild_alliance_update"));
         assertTrue(ConnectionManager.isServerScopedType("guild_alliance_snapshot"));
         assertTrue(ConnectionManager.isServerScopedType("guild_membership_event"));
@@ -183,6 +281,9 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_alliance_update"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_alliance_snapshot"));
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_membership_event"));
+        assertTrue(ConnectionManager.isAuthenticatedOutboundType("war_status"));
+        assertTrue(ConnectionManager.isAuthenticatedOutboundType("war_tower_update"));
+        assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_war_queue_cancel"));
     }
 
     @Test
@@ -190,6 +291,8 @@ class ConnectionManagerTest {
         assertFalse(ConnectionManager.isThrottleLimitedType("guild_storage_snapshot"));
         assertFalse(ConnectionManager.isThrottleLimitedType("guild_storage_reward"));
         assertTrue(ConnectionManager.isThrottleLimitedType("guild_chat"));
+        assertFalse(ConnectionManager.isThrottleLimitedType("war_status"));
+        assertFalse(ConnectionManager.isThrottleLimitedType("war_tower_update"));
     }
 
     @Test
@@ -215,11 +318,36 @@ class ConnectionManagerTest {
     }
 
     @Test
+    void capabilityValidationErrorDoesNotInvalidateAuthenticatedSession() {
+        assertFalse(ConnectionManager.isSessionAuthenticationError(
+                400, "war_status", "invalid war status payload"));
+        assertFalse(ConnectionManager.isSessionAuthenticationError(
+                400, "war_tower_update", "invalid war tower update payload"));
+
+        assertTrue(ConnectionManager.isSessionAuthenticationError(400, null, "invalid message format"));
+        assertTrue(ConnectionManager.isSessionAuthenticationError(
+                0, null, "invalid auth request"));
+    }
+
+    @Test
+    void capabilityVersionRejectionDoesNotDisableGlobalReconnect() {
+        assertFalse(ConnectionManager.shouldDisableReconnectForVersionRejection("war_status"));
+        assertFalse(ConnectionManager.shouldDisableReconnectForVersionRejection("war_tower_update"));
+
+        assertTrue(ConnectionManager.shouldDisableReconnectForVersionRejection(null));
+        assertTrue(ConnectionManager.shouldDisableReconnectForVersionRejection("   "));
+    }
+
+    @Test
     void memberOnlyOutboundTypesExcludeUnrestrictedPartyFinderUpdates() {
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_chat"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_alliance_snapshot"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_storage_snapshot"));
+        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_war_queue"));
+        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_war_queue_cancel"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_war_submission"));
+        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("war_status"));
+        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("war_tower_update"));
         assertTrue(ConnectionManager.isSequoiaMemberOnlyType("get_connected"));
         assertFalse(ConnectionManager.isSequoiaMemberOnlyType("party_class_update"));
         assertFalse(ConnectionManager.isSequoiaMemberOnlyType("party_sync_snapshot"));
@@ -234,6 +362,8 @@ class ConnectionManagerTest {
         assertTrue(ConnectionManager.isAuthenticatedOutboundType("bomb_share_submit"));
         assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_request"));
         assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_submit"));
+        assertTrue(ConnectionManager.isThrottleLimitedType("guild_war_queue"));
+        assertTrue(ConnectionManager.isThrottleLimitedType("guild_war_queue_cancel"));
         assertFalse(ConnectionManager.isThrottleLimitedType("guild_alliance_snapshot"));
     }
 

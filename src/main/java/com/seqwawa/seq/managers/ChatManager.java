@@ -15,6 +15,7 @@ import com.seqwawa.seq.integrations.WynntilsItemPreviewAccess;
 import com.seqwawa.seq.model.ChatItemPreview;
 import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.utils.ChatIdentityResolver;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 import com.seqwawa.seq.utils.RankGradientAnimation;
@@ -27,6 +28,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.regex.Matcher;
@@ -53,6 +57,48 @@ public class ChatManager {
      */
     private static final int GUILD_CHAT_COLOR = 0x55FFFF;
     private static final String BACKEND_GUILD_NAME = "Sequoia";
+    private static long nextAchievementSendAt;
+
+    public static boolean canAnnounceAchievements() {
+        if (SeqClient.getAnnounceAchievementsSetting() != null
+                && !SeqClient.getAnnounceAchievementsSetting().getValue()) {
+            return false;
+        }
+        if (mc.player == null || mc.level == null || mc.getUser() == null
+                || !ConnectionManager.isConnected()
+                || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
+            return false;
+        }
+        var session = SeqClient.getConfigManager().getStoredAuthSession();
+        return session != null && mc.getUser().getProfileId().toString().equalsIgnoreCase(session.minecraftUuid())
+                && shouldRelayForGuild(WynntilsGuildRankAccess.guildMembership(BACKEND_GUILD_NAME));
+    }
+
+    /** Sends the guild copy; the backend independently posts earned achievements to Campfire. */
+    static void announceAchievements(List<String> messages, BooleanSupplier currentSession) {
+        mc.execute(() -> {
+            if (!currentSession.getAsBoolean() || !canAnnounceAchievements()) {
+                return;
+            }
+            var connection = mc.player.connection;
+            var player = mc.getUser().getProfileId();
+            for (String message : messages) {
+                if (message.isBlank() || message.length() > 240
+                        || message.chars().anyMatch(c -> Character.isISOControl(c) || c == '§')) {
+                    continue;
+                }
+                long now = System.currentTimeMillis();
+                long delay = Math.max(0, nextAchievementSendAt - now);
+                nextAchievementSendAt = now + delay + 3_000;
+                CompletableFuture.delayedExecutor(delay, TimeUnit.MILLISECONDS).execute(() -> mc.execute(() -> {
+                    if (currentSession.getAsBoolean() && canAnnounceAchievements()
+                            && mc.player.connection == connection && mc.getUser().getProfileId().equals(player)) {
+                        connection.sendCommand("g " + message);
+                    }
+                }));
+            }
+        });
+    }
     // Nicknames may contain spaces (e.g. "Emanant Force"), so allow spaces in the
     // display-name capture group. DOTALL so the message group captures across \n.
     // Packet-level normalization strips the icon/banner glyph spam before matching.
@@ -91,13 +137,13 @@ public class ChatManager {
     private static final Pattern GUILD_MEMBERSHIP_ACTOR_FIRST_PATTERN = Pattern.compile(
             "^(?<actor>you|[a-zA-Z0-9_][a-zA-Z0-9_ ]{2,63}?)\\s+"
                     + "(?:have\\s+|has\\s+)?(?:successfully\\s+)?"
-                    + "(?<verb>invited|uninvited|kicked|removed)\\s+"
+                    + "(?<verb>invited|uninvited)\\s+"
                     + "(?<target>[a-zA-Z0-9_][a-zA-Z0-9_ ]{2,63}?)\\s+"
                     + "(?:(?:to\\s+(?:join\\s+)?|from\\s+)(?:(?:the|your)\\s+)?guild)[.!]?$",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern GUILD_MEMBERSHIP_TARGET_FIRST_PATTERN = Pattern.compile(
             "^(?<target>[a-zA-Z0-9_][a-zA-Z0-9_ ]{2,63}?)\\s+(?:was|has\\s+been)\\s+"
-                    + "(?<verb>invited|uninvited|kicked|removed)\\s+"
+                    + "(?<verb>invited|uninvited)\\s+"
                     + "(?:(?:to\\s+(?:join\\s+)?|from\\s+)(?:(?:the|your)\\s+)?guild)\\s+by\\s+"
                     + "(?<actor>[a-zA-Z0-9_][a-zA-Z0-9_ ]{2,63}?)[.!]?$",
             Pattern.CASE_INSENSITIVE);
@@ -141,6 +187,11 @@ public class ChatManager {
                 ConnectionManager.getInstance().sendGuildAllianceUpdate(
                         allianceUpdate.action(), allianceUpdate.guildName());
             }
+        }
+
+        GuildRankEventParser.Event rankEvent = GuildRankEventParser.parse(message, currentMinecraftUsername());
+        if (rankEvent != null && shouldRelayForLocalGuild()) {
+            ConnectionManager.observeGuildRankEvent(rankEvent);
         }
 
         ParsedGuildMembershipEvent membershipEvent = parseGuildMembershipEvent(message, currentMinecraftUsername());
@@ -449,7 +500,14 @@ public class ChatManager {
         if (!ChatIdentityResolver.isValidUsername(actor) || !ChatIdentityResolver.isValidUsername(target)) {
             return null;
         }
-        String action = "invited".equalsIgnoreCase(verb) ? "invited" : "removed";
+        String action;
+        if ("invited".equalsIgnoreCase(verb)) {
+            action = "invited";
+        } else if ("uninvited".equalsIgnoreCase(verb)) {
+            action = "uninvited";
+        } else {
+            return null;
+        }
         return new ParsedGuildMembershipEvent(action, actor, target);
     }
 
@@ -764,12 +822,13 @@ public class ChatManager {
         line.append(DiscordRankChatDecorator.rankPill(
                         rank, null, DiscordRankChatDecorator.discordChatTextColor()))
                 .append(Component.literal(" "));
+        String displayName = bridgeDisplayName(msg.username(), rank);
         // Same shift-click insertion Wynncraft puts on in-game names, so a bridged
         // sender links to their profile just like a guild one.
         line.append(DiscordRankChatDecorator.colouredName(
-                msg.username(),
+                displayName,
                 rank,
-                Style.EMPTY.withColor(ChatFormatting.WHITE).withInsertion(msg.username())));
+                Style.EMPTY.withColor(ChatFormatting.WHITE).withInsertion(displayName)));
         MutableComponent insignia = DiscordRankChatDecorator.bridgeInsignia(msg.username(), msg.discordId());
         if (insignia != null) {
             line.append(insignia);
@@ -777,6 +836,28 @@ public class ChatManager {
         TextColor textColor = DiscordRankChatDecorator.discordChatTextColor();
         return line.append(Component.literal(": ").withStyle(style -> style.withColor(textColor)))
                 .append(Component.literal(text).withStyle(style -> style.withColor(textColor)));
+    }
+
+    /**
+     * Discord nicknames may include the member's progression role, for example
+     * {@code Treant OwORawr}. The bridge already draws that role in the pill, so omit
+     * the matching leading label from the visible sender name.
+     */
+    static String bridgeDisplayName(String senderName, RankPresentation rank) {
+        if (senderName == null || rank == null) {
+            return senderName;
+        }
+
+        String trimmedName = senderName.strip();
+        String rankLabel = rank.label().strip();
+        if (trimmedName.length() <= rankLabel.length()
+                || !trimmedName.regionMatches(true, 0, rankLabel, 0, rankLabel.length())
+                || !Character.isWhitespace(trimmedName.charAt(rankLabel.length()))) {
+            return senderName;
+        }
+
+        String withoutRank = trimmedName.substring(rankLabel.length()).stripLeading();
+        return withoutRank.isBlank() ? senderName : withoutRank;
     }
 
     static MutableComponent bridgeContinuationLine(String text, boolean colored) {

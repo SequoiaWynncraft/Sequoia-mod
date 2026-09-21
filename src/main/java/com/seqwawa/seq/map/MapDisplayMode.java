@@ -11,6 +11,14 @@ public enum MapDisplayMode {
         this.label = label;
     }
 
+    public String mapTitle() {
+        return switch (this) {
+            case GATHERING -> "Sequoia Gathering Map";
+            case WORLD_EVENTS -> "Sequoia Event Map";
+            case INGREDIENTS -> "Sequoia Ingredient Map";
+        };
+    }
+
     public String label() {
         return label;
     }

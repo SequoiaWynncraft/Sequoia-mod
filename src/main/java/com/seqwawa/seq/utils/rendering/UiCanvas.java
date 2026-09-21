@@ -44,6 +44,11 @@ public interface UiCanvas {
 
     void drawImage(UiImage image, float x, float y, float width, float height, float alpha);
 
+    /** Draw adjacent image tiles without antialiased fringes at their shared edges. */
+    default void drawImageTile(UiImage image, float x, float y, float width, float height, float alpha) {
+        drawImage(image, x, y, width, height, alpha);
+    }
+
     void fillCurrentPathWithImage(UiImage image, float x, float y, float width, float height, float alpha);
 
     void beginPath();

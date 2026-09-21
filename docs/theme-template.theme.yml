@@ -1,3 +1,6 @@
+# RGBA values, including alpha, are used as configured by themed UI elements.
+# UI code must not substitute hard-coded alpha values. The explicit War Planner
+# opacity control scales background alpha only when its configured value is below 100%.
 # Copy this file to config/sequoia/themes/<name>.theme.yml.
 # Theme names may contain lowercase letters, numbers, underscores, and hyphens.
 name: example_theme
@@ -44,6 +47,17 @@ control:
   danger_hover: [220, 80, 80, 220]
   warning: [220, 176, 88, 255]
   success: [88, 196, 122, 255]
+
+# One colour per achievement rung, from the everyday to the legendary.
+# They are what tells two chains apart at a glance, so keep them far apart.
+achievement:
+  bronze: [200, 129, 60, 255]
+  silver: [196, 204, 216, 255]
+  gold: [242, 192, 68, 255]
+  platinum: [95, 220, 196, 255]
+  diamond: [107, 182, 255, 255]
+  obsidian: [169, 155, 209, 255]
+  mythril: [226, 244, 255, 255]
 
 status:
   success_background: [56, 140, 88, 220]

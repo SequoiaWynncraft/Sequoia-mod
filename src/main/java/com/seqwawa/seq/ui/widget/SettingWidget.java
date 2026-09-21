@@ -1,5 +1,9 @@
 package com.seqwawa.seq.ui.widget;
 
+import static com.seqwawa.seq.managers.ThemeManager.color;
+import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_DIVIDER;
+import static com.seqwawa.seq.ui.theme.UiColor.ACCENT_DISABLED;
+
 import lombok.Getter;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
@@ -11,6 +15,10 @@ import java.util.Locale;
 import java.util.Map;
 
 public abstract class SettingWidget<T extends Setting<?>> {
+    private static final float PARENT_INDENT_STEP = 14f;
+    private static final float PARENT_GUIDE_OFFSET = 7f;
+    private static final float PARENT_GUIDE_WIDTH = 2f;
+    private static final float PARENT_GUIDE_VERTICAL_MARGIN = 6f;
     private static final Map<String, String> DISPLAY_NAME_OVERRIDES = new HashMap<>();
     private static final Map<String, String> TOKEN_REPLACEMENTS = new HashMap<>();
 
@@ -18,6 +26,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("auto_connect", "Auto connect to Sequoia backend");
         DISPLAY_NAME_OVERRIDES.put("show_discord_bridge", "Show Discord chat");
         DISPLAY_NAME_OVERRIDES.put("show_discord_ranks", "Show Discord ranks and colors in guild chat");
+        DISPLAY_NAME_OVERRIDES.put("show_discord_rank_pills", "Show Discord rank on pills");
         DISPLAY_NAME_OVERRIDES.put("show_chat_insignias", "Show insignias in chat");
         DISPLAY_NAME_OVERRIDES.put("use_per_user_colors", "Use per-user colors");
         DISPLAY_NAME_OVERRIDES.put("color_discord_bridge", "Color Chatbridge with Discord ranks");
@@ -40,6 +49,7 @@ public abstract class SettingWidget<T extends Setting<?>> {
         DISPLAY_NAME_OVERRIDES.put("check_updates", "Check for updates on startup");
         DISPLAY_NAME_OVERRIDES.put("enable_easter_eggs", "Enable easter eggs");
         DISPLAY_NAME_OVERRIDES.put("startup_video", "Startup video");
+        DISPLAY_NAME_OVERRIDES.put("ui", "UI");
         DISPLAY_NAME_OVERRIDES.put("ui_size_percent", "UI size %");
         DISPLAY_NAME_OVERRIDES.put("enable_radiance_visualiser", "Enable Radiance visualiser");
         DISPLAY_NAME_OVERRIDES.put("radiance_marker_color", "Radiance marker color");
@@ -100,6 +110,9 @@ public abstract class SettingWidget<T extends Setting<?>> {
         return false;
     }
 
+    /** Clears transient input and previews when a category, section, or search hides this control. */
+    public void onHidden() {}
+
     public Setting<?> getSetting() {
         return setting;
     }
@@ -124,7 +137,31 @@ public abstract class SettingWidget<T extends Setting<?>> {
     }
 
     protected float labelIndent() {
-        return setting.getIndentLevel() * 14f;
+        return setting.getIndentLevel() * PARENT_INDENT_STEP;
+    }
+
+    /** Left edge for labels and left-aligned controls inside a dependent row. */
+    protected float indentedContentX(float margin) {
+        return x + margin + labelIndent();
+    }
+
+    /** Width remaining after applying equal margins and the dependency indent. */
+    protected float indentedContentWidth(float margin) {
+        return Math.max(1f, width - margin * 2f - labelIndent());
+    }
+
+    /** Draws the same dependency guide used by nested Chat settings. */
+    protected void drawParentGuide(UiCanvas canvas, boolean enabled) {
+        float indent = labelIndent();
+        if (indent <= 0f) {
+            return;
+        }
+        canvas.fillRect(
+                x + indent - PARENT_GUIDE_OFFSET,
+                y + PARENT_GUIDE_VERTICAL_MARGIN,
+                PARENT_GUIDE_WIDTH,
+                Math.max(1f, height - PARENT_GUIDE_VERTICAL_MARGIN * 2f),
+                color(enabled ? ACCENT_DIVIDER : ACCENT_DISABLED));
     }
 
     public static String toDisplayName(String rawName) {

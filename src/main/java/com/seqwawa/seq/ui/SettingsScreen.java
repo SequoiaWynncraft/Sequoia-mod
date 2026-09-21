@@ -8,10 +8,12 @@ import com.seqwawa.seq.LightRoomTnaRange.LightRoom;
 import com.seqwawa.seq.halcyon.HalcyonRingRenderer;
 import com.seqwawa.seq.managers.PrincessMode;
 import com.seqwawa.seq.radiance.PingRenderer;
+import com.seqwawa.seq.scroll.CraftedScrollRangeVisualiserClient;
 import com.seqwawa.seq.ui.widget.BooleanWidget;
 import com.seqwawa.seq.ui.widget.ChoiceWidget;
 import com.seqwawa.seq.ui.widget.ColorWidget;
 import com.seqwawa.seq.ui.widget.EnumWidget;
+import com.seqwawa.seq.ui.widget.SelectionWidget;
 import com.seqwawa.seq.ui.widget.SettingWidget;
 import com.seqwawa.seq.ui.widget.SliderWidget;
 import com.seqwawa.seq.ui.widget.StringWidget;
@@ -45,9 +47,10 @@ public class SettingsScreen extends Screen {
     private static final float CATEGORY_SPACING = 6;
     private static final float PADDING = 8;
     private static final float SEARCH_BAR_HEIGHT = 18;
-    private static final float SEARCH_BAR_WIDTH = 180;
     private static final float SEARCH_BAR_MARGIN = 8;
     private static final float THEME_EDITOR_BUTTON_WIDTH = 94;
+    private static final float HUD_EDITOR_BUTTON_WIDTH = 76;
+    private static final float HEADER_BUTTON_GAP = 6;
     private static final float PRINCESS_PROMPT_HEIGHT = 24;
 
     // Font sizes
@@ -59,12 +62,10 @@ public class SettingsScreen extends Screen {
     private static final float SEARCH_FONT_SIZE = 12;
     private static final float SCROLL_SPEED = 12;
 
-    // Colors
-    private static final String GITHUB_URL = "https://github.com/SequoiaWynncraft/sequoia-mod";
-
     private final Screen parent;
     private final LinkedHashMap<String, List<SettingWidget<?>>> categories = new LinkedHashMap<>();
     private final Set<String> collapsedCategories = new HashSet<>();
+    private final SettingsSectionExpansion sectionExpansion = new SettingsSectionExpansion();
     private float scrollOffset = 0;
     private float maxScroll = 0;
     private float nvgMouseX, nvgMouseY;
@@ -83,14 +84,19 @@ public class SettingsScreen extends Screen {
         super(Component.literal("Settings"));
         this.parent = parent;
         buildWidgets();
+        if (PrincessMode.isEnabled() && SeqClient.getPrincessRaidStatsManager() != null) {
+            SeqClient.getPrincessRaidStatsManager().refresh();
+        }
     }
 
     @Override
     public void removed() {
+        for (var widgets : categories.values()) widgets.forEach(SettingWidget::onHidden);
         deactivateColorPreviews();
         LightRoom.setColorPreviewActive(false);
         HalcyonRingRenderer.setColorPreviewActive(false);
         PingRenderer.setColorPreviewActive(false);
+        CraftedScrollRangeVisualiserClient.setColorPreviewActive(false);
         SeqClient.getConfigManager().save();
         super.removed();
     }
@@ -99,7 +105,7 @@ public class SettingsScreen extends Screen {
         Map<String, List<SettingWidget<?>>> temp = new LinkedHashMap<>();
 
         for (Setting<?> setting : SeqClient.getConfigManager().getSettings()) {
-            String category = setting.getCategory();
+            String category = setting.getPresentationCategory();
             SettingWidget<?> widget = createWidget(setting);
             if (widget != null) {
                 temp.computeIfAbsent(category, k -> new ArrayList<>()).add(widget);
@@ -107,9 +113,32 @@ public class SettingsScreen extends Screen {
         }
 
         categories.clear();
-        categories.putAll(temp);
+        sortedCategoryNames(temp.keySet()).forEach(
+                category -> categories.put(category, groupWidgetsBySection(temp.get(category))));
         collapsedCategories.clear();
         collapsedCategories.addAll(categories.keySet());
+    }
+
+    /** Keeps each section contiguous while preserving section and control registration order. */
+    static List<SettingWidget<?>> groupWidgetsBySection(List<SettingWidget<?>> widgets) {
+        Map<String, List<SettingWidget<?>>> sections = new LinkedHashMap<>();
+        for (SettingWidget<?> widget : widgets) {
+            sections.computeIfAbsent(widget.getSetting().getSection(), key -> new ArrayList<>()).add(widget);
+        }
+        return sections.values().stream().flatMap(List::stream).toList();
+    }
+
+    static List<String> sortedCategoryNames(Collection<String> categoryNames) {
+        if (categoryNames == null || categoryNames.isEmpty()) {
+            return List.of();
+        }
+        return categoryNames.stream()
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(
+                                (String category) -> SettingWidget.toDisplayName(category),
+                                String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(String.CASE_INSENSITIVE_ORDER))
+                .toList();
     }
 
     private SettingWidget<?> createWidget(Setting<?> setting) {
@@ -118,7 +147,7 @@ public class SettingsScreen extends Screen {
         if (setting instanceof Setting.ColorSetting c)
             return createColorWidget(c);
         if (setting instanceof Setting.IntSetting i)
-            return new SliderWidget(i, i == SeqClient.getUiSizePercentSetting());
+            return new SliderWidget(i);
         if (setting instanceof Setting.DoubleSetting d)
             return new SliderWidget(d);
         if (setting instanceof Setting.FloatSetting f)
@@ -126,7 +155,7 @@ public class SettingsScreen extends Screen {
         if (setting instanceof Setting.ChoiceSetting c)
             return new ChoiceWidget(c);
         if (setting instanceof Setting.EnumSetting<?> e)
-            return new EnumWidget(e);
+            return new EnumWidget<>(e);
         if (setting instanceof Setting.StringSetting s)
             return new StringWidget(s);
         return null;
@@ -141,6 +170,9 @@ public class SettingsScreen extends Screen {
         }
         if (setting == SeqClient.getRadianceMarkerColorSetting()) {
             return new ColorWidget(setting, PingRenderer::setColorPreviewActive);
+        }
+        if (setting == SeqClient.getCraftedScrollRangeColorSetting()) {
+            return new ColorWidget(setting, CraftedScrollRangeVisualiserClient::setColorPreviewActive);
         }
         return new ColorWidget(setting, null);
     }
@@ -164,10 +196,14 @@ public class SettingsScreen extends Screen {
                 ? SettingWidget.toDisplayName(settingName).toLowerCase()
                 : setting.getDisplayName().toLowerCase();
         String displayCategoryName = SettingWidget.toDisplayName(categoryName).toLowerCase();
+        String persistedCategoryName = setting.getCategory().toLowerCase();
+        String displayPersistedCategoryName = SettingWidget.toDisplayName(setting.getCategory()).toLowerCase();
         return settingName.toLowerCase().contains(query)
                 || categoryName.toLowerCase().contains(query)
                 || displaySettingName.contains(query)
                 || displayCategoryName.contains(query)
+                || persistedCategoryName.contains(query)
+                || displayPersistedCategoryName.contains(query)
                 || containsIgnoreCase(setting.getDescription(), query)
                 || containsIgnoreCase(setting.getSection(), query);
     }
@@ -181,6 +217,7 @@ public class SettingsScreen extends Screen {
         if (!princessPromptAllowed() && PrincessMode.isEnabled()) {
             PrincessMode.setEnabled(false);
         }
+        deactivateHiddenWidgets();
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
         nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
@@ -198,30 +235,56 @@ public class SettingsScreen extends Screen {
             canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(BACKGROUND_SIDEBAR));
 
             // Sidebar title
-            drawText(canvas, fontName, SIDEBAR_TITLE_SIZE, color(ACCENT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
-                    SIDEBAR_WIDTH / 2f, 22, "Sequoia");
+            SequoiaUiStyle.drawSidebarTitle(canvas, fontName, SIDEBAR_WIDTH);
 
             // Divider under title
-            canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_DIVIDER));
+            canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_PRIMARY_DARK));
 
             // Sidebar buttons
             float btnX = SIDEBAR_PADDING;
             float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-            float btnStartY = 50;
 
-            drawSidebarButton(canvas, fontName, btnX, btnStartY, btnW, "Partyfinder", false);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING), btnW,
-                    "Connection", false);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2,
-                    btnW, "Settings", true);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3,
-                    btnW, "Map", false);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4,
-                    btnW, "Ingredients", false);
-            drawSidebarButton(canvas, fontName, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5,
-                    btnW, "Github", false);
+            var destinations = SequoiaSidebarNavigation.destinations();
+            var sidebarLayout = SequoiaSidebarNavigation.sidebarLayout(
+                    screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
+            for (int row = 0; row < destinations.size(); row++) {
+                var destination = destinations.get(row);
+                drawSidebarButton(
+                        canvas,
+                        fontName,
+                        btnX,
+                        sidebarLayout.buttonY(row),
+                        btnW,
+                        sidebarLayout.buttonHeight(),
+                        destination.label(),
+                        destination == SequoiaSidebarNavigation.Destination.SETTINGS);
+            }
 
-            renderPrincessPrompt(canvas, fontName, screenHeight, System.currentTimeMillis());
+            boolean princessPromptFits = princessPromptFits(screenHeight, sidebarLayout.bottom());
+            if (princessLeaderboardVisible()) {
+                float leaderboardY = sidebarLayout.bottom() + SIDEBAR_BUTTON_SPACING;
+                float availableBottom = princessPromptFits
+                        ? princessPromptY(screenHeight, 1f)
+                        : screenHeight - SIDEBAR_PADDING;
+                float availableHeight = availableBottom
+                        - SIDEBAR_BUTTON_SPACING
+                        - leaderboardY;
+                float leaderboardHeight = Math.min(PrincessLeaderboardPanel.HEIGHT, availableHeight);
+                if (leaderboardHeight >= PrincessLeaderboardPanel.MIN_HEIGHT) {
+                    PrincessLeaderboardPanel.render(
+                            canvas,
+                            fontName,
+                            btnX,
+                            leaderboardY,
+                            btnW,
+                            leaderboardHeight,
+                            SeqClient.getPrincessRaidStatsManager().snapshot());
+                }
+            }
+
+            if (princessPromptFits) {
+                renderPrincessPrompt(canvas, fontName, screenHeight, System.currentTimeMillis());
+            }
 
             // === Main Content Panel (fills rest of screen) ===
             float panelX = SIDEBAR_WIDTH;
@@ -237,17 +300,18 @@ public class SettingsScreen extends Screen {
             // Search bar (top left of header)
             searchCursorBlink++;
             float searchX = panelX + SEARCH_BAR_MARGIN;
+            float searchWidth = SequoiaUiStyle.searchWidth(panelWidth - SEARCH_BAR_MARGIN * 2);
             float searchY = panelY + (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
 
             Color searchBg = searchFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
-            canvas.fillRect(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, searchBg);
+            canvas.fillRect(searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT, searchBg);
             if (searchFocused) {
-                canvas.strokeRect(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT, 1,
+                canvas.strokeRect(searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT, 1,
                         color(CONTROL_BORDER));
             }
 
             canvas.save();
-            canvas.scissor(searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT);
+            canvas.scissor(searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT);
 
             if (searchQuery.isEmpty() && !searchFocused) {
                 drawText(canvas, fontName, SEARCH_FONT_SIZE, color(TEXT_DISABLED), UiCanvas.HorizontalAlign.LEFT,
@@ -264,12 +328,12 @@ public class SettingsScreen extends Screen {
                 float textW = searchQuery.isEmpty()
                         ? 0
                         : UiRenderer.measureText(searchQuery, fontName, SEARCH_FONT_SIZE).width();
-                float cursorDrawX = searchX + 6 + textW + 1;
+                float cursorDrawX = Math.min(searchX + 6 + textW + 1, searchX + searchWidth - 1);
                 canvas.fillRect(cursorDrawX, searchY + 3, 1, SEARCH_BAR_HEIGHT - 6, color(TEXT_PRIMARY));
             }
 
             // Title (right side of header)
-            float themeEditorX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
+            float themeEditorX = searchX + searchWidth + SEARCH_BAR_MARGIN;
             boolean themeEditorHovered = isHovered(
                     nvgMouseX,
                     nvgMouseY,
@@ -282,7 +346,7 @@ public class SettingsScreen extends Screen {
                     searchY,
                     THEME_EDITOR_BUTTON_WIDTH,
                     SEARCH_BAR_HEIGHT,
-                    themeEditorHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT_SECONDARY));
+                    themeEditorHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
             drawText(
                     canvas,
                     fontName,
@@ -293,8 +357,32 @@ public class SettingsScreen extends Screen {
                     searchY + SEARCH_BAR_HEIGHT / 2f,
                     "Theme editor");
 
+            float hudEditorX = themeEditorX + THEME_EDITOR_BUTTON_WIDTH + HEADER_BUTTON_GAP;
+            boolean hudEditorHovered = isHovered(
+                    nvgMouseX,
+                    nvgMouseY,
+                    hudEditorX,
+                    searchY,
+                    HUD_EDITOR_BUTTON_WIDTH,
+                    SEARCH_BAR_HEIGHT);
+            canvas.fillRect(
+                    hudEditorX,
+                    searchY,
+                    HUD_EDITOR_BUTTON_WIDTH,
+                    SEARCH_BAR_HEIGHT,
+                    hudEditorHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
+            drawText(
+                    canvas,
+                    fontName,
+                    11,
+                    color(TEXT_PRIMARY),
+                    UiCanvas.HorizontalAlign.CENTER,
+                    hudEditorX + HUD_EDITOR_BUTTON_WIDTH / 2f,
+                    searchY + SEARCH_BAR_HEIGHT / 2f,
+                    "HUD layout");
+
             // Title (right side of header)
-            drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY), UiCanvas.HorizontalAlign.RIGHT,
+            drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY_HOVER), UiCanvas.HorizontalAlign.RIGHT,
                     panelX + panelWidth - SEARCH_BAR_MARGIN, panelY + HEADER_HEIGHT / 2f, "Settings");
 
             // Content area with scissor
@@ -338,12 +426,12 @@ public class SettingsScreen extends Screen {
                         catHovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
 
                 // Arrow
-                drawText(canvas, fontName, 12, color(ACCENT_SECONDARY), UiCanvas.HorizontalAlign.CENTER,
+                drawText(canvas, fontName, 12, color(ACCENT_PRIMARY_HOVER), UiCanvas.HorizontalAlign.CENTER,
                         contentX + PADDING + 14, cursorY + CATEGORY_HEIGHT / 2f, collapsed ? "+" : "-");
 
                 // Category name
                 String displayName = SettingWidget.toDisplayName(category);
-                drawText(canvas, fontName, CATEGORY_FONT_SIZE, color(TEXT_MUTED), UiCanvas.HorizontalAlign.LEFT,
+                drawText(canvas, fontName, CATEGORY_FONT_SIZE, color(ACCENT_PRIMARY_HOVER), UiCanvas.HorizontalAlign.LEFT,
                         contentX + PADDING + 26, cursorY + CATEGORY_HEIGHT / 2f, displayName);
 
                 cursorY += CATEGORY_HEIGHT;
@@ -354,23 +442,35 @@ public class SettingsScreen extends Screen {
                     for (SettingWidget<?> widget : filtered) {
                         String section = widget.getSetting().getSection();
                         if (section != null && !section.equals(currentSection)) {
-                            canvas.fillRect(contentX, cursorY, contentWidth, SECTION_HEIGHT, color(BACKGROUND_CONTENT, 170));
+                            boolean sectionHovered = isHovered(
+                                    nvgMouseX, nvgMouseY, contentX, cursorY, contentWidth, SECTION_HEIGHT)
+                                    && nvgMouseY >= contentY && nvgMouseY <= contentY + contentHeight;
+                            canvas.fillRect(contentX, cursorY, contentWidth, SECTION_HEIGHT,
+                                    sectionHovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
+                            drawText(canvas, fontName, SECTION_FONT_SIZE, color(TEXT_SECONDARY),
+                                    UiCanvas.HorizontalAlign.CENTER, contentX + PADDING + 14,
+                                    cursorY + SECTION_HEIGHT / 2f,
+                                    isSectionCollapsed(category, section) ? "+" : "-");
                             drawText(
                                     canvas,
                                     fontName,
                                     SECTION_FONT_SIZE,
-                                    color(ACCENT_SECONDARY),
+                                    color(TEXT_SECONDARY),
                                     UiCanvas.HorizontalAlign.LEFT,
-                                    contentX + PADDING + 8,
+                                    contentX + PADDING + 26,
                                     cursorY + SECTION_HEIGHT / 2f,
                                     section);
                             cursorY += SECTION_HEIGHT;
                         }
                         currentSection = section;
-                        Color bg = (settingIndex % 2 == 0) ? color(BACKGROUND_BODY) : color(BACKGROUND_CONTENT_FOCUSED, 100);
+                        if (isSectionCollapsed(category, section)) {
+                            continue;
+                        }
+                        Color bg = (settingIndex % 2 == 0) ? color(BACKGROUND_BODY) : color(BACKGROUND_CONTENT_FOCUSED);
                         canvas.fillRect(contentX, cursorY, contentWidth, widget.getHeight(), bg);
 
                         widget.setPosition(contentX + PADDING, cursorY, widgetWidth, widget.getHeight());
+                        if (widget instanceof SelectionWidget<?> selection) selection.setViewport(contentY, contentY + contentHeight);
                         widget.render(canvas, nvgMouseX, nvgMouseY);
                         cursorY += widget.getHeight();
                         settingIndex++;
@@ -381,6 +481,7 @@ public class SettingsScreen extends Screen {
             }
 
             maxScroll = Math.max(0, cursorY + scrollOffset - contentY - contentHeight);
+            scrollOffset = Math.min(scrollOffset, maxScroll);
 
             canvas.restore();
 
@@ -391,21 +492,35 @@ public class SettingsScreen extends Screen {
                 canvas.fillRect(scrollbarX, contentY, 4, scrollbarHeight, color(CONTROL_TRACK));
 
                 float thumbRatio = contentHeight / (contentHeight + maxScroll);
-                float thumbHeight = Math.max(20, scrollbarHeight * thumbRatio);
+                float thumbHeight = Math.min(scrollbarHeight, Math.max(20, scrollbarHeight * thumbRatio));
                 float thumbY = contentY + (scrollOffset / maxScroll) * (scrollbarHeight - thumbHeight);
                 canvas.fillRect(scrollbarX, thumbY, 4, thumbHeight, color(CONTROL_THUMB));
             }
+            SelectionWidget<?> dropdown = openDropdown();
+            if (dropdown != null) dropdown.renderOverlay(canvas, nvgMouseX, nvgMouseY);
         });
     }
 
-    private void drawSidebarButton(
-            UiCanvas canvas, String fontName, float x, float y, float w, String label, boolean active) {
-        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, SIDEBAR_BUTTON_HEIGHT);
+    private SelectionWidget<?> openDropdown() {
+        for (var widgets : categories.values()) {
+            for (var widget : widgets) {
+                if (widget instanceof SelectionWidget<?> selection && selection.isOpen()) {
+                    if (isWidgetInteractive(widget)) return selection;
+                    selection.onHidden();
+                }
+            }
+        }
+        return null;
+    }
 
-        Color bgColor = active ? color(ACCENT_PRIMARY_DARK_HOVER, 120) : (hovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_CONTENT));
-        canvas.fillRect(x, y, w, SIDEBAR_BUTTON_HEIGHT, bgColor);
-        drawText(canvas, fontName, SIDEBAR_BUTTON_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
-                x + w / 2f, y + SIDEBAR_BUTTON_HEIGHT / 2f, label);
+    private void drawSidebarButton(
+            UiCanvas canvas, String fontName, float x, float y, float w, float h, String label, boolean active) {
+        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
+
+        Color bgColor = SequoiaUiStyle.sidebarButtonColor(active, hovered);
+        canvas.fillRect(x, y, w, h, bgColor);
+        drawText(canvas, fontName, Math.min(SIDEBAR_BUTTON_SIZE, Math.max(8, h - 2)), color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
+                x + w / 2f, y + h / 2f, label);
     }
 
     private void renderPrincessPrompt(UiCanvas canvas, String fontName, float screenHeight, long nowMs) {
@@ -465,8 +580,16 @@ public class SettingsScreen extends Screen {
         return screenHeight + (visibleY - screenHeight) * progress;
     }
 
+    static boolean princessPromptFits(float screenHeight, float navigationBottom) {
+        return princessPromptY(screenHeight, 1f) >= navigationBottom + SIDEBAR_BUTTON_SPACING;
+    }
+
     private static boolean princessPromptAllowed() {
         return SeqClient.getEasterEggsSetting() != null && SeqClient.getEasterEggsSetting().getValue();
+    }
+
+    private static boolean princessLeaderboardVisible() {
+        return PrincessMode.isEnabled() && SeqClient.getPrincessRaidStatsManager() != null;
     }
 
     private static void drawText(
@@ -491,6 +614,9 @@ public class SettingsScreen extends Screen {
         float mx = MinecraftUiRenderer.mouseX(click.x());
         float my = MinecraftUiRenderer.mouseY(click.y());
 
+        SelectionWidget<?> dropdown = openDropdown();
+        if (dropdown != null && dropdown.mouseClicked(mx, my, click.button())) return true;
+
         float screenWidth = MinecraftUiRenderer.screenWidth();
         float screenHeight = MinecraftUiRenderer.screenHeight();
         float panelX = SIDEBAR_WIDTH;
@@ -504,62 +630,40 @@ public class SettingsScreen extends Screen {
             // Sidebar button clicks
             float btnX = SIDEBAR_PADDING;
             float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-            float btnStartY = 50;
 
-            if (princessPromptAllowed()) {
+            var destinations = SequoiaSidebarNavigation.destinations();
+            var sidebarLayout = SequoiaSidebarNavigation.sidebarLayout(
+                    screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
+            for (int row = 0; row < destinations.size(); row++) {
+                if (!isHovered(mx, my, btnX, sidebarLayout.buttonY(row), btnW, sidebarLayout.buttonHeight())) {
+                    continue;
+                }
+                var destination = destinations.get(row);
+                if (destination != SequoiaSidebarNavigation.Destination.SETTINGS) {
+                    SequoiaSidebarNavigation.open(destination, this);
+                }
+                return true;
+            }
+
+            if (princessPromptAllowed() && princessPromptFits(screenHeight, sidebarLayout.bottom())) {
                 long nowMs = System.currentTimeMillis();
                 float progress = princessPrompt.slideProgress(nowMs);
                 float promptY = princessPromptY(screenHeight, progress);
                 if (progress > 0f && isHovered(mx, my, btnX, promptY, btnW, PRINCESS_PROMPT_HEIGHT)) {
-                    PrincessMode.toggle();
+                    boolean enabled = PrincessMode.toggle();
+                    if (enabled && SeqClient.getPrincessRaidStatsManager() != null) {
+                        SeqClient.getPrincessRaidStatsManager().refresh();
+                    }
                     return true;
                 }
             }
 
-            // Partyfinder
-            if (isHovered(mx, my, btnX, btnStartY, btnW, SIDEBAR_BUTTON_HEIGHT)) {
-                SeqClient.mc.setScreen(new PartyFinderScreen(this));
-                return true;
-            }
-            // Connection
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING), btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                SeqClient.mc.setScreen(new ConnectionScreen(this));
-                return true;
-            }
-            // Settings (already here)
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 2, btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                return true;
-            }
-            // Map
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 3, btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                SeqClient.mc.setScreen(new WorldMapScreen(this));
-                return true;
-            }
-            // Ingredients
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 4, btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                SeqClient.mc.setScreen(new IngredientGuideScreen(this));
-                return true;
-            }
-            // Github
-            if (isHovered(mx, my, btnX, btnStartY + (SIDEBAR_BUTTON_HEIGHT + SIDEBAR_BUTTON_SPACING) * 5, btnW,
-                    SIDEBAR_BUTTON_HEIGHT)) {
-                try {
-                    java.net.URI uri = java.net.URI.create(GITHUB_URL);
-                    java.awt.Desktop.getDesktop().browse(uri);
-                } catch (Exception ignored) {
-                }
-                return true;
-            }
-
             // Search bar click
             float searchX = panelX + SEARCH_BAR_MARGIN;
+            float searchWidth = SequoiaUiStyle.searchWidth(panelWidth - SEARCH_BAR_MARGIN * 2);
             float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
 
-            if (isHovered(mx, my, searchX, searchY, SEARCH_BAR_WIDTH, SEARCH_BAR_HEIGHT)) {
+            if (isHovered(mx, my, searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT)) {
                 searchFocused = true;
                 searchCursorBlink = 0;
                 return true;
@@ -567,9 +671,14 @@ public class SettingsScreen extends Screen {
                 searchFocused = false;
             }
 
-            float themeEditorX = searchX + SEARCH_BAR_WIDTH + SEARCH_BAR_MARGIN;
+            float themeEditorX = searchX + searchWidth + SEARCH_BAR_MARGIN;
             if (isHovered(mx, my, themeEditorX, searchY, THEME_EDITOR_BUTTON_WIDTH, SEARCH_BAR_HEIGHT)) {
                 SeqClient.mc.setScreen(new ThemeEditorScreen(this));
+                return true;
+            }
+            float hudEditorX = themeEditorX + THEME_EDITOR_BUTTON_WIDTH + HEADER_BUTTON_GAP;
+            if (isHovered(mx, my, hudEditorX, searchY, HUD_EDITOR_BUTTON_WIDTH, SEARCH_BAR_HEIGHT)) {
+                SeqClient.mc.setScreen(new WarQueueHudEditorScreen(this));
                 return true;
             }
 
@@ -620,10 +729,13 @@ public class SettingsScreen extends Screen {
             // Category header click
             if (isHovered(mx, my, panelX, cursorY, contentWidth, CATEGORY_HEIGHT)) {
                 if (click.button() == 0) {
-                    if (collapsed) {
-                        collapsedCategories.remove(category);
-                    } else {
-                        collapsedCategories.add(category);
+                    if (searchQuery.isEmpty()) {
+                        if (collapsed) {
+                            collapsedCategories.remove(category);
+                        } else {
+                            collapsedCategories.add(category);
+                        }
+                        deactivateHiddenWidgets();
                     }
                     return true;
                 }
@@ -636,9 +748,22 @@ public class SettingsScreen extends Screen {
                 for (SettingWidget<?> widget : filtered) {
                     String section = widget.getSetting().getSection();
                     if (section != null && !section.equals(currentSection)) {
+                        if (isHovered(mx, my, panelX, cursorY, contentWidth, SECTION_HEIGHT)) {
+                            if (click.button() == 0) {
+                                if (searchQuery.isEmpty()) {
+                                    sectionExpansion.toggle(category, section);
+                                    deactivateHiddenWidgets();
+                                }
+                                return true;
+                            }
+                            return super.mouseClicked(click, outsideScreen);
+                        }
                         cursorY += SECTION_HEIGHT;
                     }
                     currentSection = section;
+                    if (isSectionCollapsed(category, section)) {
+                        continue;
+                    }
                     widget.setPosition(panelX + PADDING, cursorY, widgetWidth, widget.getHeight());
                     if (widget.mouseClicked(mx, my, click.button())) {
                         return true;
@@ -675,8 +800,13 @@ public class SettingsScreen extends Screen {
             float screenHeight = MinecraftUiRenderer.screenHeight();
             float contentHeight = screenHeight - HEADER_HEIGHT;
             float thumbRatio = contentHeight / (contentHeight + maxScroll);
-            float thumbHeight = Math.max(20, contentHeight * thumbRatio);
+            float thumbHeight = Math.min(contentHeight, Math.max(20, contentHeight * thumbRatio));
             float scrollRange = contentHeight - thumbHeight;
+
+            if (scrollRange <= 0) {
+                scrollOffset = 0;
+                return true;
+            }
 
             float delta = my - scrollbarDragStart;
             scrollOffset = scrollOffsetDragStart + (delta / scrollRange) * maxScroll;
@@ -685,7 +815,7 @@ public class SettingsScreen extends Screen {
         }
 
         for (List<SettingWidget<?>> widgets : categories.values()) {
-            for (SettingWidget<?> widget : widgets) {
+            for (SettingWidget<?> widget : interactiveWidgets(widgets)) {
                 if (widget.mouseDragged(mx, my))
                     return true;
             }
@@ -695,6 +825,8 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        SelectionWidget<?> dropdown = openDropdown();
+        if (dropdown != null && dropdown.scroll(scrollY)) return true;
         scrollOffset -= (float) scrollY * SCROLL_SPEED;
         scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset));
         return true;
@@ -702,6 +834,8 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean keyPressed(@NotNull KeyEvent keyEvent) {
+        SelectionWidget<?> dropdown = openDropdown();
+        if (dropdown != null && dropdown.keyPressed(keyEvent)) return true;
         // Search bar input
         if (searchFocused) {
             int keyCode = keyEvent.key();
@@ -720,7 +854,7 @@ public class SettingsScreen extends Screen {
         }
 
         for (List<SettingWidget<?>> widgets : categories.values()) {
-            for (SettingWidget<?> widget : widgets) {
+            for (SettingWidget<?> widget : interactiveWidgets(widgets)) {
                 if (widget.keyPressed(keyEvent))
                     return true;
             }
@@ -730,6 +864,7 @@ public class SettingsScreen extends Screen {
 
     @Override
     public boolean charTyped(@NotNull CharacterEvent characterEvent) {
+        if (openDropdown() != null) return true;
         if (searchFocused) {
             String typedText = TextInputHelper.getTypedText(characterEvent);
             if (typedText != null) {
@@ -740,7 +875,7 @@ public class SettingsScreen extends Screen {
         }
 
         for (List<SettingWidget<?>> widgets : categories.values()) {
-            for (SettingWidget<?> widget : widgets) {
+            for (SettingWidget<?> widget : interactiveWidgets(widgets)) {
                 if (widget.charTyped(characterEvent)) {
                     return true;
                 }
@@ -755,6 +890,33 @@ public class SettingsScreen extends Screen {
 
     private boolean isCategoryCollapsed(String category) {
         return searchQuery.isEmpty() && collapsedCategories.contains(category);
+    }
+
+    private boolean isSectionCollapsed(String category, String section) {
+        return sectionExpansion.isCollapsed(category, section, !searchQuery.isEmpty());
+    }
+
+    private boolean isWidgetInteractive(SettingWidget<?> widget) {
+        Setting<?> setting = widget.getSetting();
+        String category = setting.getPresentationCategory();
+        return setting.isVisible()
+                && !isCategoryCollapsed(category)
+                && !isSectionCollapsed(category, setting.getSection())
+                && matchesSearch(setting, category);
+    }
+
+    private List<SettingWidget<?>> interactiveWidgets(List<SettingWidget<?>> widgets) {
+        return widgets.stream().filter(this::isWidgetInteractive).toList();
+    }
+
+    private void deactivateHiddenWidgets() {
+        for (List<SettingWidget<?>> widgets : categories.values()) {
+            for (SettingWidget<?> widget : widgets) {
+                if (!isWidgetInteractive(widget)) {
+                    widget.onHidden();
+                }
+            }
+        }
     }
 
     private List<SettingWidget<?>> visibleWidgets(List<SettingWidget<?>> widgets) {

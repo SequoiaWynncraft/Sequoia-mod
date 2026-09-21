@@ -28,16 +28,14 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
         float indent = labelIndent();
         float labelY = hasDescription() ? y + 12 : y + height / 2f;
 
-        if (indent > 0) {
-            canvas.fillRect(x + indent - 7, y + 6, 2, height - 12, color(ACCENT_DIVIDER, enabled ? 170 : 80));
-        }
+        drawParentGuide(canvas, enabled);
         canvas.drawText(
                 getDisplayName(),
                 x + 8 + indent,
                 labelY,
                 textStyle(
                         fontName,
-                        enabled ? color(TEXT_SECONDARY) : color(TEXT_DISABLED),
+                        enabled ? color(TEXT_PRIMARY) : color(TEXT_DISABLED),
                         FONT_SIZE,
                         UiCanvas.HorizontalAlign.LEFT));
         if (hasDescription()) {
@@ -58,8 +56,8 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
         boolean on = setting.getValue();
 
         Color bgColor = !enabled
-                ? color(CONTROL_INPUT_SECONDARY, 120)
-                : on ? color(ACCENT_PRIMARY) : color(ACCENT_SECONDARY, 200);
+                ? color(CONTROL_INPUT_SECONDARY)
+                : on ? color(ACCENT_PRIMARY) : color(ACCENT_SECONDARY);
         canvas.fillRect(toggleX, toggleY, TOGGLE_WIDTH, TOGGLE_HEIGHT, bgColor);
 
         float knobSize = TOGGLE_HEIGHT - KNOB_PADDING * 2;

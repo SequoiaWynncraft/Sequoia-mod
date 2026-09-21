@@ -36,8 +36,8 @@ import com.seqwawa.seq.network.BuildConfig;
 import com.seqwawa.seq.network.ClientVersion;
 
 public final class GatheringMapImageService {
-    private static final String FALLBACK_MAP_RESOURCE = "assets/seq/textures/map/wynn-map.png";
     private static final String MANIFEST_PATH = "/assets/gathering-map/manifest.json";
+    private static final byte[] EMPTY_BYTES = new byte[0];
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration REQUEST_TIMEOUT = Duration.ofMinutes(3);
     private static final Duration TILE_RETRY_BASE_DELAY = Duration.ofSeconds(2);
@@ -89,6 +89,8 @@ public final class GatheringMapImageService {
     private volatile long tileVersion;
     private volatile Manifest manifest;
     private volatile boolean loadRequested;
+    private volatile boolean loadInProgress;
+    private volatile String unavailableMessage;
     private volatile String validatedTileManifestVersion = "";
 
     public static synchronized GatheringMapImageService getInstance() {
@@ -100,22 +102,37 @@ public final class GatheringMapImageService {
 
     private GatheringMapImageService() {}
 
-    public void requestLoad() {
+    public synchronized void requestLoad() {
         if (loadRequested) {
             return;
         }
         loadRequested = true;
-        CompletableFuture.runAsync(this::loadCacheThenRefresh, loadExecutor);
+        startLoad();
+    }
+
+    public synchronized String refresh() {
+        if (loadInProgress) {
+            return "Map refresh is already in progress.";
+        }
+        startLoad();
+        return "Map refresh started.";
+    }
+
+    private void startLoad() {
+        unavailableMessage = null;
+        loadInProgress = true;
+        CompletableFuture.runAsync(this::loadCacheThenRefresh, loadExecutor).whenComplete((ignored, failure) -> {
+            loadInProgress = false;
+            if (failure != null) {
+                SeqClient.LOGGER.warn("[GatheringMap] Unexpected map refresh failure.", failure);
+                markBackendFailure();
+            }
+        });
     }
 
     public byte[] imageBytes() {
         byte[] current = imageBytes;
-        if (current != null) {
-            return current;
-        }
-        byte[] fallback = loadFallbackBytes();
-        publish(fallback, Source.FALLBACK);
-        return fallback;
+        return current == null ? EMPTY_BYTES : current;
     }
 
     public long version() {
@@ -136,6 +153,10 @@ public final class GatheringMapImageService {
             return hqStatus;
         }
         return hqStatus + " | tiles: " + tiles + " | active=" + tileDownloads.size();
+    }
+
+    public Optional<String> unavailableMessage() {
+        return Optional.ofNullable(unavailableMessage);
     }
 
     public String hqMapUrl() {
@@ -175,6 +196,7 @@ public final class GatheringMapImageService {
         validatedTileManifestVersion = "";
         imageBytes = null;
         imageSource = Source.NONE;
+        unavailableMessage = null;
         hqStatus = "cache cleared";
         tileStatus = "not requested";
         manifest = null;
@@ -204,6 +226,7 @@ public final class GatheringMapImageService {
             if (validatedCachedTiles.contains(key)
                     || matchesSha256(cached, current.tiles().sha256().get(key.id()))) {
                 validatedCachedTiles.add(key);
+                markCachedTilesAvailable();
                 return cached;
             }
         } catch (IOException exception) {
@@ -239,6 +262,9 @@ public final class GatheringMapImageService {
             Manifest cachedManifest = gson.fromJson(Files.readString(MANIFEST_CACHE_PATH), Manifest.class);
             if (cachedManifest != null) {
                 manifest = cachedManifest;
+                if (hasValidCachedTile(cachedManifest)) {
+                    imageSource = Source.CACHED_TILES;
+                }
             }
         } catch (IOException | RuntimeException exception) {
             hqStatus = "cached manifest failed";
@@ -248,19 +274,19 @@ public final class GatheringMapImageService {
 
     private void loadCachedSingleImage() {
         Manifest current = manifest;
-        if (prefersTiles(current)) {
-            publishTileModeUnderlay();
-            hqStatus = "using tiled HQ, refreshing";
-            return;
-        }
         if (current == null || current.single() == null || !Files.isRegularFile(SINGLE_CACHE_PATH)) {
+            if (prefersTiles(current) && hasUsableCache()) {
+                hqStatus = "using cached tiles, refreshing";
+            }
             return;
         }
         try {
             byte[] cached = Files.readAllBytes(SINGLE_CACHE_PATH);
             if (validateSingleImage(current, cached)) {
                 publish(cached, Source.CACHED_HQ);
-                hqStatus = "using cached HQ, refreshing";
+                hqStatus = prefersTiles(current)
+                        ? "using cached tiles and HQ underlay, refreshing"
+                        : "using cached HQ, refreshing";
             }
         } catch (IOException exception) {
             hqStatus = "cache read failed";
@@ -275,6 +301,7 @@ public final class GatheringMapImageService {
         } catch (IllegalArgumentException exception) {
             hqStatus = "invalid manifest URL";
             SeqClient.LOGGER.warn("[GatheringMap] Invalid manifest URL for backend {}: {}", BuildConfig.API_URL, exception);
+            markBackendFailure();
             return;
         }
 
@@ -286,87 +313,109 @@ public final class GatheringMapImageService {
             if (remoteManifest == null) {
                 hqStatus = "manifest invalid";
                 debugMap("Manifest invalid from " + manifestUri + ": empty response.");
+                markBackendFailure();
                 return;
             }
             if (!prefersTiles(remoteManifest) && remoteManifest.single() == null) {
                 hqStatus = "manifest invalid";
                 debugMap("Manifest invalid from " + manifestUri + ": missing single image metadata.");
+                markBackendFailure();
                 return;
             }
             manifest = remoteManifest;
             writeCache(MANIFEST_CACHE_PATH, manifestBytes);
+            unavailableMessage = null;
         } catch (HttpConnectTimeoutException exception) {
             hqStatus = "manifest connect timeout";
             debugMap("Manifest connection timed out from " + manifestUri);
             SeqClient.LOGGER.debug("[GatheringMap] Manifest connection timed out from {}", manifestUri);
+            markBackendFailure();
             return;
         } catch (HttpTimeoutException exception) {
             hqStatus = "manifest timeout";
             debugMap("Manifest download timed out from " + manifestUri);
             SeqClient.LOGGER.debug("[GatheringMap] Manifest download timed out from {}", manifestUri);
+            markBackendFailure();
             return;
         } catch (MapDownloadException exception) {
             hqStatus = exception.statusLine();
             debugMap(exception.statusLine());
             SeqClient.LOGGER.debug("[GatheringMap] {}", exception.statusLine());
+            markBackendFailure();
             return;
         } catch (IOException exception) {
             hqStatus = "manifest failed: " + exception.getMessage();
             debugMap("Manifest failed from " + manifestUri + ": " + exception.getMessage());
             SeqClient.LOGGER.debug("[GatheringMap] Failed to download gathering map manifest.", exception);
+            markBackendFailure();
             return;
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             hqStatus = "manifest interrupted";
             debugMap("Manifest download interrupted from " + manifestUri);
             SeqClient.LOGGER.debug("[GatheringMap] Manifest download interrupted.", exception);
+            markBackendFailure();
             return;
         } catch (RuntimeException exception) {
             hqStatus = "manifest parse failed";
             debugMap("Manifest parse failed from " + manifestUri + ": " + exception.getMessage());
             SeqClient.LOGGER.debug("[GatheringMap] Failed to parse gathering map manifest.", exception);
+            markBackendFailure();
             return;
         }
 
         if (prefersTiles(remoteManifest)) {
-            publishTileModeUnderlay();
             hqStatus = "tiles manifest current";
+            if (remoteManifest.single() != null) {
+                refreshSingleImageWithStatus(remoteManifest, false);
+            }
             return;
         }
 
+        refreshSingleImageWithStatus(remoteManifest, true);
+    }
+
+    private void refreshSingleImageWithStatus(Manifest remoteManifest, boolean required) {
         try {
-            refreshSingleImage(remoteManifest);
+            if (!refreshSingleImage(remoteManifest) && required) {
+                markBackendFailure();
+            }
         } catch (HttpConnectTimeoutException exception) {
             hqStatus = "HQ connect timeout";
             debugMap("HQ image connection timed out for " + remoteManifest.single().url());
             SeqClient.LOGGER.debug("[GatheringMap] HQ image connection timed out for {}", remoteManifest.single().url());
+            if (required) markBackendFailure();
         } catch (HttpTimeoutException exception) {
             hqStatus = "HQ timeout";
             debugMap("HQ image download timed out for " + remoteManifest.single().url());
             SeqClient.LOGGER.debug("[GatheringMap] HQ image download timed out for {}", remoteManifest.single().url());
+            if (required) markBackendFailure();
         } catch (MapDownloadException exception) {
             hqStatus = exception.statusLine();
             debugMap(exception.statusLine());
             SeqClient.LOGGER.debug("[GatheringMap] {}", exception.statusLine());
+            if (required) markBackendFailure();
         } catch (IOException exception) {
             hqStatus = "HQ failed: " + exception.getMessage();
             debugMap("HQ image failed: " + exception.getMessage());
             SeqClient.LOGGER.debug("[GatheringMap] Failed to download HQ map image.", exception);
+            if (required) markBackendFailure();
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             hqStatus = "HQ interrupted";
             debugMap("HQ image download interrupted for " + remoteManifest.single().url());
             SeqClient.LOGGER.debug("[GatheringMap] HQ image download interrupted.", exception);
+            if (required) markBackendFailure();
         }
     }
 
-    private void refreshSingleImage(Manifest remoteManifest) throws IOException, InterruptedException {
+    private boolean refreshSingleImage(Manifest remoteManifest) throws IOException, InterruptedException {
         if (Files.isRegularFile(SINGLE_CACHE_PATH)) {
             byte[] cached = Files.readAllBytes(SINGLE_CACHE_PATH);
             if (validateSingleImage(remoteManifest, cached)) {
                 publish(cached, Source.CACHED_HQ);
                 hqStatus = "cached HQ current";
-                return;
+                return true;
             }
         }
 
@@ -393,18 +442,12 @@ public final class GatheringMapImageService {
                     remoteManifest.single().size(),
                     actual,
                     expected);
-            return;
+            return false;
         }
         writeCache(SINGLE_CACHE_PATH, downloaded);
         publish(downloaded, Source.CACHED_HQ);
         hqStatus = "downloaded HQ (" + formatBytes(downloaded.length) + ")";
-    }
-
-    private void publishTileModeUnderlay() {
-        byte[] fallback = loadFallbackBytes();
-        if (fallback.length > 0) {
-            publish(fallback, Source.FALLBACK);
-        }
+        return true;
     }
 
     private void requestTile(Manifest current, TileKey key, boolean visible) {
@@ -434,6 +477,7 @@ public final class GatheringMapImageService {
                 tileStatus = "checksum failed " + key.id();
                 debugMap("Tile " + key.id() + " checksum failed from " + tileUri);
                 scheduleTileRetry(key);
+                if (visible) markBackendFailure();
                 return;
             }
             if (manifest != current) {
@@ -447,16 +491,19 @@ public final class GatheringMapImageService {
             }
             tileRetryAfterMs.remove(key);
             tileStatus = "cached " + key.id();
+            markCachedTilesAvailable();
             tileVersion++;
         } catch (IOException exception) {
             tileStatus = "failed " + key.id() + ": " + exception.getMessage();
             scheduleTileRetry(key);
             debugMap("Tile " + key.id() + " failed from " + tileUri + ": " + exception.getMessage());
             SeqClient.LOGGER.debug("[GatheringMap] Failed to download tile {}.", key.id(), exception);
+            if (visible) markBackendFailure();
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             tileStatus = "interrupted " + key.id();
             scheduleTileRetry(key);
+            if (visible) markBackendFailure();
         }
     }
 
@@ -594,6 +641,7 @@ public final class GatheringMapImageService {
     private boolean isCachedTile(Manifest current, TileKey key, boolean retainBytes) {
         ensureTileCacheVersion(current);
         if (validatedCachedTiles.contains(key)) {
+            markCachedTilesAvailable();
             return true;
         }
 
@@ -610,6 +658,7 @@ public final class GatheringMapImageService {
             if (retainBytes) {
                 readyTileBytes.putIfAbsent(key, cached);
             }
+            markCachedTilesAvailable();
             return true;
         } catch (IOException exception) {
             SeqClient.LOGGER.warn("[GatheringMap] Failed to validate cached tile {}.", key.id(), exception);
@@ -698,17 +747,33 @@ public final class GatheringMapImageService {
         }
     }
 
-    private byte[] loadFallbackBytes() {
-        try (InputStream input = GatheringMapImageService.class.getClassLoader()
-                .getResourceAsStream(FALLBACK_MAP_RESOURCE)) {
-            if (input == null) {
-                SeqClient.LOGGER.warn("[GatheringMap] Missing fallback map image asset: {}", FALLBACK_MAP_RESOURCE);
-                return new byte[0];
+    private boolean hasUsableCache() {
+        return imageBytes != null || hasValidCachedTile(manifest);
+    }
+
+    private boolean hasValidCachedTile(Manifest current) {
+        if (!prefersTiles(current)) {
+            return false;
+        }
+        for (int y = 0; y < current.tiles().rows(); y++) {
+            for (int x = 0; x < current.tiles().columns(); x++) {
+                TileKey key = new TileKey(x, y);
+                if (isValidTile(current.tiles(), key) && isCachedTile(current, key, false)) {
+                    return true;
+                }
             }
-            return input.readAllBytes();
-        } catch (IOException exception) {
-            SeqClient.LOGGER.warn("[GatheringMap] Failed to read fallback map image asset.", exception);
-            return new byte[0];
+        }
+        return false;
+    }
+
+    private void markBackendFailure() {
+        unavailableMessage = GatheringMapAvailability.afterBackendFailure(hasUsableCache()).orElse(null);
+    }
+
+    private void markCachedTilesAvailable() {
+        unavailableMessage = null;
+        if (imageBytes == null) {
+            imageSource = Source.CACHED_TILES;
         }
     }
 
@@ -727,7 +792,7 @@ public final class GatheringMapImageService {
 
     public enum Source {
         NONE,
-        FALLBACK,
+        CACHED_TILES,
         CACHED_HQ
     }
 

@@ -41,7 +41,7 @@ class ChatBridgeLineWrappingTest {
     }
 
     @Test
-    void automaticSidebarKeepsItsFontColorAndShadowStyle() {
+    void automaticSidebarAvoidsDoubleTintAndMatchesIconShadow() {
         GuildChatMarkers.reset();
         Component bridgeLine = Component.literal("styled bridge line");
         DiscordRankChatDecorator.displayUndecorated(bridgeLine, () -> {});
@@ -61,11 +61,13 @@ class ChatBridgeLineWrappingTest {
                 .findFirst()
                 .orElseThrow()
                 .style();
-        assertEquals(0x5865F2, prefixStyle.getColor().getValue());
+        // The bitmap itself is already #5865F2, unlike the white Discord mark.
+        // White styling preserves that exact color instead of multiplying it twice.
+        assertEquals(0xFFFFFF, prefixStyle.getColor().getValue());
         assertEquals(
                 new FontDescription.Resource(Identifier.fromNamespaceAndPath("seq", "discord_bridge")),
                 prefixStyle.getFont());
-        assertEquals(Style.NO_SHADOW, prefixStyle.getShadowColor());
+        assertNull(prefixStyle.getShadowColor());
     }
 
     @Test

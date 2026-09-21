@@ -20,4 +20,13 @@ class NVGWrapperTest {
             }
         }
     }
+    @Test
+    void preservesTransparentAndTranslucentAlphaAtTheNativeRendererBoundary() {
+        for (int alpha : new int[] {0, 1, 42, 127, 254, 255}) {
+            try (NVGColor color = NVGWrapper.nvgColor(new Color(32, 96, 160, alpha))) {
+                assertEquals(alpha / 255f, color.a());
+            }
+        }
+    }
+
 }
