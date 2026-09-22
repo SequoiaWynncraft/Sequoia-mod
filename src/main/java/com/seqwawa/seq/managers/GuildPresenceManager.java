@@ -7,7 +7,9 @@ import com.seqwawa.seq.model.KnownGuildMember;
 import com.seqwawa.seq.model.MemberFilter;
 import com.seqwawa.seq.model.MemberSort;
 import com.seqwawa.seq.model.PartyFinderSpot;
+import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
+import com.seqwawa.seq.model.RaidCatalog;
 import com.seqwawa.seq.model.RaidProfilesResponse;
 import com.seqwawa.seq.model.RaidTeamProfile;
 import com.seqwawa.seq.model.RaidType;
@@ -35,6 +37,12 @@ import java.util.stream.Collectors;
  * refresh throttle protects.
  */
 public final class GuildPresenceManager {
+
+    /**
+     * How long a failed fetch blocks the next one. Short, because a failure fetched
+     * nothing: it is Wynncraft's cache that the full interval protects, not us.
+     */
+    static final long RETRY_AFTER_FAILURE_MS = 10_000L;
 
     /** How long a first roster fetch waits for a raid catalog it does not have yet. */
     private static final long CATALOG_WAIT_SECONDS = 8L;
@@ -73,10 +81,6 @@ public final class GuildPresenceManager {
         return lastError;
     }
 
-    public String guildDisplayName() {
-        return roster.displayName();
-    }
-
     /** True once a refresh has completed, whether or not it found anyone online. */
     public boolean hasLoaded() {
         return lastRefreshAtMs > 0L;
@@ -90,7 +94,14 @@ public final class GuildPresenceManager {
         if (readWithoutCatalog && !RaidProfileStore.getInstance().catalog().isEmpty()) {
             return true;
         }
-        return nowMs - lastRefreshAtMs >= WynncraftGuildClient.MINIMUM_REFRESH_INTERVAL.toMillis();
+        return nowMs - lastRefreshAtMs >= refreshIntervalMs(lastError != null);
+    }
+
+    /** The wait before the next fetch is worth making. */
+    static long refreshIntervalMs(boolean lastAttemptFailed) {
+        return lastAttemptFailed
+                ? RETRY_AFTER_FAILURE_MS
+                : WynncraftGuildClient.MINIMUM_REFRESH_INTERVAL.toMillis();
     }
 
     /** The online guild members, each carrying whichever extra facts are known. */
@@ -106,10 +117,10 @@ public final class GuildPresenceManager {
         return sortByName(filteredMembers(filter));
     }
 
-    /** Filtered, and ordered by the column the player clicked. {@code raid} is the filtered raid. */
+    /** Filtered, and ordered by the column the player clicked. */
     public List<GuildMemberPresence> membersForDisplay(
-            MemberFilter filter, MemberSort sort, boolean descending, RaidType raid) {
-        return membersForDisplay(onlineMembers(), filter, sort, descending, raid);
+            MemberFilter filter, MemberSort sort, boolean descending) {
+        return membersForDisplay(onlineMembers(), filter, sort, descending);
     }
 
     /**
@@ -117,16 +128,12 @@ public final class GuildPresenceManager {
      * more than once, and rebuilding it each time allocates a record per member.
      */
     public List<GuildMemberPresence> membersForDisplay(
-            List<GuildMemberPresence> members,
-            MemberFilter filter,
-            MemberSort sort,
-            boolean descending,
-            RaidType raid) {
+            List<GuildMemberPresence> members, MemberFilter filter, MemberSort sort, boolean descending) {
         List<GuildMemberPresence> matching = filteredMembers(members, filter);
         if (sort == null || sort == MemberSort.NAME && !descending) {
             return sortByName(matching);
         }
-        return MemberSort.sort(matching, sort, descending, raid, this::lastLogin);
+        return MemberSort.sort(matching, sort, descending, this::lastLogin);
     }
 
     /** When this member's Wynncraft session started, or null when they hide it. */
@@ -219,6 +226,95 @@ public final class GuildPresenceManager {
     public boolean isInPartyFinderListing() {
         PartyFinderManager manager = SeqClient.partyFinderManager;
         return manager != null && manager.isInParty();
+    }
+
+    /** Set while a listing is being created, so two quick invites cannot open two. */
+    private final java.util.concurrent.atomic.AtomicBoolean listingCreationInFlight =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * Opens a party finder listing for the group being put together, unless you already
+     * sit in one. {@code raid} picks the activity; with none, the listing covers every
+     * raid the catalog knows. The invitee is attached to it by the Wynn party sync once
+     * they accept the in-game invite.
+     *
+     * @return the party finder's own line, or null when nothing was attempted
+     */
+    public CompletableFuture<String> openPartyFinderListing(RaidType raid) {
+        PartyFinderManager manager = SeqClient.partyFinderManager;
+        if (manager == null || !ConnectionManager.isConnected() || manager.isInParty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        List<String> activities = partyFinderActivities(raid, RaidProfileStore.getInstance().catalog());
+        if (activities.isEmpty() || !listingCreationInFlight.compareAndSet(false, true)) {
+            return CompletableFuture.completedFuture(null);
+        }
+        PartyRegion region = listingRegion(currentWorld(), RaidProfileStore.getInstance().selfProfile().region());
+        return manager.createPartyFromCommand(activities, region)
+                .thenApply(PartyFinderManager.CommandResult::message)
+                .exceptionally(throwable -> "Could not open a party finder listing.")
+                .whenComplete((ignored, throwable) -> listingCreationInFlight.set(false));
+    }
+
+    /**
+     * The region a listing opens in: the world you are on first, since that is where the
+     * group will play, then the region on your profile when the world is not a regional
+     * one (a hub, a lobby), and NA as the party finder's own default.
+     */
+    static PartyRegion listingRegion(String currentWorld, PartyRegion profileRegion) {
+        PartyRegion fromWorld = regionForWorld(currentWorld);
+        if (fromWorld != null) {
+            return fromWorld;
+        }
+        return profileRegion != null ? profileRegion : PartyRegion.NA;
+    }
+
+    /** {@code EU3} is EU, {@code NA12} is NA, {@code AS2} is AS; anything else is null. */
+    static PartyRegion regionForWorld(String world) {
+        if (world == null) {
+            return null;
+        }
+        String trimmed = world.trim().toUpperCase(Locale.ROOT);
+        for (PartyRegion region : PartyRegion.values()) {
+            String prefix = region.name();
+            if (trimmed.length() > prefix.length()
+                    && trimmed.startsWith(prefix)
+                    && trimmed.substring(prefix.length()).chars().allMatch(Character::isDigit)) {
+                return region;
+            }
+        }
+        return null;
+    }
+
+    /** The activities a listing for {@code raid} covers: that raid, or every raid when none. */
+    static List<String> partyFinderActivities(RaidType raid, RaidCatalog catalog) {
+        if (raid != null) {
+            return List.of(partyFinderActivityFor(raid));
+        }
+        if (catalog == null) {
+            return List.of();
+        }
+        return catalog.raids().stream()
+                .map(GuildPresenceManager::partyFinderActivityFor)
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * The name the party finder knows a raid by. The catalog and the party finder mostly
+     * share codes, but not always: the catalog's WTP is the party finder's TWP, which is
+     * why the raid's full name is the fallback.
+     */
+    static String partyFinderActivityFor(RaidType raid) {
+        String key = raid.key();
+        if (!PartyListing.backendNameToDisplayName(key).equalsIgnoreCase(key)) {
+            return key;
+        }
+        String fromName = PartyListing.displayNameToBackendName(raid.apiName());
+        if (fromName != null && !fromName.equalsIgnoreCase(raid.apiName())) {
+            return fromName;
+        }
+        return raid.shortName();
     }
 
     /** Loads listings for a session where the party finder screen was never opened. */
@@ -374,17 +470,6 @@ public final class GuildPresenceManager {
     }
 
     // ── Actions ──
-
-    /** Switches to the world a member is on. */
-    public void switchToWorld(String world) {
-        if (world == null || world.isBlank()) {
-            return;
-        }
-        if (SeqClient.mc == null || SeqClient.mc.player == null || SeqClient.mc.player.connection == null) {
-            return;
-        }
-        SeqClient.mc.player.connection.sendCommand("switch " + world.trim());
-    }
 
     /**
      * Invites a member, creating the party first when there is not one. The two

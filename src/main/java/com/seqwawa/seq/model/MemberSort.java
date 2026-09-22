@@ -16,9 +16,7 @@ public enum MemberSort {
     NAME(false),
     WORLD(false),
     /** How long the member has been on, from when their session started. */
-    ONLINE_SINCE(true),
-    GUILD_RAIDS(true),
-    WARS(true);
+    ONLINE_SINCE(true);
 
     private final boolean descendingByDefault;
 
@@ -35,7 +33,6 @@ public enum MemberSort {
             List<GuildMemberPresence> members,
             MemberSort sort,
             boolean descending,
-            RaidType raid,
             Function<GuildMemberPresence, Instant> lastLogin) {
         if (members == null || members.isEmpty()) {
             return List.of();
@@ -44,7 +41,7 @@ public enum MemberSort {
         Comparator<GuildMemberPresence> comparator = key == NAME
                 ? byName(descending)
                 : Comparator.comparing((GuildMemberPresence member) -> !isKnown(key, member, lastLogin))
-                        .thenComparing(direct(key, raid, lastLogin, descending))
+                        .thenComparing(direct(key, lastLogin, descending))
                         // Name breaks every tie, so the list never reshuffles between frames.
                         .thenComparing(member -> member.username().toLowerCase(Locale.ROOT));
         return members.stream().sorted(comparator).toList();
@@ -57,7 +54,7 @@ public enum MemberSort {
     }
 
     private static Comparator<GuildMemberPresence> direct(
-            MemberSort key, RaidType raid, Function<GuildMemberPresence, Instant> lastLogin, boolean descending) {
+            MemberSort key, Function<GuildMemberPresence, Instant> lastLogin, boolean descending) {
         Comparator<GuildMemberPresence> ascending = switch (key) {
             case WORLD -> Comparator.comparing(MemberSort::worldPrefix).thenComparingInt(MemberSort::worldNumber);
             // The column shows time online, so it grows as the login instant gets older:
@@ -65,10 +62,6 @@ public enum MemberSort {
             case ONLINE_SINCE -> Comparator.comparing(
                             (GuildMemberPresence member) -> loginOrEpoch(member, lastLogin))
                     .reversed();
-            case GUILD_RAIDS -> Comparator.comparingInt(member -> raid == null
-                    ? member.stats().totalRaidCompletions()
-                    : member.stats().completions(raid));
-            case WARS -> Comparator.comparingInt(member -> member.stats().wars());
             case NAME -> Comparator.comparing(member -> member.username().toLowerCase(Locale.ROOT));
         };
         return descending ? ascending.reversed() : ascending;
@@ -79,8 +72,7 @@ public enum MemberSort {
         return switch (key) {
             case WORLD -> member.hasWorld();
             case ONLINE_SINCE -> lastLogin != null && lastLogin.apply(member) != null;
-            // Zero is a real answer here, not a missing one.
-            case GUILD_RAIDS, WARS, NAME -> true;
+            case NAME -> true;
         };
     }
 

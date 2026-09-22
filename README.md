@@ -180,8 +180,11 @@ The Events view shows runs currently visible through the Wynncraft API. Choose A
 
 ## Guild members
 
-Run `/seq members`, or press `O` and choose **Members**, to see every guild member Wynncraft
-reports as online.
+Run `/seq members`, press `O` and choose **Player List**, or pick **Player List** in any
+navigation sidebar, to see every guild member Wynncraft reports as online.
+
+The panel uses the same frame as Party Finder: the shared sidebar on the left, the title,
+search and actions in the header, then the list below.
 
 ### Your raid profile
 
@@ -200,33 +203,30 @@ You tick builds, not raids: the same build serves several raids, so raid coverag
 is worked out from what you ticked. **Not now** skips setup and is remembered;
 **My profile** in the header reopens it whenever you finish a new set.
 
-### Members
+### All
 
-The **Members** tab lists everyone online, sorted by name until you sort it otherwise, with their world in its own
+The **All** tab lists everyone online, sorted by name until you sort it otherwise, with their world in its own
 column, so a name stays where you expect it instead of jumping around every time somebody
 switches server. Your own world is highlighted. A member whose world Wynncraft will not
 report, which happens when they have turned off their online status, shows a `?` there.
 
-Each row leads with the player's head so you can spot who it is at a glance, with a dot on
-its corner for their status: green when they are free, red while they are busy.
+Each row leads with the player's head so you can spot who it is at a glance; whether they
+are free is spelled out in the status column rather than hinted at on the head.
 
-The rest of the row is how long they have been online, their guild raid count, their war
-count, and the builds they said they own. The raid number follows the filter: with no raid
-selected it is every guild raid they have run, and with one selected it narrows to that
-raid. Counts are **guild raids only**, the ones run while in Sequoia. A lifetime total
-would fold in every raid they did in a previous guild, which is not what you are asking
-when you are picking a group.
+The rest of the row is how long they have been online and the builds they said they own.
+Guild raid counts and wars are on the member's card rather than in the list, where they
+made every row a wall of numbers.
 
-Click a column heading to order the list by it: **MEMBER**, **WORLD**, **ONLINE**,
-**GRAIDS** or **WARS**. The heading in force carries an arrow, and clicking it again turns
-the order round. Each column starts the way it is usually read, so wars and guild raids
-start with the highest and names start at A. Members Wynncraft says nothing about stay at
-the bottom either way round, rather than floating to the top as a row of question marks.
+Click a column heading to order the list by it: **MEMBER**, **WORLD** or **ONLINE**. The
+heading in force carries an arrow, and clicking it again turns the order round. Each column
+starts the way it is usually read, so the longest online comes first and names start at A.
+Members Wynncraft says nothing about stay at the bottom either way round, rather than
+floating to the top as a row of question marks.
 
 Auras are shown separately from builds, as an `AURAS` tag beside the name, because being
 able to bring auras is not a build.
 
-Filter with the raid chips (**All**, then each raid), **Auras**, **Free**, and the name
+Filter with the raid dropdown, **Auras**, **Free**, and the name
 search. With a raid selected, the builds column narrows to the builds that are meta for
 that raid, and a member who has not shared a profile is matched on their clear count
 instead, which is weaker evidence but needs nobody to opt in.
@@ -239,19 +239,31 @@ gone (damage, healing, deaths, gambits). Then what they told us: region, auras, 
 builds and guild raids per raid. A **private note** you can keep on that member sits at the
 bottom and never leaves your client. The same card has **Add friend**, except on your own.
 
-Row actions: **Join** switches you to that member's world, and **Invite** invites them to
-your Wynncraft party, creating the party first when you are not in one yet. With a raid
+The row's one action, **Invite**, invites them to your Wynncraft party, creating the party
+first when you are not in one yet. It is greyed out on your own row. With a raid
 filter active, the confirmation names the build they bring to it.
 
-A member sitting in a party finder listing shows a chip such as `PF TNA 2/4` where the busy
-chip would be. When the listing is open and has room, the chip is a button: click it to join
+Inviting also opens a party finder listing when you are not already in one, so the group
+shows up for the rest of the guild. With a raid selected in the dropdown the listing is
+for that raid, such as TNA; with none, or from Friends and Premades, it covers every raid.
+It opens in the region of the world you are on (EU3 gives EU), or your profile's region
+when you are not on a regional world, and NA when neither says.
+The player you invited joins the listing once they accept in game, through the Wynn party
+sync (the `sync_with_wynn_party` setting in the Party Finder category, on by default). If you already
+sit in a listing, invites leave it as it is.
+
+The **STATUS** column, between online time and builds, holds a badge: a green **Free**, a
+red **Busy** with its countdown, or, for a member sitting in a party finder listing, a chip
+such as `PF TNA 2/4`, orange while it has room and red like Busy once it is full, which
+takes precedence over busy. Badges carry a border the way Party
+Finder's Open and Full badges do, and buttons do not, so the two cannot be confused. When the listing is open and has room, the chip is a button: click it to join
 as DPS, the party finder's default. It stays grey when the listing is full or invite only,
 on your own row, and while you are already in a listing yourself.
 
 ### Friends
 
 The **Friends** tab is the people you like raiding with. Add someone from their profile in
-the Members tab; they stay on the list whether or not they are online.
+the All tab; they stay on the list whether or not they are online.
 
 - **Raid ?** sends them `/msg <name> raid ?`.
 - **Invite** pulls them into your party, creating it if you are not in one.
@@ -262,7 +274,8 @@ online or `offline, logged in 3d ago` for someone who is not. That is Wynncraft'
 the time they connected, not the time they left, which is why it does not say "seen". A
 member who hides their online status in Wynncraft's privacy settings has no login time.
 
-Offline friends stay listed with a grey dot and a faded head, and their two action buttons
+Online friends who are busy carry a red `BUSY` tag beside their name. Offline friends stay
+listed with a faded head, and their two action buttons
 are disabled.
 
 ### Premade parties
@@ -270,9 +283,9 @@ are disabled.
 The **Premades** tab holds groups you run with often, so a regular team is one click rather
 than four invites typed out every time.
 
-**New party** opens the editor: give it a name, then add members by username, or press
-**Add my party** to pull in whoever is in your Wynncraft party right now. A party holds up
-to ten, which is Wynncraft's largest raid group.
+**New party** opens the editor with you already in it: give it a name, then add members by
+username, or press **Add my party** to pull in whoever is in your Wynncraft party right
+now. A party holds four, you included, which is a raid group.
 
 Each row says who can come, such as `3/4 online, 1 busy`, in green when the whole group is
 free. The invite button only invites the free members: it reads **Invite all** when that is
@@ -285,10 +298,11 @@ with their last login.
 
 ### Busy status
 
-A member shows a **Busy** chip with a countdown for eight minutes after finishing a raid. The
+A member shows a **Busy** chip in the status column, with a countdown, for eight minutes after
+finishing a raid. The
 signal is the same raid completion report the mod relays to Discord: Wynncraft announces every
 guild raid in guild chat, so one completion marks its whole party at once, with no server round
-trip. Members running Sequoia are tagged `SEQ`.
+trip. Members running the mod are tagged `MOD`.
 
 ### Where the data comes from
 

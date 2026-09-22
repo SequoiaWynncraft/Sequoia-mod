@@ -95,14 +95,8 @@ public final class WynncraftGuildClient {
         return httpClient
                 .sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenApply(response -> {
-                    if (response.statusCode() == 404) {
-                        throw new WynncraftApiException("Wynncraft does not know that guild.");
-                    }
-                    if (response.statusCode() == 429) {
-                        throw new WynncraftApiException("Wynncraft is rate limiting us. Try again shortly.");
-                    }
                     if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                        throw new WynncraftApiException("Wynncraft API returned " + response.statusCode() + ".");
+                        throw new WynncraftApiException(describeFailure(response.statusCode()));
                     }
                     JsonElement parsed = JsonParser.parseString(response.body());
                     if (!parsed.isJsonObject()) {
@@ -110,6 +104,26 @@ public final class WynncraftGuildClient {
                     }
                     return parsed.getAsJsonObject();
                 });
+    }
+
+    /**
+     * What to show for a status Wynncraft answered with.
+     * <p>
+     * A 5xx is worth naming as theirs: the guild endpoint has served whole guilds a
+     * 500 for a stretch while the rest of the API kept working, and nothing on this
+     * side fixes that.
+     */
+    static String describeFailure(int status) {
+        if (status == 404) {
+            return "Wynncraft does not know that guild.";
+        }
+        if (status == 429) {
+            return "Wynncraft is rate limiting us. Try again shortly.";
+        }
+        if (status >= 500) {
+            return "Wynncraft cannot serve the guild roster right now (" + status + "). Their side, try again in a bit.";
+        }
+        return "Wynncraft API returned " + status + ".";
     }
 
     // ── Parsing (pure, no I/O) ──

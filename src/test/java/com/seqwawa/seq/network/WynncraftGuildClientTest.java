@@ -245,6 +245,19 @@ class WynncraftGuildClientTest {
     }
 
     @Test
+    void anUpstreamFailureSaysWhoseSideItIsOn() {
+        assertEquals(
+                "Wynncraft cannot serve the guild roster right now (500). Their side, try again in a bit.",
+                WynncraftGuildClient.describeFailure(500));
+        assertEquals(
+                "Wynncraft cannot serve the guild roster right now (503). Their side, try again in a bit.",
+                WynncraftGuildClient.describeFailure(503));
+        assertEquals("Wynncraft does not know that guild.", WynncraftGuildClient.describeFailure(404));
+        assertEquals("Wynncraft is rate limiting us. Try again shortly.", WynncraftGuildClient.describeFailure(429));
+        assertEquals("Wynncraft API returned 418.", WynncraftGuildClient.describeFailure(418));
+    }
+
+    @Test
     void mapsUnknownRankKeysToRecruitRatherThanFailing() {
         assertEquals(
                 GuildMemberPresence.GuildRank.RECRUIT,

@@ -29,10 +29,10 @@ class SequoiaSidebarNavigationTest {
     @Test
     void warPlannerIsOnlyListedForAuthorizedMembers() {
         assertEquals(
-                List.of(PARTY_FINDER, SETTINGS, ACHIEVEMENTS, CONNECTION, INGREDIENTS, MAP, GITHUB),
+                List.of(PARTY_FINDER, SETTINGS, ACHIEVEMENTS, CONNECTION, INGREDIENTS, MAP, MEMBERS, GITHUB),
                 SequoiaSidebarNavigation.destinations(false));
         assertEquals(
-                List.of(PARTY_FINDER, SETTINGS, ACHIEVEMENTS, CONNECTION, INGREDIENTS, MAP, WAR, GITHUB),
+                List.of(PARTY_FINDER, SETTINGS, ACHIEVEMENTS, CONNECTION, INGREDIENTS, MAP, MEMBERS, WAR, GITHUB),
                 SequoiaSidebarNavigation.destinations(true));
     }
 
@@ -56,17 +56,20 @@ class SequoiaSidebarNavigationTest {
     }
 
     @Test
-    void eightRowsFitACompactSidebar() {
+    void everyRowFitsACompactSidebar() {
+        int rows = SequoiaSidebarNavigation.destinations(true).size();
         SequoiaSidebarNavigation.SidebarLayout layout =
-                SequoiaSidebarNavigation.sidebarLayout(160, 8, 22, 6);
+                SequoiaSidebarNavigation.sidebarLayout(160, rows, 22, 6);
 
         assertTrue(layout.rowStep() >= layout.buttonHeight());
         assertTrue(layout.buttonHeight() >= 10);
         assertTrue(layout.bottom() <= 152);
         assertFalse(SettingsScreen.princessPromptFits(160, layout.bottom()));
 
+        // Every row at full height, with the princess prompt still under them.
         SequoiaSidebarNavigation.SidebarLayout normal =
-                SequoiaSidebarNavigation.sidebarLayout(320, 8, 22, 6);
-        assertTrue(SettingsScreen.princessPromptFits(320, normal.bottom()));
+                SequoiaSidebarNavigation.sidebarLayout(400, rows, 22, 6);
+        assertEquals(22f, normal.buttonHeight());
+        assertTrue(SettingsScreen.princessPromptFits(400, normal.bottom()));
     }
 }

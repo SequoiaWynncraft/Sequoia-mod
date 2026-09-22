@@ -69,7 +69,8 @@ public class PremadePartyEditorScreen extends Screen {
     public PremadePartyEditorScreen(Screen parent, PremadeParty existing) {
         super(Component.literal("Premade party"));
         this.parent = parent;
-        this.draft = existing == null ? PremadeParty.named("") : existing;
+        // A new party starts with you in it: you are one of the four seats.
+        this.draft = existing == null ? PremadeParty.named("").withMemberToggled(localUsername()) : existing;
         this.previousName = existing == null ? null : existing.name();
         this.nameInput = draft.name();
     }
@@ -236,6 +237,10 @@ public class PremadePartyEditorScreen extends Screen {
                 "x",
                 UiCanvas.HorizontalAlign.CENTER);
         memberHitboxes.add(new MemberHitbox(removeBounds, member));
+    }
+
+    private static String localUsername() {
+        return GuildPresenceManager.getInstance().localUsername();
     }
 
     /** The roster knows UUIDs, so a head shows for anyone in the guild, online or not. */

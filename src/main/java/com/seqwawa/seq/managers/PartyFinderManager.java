@@ -231,6 +231,13 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<CommandResult<Listing>> createPartyFromCommand(List<String> activityInputs) {
+        return createPartyFromCommand(activityInputs, PartyRegion.NA);
+    }
+
+    /** Creates a listing in {@code region}, for callers that know where the leader plays. */
+    public CompletableFuture<CommandResult<Listing>> createPartyFromCommand(
+            List<String> activityInputs, PartyRegion region) {
+        PartyRegion listingRegion = region == null ? PartyRegion.NA : region;
         return refreshListingsForCommand().thenCompose(listingsResult -> {
             if (!listingsResult.success()) {
                 return completedCommandFailure(listingsResult.message());
@@ -254,7 +261,7 @@ public class PartyFinderManager implements NotificationAccessor {
                         ApiClient.getInstance()
                                 .createListing(
                                         resolution.activityIds(),
-                                        PartyRegion.NA,
+                                        listingRegion,
                                         PartyRole.DPS,
                                         null,
                                         currentLeaderWorldName(),

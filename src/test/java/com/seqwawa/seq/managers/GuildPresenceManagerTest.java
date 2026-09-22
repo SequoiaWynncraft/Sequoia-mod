@@ -19,6 +19,65 @@ class GuildPresenceManagerTest {
         return new GuildMemberPresence(username, "uuid-" + username, GuildRank.RECRUIT, world, false);
     }
 
+    @Test
+    void aFailedFetchIsRetriedSoonerThanWynncraftsCacheInterval() {
+        assertEquals(
+                GuildPresenceManager.RETRY_AFTER_FAILURE_MS, GuildPresenceManager.refreshIntervalMs(true));
+        assertEquals(
+                com.seqwawa.seq.network.WynncraftGuildClient.MINIMUM_REFRESH_INTERVAL.toMillis(),
+                GuildPresenceManager.refreshIntervalMs(false));
+        assertTrue(GuildPresenceManager.refreshIntervalMs(true) < GuildPresenceManager.refreshIntervalMs(false));
+    }
+
+    // ── Party finder link ──
+
+    @Test
+    void aRaidIsListedUnderTheNameThePartyFinderKnowsItBy() {
+        var catalog = com.seqwawa.seq.model.TestCatalogs.sequoia();
+
+        assertEquals("TNA", GuildPresenceManager.partyFinderActivityFor(catalog.raid("TNA")));
+        assertEquals("NOL", GuildPresenceManager.partyFinderActivityFor(catalog.raid("NOL")));
+        assertEquals(
+                "TWP",
+                GuildPresenceManager.partyFinderActivityFor(catalog.raid("WTP")),
+                "the catalog's WTP is the party finder's TWP, found through the raid's full name");
+    }
+
+    @Test
+    void aFilteredRaidOpensThatRaidAndNoFilterOpensEveryRaid() {
+        var catalog = com.seqwawa.seq.model.TestCatalogs.sequoia();
+
+        assertEquals(List.of("TNA"), GuildPresenceManager.partyFinderActivities(catalog.raid("TNA"), catalog));
+        assertEquals(
+                List.of("TNA", "TCC", "NOTG", "NOL", "TWP"),
+                GuildPresenceManager.partyFinderActivities(null, catalog));
+        assertTrue(GuildPresenceManager.partyFinderActivities(
+                        null, com.seqwawa.seq.model.RaidCatalog.empty())
+                .isEmpty());
+    }
+
+    @Test
+    void aWorldNameGivesItsRegion() {
+        assertEquals(com.seqwawa.seq.model.PartyRegion.EU, GuildPresenceManager.regionForWorld("EU3"));
+        assertEquals(com.seqwawa.seq.model.PartyRegion.NA, GuildPresenceManager.regionForWorld("na12"));
+        assertEquals(com.seqwawa.seq.model.PartyRegion.AS, GuildPresenceManager.regionForWorld(" AS2 "));
+        assertEquals(null, GuildPresenceManager.regionForWorld("EU"), "a region with no world number is not a world");
+        assertEquals(null, GuildPresenceManager.regionForWorld("WC12"));
+        assertEquals(null, GuildPresenceManager.regionForWorld(null));
+    }
+
+    @Test
+    void theListingOpensWhereYouPlayThenWhereYourProfileSaysThenNa() {
+        var eu = com.seqwawa.seq.model.PartyRegion.EU;
+        var as = com.seqwawa.seq.model.PartyRegion.AS;
+        var na = com.seqwawa.seq.model.PartyRegion.NA;
+
+        assertEquals(eu, GuildPresenceManager.listingRegion("EU5", as), "the world you are on wins");
+        assertEquals(as, GuildPresenceManager.listingRegion(null, as), "no world, so the profile");
+        assertEquals(as, GuildPresenceManager.listingRegion("lobby", as));
+        assertEquals(na, GuildPresenceManager.listingRegion(null, null), "the party finder's own default");
+    }
+
     // ── Ordering ──
 
     @Test

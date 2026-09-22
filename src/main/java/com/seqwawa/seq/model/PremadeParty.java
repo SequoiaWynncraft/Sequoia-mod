@@ -14,8 +14,8 @@ import java.util.Set;
  */
 public record PremadeParty(String name, List<String> members, long updatedAtEpochMs) {
 
-    /** Wynncraft's largest raid group. */
-    public static final int MAX_MEMBERS = 10;
+    /** A raid group, you included. Anything larger is not what these are for. */
+    public static final int MAX_MEMBERS = 4;
 
     public static final int MAX_NAME_LENGTH = 24;
 
