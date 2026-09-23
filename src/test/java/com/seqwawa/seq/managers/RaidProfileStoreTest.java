@@ -340,6 +340,34 @@ class RaidProfileStoreTest {
     }
 
     @Test
+    void aPushIsIgnoredWhenRaidProfilesLiveOnAnotherBackend(@TempDir Path directory) {
+        RaidProfileStore store = new RaidProfileStore(
+                directory.resolve("raid-profile.json"),
+                directory.resolve("cache/raid-profiles.json"),
+                () -> CompletableFuture.completedFuture(
+                        RaidProfileStore.parseProfilesResponse(BACKEND_PAYLOAD).orElse(null)),
+                () -> true);
+        store.load();
+        store.refresh().join();
+        RaidTeamProfile before = store.profileForUuid(BLOUSY_UUID);
+
+        store.onLiveUpdate(new ConnectionManager.RaidProfileUpdateMessage(
+                "updated",
+                JsonParser.parseString(
+                                """
+                                {"minecraft": {"uuid": "10000000-0000-0000-0000-000000000002",
+                                               "username": "Blousy"},
+                                 "builds": ["ASCENDANCY"], "can_bring_auras": true,
+                                 "region": "NA", "status": "back on",
+                                 "updated_at": "2026-09-05T10:00:00Z"}
+                                """)
+                        .getAsJsonObject()));
+
+        assertEquals(before, store.profileForUuid(BLOUSY_UUID),
+                "the socket speaks for the main backend, not the one profiles were fetched from");
+    }
+
+    @Test
     void aRemovalPushIsNotStoredAsAnEmptyProfile(@TempDir Path directory) {
         RaidProfileStore store = store(directory);
         store.load();

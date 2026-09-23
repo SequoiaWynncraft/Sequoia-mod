@@ -32,6 +32,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -76,6 +77,8 @@ public final class RaidProfileStore {
     private final Path localPath;
     private final Path cachePath;
     private final Supplier<CompletableFuture<RaidProfilesResponse>> fetch;
+    /** Whether raid profiles come from another backend than the socket's. */
+    private final BooleanSupplier separateBackend;
 
     private final Map<String, String> notes = new ConcurrentHashMap<>();
     private final List<String> friends = new CopyOnWriteArrayList<>();
@@ -95,15 +98,31 @@ public final class RaidProfileStore {
     private volatile long lastFetchAtMs;
 
     RaidProfileStore(Path localPath, Path cachePath) {
-        this(localPath, cachePath, () -> ApiClient.getInstance().getRaidProfiles());
+        this(
+                localPath,
+                cachePath,
+                () -> ApiClient.getInstance().getRaidProfiles(),
+                ApiClient::raidProfilesOnSeparateBackend);
     }
 
-    /** Test seam, so cache and fetch behaviour can run without a network. */
+    /**
+     * Test seam, so cache and fetch behaviour can run without a network. It behaves as
+     * if raid profiles share the main backend, whichever backend the build targets.
+     */
     RaidProfileStore(
             Path localPath, Path cachePath, Supplier<CompletableFuture<RaidProfilesResponse>> fetch) {
+        this(localPath, cachePath, fetch, () -> false);
+    }
+
+    RaidProfileStore(
+            Path localPath,
+            Path cachePath,
+            Supplier<CompletableFuture<RaidProfilesResponse>> fetch,
+            BooleanSupplier separateBackend) {
         this.localPath = localPath;
         this.cachePath = cachePath;
         this.fetch = fetch;
+        this.separateBackend = separateBackend;
     }
 
     public static synchronized RaidProfileStore getInstance() {
@@ -127,7 +146,7 @@ public final class RaidProfileStore {
         if (message == null || message.profileJson() == null) {
             return;
         }
-        if (ApiClient.raidProfilesOnSeparateBackend()) {
+        if (separateBackend.getAsBoolean()) {
             // The socket belongs to the main backend, so its pushes describe that
             // backend's profiles and must not mix into ones fetched elsewhere.
             return;

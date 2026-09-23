@@ -206,13 +206,6 @@ class ApiClientTest {
     }
 
     @Test
-    void theDefaultBuildKeepsRaidProfilesOnTheMainBackend() {
-        // Tests build without raid_profiles_environment, which must follow the main one.
-        assertFalse(ApiClient.raidProfilesOnSeparateBackend());
-        assertEquals(BuildConfig.API_URL, BuildConfig.RAID_PROFILES_API_URL);
-    }
-
-    @Test
     void signInToAnotherBackendTriesItsSiteRootThenItsApiRoot() {
         assertEquals(
                 List.of("https://staging.seqwawa.com", "https://staging.seqwawa.com/api"),

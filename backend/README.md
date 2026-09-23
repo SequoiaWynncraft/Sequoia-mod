@@ -46,8 +46,13 @@ The mod refuses to sign in over plain HTTP, so it can only reach a deployment
 served over HTTPS. Once yours is, build the mod against it:
 
 ```powershell
-./gradlew build -Praid_profiles_environment=https://raid-profiles.example.com/api
+./gradlew build -Praid_profiles_environment=https://raid-profiles.example.com
 ```
+
+Give the address the service answers on, with no `/api` on the end: `main.py`
+serves `/raid-profiles` and `/auth/minecraft/*` at its root, and the mod adds those
+paths to whatever you pass. Anything other than `production`, `staging` or an
+`https://` address stops the build, so a typo cannot quietly point it at staging.
 
 Everything else in the mod stays on the Sequoia backend. Moving these endpoints
 into `api.seqwawa.com` later makes that flag unnecessary, and this file is then
@@ -91,6 +96,11 @@ Adding a build is one entry in `builds` plus its key in whichever raids it serve
 { "key": "NEWBUILD", "label": "Newbuild", "position": 9 }
 ```
 
+Only `key` is required on a build or a raid. A missing `label` becomes the tidied
+key (`CSPRING` reads `Cspring`), a missing `short_name` becomes the key. The file is
+checked on every read, so a mistake such as a build with no key comes back as
+`500 catalog_unavailable` naming the entry, never as an unexplained error.
+
 Two rules keep old profiles valid. **Never reuse a key for a different build**,
 because saved profiles reference keys. **Retiring a key is safe**: profiles that
 still name it keep it in the database and the mod just stops showing it, so
@@ -116,16 +126,19 @@ tries to make them agree.
 
 Every error comes back as `{"code": ..., "message": ...}`. `code` is what the mod
 branches on, `message` is what the player reads under the Save button. The one
-worth knowing about is `409 identity_unknown`: the caller sent no
-`X-Minecraft-Uuid`, and a profile stored without one could never be matched to a
-roster row, so it is refused rather than silently lost.
+worth knowing about in `trust-header` mode is `409 identity_unknown`: the caller
+sent no `X-Minecraft-Uuid`, and a profile stored without one could never be matched
+to a roster row, so it is refused rather than silently lost.
 
-Saving looks like this:
+Saving by hand needs `trust-header` mode, since the default `minecraft` mode only
+accepts a token from the sign-in the mod performs. Start the service with
+`$env:RAID_PROFILES_AUTH = "trust-header"` first, then send both headers:
 
 ```powershell
 curl -X PUT http://127.0.0.1:8000/raid-profiles/me `
   -H "Content-Type: application/json" `
   -H "X-Minecraft-Username: ArcLeRetour" `
+  -H "X-Minecraft-Uuid: 806c8e32-aaaa-bbbb-cccc-dddddddddddd" `
   -d '{\"builds\":[\"ASCENDANCY\",\"CSPRING\"],\"can_bring_auras\":true,\"region\":\"EU\",\"status\":\"down for tna\"}'
 ```
 
@@ -136,12 +149,16 @@ so a wrong clock on someone's PC cannot make their profile look newest.
 
 ## Settings
 
-All optional. Set them as environment variables before starting the service.
+Set them as environment variables before starting the service. Only
+`RAID_PROFILES_SECRET` is needed in the default mode; without it, sign-in and every
+write answer `503 auth_not_configured`.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
+| `RAID_PROFILES_AUTH` | `minecraft` | `minecraft`, `trust-header` or `disabled`. See above. Any other value stops the service at start-up rather than guessing. |
+| `RAID_PROFILES_SECRET` | none | Signs the tokens issued in `minecraft` mode. Required there; any long random string, kept secret. |
+| `RAID_PROFILES_TOKEN_TTL` | `604800` (a week) | How long a token lasts, in seconds. |
 | `RAID_PROFILES_DB` | `raid-profiles.db` | Where the SQLite file lives. |
-| `RAID_PROFILES_AUTH` | `trust-header` | `trust-header` or `disabled`. See above. |
 | `RAID_PROFILES_CATALOG` | `catalog.json` next to `main.py` | Where the meta lives. |
 
 ## Putting it somewhere the guild can reach

@@ -62,7 +62,16 @@ DATABASE_PATH = os.environ.get("RAID_PROFILES_DB", "raid-profiles.db")
 #                  by hand with curl. NOT safe on the open internet.
 #   "disabled"     every request is rejected. Use it to be sure you have made a
 #                  deliberate choice before exposing the service.
-AUTH_MODE = os.environ.get("RAID_PROFILES_AUTH", "minecraft")
+# Any other value stops the service at start-up. Falling back to a mode instead would
+# turn a typo such as "Minecraft " or "mojang" into trusting whatever headers a
+# caller sends, which lets anyone overwrite anyone's profile.
+AUTH_MODES = {"minecraft", "trust-header", "disabled"}
+AUTH_MODE = os.environ.get("RAID_PROFILES_AUTH", "minecraft").strip().lower()
+if AUTH_MODE not in AUTH_MODES:
+    raise RuntimeError(
+        f"RAID_PROFILES_AUTH={AUTH_MODE!r} is not a mode this service knows. "
+        f"Use one of: {', '.join(sorted(AUTH_MODES))}."
+    )
 
 # Signs the tokens this service issues in "minecraft" mode. Any string, kept
 # secret: anyone holding it can mint a token for any member.
@@ -154,24 +163,78 @@ def load_catalog() -> dict:
             f"catalog.json is not valid JSON: {error}",
         ) from error
 
-    builds = catalog.get("builds") or []
-    raids = catalog.get("raids") or []
-    if not builds or not raids:
-        raise ApiError(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            "catalog_unavailable",
-            "catalog.json needs at least one build and one raid.",
+    return normalize_catalog(catalog)
+
+
+def catalog_error(message: str) -> ApiError:
+    return ApiError(status.HTTP_500_INTERNAL_SERVER_ERROR, "catalog_unavailable", message)
+
+
+def catalog_position(entry: dict, where: str) -> int:
+    value = entry.get("position", 0)
+    try:
+        return int(value)
+    except (TypeError, ValueError) as error:
+        raise catalog_error(f"{where} has a position that is not a whole number: {value!r}.") from error
+
+
+def normalize_catalog(catalog: object) -> dict:
+    """
+    Checks catalog.json and fills in what the protocol lets it leave out, so a
+    hand edit can only ever produce a clear catalog_unavailable error, never a bare 500
+    from a missing field further down.
+
+    Only `key` is required. A build without a label gets its key tidied (CSPRING
+    becomes Cspring); a raid without a short name uses its key, and one without an
+    api_name reads no clear counts, which is what the mod does with it too.
+    """
+    if not isinstance(catalog, dict):
+        raise catalog_error("catalog.json must be an object with builds and raids.")
+    raw_builds = catalog.get("builds") or []
+    raw_raids = catalog.get("raids") or []
+    if not isinstance(raw_builds, list) or not isinstance(raw_raids, list):
+        raise catalog_error("builds and raids in catalog.json must both be lists.")
+
+    builds = []
+    for index, entry in enumerate(raw_builds):
+        where = f"builds[{index}]"
+        if not isinstance(entry, dict):
+            raise catalog_error(f"{where} must be an object.")
+        key = str(entry.get("key") or "").strip().upper()
+        if not key:
+            raise catalog_error(f"{where} has no key.")
+        label = str(entry.get("label") or "").strip() or key[0] + key[1:].lower()
+        builds.append({"key": key, "label": label, "position": catalog_position(entry, where)})
+
+    raids = []
+    for index, entry in enumerate(raw_raids):
+        where = f"raids[{index}]"
+        if not isinstance(entry, dict):
+            raise catalog_error(f"{where} must be an object.")
+        key = str(entry.get("key") or "").strip().upper()
+        if not key:
+            raise catalog_error(f"{where} has no key.")
+        build_keys = entry.get("build_keys") or []
+        if not isinstance(build_keys, list):
+            raise catalog_error(f"{where} has build_keys that are not a list.")
+        raids.append(
+            {
+                "key": key,
+                "short_name": str(entry.get("short_name") or "").strip() or key,
+                "api_name": str(entry.get("api_name") or "").strip(),
+                "position": catalog_position(entry, where),
+                "build_keys": [str(value).strip().upper() for value in build_keys if str(value).strip()],
+            }
         )
+
+    if not builds or not raids:
+        raise catalog_error("catalog.json needs at least one build and one raid.")
     return {"builds": builds, "raids": raids}
 
 
 def known_build_keys() -> set[str]:
     """The build keys a profile is allowed to name, straight from the catalog."""
-    return {
-        str(build.get("key", "")).strip().upper()
-        for build in load_catalog()["builds"]
-        if str(build.get("key", "")).strip()
-    }
+    return {build["key"] for build in load_catalog()["builds"]}
 
 
 # ── Database ─────────────────────────────────────────────────────────────────
@@ -246,6 +309,15 @@ def current_caller(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "auth_not_configured",
             "Authentication is not configured. Set RAID_PROFILES_AUTH.",
+        )
+
+    if AUTH_MODE != "trust-header":
+        # Unreachable while the start-up check holds, and kept so that a mode added
+        # later without its own branch fails closed rather than trusting headers.
+        raise ApiError(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "auth_not_configured",
+            f"Unknown RAID_PROFILES_AUTH mode {AUTH_MODE!r}.",
         )
 
     username = (x_minecraft_username or "").strip()
@@ -552,7 +624,7 @@ def list_profiles(response: Response) -> ProfilesResponse:
     """
     response.headers["Cache-Control"] = "no-store"
     catalog = load_catalog()
-    build_order = [str(build["key"]).strip().upper() for build in catalog["builds"]]
+    build_order = [build["key"] for build in catalog["builds"]]
     with database() as connection:
         rows = connection.execute(
             "SELECT * FROM raid_profiles WHERE uuid IS NOT NULL ORDER BY username_key"
@@ -614,7 +686,7 @@ def save_my_profile(
             (caller.username.lower(),),
         ).fetchone()
 
-    build_order = [str(build["key"]).strip().upper() for build in load_catalog()["builds"]]
+    build_order = [build["key"] for build in load_catalog()["builds"]]
     return row_to_profile(row, build_order)
 
 

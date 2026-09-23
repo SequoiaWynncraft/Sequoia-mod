@@ -22,6 +22,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Supplier;
 
 public class MinecraftAuthService {
 
@@ -44,6 +45,13 @@ public class MinecraftAuthService {
 
     private volatile CompletableFuture<StoredAuthSession> inFlightAuthentication;
     private long authenticationGeneration;
+
+    /**
+     * The last join-and-complete sequence handed out. Mojang keeps only the latest
+     * server id a profile joined, so two sign-ins (the main one and the raid profiles
+     * one) interleaving would fail whichever backend asked Mojang second.
+     */
+    private CompletableFuture<?> lastJoin = CompletableFuture.completedFuture(null);
 
     public static synchronized MinecraftAuthService getInstance() {
         if (instance == null) {
@@ -78,7 +86,7 @@ public class MinecraftAuthService {
             CompletableFuture<StoredAuthSession> future = ApiClient.getInstance()
                     .requestMinecraftAuthChallenge()
                     .thenApply(MinecraftAuthService::validateChallenge)
-                    .thenCompose(challenge -> authenticateMinecraftSession(startedFor, challenge))
+                    .thenCompose(challenge -> oneJoinAtATime(() -> authenticateMinecraftSession(startedFor, challenge)))
                     .thenApply(response -> storeSession(startedFor, response))
                     .handle((session, throwable) -> {
                         if (throwable != null) {
@@ -134,11 +142,11 @@ public class MinecraftAuthService {
         return ApiClient.getInstance()
                 .requestMinecraftAuthChallenge(apiBaseUrl)
                 .thenApply(MinecraftAuthService::validateChallenge)
-                .thenCompose(challenge -> CompletableFuture
+                .thenCompose(challenge -> oneJoinAtATime(() -> CompletableFuture
                         .supplyAsync(() -> joinServer(challenge), executor)
                         .thenCompose(username -> ApiClient.getInstance()
                                 .completeMinecraftAuthentication(
-                                        apiBaseUrl, new MinecraftAuthCompleteRequest(challenge.challengeId(), username))))
+                                        apiBaseUrl, new MinecraftAuthCompleteRequest(challenge.challengeId(), username)))))
                 .thenApply(response -> toStoredSession(unwrapCompleteResponse(response)))
                 .handle((session, throwable) -> {
                     if (throwable != null) {
@@ -176,6 +184,18 @@ public class MinecraftAuthService {
                         },
                         executor)
                 .thenCompose(username -> completeAuthentication(startedFor, challenge.challengeId(), username));
+    }
+
+    /**
+     * Runs {@code joinAndComplete} once the previous sequence has finished, whatever
+     * its outcome, so each backend checks Mojang while its own server id is the latest.
+     */
+    private synchronized <T> CompletableFuture<T> oneJoinAtATime(Supplier<CompletableFuture<T>> joinAndComplete) {
+        CompletableFuture<T> next = lastJoin
+                .handle((ignored, throwable) -> null)
+                .thenCompose(ignored -> joinAndComplete.get());
+        lastJoin = next;
+        return next;
     }
 
     /** Proves to Mojang that this client owns the account, for the backend to check. */

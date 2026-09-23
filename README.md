@@ -254,11 +254,16 @@ sit in a listing, invites leave it as it is.
 
 The **STATUS** column, between online time and builds, holds a badge: a green **Free**, a
 red **Busy** with its countdown, or, for a member sitting in a party finder listing, a chip
-such as `PF TNA 2/4`, orange while it has room and red like Busy once it is full, which
-takes precedence over busy. Badges carry a border the way Party
-Finder's Open and Full badges do, and buttons do not, so the two cannot be confused. When the listing is open and has room, the chip is a button: click it to join
-as DPS, the party finder's default. It stays grey when the listing is full or invite only,
-on your own row, and while you are already in a listing yourself.
+such as `PF TNA 2/4`, which takes precedence over busy. That chip is orange while the
+listing has room and red like Busy once it is full. The listing you are in yourself
+wears the main accent instead, on every member in it, and reads "Your party" on hover.
+Badges carry a border the way Party Finder's Open and Full badges do, and buttons do
+not, so the two cannot be confused.
+
+An orange chip is also a button when joining could work: the listing is open, it is
+not your own row, and you are not already in a listing. Hovering it then reads
+`Join 2/4`, and a click joins as DPS, the party finder's default. An invite-only
+listing with room stays orange but does nothing when clicked.
 
 ### Friends
 
@@ -317,9 +322,9 @@ The last row never leaves your machine. A private note about somebody is not
 something to upload.
 
 The last backend response is cached to `config/sequoia/cache/raid-profiles.json`
-so the panel is not blank while the backend is unreachable. The column header
-says how many profiles are in play, `N SHARED` or `ONLY YOUR PROFILE`, so an empty
-builds column reads as "nobody has shared one" rather than "nobody owns anything".
+so the panel is not blank while the backend is unreachable. A member who has not
+shared a profile reads `no profile yet` in the builds column, so an empty cell never
+passes for "owns nothing".
 
 Raid profiles can be pointed at a different backend than the rest of the mod, to try
 the feature on staging while sign-in, chat and the party finder stay on production:

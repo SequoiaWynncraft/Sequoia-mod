@@ -123,13 +123,15 @@ public final class PlayerHeadCache {
 
     /**
      * One key per player: the roster writes UUIDs with dashes, the party finder may not,
-     * and without this the same head would be fetched and kept twice.
+     * and without this the same head would be fetched and kept twice. Anything that is
+     * not a UUID is refused, since it goes into a URL built on the render thread, where
+     * a stray space would throw and a slash or a question mark would change the request.
      */
-    private static String normalize(String uuid) {
+    static String normalize(String uuid) {
         if (uuid == null) {
             return null;
         }
         String compact = uuid.trim().replace("-", "").toLowerCase(Locale.ROOT);
-        return compact.isEmpty() ? null : compact;
+        return compact.matches("[0-9a-f]{32}") ? compact : null;
     }
 }
