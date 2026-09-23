@@ -191,7 +191,7 @@ public final class RaidProfileStore {
     }
 
     /** How many members other than you have shared a profile. */
-    public int sharedProfileCount() {
+    int sharedProfileCount() {
         String self = RaidProfilesResponse.normalizeUuid(localUuid());
         return (int) profiles.entrySet().stream()
                 .filter(entry -> entry.getValue().isComplete())
@@ -232,7 +232,15 @@ public final class RaidProfileStore {
         }
         fetching = true;
         refreshQueued = false;
-        CompletableFuture<Void> attempt = fetch.get()
+        CompletableFuture<RaidProfilesResponse> request;
+        try {
+            request = fetch.get();
+        } catch (RuntimeException e) {
+            // Thrown before any future existed, so nothing would ever clear the flag
+            // and every later refresh would wait on a fetch that is not running.
+            request = CompletableFuture.failedFuture(e);
+        }
+        CompletableFuture<Void> attempt = request
                 .thenAccept(response -> {
                     if (response == null) {
                         return;
@@ -446,10 +454,15 @@ public final class RaidProfileStore {
             return;
         }
         String trimmed = note == null ? "" : note.trim();
-        if (trimmed.isEmpty()) {
+        String value = trimmed.length() <= MAX_NOTE_LENGTH ? trimmed : trimmed.substring(0, MAX_NOTE_LENGTH);
+        // The card saves on every close, and most closes change nothing.
+        if (value.equals(notes.getOrDefault(key, ""))) {
+            return;
+        }
+        if (value.isEmpty()) {
             notes.remove(key);
         } else {
-            notes.put(key, trimmed.length() <= MAX_NOTE_LENGTH ? trimmed : trimmed.substring(0, MAX_NOTE_LENGTH));
+            notes.put(key, value);
         }
         persist();
     }

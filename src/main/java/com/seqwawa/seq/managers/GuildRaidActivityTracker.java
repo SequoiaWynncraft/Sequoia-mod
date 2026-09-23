@@ -12,9 +12,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * mid-session.
  * <p>
  * The signal is the raid completion report already built for the Discord relay, and
- * every announcement names its whole party. Two paths feed it: {@link RaidTracker}
- * for completions this client witnessed, and {@code guild_raid_announcement}
- * relayed by the backend for everyone else running the mod.
+ * every announcement names its whole party. {@link RaidTracker} feeds it from guild
+ * chat, where Wynncraft posts every guild raid completion, so members who do not run
+ * the mod are covered too.
  */
 public final class GuildRaidActivityTracker {
 

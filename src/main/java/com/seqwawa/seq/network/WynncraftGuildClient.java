@@ -9,11 +9,13 @@ import com.seqwawa.seq.model.KnownGuildMember;
 import com.seqwawa.seq.model.RaidCatalog;
 import com.seqwawa.seq.model.RaidPerformance;
 import com.seqwawa.seq.model.RaidType;
+import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -24,6 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -39,9 +42,18 @@ public final class WynncraftGuildClient {
 
     private static final String API_BASE = "https://api.wynncraft.com/v3";
     private static final String USER_AGENT = "Sequoia-mod/" + ClientVersion.resolveInstalledVersion();
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(15);
+    /**
+     * Wynncraft takes up to about twenty seconds for a guild or player it has not served
+     * lately (a whole guild roster is the slow case), then answers from its cache. So the
+     * wait is generous, and a read that still times out is tried once more.
+     */
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration RETRY_TIMEOUT = Duration.ofSeconds(45);
 
-    /** Matches the upstream {@code Cache-Control: max-age=120} on the guild endpoint. */
+    /**
+     * Upstream caches the guild endpoint for two minutes ({@code Cache-Control:
+     * max-age=120}); asking every minute picks a new copy up within a minute of it.
+     */
     public static final Duration MINIMUM_REFRESH_INTERVAL = Duration.ofSeconds(60);
 
     private static WynncraftGuildClient instance;
@@ -83,10 +95,29 @@ public final class WynncraftGuildClient {
         return get("/guild/prefix/" + encode(guildPrefix)).thenApply(json -> parseRoster(json, catalog));
     }
 
+    /** A read, tried a second time when the first one times out or the connection drops. */
     private CompletableFuture<JsonObject> get(String path) {
+        return get(path, REQUEST_TIMEOUT)
+                .exceptionallyCompose(throwable -> retryable(throwable)
+                        ? get(path, RETRY_TIMEOUT)
+                        : CompletableFuture.failedFuture(throwable))
+                .exceptionallyCompose(throwable -> CompletableFuture.failedFuture(retryable(throwable)
+                        ? new WynncraftApiException("Wynncraft is taking too long to answer. Try Refresh in a minute.")
+                        : throwable));
+    }
+
+    static boolean retryable(Throwable throwable) {
+        Throwable cause = throwable;
+        while (cause instanceof CompletionException && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return cause instanceof HttpTimeoutException || cause instanceof IOException;
+    }
+
+    private CompletableFuture<JsonObject> get(String path, Duration timeout) {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(API_BASE + path))
-                .timeout(REQUEST_TIMEOUT)
+                .timeout(timeout)
                 .header("Accept", "application/json")
                 .header("User-Agent", USER_AGENT)
                 .GET()

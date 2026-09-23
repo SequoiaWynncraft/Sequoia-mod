@@ -304,13 +304,13 @@ public class ApiClient {
     /**
      * Runs a raid-profile call with the token its backend accepts.
      * <p>
-     * On the same backend as everything else that is the main session's token. On a
-     * separate one it is a sign-in of its own, since that backend signs tokens with a
-     * different secret and refuses the main one as invalid.
+     * On the same backend as everything else that is the main session's token, renewed
+     * the way every other call renews it. On a separate one it is a sign-in of its own,
+     * since that backend signs tokens with a different secret and refuses the main one.
      */
     private <T> CompletableFuture<T> withRaidProfilesToken(java.util.function.Function<String, CompletableFuture<T>> call) {
         if (!raidProfilesOnSeparateBackend()) {
-            return call.apply(SeqClient.getConfigManager().getToken());
+            return callWithTokenRetry(force -> SeqClient.getAuthService().ensureValidToken(force), call);
         }
         return callWithTokenRetry(
                 force -> com.seqwawa.seq.network.auth.RaidProfilesSession.getInstance().ensureToken(force), call);

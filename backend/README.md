@@ -168,9 +168,9 @@ relative to `BuildConfig.API_URL`.
 
 ## The files
 
-- `main.py` — the whole service.
-- `catalog.json` — the guild's meta. This is the file you will actually edit.
-- `requirements.txt` — what to install. These are lower bounds rather than exact
+- `main.py`: the whole service.
+- `catalog.json`: the guild's meta. This is the file you will actually edit.
+- `requirements.txt`: what to install. These are lower bounds rather than exact
   pins on purpose: pinning an old `pydantic` makes pip try to compile it from
   Rust source on a recent Python, which fails with a wall of errors.
-- `.gitignore` — keeps the virtualenv and the database out of git.
+- `.gitignore`: keeps the virtualenv and the database out of git.

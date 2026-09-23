@@ -121,11 +121,15 @@ public final class PlayerHeadCache {
         return key != null && FAILED.contains(key);
     }
 
+    /**
+     * One key per player: the roster writes UUIDs with dashes, the party finder may not,
+     * and without this the same head would be fetched and kept twice.
+     */
     private static String normalize(String uuid) {
         if (uuid == null) {
             return null;
         }
-        String trimmed = uuid.trim();
-        return trimmed.isEmpty() ? null : trimmed;
+        String compact = uuid.trim().replace("-", "").toLowerCase(Locale.ROOT);
+        return compact.isEmpty() ? null : compact;
     }
 }

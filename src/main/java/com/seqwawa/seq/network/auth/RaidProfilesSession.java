@@ -41,6 +41,8 @@ public final class RaidProfilesSession {
     private volatile AuthException lastFailure;
     private volatile Instant lastFailureAt = Instant.EPOCH;
     private volatile boolean linkHintShown;
+    /** Bumped by {@link #clear()}, so a sign-in started for the previous account is dropped. */
+    private volatile long generation;
 
     RaidProfilesSession(String apiBaseUrl) {
         this.apiBaseUrl = apiBaseUrl;
@@ -74,9 +76,15 @@ public final class RaidProfilesSession {
             session = null;
         }
 
+        long startedFor = generation;
         CompletableFuture<String> attempt = MinecraftAuthService.getInstance()
                 .authenticateAgainst(apiBaseUrl)
                 .thenApply(signedIn -> {
+                    if (startedFor != generation) {
+                        // The account changed mid sign-in: this token speaks for the old one.
+                        throw new CompletionException(new AuthException(
+                                AuthErrorCode.NETWORK_FAILURE, "The Minecraft account changed while signing in.", true, null));
+                    }
                     session = signedIn;
                     lastFailure = null;
                     SeqClient.LOGGER.info(
@@ -87,7 +95,8 @@ public final class RaidProfilesSession {
                     return signedIn.token();
                 })
                 .whenComplete((token, throwable) -> {
-                    if (throwable != null) {
+                    // A failure from before the account changed must not hold the new one back.
+                    if (throwable != null && startedFor == generation) {
                         onFailure(throwable);
                     }
                 });
@@ -127,8 +136,11 @@ public final class RaidProfilesSession {
         return lastFailure;
     }
 
-    public void clear() {
+    /** Forgets the token, for when the Minecraft account changes and it no longer speaks for you. */
+    public synchronized void clear() {
+        generation++;
         session = null;
+        inFlight = null;
         lastFailure = null;
         lastFailureAt = Instant.EPOCH;
     }

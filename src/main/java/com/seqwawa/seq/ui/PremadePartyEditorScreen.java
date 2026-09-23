@@ -44,6 +44,9 @@ public class PremadePartyEditorScreen extends Screen {
     private static final float BODY_FONT_SIZE = 12;
     private static final float SMALL_FONT_SIZE = 10;
 
+    /** Minecraft refuses usernames shorter than this. */
+    private static final int MIN_USERNAME_LENGTH = 3;
+
     private final Screen parent;
     /** The name this party had when the editor opened, so a rename replaces it. */
     private final String previousName;
@@ -53,6 +56,8 @@ public class PremadePartyEditorScreen extends Screen {
     private String memberInput = "";
     private Field focused = Field.NAME;
     private String error;
+    /** Set by a first click on Delete, which a second one confirms. */
+    private boolean deleteArmed;
 
     private float uiMouseX;
     private float uiMouseY;
@@ -273,7 +278,7 @@ public class PremadePartyEditorScreen extends Screen {
                     color(TEXT_PRIMARY),
                     deleteBounds.x() + deleteBounds.width() / 2f,
                     deleteBounds.y() + deleteBounds.height() / 2f,
-                    "Delete",
+                    deleteArmed ? "Sure?" : "Delete",
                     UiCanvas.HorizontalAlign.CENTER);
         } else {
             deleteBounds = null;
@@ -310,13 +315,15 @@ public class PremadePartyEditorScreen extends Screen {
     private void renderButton(
             UiCanvas canvas, String fontName, Rect bounds, String label, boolean enabled, boolean accent) {
         boolean hovered = enabled && bounds.contains(uiMouseX, uiMouseY);
+        // The 1.10.6 palette, as in the Player List: the main accent by default, the
+        // success colour for the action that commits.
         Color background;
         if (!enabled) {
             background = color(ACCENT_DISABLED);
         } else if (accent) {
-            background = hovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY);
+            background = hovered ? color(CONTROL_SUCCESS) : color(STATUS_SUCCESS_BACKGROUND);
         } else {
-            background = hovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT);
+            background = hovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY);
         }
         canvas.fillRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), background);
         drawText(
@@ -340,6 +347,17 @@ public class PremadePartyEditorScreen extends Screen {
         float mx = MinecraftUiRenderer.mouseX(click.x());
         float my = MinecraftUiRenderer.mouseY(click.y());
         error = null;
+        if (deleteBounds != null && deleteBounds.contains(mx, my)) {
+            if (deleteArmed) {
+                RaidProfileStore.getInstance().deletePremade(previousName);
+                onClose();
+            } else {
+                deleteArmed = true;
+            }
+            return true;
+        }
+        // Any other click stands a pending delete down.
+        deleteArmed = false;
 
         for (MemberHitbox hitbox : memberHitboxes) {
             if (hitbox.bounds().contains(mx, my)) {
@@ -371,11 +389,6 @@ public class PremadePartyEditorScreen extends Screen {
             onClose();
             return true;
         }
-        if (deleteBounds != null && deleteBounds.contains(mx, my)) {
-            RaidProfileStore.getInstance().deletePremade(previousName);
-            onClose();
-            return true;
-        }
         focused = Field.NONE;
         return super.mouseClicked(click, outsideScreen);
     }
@@ -383,6 +396,11 @@ public class PremadePartyEditorScreen extends Screen {
     private void commitMemberInput() {
         String candidate = memberInput.trim();
         if (candidate.isEmpty()) {
+            return;
+        }
+        if (candidate.length() < MIN_USERNAME_LENGTH) {
+            // The input only takes username characters, so length is all left to check.
+            error = "A username has " + MIN_USERNAME_LENGTH + " to 16 characters.";
             return;
         }
         if (draft.isFull()) {

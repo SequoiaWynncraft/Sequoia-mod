@@ -267,6 +267,41 @@ class RaidProfileStoreTest {
     }
 
     @Test
+    void aFetchThatThrowsInsteadOfFailingDoesNotLeaveTheStoreStuck(@TempDir Path directory) {
+        AtomicInteger calls = new AtomicInteger();
+        RaidProfileStore store = new RaidProfileStore(
+                directory.resolve("raid-profile.json"), directory.resolve("cache/raid-profiles.json"), () -> {
+                    calls.incrementAndGet();
+                    throw new IllegalStateException("thrown before any future existed");
+                });
+        store.load();
+
+        store.refresh().join();
+        store.refresh().join();
+
+        assertFalse(store.isFetching());
+        assertEquals(2, calls.get());
+        assertNotNull(store.lastError());
+    }
+
+    @Test
+    void savingTheSameNoteAgainDoesNotRewriteTheFile(@TempDir Path directory) throws Exception {
+        Path local = directory.resolve("raid-profile.json");
+        RaidProfileStore store = new RaidProfileStore(
+                local, directory.resolve("cache/raid-profiles.json"), () -> CompletableFuture.completedFuture(null));
+        store.load();
+        store.setNote("Visroul", "solid tna aco");
+        java.nio.file.attribute.FileTime written = Files.getLastModifiedTime(local);
+        Files.setLastModifiedTime(local, java.nio.file.attribute.FileTime.fromMillis(written.toMillis() - 60_000L));
+        java.nio.file.attribute.FileTime backdated = Files.getLastModifiedTime(local);
+
+        store.setNote("visroul", "  solid tna aco ");
+
+        assertEquals(backdated, Files.getLastModifiedTime(local), "an unchanged note is not written again");
+        assertEquals("solid tna aco", store.noteFor("VISROUL"));
+    }
+
+    @Test
     void aCorruptCacheIsSurvivable(@TempDir Path directory) throws Exception {
         Path cache = directory.resolve("cache/raid-profiles.json");
         Files.createDirectories(cache.getParent());

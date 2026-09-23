@@ -61,6 +61,11 @@ public final class GuildPresenceManager {
      * zero. Reading it again with one gives the right numbers, so the throttle is waived.
      */
     private volatile boolean readWithoutCatalog;
+    /**
+     * Bumped by {@link #reset()}, so a fetch started for the previous account cannot
+     * land its guild's roster in the new session.
+     */
+    private volatile long generation;
 
     private GuildPresenceManager() {}
 
@@ -112,20 +117,11 @@ public final class GuildPresenceManager {
                 .toList();
     }
 
-    /** The online members in the order the panel draws them, narrowed by {@code filter}. */
-    public List<GuildMemberPresence> membersForDisplay(MemberFilter filter) {
-        return sortByName(filteredMembers(filter));
-    }
-
-    /** Filtered, and ordered by the column the player clicked. */
-    public List<GuildMemberPresence> membersForDisplay(
-            MemberFilter filter, MemberSort sort, boolean descending) {
-        return membersForDisplay(onlineMembers(), filter, sort, descending);
-    }
-
     /**
-     * The same, over a roster the caller already has. A frame reads the members list
-     * more than once, and rebuilding it each time allocates a record per member.
+     * The members in the order the panel draws them: narrowed by {@code filter} and
+     * ordered by the column the player clicked. Takes the roster the caller already
+     * read, since a frame uses it more than once and each read allocates a record per
+     * member.
      */
     public List<GuildMemberPresence> membersForDisplay(
             List<GuildMemberPresence> members, MemberFilter filter, MemberSort sort, boolean descending) {
@@ -142,14 +138,11 @@ public final class GuildPresenceManager {
         return known == null ? null : known.lastJoin();
     }
 
-    /** The online members that pass {@code filter}, ungrouped. */
-    public List<GuildMemberPresence> filteredMembers(MemberFilter filter) {
-        return filteredMembers(onlineMembers(), filter);
-    }
-
-    /** The same, over a roster the caller already has. */
-    public List<GuildMemberPresence> filteredMembers(
-            List<GuildMemberPresence> members, MemberFilter filter) {
+    /**
+     * The members that pass {@code filter}. "Free" means what the status column says:
+     * someone sitting in a party finder listing is spoken for, like someone mid-raid.
+     */
+    private List<GuildMemberPresence> filteredMembers(List<GuildMemberPresence> members, MemberFilter filter) {
         if (members == null || members.isEmpty()) {
             return List.of();
         }
@@ -161,7 +154,7 @@ public final class GuildPresenceManager {
                 .filter(member -> filter.matches(
                         member,
                         profiles.profileFor(member),
-                        GuildRaidActivityTracker.isBusy(member.username()),
+                        GuildRaidActivityTracker.isBusy(member.username()) || partyFinderSpotFor(member) != null,
                         profiles.catalog()))
                 .toList();
     }
@@ -226,6 +219,17 @@ public final class GuildPresenceManager {
     public boolean isInPartyFinderListing() {
         PartyFinderManager manager = SeqClient.partyFinderManager;
         return manager != null && manager.isInParty();
+    }
+
+    /** The listing the local player sits in, or null when they are in none. */
+    public PartyFinderSpot myPartyFinderSpot() {
+        PartyFinderManager manager = SeqClient.partyFinderManager;
+        if (manager == null) {
+            return null;
+        }
+        List<PartyListing> listings = manager.getParties();
+        int index = manager.getJoinedPartyIndex();
+        return index >= 0 && index < listings.size() ? toSpot(listings.get(index)) : null;
     }
 
     /** Set while a listing is being created, so two quick invites cannot open two. */
@@ -367,6 +371,7 @@ public final class GuildPresenceManager {
         }
         refreshing = true;
         lastError = null;
+        long startedFor = generation;
 
         requestSequoiaConnectedUsers();
         // Clear counts are keyed by the raid names the catalog carries, so it has to be
@@ -380,7 +385,7 @@ public final class GuildPresenceManager {
                 ? refreshed.copy().completeOnTimeout(null, CATALOG_WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
                 : CompletableFuture.completedFuture(null);
 
-        return resolveGuildPrefix()
+        return resolveGuildPrefix(startedFor)
                 .thenCombine(catalogReady, (prefix, ignored) -> prefix)
                 .thenCompose(prefix -> {
                     if (prefix == null || prefix.isBlank()) {
@@ -390,6 +395,9 @@ public final class GuildPresenceManager {
                             .fetchRoster(prefix, RaidProfileStore.getInstance().catalog());
                 })
                 .thenAccept(fetched -> {
+                    if (startedFor != generation) {
+                        return;
+                    }
                     roster = fetched;
                     readWithoutCatalog = RaidProfileStore.getInstance().catalog().isEmpty();
                     lastRefreshAtMs = System.currentTimeMillis();
@@ -400,6 +408,9 @@ public final class GuildPresenceManager {
                             fetched.totalMembers());
                 })
                 .exceptionally(throwable -> {
+                    if (startedFor != generation) {
+                        return null;
+                    }
                     Throwable cause = throwable.getCause() != null ? throwable.getCause() : throwable;
                     lastError = cause.getMessage() == null ? "Could not reach Wynncraft." : cause.getMessage();
                     // A failed refresh still counts as an attempt, otherwise a broken
@@ -408,10 +419,14 @@ public final class GuildPresenceManager {
                     SeqClient.LOGGER.warn("[GuildPresence] Roster refresh failed: {}", lastError);
                     return null;
                 })
-                .whenComplete((ignored, throwable) -> refreshing = false);
+                .whenComplete((ignored, throwable) -> {
+                    if (startedFor == generation) {
+                        refreshing = false;
+                    }
+                });
     }
 
-    private CompletableFuture<String> resolveGuildPrefix() {
+    private CompletableFuture<String> resolveGuildPrefix(long startedFor) {
         if (guildPrefix != null && !guildPrefix.isBlank()) {
             return CompletableFuture.completedFuture(guildPrefix);
         }
@@ -420,7 +435,9 @@ public final class GuildPresenceManager {
             return CompletableFuture.completedFuture(null);
         }
         return WynncraftGuildClient.getInstance().resolveGuildPrefix(username).thenApply(prefix -> {
-            guildPrefix = prefix;
+            if (startedFor == generation) {
+                guildPrefix = prefix;
+            }
             return prefix;
         });
     }
@@ -460,6 +477,7 @@ public final class GuildPresenceManager {
 
     /** Clears cached state so a fresh session does not show the previous one's roster. */
     public void reset() {
+        generation++;
         roster = WynncraftGuildClient.GuildRoster.empty();
         sequoiaConnected.clear();
         guildPrefix = null;

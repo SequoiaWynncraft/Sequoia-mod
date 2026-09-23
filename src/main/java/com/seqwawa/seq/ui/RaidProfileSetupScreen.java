@@ -389,6 +389,9 @@ public class RaidProfileSetupScreen extends Screen {
     }
 
     private void renderFooter(UiCanvas canvas, String fontName, float x, float y, float width) {
+        float skipWidth = 84;
+        // The text on the left stops short of the two buttons on the right.
+        float textRoom = width - FOOTER_BUTTON_W - 8 - skipWidth - 12;
         List<RaidType> covered = draft.coveredRaids(catalog());
         String summary = draft.buildKeys().isEmpty()
                 ? "No builds ticked yet"
@@ -400,7 +403,7 @@ public class RaidProfileSetupScreen extends Screen {
                 color(TEXT_MUTED),
                 x,
                 y + FOOTER_BUTTON_H / 2f,
-                summary,
+                GuildMembersScreen.fitToWidth(summary, fontName, SMALL_FONT_SIZE, textRoom),
                 UiCanvas.HorizontalAlign.LEFT);
 
         if (error != null && !error.isBlank()) {
@@ -411,10 +414,12 @@ public class RaidProfileSetupScreen extends Screen {
                     color(CONTROL_DANGER),
                     x,
                     y + FOOTER_BUTTON_H / 2f + 12,
-                    error,
+                    GuildMembersScreen.fitToWidth(error, fontName, SMALL_FONT_SIZE, textRoom),
                     UiCanvas.HorizontalAlign.LEFT);
         }
 
+        // The 1.10.6 palette, as in the Player List: success for the action that commits,
+        // the main accent for the other one.
         saveBounds = new Rect(x + width - FOOTER_BUTTON_W, y, FOOTER_BUTTON_W, FOOTER_BUTTON_H);
         boolean saveHovered = saveBounds.contains(uiMouseX, uiMouseY);
         canvas.fillRect(
@@ -424,7 +429,7 @@ public class RaidProfileSetupScreen extends Screen {
                 saveBounds.height(),
                 saving
                         ? color(ACCENT_DISABLED)
-                        : saveHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
+                        : saveHovered ? color(CONTROL_SUCCESS) : color(STATUS_SUCCESS_BACKGROUND));
         drawText(
                 canvas,
                 fontName,
@@ -435,7 +440,6 @@ public class RaidProfileSetupScreen extends Screen {
                 saving ? "Saving" : "Save profile",
                 UiCanvas.HorizontalAlign.CENTER);
 
-        float skipWidth = 84;
         skipBounds = new Rect(saveBounds.x() - skipWidth - 8, y, skipWidth, FOOTER_BUTTON_H);
         boolean skipHovered = skipBounds.contains(uiMouseX, uiMouseY);
         canvas.fillRect(
@@ -443,12 +447,12 @@ public class RaidProfileSetupScreen extends Screen {
                 skipBounds.y(),
                 skipBounds.width(),
                 skipBounds.height(),
-                skipHovered ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
+                skipHovered ? color(ACCENT_PRIMARY_HOVER) : color(ACCENT_PRIMARY));
         drawText(
                 canvas,
                 fontName,
                 BODY_FONT_SIZE,
-                color(TEXT_SECONDARY),
+                color(TEXT_PRIMARY),
                 skipBounds.x() + skipBounds.width() / 2f,
                 skipBounds.y() + skipBounds.height() / 2f,
                 firstRun ? "Not now" : "Cancel",

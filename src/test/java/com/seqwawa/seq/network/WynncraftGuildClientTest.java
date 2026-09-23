@@ -18,6 +18,16 @@ import org.junit.jupiter.api.Test;
 
 class WynncraftGuildClientTest {
 
+    @Test
+    void aTimeoutOrADroppedConnectionIsWorthASecondTry() {
+        assertTrue(WynncraftGuildClient.retryable(new java.net.http.HttpTimeoutException("request timed out")));
+        assertTrue(WynncraftGuildClient.retryable(
+                new java.util.concurrent.CompletionException(new java.io.IOException("connection reset"))));
+        assertFalse(
+                WynncraftGuildClient.retryable(new WynncraftGuildClient.WynncraftApiException("Wynncraft API returned 404.")),
+                "an answer, even a bad one, is not retried");
+    }
+
     /** Shaped exactly like a real {@code /v3/guild/prefix/{prefix}} response, trimmed. */
     private static final String GUILD_PAYLOAD =
             """

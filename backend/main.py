@@ -35,6 +35,7 @@ import json
 import os
 import secrets
 import sqlite3
+import threading
 import urllib.parse
 import urllib.request
 from contextlib import contextmanager
@@ -396,6 +397,11 @@ def now_iso() -> str:
 # challenge_id -> (server_id, expires_at). In memory on purpose: a challenge is
 # worthless two minutes after it is issued, so it is not worth a table.
 CHALLENGES: dict[str, tuple[str, datetime]] = {}
+# Anyone can ask for a challenge, so the ones never completed are swept out and the
+# total is capped; otherwise a loop of requests would grow this until memory ran out.
+# The lock is there because FastAPI runs these handlers on a thread pool.
+CHALLENGES_LOCK = threading.Lock()
+MAX_PENDING_CHALLENGES = 10_000
 
 
 class CompleteIn(BaseModel):
@@ -436,6 +442,8 @@ def caller_from_token(authorization: Optional[str]) -> Caller:
         raise ApiError(status.HTTP_401_UNAUTHORIZED, "token_invalid", "Missing bearer token.")
 
     payload, _, signature = token.partition(".")
+    if not payload.isascii() or not signature.isascii():
+        raise ApiError(status.HTTP_401_UNAUTHORIZED, "token_invalid", "That token was not issued by this service.")
     expected = b64(hmac.new(require_auth_secret().encode("utf-8"), payload.encode("ascii"), hashlib.sha256).digest())
     # compare_digest, so a wrong token cannot be guessed one character at a time.
     if not signature or not hmac.compare_digest(signature, expected):
@@ -470,7 +478,12 @@ def ask_mojang(username: str, server_id: str) -> Optional[dict]:
         ) from error
     if not body:
         return None
-    return json.loads(body)
+    try:
+        return json.loads(body)
+    except ValueError as error:
+        raise ApiError(
+            status.HTTP_502_BAD_GATEWAY, "upstream_unavailable", "Mojang answered with something unreadable."
+        ) from error
 
 
 @app.post("/auth/minecraft/challenge")
@@ -480,8 +493,16 @@ def minecraft_challenge() -> dict:
     # have, and refuses the challenge otherwise.
     server_id = secrets.token_hex(20)
     challenge_id = secrets.token_urlsafe(24)
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=CHALLENGE_TTL_SECONDS)
-    CHALLENGES[challenge_id] = (server_id, expires_at)
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(seconds=CHALLENGE_TTL_SECONDS)
+    with CHALLENGES_LOCK:
+        for stale in [key for key, (_, expiry) in CHALLENGES.items() if expiry <= now]:
+            del CHALLENGES[stale]
+        if len(CHALLENGES) >= MAX_PENDING_CHALLENGES:
+            raise ApiError(
+                status.HTTP_429_TOO_MANY_REQUESTS, "too_many_challenges", "Too many sign-ins at once. Try again shortly."
+            )
+        CHALLENGES[challenge_id] = (server_id, expires_at)
     return {"challenge_id": challenge_id, "server_id": server_id, "expires_at": expires_at.isoformat()}
 
 
@@ -489,7 +510,8 @@ def minecraft_challenge() -> dict:
 def minecraft_complete(request: CompleteIn) -> dict:
     require_auth_secret()
     # One use each, expired or not, so a replay cannot ride on someone else's join.
-    issued = CHALLENGES.pop(request.challenge_id, None)
+    with CHALLENGES_LOCK:
+        issued = CHALLENGES.pop(request.challenge_id, None)
     if issued is None:
         raise ApiError(status.HTTP_401_UNAUTHORIZED, "challenge_unknown", "That challenge is unknown or already used.")
 

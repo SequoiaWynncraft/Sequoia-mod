@@ -41,8 +41,8 @@ import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * The guild members panel: who is online, what they bring to a raid, and the two
- * things you would do about it, join their world or invite them.
+ * The guild members panel: who is online, whether they are free, what they bring to
+ * a raid, and an invite that opens a party finder listing to go with it.
  * <p>
  * A member with a raid profile shows the builds they declared; one without shows
  * how many times they have run that raid with the guild, which is weaker evidence
@@ -204,8 +204,11 @@ public class GuildMembersScreen extends Screen {
 
     private List<GuildMemberPresence> visibleThisFrame = List.of();
 
+    /** The party finder listing you are in, so your own party can be told from the others. */
+    private PartyFinderSpot myPartyThisFrame;
+
     public GuildMembersScreen(Screen parent) {
-        super(Component.literal("Guild Members"));
+        super(Component.literal(SequoiaSidebarNavigation.Destination.MEMBERS.label()));
         this.parent = parent;
     }
 
@@ -284,6 +287,7 @@ public class GuildMembersScreen extends Screen {
 
             onlineThisFrame = presence().onlineMembers();
             visibleThisFrame = presence().membersForDisplay(onlineThisFrame, filter, sort, sortDescending);
+            myPartyThisFrame = presence().myPartyFinderSpot();
 
             renderHeader(canvas, fontName, contentX, contentWidth);
             renderTabStrip(canvas, fontName, contentX, contentWidth);
@@ -318,7 +322,9 @@ public class GuildMembersScreen extends Screen {
                 canvas.fillRect(trackX, thumbY, SCROLLBAR_WIDTH, thumbHeight, color(CONTROL_THUMB));
             }
 
-            renderRaidDropdown(canvas);
+            if (tab == Tab.MEMBERS) {
+                renderRaidDropdown(canvas);
+            }
 
             premadeInviteBounds = null;
             premadeEditBounds = null;
@@ -426,7 +432,7 @@ public class GuildMembersScreen extends Screen {
                     color(TEXT_MUTED),
                     contentX + contentWidth / 2f,
                     contentY + contentHeight / 3f,
-                    "Open someone from Members and press Add friend.",
+                    "Open someone from the All tab and press Add friend.",
                     UiCanvas.HorizontalAlign.CENTER);
             maxScroll = 0;
             return;
@@ -904,6 +910,8 @@ public class GuildMembersScreen extends Screen {
         canvas.save();
         canvas.scissor(x, y, width, HEADER_CONTROL_H);
         boolean empty = searchInput.isEmpty();
+        // The end of what is being typed is the part to keep in view.
+        String shown = empty ? "Search..." : fitTail(searchInput, fontName, SMALL_FONT_SIZE, width - 14);
         drawText(
                 canvas,
                 fontName,
@@ -911,13 +919,13 @@ public class GuildMembersScreen extends Screen {
                 empty ? color(TEXT_DISABLED) : color(TEXT_PRIMARY),
                 x + 6,
                 y + HEADER_CONTROL_H / 2f,
-                empty ? "Search..." : searchInput,
+                shown,
                 UiCanvas.HorizontalAlign.LEFT);
         canvas.restore();
 
         searchCursorBlink++;
         if (searchFocused && (searchCursorBlink / 20) % 2 == 0) {
-            float typed = empty ? 0 : textWidth(searchInput, fontName, SMALL_FONT_SIZE);
+            float typed = empty ? 0 : textWidth(shown, fontName, SMALL_FONT_SIZE);
             canvas.fillRect(
                     Math.min(x + 6 + typed + 1, x + width - 1), y + 3, 1, HEADER_CONTROL_H - 6, color(TEXT_PRIMARY));
         }
@@ -937,7 +945,11 @@ public class GuildMembersScreen extends Screen {
                 .filter(member -> GuildRaidActivityTracker.isBusy(member.username()))
                 .count();
         String base = filter.isActive() ? shown + " of " + all.size() + " online" : all.size() + " online";
-        return busy == 0 ? base : base + ", " + busy + " busy";
+        if (busy > 0) {
+            base += ", " + busy + " busy";
+        }
+        // Your own listing is named here too, since its members may not all be on the roster.
+        return myPartyThisFrame == null ? base : base + ", in " + myPartyThisFrame.label();
     }
 
     private void renderFilterBar(
@@ -1211,7 +1223,7 @@ public class GuildMembersScreen extends Screen {
         renderEvidence(
                 canvas, fontName, x + COL_EVIDENCE, y, member, profile, width - ACTIONS_ZONE_W - COL_EVIDENCE);
 
-        // A listing says more than the busy timer, and the red dot still carries busy.
+        // A listing says more than the busy timer, so it takes the column when there is one.
         float statusX = x + COL_STATUS;
         PartyFinderSpot spot = presence().partyFinderSpotFor(member);
         if (spot != null) {
@@ -1255,8 +1267,9 @@ public class GuildMembersScreen extends Screen {
     }
 
     /**
-     * "PF TNA 2/4", starting at {@code chipX}. It is a join button only when joining
-     * could work: open listing with room, not you, and you are in none yourself.
+     * "PF TNA 2/4", starting at {@code chipX}, in the accent when it is the listing you
+     * are in. It is a join button only when joining could work: open listing with room,
+     * not you, and you are in none yourself.
      */
     private void renderPartyFinderChip(
             UiCanvas canvas,
@@ -1271,23 +1284,28 @@ public class GuildMembersScreen extends Screen {
         float chipY = rowY + (ROW_HEIGHT - BUSY_CHIP_H) / 2f;
         Rect bounds = new Rect(chipX, chipY, chipW, BUSY_CHIP_H);
 
+        boolean mine = myPartyThisFrame != null && myPartyThisFrame.listingId() == spot.listingId();
         boolean joinable = spot.isJoinable() && !isLocalPlayer && !presence().isInPartyFinderListing();
-        boolean hovered = joinable && bounds.contains(uiMouseX, uiMouseY);
-        // A full listing reads like Busy, since nobody else is getting in; one with room
-        // stays orange. Hovering one you can join brightens it and says what a click does.
+        boolean hovered = bounds.contains(uiMouseX, uiMouseY) && (joinable || mine);
+        // Your own party wears the accent, so it stands out from the ones you could join.
+        // Elsewhere a full listing reads like Busy, since nobody else is getting in, and one
+        // with room stays orange. Hovering one you can join says what a click does.
         boolean full = spot.isFull();
-        Color fill = full
-                ? color(STATUS_DANGER_BACKGROUND)
-                : hovered ? color(CONTROL_WARNING) : color(STATUS_WARNING_BACKGROUND);
-        renderStatusBadge(
-                canvas,
-                fontName,
-                chipX,
-                rowY,
-                chipW,
-                hovered ? "Join " + spot.occupiedSlots() + "/" + spot.maxSize() : label,
-                fill,
-                full ? color(STATUS_DANGER_BORDER) : color(STATUS_WARNING_BORDER));
+        Color fill = mine
+                ? color(ACCENT_PRIMARY)
+                : full
+                        ? color(STATUS_DANGER_BACKGROUND)
+                        : hovered ? color(CONTROL_WARNING) : color(STATUS_WARNING_BACKGROUND);
+        Color border = mine
+                ? color(ACCENT_PRIMARY_HOVER)
+                : full ? color(STATUS_DANGER_BORDER) : color(STATUS_WARNING_BORDER);
+        String shown = label;
+        if (mine && hovered) {
+            shown = "Your party";
+        } else if (hovered) {
+            shown = "Join " + spot.occupiedSlots() + "/" + spot.maxSize();
+        }
+        renderStatusBadge(canvas, fontName, chipX, rowY, chipW, shown, fill, border);
         if (joinable && clickable) {
             partyFinderHitboxes.add(new PartyFinderHitbox(bounds, spot));
         }
@@ -1819,7 +1837,11 @@ public class GuildMembersScreen extends Screen {
             return;
         }
 
-        float width = Math.max(STATUS_BANNER_MIN_W, textWidth(statusBannerMessage, fontName, ROW_FONT_SIZE) + 32);
+        // As wide as the line needs, but never past the panel: an invite line with the
+        // party finder's reply tacked on can outgrow a small window.
+        float panelWidth = screenWidth - SIDEBAR_WIDTH - 16;
+        float width = Math.min(
+                panelWidth, Math.max(STATUS_BANNER_MIN_W, textWidth(statusBannerMessage, fontName, ROW_FONT_SIZE) + 32));
         // Centred on the panel, like every other overlay beside the sidebar.
         float x = SIDEBAR_WIDTH + (screenWidth - SIDEBAR_WIDTH - width) / 2f;
         float y = screenHeight - STATUS_BANNER_H - 16;
@@ -1832,7 +1854,7 @@ public class GuildMembersScreen extends Screen {
                 color(TEXT_SECONDARY),
                 x + width / 2f,
                 y + STATUS_BANNER_H / 2f,
-                statusBannerMessage,
+                fitToWidth(statusBannerMessage, fontName, ROW_FONT_SIZE, width - 16),
                 UiCanvas.HorizontalAlign.CENTER);
     }
 
@@ -1870,6 +1892,20 @@ public class GuildMembersScreen extends Screen {
         if (mx < SIDEBAR_WIDTH) {
             return SequoiaSidebarNavigation.click(
                     mx, my, uiHeight, SequoiaSidebarNavigation.Destination.MEMBERS, parent);
+        }
+        // The open list is drawn over the column headings and the first rows, so it
+        // answers first; otherwise a click on "All raids" would sort by name instead.
+        if (raidDropdownOpen) {
+            Integer row = raidDropdownRowAt(mx, my);
+            if (row != null) {
+                // Row zero is "All raids", the rest follow the catalog.
+                filter = filter.withRaid(row == 0 ? null : catalog().raids().get(row - 1));
+                scrollOffset = 0;
+            }
+            // A click anywhere else closes the list rather than acting through it.
+            raidDropdownOpen = false;
+            searchFocused = false;
+            return true;
         }
 
         for (TabHitbox hitbox : tabHitboxes) {
@@ -1922,23 +1958,9 @@ public class GuildMembersScreen extends Screen {
             searchFocused = false;
             return true;
         }
-        Integer row = raidDropdownRowAt(mx, my);
-        if (row != null) {
-            // Row zero is "All raids", the rest follow the catalog.
-            filter = filter.withRaid(row == 0 ? null : catalog().raids().get(row - 1));
-            raidDropdownOpen = false;
-            scrollOffset = 0;
-            searchFocused = false;
-            return true;
-        }
         if (raidDropdownBounds != null && raidDropdownBounds.contains(mx, my)) {
-            raidDropdownOpen = !raidDropdownOpen;
+            raidDropdownOpen = true;
             searchFocused = false;
-            return true;
-        }
-        if (raidDropdownOpen) {
-            // A click anywhere else closes the list rather than acting through it.
-            raidDropdownOpen = false;
             return true;
         }
         if (aurasFilterBounds != null && aurasFilterBounds.contains(mx, my)) {
@@ -2161,6 +2183,11 @@ public class GuildMembersScreen extends Screen {
             }
             return true;
         }
+        if (raidDropdownOpen && key == GLFW.GLFW_KEY_ESCAPE) {
+            // Escape closes the open list first, not the whole panel.
+            raidDropdownOpen = false;
+            return true;
+        }
 
         if (searchFocused) {
             if (key == GLFW.GLFW_KEY_BACKSPACE) {
@@ -2210,6 +2237,16 @@ public class GuildMembersScreen extends Screen {
     @Override
     public void onClose() {
         SeqClient.mc.setScreen(parent);
+    }
+
+    /**
+     * Runs whenever this screen is replaced, however it happened: a server window, a
+     * command, a disconnect. A note being typed is saved rather than lost with it.
+     */
+    @Override
+    public void removed() {
+        closeProfile();
+        super.removed();
     }
 
     @Override

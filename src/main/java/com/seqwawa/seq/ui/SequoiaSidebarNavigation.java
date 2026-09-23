@@ -129,7 +129,7 @@ final class SequoiaSidebarNavigation {
             case INGREDIENTS -> SeqClient.mc.setScreen(new IngredientGuideScreen(parent));
             case ACHIEVEMENTS -> SeqClient.mc.setScreen(new AchievementsScreen(parent));
             // Routed through SeqClient, which sends a member with no profile to setup first.
-            case MEMBERS -> SeqClient.openGuildMembersScreen();
+            case MEMBERS -> SeqClient.openGuildMembersScreen(parent);
             case GITHUB -> openGithub();
         }
     }
