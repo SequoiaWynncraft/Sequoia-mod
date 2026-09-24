@@ -1,24 +1,19 @@
 # Raid profiles: backend contract
 
-> **Aligned with the shipped backend, 5 September 2026.** Four things changed from
-> the first draft of this document, and the mod now matches all four: the Wartorn
-> Palace is keyed `WTP`, `409 identity_unknown` exists, every profile carries a
-> non-null `minecraft.uuid`, and the panel keys on that uuid rather than on the
-> username. See [Matching](#matching-on-uuid-not-on-username).
+The members panel consumes the raid-profile API implemented in
+[`sequoia-backend`](https://github.com/SequoiaWynncraft/sequoia-backend).
+The Java service owns the guild's catalog and saved profiles. The mod fetches
+both through this API and caches the last response locally.
 
-Everything the backend has to provide for the members panel. The mod holds no
-copy of the guild's meta and no copy of anyone's profile: both come from here, so
-until these endpoints exist the panel's builds column stays empty.
-
-A working implementation of all of it lives in [`../backend/`](../backend), in one
-readable Python file. If you are porting rather than deploying that, it is the
-reference to port from.
+The Wartorn Palace is keyed `WTP`, and every profile carries a non-null
+`minecraft.uuid`. The panel matches profiles by UUID rather than username.
+See [Matching](#matching-on-uuid-not-on-username).
 
 `RaidProfilesResponse` is the client's Gson model and
 `RaidProfileStore.parseProfilesResponse` is the only parser, so a payload that
 matches this document needs no client work. `RaidProfilesBackendContractTest`
-parses a real captured response from the reference service, which is what keeps
-this document honest.
+parses a saved sample response to verify client parsing. It does not run the
+backend or automatically detect changes to the server's response format.
 
 Conventions are the ones the rest of the protocol already uses: REST, `snake_case`
 fields, ISO-8601 instants, and the `Authorization: Bearer <token>` plus
@@ -28,13 +23,13 @@ Every profile endpoint requires authenticated current Sequoia membership.
 Unauthenticated calls receive `401`; non-members receive `403 not_in_guild`.
 The Java service checks its existing Wynncraft membership roster for REST and
 live updates, without granting this feature to non-member website administrators.
-The Python service checks UUID membership before issuing a token and on every
-profile request; an unavailable roster returns `503 guild_roster_unavailable`.
 Header-supplied identities are not supported. Membership freshness follows the
-respective Wynncraft roster source, not the lifetime of an authentication token.
+backend's Wynncraft roster source, not the lifetime of an authentication token.
 
-Base URL is `BuildConfig.API_URL`, which is `https://api.seqwawa.com/api` in
-production and `https://staging.seqwawa.com/api` in staging.
+Base URL is `BuildConfig.RAID_PROFILES_API_URL`, which follows `BuildConfig.API_URL`
+unless `raid_profiles_environment` is set at build time. The production and
+staging API bases are `https://api.seqwawa.com/api` and
+`https://staging.seqwawa.com/api`, respectively.
 
 ---
 
@@ -184,18 +179,16 @@ duplicates, truncating the status) shows up immediately and correctly.
 
 ### Errors
 
-| Status | When |
-| --- | --- |
 Every error body is `{"code": "...", "message": "..."}`. `code` is what the client
 branches on; `message` is shown to the player under the Save button, so write it
 for a person to read.
 
 | Status | `code` | When |
 | --- | --- | --- |
-| `400` / `422` | `invalid_request` | A build key outside the catalog, or a region that is not `EU`/`NA`/`AS`. |
+| `400` | `invalid_request` | A build key outside the catalog, or a region that is not `EU`/`NA`/`AS`. |
 | `409` | `identity_unknown` | The backend holds no Minecraft identity for the caller, so a stored profile could never be listed. Recoverable: the client tells the player to rejoin and retry. |
 | `401` | `token_invalid` / `token_expired` | No or bad token. |
-| `403` | `token_invalid` | Authenticated but not a guild member. |
+| `403` | `not_in_guild` | Authenticated but not a guild member. |
 | `426` | `mod_version_unsupported` | Client below the configured minimum. |
 
 ---
@@ -286,8 +279,10 @@ Two rules keep old data valid:
   the client drops it from display because the catalog no longer lists it. Put the
   key back and those profiles light up again.
 
-In the reference backend this is one edit to `backend/catalog.json`, live on the
-next request.
+The Java backend reads the catalog from `raid_profile_catalog_builds`,
+`raid_profile_catalog_raids` and `raid_profile_catalog_raid_builds`. Changes to
+these tables take effect on the next request. Catalog administration belongs
+in the backend repository; there is no editable catalog in the mod.
 
 ---
 

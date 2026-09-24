@@ -346,9 +346,9 @@ which links through Discord and Wynncraft the same way `/link` does. Live
 `raid_profile_update` pushes are ignored in this mode, because the WebSocket still
 belongs to the main backend.
 
-[`docs/raid-profiles-protocol.md`](docs/raid-profiles-protocol.md) is the contract
-the backend implements, and [`backend/`](backend) is a working implementation of
-it in one Python file.
+[`docs/raid-profiles-protocol.md`](docs/raid-profiles-protocol.md) documents the
+client's API contract. The service and its catalog are maintained in
+[`sequoia-backend`](https://github.com/SequoiaWynncraft/sequoia-backend).
 
 The roster refreshes at most once a minute, matching the two-minute cache
 Wynncraft serves the guild endpoint with; **Refresh** in the header forces the

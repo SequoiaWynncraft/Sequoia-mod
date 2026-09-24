@@ -3,7 +3,7 @@ package com.seqwawa.seq.model;
 import java.util.List;
 import java.util.Set;
 
-/** The guild's meta as the reference backend ships it, for tests in any package. */
+/** Sample guild meta shared by client tests. */
 public final class TestCatalogs {
 
     private TestCatalogs() {}

@@ -20,12 +20,10 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
- * Holds the client to the payload the reference backend in {@code backend/}
- * actually produces.
+ * Verifies client parsing against a saved sample of the raid-profile API response.
  * <p>
- * The fixture is a real captured response from that service, not a hand-written
- * one, so the two cannot drift apart quietly: change the backend's output shape
- * and this test is what tells you the client stopped understanding it.
+ * This test does not run the backend. The fixture must be maintained alongside
+ * API changes; it cannot detect server-side changes by itself.
  */
 class RaidProfilesBackendContractTest {
 

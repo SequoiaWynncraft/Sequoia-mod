@@ -168,8 +168,8 @@ def generateBuildConfig = tasks.register("generateBuildConfig") {
     // feature can be tried against staging while chat, party finder and sign-in stay
     // on production. Unset, it is exactly the main backend, so a release build cannot
     // ship pointing at staging by accident.
-    // "production", "staging", or the https base URL of a backend of your own, which is
-    // how you point the mod at a deployment of backend/ without touching this file.
+    // Accepts "production", "staging", or the HTTPS API base URL of another
+    // Sequoia backend deployment.
     // Anything else stops the build: a typo must not quietly land on staging.
     def raidProfilesProperty = project.findProperty("raid_profiles_environment")?.toString()?.trim()
     def raidProfilesEnv

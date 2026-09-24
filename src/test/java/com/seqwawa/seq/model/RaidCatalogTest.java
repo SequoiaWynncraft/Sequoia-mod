@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 /** The meta the backend publishes, and the questions the panel asks of it. */
 class RaidCatalogTest {
 
-    /** The guild's meta as the reference backend ships it. */
+    /** Sample guild meta for client catalog tests. */
     static RaidCatalog sequoiaCatalog() {
         return TestCatalogs.sequoia();
     }

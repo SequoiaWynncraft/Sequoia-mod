@@ -24,7 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class RaidProfileStoreTest {
 
-    /** A payload shaped exactly like the reference backend's, trimmed to two members. */
+    /** A sample API payload containing two members. */
     private static final String BACKEND_PAYLOAD =
             """
             {

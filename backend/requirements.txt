@@ -1,6 +1,0 @@
-# Lower bounds, not exact pins: pinning an old pydantic makes pip try to compile
-# it from Rust source on a recent Python, which fails. These floors are the first
-# releases with prebuilt wheels for Python 3.12 through 3.14.
-fastapi>=0.115
-uvicorn[standard]>=0.34
-pydantic>=2.10
