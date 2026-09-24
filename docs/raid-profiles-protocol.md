@@ -24,6 +24,15 @@ Conventions are the ones the rest of the protocol already uses: REST, `snake_cas
 fields, ISO-8601 instants, and the `Authorization: Bearer <token>` plus
 `X-Sequoia-Mod-Version` headers `ApiClient` sends on every call.
 
+Every profile endpoint requires authenticated current Sequoia membership.
+Unauthenticated calls receive `401`; non-members receive `403 not_in_guild`.
+The Java service checks its existing Wynncraft membership roster for REST and
+live updates, without granting this feature to non-member website administrators.
+The Python service checks UUID membership before issuing a token and on every
+profile request; an unavailable roster returns `503 guild_roster_unavailable`.
+Header-supplied identities are not supported. Membership freshness follows the
+respective Wynncraft roster source, not the lifetime of an authentication token.
+
 Base URL is `BuildConfig.API_URL`, which is `https://api.seqwawa.com/api` in
 production and `https://staging.seqwawa.com/api` in staging.
 

@@ -41,6 +41,7 @@ import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Iterator, Optional
+from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -53,19 +54,9 @@ from pydantic import BaseModel, Field, field_validator
 
 DATABASE_PATH = os.environ.get("RAID_PROFILES_DB", "raid-profiles.db")
 
-# How the service decides who is calling. See the README for the trade-off.
-#   "minecraft"    what the mod speaks: the client proves it owns the account
-#                  against Mojang, this service checks that with Mojang too, and
-#                  hands back a token it signs itself. The only mode the mod can
-#                  use, and the only one safe to expose.
-#   "trust-header" reads the caller from request headers, for calling the service
-#                  by hand with curl. NOT safe on the open internet.
-#   "disabled"     every request is rejected. Use it to be sure you have made a
-#                  deliberate choice before exposing the service.
-# Any other value stops the service at start-up. Falling back to a mode instead would
-# turn a typo such as "Minecraft " or "mojang" into trusting whatever headers a
-# caller sends, which lets anyone overwrite anyone's profile.
-AUTH_MODES = {"minecraft", "trust-header", "disabled"}
+# Only Minecraft ownership authentication is supported. Header-supplied identities
+# cannot prove membership, even when the supplied UUID belongs to a guild member.
+AUTH_MODES = {"minecraft", "disabled"}
 AUTH_MODE = os.environ.get("RAID_PROFILES_AUTH", "minecraft").strip().lower()
 if AUTH_MODE not in AUTH_MODES:
     raise RuntimeError(
@@ -83,6 +74,7 @@ TOKEN_TTL_SECONDS = int(os.environ.get("RAID_PROFILES_TOKEN_TTL", str(7 * 24 * 3
 CHALLENGE_TTL_SECONDS = 120
 
 MOJANG_HAS_JOINED = "https://sessionserver.mojang.com/session/minecraft/hasJoined"
+WYNNCRAFT_GUILD_URL = "https://api.wynncraft.com/v3/guild/Sequoia?identifier=uuid"
 
 # The guild's meta: which builds exist, which raids exist, and which builds are
 # meta for which raid. Edit this file to change the meta; nothing else needs to
@@ -119,7 +111,7 @@ class ApiError(HTTPException):
 
 @app.exception_handler(ApiError)
 def api_error_handler(request: Request, error: ApiError) -> JSONResponse:
-    return JSONResponse(status_code=error.status_code, content=error.detail)
+    return JSONResponse(status_code=error.status_code, content=error.detail, headers={"Cache-Control": "no-store"})
 
 
 @app.exception_handler(RequestValidationError)
@@ -288,55 +280,55 @@ class Caller(BaseModel):
     uuid: str
 
 
-def current_caller(
-    authorization: Optional[str] = Header(default=None),
-    x_minecraft_username: Optional[str] = Header(default=None),
-    x_minecraft_uuid: Optional[str] = Header(default=None),
-) -> Caller:
-    """
-    Resolves the caller from the request.
+def current_caller(authorization: Optional[str] = Header(default=None)) -> Caller:
+    """Resolve the authenticated Minecraft identity before checking membership."""
+    require_auth_secret()
+    return caller_from_token(authorization)
 
-    In "minecraft" mode the caller is whoever the bearer token belongs to, which
-    is what the mod sends. In "trust-header" mode this believes what the client
-    says it is, which is enough for curl on your own machine and not enough on
-    the open internet.
-    """
-    if AUTH_MODE == "minecraft":
-        return caller_from_token(authorization)
 
-    if AUTH_MODE == "disabled":
+def require_guild_member(caller: Caller) -> Caller:
+    """Check UUID membership, including for tokens issued before a player left."""
+    try:
+        player_uuid = UUID(caller.uuid)
+    except ValueError as error:
+        raise ApiError(status.HTTP_401_UNAUTHORIZED, "token_invalid", "Invalid Minecraft UUID.") from error
+
+    request = urllib.request.Request(
+        WYNNCRAFT_GUILD_URL, headers={"Accept": "application/json", "User-Agent": "Sequoia-raid-profiles"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            roster = json.load(response)
+        if not isinstance(roster, dict) or roster.get("name") != "Sequoia":
+            raise ValueError("Unexpected guild roster")
+        members = roster.get("members")
+        if not isinstance(members, dict):
+            raise ValueError("Missing guild members")
+        member_uuids = set()
+        for rank, entries in members.items():
+            if rank == "total":
+                continue
+            if not isinstance(entries, dict):
+                raise ValueError("Invalid guild rank")
+            for member_uuid, member in entries.items():
+                if not isinstance(member, dict):
+                    raise ValueError("Invalid guild member")
+                member_uuids.add(UUID(member_uuid))
+    except (OSError, ValueError) as error:
+        # No stale-success fallback: an outage must not grant access to a former member.
         raise ApiError(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            "auth_not_configured",
-            "Authentication is not configured. Set RAID_PROFILES_AUTH.",
-        )
+            "guild_roster_unavailable",
+            "Current Sequoia membership could not be verified. Try again shortly.",
+        ) from error
 
-    if AUTH_MODE != "trust-header":
-        # Unreachable while the start-up check holds, and kept so that a mode added
-        # later without its own branch fails closed rather than trusting headers.
-        raise ApiError(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "auth_not_configured",
-            f"Unknown RAID_PROFILES_AUTH mode {AUTH_MODE!r}.",
-        )
+    if player_uuid not in member_uuids:
+        raise ApiError(status.HTTP_403_FORBIDDEN, "not_in_guild", "You must be a Sequoia guild member.")
+    return caller.model_copy(update={"uuid": str(player_uuid)})
 
-    username = (x_minecraft_username or "").strip()
-    if not username:
-        raise ApiError(status.HTTP_401_UNAUTHORIZED, "token_invalid", "Missing X-Minecraft-Username header.")
-    if not username.replace("_", "").isalnum() or not 3 <= len(username) <= 16:
-        raise ApiError(status.HTTP_400_BAD_REQUEST, "invalid_request", "That is not a Minecraft username.")
 
-    # Every stored profile must carry a uuid, because the mod keys on it: a member
-    # who renames keeps the uuid, and matching by name would strand their old row.
-    uuid = (x_minecraft_uuid or "").strip()
-    if not uuid:
-        raise ApiError(
-            status.HTTP_409_CONFLICT,
-            "identity_unknown",
-            "The backend does not know your Minecraft account yet. Rejoin the game and try again.",
-        )
-
-    return Caller(username=username, uuid=uuid)
+def current_guild_member(caller: Caller = Depends(current_caller)) -> Caller:
+    return require_guild_member(caller)
 
 
 # ── Request and response shapes ──────────────────────────────────────────────
@@ -482,11 +474,11 @@ class CompleteIn(BaseModel):
 
 
 def require_auth_secret() -> str:
-    if not AUTH_SECRET:
+    if AUTH_MODE != "minecraft" or not AUTH_SECRET:
         raise ApiError(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "auth_not_configured",
-            "Set RAID_PROFILES_SECRET to sign tokens with.",
+            "Enable Minecraft authentication and configure RAID_PROFILES_SECRET.",
         )
     return AUTH_SECRET
 
@@ -601,6 +593,7 @@ def minecraft_complete(request: CompleteIn) -> dict:
 
     username = str(profile.get("name") or request.username.strip())
     uuid = dashed(str(profile["id"]))
+    require_guild_member(Caller(username=username, uuid=uuid))
     token, token_expires_at = issue_token(username, uuid)
     return {
         "token": token,
@@ -610,7 +603,7 @@ def minecraft_complete(request: CompleteIn) -> dict:
 
 
 @app.get("/raid-profiles", response_model=ProfilesResponse)
-def list_profiles(response: Response) -> ProfilesResponse:
+def list_profiles(response: Response, caller: Caller = Depends(current_guild_member)) -> ProfilesResponse:
     """
     The meta catalog and every saved profile, in one response.
 
@@ -639,7 +632,7 @@ def list_profiles(response: Response) -> ProfilesResponse:
 
 @app.put("/raid-profiles/me", response_model=ProfileOut)
 def save_my_profile(
-    profile: ProfileIn, caller: Caller = Depends(current_caller)
+    profile: ProfileIn, caller: Caller = Depends(current_guild_member)
 ) -> ProfileOut:
     """
     Saves the caller's profile, replacing whatever was there.
@@ -691,7 +684,7 @@ def save_my_profile(
 
 
 @app.delete("/raid-profiles/me", status_code=status.HTTP_204_NO_CONTENT)
-def delete_my_profile(caller: Caller = Depends(current_caller)) -> Response:
+def delete_my_profile(caller: Caller = Depends(current_guild_member)) -> Response:
     """Removes the caller's profile, so they read as "has not shared one" again."""
     with database() as connection:
         connection.execute(

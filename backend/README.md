@@ -13,7 +13,7 @@ The endpoints match [`../docs/raid-profiles-protocol.md`](../docs/raid-profiles-
 exactly, and `RaidProfilesBackendContractTest` in the mod parses a captured
 response from this service, so the two are held together by a test.
 
-## Who is allowed to write
+## Who is allowed to use profiles
 
 A token from `api.seqwawa.com` is opaque: only the service that issued it can say
 who it belongs to. So this service does not try to read one. It signs in members
@@ -24,21 +24,29 @@ itself, the same way the mod expects, and issues its own tokens:
    of the account can do.
 3. The mod calls `POST /auth/minecraft/complete`, and this service asks Mojang
    whether that join happened. Mojang answers with the uuid.
-4. This service hands back a token it signed with `RAID_PROFILES_SECRET`, and the
-   mod sends it as `Authorization: Bearer <token>` on every write.
+4. This service verifies that the UUID belongs to Sequoia using Wynncraft's guild
+   roster, then returns a token signed with `RAID_PROFILES_SECRET`. The mod sends
+   it as `Authorization: Bearer <token>` on every profile read and write.
 
 That is the default, `RAID_PROFILES_AUTH=minecraft`, and it is the only mode the
 mod can use. Set `RAID_PROFILES_SECRET` to any long random string and keep it
 secret: whoever holds it can mint a token for any member.
 
-Two other modes exist:
+Every profile request rechecks the authenticated UUID against Sequoia's roster.
+An existing token stops granting access when the roster no longer contains its
+owner. Membership is never inferred from a username or supplied identity header.
+The service requests the [Wynncraft guild endpoint](https://docs.wynncraft.com/modules/guild/get-guild-by-name)
+with `identifier=uuid`; Wynncraft's own cache can delay membership changes.
+The service adds no membership cache or stale-success fallback.
 
-- `RAID_PROFILES_AUTH=trust-header` reads the caller from `X-Minecraft-Username`
-  and `X-Minecraft-Uuid`, which is how you call the service by hand with curl. The
-  mod never sends those headers, and anyone who reaches the service could overwrite
-  anybody's profile, so this is for your own machine only.
-- `RAID_PROFILES_AUTH=disabled` refuses every write, so the service cannot be
-  exposed by accident before you have decided.
+Unauthenticated profile calls return `401 token_invalid`; authenticated
+non-members return `403 not_in_guild`. If the roster cannot be fetched or parsed,
+access fails closed with `503 guild_roster_unavailable` until it can be verified.
+
+`RAID_PROFILES_AUTH=disabled` refuses profile reads, writes and new sign-ins.
+The old `trust-header` mode is no longer accepted: anyone reaching that mode
+could impersonate a member. Authentication configuration other than `minecraft`
+or `disabled` stops the service at startup. `/health` remains public for monitors.
 
 ### Pointing the mod at it
 
@@ -125,22 +133,9 @@ tries to make them agree.
 | `GET` | `/health` | Says the service is up and how many profiles it holds. |
 
 Every error comes back as `{"code": ..., "message": ...}`. `code` is what the mod
-branches on, `message` is what the player reads under the Save button. The one
-worth knowing about in `trust-header` mode is `409 identity_unknown`: the caller
-sent no `X-Minecraft-Uuid`, and a profile stored without one could never be matched
-to a roster row, so it is refused rather than silently lost.
-
-Saving by hand needs `trust-header` mode, since the default `minecraft` mode only
-accepts a token from the sign-in the mod performs. Start the service with
-`$env:RAID_PROFILES_AUTH = "trust-header"` first, then send both headers:
-
-```powershell
-curl -X PUT http://127.0.0.1:8000/raid-profiles/me `
-  -H "Content-Type: application/json" `
-  -H "X-Minecraft-Username: ArcLeRetour" `
-  -H "X-Minecraft-Uuid: 806c8e32-aaaa-bbbb-cccc-dddddddddddd" `
-  -d '{\"builds\":[\"ASCENDANCY\",\"CSPRING\"],\"can_bring_auras\":true,\"region\":\"EU\",\"status\":\"down for tna\"}'
-```
+branches on, and `message` is what the player reads under the Save button.
+Manual API clients must complete the same Minecraft authentication flow and
+supply its bearer token; identity headers do not authenticate a request.
 
 The service normalises what it stores, so the client never has to: build keys are
 uppercased, duplicates dropped, unknown ones rejected with a message naming the
@@ -151,11 +146,11 @@ so a wrong clock on someone's PC cannot make their profile look newest.
 
 Set them as environment variables before starting the service. Only
 `RAID_PROFILES_SECRET` is needed in the default mode; without it, sign-in and every
-write answer `503 auth_not_configured`.
+profile request answers `503 auth_not_configured`.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `RAID_PROFILES_AUTH` | `minecraft` | `minecraft`, `trust-header` or `disabled`. See above. Any other value stops the service at start-up rather than guessing. |
+| `RAID_PROFILES_AUTH` | `minecraft` | `minecraft` or `disabled`. See above. Any other value stops the service at start-up rather than guessing. |
 | `RAID_PROFILES_SECRET` | none | Signs the tokens issued in `minecraft` mode. Required there; any long random string, kept secret. |
 | `RAID_PROFILES_TOKEN_TTL` | `604800` (a week) | How long a token lasts, in seconds. |
 | `RAID_PROFILES_DB` | `raid-profiles.db` | Where the SQLite file lives. |
@@ -191,3 +186,16 @@ relative to `BuildConfig.API_URL`.
   pins on purpose: pinning an old `pydantic` makes pip try to compile it from
   Rust source on a recent Python, which fails with a wall of errors.
 - `.gitignore`: keeps the virtualenv and the database out of git.
+
+## Authorization tests
+
+From this folder, install the test dependencies and run the endpoint tests:
+
+```powershell
+python -m pip install -r requirements-test.txt
+python -m unittest discover -s tests -v
+```
+
+The tests use temporary databases and stub Wynncraft/Mojang responses. They cover
+reads and mutations, spoofed identities, non-members, departure with a valid token,
+upstream failures, disabled authentication and token issuance.
