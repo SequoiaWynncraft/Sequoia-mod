@@ -33,6 +33,7 @@ import com.seqwawa.seq.managers.ChatRegexFilterManager;
 import com.seqwawa.seq.managers.FontManager;
 import com.seqwawa.seq.managers.GameManager;
 import com.seqwawa.seq.managers.GlobalSoundListener;
+import com.seqwawa.seq.managers.GuildPresenceManager;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
@@ -48,6 +49,7 @@ import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.PrincessMode;
 import com.seqwawa.seq.managers.PrincessRaidStatsManager;
 import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
+import com.seqwawa.seq.managers.RaidProfileStore;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
 import com.seqwawa.seq.managers.ThemeManager;
@@ -61,11 +63,14 @@ import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
+import com.seqwawa.seq.network.auth.RaidProfilesSession;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
 import com.seqwawa.seq.raids.tna.TnaLineupHelper;
 import com.seqwawa.seq.raids.tna.TnaSahurSoundDetector;
 import com.seqwawa.seq.scroll.CraftedScrollRangeVisualiserClient;
+import com.seqwawa.seq.ui.GuildMembersScreen;
+import com.seqwawa.seq.ui.RaidProfileSetupScreen;
 import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.AchievementsScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
@@ -602,6 +607,9 @@ public class SeqClient implements ClientModInitializer {
             wynnPartySyncManager.reset();
         }
         RaidPartySnapshotTracker.reset();
+        GuildPresenceManager.getInstance().reset();
+        // Its token speaks for the previous account, so a save would land on their profile.
+        RaidProfilesSession.getInstance().clear();
         GuildRaidProgressService.getInstance().reset();
         resetWarTrackingState();
         if (guildStorageTracker != null) {
@@ -787,6 +795,35 @@ public class SeqClient implements ClientModInitializer {
 
     public static void openIngredientGuideScreen() {
         mc.execute(() -> mc.setScreen(new IngredientGuideScreen(mc.screen)));
+    }
+
+    /**
+     * Opens the members panel, or the profile setup the very first time. Both the
+     * command and the menu button route through here so the first run cannot be
+     * reached by one entry point and skipped by the other.
+     */
+    public static void openGuildMembersScreen() {
+        mc.execute(() -> showGuildMembersScreen(mc.screen));
+    }
+
+    /**
+     * The same, returning to {@code parent} on close. The sidebar passes the parent of
+     * the screen it sits in, like its other destinations, so hopping between panels
+     * does not pile them up behind Escape.
+     */
+    public static void openGuildMembersScreen(net.minecraft.client.gui.screens.Screen parent) {
+        mc.execute(() -> showGuildMembersScreen(parent));
+    }
+
+    private static void showGuildMembersScreen(net.minecraft.client.gui.screens.Screen parent) {
+        RaidProfileStore store = RaidProfileStore.getInstance();
+        // Until profiles have loaded, "no profile" may only mean "not fetched yet";
+        // forcing setup then would show a blank form to members who already have one.
+        if (store.hasLoadedProfiles() && store.needsSetup()) {
+            mc.setScreen(new RaidProfileSetupScreen(parent, true));
+        } else {
+            mc.setScreen(new GuildMembersScreen(parent));
+        }
     }
 
     public static boolean isBombShareHotkeyDown() {

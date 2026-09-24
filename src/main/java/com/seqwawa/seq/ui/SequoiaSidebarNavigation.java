@@ -16,7 +16,8 @@ final class SequoiaSidebarNavigation {
             Destination.SETTINGS,
             Destination.CONNECTION,
             Destination.INGREDIENTS,
-            Destination.MAP);
+            Destination.MAP,
+            Destination.MEMBERS);
     private static final List<Destination> STANDARD_DESTINATIONS = List.of(
             Destination.PARTY_FINDER,
             Destination.SETTINGS,
@@ -24,6 +25,7 @@ final class SequoiaSidebarNavigation {
             Destination.CONNECTION,
             Destination.INGREDIENTS,
             Destination.MAP,
+            Destination.MEMBERS,
             Destination.GITHUB);
     private static final List<Destination> WAR_DESTINATIONS = List.of(
             Destination.PARTY_FINDER,
@@ -32,6 +34,7 @@ final class SequoiaSidebarNavigation {
             Destination.CONNECTION,
             Destination.INGREDIENTS,
             Destination.MAP,
+            Destination.MEMBERS,
             Destination.WAR,
             Destination.GITHUB);
 
@@ -125,6 +128,8 @@ final class SequoiaSidebarNavigation {
             case MAP -> SeqClient.mc.setScreen(new WorldMapScreen(parent));
             case INGREDIENTS -> SeqClient.mc.setScreen(new IngredientGuideScreen(parent));
             case ACHIEVEMENTS -> SeqClient.mc.setScreen(new AchievementsScreen(parent));
+            // Routed through SeqClient, which sends a member with no profile to setup first.
+            case MEMBERS -> SeqClient.openGuildMembersScreen(parent);
             case GITHUB -> openGithub();
         }
     }
@@ -143,6 +148,7 @@ final class SequoiaSidebarNavigation {
         ACHIEVEMENTS("Achievements"),
         SETTINGS("Settings"),
         MAP("Map"),
+        MEMBERS("Player List"),
         INGREDIENTS("Ingredients"),
         GITHUB("Github");
 

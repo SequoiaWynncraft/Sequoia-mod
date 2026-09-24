@@ -164,7 +164,36 @@ def generateBuildConfig = tasks.register("generateBuildConfig") {
             break
     }
 
+    // Raid profiles can point at a different backend than the rest of the mod, so the
+    // feature can be tried against staging while chat, party finder and sign-in stay
+    // on production. Unset, it is exactly the main backend, so a release build cannot
+    // ship pointing at staging by accident.
+    // Accepts "production", "staging", or the HTTPS API base URL of another
+    // Sequoia backend deployment.
+    // Anything else stops the build: a typo must not quietly land on staging.
+    def raidProfilesProperty = project.findProperty("raid_profiles_environment")?.toString()?.trim()
+    def raidProfilesEnv
+    def raidProfilesApiUrl
+    if (!raidProfilesProperty) {
+        raidProfilesEnv = env
+        raidProfilesApiUrl = apiUrl
+    } else if (raidProfilesProperty.startsWith("https://")) {
+        raidProfilesEnv = raidProfilesProperty
+        raidProfilesApiUrl = raidProfilesProperty.replaceAll("/+\$", "")
+    } else if (raidProfilesProperty.equalsIgnoreCase("production")) {
+        raidProfilesEnv = "production"
+        raidProfilesApiUrl = "https://api.seqwawa.com/api"
+    } else if (raidProfilesProperty.equalsIgnoreCase("staging")) {
+        raidProfilesEnv = "staging"
+        raidProfilesApiUrl = "https://staging.seqwawa.com/api"
+    } else {
+        throw new GradleException(
+                "raid_profiles_environment='${raidProfilesProperty}' is not recognised. Use production, "
+                        + "staging, or the https:// base URL of your backend (the mod refuses to sign in over http).")
+    }
+
     inputs.property("env", env)
+    inputs.property("raidProfilesEnv", raidProfilesEnv)
     outputs.dir(buildConfigDir)
 
     doLast {
@@ -179,6 +208,8 @@ public final class BuildConfig {
     public static final String ENVIRONMENT = "${env}";
     public static final String WS_URL = "${wsUrl}";
     public static final String API_URL = "${apiUrl}";
+    public static final String RAID_PROFILES_ENVIRONMENT = "${raidProfilesEnv}";
+    public static final String RAID_PROFILES_API_URL = "${raidProfilesApiUrl}";
 }
 """
     }

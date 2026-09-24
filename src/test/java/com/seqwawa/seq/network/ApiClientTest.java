@@ -6,19 +6,22 @@ import com.seqwawa.seq.model.PartyRegion;
 import com.seqwawa.seq.model.PartyRole;
 import com.seqwawa.seq.model.war.WarCompositionRole;
 import com.seqwawa.seq.model.war.WarCompositionTargets;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportSlotDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.TeamMemberMoveDraft;
-import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportDraft;
-import com.seqwawa.seq.model.war.WarPlannerDrafts.SupportSlotDraft;
-import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneCategoryDraft;
+import com.seqwawa.seq.model.war.WarPlannerDrafts.ZoneDraft;
 import com.seqwawa.seq.model.war.WarPlannerDrafts.ZonePlacementDraft;
 import com.seqwawa.seq.model.war.WarTeamType;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -189,6 +192,117 @@ class ApiClientTest {
     void modVersionHeaderConstantMatchesBackendContract() {
         assertEquals("X-Sequoia-Mod-Version", ClientVersion.MOD_VERSION_HEADER);
         assertTrue(ClientVersion.MOD_VERSION_HEADER.startsWith("X-"));
+    }
+
+    // ── Raid profiles on a separate backend ──
+
+    @Test
+    void raidProfilesAreOnASeparateBackendOnlyWhenTheUrlsDiffer() {
+        assertTrue(ApiClient.isSeparateBackend("https://staging.seqwawa.com/api", "https://api.seqwawa.com/api"));
+        assertFalse(ApiClient.isSeparateBackend("https://api.seqwawa.com/api", "https://api.seqwawa.com/api"));
+        assertFalse(
+                ApiClient.isSeparateBackend("https://api.seqwawa.com/api/", "https://API.seqwawa.com/api"),
+                "a trailing slash or a change of case is the same backend");
+    }
+
+    @Test
+    void signInToAnotherBackendTriesItsSiteRootThenItsApiRoot() {
+        assertEquals(
+                List.of("https://staging.seqwawa.com", "https://staging.seqwawa.com/api"),
+                ApiClient.authRequestBaseUrlsFor("https://staging.seqwawa.com/api"));
+        assertEquals(
+                List.of("https://staging.seqwawa.com"),
+                ApiClient.authRequestBaseUrlsFor("https://staging.seqwawa.com"),
+                "no duplicate when the API root is already the site root");
+    }
+
+    @Test
+    void aCallThatSucceedsDoesNotSignInAgain() {
+        List<Boolean> tokenRequests = new ArrayList<>();
+
+        String result = ApiClient.callWithTokenRetry(
+                        force -> {
+                            tokenRequests.add(force);
+                            return CompletableFuture.completedFuture("token-1");
+                        },
+                        token -> CompletableFuture.completedFuture("used " + token))
+                .join();
+
+        assertEquals("used token-1", result);
+        assertEquals(List.of(false), tokenRequests);
+    }
+
+    @Test
+    void aRejectedTokenIsReplacedOnceAndTheCallRetried() {
+        List<Boolean> tokenRequests = new ArrayList<>();
+        List<String> tokensUsed = new ArrayList<>();
+
+        String result = ApiClient.callWithTokenRetry(
+                        force -> {
+                            tokenRequests.add(force);
+                            return CompletableFuture.completedFuture(force ? "fresh" : "stale");
+                        },
+                        token -> {
+                            tokensUsed.add(token);
+                            return "stale".equals(token)
+                                    ? CompletableFuture.failedFuture(unauthorized())
+                                    : CompletableFuture.completedFuture("ok with " + token);
+                        })
+                .join();
+
+        assertEquals("ok with fresh", result);
+        assertEquals(List.of(false, true), tokenRequests, "the second sign-in is forced");
+        assertEquals(List.of("stale", "fresh"), tokensUsed);
+    }
+
+    @Test
+    void aSecondRejectionIsReportedRatherThanLoopedOn() {
+        AtomicInteger calls = new AtomicInteger();
+
+        CompletableFuture<String> result = ApiClient.callWithTokenRetry(
+                force -> CompletableFuture.completedFuture("token"),
+                token -> {
+                    calls.incrementAndGet();
+                    return CompletableFuture.failedFuture(unauthorized());
+                });
+
+        CompletionException failure = assertThrows(CompletionException.class, result::join);
+        assertTrue(ApiClient.isUnauthorized(failure));
+        assertEquals(2, calls.get(), "one call, one retry, then stop");
+    }
+
+    @Test
+    void otherFailuresAreNotRetried() {
+        AtomicInteger calls = new AtomicInteger();
+
+        CompletableFuture<String> result = ApiClient.callWithTokenRetry(
+                force -> CompletableFuture.completedFuture("token"),
+                token -> {
+                    calls.incrementAndGet();
+                    return CompletableFuture.failedFuture(new ApiClient.ApiException(500, "{}"));
+                });
+
+        assertThrows(CompletionException.class, result::join);
+        assertEquals(1, calls.get());
+    }
+
+    @Test
+    void aFailedSignInIsReportedWithoutCallingTheBackend() {
+        AtomicInteger calls = new AtomicInteger();
+
+        CompletableFuture<String> result = ApiClient.callWithTokenRetry(
+                force -> CompletableFuture.failedFuture(new IllegalStateException("not linked")),
+                token -> {
+                    calls.incrementAndGet();
+                    return CompletableFuture.completedFuture("unreachable");
+                });
+
+        assertThrows(CompletionException.class, result::join);
+        assertEquals(0, calls.get());
+    }
+
+    private static ApiClient.ApiException unauthorized() {
+        return new ApiClient.ApiException(401, "{\"code\":\"token_invalid\",\"message\":\"Invalid token\"}");
     }
 
     @Test

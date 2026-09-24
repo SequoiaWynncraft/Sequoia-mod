@@ -231,6 +231,13 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<CommandResult<Listing>> createPartyFromCommand(List<String> activityInputs) {
+        return createPartyFromCommand(activityInputs, PartyRegion.NA);
+    }
+
+    /** Creates a listing in {@code region}, for callers that know where the leader plays. */
+    public CompletableFuture<CommandResult<Listing>> createPartyFromCommand(
+            List<String> activityInputs, PartyRegion region) {
+        PartyRegion listingRegion = region == null ? PartyRegion.NA : region;
         return refreshListingsForCommand().thenCompose(listingsResult -> {
             if (!listingsResult.success()) {
                 return completedCommandFailure(listingsResult.message());
@@ -254,7 +261,7 @@ public class PartyFinderManager implements NotificationAccessor {
                         ApiClient.getInstance()
                                 .createListing(
                                         resolution.activityIds(),
-                                        PartyRegion.NA,
+                                        listingRegion,
                                         PartyRole.DPS,
                                         null,
                                         currentLeaderWorldName(),
@@ -2065,6 +2072,16 @@ public class PartyFinderManager implements NotificationAccessor {
     /** Loads activities and listings from the API. Called when the screen opens. */
     public void refreshData() {
         loadActivities().thenRun(() -> loadListings(null, null));
+    }
+
+    /**
+     * Reloads listings for a screen that only reads them, such as the guild members
+     * panel. A failure is logged, not pushed to the party finder's error banner,
+     * which would otherwise greet the player the next time they open that screen.
+     */
+    public CompletableFuture<List<Listing>> refreshListingsQuietly() {
+        return refreshListingsSnapshot(null, null, (message, error) ->
+                SeqClient.LOGGER.debug("[PartyFinder] Quiet listings refresh failed: {}", message, error));
     }
 
     CompletableFuture<List<Listing>> refreshListingsForAnnouncements() {

@@ -13,8 +13,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
@@ -102,7 +104,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     @Getter
     private Instant connectedSince;
 
-    private Consumer<List<String>> connectedUsersCallback;
+    /** Everyone waiting on a get_connected reply, so the members panel and /seq connected can overlap. */
+    private final Queue<Consumer<List<String>>> connectedUsersCallbacks = new ConcurrentLinkedQueue<>();
     private volatile boolean membershipProbePending;
     private volatile boolean memberFeaturesDisabled;
     private volatile long nextAllowedAuthAttemptAtMs;
@@ -124,6 +127,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // Callbacks for new message types
     private static Consumer<DiscordChatMessage> discordChatHandler;
     private static Consumer<PartyFinderUpdateMessage> partyFinderUpdateHandler;
+    private static Consumer<RaidProfileUpdateMessage> raidProfileUpdateHandler;
     private static Consumer<PartyFinderInviteMessage> partyFinderInviteHandler;
     private static Consumer<PartyFinderStaleWarningMessage> partyFinderStaleWarningHandler;
     private static Consumer<BombSharePromptMessage> bombSharePromptHandler;
@@ -884,7 +888,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             callback.accept(List.of());
             return;
         }
-        this.connectedUsersCallback = callback;
+        connectedUsersCallbacks.add(callback);
         send("get_connected", null);
     }
 
@@ -1896,13 +1900,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     List<String> users = new ArrayList<>();
                     json.getAsJsonArray("users").forEach(el -> users.add(el.getAsString()));
                     SeqClient.LOGGER.info(
-                            "[WebSocket] connected_users received count={} callbackPresent={}",
+                            "[WebSocket] connected_users received count={} waiting={}",
                             users.size(),
-                            connectedUsersCallback != null);
-                    if (connectedUsersCallback != null) {
-                        connectedUsersCallback.accept(users);
-                        connectedUsersCallback = null;
-                    } else if (!wasMembershipProbe) {
+                            connectedUsersCallbacks.size());
+                    boolean delivered = false;
+                    Consumer<List<String>> waiting;
+                    while ((waiting = connectedUsersCallbacks.poll()) != null) {
+                        delivered = true;
+                        waiting.accept(users);
+                    }
+                    if (!delivered && !wasMembershipProbe) {
                         SeqClient.LOGGER.warn("[WebSocket] connected_users had no callback listener");
                     }
                 }
@@ -2007,6 +2014,20 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         partyFinderUpdateHandler.accept(new PartyFinderUpdateMessage(action, listingJson));
                     } else {
                         SeqClient.LOGGER.warn("[WebSocket] Received party_finder_update but handler is not registered");
+                    }
+                }
+                case "raid_profile_update" -> {
+                    String action = extractPrimitiveString(json, "action");
+                    JsonObject profileJson = json.has("profile") && json.get("profile").isJsonObject()
+                            ? json.getAsJsonObject("profile")
+                            : null;
+                    SeqClient.LOGGER.info(
+                            "[WebSocket] raid_profile_update action={} hasProfile={} handlerPresent={}",
+                            action,
+                            profileJson != null,
+                            raidProfileUpdateHandler != null);
+                    if (raidProfileUpdateHandler != null && profileJson != null) {
+                        raidProfileUpdateHandler.accept(new RaidProfileUpdateMessage(action, profileJson));
                     }
                 }
                 case "party_finder_invite" -> {
@@ -2198,6 +2219,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     public static void onPartyFinderUpdate(Consumer<PartyFinderUpdateMessage> handler) {
         SeqClient.LOGGER.info("[WebSocket] Registering party_finder_update handler present={}", handler != null);
         partyFinderUpdateHandler = handler;
+    }
+
+    public static void onRaidProfileUpdate(Consumer<RaidProfileUpdateMessage> handler) {
+        SeqClient.LOGGER.info("[WebSocket] Registering raid_profile_update handler present={}", handler != null);
+        raidProfileUpdateHandler = handler;
     }
 
     public static void onPartyFinderInvite(Consumer<PartyFinderInviteMessage> handler) {
@@ -2779,6 +2805,20 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     public record PartyFinderUpdateMessage(String action, JsonObject listingJson) {}
+
+    /**
+     * One member's raid profile changing.
+     * <p>
+     * {@code action} is {@code updated} or {@code removed}. On a removal the
+     * payload is still shaped like a profile, with its fields set to null rather
+     * than omitted, so only {@code minecraft} is meaningful there.
+     */
+    public record RaidProfileUpdateMessage(String action, JsonObject profileJson) {
+
+        public boolean isRemoval() {
+            return "removed".equalsIgnoreCase(action);
+        }
+    }
 
     public record PartyFinderInviteMessage(
             long listingId, String inviterUUID, String inviteToken, JsonObject listingJson) {}
