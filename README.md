@@ -438,3 +438,16 @@ theme token for disabled, active, and hover states. Add alpha adjustments only w
 ## License
 
 MIT: `LICENSE.txt`.
+
+### Player List party synchronization
+
+Inviting through Player List enables and saves **Sync with Wynn party** when the
+feature links a new or existing Sequoia listing. The leader requests a Wynn roster
+scan if the party has not yet been observed. Accepted invites and later party
+changes then use the existing automatic sync path.
+
+Observed players with verified Sequoia account links become full listing members
+when eligible. The backend can resolve a renamed guild member through the cached
+Wynncraft UUID roster before checking their link. Unlinked or ineligible players
+remain observed occupancy; a later sync can upgrade them once a verified link is
+available. This does not create or verify account links on anyone's behalf.

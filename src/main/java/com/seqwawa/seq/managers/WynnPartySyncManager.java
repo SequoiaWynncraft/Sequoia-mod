@@ -17,6 +17,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
@@ -283,6 +284,24 @@ public class WynnPartySyncManager {
     public boolean isObservedMember(String username) {
         return username != null
                 && observedState.memberUsernames.stream().anyMatch(member -> member.equalsIgnoreCase(username));
+    }
+
+    /** Player List uses ongoing sync to keep its linked listing accurate after invites are accepted. */
+    public void enableAutomaticSync() {
+        enableAutomaticSync(SeqClient.getSyncWynnPartySetting(), () -> SeqClient.getConfigManager().save());
+    }
+
+    void enableAutomaticSync(Setting.BooleanSetting setting, Runnable saveSettings) {
+        if (setting == null) {
+            return;
+        }
+        if (!setting.getValue()) {
+            setting.setValue(true);
+            saveSettings.run();
+        }
+        // Republish the current observations even if nothing changed while sync was off.
+        lastSentSnapshotKey = null;
+        lastSentSnapshotAt = Instant.EPOCH;
     }
 
     public boolean requestCurrentPartySnapshot() {

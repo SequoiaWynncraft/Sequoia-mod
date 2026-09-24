@@ -246,7 +246,12 @@ public final class GuildPresenceManager {
      */
     public CompletableFuture<String> openPartyFinderListing(RaidType raid) {
         PartyFinderManager manager = SeqClient.partyFinderManager;
-        if (manager == null || !ConnectionManager.isConnected() || manager.isInParty()) {
+        if (manager == null || !ConnectionManager.isConnected()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        long startedFor = generation;
+        if (manager.isInParty()) {
+            enableLinkedPartySync(manager.getCurrentListing().id(), startedFor);
             return CompletableFuture.completedFuture(null);
         }
         List<String> activities = partyFinderActivities(raid, RaidProfileStore.getInstance().catalog());
@@ -255,9 +260,29 @@ public final class GuildPresenceManager {
         }
         PartyRegion region = listingRegion(currentWorld(), RaidProfileStore.getInstance().selfProfile().region());
         return manager.createPartyFromCommand(activities, region)
-                .thenApply(PartyFinderManager.CommandResult::message)
+                .thenApply(result -> {
+                    if (result.success() && result.data() != null) {
+                        enableLinkedPartySync(result.data().id(), startedFor);
+                    }
+                    return result.message();
+                })
                 .exceptionally(throwable -> "Could not open a party finder listing.")
                 .whenComplete((ignored, throwable) -> listingCreationInFlight.set(false));
+    }
+
+    private void enableLinkedPartySync(long listingId, long startedFor) {
+        SeqClient.mc.execute(() -> {
+            PartyFinderManager manager = SeqClient.getPartyFinderManager();
+            WynnPartySyncManager sync = SeqClient.getWynnPartySyncManager();
+            if (startedFor != generation || manager == null || sync == null
+                    || manager.getCurrentListing() == null || manager.getCurrentListing().id() != listingId) {
+                return;
+            }
+            sync.enableAutomaticSync();
+            if (manager.isPartyLeader() && !sync.hasActiveParty()) {
+                sync.requestCurrentPartySnapshot();
+            }
+        });
     }
 
     /**
