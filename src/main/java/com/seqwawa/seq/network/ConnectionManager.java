@@ -7,14 +7,12 @@ import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
@@ -33,6 +31,7 @@ import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.User;
 import org.java_websocket.client.WebSocketClient;
+import org.java_websocket.exceptions.WebsocketNotConnectedException;
 import org.java_websocket.handshake.ServerHandshake;
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
@@ -113,7 +112,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private volatile boolean userInitiatedConnectFlow;
     private volatile boolean treasuryOnlyConnection;
     private final TreasurySessionAuthenticator treasurySessionAuthenticator;
-    private final Deque<GuildWarSubmission> pendingGuildWarSubmissions = new ConcurrentLinkedDeque<>();
+    // WebSocket instances are replaced on reconnect; pending events belong to the account session.
+    private static final GuildWarOutboundQueue pendingGuildWarEvents = new GuildWarOutboundQueue();
 
     // Reconnect state
     private static boolean autoReconnect = true;
@@ -527,6 +527,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     static void resetForTest() {
+        pendingGuildWarEvents.clear();
         autoReconnect = true;
         reconnectAttempt = 0;
         autoConnectSuppressedByManualDisconnect = false;
@@ -1472,30 +1473,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             SeqClient.LOGGER.debug("[WebSocket] Guild war submission disabled for non-member session");
             return true;
         }
-        if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
-            SeqClient.LOGGER.warn("[WebSocket] Queueing guild_war_submission until Wynncraft host is confirmed");
-            pendingGuildWarSubmissions.addLast(submission);
-            return true;
-        }
-
-        if (!authenticated || !isOpen()) {
-            SeqClient.LOGGER.warn(
-                    "[WebSocket] Queueing guild_war_submission until websocket is ready open={} authenticated={}",
-                    isOpen(),
-                    authenticated);
-            pendingGuildWarSubmissions.addLast(submission);
-            return true;
-        }
-        if (authFailed || notInGuild) {
-            SeqClient.LOGGER.warn(
-                    "[WebSocket] Queueing guild_war_submission until auth recovers authFailed={} notInGuild={}",
-                    authFailed,
-                    notInGuild);
-            pendingGuildWarSubmissions.addLast(submission);
-            return true;
-        }
-
-        return sendGuildWarSubmissionNow(submission, false);
+        return enqueueGuildWarEvent("guild_war_submission", buildGuildWarSubmissionPayload(submission));
     }
 
     public boolean sendGuildWarQueue(GuildWarQueueSubmission submission) {
@@ -1523,22 +1501,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             SeqClient.LOGGER.debug("[WebSocket] Guild war queue submission disabled for non-member session");
             return true;
         }
-        if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
-            SeqClient.LOGGER.warn("[WebSocket] Queueing guild_war_queue until Wynncraft host is confirmed");
-            return false;
-        }
-
-        if (!authenticated || !isOpen()) {
-            SeqClient.LOGGER.warn(
-                    "[WebSocket] sendGuildWarQueue dropped open={} authenticated={}", isOpen(), authenticated);
-            return false;
-        }
-        if (authFailed || notInGuild) {
-            SeqClient.LOGGER.warn(
-                    "[WebSocket] sendGuildWarQueue dropped authFailed={} notInGuild={}", authFailed, notInGuild);
-            return false;
-        }
-
         JsonObject msg = new JsonObject();
         msg.addProperty("territory", submission.territory());
         msg.addProperty("submitted_by", submission.submittedBy());
@@ -1546,7 +1508,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         msg.addProperty("defense_rating", submission.defenseRating());
         msg.addProperty("queue_minutes", submission.queueMinutes());
 
-        return send("guild_war_queue", msg);
+        return enqueueGuildWarEvent("guild_war_queue", msg);
     }
 
     public boolean sendGuildWarQueueCancellation(GuildWarQueueCancellation cancellation) {
@@ -1570,25 +1532,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             SeqClient.LOGGER.debug("[WebSocket] Guild war queue cancellation disabled for non-member session");
             return true;
         }
-        if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
-            SeqClient.LOGGER.warn("[WebSocket] Queueing guild_war_queue_cancel until Wynncraft host is confirmed");
-            return false;
-        }
-        if (!authenticated || !isOpen() || authFailed || notInGuild) {
-            SeqClient.LOGGER.warn(
-                    "[WebSocket] sendGuildWarQueueCancellation dropped open={} authenticated={} authFailed={} notInGuild={}",
-                    isOpen(),
-                    authenticated,
-                    authFailed,
-                    notInGuild);
-            return false;
-        }
-
         JsonObject msg = new JsonObject();
         msg.addProperty("territory", cancellation.territory());
         msg.addProperty("submitted_by", cancellation.submittedBy());
         msg.addProperty("submitted_at", cancellation.submittedAt());
-        return send("guild_war_queue_cancel", msg);
+        return enqueueGuildWarEvent("guild_war_queue_cancel", msg);
     }
 
     public boolean sendWarStatus(WarStatusUpdate update) {
@@ -1641,58 +1589,60 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         if (instance == null) {
             return;
         }
-        instance.flushPendingGuildWarSubmissions();
+        instance.flushPendingGuildWarEvents();
     }
 
     public static void resetForAccountChange() {
+        pendingGuildWarEvents.clear();
         ConnectionManager current = instance;
         if (current == null) {
             return;
         }
 
-        current.pendingGuildWarSubmissions.clear();
         current.pendingBombSharePrompts.clear();
         current.disconnectInternal(false);
     }
 
-    private void flushPendingGuildWarSubmissions() {
-        if (pendingGuildWarSubmissions.isEmpty()
-                || !isOpen()
-                || !authenticated
-                || authFailed
-                || notInGuild
-                || memberFeaturesDisabled
-                || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
-            return;
-        }
-
-        GuildWarSubmission pending = pendingGuildWarSubmissions.peekFirst();
-        if (pending == null) {
-            return;
-        }
-        if (sendGuildWarSubmissionNow(pending, true)) {
-            pendingGuildWarSubmissions.pollFirst();
-        }
-    }
-
-    private boolean sendGuildWarSubmissionNow(GuildWarSubmission submission, boolean replay) {
-        if (memberFeaturesDisabled) {
-            return true;
-        }
-        if (!canSendAuthenticated("guild_war_submission") || !canSendThrottleLimited("guild_war_submission")) {
+    private boolean enqueueGuildWarEvent(String type, JsonObject payload) {
+        if (!pendingGuildWarEvents.offer(type, payload)) {
+            SeqClient.LOGGER.warn("[WebSocket] War event buffer full; could not retain {} territory='{}'",
+                    type, payload.get("territory").getAsString());
             return false;
         }
-        JsonObject payload = buildGuildWarSubmissionPayload(submission);
-        SeqClient.LOGGER.info(
-                replay
-                        ? "[WebSocket] Replaying queued guild_war_submission territory='{}' warrers={} completedAt={} sr={}"
-                        : "[WebSocket] Sending guild_war_submission territory='{}' warrers={} completedAt={} sr={}",
-                submission.territory(),
-                submission.warrers(),
-                submission.completedAt(),
-                submission.seasonRating());
-        sendPrepared("guild_war_submission", payload);
+        SeqClient.LOGGER.info("[WebSocket] Buffered {} territory='{}' submittedAt={}",
+                type, payload.get("territory").getAsString(), payload.get("submitted_at").getAsString());
+        flushPendingGuildWarEvents();
+        // Accepted for delivery, even when the socket or throttle prevents an immediate send.
         return true;
+    }
+
+    private void flushPendingGuildWarEvents() {
+        pendingGuildWarEvents.flushOne(this::sendGuildWarEventNow);
+    }
+
+    private boolean sendGuildWarEventNow(String type, JsonObject payload) {
+        if (instance != this
+                || !isReadyForLiveWarTelemetry()
+                || WynncraftServerPolicy.currentScope() != WynncraftServerPolicy.Scope.MAIN) {
+            return false;
+        }
+        return tryGuildWarEventSend(() -> {
+            if (!send(type, payload)) {
+                return false;
+            }
+            SeqClient.LOGGER.info("[WebSocket] Sent buffered {} territory='{}' submittedAt={}",
+                    type, payload.get("territory").getAsString(), payload.get("submitted_at").getAsString());
+            return true;
+        });
+    }
+
+    static boolean tryGuildWarEventSend(BooleanSupplier sendAction) {
+        try {
+            return sendAction.getAsBoolean();
+        } catch (WebsocketNotConnectedException exception) {
+            SeqClient.LOGGER.debug("[WebSocket] Retaining war event after connection closed during send", exception);
+            return false;
+        }
     }
 
     public void sendPartyClassUpdate(WynnClassType classType) {
@@ -1881,7 +1831,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         clearDiscordUsername();
                     }
                     sendPrepared("get_connected", null);
-                    flushPendingGuildWarSubmissions();
+                    flushPendingGuildWarEvents();
                     sendLocalPartyClassUpdate();
                 }
                 case "guild_rank_recorded" -> {
@@ -2293,6 +2243,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     }
 
     public void unlinkLocally() {
+        pendingGuildWarEvents.clear();
         disconnectInternal(false);
         SeqClient.getAuthService().clearSession();
         clearDiscordUsername();
@@ -2335,7 +2286,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     private void disableMemberFeaturesForSession() {
         membershipProbePending = false;
-        pendingGuildWarSubmissions.clear();
+        pendingGuildWarEvents.clear();
         if (memberFeaturesDisabled) {
             SeqClient.LOGGER.debug("[WebSocket] Additional non-member feature rejection suppressed");
             return;
