@@ -147,19 +147,30 @@ public interface NotificationAccessor {
         if (!displayRamp.isGradient() && !roleRamp.isGradient()) {
             return wynnPill(label, displayRamp, roleRamp, labelColor, clickEvent, baseBackgroundColor);
         }
-        DoubleFunction<TextColor> backgroundAt = position -> RankGradientAnimation.colorAt(
-                displayRamp, roleRamp, position, RankGradientAnimation.Target.RANK_BADGE, baseBackgroundColor);
-        return RankGradientAnimation.batchRegistrations(
-                () -> smoothWynnPill(label, backgroundAt, labelColor, clickEvent));
+        return RankGradientAnimation.batchRegistrations(() -> columnPill(
+                label, displayRamp, roleRamp, labelColor, clickEvent, baseBackgroundColor));
     }
 
-    private static @NotNull MutableComponent smoothWynnPill(
+    private static @NotNull MutableComponent columnPill(
             String label,
-            DoubleFunction<TextColor> backgroundAt,
+            ColorRamp displayRamp,
+            ColorRamp roleRamp,
             TextColor labelColor,
-            ClickEvent clickEvent) {
+            ClickEvent clickEvent,
+            TextColor baseBackgroundColor) {
         int[] blockStarts = pillBlockStarts(label);
         int span = label.isEmpty() ? 0 : blockStarts[label.length() - 1] + PILL_BG_WIDTH;
+        // Half the step between neighbouring columns, so a column's edges meet theirs.
+        double spread = span <= 1 ? 0d : 0.5d / (span - 1);
+        DoubleFunction<TextColor> backgroundAt = position -> RankGradientAnimation.colorAt(
+                displayRamp, roleRamp, position, RankGradientAnimation.Target.RANK_BADGE, baseBackgroundColor);
+        DoubleFunction<TextColor> columnAt = position -> RankGradientAnimation.colorAt(
+                displayRamp,
+                roleRamp,
+                position,
+                spread,
+                RankGradientAnimation.Target.RANK_BADGE,
+                baseBackgroundColor);
 
         MutableComponent pill = Component.empty();
         pill.append(styledPillPart(PILL_CORNER_LEFT, backgroundAt.apply(0d), clickEvent));
@@ -171,7 +182,7 @@ public interface NotificationAccessor {
                 // itself, so the run advances exactly as far as the block it replaces.
                 String glyph = column < PILL_BG_WIDTH - 1 ? PILL_COLUMN + PILL_COLUMN_STEP_BACK : PILL_COLUMN;
                 double position = gradientPosition(blockStarts[i] + column, span);
-                pill.append(columnPillPart(glyph, backgroundAt.apply(position), clickEvent));
+                pill.append(columnPillPart(glyph, columnAt.apply(position), clickEvent));
             }
             if (WynnPillGlyphs.hasGlyph(rawChar)) {
                 pill.append(labelPillPart(PILL_BG_FRONT + toWynncraftGlyph(rawChar), labelColor, clickEvent));

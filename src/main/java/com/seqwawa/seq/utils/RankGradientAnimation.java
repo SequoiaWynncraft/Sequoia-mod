@@ -45,13 +45,22 @@ public final class RankGradientAnimation {
      */
     static final int MAX_REMEMBERED_STOPS = 16384;
 
-    /** Where a remembered colour was sampled from, its target, and its uncoloured base. */
+    /**
+     * Where a remembered colour was sampled from, its target, and its uncoloured base.
+     * A pixel column also records {@code spread}, half the distance to its neighbours'
+     * positions, so its edges can be coloured where they meet theirs; see
+     * {@link #animateSpan}. It is zero for every other glyph.
+     */
     private record Stop(
             ColorRamp displayRamp,
             ColorRamp roleRamp,
             double position,
+            double spread,
             Target target,
             TextColor baseColor) {}
+
+    /** The colours at the left and right edges of a pixel column, as RGB. */
+    public record Span(int leftRgb, int rightRgb) {}
 
     /** A stop waiting to be included in the next registry publication. */
     private record Registration(TextColor color, Stop stop) {}
@@ -207,11 +216,26 @@ public final class RankGradientAnimation {
             double position,
             Target target,
             TextColor baseColor) {
+        return colorAt(displayRamp, roleRamp, position, 0d, target, baseColor);
+    }
+
+    /**
+     * A pixel column's colour, remembered with {@code spread}, half the distance to the
+     * positions its neighbours were sampled at, so {@link #animateSpan} can grade it
+     * from edge to edge.
+     */
+    public static TextColor colorAt(
+            ColorRamp displayRamp,
+            ColorRamp roleRamp,
+            double position,
+            double spread,
+            Target target,
+            TextColor baseColor) {
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(displayRamp, "displayRamp");
         Objects.requireNonNull(roleRamp, "roleRamp");
         TextColor color = WynncraftTextShaderColor.safeTextColor(displayRamp.sample(position));
-        remember(new Registration(color, new Stop(displayRamp, roleRamp, position, target, baseColor)));
+        remember(new Registration(color, new Stop(displayRamp, roleRamp, position, spread, target, baseColor)));
         return color;
     }
 
@@ -247,6 +271,44 @@ public final class RankGradientAnimation {
             return WynncraftTextShaderColor.safeTextColor(ramp.scroll(stop.position(), phase));
         }
         return storedRampActive ? color : WynncraftTextShaderColor.safeTextColor(ramp.sample(stop.position()));
+    }
+
+    /**
+     * The colours {@code color}'s pixel column should take at its two edges at this
+     * instant, or {@code null} when it is not a column or its settings draw it flat.
+     * <p>
+     * A glyph is drawn in one colour, which is enough in chat but not on a nametag seen
+     * up close, where one pixel of the font spans many on screen and every column shows
+     * as a band. Coloured at its edges instead, a column is graded across by the GPU,
+     * and since each edge is sampled where it meets the neighbouring column, the two
+     * agree there and the ramp runs on without a seam.
+     */
+    public static Span animateSpan(TextColor color) {
+        return animateSpan(color, phase());
+    }
+
+    /** Edge colouring core, parameterised on the phase so it stays unit-testable. */
+    static Span animateSpan(TextColor color, double phase) {
+        if (color == null) {
+            return null;
+        }
+        Stop stop = stops.get(color);
+        if (stop == null || stop.spread() <= 0d || !coloringEnabled(stop.target())) {
+            return null;
+        }
+        ColorRamp ramp = perUserColorsEnabled() ? stop.displayRamp() : stop.roleRamp();
+        if (!ramp.isGradient() || !gradientsEnabled(stop.target())) {
+            return null;
+        }
+        boolean animated = animationEnabled(stop.target());
+        return new Span(
+                edgeRgb(ramp, stop.position() - stop.spread(), animated, phase),
+                edgeRgb(ramp, stop.position() + stop.spread(), animated, phase));
+    }
+
+    /** The ramp at one column edge; positions past the pill's ends clamp to its end stops. */
+    private static int edgeRgb(ColorRamp ramp, double position, boolean animated, double phase) {
+        return WynncraftTextShaderColor.safeRgb(animated ? ramp.scroll(position, phase) : ramp.sample(position));
     }
 
     /** How far through the current turn the clock is, in {@code [0, 1)}. */

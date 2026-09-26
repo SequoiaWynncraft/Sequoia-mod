@@ -226,6 +226,48 @@ class RankGradientAnimationTest {
     }
 
     @Test
+    void gradesEveryPillColumnBetweenTheEdgesItSharesWithItsNeighbours() {
+        List<TextColor> columns = pillColumns();
+
+        withAnimation(false, () -> {
+            List<RankGradientAnimation.Span> spans = spans(columns, 0d);
+            assertEquals(0x000000, spans.getFirst().leftRgb(), "the pill starts on the first stop");
+            assertEquals(0xFFFFFF, spans.getLast().rightRgb(), "and ends on the last");
+            RankGradientAnimation.Span middle = spans.get(spans.size() / 2);
+            assertTrue(middle.leftRgb() < middle.rightRgb(), "a column is graded across, not flat");
+            assertSeamless(spans);
+        });
+    }
+
+    @Test
+    void keepsTheColumnsSeamlessWhileTheGradientScrolls() {
+        List<TextColor> columns = pillColumns();
+
+        withAnimation(true, () -> {
+            for (double phase : new double[] {0.1d, 0.37d, 0.5d, 0.83d}) {
+                assertSeamless(spans(columns, phase));
+            }
+        });
+    }
+
+    @Test
+    void drawsAColumnFlatWhenItsGradientIsHidden() {
+        TextColor column = pillColumns().getFirst();
+
+        withColorSettings(false, true, () -> assertNull(RankGradientAnimation.animateSpan(column, 0d)));
+        withGradientSettings(false, true, false, false, () ->
+                assertNull(RankGradientAnimation.animateSpan(column, 0d)));
+    }
+
+    @Test
+    void onlyPillColumnsHaveEdges() {
+        TextColor glyph = RankGradientAnimation.colorAt(GRADIENT, 0.5d);
+
+        assertNull(RankGradientAnimation.animateSpan(glyph, 0d), "a whole glyph has no neighbours to meet");
+        assertNull(RankGradientAnimation.animateSpan(TextColor.fromRgb(0x123456), 0d));
+    }
+
+    @Test
     void rejectsAPinNestedInsideAnEvictableBatch() {
         assertThrows(
                 IllegalStateException.class,
@@ -265,6 +307,34 @@ class RankGradientAnimationTest {
                 .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
                 .map(fragment -> fragment.style().getColor())
                 .toList();
+    }
+
+    /**
+     * The stored colours of a gradient pill's pixel columns, in the order they are drawn.
+     * One word, so every column touches the next: a space leaves a pixel unfilled, as
+     * Wynncraft's block does, and the columns either side of it do not meet.
+     */
+    private static List<TextColor> pillColumns() {
+        return ComponentTextEditor.flatten(NotificationAccessor.smoothWynnPill(
+                        "Yggdrasil", GRADIENT, GRADIENT, TextColor.fromRgb(0x1F2126), null, null))
+                .stream()
+                .filter(fragment -> fragment.text().contains(NotificationAccessor.PILL_COLUMN))
+                .map(fragment -> fragment.style().getColor())
+                .toList();
+    }
+
+    private static List<RankGradientAnimation.Span> spans(List<TextColor> columns, double phase) {
+        return columns.stream().map(column -> RankGradientAnimation.animateSpan(column, phase)).toList();
+    }
+
+    /** Each column must end on exactly the colour the next one starts on. */
+    private static void assertSeamless(List<RankGradientAnimation.Span> spans) {
+        for (int index = 1; index < spans.size(); index++) {
+            assertEquals(
+                    spans.get(index - 1).rightRgb(),
+                    spans.get(index).leftRgb(),
+                    "seam between columns " + (index - 1) + " and " + index);
+        }
     }
 
     private static void withAnimation(boolean enabled, Runnable body) {

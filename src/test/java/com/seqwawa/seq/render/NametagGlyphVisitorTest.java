@@ -3,6 +3,8 @@ package com.seqwawa.seq.render;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.seqwawa.seq.mixins.GlyphInstanceAccessor;
 import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.RankGradientAnimation;
 import java.lang.reflect.Proxy;
@@ -75,6 +77,76 @@ class NametagGlyphVisitorTest {
         assertEquals(base.x, label.x);
         assertEquals(base.y, label.y);
         assertEquals(base.z + 0.00075f, label.z, 0.000001f);
+    }
+
+    @Test
+    void gradesAPillColumnAcrossItsMainQuadOnly() {
+        ColorRamp gradient = ColorRamp.of(List.of(0x000000, 0xFFFFFF));
+        RankGradientAnimation.Pinned<TextColor> column = RankGradientAnimation.pin(() ->
+                RankGradientAnimation.colorAt(
+                        gradient, gradient, 0.5d, 0.25d, RankGradientAnimation.Target.RANK_BADGE, null));
+        try {
+            int main = 0x80000000 | column.value().getValue();
+            int shadow = 0x80202020;
+            List<Integer> drawn = new ArrayList<>();
+            TextRenderable.Styled glyph = drawableColumn(Style.EMPTY.withColor(column.value()), main, shadow);
+
+            TextRenderable.Styled graded = NametagGlyphVisitor.graded(glyph, column.value());
+            graded.render(new Matrix4f(), recorder(drawn), 0, false);
+
+            RankGradientAnimation.Span span = RankGradientAnimation.animateSpan(column.value());
+            assertEquals(
+                    List.of(shadow, shadow, shadow, shadow,
+                            0x80000000 | span.leftRgb(), 0x80000000 | span.leftRgb(),
+                            0x80000000 | span.rightRgb(), 0x80000000 | span.rightRgb()),
+                    drawn,
+                    "the shadow keeps its colour; the main quad runs from edge to edge, alpha intact");
+        } finally {
+            RankGradientAnimation.release(column.colors());
+        }
+    }
+
+    /**
+     * A glyph drawn as a 1px column is: a shadow quad, then the main one, each corner
+     * by corner as {@code BakedSheetGlyph} emits them, left edge first.
+     */
+    private static TextRenderable.Styled drawableColumn(Style style, int main, int shadow) {
+        return (TextRenderable.Styled) Proxy.newProxyInstance(
+                TextRenderable.Styled.class.getClassLoader(),
+                new Class<?>[] {TextRenderable.Styled.class, GlyphInstanceAccessor.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "style" -> style;
+                    case "seq$color" -> main;
+                    case "left" -> 0f;
+                    case "right" -> 2f;
+                    case "render" -> {
+                        VertexConsumer consumer = (VertexConsumer) args[1];
+                        quad(consumer, (Matrix4f) args[0], 1f, shadow);
+                        quad(consumer, (Matrix4f) args[0], 0f, main);
+                        yield null;
+                    }
+                    default -> throw new AssertionError("unexpected call: " + method.getName());
+                });
+    }
+
+    private static void quad(VertexConsumer consumer, Matrix4f pose, float left, int color) {
+        consumer.addVertex(pose, left, 0f, 0f).setColor(color);
+        consumer.addVertex(pose, left, 7f, 0f).setColor(color);
+        consumer.addVertex(pose, left + 1f, 7f, 0f).setColor(color);
+        consumer.addVertex(pose, left + 1f, 0f, 0f).setColor(color);
+    }
+
+    /** Records the colour of every vertex drawn through it. */
+    private static VertexConsumer recorder(List<Integer> colors) {
+        return (VertexConsumer) Proxy.newProxyInstance(
+                VertexConsumer.class.getClassLoader(),
+                new Class<?>[] {VertexConsumer.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("setColor") && args.length == 1) {
+                        colors.add((Integer) args[0]);
+                    }
+                    return proxy;
+                });
     }
 
     private static Font.GlyphVisitor collector(List<TextRenderable.Styled> target) {
