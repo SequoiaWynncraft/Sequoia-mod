@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.model.DiscordRank;
@@ -932,17 +933,35 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void paintsAGradientRoleAcrossThePillInsteadOfFlatteningItToTheFirstStop() {
+    void paintsAGradientRoleAcrossThePillAPixelColumnAtATime() {
         RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x000000, 0xFFFFFF);
 
-        List<Integer> backgrounds = pillBackgroundColors(DiscordRankChatDecorator.rankPill(gradient, null));
+        Component pill = DiscordRankChatDecorator.rankPill(gradient, null);
+        List<Integer> columns = pillColumnColors(pill);
 
-        assertEquals(3, backgrounds.size(), "one background block per glyph");
-        assertEquals(0x000000, backgrounds.getFirst());
-        assertEquals(0xFFFFFF, backgrounds.getLast());
-        assertTrue(
-                backgrounds.get(1) > backgrounds.getFirst() && backgrounds.get(1) < backgrounds.getLast(),
-                "the middle glyph must sit between the two stops, was " + backgrounds.get(1));
+        assertTrue(pillBackgroundColors(pill).isEmpty(), "no letter-sized block may remain");
+        assertEquals(3 * NotificationAccessor.PILL_BG_WIDTH, columns.size(), "one column per pixel of each block");
+        assertEquals(0x000000, columns.getFirst());
+        assertEquals(0xFFFFFF, columns.getLast());
+        for (int index = 1; index < columns.size(); index++) {
+            assertTrue(
+                    columns.get(index) > columns.get(index - 1),
+                    "every column must step further along the ramp, was " + columns);
+        }
+    }
+
+    @Test
+    void uncoloredGradientPillReturnsEveryColumnToTheBaseColor() {
+        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x000000, 0xFFFFFF);
+        Component pill = DiscordRankChatDecorator.rankPill(gradient, null, TextColor.fromRgb(GUILD_AQUA));
+
+        withRankColoring(false, true, () -> assertEquals(
+                Set.of(GUILD_AQUA),
+                Set.copyOf(ComponentTextEditor.flatten(pill).stream()
+                        .filter(fragment -> fragment.text().contains(NotificationAccessor.PILL_COLUMN))
+                        .map(fragment -> RankGradientAnimation.animate(fragment.style().getColor()))
+                        .map(TextColor::getValue)
+                        .toList())));
     }
 
     @Test
@@ -1404,6 +1423,14 @@ class DiscordRankChatDecoratorTest {
     private static List<Integer> pillBackgroundColors(Component pill) {
         return ComponentTextEditor.flatten(pill).stream()
                 .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
+                .map(fragment -> fragment.style().getColor().getValue())
+                .toList();
+    }
+
+    /** Colours of a gradient pill's one-pixel background columns, in order. */
+    private static List<Integer> pillColumnColors(Component pill) {
+        return ComponentTextEditor.flatten(pill).stream()
+                .filter(fragment -> fragment.text().contains(NotificationAccessor.PILL_COLUMN))
                 .map(fragment -> fragment.style().getColor().getValue())
                 .toList();
     }

@@ -38,11 +38,12 @@ public final class RankGradientAnimation {
     private static final long CYCLE_MILLIS = 5000L;
 
     /**
-     * How many rank-decoration colours stay configurable. A pill and speaker name each
-     * contribute one stop per glyph, so this covers the recent chat history; older
-     * decorations simply keep their stored colour rather than being rebuilt.
+     * How many rank-decoration colours stay configurable. A speaker name contributes
+     * one stop per glyph and a gradient chat pill one per pixel column, around a hundred
+     * for the longest rank, so this covers a full chat history; older decorations
+     * simply keep their stored colour rather than being rebuilt.
      */
-    private static final int MAX_REMEMBERED_STOPS = 4096;
+    static final int MAX_REMEMBERED_STOPS = 16384;
 
     /** Where a remembered colour was sampled from, its target, and its uncoloured base. */
     private record Stop(

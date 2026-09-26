@@ -1125,9 +1125,14 @@ public final class DiscordRankChatDecorator {
         return withTooltip(pill, tooltip);
     }
 
+    /**
+     * The pill itself, filled a pixel column at a time so a gradient role reads as a
+     * smooth ramp in guild chat and on the bridge rather than one step per letter, as
+     * it does on nametags.
+     */
     private static MutableComponent buildRankPill(
             RankPresentation rank, String pillLabel, TextColor baseBackgroundColor) {
-        return NotificationAccessor.wynnPill(
+        return NotificationAccessor.smoothWynnPill(
                 pillLabel,
                 rampFor(rank),
                 roleRampFor(rank),

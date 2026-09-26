@@ -1,0 +1,21 @@
+{
+  "providers": [
+    {
+      "comment": "One pixel-wide column of Wynncraft's rank pill background (its 6x7 chat/banner glyph, same ascent and height), so a gradient pill can be filled a column at a time and graded smoothly instead of once per letter. White on purpose: Minecraft multiplies a glyph by the text colour, so the mod tints each column at render time.",
+      "type": "bitmap",
+      "file": "seq:font/rank_pill_column.png",
+      "ascent": 7,
+      "height": 7,
+      "chars": [
+        "\uF8F3"
+      ]
+    },
+    {
+      "comment": "A bitmap glyph always advances one pixel past its width. Following a column with this pulls the next one back against it, so columns sit edge to edge.",
+      "type": "space",
+      "advances": {
+        "\uF8F4": -1
+      }
+    }
+  ]
+}

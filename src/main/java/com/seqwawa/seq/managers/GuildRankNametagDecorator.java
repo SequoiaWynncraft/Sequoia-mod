@@ -159,9 +159,11 @@ public final class GuildRankNametagDecorator {
             TextColor badgeColor) {
         RankPresentation rank = name.member().rank();
         List<ComponentTextEditor.Fragment> coloured = paintName(fragments, name, rank);
+        // Chat's pill, graded a pixel column at a time. The columns are ordinary glyphs
+        // like the blocks they replace, so the label still sits in front of them.
         MutableComponent replacement =
                 Component.empty()
-                .append(NotificationAccessor.wynnPill(
+                .append(NotificationAccessor.smoothWynnPill(
                         label,
                         DiscordRankChatDecorator.rampFor(rank),
                         DiscordRankChatDecorator.roleRampFor(rank),

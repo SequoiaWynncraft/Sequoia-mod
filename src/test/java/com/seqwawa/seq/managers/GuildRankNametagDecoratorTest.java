@@ -72,6 +72,19 @@ class GuildRankNametagDecoratorTest {
         return decoration.component();
     }
 
+    /** Decorates ArcLeRetour's tag as {@code member} instead of the solid Dryad. */
+    private Component decorateAs(Member member, Component nameTag) {
+        GuildRankNametagDecorator.Decoration decoration = GuildRankNametagDecorator.decorate(
+                nameTag, name -> "arcleretour".equals(name) ? member : null);
+        pinned.addAll(decoration.colors());
+        return decoration.component();
+    }
+
+    private static Member gradientMember(String rankLabel) {
+        return new Member("ArcLeRetour", new RankPresentation(
+                new DiscordRank("rank.gradient", rankLabel, 110), ColorRamp.of(List.of(0x1B9056, 0x50C9A6))));
+    }
+
     @Test
     void replacesTheWynncraftBadgeWithTheSequoiaRank() {
         Component nameTag = Component.literal(CHAMPION_BADGE + " ArcLeRetour");
@@ -110,6 +123,30 @@ class GuildRankNametagDecoratorTest {
                 decorate(Component.literal(CHAMPION_BADGE + " ArcLeRetour"));
 
         assertSame(decorated, decorate(decorated));
+    }
+
+    @Test
+    void gradesAGradientRankAPixelColumnAtATime() {
+        Component decorated = decorateAs(
+                gradientMember("Dryad"), Component.literal(CHAMPION_BADGE + " ArcLeRetour"));
+        String text = decorated.getString();
+
+        assertTrue(text.indexOf(WynnPillGlyphs.COLUMN) >= 0, "the pill is filled with columns");
+        assertFalse(text.indexOf(WynnPillGlyphs.BACKGROUND) >= 0, "no letter-sized block may remain");
+        assertEquals(List.of("dryad"), badgeLabels(decorated));
+        assertTrue(text.endsWith(" ArcLeRetour"), text);
+    }
+
+    @Test
+    void leavesAGradientNametagItAlreadyDecoratedAlone() {
+        Member member = gradientMember("Upper Strategist");
+        Component decorated = decorateAs(member, Component.literal(CHAMPION_BADGE + " ArcLeRetour"));
+
+        GuildRankNametagDecorator.Decoration again = GuildRankNametagDecorator.decorate(
+                decorated, name -> "arcleretour".equals(name) ? member : null);
+
+        assertSame(decorated, again.component(), "a second pass must not rebuild the rank");
+        assertEquals(List.of(), again.colors());
     }
 
     @Test

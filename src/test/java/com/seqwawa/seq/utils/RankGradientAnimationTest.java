@@ -193,12 +193,12 @@ class RankGradientAnimationTest {
     @Test
     void publishesAWholePillOnceEvenWhenTheRegistryIsFull() {
         RankGradientAnimation.batchRegistrations(() -> {
-            for (int index = 0; index < 4096; index++) {
-                RankGradientAnimation.colorAt(GRADIENT, index / 4095d);
+            for (int index = 0; index < RankGradientAnimation.MAX_REMEMBERED_STOPS; index++) {
+                RankGradientAnimation.colorAt(GRADIENT, index / (RankGradientAnimation.MAX_REMEMBERED_STOPS - 1d));
             }
             return null;
         });
-        assertEquals(4096, RankGradientAnimation.rememberedStopCount());
+        assertEquals(RankGradientAnimation.MAX_REMEMBERED_STOPS, RankGradientAnimation.rememberedStopCount());
 
         long publicationsBefore = RankGradientAnimation.publicationCount();
         NotificationAccessor.wynnPill("Upper Strategist", GRADIENT, TextColor.fromRgb(0xFFFFFF), null);
@@ -207,7 +207,22 @@ class RankGradientAnimationTest {
                 publicationsBefore + 1,
                 RankGradientAnimation.publicationCount(),
                 "all glyph stops should share one copy-on-write publication");
-        assertEquals(4096, RankGradientAnimation.rememberedStopCount(), "the registry remains bounded");
+        assertEquals(
+                RankGradientAnimation.MAX_REMEMBERED_STOPS,
+                RankGradientAnimation.rememberedStopCount(),
+                "the registry remains bounded");
+    }
+
+    @Test
+    void publishesAPixelColumnPillOnce() {
+        long publicationsBefore = RankGradientAnimation.publicationCount();
+        NotificationAccessor.smoothWynnPill(
+                "Upper Strategist", GRADIENT, GRADIENT, TextColor.fromRgb(0xFFFFFF), null, null);
+
+        assertEquals(
+                publicationsBefore + 1,
+                RankGradientAnimation.publicationCount(),
+                "every column stop should share one copy-on-write publication");
     }
 
     @Test

@@ -2,12 +2,15 @@ package com.seqwawa.seq.accessors;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
+import net.minecraft.resources.Identifier;
 import org.jetbrains.annotations.NotNull;
 
 import com.seqwawa.seq.utils.ColorRamp;
@@ -16,6 +19,7 @@ import com.seqwawa.seq.utils.WynnPillGlyphs;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.function.DoubleFunction;
 import java.util.function.IntFunction;
 
 public interface NotificationAccessor {
@@ -25,6 +29,19 @@ public interface NotificationAccessor {
     String PILL_CORNER_RIGHT = "⁤";
     String PILL_BG_BACK = "";
     String PILL_BG_FRONT = "";
+
+    /** Width Wynncraft draws a {@link #PILL_BG_BACK} block at; it advances one pixel further. */
+    int PILL_BG_WIDTH = 6;
+    int PILL_BG_ADVANCE = PILL_BG_WIDTH + 1;
+
+    /**
+     * One pixel-wide column of a {@link #PILL_BG_BACK} block, and the step back that
+     * butts the next column against it; see {@code assets/seq/font/rank_pill.json}.
+     */
+    String PILL_COLUMN = String.valueOf(WynnPillGlyphs.COLUMN);
+    String PILL_COLUMN_STEP_BACK = String.valueOf(WynnPillGlyphs.COLUMN_STEP_BACK);
+    FontDescription PILL_COLUMN_FONT =
+            new FontDescription.Resource(Identifier.fromNamespaceAndPath("seq", "rank_pill"));
 
     static @NotNull MutableComponent prefixComponent() {
         return wynnPill(PREFIX_LABEL, ChatFormatting.DARK_PURPLE, ChatFormatting.WHITE)
@@ -108,8 +125,102 @@ public interface NotificationAccessor {
     }
 
     /**
-     * Where glyph {@code index} sits in {@code [0, 1]} along the pill. A single-glyph
-     * label has no span to run a gradient over, so it takes the first stop.
+     * Gradient pill whose background is filled one pixel column at a time, so a role
+     * gradient runs smoothly across it rather than stepping once per letter.
+     * <p>
+     * Every {@link #PILL_BG_BACK} block becomes {@link #PILL_BG_WIDTH} columns that
+     * cover the same pixels and advance by the same amount, so the letters, corners
+     * and everything after the pill land exactly where the block pill puts them. Each
+     * column is sampled at its own pixel along the pill, which keeps the ramp even
+     * under narrow letters, where Wynncraft lets the next block overlap.
+     * <p>
+     * A role with no gradient on either palette keeps the block pill: its columns
+     * would all be one colour, at several times the glyphs and registered stops.
+     */
+    static @NotNull MutableComponent smoothWynnPill(
+            String label,
+            ColorRamp displayRamp,
+            ColorRamp roleRamp,
+            TextColor labelColor,
+            ClickEvent clickEvent,
+            TextColor baseBackgroundColor) {
+        if (!displayRamp.isGradient() && !roleRamp.isGradient()) {
+            return wynnPill(label, displayRamp, roleRamp, labelColor, clickEvent, baseBackgroundColor);
+        }
+        DoubleFunction<TextColor> backgroundAt = position -> RankGradientAnimation.colorAt(
+                displayRamp, roleRamp, position, RankGradientAnimation.Target.RANK_BADGE, baseBackgroundColor);
+        return RankGradientAnimation.batchRegistrations(
+                () -> smoothWynnPill(label, backgroundAt, labelColor, clickEvent));
+    }
+
+    private static @NotNull MutableComponent smoothWynnPill(
+            String label,
+            DoubleFunction<TextColor> backgroundAt,
+            TextColor labelColor,
+            ClickEvent clickEvent) {
+        int[] blockStarts = pillBlockStarts(label);
+        int span = label.isEmpty() ? 0 : blockStarts[label.length() - 1] + PILL_BG_WIDTH;
+
+        MutableComponent pill = Component.empty();
+        pill.append(styledPillPart(PILL_CORNER_LEFT, backgroundAt.apply(0d), clickEvent));
+
+        for (int i = 0; i < label.length(); i++) {
+            char rawChar = label.charAt(i);
+            for (int column = 0; column < PILL_BG_WIDTH; column++) {
+                // The last column keeps the pixel of advance a bitmap glyph leaves after
+                // itself, so the run advances exactly as far as the block it replaces.
+                String glyph = column < PILL_BG_WIDTH - 1 ? PILL_COLUMN + PILL_COLUMN_STEP_BACK : PILL_COLUMN;
+                double position = gradientPosition(blockStarts[i] + column, span);
+                pill.append(columnPillPart(glyph, backgroundAt.apply(position), clickEvent));
+            }
+            if (WynnPillGlyphs.hasGlyph(rawChar)) {
+                pill.append(labelPillPart(PILL_BG_FRONT + toWynncraftGlyph(rawChar), labelColor, clickEvent));
+            }
+        }
+
+        pill.append(styledPillPart(PILL_CORNER_RIGHT, backgroundAt.apply(1d), clickEvent));
+        return pill;
+    }
+
+    /**
+     * Where each character's background block starts, in pixels from the first. A
+     * letter moves the pill on by its own advance, since {@link #PILL_BG_FRONT} pulls
+     * it back over its block; a character with no glyph moves it by the whole block.
+     * <p>
+     * Letters are measured with the loaded font because Wynncraft's are not all one
+     * width: {@code I} is narrower, and the next block overlaps its own. Outside a
+     * running client every letter is taken to fill its block.
+     */
+    private static int[] pillBlockStarts(String label) {
+        Font font = clientFont();
+        int[] starts = new int[label.length()];
+        int x = 0;
+        for (int i = 0; i < label.length(); i++) {
+            starts[i] = x;
+            char rawChar = label.charAt(i);
+            if (!WynnPillGlyphs.hasGlyph(rawChar)) {
+                x += PILL_BG_ADVANCE;
+                continue;
+            }
+            int advance = font == null ? 0 : font.width(toWynncraftGlyph(rawChar));
+            x += advance > 0 ? advance : PILL_BG_WIDTH;
+        }
+        return starts;
+    }
+
+    /** The client's font, or {@code null} when there is no client, as in unit tests. */
+    private static Font clientFont() {
+        try {
+            return Minecraft.getInstance().font;
+        } catch (RuntimeException | LinkageError ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * Where glyph or pixel column {@code index} of {@code length} sits in {@code [0, 1]}
+     * along the pill. A single step has no span to run a gradient over, so it takes the
+     * first stop.
      */
     private static double gradientPosition(int index, int length) {
         return length <= 1 ? 0d : (double) index / (length - 1);
@@ -189,6 +300,14 @@ public interface NotificationAccessor {
             TextColor color,
             ClickEvent clickEvent) {
         return styledPillPart(text, color, clickEvent).withStyle(Style::withoutShadow);
+    }
+
+    /** A background column, in the mod's own font since Wynncraft has no such glyph. */
+    private static MutableComponent columnPillPart(
+            String text,
+            TextColor color,
+            ClickEvent clickEvent) {
+        return styledPillPart(text, color, clickEvent).withStyle(style -> style.withFont(PILL_COLUMN_FONT));
     }
 
     private static MutableComponent styledPillPart(
