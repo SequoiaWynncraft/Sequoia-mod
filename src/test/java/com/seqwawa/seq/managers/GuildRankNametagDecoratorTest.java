@@ -18,7 +18,6 @@ import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.seqwawa.seq.utils.RankGradientAnimation;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -28,7 +27,6 @@ import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.resources.Identifier;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class GuildRankNametagDecoratorTest {
@@ -55,29 +53,14 @@ class GuildRankNametagDecoratorTest {
     /** Gold, as Wynncraft draws an account rank badge. */
     private static final int WYNNCRAFT_BADGE_COLOR = 0xFFAA00;
 
-    /** Colours pinned by the decorations a test built, handed back when it ends. */
-    private final List<TextColor> pinned = new ArrayList<>();
-
-    @AfterEach
-    void releasePinnedColors() {
-        RankGradientAnimation.release(pinned);
-        pinned.clear();
-    }
-
-    /** Decorates as the render hook does, keeping the pinned colours for cleanup. */
-    private Component decorate(Component nameTag) {
-        GuildRankNametagDecorator.Decoration decoration =
-                GuildRankNametagDecorator.decorate(nameTag, MEMBERS);
-        pinned.addAll(decoration.colors());
-        return decoration.component();
+    /** Decorates as the render hook does. */
+    private static Component decorate(Component nameTag) {
+        return GuildRankNametagDecorator.decorate(nameTag, MEMBERS);
     }
 
     /** Decorates ArcLeRetour's tag as {@code member} instead of the solid Dryad. */
-    private Component decorateAs(Member member, Component nameTag) {
-        GuildRankNametagDecorator.Decoration decoration = GuildRankNametagDecorator.decorate(
-                nameTag, name -> "arcleretour".equals(name) ? member : null);
-        pinned.addAll(decoration.colors());
-        return decoration.component();
+    private static Component decorateAs(Member member, Component nameTag) {
+        return GuildRankNametagDecorator.decorate(nameTag, name -> "arcleretour".equals(name) ? member : null);
     }
 
     private static Member gradientMember(String rankLabel) {
@@ -153,11 +136,7 @@ class GuildRankNametagDecoratorTest {
         Member member = gradientMember("Upper Strategist");
         Component decorated = decorateAs(member, Component.literal(CHAMPION_BADGE + " ArcLeRetour"));
 
-        GuildRankNametagDecorator.Decoration again = GuildRankNametagDecorator.decorate(
-                decorated, name -> "arcleretour".equals(name) ? member : null);
-
-        assertSame(decorated, again.component(), "a second pass must not rebuild the rank");
-        assertEquals(List.of(), again.colors());
+        assertSame(decorated, decorateAs(member, decorated), "a second pass must not rebuild the rank");
     }
 
     @Test
@@ -169,11 +148,7 @@ class GuildRankNametagDecoratorTest {
         Component nameTag = Component.literal(
                 WynnPillGlyphs.encodePlainPill("Upper Strategist") + " ArcLeRetour");
 
-        GuildRankNametagDecorator.Decoration decoration = GuildRankNametagDecorator.decorate(
-                nameTag, name -> "arcleretour".equals(name) ? ranked : null);
-
-        assertSame(nameTag, decoration.component());
-        assertEquals(List.of(), decoration.colors());
+        assertSame(nameTag, decorateAs(ranked, nameTag));
     }
 
     /**
@@ -340,16 +315,37 @@ class GuildRankNametagDecoratorTest {
                 "a colour Sequoia never minted");
     }
 
-    /** Chat traffic well past the registry's bound, to evict anything evictable. */
+    /** Plenty of chat decorations, which a shared registry used to evict nametag colours for. */
     private static void fillAnimationRegistry() {
-        RankGradientAnimation.batchRegistrations(() -> {
-            RankGradientAnimation.Axis chat = RankGradientAnimation.axis(
-                    ColorRamp.of(0xFF0000), ColorRamp.of(0xFF0000), RankGradientAnimation.Target.USERNAME, 1f);
-            for (int index = 0; index < 5000; index++) {
-                chat.colorAt(0f, 1f, null);
-            }
-            return null;
-        });
+        RankGradientAnimation.Axis chat = RankGradientAnimation.axis(
+                ColorRamp.of(0xFF0000), ColorRamp.of(0xFF0000), RankGradientAnimation.Target.USERNAME, 1f);
+        for (int index = 0; index < 5000; index++) {
+            chat.colorAt(0f, 1f, null);
+        }
+    }
+
+    @Test
+    void recognisesARebuiltTagFromItsSnapshot() {
+        // Minecraft builds a player's tag afresh each frame, with the same text and styles.
+        Component tag = Component.literal(CHAMPION_BADGE + " ").append(
+                Component.literal("ArcLeRetour").withStyle(style -> style.withColor(0x55FFFF)));
+        GuildRankNametagDecorator.Snapshot snapshot = GuildRankNametagDecorator.Snapshot.of(tag);
+
+        assertTrue(snapshot.matches(Component.literal(CHAMPION_BADGE + " ").append(
+                Component.literal("ArcLeRetour").withStyle(style -> style.withColor(0x55FFFF)))));
+        assertTrue(
+                snapshot.matches(Component.empty().append(Component.literal(CHAMPION_BADGE + " "))
+                        .append(Component.literal(""))
+                        .append(Component.literal("ArcLeRetour").withStyle(style -> style.withColor(0x55FFFF)))),
+                "however the same pieces are nested");
+        assertFalse(
+                snapshot.matches(Component.literal(CHAMPION_BADGE + " ArcLeRetour")),
+                "a style change is a different tag");
+        assertFalse(snapshot.matches(Component.literal(CHAMPION_BADGE + " ").append(
+                Component.literal("ArcLeRetour2").withStyle(style -> style.withColor(0x55FFFF)))));
+        assertFalse(snapshot.matches(Component.literal(CHAMPION_BADGE + " ")), "a shorter tag");
+        assertFalse(snapshot.matches(tag.copy().append(" [Lv. 100]")), "a longer one");
+        assertFalse(snapshot.matches(null));
     }
 
     @Test

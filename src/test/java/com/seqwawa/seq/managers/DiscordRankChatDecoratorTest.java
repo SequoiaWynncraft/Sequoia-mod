@@ -1167,6 +1167,20 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void stopsPaintingANameAtALegacyFormattingCode() {
+        // Split one glyph to a piece, "§c" would lose its section sign and draw its "c".
+        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x123456, 0xFFFFFF);
+
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(
+                DiscordRankChatDecorator.colouredName("Nick§c(Real)", gradient, Style.EMPTY));
+
+        assertEquals(
+                List.of("N", "i", "c", "k", "§c(Real)"),
+                fragments.stream().map(ComponentTextEditor.Fragment::text).toList());
+        assertNull(fragments.getLast().style().getColor(), "the code goes on colouring what follows it");
+    }
+
+    @Test
     void bridgeInsigniaIsSuppressedWhileTheSettingIsOff() {
         // The bridge builds its own line, so unlike guild chat it never passes through
         // decorateGuildChat's early return and has to check the setting itself.

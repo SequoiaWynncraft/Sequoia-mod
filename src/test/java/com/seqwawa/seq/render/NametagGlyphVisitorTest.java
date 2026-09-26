@@ -26,30 +26,25 @@ class NametagGlyphVisitorTest {
         List<TextRenderable.Styled> foreground = new ArrayList<>();
         NametagGlyphVisitor visitor = new NametagGlyphVisitor(collector(ordinary), collector(foreground));
         ColorRamp solid = ColorRamp.of(0x2ECC71);
-        RankGradientAnimation.Pinned<List<TextColor>> colors = RankGradientAnimation.pin(() -> List.of(
+        TextRenderable.Styled fill = glyph(Style.EMPTY.withColor(
                 RankGradientAnimation.axis(solid, solid, RankGradientAnimation.Target.RANK_BADGE, 6f)
-                        .colorAt(0f, 6f, null),
+                        .colorAt(0f, 6f, null)));
+        TextRenderable.Styled name = glyph(Style.EMPTY.withColor(
                 RankGradientAnimation.axis(solid, solid, RankGradientAnimation.Target.USERNAME, 6f)
                         .colorAt(0f, 6f, null)));
-        try {
-            TextRenderable.Styled fill = glyph(Style.EMPTY.withColor(colors.value().get(0)));
-            TextRenderable.Styled name = glyph(Style.EMPTY.withColor(colors.value().get(1)));
-            TextRenderable.Styled otherMod = glyph(Style.EMPTY.withColor(TextColor.fromRgb(0x1F2126)));
-            TextRenderable.Styled label = glyph(Style.EMPTY.withColor(LABEL));
-            visitor.acceptGlyph(fill);
-            visitor.acceptGlyph(name);
-            visitor.acceptGlyph(otherMod);
-            visitor.acceptGlyph(label);
+        TextRenderable.Styled otherMod = glyph(Style.EMPTY.withColor(TextColor.fromRgb(0x1F2126)));
+        TextRenderable.Styled label = glyph(Style.EMPTY.withColor(LABEL));
+        visitor.acceptGlyph(fill);
+        visitor.acceptGlyph(name);
+        visitor.acceptGlyph(otherMod);
+        visitor.acceptGlyph(label);
 
-            assertEquals(3, ordinary.size());
-            assertSame(fill, ordinary.get(0));
-            assertSame(name, ordinary.get(1));
-            assertSame(otherMod, ordinary.get(2), "matching RGB alone must not affect other mods' icons");
-            assertEquals(1, foreground.size());
-            assertSame(label, foreground.getFirst(), "forward the original glyph, including its pass alpha");
-        } finally {
-            RankGradientAnimation.release(colors.colors());
-        }
+        assertEquals(3, ordinary.size());
+        assertSame(fill, ordinary.get(0));
+        assertSame(name, ordinary.get(1));
+        assertSame(otherMod, ordinary.get(2), "matching RGB alone must not affect other mods' icons");
+        assertEquals(1, foreground.size());
+        assertSame(label, foreground.getFirst(), "forward the original glyph, including its pass alpha");
     }
 
     @Test

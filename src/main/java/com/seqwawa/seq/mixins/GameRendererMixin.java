@@ -1,6 +1,7 @@
 package com.seqwawa.seq.mixins;
 
 import com.seqwawa.seq.render.MinecraftGuiOverlay;
+import com.seqwawa.seq.utils.RankGradientAnimation;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -33,6 +34,12 @@ public class GameRendererMixin {
     @Shadow
     @Final
     private FogRenderer fogRenderer;
+
+    /** Samples the rank gradient clock once, for every glyph drawn this frame. */
+    @Inject(method = "render", at = @At("HEAD"))
+    private void seq$beginGradientFrame(DeltaTracker deltaTracker, boolean renderLevel, CallbackInfo ci) {
+        RankGradientAnimation.beginFrame();
+    }
 
     @Inject(
             method = "render",

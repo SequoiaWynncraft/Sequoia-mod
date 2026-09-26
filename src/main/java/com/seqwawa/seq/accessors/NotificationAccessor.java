@@ -92,20 +92,9 @@ public interface NotificationAccessor {
      * Each character's background is one block, placed on the axis at the pixel it is
      * drawn at. The gradient is applied to the blocks' corners as they are drawn, so it
      * runs smoothly across each block and on into the next; see
-     * {@link RankGradientAnimation#shade}.
+     * {@link com.seqwawa.seq.utils.GradientPainter}.
      */
     static GradientPill gradientPill(
-            String label,
-            ColorRamp displayRamp,
-            ColorRamp roleRamp,
-            TextColor labelColor,
-            ClickEvent clickEvent,
-            TextColor baseBackgroundColor) {
-        return RankGradientAnimation.batchRegistrations(() -> buildGradientPill(
-                label, displayRamp, roleRamp, labelColor, clickEvent, baseBackgroundColor));
-    }
-
-    private static GradientPill buildGradientPill(
             String label,
             ColorRamp displayRamp,
             ColorRamp roleRamp,

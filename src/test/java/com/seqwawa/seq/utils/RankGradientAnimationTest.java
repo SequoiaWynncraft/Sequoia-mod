@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.accessors.NotificationAccessor;
@@ -290,48 +289,27 @@ class RankGradientAnimationTest {
     }
 
     @Test
-    void registersAWholePillOnceEvenWhenTheRegistryIsFull() {
-        RankGradientAnimation.batchRegistrations(() -> {
-            RankGradientAnimation.Axis filler = axis(GRADIENT, RankGradientAnimation.Target.RANK_BADGE);
-            for (int index = 0; index < RankGradientAnimation.MAX_REMEMBERED_STOPS; index++) {
-                filler.colorAt(index % AXIS_LENGTH, 0f, null);
-            }
-            return null;
-        });
-        assertEquals(RankGradientAnimation.MAX_REMEMBERED_STOPS, RankGradientAnimation.rememberedStopCount());
+    void keepsEveryDecorationItsColoursHoweverManyThereAre() {
+        // A registry shared with chat used to evict the oldest colours first, and a pill
+        // then came apart glyph by glyph as chat pushed its colours out.
+        TextColor first = colorAt(GRADIENT, 0d);
+        RankGradientAnimation.Axis chat = axis(GRADIENT, RankGradientAnimation.Target.USERNAME);
+        for (int index = 0; index < 20_000; index++) {
+            chat.colorAt(index % AXIS_LENGTH, 0f, null);
+        }
 
-        long registrationsBefore = RankGradientAnimation.publicationCount();
-        NotificationAccessor.gradientPill("Upper Strategist", GRADIENT, GRADIENT, TextColor.fromRgb(0xFFFFFF), null, null);
-
-        assertEquals(
-                registrationsBefore + 1,
-                RankGradientAnimation.publicationCount(),
-                "all glyph stops should be registered together");
-        assertEquals(
-                RankGradientAnimation.MAX_REMEMBERED_STOPS,
-                RankGradientAnimation.rememberedStopCount(),
-                "the registry remains bounded");
+        assertTrue(RankGradientAnimation.isDecorationColor(first));
+        assertNotNull(RankGradientAnimation.shade(first, 0d));
     }
 
     @Test
-    void rejectsAPinNestedInsideAnEvictableBatch() {
-        assertThrows(
-                IllegalStateException.class,
-                () -> RankGradientAnimation.batchRegistrations(
-                        () -> RankGradientAnimation.pin(() -> colorAt(GRADIENT, 0d))));
-    }
+    void carriesTheDecorationOnTheColourItselfNotOnItsValue() {
+        TextColor minted = colorAt(GRADIENT, 0d);
 
-    @Test
-    void releasesSeveralPinnedDecorationsAtOnce() {
-        RankGradientAnimation.Pinned<TextColor> first = RankGradientAnimation.pin(() -> colorAt(GRADIENT, 0d));
-        RankGradientAnimation.Pinned<TextColor> second = RankGradientAnimation.pin(() -> colorAt(GRADIENT, 1d));
-        long registrationsBefore = RankGradientAnimation.publicationCount();
-
-        RankGradientAnimation.releaseAll(List.of(first.colors(), second.colors()));
-
-        assertEquals(registrationsBefore + 1, RankGradientAnimation.publicationCount());
-        assertFalse(RankGradientAnimation.isDecorationColor(first.value()));
-        assertFalse(RankGradientAnimation.isDecorationColor(second.value()));
+        assertTrue(RankGradientAnimation.isDecorationColor(minted));
+        assertFalse(
+                RankGradientAnimation.isDecorationColor(TextColor.fromRgb(minted.getValue())),
+                "another colour of the same value belongs to someone else");
     }
 
     @Test
@@ -391,10 +369,10 @@ class RankGradientAnimationTest {
      * Moments on the animation clock later than any it has seen, each later than the
      * last, so tests can move it forward whatever order they run in.
      */
-    private static long lastMoment = System.nanoTime() / 1_000_000L + 1_000_000_000L;
+    private static long lastMoment = System.nanoTime() / 1_000_000L;
 
     private static synchronized long later(long millis) {
-        lastMoment += millis;
+        lastMoment = Math.max(lastMoment, RankGradientAnimation.clockMillis()) + millis;
         return lastMoment;
     }
 

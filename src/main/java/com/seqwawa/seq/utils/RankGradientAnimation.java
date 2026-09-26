@@ -1,38 +1,32 @@
 package com.seqwawa.seq.utils;
 
+import com.google.common.collect.MapMaker;
+import com.seqwawa.seq.accessors.GradientTagHolder;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.IdentityHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Supplier;
 import net.minecraft.network.chat.TextColor;
 
 /**
  * Paints a gradient rank's colours along its pill and speaker name, and scrolls them,
  * so a role whose colour is a Discord gradient reads as one rather than as a fixed smear.
  * <p>
- * A chat line or nametag is drawn from a component built once, long before the frame
- * it appears on, so a colour cannot be animated by rebuilding it. What survives into
+ * A chat line or nametag is drawn from a component built once, long before the frame it
+ * appears on, so a colour cannot be animated by rebuilding it. What survives into
  * rendering is the {@link TextColor} instance itself: {@code TextColor.fromRgb} mints a
- * new one per call and every step from component to glyph copies the reference rather
- * than the value. Each decoration colour is therefore recognisable by identity, and the
- * remembered stop behind it says where it sits on which gradient.
+ * new one per call, and every step from component to glyph copies the reference rather
+ * than the value. Each decoration colour therefore carries its own {@link Glyph}: where
+ * that glyph sits on which gradient, what it returns to, and what drawing it has worked
+ * out so far. It lives and dies with the text that uses it, so nothing has to be
+ * registered, evicted or released.
  * <p>
  * Where a glyph sits is measured in font pixels along an {@link Axis}: a pill's
- * background, or a name. At render time a glyph's corners are coloured by where they
- * fall on that axis ({@link #shade}), so the gradient runs smoothly across and between
- * glyphs, and moves at the same speed in pixels whatever it is painted on. A pill and
- * the name after it can be {@link #join joined}, and then read as one gradient whenever
- * both show theirs.
- * <p>
- * Every lookup here runs for glyphs the game draws, most of which are not decorations,
- * so each starts with one identity probe and only consults settings on a hit.
- * Registration and rendering both happen on the render thread, so the registry is
- * updated in place rather than republished.
+ * background, or a name. As a glyph is drawn its corners are coloured by where they fall
+ * on that axis (see {@link GradientPainter}), so the gradient runs smoothly across and
+ * between glyphs and moves at the same speed in pixels whatever it is painted on. A pill
+ * and the name after it can be {@link #join joined}, and then read as one gradient
+ * whenever both show theirs.
  */
 public final class RankGradientAnimation {
 
@@ -50,45 +44,52 @@ public final class RankGradientAnimation {
      */
     static final double PIXELS_PER_SECOND = 20d;
 
+    /** How much Minecraft thickens each edge of a bold glyph's quads. */
+    private static final float BOLD_THICKNESS = 0.1f;
+
+    /** Tags shared pill lettering: part of a decoration, but always one fixed colour. */
+    private static final Object LABEL = new Object();
+
+    /**
+     * Tags for colours with no field of their own to hold one, which only happens without
+     * the {@code TextColor} mixin, as in unit tests. Keys are held weakly and compared by
+     * identity, so this keeps nothing alive either.
+     */
+    private static final Map<TextColor, Object> DETACHED_TAGS = new MapMaker().weakKeys().makeMap();
+
+    /** The settings a decoration's colours depend on, as bits of one number. */
+    private static final int COLOR_BADGE = 1;
+    private static final int COLOR_NAME = 1 << 1;
+    private static final int GRADIENT_BADGE = 1 << 2;
+    private static final int GRADIENT_NAME = 1 << 3;
+    private static final int PER_USER = 1 << 4;
+    private static final int ANIMATE_BADGE = 1 << 5;
+    private static final int ANIMATE_NAME = 1 << 6;
+    private static final int JOINT_VISIBLE = COLOR_BADGE | COLOR_NAME | GRADIENT_BADGE | GRADIENT_NAME;
+    /** Keeps a moving glyph's cache key apart from every still one. */
+    private static final long MOVING = 1L << 7;
+
     /** How far animated gradients have travelled, in font pixels, as of {@link #travelledAt}. */
     private static double travelledPixels;
     private static long travelledAt = Long.MIN_VALUE;
 
-    /**
-     * How many rank-decoration colours stay configurable. A pill contributes one per
-     * letter and a name one per glyph, so this covers a full chat history; older
-     * decorations simply keep their stored colour rather than being rebuilt.
-     */
-    static final int MAX_REMEMBERED_STOPS = 4096;
-
-    /** Registered decoration colours. Written under the class lock, read without one. */
-    private static final Map<TextColor, Stop> STOPS = new IdentityHashMap<>();
-
-    /** Registration order, so the stops dropped on overflow are the oldest ones. */
-    private static final ArrayDeque<TextColor> REGISTRATION_ORDER = new ArrayDeque<>();
-
-    /** Fixed-colour glyphs that are part of a decoration but do not animate. */
-    private static volatile Map<TextColor, Boolean> fixedDecorationColors = new IdentityHashMap<>();
-
-    /**
-     * Registrations made while one decoration is being built. Nested batches share the
-     * outer list, so composing a pill and a name still registers once.
-     */
-    private static final ThreadLocal<Batch> PENDING_REGISTRATIONS = new ThreadLocal<>();
-
-    /** Monotonic registration count, exposed package-locally for the batching test. */
-    private static long publicationCount;
-
-    /** The phase every axis is at now, from how far a gradient has travelled. */
-    private static final Clock WALL_CLOCK =
-            (ramp, length) -> phaseAt(ramp, length, travelled(System.nanoTime() / 1_000_000L));
+    /** The frame being drawn, and how far gradients have travelled by it; see {@link #beginFrame}. */
+    private static long frame;
+    private static double frameTravelled;
 
     private RankGradientAnimation() {}
 
-    /** Turns a ramp and an axis length into how far round the ramp it has scrolled. */
-    @FunctionalInterface
-    interface Clock {
-        double phase(ColorRamp ramp, double length);
+    /**
+     * Samples the animation clock for the frame about to be drawn. Every moving glyph in
+     * the frame is drawn at this one instant, and works out its colours at most once.
+     */
+    public static void beginFrame() {
+        beginFrame(System.nanoTime() / 1_000_000L);
+    }
+
+    static void beginFrame(long millis) {
+        frameTravelled = travelled(millis);
+        frame++;
     }
 
     /**
@@ -113,14 +114,14 @@ public final class RankGradientAnimation {
 
         /**
          * The colour of a glyph drawn at {@code offset} pixels along this axis and
-         * {@code width} pixels wide, remembered so it can be graded and moved later.
+         * {@code width} pixels wide, tagged so it can be graded and moved as it is drawn.
          * {@code baseColor} is what it returns to when role colouring is switched off;
          * {@code null} restores Minecraft's inherited text colour.
          */
         public TextColor colorAt(float offset, float width, TextColor baseColor) {
             float center = offset + Math.max(0f, width) / 2f;
             TextColor color = WynncraftTextShaderColor.safeTextColor(displayRamp.sample(center / length));
-            remember(color, new Stop(this, offset, center, baseColor));
+            tag(color, new Glyph(this, offset, center, baseColor));
             return color;
         }
 
@@ -151,21 +152,112 @@ public final class RankGradientAnimation {
         second.jointLength = length;
     }
 
-    /** Where one glyph sits on its axis, what it returns to, and its last flat colour. */
-    private static final class Stop {
+    /**
+     * One glyph of a decoration: where it sits on which gradient, what it returns to, and
+     * what drawing it has worked out so far. A still gradient is worked out once for the
+     * current settings and the glyph's size, a moving one once per frame, and a glyph
+     * that is not drawn works nothing out at all.
+     */
+    static final class Glyph {
+        private static final int GRADED = -1;
+        private static final int SAMPLE_SLOTS = 8;
+
         final Axis axis;
         final float offset;
         final float center;
         final TextColor baseColor;
-        /** The flat colour last worked out for {@link #memoMode}, so it is not re-minted. */
-        int memoMode = -1;
-        TextColor memoColor;
 
-        Stop(Axis axis, float offset, float center, TextColor baseColor) {
+        /** The flat colour last resolved, and the settings it was resolved under. */
+        private int resolvedFor = -1;
+        private TextColor resolved;
+
+        /** How the glyph was last painted, and what that was worked out for. */
+        private long paintedFor = Long.MIN_VALUE;
+        private float paintedLeft;
+        private float paintedRight;
+        private float paintedShearTop;
+        private float paintedShearBottom;
+        private float paintedBoldOffset;
+        private boolean paintedShadow;
+        private Shade shade;
+        private int flatRgb = GRADED;
+        /** Corner colours already sampled: a glyph's corners share a few x positions. */
+        private float[] sampledX;
+        private int[] sampledRgb;
+        private int samples;
+
+        private Glyph(Axis axis, float offset, float center, TextColor baseColor) {
             this.axis = axis;
             this.offset = offset;
             this.center = center;
             this.baseColor = baseColor;
+        }
+
+        /**
+         * Gets the glyph ready to be drawn from a bitmap whose edges lie {@code left} and
+         * {@code right} from its origin, sheared {@code shearTop} and {@code shearBottom}
+         * by italics, with a bold copy {@code boldOffset} further on unless that is
+         * {@code NaN}, and a shadow coloured along with it when {@code shadow}. False
+         * when it is to be drawn flat in its resolved colour.
+         */
+        boolean prepare(
+                float left, float right, float shearTop, float shearBottom, float boldOffset, boolean shadow) {
+            int settings = settings();
+            long key = paintKey(settings);
+            if (key == paintedFor
+                    && left == paintedLeft
+                    && right == paintedRight
+                    && shearTop == paintedShearTop
+                    && shearBottom == paintedShearBottom
+                    && Float.compare(boldOffset, paintedBoldOffset) == 0
+                    && shadow == paintedShadow) {
+                return shade != null;
+            }
+            shade = describe(this, settings, frameTravelled, Double.NaN);
+            flatRgb = shade == null
+                    ? GRADED
+                    : markerSafeFlatColor(shade, left, right, shearTop, shearBottom, boldOffset, shadow);
+            samples = 0;
+            paintedFor = key;
+            paintedLeft = left;
+            paintedRight = right;
+            paintedShearTop = shearTop;
+            paintedShearBottom = shearBottom;
+            paintedBoldOffset = boldOffset;
+            paintedShadow = shadow;
+            return shade != null;
+        }
+
+        /** The colour {@code x} pixels from the glyph's origin, as last prepared. */
+        int rgbAt(float x) {
+            if (flatRgb != GRADED) {
+                return flatRgb;
+            }
+            for (int index = 0; index < samples; index++) {
+                if (sampledX[index] == x) {
+                    return sampledRgb[index];
+                }
+            }
+            int rgb = shade.rgbAt(x);
+            if (sampledX == null) {
+                sampledX = new float[SAMPLE_SLOTS];
+                sampledRgb = new int[SAMPLE_SLOTS];
+            }
+            if (samples < SAMPLE_SLOTS) {
+                sampledX[samples] = x;
+                sampledRgb[samples++] = rgb;
+            }
+            return rgb;
+        }
+
+        /** Still glyphs are keyed by their settings alone, moving ones by frame as well. */
+        private long paintKey(int settings) {
+            Target target = axis.target;
+            boolean joint = axis.joined() && (settings & JOINT_VISIBLE) == JOINT_VISIBLE;
+            boolean animated = joint
+                    ? (settings & (ANIMATE_BADGE | ANIMATE_NAME)) != 0
+                    : (settings & animateBit(target)) != 0;
+            return animated ? frame << 8 | MOVING | settings : settings;
         }
     }
 
@@ -185,166 +277,147 @@ public final class RankGradientAnimation {
     }
 
     /**
-     * Builds one decoration while collecting all of its colours, then registers them
-     * together. Calls may be nested: only the outermost call registers. A pinned build
-     * cannot be nested inside this evictable batch because no caller would receive
-     * ownership of its colours.
-     */
-    public static <T> T batchRegistrations(Supplier<T> build) {
-        return batch(build, false).value();
-    }
-
-    /**
-     * Builds a decoration whose colours are exempt from the eviction below, and hands
-     * them back so the caller can release them when the decoration is dropped.
-     * <p>
-     * For decorations that stay on screen indefinitely, such as an in-world nametag.
-     * An evicted colour stops responding to the settings and reverts to the value it
-     * was sampled at, and since eviction takes one glyph at a time, a long-lived
-     * decoration would come apart into differently coloured pieces as chat pushes its
-     * stops out — which reads as flickering rather than as a colour change.
-     */
-    public static <T> Pinned<T> pin(Supplier<T> build) {
-        return batch(build, true);
-    }
-
-    /**
-     * A decoration and the colours registered for it, which stay configurable until
-     * they are handed back to {@link #release}.
-     */
-    public record Pinned<T>(T value, List<TextColor> colors) {}
-
-    private record Registration(TextColor color, Stop stop) {}
-
-    /** Colours collected for one decoration, and whether they are exempt from eviction. */
-    private record Batch(List<Registration> registrations, boolean pinned) {}
-
-    private static <T> Pinned<T> batch(Supplier<T> build, boolean pinned) {
-        Objects.requireNonNull(build, "build");
-        Batch outer = PENDING_REGISTRATIONS.get();
-        if (outer != null) {
-            if (pinned && !outer.pinned()) {
-                throw new IllegalStateException("A pinned decoration cannot be built inside an evictable batch");
-            }
-            // An inner batch: the outermost call owns the registration and the colours.
-            return new Pinned<>(build.get(), List.of());
-        }
-
-        Batch pending = new Batch(new ArrayList<>(), pinned);
-        PENDING_REGISTRATIONS.set(pending);
-        try {
-            T result = build.get();
-            rememberAll(pending.registrations(), pinned);
-            return new Pinned<>(
-                    result, pending.registrations().stream().map(Registration::color).toList());
-        } finally {
-            PENDING_REGISTRATIONS.remove();
-        }
-    }
-
-    /** Forgets pinned colours, so the decoration they belonged to stops being tracked. */
-    public static void release(List<TextColor> colors) {
-        if (colors == null || colors.isEmpty()) {
-            return;
-        }
-        releaseAll(List.of(colors));
-    }
-
-    /** Forgets several pinned decorations at once. */
-    public static synchronized void releaseAll(Iterable<? extends Iterable<TextColor>> colorGroups) {
-        if (colorGroups == null) {
-            return;
-        }
-        boolean removed = false;
-        for (Iterable<TextColor> colors : colorGroups) {
-            if (colors == null) {
-                continue;
-            }
-            for (TextColor color : colors) {
-                removed |= STOPS.remove(color) != null;
-            }
-        }
-        if (removed) {
-            publicationCount++;
-        }
-    }
-
-    /**
      * The flat colour {@code color} is laid out in, or {@code color} itself when it is
-     * not a remembered decoration or its settings leave it unchanged.
+     * not a decoration or its settings leave it unchanged.
      * <p>
      * This is the colour a glyph gets as a whole: its base when role colouring is off,
      * the role's first colour when the gradient is hidden, and otherwise the gradient at
      * the glyph's middle. The gradient itself, and its movement, are applied to the
-     * glyph's corners as it is drawn; see {@link #shade}.
+     * glyph's corners as it is drawn.
      */
     public static TextColor resolve(TextColor color) {
-        if (color == null) {
-            return null;
-        }
-        Stop stop = STOPS.get(color);
-        if (stop == null) {
+        Glyph glyph = glyphOf(color);
+        if (glyph == null) {
             return color;
         }
-        Axis axis = stop.axis;
-        if (!coloringEnabled(axis.target)) {
-            return stop.baseColor;
+        int settings = settings();
+        Axis axis = glyph.axis;
+        if ((settings & colorBit(axis.target)) == 0) {
+            return glyph.baseColor;
         }
-        boolean perUser = perUserColorsEnabled();
+        boolean perUser = (settings & PER_USER) != 0;
         ColorRamp ramp = perUser ? axis.displayRamp : axis.roleRamp;
         boolean storedRampActive = ramp == axis.displayRamp;
-        boolean gradient = ramp.isGradient() && gradientsEnabled(axis.target);
-        boolean joint = gradient && axis.joined() && jointGradientsVisible();
+        boolean gradient = ramp.isGradient() && (settings & gradientBit(axis.target)) != 0;
+        boolean joint = gradient && axis.joined() && (settings & JOINT_VISIBLE) == JOINT_VISIBLE;
         if (storedRampActive && (!ramp.isGradient() || (gradient && !joint))) {
             return color;
         }
 
         int mode = (perUser ? 1 : 0) | (gradient ? 2 : 0) | (joint ? 4 : 0);
-        if (stop.memoMode != mode) {
-            stop.memoColor = WynncraftTextShaderColor.safeTextColor(!gradient
+        if (glyph.resolvedFor != mode) {
+            glyph.resolved = WynncraftTextShaderColor.safeTextColor(!gradient
                     ? ramp.first()
                     : ramp.sample(joint
-                            ? (axis.jointOffset + stop.center) / axis.jointLength
-                            : stop.center / axis.length));
-            stop.memoMode = mode;
+                            ? (axis.jointOffset + glyph.center) / axis.jointLength
+                            : glyph.center / axis.length));
+            glyph.resolvedFor = mode;
         }
-        return stop.memoColor;
+        return glyph.resolved;
     }
 
     /**
-     * How to colour the corners of a glyph drawn in {@code color}, for this instant, or
-     * {@code null} when it is not a decoration or its settings draw it flat.
+     * How the corners of a glyph drawn in {@code color} are coloured in the current
+     * frame, or {@code null} when it is not a decoration or its settings draw it flat.
      */
     public static Shade shade(TextColor color) {
-        return shade(color, WALL_CLOCK);
+        Glyph glyph = glyphOf(color);
+        return glyph == null ? null : describe(glyph, settings(), frameTravelled, Double.NaN);
     }
 
     /** Shading at a fixed {@code phase} on every axis, for tests. */
     static Shade shade(TextColor color, double phase) {
-        return shade(color, (ramp, length) -> phase);
+        Glyph glyph = glyphOf(color);
+        return glyph == null ? null : describe(glyph, settings(), 0d, phase);
     }
 
-    private static Shade shade(TextColor color, Clock clock) {
-        if (color == null) {
+    private static Shade describe(Glyph glyph, int settings, double travelled, double fixedPhase) {
+        Axis axis = glyph.axis;
+        if ((settings & colorBit(axis.target)) == 0) {
             return null;
         }
-        Stop stop = STOPS.get(color);
-        if (stop == null) {
+        ColorRamp ramp = (settings & PER_USER) != 0 ? axis.displayRamp : axis.roleRamp;
+        if (!ramp.isGradient() || (settings & gradientBit(axis.target)) == 0) {
             return null;
         }
-        Axis axis = stop.axis;
-        if (!coloringEnabled(axis.target)) {
-            return null;
-        }
-        ColorRamp ramp = perUserColorsEnabled() ? axis.displayRamp : axis.roleRamp;
-        if (!ramp.isGradient() || !gradientsEnabled(axis.target)) {
-            return null;
-        }
-        boolean joint = axis.joined() && jointGradientsVisible();
-        boolean animated = joint ? anyAnimationEnabled() : animationEnabled(axis.target);
+        boolean joint = axis.joined() && (settings & JOINT_VISIBLE) == JOINT_VISIBLE;
+        boolean animated = joint
+                ? (settings & (ANIMATE_BADGE | ANIMATE_NAME)) != 0
+                : (settings & animateBit(axis.target)) != 0;
         double length = joint ? axis.jointLength : axis.length;
-        double origin = (joint ? axis.jointOffset : 0f) + stop.offset;
-        return new Shade(ramp, origin, length, animated ? clock.phase(ramp, length) : Double.NaN);
+        double origin = (joint ? axis.jointOffset : 0f) + glyph.offset;
+        double phase = !animated ? Double.NaN : Double.isNaN(fixedPhase) ? phaseAt(ramp, length, travelled) : fixedPhase;
+        return new Shade(ramp, origin, length, phase);
+    }
+
+    /**
+     * The glyph's middle colour when any colour drawn across it would land on one of
+     * Wynncraft's shader markers, or {@link Glyph#GRADED} when it can be graded; see
+     * {@link Glyph#prepare} for what describes the glyph.
+     * <p>
+     * Wynncraft's text shader reads colours pixel by pixel and paints white any pixel
+     * whose blended colour lands on a marker, so two safe corners are not enough. The
+     * blend is checked quad by quad, between the corners exactly where Minecraft puts
+     * them: the gradient between them may bend at a ramp stop, but the GPU blends
+     * straight across. A bold glyph's second copy and a graded shadow are checked too.
+     */
+    static int markerSafeFlatColor(
+            Shade shade,
+            float left,
+            float right,
+            float shearTop,
+            float shearBottom,
+            float boldOffset,
+            boolean shadow) {
+        boolean bold = !Float.isNaN(boldOffset);
+        float thickness = bold ? BOLD_THICKNESS : 0f;
+        float topLeft = left + shearTop - thickness;
+        float bottomLeft = left + shearBottom - thickness;
+        float bottomRight = right + shearBottom + thickness;
+        float topRight = right + shearTop + thickness;
+        boolean crosses = quadCrosses(shade, topLeft, bottomLeft, bottomRight, topRight, shadow)
+                || bold && quadCrosses(
+                        shade,
+                        topLeft + boldOffset,
+                        bottomLeft + boldOffset,
+                        bottomRight + boldOffset,
+                        topRight + boldOffset,
+                        shadow);
+        return crosses ? shade.rgbAt((left + right) / 2f) : Glyph.GRADED;
+    }
+
+    /** Whether a quad with corners at these x positions blends through a marker, or its shadow does. */
+    private static boolean quadCrosses(
+            Shade shade, float topLeft, float bottomLeft, float bottomRight, float topRight, boolean shadow) {
+        int a = shade.rgbAt(topLeft);
+        int b = shade.rgbAt(bottomLeft);
+        int c = shade.rgbAt(bottomRight);
+        int d = shade.rgbAt(topRight);
+        return blendCrosses(a, b, c, d)
+                || shadow && blendCrosses(darkened(a), darkened(b), darkened(c), darkened(d));
+    }
+
+    /**
+     * Whether the GPU, blending between a quad's four corner colours, can land on a
+     * marker. An upright glyph's left corners share one colour and its right ones
+     * another, so every colour it draws lies between those two. A slanted glyph's
+     * corners all differ, and are checked pair by pair.
+     */
+    private static boolean blendCrosses(int topLeft, int bottomLeft, int bottomRight, int topRight) {
+        if (topLeft == bottomLeft && topRight == bottomRight) {
+            return WynncraftTextShaderColor.crossesMarker(topLeft, topRight);
+        }
+        return WynncraftTextShaderColor.crossesMarker(topLeft, bottomLeft)
+                || WynncraftTextShaderColor.crossesMarker(topLeft, bottomRight)
+                || WynncraftTextShaderColor.crossesMarker(topLeft, topRight)
+                || WynncraftTextShaderColor.crossesMarker(bottomLeft, bottomRight)
+                || WynncraftTextShaderColor.crossesMarker(bottomLeft, topRight)
+                || WynncraftTextShaderColor.crossesMarker(bottomRight, topRight);
+    }
+
+    /** A shadow's colour, as Minecraft works it out: each channel at a quarter. */
+    static int darkened(int rgb) {
+        return (((rgb >> 16) & 0xFF) / 4) << 16 | (((rgb >> 8) & 0xFF) / 4) << 8 | (rgb & 0xFF) / 4;
     }
 
     /**
@@ -377,83 +450,36 @@ public final class RankGradientAnimation {
         return travelledPixels;
     }
 
+    /** The latest moment the animation clock has been brought up to, for tests. */
+    static long clockMillis() {
+        return travelledAt;
+    }
+
     /** The configured animation speed, in font pixels per second. */
     static double pixelsPerSecond() {
         Setting.IntSetting speed = SeqClient.getGradientAnimationSpeedSetting();
         return PIXELS_PER_SECOND * (speed == null ? 100 : speed.getValue()) / 100d;
     }
 
-    /** Pill and name read as one gradient only while both are coloured and graded. */
-    private static boolean jointGradientsVisible() {
-        return coloringEnabled(Target.RANK_BADGE)
-                && coloringEnabled(Target.USERNAME)
-                && gradientsEnabled(Target.RANK_BADGE)
-                && gradientsEnabled(Target.USERNAME);
+    /** The decoration {@code color} was minted for, or {@code null}. */
+    static Glyph glyphOf(TextColor color) {
+        return tagOf(color) instanceof Glyph glyph ? glyph : null;
     }
 
-    /** A joint gradient moves as one: asking either half to move moves both. */
-    private static boolean anyAnimationEnabled() {
-        return animationEnabled(Target.RANK_BADGE) || animationEnabled(Target.USERNAME);
-    }
-
-    private static boolean gradientsEnabled(Target target) {
-        Setting.BooleanSetting setting = switch (target) {
-            case RANK_BADGE -> SeqClient.getShowRankPillGradientsSetting();
-            case USERNAME -> SeqClient.getShowUsernameGradientsSetting();
-        };
-        return setting == null || setting.getValue();
-    }
-
-    private static boolean coloringEnabled(Target target) {
-        Setting.BooleanSetting setting = switch (target) {
-            case RANK_BADGE -> SeqClient.getColorRankPillsSetting();
-            case USERNAME -> SeqClient.getColorUsernamesSetting();
-        };
-        return setting == null || setting.getValue();
-    }
-
-    private static boolean perUserColorsEnabled() {
-        Setting.BooleanSetting setting = SeqClient.getUsePerUserColorsSetting();
-        return setting == null || setting.getValue();
-    }
-
-    private static boolean animationEnabled(Target target) {
-        Setting.BooleanSetting setting = switch (target) {
-            case RANK_BADGE -> SeqClient.getAnimateRankGradientsSetting();
-            case USERNAME -> SeqClient.getAnimateUsernameGradientsSetting();
-        };
-        return setting != null && setting.getValue();
-    }
-
-    private static void remember(TextColor color, Stop stop) {
-        Batch pending = PENDING_REGISTRATIONS.get();
-        if (pending != null) {
-            pending.registrations().add(new Registration(color, stop));
-            return;
+    private static Object tagOf(TextColor color) {
+        if (color == null) {
+            return null;
         }
-        rememberAll(List.of(new Registration(color, stop)), false);
+        // Through Object: TextColor is final, and only the mixin makes it a holder.
+        return (Object) color instanceof GradientTagHolder holder ? holder.seq$gradientTag() : DETACHED_TAGS.get(color);
     }
 
-    private static synchronized void rememberAll(List<Registration> registrations, boolean pinned) {
-        if (registrations.isEmpty()) {
-            return;
+    private static void tag(TextColor color, Object tag) {
+        if ((Object) color instanceof GradientTagHolder holder) {
+            holder.seq$setGradientTag(tag);
+        } else {
+            DETACHED_TAGS.put(color, tag);
         }
-        for (Registration registration : registrations) {
-            STOPS.put(registration.color(), registration.stop());
-            if (pinned) {
-                continue;
-            }
-            REGISTRATION_ORDER.addLast(registration.color());
-            while (REGISTRATION_ORDER.size() > MAX_REMEMBERED_STOPS) {
-                STOPS.remove(REGISTRATION_ORDER.removeFirst());
-            }
-        }
-        publicationCount++;
-    }
-
-    /** How many evictable stops are held; pinned ones are counted by their owner. */
-    static synchronized int rememberedStopCount() {
-        return REGISTRATION_ORDER.size();
     }
 
     /**
@@ -461,40 +487,44 @@ public final class RankGradientAnimation {
      * game or another mod set.
      */
     public static boolean isDecorationColor(TextColor color) {
-        return color != null && (STOPS.containsKey(color) || fixedDecorationColors.containsKey(color));
+        return tagOf(color) != null;
     }
 
     /** Shared foreground lettering, drawn slightly in front of a nametag pill's fill. */
     public static boolean isBadgeLabelColor(TextColor color) {
-        return color != null && fixedDecorationColors.containsKey(color);
+        return tagOf(color) == LABEL;
     }
 
-    /**
-     * Whether {@code color} belongs to a rank badge rather than to a decorated name.
-     * A badge is built by laying glyphs on top of one another and a name is not, so
-     * the two have to be drawn differently in the world; see {@code NametagTextPass}.
-     */
-    public static boolean isBadgeColor(TextColor color) {
-        if (color == null) {
-            return false;
-        }
-        if (fixedDecorationColors.containsKey(color)) {
-            return true;
-        }
-        Stop stop = STOPS.get(color);
-        return stop != null && stop.axis.target == Target.RANK_BADGE;
-    }
-
-    /** Marks a shared, non-animated colour as belonging to a Sequoia decoration. */
-    public static synchronized TextColor markDecorationColor(TextColor color) {
-        Objects.requireNonNull(color, "color");
-        IdentityHashMap<TextColor, Boolean> updated = new IdentityHashMap<>(fixedDecorationColors);
-        updated.put(color, Boolean.TRUE);
-        fixedDecorationColors = updated;
+    /** Marks a shared, never graded colour as belonging to a Sequoia decoration. */
+    public static TextColor markDecorationColor(TextColor color) {
+        tag(Objects.requireNonNull(color, "color"), LABEL);
         return color;
     }
 
-    static synchronized long publicationCount() {
-        return publicationCount;
+    /** The settings a decoration's colours depend on, read as they are now. */
+    private static int settings() {
+        return bit(SeqClient.getColorRankPillsSetting(), true, COLOR_BADGE)
+                | bit(SeqClient.getColorUsernamesSetting(), true, COLOR_NAME)
+                | bit(SeqClient.getShowRankPillGradientsSetting(), true, GRADIENT_BADGE)
+                | bit(SeqClient.getShowUsernameGradientsSetting(), true, GRADIENT_NAME)
+                | bit(SeqClient.getUsePerUserColorsSetting(), true, PER_USER)
+                | bit(SeqClient.getAnimateRankGradientsSetting(), false, ANIMATE_BADGE)
+                | bit(SeqClient.getAnimateUsernameGradientsSetting(), false, ANIMATE_NAME);
+    }
+
+    private static int bit(Setting.BooleanSetting setting, boolean unset, int bit) {
+        return (setting == null ? unset : setting.getValue()) ? bit : 0;
+    }
+
+    private static int colorBit(Target target) {
+        return target == Target.RANK_BADGE ? COLOR_BADGE : COLOR_NAME;
+    }
+
+    private static int gradientBit(Target target) {
+        return target == Target.RANK_BADGE ? GRADIENT_BADGE : GRADIENT_NAME;
+    }
+
+    private static int animateBit(Target target) {
+        return target == Target.RANK_BADGE ? ANIMATE_BADGE : ANIMATE_NAME;
     }
 }

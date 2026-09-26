@@ -155,10 +155,6 @@ public final class DiscordRankChatDecorator {
      * guild chat or the speaker has no linked rank.
      */
     public static Component decorateGuildChat(Component message) {
-        return RankGradientAnimation.batchRegistrations(() -> decorateGuildChatNow(message));
-    }
-
-    private static Component decorateGuildChatNow(Component message) {
         // Every ordinary chat line ends the current bridge block. A bridged line must
         // not, so it is recognised by identity as well as by the suppression flag:
         // another mod may queue the message and deliver it here after
@@ -1220,17 +1216,13 @@ public final class DiscordRankChatDecorator {
             RankPresentation rank,
             String insertion,
             NotificationAccessor.GradientPill pill) {
-        return RankGradientAnimation.batchRegistrations(
-                () -> paintNameNow(fragments, start, endExclusive, rank, insertion, pill));
-    }
-
-    private static List<ComponentTextEditor.Fragment> paintNameNow(
-            List<ComponentTextEditor.Fragment> fragments,
-            int start,
-            int endExclusive,
-            RankPresentation rank,
-            String insertion,
-            NotificationAccessor.GradientPill pill) {
+        // A legacy formatting code ends the name, as in speakerNameEnd. Split into one
+        // piece per glyph, its section sign and code letter would land in pieces of
+        // their own, and the letter would be drawn as text.
+        int legacyCode = ComponentTextEditor.textOf(fragments).indexOf(LEGACY_FORMATTING_PREFIX, start);
+        if (legacyCode >= 0 && legacyCode < endExclusive) {
+            endExclusive = legacyCode;
+        }
         List<ComponentTextEditor.Fragment> glyphs = ComponentTextEditor.codePoints(fragments, start, endExclusive);
         if (glyphs.isEmpty()) {
             return fragments;

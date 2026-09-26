@@ -9,8 +9,6 @@ import org.joml.Matrix4f;
 /**
  * Separates a pill's letters from its background in depth, without changing the
  * font's render mode. Both layers therefore obey the same occlusion as the name.
- * Decoration glyphs are also graded corner by corner along their gradient, as in chat;
- * see {@link GradientGlyphs}.
  */
 public final class NametagGlyphVisitor implements Font.GlyphVisitor {
     // Font uses the same text-space distance between ordinary glyphs and shadows.
@@ -34,7 +32,7 @@ public final class NametagGlyphVisitor implements Font.GlyphVisitor {
             foreground.acceptGlyph(glyph);
             return;
         }
-        ordinary.acceptGlyph(GradientGlyphs.wrap(glyph));
+        ordinary.acceptGlyph(glyph);
     }
 
     @Override

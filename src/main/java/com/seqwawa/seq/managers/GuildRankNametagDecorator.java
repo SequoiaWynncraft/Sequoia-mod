@@ -5,20 +5,22 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.utils.ComponentTextEditor;
-import com.seqwawa.seq.utils.RankGradientAnimation;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.FontDescription;
+import net.minecraft.network.chat.FormattedText;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.resources.Identifier;
 
@@ -40,9 +42,11 @@ import net.minecraft.resources.Identifier;
  */
 public final class GuildRankNametagDecorator {
 
-    /** Bounds on the two caches, ample for the players one client can see at once. */
+    /** Players remembered, ample for the players one client can see at once. */
     private static final int MAX_REMEMBERED_PLAYERS = 256;
-    private static final int MAX_CACHED_NAMETAGS = 256;
+
+    /** Tags remembered per player; one rarely has more than a line or two decorated. */
+    private static final int MAX_TAGS_PER_PLAYER = 4;
 
     private static final int MIN_NAME_LENGTH = 3;
     private static final int MAX_NAME_LENGTH = 16;
@@ -50,16 +54,8 @@ public final class GuildRankNametagDecorator {
     private static final FontDescription WYNNTILS_NAMETAG_FONT =
             new FontDescription.Resource(Identifier.fromNamespaceAndPath("wynntils", "nametag"));
 
-    /** What was last published for a player, so an unchanged frame costs one lookup. */
-    private static final Map<UUID, Registration> REGISTRATIONS = boundedMap(MAX_REMEMBERED_PLAYERS);
-
-    /**
-     * Decoration results keyed by the component handed to the renderer, including
-     * the ones left alone. A nametag is submitted every frame from a component that
-     * upstream caches, so without this the rank would be rebuilt — and its animated
-     * colours re-registered — sixty times a second per player.
-     */
-    private static final Map<DecorationKey, Decoration> DECORATED_NAMETAGS = decorationCache();
+    /** What is known about each player rendered lately. Render thread only. */
+    private static final Map<UUID, PlayerTags> PLAYERS = boundedMap(MAX_REMEMBERED_PLAYERS);
 
     private GuildRankNametagDecorator() {}
 
@@ -75,30 +71,40 @@ public final class GuildRankNametagDecorator {
             return;
         }
 
-        // Called for every player on screen every frame, and almost always with what
-        // was published last time: the same tag, name and roster need no lookups.
+        // Called for every player on screen every frame, almost always with the tag it
+        // had last frame: rebuilt as a new component, but with the same text and styles.
+        // Comparing it with the snapshot kept last time needs no lookups and no hashing.
         DiscordRankService service = DiscordRankService.getInstance();
         Object roster = service.rosterSnapshot();
-        Registration previous = REGISTRATIONS.get(uuid);
+        PlayerTags previous = PLAYERS.get(uuid);
         if (previous != null
-                && previous.roster() == roster
-                && Objects.equals(previous.username(), username)
-                && Objects.equals(previous.nameTag(), nameTag)) {
+                && previous.roster == roster
+                && Objects.equals(previous.username, username)
+                && previous.shows(nameTag)) {
             return;
         }
 
+        Snapshot snapshot = Snapshot.of(nameTag);
         RankPresentation rank = rankFor(service, uuid, username);
         Member member = rank == null ? null : new Member(username, rank);
-        Registration replacement =
-                new Registration(nameTag, username, roster, member, registeredNames(username, nameTag));
-        REGISTRATIONS.put(uuid, replacement);
+        PlayerTags replacement = new PlayerTags(
+                username, roster, member, registeredNames(username, snapshot.text()), snapshot, nameTag);
+        // Replacing the registration replaces its complete alias set, so no obsolete
+        // nickname stays available to this UUID. Decorations only carry over when they
+        // would come out the same.
         if (previous != null && previous.decoratesLike(replacement)) {
-            return;
+            replacement.decorations.addAll(previous.decorations);
         }
+        PLAYERS.put(uuid, replacement);
+    }
 
-        // Replacing the registration replaces its complete alias set. No obsolete
-        // nickname remains available to this UUID after the displayed tag changes.
-        forgetDecorations(uuid);
+    /**
+     * Drops every decorated tag, once the fonts have been reloaded. A pill is laid out
+     * to the widths of the glyphs it is made of, and a tag decorated before Wynncraft's
+     * resource pack arrived was laid out to the wrong ones.
+     */
+    public static void forgetDecorations() {
+        PLAYERS.clear();
     }
 
     /**
@@ -111,56 +117,34 @@ public final class GuildRankNametagDecorator {
             return nameTag;
         }
 
-        Registration registration = REGISTRATIONS.get(uuid);
-        if (registration == null || registration.member() == null) {
+        PlayerTags player = PLAYERS.get(uuid);
+        if (player == null || player.member == null) {
             return nameTag;
         }
-
-        DecorationKey key = new DecorationKey(uuid, nameTag);
-        Decoration cached = DECORATED_NAMETAGS.get(key);
-        if (cached != null) {
-            return cached.component();
-        }
-
-        Decoration decorated;
-        try {
-            decorated = decorate(nameTag, registration::memberFor);
-        } catch (RuntimeException exception) {
-            SeqClient.LOGGER.debug("[DiscordRanks] Failed to decorate a nametag.", exception);
-            decorated = Decoration.unchanged(nameTag);
-        }
-        DECORATED_NAMETAGS.put(key, decorated);
-        return decorated.component();
+        return player.decorated(nameTag);
     }
 
-    /**
-     * Decoration core, parameterised on the identity lookup so it stays unit-testable.
-     * <p>
-     * The colours are pinned rather than merely registered: a nametag stands on screen
-     * for as long as its owner is in sight, far longer than the chat line this registry
-     * was built for, and a stop evicted underneath it would drop that one glyph out of
-     * step with the rest of the rank.
-     */
-    static Decoration decorate(Component nameTag, Function<String, Member> members) {
-        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(nameTag);
-        String text = ComponentTextEditor.textOf(fragments);
+    /** Decoration core, parameterised on the identity lookup so it stays unit-testable. */
+    static Component decorate(Component nameTag, Function<String, Member> members) {
+        return decorate(Snapshot.of(nameTag), nameTag, members);
+    }
+
+    private static Component decorate(Snapshot source, Component nameTag, Function<String, Member> members) {
+        List<ComponentTextEditor.Fragment> fragments = source.fragments();
+        String text = source.text();
         DisplayedName name = displayedName(text, members);
         if (name == null) {
-            return Decoration.unchanged(nameTag);
+            return nameTag;
         }
 
         Member member = name.member();
         String label = PrincessRankEasterEgg.pillLabel(member.rank().pillLabel(), member.username());
         Badge badge = badgeBefore(fragments, text, name.start());
         if (alreadyDecorated(text, name.start(), label, badge)) {
-            return Decoration.unchanged(nameTag);
+            return nameTag;
         }
-
-        RankGradientAnimation.Pinned<Component> pinned = RankGradientAnimation.pin(
-                () -> rewrite(fragments, name, badge, label, badgeColor(fragments, badge)));
-        return pinned.value() == null
-                ? Decoration.unchanged(nameTag)
-                : new Decoration(pinned.value(), pinned.colors());
+        Component rewritten = rewrite(fragments, name, badge, label, badgeColor(fragments, badge));
+        return rewritten == null ? nameTag : rewritten;
     }
 
     private static Component rewrite(
@@ -351,10 +335,10 @@ public final class GuildRankNametagDecorator {
     }
 
     /** All account-name-shaped aliases currently shown for one rendered player. */
-    private static List<String> registeredNames(String username, Component nameTag) {
+    private static List<String> registeredNames(String username, String nameTagText) {
         List<String> names = new ArrayList<>(3);
         addRegisteredName(names, username);
-        for (String candidate : nameCandidates(nameTag == null ? "" : nameTag.getString())) {
+        for (String candidate : nameCandidates(nameTagText)) {
             addRegisteredName(names, candidate);
         }
         return List.copyOf(names);
@@ -395,59 +379,19 @@ public final class GuildRankNametagDecorator {
         return setting != null && setting.getValue();
     }
 
-    /**
-     * The decoration cache, which hands a dropped decoration's colours back to the
-     * animation registry: nothing else knows when a nametag has stopped being drawn.
-     */
-    private static Map<DecorationKey, Decoration> decorationCache() {
-        return Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, false) {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<DecorationKey, Decoration> eldest) {
-                if (size() <= MAX_CACHED_NAMETAGS) {
-                    return false;
-                }
-                RankGradientAnimation.release(eldest.getValue().colors());
-                return true;
-            }
-        });
-    }
-
-    private static void forgetDecorations(UUID uuid) {
-        synchronized (DECORATED_NAMETAGS) {
-            List<List<TextColor>> released = new ArrayList<>();
-            DECORATED_NAMETAGS.entrySet().removeIf(entry -> {
-                if (!entry.getKey().uuid().equals(uuid)) {
-                    return false;
-                }
-                released.add(entry.getValue().colors());
-                return true;
-            });
-            RankGradientAnimation.releaseAll(released);
-        }
-    }
-
     private static <K, V> Map<K, V> boundedMap(int maximumEntries) {
         // Insertion ordered on purpose: an access-ordered map mutates on a read, and
-        // these are read from the render loop.
-        return Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, false) {
+        // this is read from the render loop.
+        return new LinkedHashMap<>(16, 0.75f, false) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
                 return size() > maximumEntries;
             }
-        });
+        };
     }
 
     /** A player whose nametag should carry a Sequoia rank. */
     record Member(String username, RankPresentation rank) {}
-
-    /** A rewritten nametag and the pinned colours it is drawn with. */
-    record Decoration(Component component, List<TextColor> colors) {
-
-        /** A nametag that belongs to nobody known, cached so it is only examined once. */
-        static Decoration unchanged(Component nameTag) {
-            return new Decoration(nameTag, List.of());
-        }
-    }
 
     /** Where a known member's name sits on a nametag. */
     record DisplayedName(int start, int endExclusive, Member member) {}
@@ -458,21 +402,155 @@ public final class GuildRankNametagDecorator {
     /** The span a rank badge occupies, up to and including the space after it. */
     record Badge(int start, int endExclusive) {}
 
-    /** Cache identity: the same component text may legitimately belong to two players. */
-    private record DecorationKey(UUID uuid, Component nameTag) {}
+    /**
+     * A nametag's text and styles as they were: immutable, so it can be kept and set
+     * against the next frame's tag without walking or hashing that one twice.
+     */
+    record Snapshot(List<ComponentTextEditor.Fragment> fragments, String text) {
 
-    /** What was last published for one UUID, including only that player's aliases. */
-    private record Registration(
-            Component nameTag, String username, Object roster, Member member, List<String> names) {
-        private Member memberFor(String candidate) {
+        static Snapshot of(Component nameTag) {
+            List<ComponentTextEditor.Fragment> fragments = List.copyOf(ComponentTextEditor.flatten(nameTag));
+            return new Snapshot(fragments, ComponentTextEditor.textOf(fragments));
+        }
+
+        /** Whether {@code nameTag} shows exactly this text in exactly these styles. */
+        boolean matches(Component nameTag) {
+            if (nameTag == null) {
+                return false;
+            }
+            SnapshotMatcher matcher = new SnapshotMatcher(fragments);
+            return nameTag.visit(matcher, Style.EMPTY).isEmpty() && matcher.index == fragments.size();
+        }
+    }
+
+    /**
+     * Walks a tag piece by piece against a snapshot and stops at the first difference.
+     * The pieces are those {@link ComponentTextEditor#flatten} produces: each run of
+     * text with its resolved style, empty runs left out.
+     */
+    private static final class SnapshotMatcher implements FormattedText.StyledContentConsumer<Boolean> {
+        private static final Optional<Boolean> DIFFERENT = Optional.of(Boolean.FALSE);
+
+        private final List<ComponentTextEditor.Fragment> fragments;
+        private int index;
+
+        private SnapshotMatcher(List<ComponentTextEditor.Fragment> fragments) {
+            this.fragments = fragments;
+        }
+
+        @Override
+        public Optional<Boolean> accept(Style style, String text) {
+            if (text.isEmpty()) {
+                return Optional.empty();
+            }
+            if (index >= fragments.size()) {
+                return DIFFERENT;
+            }
+            ComponentTextEditor.Fragment expected = fragments.get(index++);
+            return expected.text().equals(text) && expected.style().equals(style) ? Optional.empty() : DIFFERENT;
+        }
+    }
+
+    /**
+     * Everything known about one rendered player's nametags: who they are, the names
+     * their tag shows, the tag they were last seen with, and the tags lately decorated
+     * for them.
+     */
+    private static final class PlayerTags {
+        final String username;
+        final Object roster;
+        final Member member;
+        final List<String> names;
+        final Snapshot registered;
+        /** The component instance last found to show {@link #registered}. */
+        Component lastSeen;
+        final ArrayDeque<Decorated> decorations = new ArrayDeque<>(MAX_TAGS_PER_PLAYER);
+
+        PlayerTags(
+                String username,
+                Object roster,
+                Member member,
+                List<String> names,
+                Snapshot registered,
+                Component lastSeen) {
+            this.username = username;
+            this.roster = roster;
+            this.member = member;
+            this.names = names;
+            this.registered = registered;
+            this.lastSeen = lastSeen;
+        }
+
+        /** Whether {@code nameTag} is still the tag this player was registered with. */
+        boolean shows(Component nameTag) {
+            if (nameTag == lastSeen) {
+                return true;
+            }
+            if (!registered.matches(nameTag)) {
+                return false;
+            }
+            lastSeen = nameTag;
+            return true;
+        }
+
+        /**
+         * {@code nameTag} decorated for this player. The same component handed back, as
+         * the see-through and normal passes of one frame do, costs a comparison; one
+         * rebuilt with the same text and styles, one walk against a snapshot.
+         */
+        Component decorated(Component nameTag) {
+            for (Decorated decorated : decorations) {
+                if (decorated.input == nameTag) {
+                    return decorated.output(nameTag);
+                }
+            }
+            Snapshot seen = nameTag == lastSeen ? registered : null;
+            for (Decorated decorated : decorations) {
+                if (decorated.source == seen || decorated.source.matches(nameTag)) {
+                    decorated.input = nameTag;
+                    return decorated.output(nameTag);
+                }
+            }
+
+            Snapshot source = seen != null ? seen : Snapshot.of(nameTag);
+            Component output;
+            try {
+                output = decorate(source, nameTag, this::memberFor);
+            } catch (RuntimeException exception) {
+                SeqClient.LOGGER.debug("[DiscordRanks] Failed to decorate a nametag.", exception);
+                output = nameTag;
+            }
+            decorations.addFirst(new Decorated(source, nameTag, output == nameTag ? null : output));
+            while (decorations.size() > MAX_TAGS_PER_PLAYER) {
+                decorations.removeLast();
+            }
+            return output;
+        }
+
+        Member memberFor(String candidate) {
             return names.contains(normalize(candidate)) ? member : null;
         }
 
-        /** Whether a tag decorated under this registration would come out the same under {@code other}. */
-        private boolean decoratesLike(Registration other) {
-            return Objects.equals(nameTag, other.nameTag)
-                    && Objects.equals(member, other.member)
-                    && names.equals(other.names);
+        /** Whether a tag decorated for this player would come out the same for {@code other}. */
+        boolean decoratesLike(PlayerTags other) {
+            return Objects.equals(member, other.member) && names.equals(other.names);
+        }
+    }
+
+    /** A tag as it was handed over, and what it is drawn as: {@code null} when left as it is. */
+    private static final class Decorated {
+        final Snapshot source;
+        Component input;
+        final Component output;
+
+        Decorated(Snapshot source, Component input, Component output) {
+            this.source = source;
+            this.input = input;
+            this.output = output;
+        }
+
+        Component output(Component nameTag) {
+            return output == null ? nameTag : output;
         }
     }
 }
