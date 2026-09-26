@@ -126,15 +126,26 @@ class GuildRankNametagDecoratorTest {
     }
 
     @Test
-    void gradesAGradientRankAPixelColumnAtATime() {
+    void gradesAGradientRankAndNameAsOne() {
         Component decorated = decorateAs(
                 gradientMember("Dryad"), Component.literal(CHAMPION_BADGE + " ArcLeRetour"));
-        String text = decorated.getString();
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
 
-        assertTrue(text.indexOf(WynnPillGlyphs.COLUMN) >= 0, "the pill is filled with columns");
-        assertFalse(text.indexOf(WynnPillGlyphs.BACKGROUND) >= 0, "no letter-sized block may remain");
+        RankGradientAnimation.Shade block = RankGradientAnimation.shade(fragments.stream()
+                .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
+                .findFirst()
+                .orElseThrow()
+                .style()
+                .getColor());
+        RankGradientAnimation.Shade letter = RankGradientAnimation.shade(fragments.stream()
+                .filter(fragment -> "A".equals(fragment.text()))
+                .findFirst()
+                .orElseThrow()
+                .style()
+                .getColor());
+        assertEquals(block.length(), letter.length(), 1e-6, "the pill and the name share one gradient");
         assertEquals(List.of("dryad"), badgeLabels(decorated));
-        assertTrue(text.endsWith(" ArcLeRetour"), text);
+        assertTrue(decorated.getString().endsWith(" ArcLeRetour"), decorated.getString());
     }
 
     @Test
@@ -302,7 +313,7 @@ class GuildRankNametagDecoratorTest {
             for (TextColor background : backgrounds) {
                 assertEquals(
                         WYNNCRAFT_BADGE_COLOR,
-                        RankGradientAnimation.animate(background).getValue(),
+                        RankGradientAnimation.resolve(background).getValue(),
                         "the pill stopped answering to the settings, so its stop was evicted");
             }
         } finally {
@@ -332,8 +343,10 @@ class GuildRankNametagDecoratorTest {
     /** Chat traffic well past the registry's bound, to evict anything evictable. */
     private static void fillAnimationRegistry() {
         RankGradientAnimation.batchRegistrations(() -> {
+            RankGradientAnimation.Axis chat = RankGradientAnimation.axis(
+                    ColorRamp.of(0xFF0000), ColorRamp.of(0xFF0000), RankGradientAnimation.Target.USERNAME, 1f);
             for (int index = 0; index < 5000; index++) {
-                RankGradientAnimation.colorAt(ColorRamp.of(0xFF0000), 0d);
+                chat.colorAt(0f, 1f, null);
             }
             return null;
         });

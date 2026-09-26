@@ -819,16 +819,18 @@ public class ChatManager {
         }
 
         MutableComponent line = Component.empty().append(DiscordRankChatDecorator.bridgePrefix());
-        line.append(DiscordRankChatDecorator.rankPill(
-                        rank, null, DiscordRankChatDecorator.discordChatTextColor()))
-                .append(Component.literal(" "));
+        NotificationAccessor.GradientPill pill = DiscordRankChatDecorator.sequoiaRankPill(
+                rank, null, DiscordRankChatDecorator.discordChatTextColor());
+        line.append(pill.component()).append(Component.literal(" "));
         String displayName = bridgeDisplayName(msg.username(), rank);
         // Same shift-click insertion Wynncraft puts on in-game names, so a bridged
-        // sender links to their profile just like a guild one.
+        // sender links to their profile just like a guild one. The name joins the
+        // pill's gradient, so the two read as one.
         line.append(DiscordRankChatDecorator.colouredName(
                 displayName,
                 rank,
-                Style.EMPTY.withColor(ChatFormatting.WHITE).withInsertion(displayName)));
+                Style.EMPTY.withColor(ChatFormatting.WHITE).withInsertion(displayName),
+                pill));
         MutableComponent insignia = DiscordRankChatDecorator.bridgeInsignia(msg.username(), msg.discordId());
         if (insignia != null) {
             line.append(insignia);

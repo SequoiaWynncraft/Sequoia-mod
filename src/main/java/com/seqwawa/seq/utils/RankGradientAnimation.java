@@ -12,19 +12,27 @@ import java.util.function.Supplier;
 import net.minecraft.network.chat.TextColor;
 
 /**
- * Scrolls a gradient rank's colours along its chat pill and speaker name, so a role
- * whose colour is a Discord gradient reads as one rather than as a fixed smear.
+ * Paints a gradient rank's colours along its pill and speaker name, and scrolls them,
+ * so a role whose colour is a Discord gradient reads as one rather than as a fixed smear.
  * <p>
- * A chat line is drawn from a component that was built once, long before the frame it
- * appears on, so a colour cannot be animated by rebuilding it. What survives into
+ * A chat line or nametag is drawn from a component built once, long before the frame
+ * it appears on, so a colour cannot be animated by rebuilding it. What survives into
  * rendering is the {@link TextColor} instance itself: {@code TextColor.fromRgb} mints a
  * new one per call and every step from component to glyph copies the reference rather
- * than the value. Each pill colour is therefore recognisable by identity, and the
- * remembered stops below say where on which ramp it was sampled from.
+ * than the value. Each decoration colour is therefore recognisable by identity, and the
+ * remembered stop behind it says where it sits on which gradient.
  * <p>
- * The lookup runs for every glyph the game draws (see {@code
- * FontPreparedTextBuilderMixin}), so it starts with one identity probe that misses on
- * ordinary text and only consults settings for a registered decoration.
+ * Where a glyph sits is measured in font pixels along an {@link Axis}: a pill's
+ * background, or a name. At render time a glyph's corners are coloured by where they
+ * fall on that axis ({@link #shade}), so the gradient runs smoothly across and between
+ * glyphs, and moves at the same speed in pixels whatever it is painted on. A pill and
+ * the name after it can be {@link #join joined}, and then read as one gradient whenever
+ * both show theirs.
+ * <p>
+ * Every lookup here runs for glyphs the game draws, most of which are not decorations,
+ * so each starts with one identity probe and only consults settings on a hit.
+ * Registration and rendering both happen on the render thread, so the registry is
+ * updated in place rather than republished.
  */
 public final class RankGradientAnimation {
 
@@ -34,75 +42,153 @@ public final class RankGradientAnimation {
         USERNAME
     }
 
-    /** One full turn around a role's ramp, slow enough to read as a sheen. */
-    private static final long CYCLE_MILLIS = 5000L;
+    /**
+     * How fast an animated gradient travels at 100% speed, in font pixels per second. A
+     * speed rather than a period, so a short pill and a longer name move together: a
+     * fixed period had the longer of the two race past the other. The speed setting
+     * scales it.
+     */
+    static final double PIXELS_PER_SECOND = 20d;
+
+    /** How far animated gradients have travelled, in font pixels, as of {@link #travelledAt}. */
+    private static double travelledPixels;
+    private static long travelledAt = Long.MIN_VALUE;
 
     /**
-     * How many rank-decoration colours stay configurable. A speaker name contributes
-     * one stop per glyph and a gradient chat pill one per pixel column, around a hundred
-     * for the longest rank, so this covers a full chat history; older decorations
-     * simply keep their stored colour rather than being rebuilt.
+     * How many rank-decoration colours stay configurable. A pill contributes one per
+     * letter and a name one per glyph, so this covers a full chat history; older
+     * decorations simply keep their stored colour rather than being rebuilt.
      */
-    static final int MAX_REMEMBERED_STOPS = 16384;
+    static final int MAX_REMEMBERED_STOPS = 4096;
 
-    /**
-     * Where a remembered colour was sampled from, its target, and its uncoloured base.
-     * A pixel column also records {@code spread}, half the distance to its neighbours'
-     * positions, so its edges can be coloured where they meet theirs; see
-     * {@link #animateSpan}. It is zero for every other glyph.
-     */
-    private record Stop(
-            ColorRamp displayRamp,
-            ColorRamp roleRamp,
-            double position,
-            double spread,
-            Target target,
-            TextColor baseColor) {}
-
-    /** The colours at the left and right edges of a pixel column, as RGB. */
-    public record Span(int leftRgb, int rightRgb) {}
-
-    /** A stop waiting to be included in the next registry publication. */
-    private record Registration(TextColor color, Stop stop) {}
+    /** Registered decoration colours. Written under the class lock, read without one. */
+    private static final Map<TextColor, Stop> STOPS = new IdentityHashMap<>();
 
     /** Registration order, so the stops dropped on overflow are the oldest ones. */
     private static final ArrayDeque<TextColor> REGISTRATION_ORDER = new ArrayDeque<>();
-
-    /**
-     * Published to the render thread by replacement rather than by mutation. It is read
-     * once per drawn glyph, and a lock there would be paid by every piece of text the
-     * game draws, not just by chat.
-     */
-    private static volatile Map<TextColor, Stop> stops = new IdentityHashMap<>();
 
     /** Fixed-colour glyphs that are part of a decoration but do not animate. */
     private static volatile Map<TextColor, Boolean> fixedDecorationColors = new IdentityHashMap<>();
 
     /**
-     * Registrations made while one chat decoration is being built. Nested batches
-     * share the outer list, so composing a pill and a name still publishes once.
+     * Registrations made while one decoration is being built. Nested batches share the
+     * outer list, so composing a pill and a name still registers once.
      */
     private static final ThreadLocal<Batch> PENDING_REGISTRATIONS = new ThreadLocal<>();
 
-    /** Monotonic publication count, exposed package-locally for the batching test. */
+    /** Monotonic registration count, exposed package-locally for the batching test. */
     private static long publicationCount;
 
-    /** Colours collected for one decoration, and whether they are exempt from eviction. */
-    private record Batch(List<Registration> registrations, boolean pinned) {}
-
-    /**
-     * A decoration and the colours registered for it, which stay configurable until
-     * they are handed back to {@link #release}.
-     */
-    public record Pinned<T>(T value, List<TextColor> colors) {}
+    /** The phase every axis is at now, from how far a gradient has travelled. */
+    private static final Clock WALL_CLOCK =
+            (ramp, length) -> phaseAt(ramp, length, travelled(System.nanoTime() / 1_000_000L));
 
     private RankGradientAnimation() {}
 
+    /** Turns a ramp and an axis length into how far round the ramp it has scrolled. */
+    @FunctionalInterface
+    interface Clock {
+        double phase(ColorRamp ramp, double length);
+    }
+
     /**
-     * Builds one decoration while collecting all of its colours, then publishes them
-     * to the render thread in a single copy-on-write update. Calls may be nested: only
-     * the outermost call publishes. A pinned build cannot be nested inside this
-     * evictable batch because no caller would receive ownership of its colours.
+     * A run of glyphs sharing one gradient, measured in font pixels from its first pixel
+     * to its last: a pill's background, or a name.
+     */
+    public static final class Axis {
+        private final ColorRamp displayRamp;
+        private final ColorRamp roleRamp;
+        private final Target target;
+        private final float length;
+        /** Where this axis starts on the one it was joined into, and how long that is. */
+        private float jointOffset;
+        private float jointLength = Float.NaN;
+
+        private Axis(ColorRamp displayRamp, ColorRamp roleRamp, Target target, float length) {
+            this.displayRamp = Objects.requireNonNull(displayRamp, "displayRamp");
+            this.roleRamp = Objects.requireNonNull(roleRamp, "roleRamp");
+            this.target = Objects.requireNonNull(target, "target");
+            this.length = Math.max(1f, length);
+        }
+
+        /**
+         * The colour of a glyph drawn at {@code offset} pixels along this axis and
+         * {@code width} pixels wide, remembered so it can be graded and moved later.
+         * {@code baseColor} is what it returns to when role colouring is switched off;
+         * {@code null} restores Minecraft's inherited text colour.
+         */
+        public TextColor colorAt(float offset, float width, TextColor baseColor) {
+            float center = offset + Math.max(0f, width) / 2f;
+            TextColor color = WynncraftTextShaderColor.safeTextColor(displayRamp.sample(center / length));
+            remember(color, new Stop(this, offset, center, baseColor));
+            return color;
+        }
+
+        public float length() {
+            return length;
+        }
+
+        private boolean joined() {
+            return !Float.isNaN(jointLength);
+        }
+    }
+
+    /** An axis {@code length} font pixels long, painted with a member's palettes. */
+    public static Axis axis(ColorRamp displayRamp, ColorRamp roleRamp, Target target, float length) {
+        return new Axis(displayRamp, roleRamp, target, length);
+    }
+
+    /**
+     * Makes {@code first} and {@code second} one gradient whenever both show theirs: a
+     * pill and the name after it. {@code gap} is how many pixels lie between the end
+     * of {@code first} and the start of {@code second}.
+     */
+    public static void join(Axis first, Axis second, float gap) {
+        float length = first.length + Math.max(0f, gap) + second.length;
+        first.jointOffset = 0f;
+        first.jointLength = length;
+        second.jointOffset = length - second.length;
+        second.jointLength = length;
+    }
+
+    /** Where one glyph sits on its axis, what it returns to, and its last flat colour. */
+    private static final class Stop {
+        final Axis axis;
+        final float offset;
+        final float center;
+        final TextColor baseColor;
+        /** The flat colour last worked out for {@link #memoMode}, so it is not re-minted. */
+        int memoMode = -1;
+        TextColor memoColor;
+
+        Stop(Axis axis, float offset, float center, TextColor baseColor) {
+            this.axis = axis;
+            this.offset = offset;
+            this.center = center;
+            this.baseColor = baseColor;
+        }
+    }
+
+    /**
+     * How to colour one glyph's corners along its gradient: {@code origin} is where the
+     * glyph starts on an axis {@code length} long, and {@code phase} how far round the
+     * ramp it has scrolled, or {@code NaN} when it is still.
+     */
+    public record Shade(ColorRamp ramp, double origin, double length, double phase) {
+
+        /** The colour {@code x} font pixels from the glyph's origin, as RGB. */
+        public int rgbAt(float x) {
+            double position = (origin + x) / length;
+            return WynncraftTextShaderColor.safeRgb(
+                    Double.isNaN(phase) ? ramp.sample(position) : ramp.scroll(position, phase));
+        }
+    }
+
+    /**
+     * Builds one decoration while collecting all of its colours, then registers them
+     * together. Calls may be nested: only the outermost call registers. A pinned build
+     * cannot be nested inside this evictable batch because no caller would receive
+     * ownership of its colours.
      */
     public static <T> T batchRegistrations(Supplier<T> build) {
         return batch(build, false).value();
@@ -122,6 +208,17 @@ public final class RankGradientAnimation {
         return batch(build, true);
     }
 
+    /**
+     * A decoration and the colours registered for it, which stay configurable until
+     * they are handed back to {@link #release}.
+     */
+    public record Pinned<T>(T value, List<TextColor> colors) {}
+
+    private record Registration(TextColor color, Stop stop) {}
+
+    /** Colours collected for one decoration, and whether they are exempt from eviction. */
+    private record Batch(List<Registration> registrations, boolean pinned) {}
+
     private static <T> Pinned<T> batch(Supplier<T> build, boolean pinned) {
         Objects.requireNonNull(build, "build");
         Batch outer = PENDING_REGISTRATIONS.get();
@@ -129,7 +226,7 @@ public final class RankGradientAnimation {
             if (pinned && !outer.pinned()) {
                 throw new IllegalStateException("A pinned decoration cannot be built inside an evictable batch");
             }
-            // An inner batch: the outermost call owns the publication and the colours.
+            // An inner batch: the outermost call owns the registration and the colours.
             return new Pinned<>(build.get(), List.of());
         }
 
@@ -153,167 +250,150 @@ public final class RankGradientAnimation {
         releaseAll(List.of(colors));
     }
 
-    /** Forgets several pinned decorations with one copy-on-write publication. */
+    /** Forgets several pinned decorations at once. */
     public static synchronized void releaseAll(Iterable<? extends Iterable<TextColor>> colorGroups) {
         if (colorGroups == null) {
             return;
         }
-        IdentityHashMap<TextColor, Stop> updated = null;
         boolean removed = false;
         for (Iterable<TextColor> colors : colorGroups) {
             if (colors == null) {
                 continue;
             }
             for (TextColor color : colors) {
-                if (updated == null) {
-                    updated = new IdentityHashMap<>(stops);
-                }
-                removed |= updated.remove(color) != null;
+                removed |= STOPS.remove(color) != null;
             }
         }
-        if (!removed) {
-            return;
+        if (removed) {
+            publicationCount++;
         }
-        stops = updated;
-        publicationCount++;
     }
 
     /**
-     * The decoration colour at {@code position} along {@code ramp}, remembered so it
-     * can be moved later.
+     * The flat colour {@code color} is laid out in, or {@code color} itself when it is
+     * not a remembered decoration or its settings leave it unchanged.
      * <p>
-     * Solid roles are remembered too, so their target can return to its base colour
-     * immediately when role colouring is switched off.
+     * This is the colour a glyph gets as a whole: its base when role colouring is off,
+     * the role's first colour when the gradient is hidden, and otherwise the gradient at
+     * the glyph's middle. The gradient itself, and its movement, are applied to the
+     * glyph's corners as it is drawn; see {@link #shade}.
      */
-    public static TextColor colorAt(ColorRamp ramp, double position) {
-        return colorAt(ramp, position, Target.RANK_BADGE);
-    }
-
-    /**
-     * The decoration colour for {@code target}, registered with enough information to
-     * flatten or animate it immediately when its settings change.
-     */
-    public static TextColor colorAt(ColorRamp ramp, double position, Target target) {
-        return colorAt(ramp, position, target, null);
-    }
-
-    /**
-     * The decoration colour for {@code target}, paired with the colour it should return
-     * to when role colouring is disabled. A null base restores Minecraft's inherited
-     * text colour.
-     */
-    public static TextColor colorAt(ColorRamp ramp, double position, Target target, TextColor baseColor) {
-        return colorAt(ramp, ramp, position, target, baseColor);
-    }
-
-    /**
-     * A member decoration that can switch between their individual display palette
-     * and the palette shared by their progression rank.
-     */
-    public static TextColor colorAt(
-            ColorRamp displayRamp,
-            ColorRamp roleRamp,
-            double position,
-            Target target,
-            TextColor baseColor) {
-        return colorAt(displayRamp, roleRamp, position, 0d, target, baseColor);
-    }
-
-    /**
-     * A pixel column's colour, remembered with {@code spread}, half the distance to the
-     * positions its neighbours were sampled at, so {@link #animateSpan} can grade it
-     * from edge to edge.
-     */
-    public static TextColor colorAt(
-            ColorRamp displayRamp,
-            ColorRamp roleRamp,
-            double position,
-            double spread,
-            Target target,
-            TextColor baseColor) {
-        Objects.requireNonNull(target, "target");
-        Objects.requireNonNull(displayRamp, "displayRamp");
-        Objects.requireNonNull(roleRamp, "roleRamp");
-        TextColor color = WynncraftTextShaderColor.safeTextColor(displayRamp.sample(position));
-        remember(new Registration(color, new Stop(displayRamp, roleRamp, position, spread, target, baseColor)));
-        return color;
-    }
-
-    /**
-     * The colour {@code color} should be drawn as at this instant, or {@code color}
-     * itself when it is not a remembered role decoration or its settings leave it unchanged.
-     */
-    public static TextColor animate(TextColor color) {
-        return animate(color, phase());
-    }
-
-    /** Animation core, parameterised on the phase so it stays unit-testable. */
-    static TextColor animate(TextColor color, double phase) {
+    public static TextColor resolve(TextColor color) {
         if (color == null) {
-            return color;
+            return null;
         }
-        Stop stop = stops.get(color);
+        Stop stop = STOPS.get(color);
         if (stop == null) {
             return color;
         }
-        if (!coloringEnabled(stop.target())) {
-            return stop.baseColor();
+        Axis axis = stop.axis;
+        if (!coloringEnabled(axis.target)) {
+            return stop.baseColor;
         }
-        ColorRamp ramp = perUserColorsEnabled() ? stop.displayRamp() : stop.roleRamp();
-        boolean storedRampActive = ramp == stop.displayRamp();
-        if (!ramp.isGradient()) {
-            return storedRampActive ? color : WynncraftTextShaderColor.safeTextColor(ramp.first());
+        boolean perUser = perUserColorsEnabled();
+        ColorRamp ramp = perUser ? axis.displayRamp : axis.roleRamp;
+        boolean storedRampActive = ramp == axis.displayRamp;
+        boolean gradient = ramp.isGradient() && gradientsEnabled(axis.target);
+        boolean joint = gradient && axis.joined() && jointGradientsVisible();
+        if (storedRampActive && (!ramp.isGradient() || (gradient && !joint))) {
+            return color;
         }
-        if (!gradientsEnabled(stop.target())) {
-            return WynncraftTextShaderColor.safeTextColor(ramp.first());
+
+        int mode = (perUser ? 1 : 0) | (gradient ? 2 : 0) | (joint ? 4 : 0);
+        if (stop.memoMode != mode) {
+            stop.memoColor = WynncraftTextShaderColor.safeTextColor(!gradient
+                    ? ramp.first()
+                    : ramp.sample(joint
+                            ? (axis.jointOffset + stop.center) / axis.jointLength
+                            : stop.center / axis.length));
+            stop.memoMode = mode;
         }
-        if (animationEnabled(stop.target())) {
-            return WynncraftTextShaderColor.safeTextColor(ramp.scroll(stop.position(), phase));
-        }
-        return storedRampActive ? color : WynncraftTextShaderColor.safeTextColor(ramp.sample(stop.position()));
+        return stop.memoColor;
     }
 
     /**
-     * The colours {@code color}'s pixel column should take at its two edges at this
-     * instant, or {@code null} when it is not a column or its settings draw it flat.
-     * <p>
-     * A glyph is drawn in one colour, which is enough in chat but not on a nametag seen
-     * up close, where one pixel of the font spans many on screen and every column shows
-     * as a band. Coloured at its edges instead, a column is graded across by the GPU,
-     * and since each edge is sampled where it meets the neighbouring column, the two
-     * agree there and the ramp runs on without a seam.
+     * How to colour the corners of a glyph drawn in {@code color}, for this instant, or
+     * {@code null} when it is not a decoration or its settings draw it flat.
      */
-    public static Span animateSpan(TextColor color) {
-        return animateSpan(color, phase());
+    public static Shade shade(TextColor color) {
+        return shade(color, WALL_CLOCK);
     }
 
-    /** Edge colouring core, parameterised on the phase so it stays unit-testable. */
-    static Span animateSpan(TextColor color, double phase) {
+    /** Shading at a fixed {@code phase} on every axis, for tests. */
+    static Shade shade(TextColor color, double phase) {
+        return shade(color, (ramp, length) -> phase);
+    }
+
+    private static Shade shade(TextColor color, Clock clock) {
         if (color == null) {
             return null;
         }
-        Stop stop = stops.get(color);
-        if (stop == null || stop.spread() <= 0d || !coloringEnabled(stop.target())) {
+        Stop stop = STOPS.get(color);
+        if (stop == null) {
             return null;
         }
-        ColorRamp ramp = perUserColorsEnabled() ? stop.displayRamp() : stop.roleRamp();
-        if (!ramp.isGradient() || !gradientsEnabled(stop.target())) {
+        Axis axis = stop.axis;
+        if (!coloringEnabled(axis.target)) {
             return null;
         }
-        boolean animated = animationEnabled(stop.target());
-        return new Span(
-                edgeRgb(ramp, stop.position() - stop.spread(), animated, phase),
-                edgeRgb(ramp, stop.position() + stop.spread(), animated, phase));
+        ColorRamp ramp = perUserColorsEnabled() ? axis.displayRamp : axis.roleRamp;
+        if (!ramp.isGradient() || !gradientsEnabled(axis.target)) {
+            return null;
+        }
+        boolean joint = axis.joined() && jointGradientsVisible();
+        boolean animated = joint ? anyAnimationEnabled() : animationEnabled(axis.target);
+        double length = joint ? axis.jointLength : axis.length;
+        double origin = (joint ? axis.jointOffset : 0f) + stop.offset;
+        return new Shade(ramp, origin, length, animated ? clock.phase(ramp, length) : Double.NaN);
     }
 
-    /** The ramp at one column edge; positions past the pill's ends clamp to its end stops. */
-    private static int edgeRgb(ColorRamp ramp, double position, boolean animated, double phase) {
-        return WynncraftTextShaderColor.safeRgb(animated ? ramp.scroll(position, phase) : ramp.sample(position));
+    /**
+     * How far round {@code ramp} an axis {@code length} pixels long has scrolled once
+     * gradients have travelled {@code travelled} pixels. One full turn brings every
+     * stop, and the step from the last back to the first, past a point, so it covers
+     * {@code stops / (stops - 1)} axis lengths.
+     */
+    static double phaseAt(ColorRamp ramp, double length, double travelled) {
+        int stops = Math.max(2, ramp.stops().size());
+        double turn = stops * Math.max(1d, length) / (stops - 1);
+        return (travelled % turn) / turn;
     }
 
-    /** How far through the current turn the clock is, in {@code [0, 1)}. */
-    private static double phase() {
-        return Math.floorMod(System.nanoTime() / 1_000_000L, CYCLE_MILLIS) / (double) CYCLE_MILLIS;
+    /**
+     * How far animated gradients have travelled by {@code millis}, in font pixels.
+     * <p>
+     * The distance is added up as time passes, at whatever speed is set at the time,
+     * rather than worked out from the clock alone. Changing the speed then changes how
+     * fast gradients move from that moment on, instead of throwing them to wherever the
+     * new speed would have taken them since the game started.
+     */
+    static double travelled(long millis) {
+        if (travelledAt != Long.MIN_VALUE && millis > travelledAt) {
+            travelledPixels += (millis - travelledAt) * pixelsPerSecond() / 1000d;
+        }
+        if (millis > travelledAt) {
+            travelledAt = millis;
+        }
+        return travelledPixels;
+    }
+
+    /** The configured animation speed, in font pixels per second. */
+    static double pixelsPerSecond() {
+        Setting.IntSetting speed = SeqClient.getGradientAnimationSpeedSetting();
+        return PIXELS_PER_SECOND * (speed == null ? 100 : speed.getValue()) / 100d;
+    }
+
+    /** Pill and name read as one gradient only while both are coloured and graded. */
+    private static boolean jointGradientsVisible() {
+        return coloringEnabled(Target.RANK_BADGE)
+                && coloringEnabled(Target.USERNAME)
+                && gradientsEnabled(Target.RANK_BADGE)
+                && gradientsEnabled(Target.USERNAME);
+    }
+
+    /** A joint gradient moves as one: asking either half to move moves both. */
+    private static boolean anyAnimationEnabled() {
+        return animationEnabled(Target.RANK_BADGE) || animationEnabled(Target.USERNAME);
     }
 
     private static boolean gradientsEnabled(Target target) {
@@ -345,31 +425,29 @@ public final class RankGradientAnimation {
         return setting != null && setting.getValue();
     }
 
-    private static void remember(Registration registration) {
+    private static void remember(TextColor color, Stop stop) {
         Batch pending = PENDING_REGISTRATIONS.get();
         if (pending != null) {
-            pending.registrations().add(registration);
+            pending.registrations().add(new Registration(color, stop));
             return;
         }
-        rememberAll(List.of(registration), false);
+        rememberAll(List.of(new Registration(color, stop)), false);
     }
 
     private static synchronized void rememberAll(List<Registration> registrations, boolean pinned) {
         if (registrations.isEmpty()) {
             return;
         }
-        IdentityHashMap<TextColor, Stop> updated = new IdentityHashMap<>(stops);
         for (Registration registration : registrations) {
-            updated.put(registration.color(), registration.stop());
+            STOPS.put(registration.color(), registration.stop());
             if (pinned) {
                 continue;
             }
             REGISTRATION_ORDER.addLast(registration.color());
             while (REGISTRATION_ORDER.size() > MAX_REMEMBERED_STOPS) {
-                updated.remove(REGISTRATION_ORDER.removeFirst());
+                STOPS.remove(REGISTRATION_ORDER.removeFirst());
             }
         }
-        stops = updated;
         publicationCount++;
     }
 
@@ -380,11 +458,10 @@ public final class RankGradientAnimation {
 
     /**
      * Whether {@code color} is a rank decoration this minted, rather than a colour the
-     * game or another mod set. Read without locking, like {@link #animate}, because it
-     * is consulted while text is being laid out.
+     * game or another mod set.
      */
     public static boolean isDecorationColor(TextColor color) {
-        return color != null && (stops.containsKey(color) || fixedDecorationColors.containsKey(color));
+        return color != null && (STOPS.containsKey(color) || fixedDecorationColors.containsKey(color));
     }
 
     /** Shared foreground lettering, drawn slightly in front of a nametag pill's fill. */
@@ -404,8 +481,8 @@ public final class RankGradientAnimation {
         if (fixedDecorationColors.containsKey(color)) {
             return true;
         }
-        Stop stop = stops.get(color);
-        return stop != null && stop.target() == Target.RANK_BADGE;
+        Stop stop = STOPS.get(color);
+        return stop != null && stop.axis.target == Target.RANK_BADGE;
     }
 
     /** Marks a shared, non-animated colour as belonging to a Sequoia decoration. */

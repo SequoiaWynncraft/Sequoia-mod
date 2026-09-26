@@ -57,6 +57,15 @@ public final class DiscordRankService {
         return instance;
     }
 
+    /**
+     * The roster as currently loaded, as an opaque token: it is replaced, never
+     * modified, so a caller holding one can tell by identity whether ranks have changed
+     * since, without looking anything up.
+     */
+    public Object rosterSnapshot() {
+        return index;
+    }
+
     /** True when at least one rank is known, i.e. decoration can do something useful. */
     public boolean hasRanks() {
         return !index.byMinecraftUuid().isEmpty() || !index.byDiscordIdentity().isEmpty();

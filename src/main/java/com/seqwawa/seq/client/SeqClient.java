@@ -180,6 +180,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting animateUsernameGradientsSetting;
 
     @Getter
+    public static Setting.IntSetting gradientAnimationSpeedSetting;
+
+    @Getter
     public static Setting.BooleanSetting profileOnShiftClickSetting;
 
     @Getter
@@ -834,6 +837,10 @@ public class SeqClient implements ClientModInitializer {
         animateRankGradientsSetting = new Setting.BooleanSetting("animate_rank_gradients", "chat", false);
         animateUsernameGradientsSetting =
                 new Setting.BooleanSetting("animate_username_gradients", "chat", false);
+        // A percentage of the default speed. One speed for pills and names alike, in chat
+        // and on nametags: a pill and the name after it move as one gradient.
+        gradientAnimationSpeedSetting =
+                new Setting.IntSetting("gradient_animation_speed", "chat", 100, 10, 500, 5);
         // Off by default: shift-click is vanilla's "insert this name into the chat box"
         // gesture, so taking it over is opt-in rather than a surprise.
         profileOnShiftClickSetting = new Setting.BooleanSetting("profile_on_shift_click", "chat", false);
@@ -913,6 +920,14 @@ public class SeqClient implements ClientModInitializer {
                 "Move gradient colors across guild, party and Discord bridge names while chat is rendered.",
                 "Usernames");
         animateUsernameGradientsSetting.setParentSetting(showUsernameGradientsSetting);
+        gradientAnimationSpeedSetting.setPresentation(
+                "Gradient animation speed (%)",
+                "How fast animated gradients move on rank pills and usernames, in chat and on nametags. "
+                        + "100% is the default speed.",
+                "Gradient animation");
+        gradientAnimationSpeedSetting.setParentSetting(showDiscordRanksSetting);
+        gradientAnimationSpeedSetting.setEnabledCondition(() -> animateRankGradientsSetting.getValue()
+                || animateUsernameGradientsSetting.getValue());
 
         profileOnShiftClickSetting.setPresentation(
                 "Open Sequoia profile on shift-click",
@@ -1088,6 +1103,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(colorPartyChatSetting);
         getConfigManager().registerWithLegacyKeys(showUsernameGradientsSetting, "chat.show_rank_gradients");
         getConfigManager().register(animateUsernameGradientsSetting);
+        getConfigManager().register(gradientAnimationSpeedSetting);
         getConfigManager().register(profileOnShiftClickSetting);
         getConfigManager().register(linkWorldNamesSetting);
         getConfigManager().register(worldLinkRunsSwitchSetting);

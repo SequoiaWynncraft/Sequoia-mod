@@ -4,7 +4,6 @@ import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.model.RankPresentation;
-import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.seqwawa.seq.utils.RankGradientAnimation;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
@@ -14,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import net.minecraft.network.chat.Component;
@@ -75,17 +75,29 @@ public final class GuildRankNametagDecorator {
             return;
         }
 
-        RankPresentation rank = rankFor(uuid, username);
-        Member member = rank == null ? null : new Member(username, rank);
-        Registration replacement = new Registration(nameTag, member, registeredNames(username, nameTag));
+        // Called for every player on screen every frame, and almost always with what
+        // was published last time: the same tag, name and roster need no lookups.
+        DiscordRankService service = DiscordRankService.getInstance();
+        Object roster = service.rosterSnapshot();
         Registration previous = REGISTRATIONS.get(uuid);
-        if (replacement.equals(previous)) {
+        if (previous != null
+                && previous.roster() == roster
+                && Objects.equals(previous.username(), username)
+                && Objects.equals(previous.nameTag(), nameTag)) {
+            return;
+        }
+
+        RankPresentation rank = rankFor(service, uuid, username);
+        Member member = rank == null ? null : new Member(username, rank);
+        Registration replacement =
+                new Registration(nameTag, username, roster, member, registeredNames(username, nameTag));
+        REGISTRATIONS.put(uuid, replacement);
+        if (previous != null && previous.decoratesLike(replacement)) {
             return;
         }
 
         // Replacing the registration replaces its complete alias set. No obsolete
         // nickname remains available to this UUID after the displayed tag changes.
-        REGISTRATIONS.put(uuid, replacement);
         forgetDecorations(uuid);
     }
 
@@ -158,18 +170,20 @@ public final class GuildRankNametagDecorator {
             String label,
             TextColor badgeColor) {
         RankPresentation rank = name.member().rank();
-        List<ComponentTextEditor.Fragment> coloured = paintName(fragments, name, rank);
-        // Chat's pill, graded a pixel column at a time. The columns are ordinary glyphs
-        // like the blocks they replace, so the label still sits in front of them.
-        MutableComponent replacement =
-                Component.empty()
-                .append(NotificationAccessor.smoothWynnPill(
-                        label,
-                        DiscordRankChatDecorator.rampFor(rank),
-                        DiscordRankChatDecorator.roleRampFor(rank),
-                        DiscordRankChatDecorator.PILL_LABEL_COLOR,
-                        null,
-                        badgeColor))
+        // Chat's pill, and the name painted in the member's colours so the two read as
+        // one label rather than as a Sequoia rank stuck on a Wynncraft-coloured name,
+        // joined onto one gradient.
+        NotificationAccessor.GradientPill pill = NotificationAccessor.gradientPill(
+                label,
+                DiscordRankChatDecorator.rampFor(rank),
+                DiscordRankChatDecorator.roleRampFor(rank),
+                DiscordRankChatDecorator.PILL_LABEL_COLOR,
+                null,
+                badgeColor);
+        List<ComponentTextEditor.Fragment> coloured = DiscordRankChatDecorator.paintName(
+                fragments, name.start(), name.endExclusive(), rank, null, pill);
+        MutableComponent replacement = Component.empty()
+                .append(pill.component())
                 .append(Component.literal(" "));
 
         if (badge == null) {
@@ -225,47 +239,6 @@ public final class GuildRankNametagDecorator {
             }
         }
         return null;
-    }
-
-    /**
-     * Paints the member's name in their rank colours, so the name and the rank in
-     * front of it read as one label rather than as a Sequoia rank stuck on a
-     * Wynncraft-coloured name.
-     * <p>
-     * A gradient has to be painted a code point at a time, since a component leaf
-     * carries one colour; a solid rank keeps the name in one piece, which is a
-     * nametag's usual shape and less for the font to lay out every frame.
-     */
-    private static List<ComponentTextEditor.Fragment> paintName(
-            List<ComponentTextEditor.Fragment> fragments, DisplayedName name, RankPresentation rank) {
-        ColorRamp displayRamp = DiscordRankChatDecorator.rampFor(rank);
-        ColorRamp roleRamp = DiscordRankChatDecorator.roleRampFor(rank);
-        if (!displayRamp.isGradient() && !roleRamp.isGradient()) {
-            return ComponentTextEditor.restyleRange(
-                    fragments,
-                    name.start(),
-                    name.endExclusive(),
-                    style -> DiscordRankChatDecorator.withRegisteredColor(
-                            style,
-                            RankGradientAnimation.colorAt(
-                                    displayRamp,
-                                    roleRamp,
-                                    0d,
-                                    RankGradientAnimation.Target.USERNAME,
-                                    style.getColor())));
-        }
-        return ComponentTextEditor.restyleRangeByPosition(
-                fragments,
-                name.start(),
-                name.endExclusive(),
-                (style, position) -> DiscordRankChatDecorator.withRegisteredColor(
-                        style,
-                        RankGradientAnimation.colorAt(
-                                displayRamp,
-                                roleRamp,
-                                position,
-                                RankGradientAnimation.Target.USERNAME,
-                                style.getColor())));
     }
 
     /**
@@ -412,10 +385,6 @@ public final class GuildRankNametagDecorator {
      * nickname and survives a rename, but the roster only carries one for members
      * whose profile records it, so the account name still has to answer for the rest.
      */
-    private static RankPresentation rankFor(UUID uuid, String username) {
-        return rankFor(DiscordRankService.getInstance(), uuid, username);
-    }
-
     static RankPresentation rankFor(DiscordRankService service, UUID uuid, String username) {
         RankPresentation byAccount = service.presentationForMinecraftUuid(uuid);
         return byAccount != null ? byAccount : service.presentationForMinecraftUsername(username);
@@ -493,9 +462,17 @@ public final class GuildRankNametagDecorator {
     private record DecorationKey(UUID uuid, Component nameTag) {}
 
     /** What was last published for one UUID, including only that player's aliases. */
-    private record Registration(Component nameTag, Member member, List<String> names) {
+    private record Registration(
+            Component nameTag, String username, Object roster, Member member, List<String> names) {
         private Member memberFor(String candidate) {
             return names.contains(normalize(candidate)) ? member : null;
+        }
+
+        /** Whether a tag decorated under this registration would come out the same under {@code other}. */
+        private boolean decoratesLike(Registration other) {
+            return Objects.equals(nameTag, other.nameTag)
+                    && Objects.equals(member, other.member)
+                    && names.equals(other.names);
         }
     }
 }

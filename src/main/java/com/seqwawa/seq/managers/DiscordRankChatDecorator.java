@@ -27,6 +27,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.FontDescription;
+import net.minecraft.network.chat.FormattedText;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
@@ -55,6 +56,14 @@ public final class DiscordRankChatDecorator {
 
     /** Used when the backend publishes no colour for a rank, e.g. Upper Strategist. */
     private static final TextColor FALLBACK_RANK_COLOR = TextColor.fromLegacyFormat(ChatFormatting.DARK_GREEN);
+
+    /** The second line of a pill's tooltip, naming the Wynncraft rank it replaced. */
+    private static final String GUILD_RANK_LINE = "\nGuild rank: ";
+
+    /** Advances assumed without a loaded font: a typical letter, and a space. */
+    private static final int DEFAULT_GLYPH_ADVANCE = 6;
+    private static final int SPACE_ADVANCE = 4;
+    private static final ComponentTextEditor.Fragment SPACE = new ComponentTextEditor.Fragment(" ", Style.EMPTY);
 
     /**
      * The one colour every pill label is drawn in.
@@ -260,7 +269,7 @@ public final class DiscordRankChatDecorator {
                 ? colonIndex
                 : speakerNameEnd(fragments, text, nameStart, colonIndex, speaker.username());
         List<ComponentTextEditor.Fragment> recoloured =
-                recolourName(fragments, nameStart, nameEnd, speaker.rank(), speaker.username());
+                paintName(fragments, nameStart, nameEnd, speaker.rank(), speaker.username(), null);
         return rebuild(recoloured);
     }
 
@@ -339,14 +348,15 @@ public final class DiscordRankChatDecorator {
         // insertion, so one is not guaranteed to be there, and where Wynncraft does set
         // it a nicked player's carries the nickname rather than the account.
         String speakerName = speaker.username();
-        List<ComponentTextEditor.Fragment> recoloured = recolourName(
-                fragments, end, nameEnd, rank, speakerName);
-
         // The pill keeps the default font on purpose: Wynncraft's badge uses a font of
         // its own in which these glyphs mean nothing, so inheriting it collapses the
         // pill to no width and drags the rest of the line left.
+        NotificationAccessor.GradientPill pill =
+                inGameRankPill(rank, replacedGuildRank, inGameGuildChatTextColor(), speaker.username());
+        List<ComponentTextEditor.Fragment> recoloured = paintName(
+                fragments, end, nameEnd, rank, speakerName, pill);
         MutableComponent replacement = Component.empty()
-                .append(rankPill(rank, replacedGuildRank, inGameGuildChatTextColor(), speaker.username()))
+                .append(pill.component())
                 .append(Component.literal(" "));
         List<ComponentTextEditor.Fragment> withBadge =
                 insertInsignia(recoloured, colonIndex, speaker.username());
@@ -1083,20 +1093,35 @@ public final class DiscordRankChatDecorator {
     /** Rank pill whose role colour can return to the supplied source/default background. */
     static MutableComponent rankPill(
             RankPresentation rank, String replacedWynncraftRank, TextColor baseBackgroundColor) {
-        MutableComponent pill = buildRankPill(rank, rank.pillLabel(), baseBackgroundColor);
+        return sequoiaRankPill(rank, replacedWynncraftRank, baseBackgroundColor).component();
+    }
+
+    /** {@link #rankPill(RankPresentation, String, TextColor)}, with the axis a name can join. */
+    static NotificationAccessor.GradientPill sequoiaRankPill(
+            RankPresentation rank, String replacedWynncraftRank, TextColor baseBackgroundColor) {
+        NotificationAccessor.GradientPill pill = buildRankPill(rank, rank.pillLabel(), baseBackgroundColor);
         TextColor primary = colorFor(rank);
         MutableComponent tooltip = Component.literal("Sequoia rank: ")
                 .withStyle(ChatFormatting.GRAY)
                 .append(Component.literal(rank.label()).withStyle(style -> style.withColor(primary)));
         if (replacedWynncraftRank != null && !replacedWynncraftRank.isBlank()) {
-            tooltip.append(Component.literal("\nGuild rank: " + capitalize(replacedWynncraftRank))
+            tooltip.append(Component.literal(GUILD_RANK_LINE + capitalize(replacedWynncraftRank))
                     .withStyle(ChatFormatting.DARK_GRAY));
         }
-        return withTooltip(pill, tooltip);
+        withTooltip(pill.component(), tooltip);
+        return pill;
     }
 
     /** In-game pill using either the Discord or Wynncraft rank label. */
     static MutableComponent rankPill(
+            RankPresentation rank,
+            String replacedWynncraftRank,
+            TextColor baseBackgroundColor,
+            String speakerUsername) {
+        return inGameRankPill(rank, replacedWynncraftRank, baseBackgroundColor, speakerUsername).component();
+    }
+
+    private static NotificationAccessor.GradientPill inGameRankPill(
             RankPresentation rank,
             String replacedWynncraftRank,
             TextColor baseBackgroundColor,
@@ -1113,7 +1138,7 @@ public final class DiscordRankChatDecorator {
         String pillLabel = showDiscordRank
                 ? PrincessRankEasterEgg.pillLabel(rank.pillLabel(), speakerUsername)
                 : inGameRank.toUpperCase(Locale.ROOT);
-        MutableComponent pill = buildRankPill(rank, pillLabel, baseBackgroundColor);
+        NotificationAccessor.GradientPill pill = buildRankPill(rank, pillLabel, baseBackgroundColor);
         MutableComponent tooltip = showDiscordRank
                 ? Component.literal("In-game rank: ")
                         .withStyle(ChatFormatting.GRAY)
@@ -1122,17 +1147,14 @@ public final class DiscordRankChatDecorator {
                 : Component.literal("Sequoia rank: ")
                         .withStyle(ChatFormatting.GRAY)
                         .append(Component.literal(rank.label()).withStyle(style -> style.withColor(colorFor(rank))));
-        return withTooltip(pill, tooltip);
+        withTooltip(pill.component(), tooltip);
+        return pill;
     }
 
-    /**
-     * The pill itself, filled a pixel column at a time so a gradient role reads as a
-     * smooth ramp in guild chat and on the bridge rather than one step per letter, as
-     * it does on nametags.
-     */
-    private static MutableComponent buildRankPill(
+    /** The pill itself, painted along the member's gradient; see {@link NotificationAccessor#gradientPill}. */
+    private static NotificationAccessor.GradientPill buildRankPill(
             RankPresentation rank, String pillLabel, TextColor baseBackgroundColor) {
-        return NotificationAccessor.smoothWynnPill(
+        return NotificationAccessor.gradientPill(
                 pillLabel,
                 rampFor(rank),
                 roleRampFor(rank),
@@ -1167,87 +1189,108 @@ public final class DiscordRankChatDecorator {
      * a rank pill moves the name with it. Solid names stay one component.
      */
     static MutableComponent colouredName(String name, RankPresentation rank, Style style) {
-        return RankGradientAnimation.batchRegistrations(() -> colouredNameNow(name, rank, style));
+        return colouredName(name, rank, style, null);
     }
 
-    private static MutableComponent colouredNameNow(String name, RankPresentation rank, Style style) {
+    /**
+     * {@link #colouredName(String, RankPresentation, Style)} drawn one space after
+     * {@code pill}, and joined onto its gradient so the two read as one.
+     */
+    static MutableComponent colouredName(
+            String name, RankPresentation rank, Style style, NotificationAccessor.GradientPill pill) {
         String text = name == null ? "" : name;
-        Style baseStyle = style == null ? Style.EMPTY : style;
-        ColorRamp displayRamp = rampFor(rank);
-        ColorRamp roleRamp = roleRampFor(rank);
-        if ((!displayRamp.isGradient() && !roleRamp.isGradient())
-                || text.codePointCount(0, text.length()) <= 1) {
-            TextColor color = RankGradientAnimation.colorAt(
-                    displayRamp, roleRamp, 0d, RankGradientAnimation.Target.USERNAME, baseStyle.getColor());
-            return Component.literal(text).withStyle(withRegisteredColor(baseStyle, color));
-        }
-
-        MutableComponent coloured = Component.empty();
-        int codePointCount = text.codePointCount(0, text.length());
-        int index = 0;
-        for (int offset = 0; offset < text.length(); ) {
-            int codePoint = text.codePointAt(offset);
-            double position = (double) index / (codePointCount - 1);
-            TextColor color = RankGradientAnimation.colorAt(
-                    displayRamp,
-                    roleRamp,
-                    position,
-                    RankGradientAnimation.Target.USERNAME,
-                    baseStyle.getColor());
-            coloured.append(Component.literal(new String(Character.toChars(codePoint)))
-                    .withStyle(withRegisteredColor(baseStyle, color)));
-            offset += Character.charCount(codePoint);
-            index++;
-        }
-        return coloured;
+        List<ComponentTextEditor.Fragment> fragments =
+                List.of(new ComponentTextEditor.Fragment(text, style == null ? Style.EMPTY : style));
+        return rebuild(paintName(fragments, 0, text.length(), rank, null, pill));
     }
 
-    private static List<ComponentTextEditor.Fragment> recolourName(
+    /**
+     * Paints {@code [start, endExclusive)} of {@code fragments} as a member's name: each
+     * glyph gets its own colour, placed on the name's gradient at the pixel it is drawn
+     * at, so the gradient runs evenly however wide its letters are. When the name is
+     * drawn one space after {@code pill}, the two are joined into one gradient.
+     * <p>
+     * {@code insertion} is stamped on as the shift-click text, or left as it was when
+     * {@code null}.
+     */
+    static List<ComponentTextEditor.Fragment> paintName(
             List<ComponentTextEditor.Fragment> fragments,
             int start,
             int endExclusive,
             RankPresentation rank,
-            String insertion) {
+            String insertion,
+            NotificationAccessor.GradientPill pill) {
         return RankGradientAnimation.batchRegistrations(
-                () -> recolourNameNow(fragments, start, endExclusive, rank, insertion));
+                () -> paintNameNow(fragments, start, endExclusive, rank, insertion, pill));
     }
 
-    private static List<ComponentTextEditor.Fragment> recolourNameNow(
+    private static List<ComponentTextEditor.Fragment> paintNameNow(
             List<ComponentTextEditor.Fragment> fragments,
             int start,
             int endExclusive,
             RankPresentation rank,
-            String insertion) {
+            String insertion,
+            NotificationAccessor.GradientPill pill) {
+        List<ComponentTextEditor.Fragment> glyphs = ComponentTextEditor.codePoints(fragments, start, endExclusive);
+        if (glyphs.isEmpty()) {
+            return fragments;
+        }
+
+        Font font = clientFont();
+        float[] offsets = new float[glyphs.size()];
+        float[] widths = new float[glyphs.size()];
+        float x = 0f;
+        for (int index = 0; index < glyphs.size(); index++) {
+            offsets[index] = x;
+            // A glyph is drawn one pixel narrower than it advances.
+            int advance = measured(font, glyphs.get(index), DEFAULT_GLYPH_ADVANCE);
+            widths[index] = Math.max(1, advance - 1);
+            x += advance;
+        }
+        float length = x - 1;
+
         ColorRamp displayRamp = rampFor(rank);
         ColorRamp roleRamp = roleRampFor(rank);
+        RankGradientAnimation.Axis axis = RankGradientAnimation.axis(
+                displayRamp, roleRamp, RankGradientAnimation.Target.USERNAME, length);
+        if (pill != null) {
+            RankGradientAnimation.join(pill.axis(), axis, pill.gapTo(measured(font, SPACE, SPACE_ADVANCE)));
+        }
+
         if (!displayRamp.isGradient() && !roleRamp.isGradient()) {
             return ComponentTextEditor.restyleRange(
                     fragments,
                     start,
                     endExclusive,
-                    style -> withRegisteredColor(
-                                    style,
-                                    RankGradientAnimation.colorAt(
-                                            displayRamp,
-                                            roleRamp,
-                                            0d,
-                                            RankGradientAnimation.Target.USERNAME,
-                                            style.getColor()))
-                            .withInsertion(insertion));
+                    style -> withInsertion(
+                            withRegisteredColor(style, axis.colorAt(0f, length, style.getColor())), insertion));
         }
-        return ComponentTextEditor.restyleRangeByPosition(
+        return ComponentTextEditor.restyleRangeByCodePoint(
                 fragments,
                 start,
                 endExclusive,
-                (style, position) -> withRegisteredColor(
-                                style,
-                                RankGradientAnimation.colorAt(
-                                        displayRamp,
-                                        roleRamp,
-                                        position,
-                                        RankGradientAnimation.Target.USERNAME,
-                                        style.getColor()))
-                        .withInsertion(insertion));
+                (style, index) -> withInsertion(
+                        withRegisteredColor(style, axis.colorAt(offsets[index], widths[index], style.getColor())),
+                        insertion));
+    }
+
+    private static Style withInsertion(Style style, String insertion) {
+        return insertion == null ? style : style.withInsertion(insertion);
+    }
+
+    /** {@code glyph}'s advance in the loaded font, or {@code fallback} without one. */
+    private static int measured(Font font, ComponentTextEditor.Fragment glyph, int fallback) {
+        int width = font == null ? 0 : font.width(FormattedText.of(glyph.text(), glyph.style()));
+        return width > 0 ? width : fallback;
+    }
+
+    /** The client's font, or {@code null} when there is no client, as in unit tests. */
+    private static Font clientFont() {
+        try {
+            return Minecraft.getInstance().font;
+        } catch (RuntimeException | LinkageError ignored) {
+            return null;
+        }
     }
 
     /**

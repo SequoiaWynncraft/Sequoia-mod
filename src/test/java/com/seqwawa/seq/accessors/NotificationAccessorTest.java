@@ -1,17 +1,15 @@
 package com.seqwawa.seq.accessors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
+import com.seqwawa.seq.utils.RankGradientAnimation;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.TreeSet;
-import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.TextColor;
 import org.junit.jupiter.api.Test;
@@ -26,117 +24,115 @@ class NotificationAccessorTest {
     private static final String LABEL = "Upper Strategist";
 
     @Test
-    void aPixelColumnPillAdvancesExactlyAsFarAsTheBlockPill() {
-        assertEquals(layout(blockPill()).advance(), layout(columnPill()).advance());
+    void placesEveryBlockOnTheGradientAtThePixelItIsDrawnAt() {
+        NotificationAccessor.GradientPill pill = gradientPill(GRADIENT);
+
+        List<Drawn> blocks = layout(pill).stream()
+                .filter(drawn -> drawn.glyph() == WynnPillGlyphs.BACKGROUND)
+                .toList();
+        assertEquals(LABEL.length(), blocks.size(), "one block per character");
+        for (Drawn block : blocks) {
+            RankGradientAnimation.Shade shade = RankGradientAnimation.shade(block.color());
+            assertNotNull(shade, "a gradient block is graded");
+            assertEquals(block.x() - pill.axisStart(), shade.origin(), 1e-6, "block at " + block.x());
+        }
+        Drawn last = blocks.getLast();
+        assertEquals(
+                last.x() - pill.axisStart() + NotificationAccessor.PILL_BG_WIDTH,
+                pill.axis().length(),
+                1e-6,
+                "the gradient ends where the last block does");
     }
 
     @Test
-    void itsColumnsFillExactlyThePixelsTheBlocksDid() {
-        assertEquals(layout(blockPill()).backgroundPixels(), layout(columnPill()).backgroundPixels());
+    void reportsHowFarThePillAdvances() {
+        NotificationAccessor.GradientPill pill = gradientPill(GRADIENT);
+        List<Drawn> drawn = layout(pill);
+
+        assertEquals(advanceOf(pill), pill.advance());
+        assertEquals(NotificationAccessor.PILL_CORNER_ADVANCE, pill.axisStart(), "the gradient starts after the corner");
+        assertEquals(WynnPillGlyphs.CORNER_LEFT, drawn.getFirst().glyph());
     }
 
     @Test
-    void itsLettersAndCornersLandWhereTheBlockPillPutsThem() {
-        assertEquals(layout(blockPill()).otherGlyphs(), layout(columnPill()).otherGlyphs());
+    void measuresTheGapToANameDrawnOneSpaceAfterIt() {
+        NotificationAccessor.GradientPill pill = gradientPill(GRADIENT);
+
+        float nameStart = pill.advance() + 4;
+        assertEquals(nameStart - pill.axisStart() - pill.axis().length(), pill.gapTo(4), 1e-6);
     }
 
     @Test
-    void itStillReadsAsItsLabelSpaceIncluded() {
+    void stillReadsAsItsLabelSpaceIncluded() {
         // Nametags recognise a tag they already rewrote by reading its pill back.
-        String text = columnPill().getString();
+        String text = gradientPill(GRADIENT).component().getString();
         List<WynnPillGlyphs.Pill> pills = WynnPillGlyphs.findPills(text);
 
-        assertEquals(1, pills.size(), "the columns must not split the pill: " + pills);
+        assertEquals(1, pills.size());
         assertEquals(new WynnPillGlyphs.Pill(0, text.length(), "upper strategist"), pills.getFirst());
-        assertEquals(WynnPillGlyphs.findPills(blockPill().getString()).getFirst().label(), pills.getFirst().label());
     }
 
     @Test
-    void onlyTheColumnsUseTheModFont() {
-        for (ComponentTextEditor.Fragment fragment : ComponentTextEditor.flatten(columnPill())) {
-            FontDescription expected = fragment.text().contains(NotificationAccessor.PILL_COLUMN)
-                    ? NotificationAccessor.PILL_COLUMN_FONT
-                    : FontDescription.DEFAULT;
-            assertEquals(expected, fragment.style().getFont(), "font of " + fragment.text());
-        }
+    void drawsInWynncraftsFontOnly() {
+        ComponentTextEditor.flatten(gradientPill(GRADIENT).component()).forEach(fragment ->
+                assertEquals(FontDescription.DEFAULT, fragment.style().getFont(), "font of " + fragment.text()));
     }
 
     @Test
-    void aSolidRoleKeepsWynncraftsBlocks() {
-        String text = NotificationAccessor.smoothWynnPill(LABEL, SOLID, SOLID, LABEL_COLOR, null, null)
-                .getString();
+    void drawsASolidRoleFlat() {
+        NotificationAccessor.GradientPill pill = gradientPill(SOLID);
 
-        assertTrue(text.indexOf(WynnPillGlyphs.BACKGROUND) >= 0);
-        assertFalse(text.contains(NotificationAccessor.PILL_COLUMN));
+        layout(pill).stream()
+                .filter(drawn -> drawn.glyph() == WynnPillGlyphs.BACKGROUND)
+                .forEach(block -> {
+                    assertEquals(0x4CB4FA, block.color().getValue());
+                    assertNull(RankGradientAnimation.shade(block.color()), "one colour has nothing to grade");
+                });
     }
 
     @Test
-    void aGradientOnEitherPaletteGetsColumns() {
-        // Per-user colours switch live between the two palettes, so a solid display
-        // palette over a gradient role palette still has to be able to show the ramp.
-        String text = NotificationAccessor.smoothWynnPill(LABEL, SOLID, GRADIENT, LABEL_COLOR, null, null)
-                .getString();
-
-        assertTrue(text.contains(NotificationAccessor.PILL_COLUMN));
-        assertFalse(text.indexOf(WynnPillGlyphs.BACKGROUND) >= 0);
+    void keepsTheLabelOutOfTheGradient() {
+        layout(gradientPill(GRADIENT)).stream()
+                .filter(drawn -> WynnPillGlyphs.decodeGlyph(drawn.glyph()) != 0)
+                .forEach(letter -> assertEquals(LABEL_COLOR, letter.color()));
     }
 
-    private static Component blockPill() {
-        return NotificationAccessor.wynnPill(LABEL, GRADIENT, GRADIENT, LABEL_COLOR, null, null);
+    private static NotificationAccessor.GradientPill gradientPill(ColorRamp ramp) {
+        return NotificationAccessor.gradientPill(LABEL, ramp, ramp, LABEL_COLOR, null, null);
     }
 
-    private static Component columnPill() {
-        return NotificationAccessor.smoothWynnPill(LABEL, GRADIENT, GRADIENT, LABEL_COLOR, null, null);
-    }
+    /** One glyph as it is drawn: where, what, and in which colour. */
+    private record Drawn(int x, char glyph, TextColor color) {}
 
-    /**
-     * Where a pill draws, walked glyph by glyph the way Minecraft lays text out.
-     *
-     * @param advance          how far the pill moves the text after it
-     * @param backgroundPixels every pixel column a background block or column fills
-     * @param otherGlyphs      each corner and letter, as {@code x:codepoint}
-     */
-    private record Layout(int advance, Set<Integer> backgroundPixels, List<String> otherGlyphs) {}
-
-    private static Layout layout(Component pill) {
+    /** Walks the pill glyph by glyph the way Minecraft lays text out. */
+    private static List<Drawn> layout(NotificationAccessor.GradientPill pill) {
         int x = 0;
-        Set<Integer> backgroundPixels = new TreeSet<>();
-        List<String> otherGlyphs = new ArrayList<>();
-        for (ComponentTextEditor.Fragment fragment : ComponentTextEditor.flatten(pill)) {
-            FontDescription font = fragment.style().getFont();
+        List<Drawn> drawn = new ArrayList<>();
+        for (ComponentTextEditor.Fragment fragment : ComponentTextEditor.flatten(pill.component())) {
             for (char glyph : fragment.text().toCharArray()) {
-                if (NotificationAccessor.PILL_COLUMN_FONT.equals(font)) {
-                    if (glyph == NotificationAccessor.PILL_COLUMN.charAt(0)) {
-                        backgroundPixels.add(x);
-                    }
-                } else if (glyph == WynnPillGlyphs.BACKGROUND) {
-                    for (int pixel = 0; pixel < NotificationAccessor.PILL_BG_WIDTH; pixel++) {
-                        backgroundPixels.add(x + pixel);
-                    }
-                } else if (glyph != WynnPillGlyphs.TEXT_OFFSET && glyph != WynnPillGlyphs.SEPARATOR) {
-                    otherGlyphs.add(x + ":" + Integer.toHexString(glyph));
+                if (glyph != WynnPillGlyphs.TEXT_OFFSET && glyph != WynnPillGlyphs.SEPARATOR) {
+                    drawn.add(new Drawn(x, glyph, fragment.style().getColor()));
                 }
-                x += advance(font, glyph);
+                x += advance(glyph);
             }
         }
-        return new Layout(x, backgroundPixels, otherGlyphs);
+        return drawn;
+    }
+
+    private static int advanceOf(NotificationAccessor.GradientPill pill) {
+        int x = 0;
+        for (char glyph : pill.component().getString().toCharArray()) {
+            x += advance(glyph);
+        }
+        return x;
     }
 
     /**
-     * Advances as the fonts define them: Wynncraft's {@code chat/banner} blocks and
-     * corners and {@code chat/five} letters, and the mod's {@code rank_pill} font. A
-     * bitmap glyph advances one pixel past its width.
+     * Advances as Wynncraft's font defines them: its {@code chat/banner} blocks and
+     * corners, and its {@code chat/five} letters. A bitmap glyph advances one pixel past
+     * its width.
      */
-    private static int advance(FontDescription font, char glyph) {
-        if (NotificationAccessor.PILL_COLUMN_FONT.equals(font)) {
-            if (glyph == NotificationAccessor.PILL_COLUMN.charAt(0)) {
-                return 2;
-            }
-            if (glyph == NotificationAccessor.PILL_COLUMN_STEP_BACK.charAt(0)) {
-                return -1;
-            }
-            throw new AssertionError("unexpected column font glyph " + Integer.toHexString(glyph));
-        }
+    private static int advance(char glyph) {
         if (WynnPillGlyphs.decodeGlyph(glyph) != 0) {
             return 6;
         }

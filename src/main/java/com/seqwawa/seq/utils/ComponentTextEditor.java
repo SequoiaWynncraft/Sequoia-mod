@@ -149,6 +149,31 @@ public final class ComponentTextEditor {
         if (fragments == null || styleMapper == null || start < 0 || endExclusive <= start) {
             return fragments;
         }
+        int codePointCount = codePointCount(fragments, start, endExclusive);
+        return restyleRangeByCodePoint(fragments, start, endExclusive, (style, index) -> styleMapper.apply(
+                style, codePointCount <= 1 ? 0d : (double) index / (codePointCount - 1)));
+    }
+
+    /** Styles one code point, given its style so far and its index within the range. */
+    @FunctionalInterface
+    public interface CodePointStyler {
+        Style apply(Style style, int index);
+    }
+
+    /**
+     * Applies a style per code point across {@code [start, endExclusive)}, each styled
+     * with its index in the range, and each becoming its own fragment because Minecraft
+     * gives a component leaf only one colour. Styling outside the range, and styling
+     * other than what {@code styler} changes, is preserved.
+     */
+    public static List<Fragment> restyleRangeByCodePoint(
+            List<Fragment> fragments,
+            int start,
+            int endExclusive,
+            CodePointStyler styler) {
+        if (fragments == null || styler == null || start < 0 || endExclusive <= start) {
+            return fragments;
+        }
 
         int codePointCount = codePointCount(fragments, start, endExclusive);
         if (codePointCount == 0) {
@@ -176,9 +201,8 @@ public final class ComponentTextEditor {
             for (int offset = localStart; offset < localEnd; ) {
                 int codePoint = text.codePointAt(offset);
                 int width = Character.charCount(codePoint);
-                double position = codePointCount <= 1 ? 0d : (double) styledIndex / (codePointCount - 1);
                 restyled.add(new Fragment(
-                        new String(Character.toChars(codePoint)), styleMapper.apply(fragment.style(), position)));
+                        new String(Character.toChars(codePoint)), styler.apply(fragment.style(), styledIndex)));
                 offset += width;
                 styledIndex++;
             }
@@ -186,6 +210,24 @@ public final class ComponentTextEditor {
             addIfPresent(restyled, text.substring(localEnd), fragment.style());
         }
         return List.copyOf(restyled);
+    }
+
+    /** The code points in {@code [start, endExclusive)}, one fragment each, with their styles. */
+    public static List<Fragment> codePoints(List<Fragment> fragments, int start, int endExclusive) {
+        List<Fragment> codePoints = new ArrayList<>();
+        int cursor = 0;
+        for (Fragment fragment : fragments == null ? List.<Fragment>of() : fragments) {
+            int fragmentStart = cursor;
+            cursor += fragment.text().length();
+            int localStart = Math.max(0, start - fragmentStart);
+            int localEnd = Math.min(fragment.text().length(), endExclusive - fragmentStart);
+            for (int offset = localStart; offset < localEnd; ) {
+                int codePoint = fragment.text().codePointAt(offset);
+                codePoints.add(new Fragment(new String(Character.toChars(codePoint)), fragment.style()));
+                offset += Character.charCount(codePoint);
+            }
+        }
+        return List.copyOf(codePoints);
     }
 
     private static int codePointCount(List<Fragment> fragments, int start, int endExclusive) {

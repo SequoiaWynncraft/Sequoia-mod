@@ -2,6 +2,8 @@ package com.seqwawa.seq.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -11,6 +13,7 @@ import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
 import java.util.List;
+import java.util.function.Supplier;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextColor;
 import org.junit.jupiter.api.Test;
@@ -19,99 +22,193 @@ class RankGradientAnimationTest {
 
     private static final ColorRamp GRADIENT = ColorRamp.of(List.of(0x000000, 0xFFFFFF));
 
+    /** Long enough that a lone test glyph at {@code position} sits at that fraction of it. */
+    private static final float AXIS_LENGTH = 100f;
+
     @Test
-    void scrollsAGradientStopAlongItsRamp() {
-        TextColor first = RankGradientAnimation.colorAt(GRADIENT, 0d);
+    void scrollsAGradientAlongItsRamp() {
+        TextColor first = colorAt(GRADIENT, 0d);
 
         withAnimation(true, () -> {
-            assertEquals(0x000000, animated(first, 0d), "at rest the pill looks untouched");
-            assertEquals(0xFFFFFF, animated(first, 0.5d), "half a turn later the far stop has arrived");
-            assertEquals(0x000000, animated(first, 1d), "and a full turn is where it started");
+            assertEquals(0x000000, shaded(first, 0d), "at rest the pill looks untouched");
+            assertEquals(0xFFFFFF, shaded(first, 0.5d), "half a turn later the far stop has arrived");
+            assertEquals(0x000000, shaded(first, 1d), "and a full turn is where it started");
         });
     }
 
     @Test
     void avoidsWynncraftShaderMarkersInStaticAndAnimatedSamples() {
         ColorRamp ramp = ColorRamp.of(List.of(0x25FF00, 0x72D400));
-        TextColor staticCrossing = RankGradientAnimation.colorAt(ramp, 8d / 17d);
-        TextColor animatedCrossing = RankGradientAnimation.colorAt(ramp, 0d);
+        TextColor staticCrossing = colorAt(ramp, 8d / 17d);
+        TextColor animatedCrossing = colorAt(ramp, 0d);
 
         assertEquals(0x49EC00, staticCrossing.getValue());
-        withAnimation(true, () -> assertEquals(0x49EC00, animated(animatedCrossing, 4d / 17d)));
+        withAnimation(true, () -> assertEquals(0x49EC00, shaded(animatedCrossing, 4d / 17d)));
     }
 
     @Test
     void avoidsShaderMarkersWhenSettingsSelectAlternatePalettePaths() {
         ColorRamp dangerousGradient = ColorRamp.of(List.of(0x40EB00, 0x72D400));
-        TextColor flattened = RankGradientAnimation.colorAt(dangerousGradient, 1d);
-        TextColor switchedSolid = RankGradientAnimation.colorAt(
-                ColorRamp.of(0x123456),
-                ColorRamp.of(0x40EB00),
-                0d,
-                RankGradientAnimation.Target.USERNAME,
-                null);
-        TextColor switchedGradient = RankGradientAnimation.colorAt(
-                ColorRamp.of(0x123456),
-                dangerousGradient,
-                0d,
-                RankGradientAnimation.Target.USERNAME,
-                null);
+        TextColor flattened = colorAt(dangerousGradient, 1d);
+        TextColor switchedSolid = colorAt(
+                ColorRamp.of(0x123456), ColorRamp.of(0x40EB00), 0d, RankGradientAnimation.Target.USERNAME, null);
+        TextColor switchedGradient = colorAt(
+                ColorRamp.of(0x123456), dangerousGradient, 0d, RankGradientAnimation.Target.USERNAME, null);
 
         withGradientSettings(
                 false,
                 true,
                 false,
                 false,
-                () -> assertEquals(0x40EC00, animated(flattened, 0d), "flattened gradient"));
+                () -> assertEquals(0x40EC00, resolved(flattened), "flattened gradient"));
         withGradientSettings(true, true, false, false, () -> withPerUserColors(false, () -> {
-            assertEquals(0x40EC00, animated(switchedSolid, 0d), "switched solid palette");
-            assertEquals(0x40EC00, animated(switchedGradient, 0d), "switched gradient palette");
+            assertEquals(0x40EC00, resolved(switchedSolid), "switched solid palette");
+            assertEquals(0x40EC00, resolved(switchedGradient), "switched gradient palette");
         }));
     }
 
     @Test
     void movesEveryStopOfAPillTogether() {
         // Otherwise the gradient would stretch and squash rather than travel.
-        TextColor start = RankGradientAnimation.colorAt(GRADIENT, 0d);
-        TextColor end = RankGradientAnimation.colorAt(GRADIENT, 1d);
+        RankGradientAnimation.Axis axis = axis(GRADIENT, RankGradientAnimation.Target.RANK_BADGE);
+        TextColor start = axis.colorAt(0f, 0f, null);
+        TextColor end = axis.colorAt(AXIS_LENGTH, 0f, null);
 
         withAnimation(true, () -> assertEquals(
-                animated(start, 0d), animated(end, 0.5d), "the far stop reaches what the near one showed"));
+                shaded(start, 0d), shaded(end, 0.5d), "the far stop reaches what the near one showed"));
+    }
+
+    @Test
+    void movesAtTheSameSpeedInPixelsWhateverItIsPaintedOn() {
+        // A pill and the longer name after it used to take the same time to come round,
+        // which had the name's gradient race past the pill's.
+        for (double length : new double[] {40d, 80d, 137d}) {
+            double turn = 2 * length;
+            assertEquals(
+                    RankGradientAnimation.PIXELS_PER_SECOND,
+                    RankGradientAnimation.phaseAt(GRADIENT, length, RankGradientAnimation.PIXELS_PER_SECOND) * turn,
+                    1e-9,
+                    "pixels travelled along " + length);
+        }
+    }
+
+    @Test
+    void travelsFasterOrSlowerWithTheSpeedSetting() {
+        for (int percent : new int[] {100, 250, 50, 10, 500}) {
+            double travelled = withAnimationSpeed(percent, () -> {
+                double before = RankGradientAnimation.travelled(later(60_000L));
+                return RankGradientAnimation.travelled(later(1000L)) - before;
+            });
+            assertEquals(
+                    RankGradientAnimation.PIXELS_PER_SECOND * percent / 100d,
+                    travelled,
+                    1e-9,
+                    "pixels travelled in a second at " + percent + "%");
+        }
+    }
+
+    @Test
+    void changingTheSpeedDoesNotMakeTheGradientJump() {
+        long now = later(60_000L);
+        double atOldSpeed = withAnimationSpeed(100, () -> RankGradientAnimation.travelled(now));
+        double atNewSpeed = withAnimationSpeed(400, () -> RankGradientAnimation.travelled(now));
+        double aSecondLater = withAnimationSpeed(400, () -> RankGradientAnimation.travelled(later(1000L)));
+
+        assertEquals(atOldSpeed, atNewSpeed, 1e-9, "the gradient stays where it was");
+        assertEquals(
+                4 * RankGradientAnimation.PIXELS_PER_SECOND, aSecondLater - atNewSpeed, 1e-9, "and then goes faster");
+    }
+
+    @Test
+    void neverRunsBackwards() {
+        long now = later(60_000L);
+        double travelled = RankGradientAnimation.travelled(now);
+
+        assertEquals(travelled, RankGradientAnimation.travelled(now - 5000L), 1e-9);
     }
 
     @Test
     void holdsStillWhileTheSettingIsOff() {
-        TextColor stop = RankGradientAnimation.colorAt(GRADIENT, 0d);
+        TextColor stop = colorAt(GRADIENT, 0d);
 
-        withAnimation(false, () -> assertSame(stop, RankGradientAnimation.animate(stop, 0.5d)));
+        withAnimation(false, () -> {
+            assertSame(stop, RankGradientAnimation.resolve(stop));
+            assertTrue(Double.isNaN(RankGradientAnimation.shade(stop, 0.5d).phase()), "a still gradient");
+            assertEquals(0x000000, shaded(stop, 0.5d));
+        });
     }
 
     @Test
     void controlsBadgeAndUsernameAnimationIndependently() {
-        TextColor badge = RankGradientAnimation.colorAt(GRADIENT, 0d, RankGradientAnimation.Target.RANK_BADGE);
-        TextColor username = RankGradientAnimation.colorAt(GRADIENT, 0d, RankGradientAnimation.Target.USERNAME);
+        TextColor badge = colorAt(GRADIENT, 0d, RankGradientAnimation.Target.RANK_BADGE);
+        TextColor username = colorAt(GRADIENT, 0d, RankGradientAnimation.Target.USERNAME);
 
         withGradientSettings(true, true, false, true, () -> {
-            assertSame(badge, RankGradientAnimation.animate(badge, 0.5d), "the badge stays static");
-            assertEquals(0xFFFFFF, animated(username, 0.5d), "the username moves independently");
+            assertEquals(0x000000, shaded(badge, 0.5d), "the badge stays static");
+            assertEquals(0xFFFFFF, shaded(username, 0.5d), "the username moves independently");
         });
     }
 
     @Test
     void controlsBadgeAndUsernameGradientsIndependently() {
-        TextColor badge = RankGradientAnimation.colorAt(GRADIENT, 1d, RankGradientAnimation.Target.RANK_BADGE);
-        TextColor username = RankGradientAnimation.colorAt(GRADIENT, 1d, RankGradientAnimation.Target.USERNAME);
+        TextColor badge = colorAt(GRADIENT, 1d, RankGradientAnimation.Target.RANK_BADGE);
+        TextColor username = colorAt(GRADIENT, 1d, RankGradientAnimation.Target.USERNAME);
 
         withGradientSettings(true, false, false, false, () -> {
-            assertSame(badge, RankGradientAnimation.animate(badge, 0.5d), "the pill keeps its complete gradient");
-            assertEquals(0x000000, animated(username, 0.5d), "the username flattens independently");
+            assertSame(badge, RankGradientAnimation.resolve(badge), "the pill keeps its complete gradient");
+            assertNotNull(RankGradientAnimation.shade(badge, 0d));
+            assertEquals(0x000000, resolved(username), "the username flattens independently");
+            assertNull(RankGradientAnimation.shade(username, 0d), "and is drawn flat");
         });
         withGradientSettings(false, true, false, false, () -> {
-            assertEquals(0x000000, animated(badge, 0.5d), "the pill flattens independently");
-            assertSame(
-                    username,
-                    RankGradientAnimation.animate(username, 0.5d),
-                    "the username keeps its complete gradient");
+            assertEquals(0x000000, resolved(badge), "the pill flattens independently");
+            assertNull(RankGradientAnimation.shade(badge, 0d));
+            assertSame(username, RankGradientAnimation.resolve(username), "the username keeps its gradient");
+        });
+    }
+
+    @Test
+    void readsAPillAndItsNameAsOneGradientWhenBothShowTheirs() {
+        RankGradientAnimation.Axis pill = RankGradientAnimation.axis(
+                GRADIENT, GRADIENT, RankGradientAnimation.Target.RANK_BADGE, 40f);
+        RankGradientAnimation.Axis name = RankGradientAnimation.axis(
+                GRADIENT, GRADIENT, RankGradientAnimation.Target.USERNAME, 60f);
+        TextColor pillStart = pill.colorAt(0f, 0f, null);
+        TextColor nameStart = name.colorAt(0f, 0f, null);
+        TextColor nameEnd = name.colorAt(60f, 0f, null);
+        RankGradientAnimation.join(pill, name, 10f);
+
+        withGradientSettings(true, true, false, false, () -> {
+            assertEquals(0x000000, shaded(pillStart, 0d), "the pill starts the gradient");
+            assertEquals(GRADIENT.sample(50d / 110d), shaded(nameStart, 0d), "the name carries on from it");
+            assertEquals(0xFFFFFF, shaded(nameEnd, 0d), "and finishes it");
+            assertEquals(GRADIENT.sample(50d / 110d), resolved(nameStart), "its flat colour agrees");
+        });
+        withGradientSettings(true, false, false, false, () -> assertEquals(
+                0x000000, shaded(pillStart, 0d), "with the name flat, the pill keeps a gradient of its own"));
+        withGradientSettings(true, false, false, false, () -> {
+            RankGradientAnimation.Shade alone = RankGradientAnimation.shade(pillStart, 0d);
+            assertEquals(0xFFFFFF, alone.rgbAt(40f), "spread over the pill alone");
+        });
+    }
+
+    @Test
+    void movesAJoinedGradientAsOneWhenEitherHalfIsAnimated() {
+        RankGradientAnimation.Axis pill = RankGradientAnimation.axis(
+                GRADIENT, GRADIENT, RankGradientAnimation.Target.RANK_BADGE, 40f);
+        RankGradientAnimation.Axis name = RankGradientAnimation.axis(
+                GRADIENT, GRADIENT, RankGradientAnimation.Target.USERNAME, 60f);
+        TextColor pillGlyph = pill.colorAt(0f, 0f, null);
+        TextColor nameGlyph = name.colorAt(0f, 0f, null);
+        RankGradientAnimation.join(pill, name, 10f);
+
+        withGradientSettings(true, true, true, false, () -> {
+            assertFalse(Double.isNaN(RankGradientAnimation.shade(pillGlyph, 0.25d).phase()));
+            assertFalse(Double.isNaN(RankGradientAnimation.shade(nameGlyph, 0.25d).phase()), "the name moves too");
+            assertEquals(
+                    RankGradientAnimation.shade(pillGlyph, 0.25d).length(),
+                    RankGradientAnimation.shade(nameGlyph, 0.25d).length(),
+                    "along one axis, so at one speed");
         });
     }
 
@@ -119,63 +216,62 @@ class RankGradientAnimationTest {
     void restoresEachTargetsBaseColorImmediatelyWhenRoleColoringIsDisabled() {
         TextColor pillBase = TextColor.fromRgb(0x40EB00);
         TextColor usernameBase = TextColor.fromRgb(0xFFFFFF);
-        TextColor badge = RankGradientAnimation.colorAt(
-                ColorRamp.of(0x4CB4FA), 0d, RankGradientAnimation.Target.RANK_BADGE, pillBase);
-        TextColor username = RankGradientAnimation.colorAt(
-                GRADIENT, 1d, RankGradientAnimation.Target.USERNAME, usernameBase);
+        TextColor badge = colorAt(ColorRamp.of(0x4CB4FA), 0d, RankGradientAnimation.Target.RANK_BADGE, pillBase);
+        TextColor username = colorAt(GRADIENT, 1d, RankGradientAnimation.Target.USERNAME, usernameBase);
 
         withColorSettings(false, true, () -> {
-            assertSame(pillBase, RankGradientAnimation.animate(badge, 0.5d));
-            assertSame(username, RankGradientAnimation.animate(username, 0.5d));
+            assertSame(pillBase, RankGradientAnimation.resolve(badge));
+            assertSame(username, RankGradientAnimation.resolve(username));
         });
         withColorSettings(true, false, () -> {
-            assertSame(badge, RankGradientAnimation.animate(badge, 0.5d));
-            assertSame(usernameBase, RankGradientAnimation.animate(username, 0.5d));
+            assertSame(badge, RankGradientAnimation.resolve(badge));
+            assertSame(usernameBase, RankGradientAnimation.resolve(username));
+            assertNull(RankGradientAnimation.shade(username, 0d), "an uncoloured name is drawn flat");
         });
     }
 
     @Test
     void restoresAnInheritedUsernameColorAsNull() {
-        TextColor username = RankGradientAnimation.colorAt(
-                ColorRamp.of(0x4CB4FA), 0d, RankGradientAnimation.Target.USERNAME, null);
+        TextColor username = colorAt(ColorRamp.of(0x4CB4FA), 0d, RankGradientAnimation.Target.USERNAME, null);
 
-        withColorSettings(true, false, () -> assertNull(RankGradientAnimation.animate(username, 0.5d)));
+        withColorSettings(true, false, () -> assertNull(RankGradientAnimation.resolve(username)));
     }
 
     @Test
     void switchesExistingDecorationsBetweenIndividualAndRolePalettes() {
         ColorRamp individual = ColorRamp.of(List.of(0x000000, 0xFFFFFF));
         ColorRamp role = ColorRamp.of(0x4CB4FA);
-        TextColor color = RankGradientAnimation.colorAt(
-                individual, role, 1d, RankGradientAnimation.Target.USERNAME, TextColor.fromRgb(0xFFFFFF));
+        TextColor color = colorAt(individual, role, 1d, RankGradientAnimation.Target.USERNAME, TextColor.fromRgb(0xFFFFFF));
 
-        withPerUserColors(true, () -> assertSame(color, RankGradientAnimation.animate(color, 0.5d)));
-        withPerUserColors(
-                false, () -> assertEquals(0x4CB4FA, RankGradientAnimation.animate(color, 0.5d).getValue()));
-        withPerUserColors(true, () -> assertSame(color, RankGradientAnimation.animate(color, 0.5d)));
+        withPerUserColors(true, () -> assertSame(color, RankGradientAnimation.resolve(color)));
+        withPerUserColors(false, () -> assertEquals(0x4CB4FA, resolved(color)));
+        withPerUserColors(true, () -> assertSame(color, RankGradientAnimation.resolve(color)));
     }
 
     @Test
     void leavesSolidRolesAlone() {
-        // One colour scrolled is that same colour back again, so it is never remembered.
-        TextColor solid = RankGradientAnimation.colorAt(ColorRamp.of(0x4CB4FA), 0d);
+        TextColor solid = colorAt(ColorRamp.of(0x4CB4FA), 0d);
 
-        withAnimation(true, () -> assertSame(solid, RankGradientAnimation.animate(solid, 0.5d)));
+        withAnimation(true, () -> {
+            assertSame(solid, RankGradientAnimation.resolve(solid));
+            assertNull(RankGradientAnimation.shade(solid, 0.5d), "one colour has nothing to grade or move");
+        });
     }
 
     @Test
     void leavesEveryOtherColourInTheGameAlone() {
-        // The lookup runs on every glyph drawn, so ordinary text must come straight back.
+        // The lookups run on every glyph drawn, so ordinary text must come straight back.
         TextColor chatColor = TextColor.fromRgb(0x55FFFF);
         TextColor intentionalShaderColor = TextColor.fromRgb(0x40EB00);
 
         withAnimation(true, () -> {
-            assertSame(chatColor, RankGradientAnimation.animate(chatColor, 0.5d));
+            assertSame(chatColor, RankGradientAnimation.resolve(chatColor));
+            assertNull(RankGradientAnimation.shade(chatColor, 0.5d));
             assertSame(
                     intentionalShaderColor,
-                    RankGradientAnimation.animate(intentionalShaderColor, 0.5d),
+                    RankGradientAnimation.resolve(intentionalShaderColor),
                     "unregistered Wynncraft shader text remains intentional");
-            assertNull(RankGradientAnimation.animate(null, 0.5d), "an unstyled glyph has no colour to move");
+            assertNull(RankGradientAnimation.resolve(null), "an unstyled glyph has no colour to change");
         });
     }
 
@@ -183,30 +279,34 @@ class RankGradientAnimationTest {
     void aPillBuiltForAGradientRoleCarriesStopsThatMove() {
         // The colours have to survive from the built component through to rendering by
         // identity alone; anything that copied them by value would silently stop moving.
-        List<TextColor> backgrounds =
-                pillBackgroundColors(NotificationAccessor.wynnPill("AB", GRADIENT, TextColor.fromRgb(0x1F2126), null));
+        List<TextColor> backgrounds = pillBackgroundColors(NotificationAccessor.gradientPill(
+                        "AB", GRADIENT, GRADIENT, TextColor.fromRgb(0x1F2126), null, null)
+                .component());
 
-        withAnimation(true, () -> assertEquals(
-                0xFFFFFF, animated(backgrounds.getFirst(), 0.5d), "the pill's first block has moved"));
+        withAnimation(true, () -> assertNotEquals(
+                shaded(backgrounds.getFirst(), 0d),
+                shaded(backgrounds.getFirst(), 0.5d),
+                "the pill's first block has moved"));
     }
 
     @Test
-    void publishesAWholePillOnceEvenWhenTheRegistryIsFull() {
+    void registersAWholePillOnceEvenWhenTheRegistryIsFull() {
         RankGradientAnimation.batchRegistrations(() -> {
+            RankGradientAnimation.Axis filler = axis(GRADIENT, RankGradientAnimation.Target.RANK_BADGE);
             for (int index = 0; index < RankGradientAnimation.MAX_REMEMBERED_STOPS; index++) {
-                RankGradientAnimation.colorAt(GRADIENT, index / (RankGradientAnimation.MAX_REMEMBERED_STOPS - 1d));
+                filler.colorAt(index % AXIS_LENGTH, 0f, null);
             }
             return null;
         });
         assertEquals(RankGradientAnimation.MAX_REMEMBERED_STOPS, RankGradientAnimation.rememberedStopCount());
 
-        long publicationsBefore = RankGradientAnimation.publicationCount();
-        NotificationAccessor.wynnPill("Upper Strategist", GRADIENT, TextColor.fromRgb(0xFFFFFF), null);
+        long registrationsBefore = RankGradientAnimation.publicationCount();
+        NotificationAccessor.gradientPill("Upper Strategist", GRADIENT, GRADIENT, TextColor.fromRgb(0xFFFFFF), null, null);
 
         assertEquals(
-                publicationsBefore + 1,
+                registrationsBefore + 1,
                 RankGradientAnimation.publicationCount(),
-                "all glyph stops should share one copy-on-write publication");
+                "all glyph stops should be registered together");
         assertEquals(
                 RankGradientAnimation.MAX_REMEMBERED_STOPS,
                 RankGradientAnimation.rememberedStopCount(),
@@ -214,78 +314,22 @@ class RankGradientAnimationTest {
     }
 
     @Test
-    void publishesAPixelColumnPillOnce() {
-        long publicationsBefore = RankGradientAnimation.publicationCount();
-        NotificationAccessor.smoothWynnPill(
-                "Upper Strategist", GRADIENT, GRADIENT, TextColor.fromRgb(0xFFFFFF), null, null);
-
-        assertEquals(
-                publicationsBefore + 1,
-                RankGradientAnimation.publicationCount(),
-                "every column stop should share one copy-on-write publication");
-    }
-
-    @Test
-    void gradesEveryPillColumnBetweenTheEdgesItSharesWithItsNeighbours() {
-        List<TextColor> columns = pillColumns();
-
-        withAnimation(false, () -> {
-            List<RankGradientAnimation.Span> spans = spans(columns, 0d);
-            assertEquals(0x000000, spans.getFirst().leftRgb(), "the pill starts on the first stop");
-            assertEquals(0xFFFFFF, spans.getLast().rightRgb(), "and ends on the last");
-            RankGradientAnimation.Span middle = spans.get(spans.size() / 2);
-            assertTrue(middle.leftRgb() < middle.rightRgb(), "a column is graded across, not flat");
-            assertSeamless(spans);
-        });
-    }
-
-    @Test
-    void keepsTheColumnsSeamlessWhileTheGradientScrolls() {
-        List<TextColor> columns = pillColumns();
-
-        withAnimation(true, () -> {
-            for (double phase : new double[] {0.1d, 0.37d, 0.5d, 0.83d}) {
-                assertSeamless(spans(columns, phase));
-            }
-        });
-    }
-
-    @Test
-    void drawsAColumnFlatWhenItsGradientIsHidden() {
-        TextColor column = pillColumns().getFirst();
-
-        withColorSettings(false, true, () -> assertNull(RankGradientAnimation.animateSpan(column, 0d)));
-        withGradientSettings(false, true, false, false, () ->
-                assertNull(RankGradientAnimation.animateSpan(column, 0d)));
-    }
-
-    @Test
-    void onlyPillColumnsHaveEdges() {
-        TextColor glyph = RankGradientAnimation.colorAt(GRADIENT, 0.5d);
-
-        assertNull(RankGradientAnimation.animateSpan(glyph, 0d), "a whole glyph has no neighbours to meet");
-        assertNull(RankGradientAnimation.animateSpan(TextColor.fromRgb(0x123456), 0d));
-    }
-
-    @Test
     void rejectsAPinNestedInsideAnEvictableBatch() {
         assertThrows(
                 IllegalStateException.class,
                 () -> RankGradientAnimation.batchRegistrations(
-                        () -> RankGradientAnimation.pin(() -> RankGradientAnimation.colorAt(GRADIENT, 0d))));
+                        () -> RankGradientAnimation.pin(() -> colorAt(GRADIENT, 0d))));
     }
 
     @Test
-    void releasesSeveralPinnedDecorationsWithOnePublication() {
-        RankGradientAnimation.Pinned<TextColor> first =
-                RankGradientAnimation.pin(() -> RankGradientAnimation.colorAt(GRADIENT, 0d));
-        RankGradientAnimation.Pinned<TextColor> second =
-                RankGradientAnimation.pin(() -> RankGradientAnimation.colorAt(GRADIENT, 1d));
-        long publicationsBefore = RankGradientAnimation.publicationCount();
+    void releasesSeveralPinnedDecorationsAtOnce() {
+        RankGradientAnimation.Pinned<TextColor> first = RankGradientAnimation.pin(() -> colorAt(GRADIENT, 0d));
+        RankGradientAnimation.Pinned<TextColor> second = RankGradientAnimation.pin(() -> colorAt(GRADIENT, 1d));
+        long registrationsBefore = RankGradientAnimation.publicationCount();
 
         RankGradientAnimation.releaseAll(List.of(first.colors(), second.colors()));
 
-        assertEquals(publicationsBefore + 1, RankGradientAnimation.publicationCount());
+        assertEquals(registrationsBefore + 1, RankGradientAnimation.publicationCount());
         assertFalse(RankGradientAnimation.isDecorationColor(first.value()));
         assertFalse(RankGradientAnimation.isDecorationColor(second.value()));
     }
@@ -295,11 +339,45 @@ class RankGradientAnimationTest {
         TextColor fixed = RankGradientAnimation.markDecorationColor(TextColor.fromRgb(0x1F2126));
 
         assertTrue(RankGradientAnimation.isDecorationColor(fixed));
-        assertSame(fixed, RankGradientAnimation.animate(fixed, 0.5d));
+        assertSame(fixed, RankGradientAnimation.resolve(fixed));
+        assertNull(RankGradientAnimation.shade(fixed, 0.5d), "a fixed colour is not graded");
     }
 
-    private static int animated(TextColor color, double phase) {
-        return RankGradientAnimation.animate(color, phase).getValue();
+    /** A lone glyph at {@code position} along an axis painted with {@code ramp}. */
+    private static TextColor colorAt(ColorRamp ramp, double position) {
+        return colorAt(ramp, position, RankGradientAnimation.Target.RANK_BADGE);
+    }
+
+    private static TextColor colorAt(ColorRamp ramp, double position, RankGradientAnimation.Target target) {
+        return colorAt(ramp, position, target, null);
+    }
+
+    private static TextColor colorAt(
+            ColorRamp ramp, double position, RankGradientAnimation.Target target, TextColor baseColor) {
+        return colorAt(ramp, ramp, position, target, baseColor);
+    }
+
+    private static TextColor colorAt(
+            ColorRamp displayRamp,
+            ColorRamp roleRamp,
+            double position,
+            RankGradientAnimation.Target target,
+            TextColor baseColor) {
+        return RankGradientAnimation.axis(displayRamp, roleRamp, target, AXIS_LENGTH)
+                .colorAt((float) (position * AXIS_LENGTH), 0f, baseColor);
+    }
+
+    private static RankGradientAnimation.Axis axis(ColorRamp ramp, RankGradientAnimation.Target target) {
+        return RankGradientAnimation.axis(ramp, ramp, target, AXIS_LENGTH);
+    }
+
+    private static int resolved(TextColor color) {
+        return RankGradientAnimation.resolve(color).getValue();
+    }
+
+    /** The colour at a glyph's origin, graded along its gradient at {@code phase}. */
+    private static int shaded(TextColor color, double phase) {
+        return RankGradientAnimation.shade(color, phase).rgbAt(0f);
     }
 
     private static List<TextColor> pillBackgroundColors(Component pill) {
@@ -310,30 +388,24 @@ class RankGradientAnimationTest {
     }
 
     /**
-     * The stored colours of a gradient pill's pixel columns, in the order they are drawn.
-     * One word, so every column touches the next: a space leaves a pixel unfilled, as
-     * Wynncraft's block does, and the columns either side of it do not meet.
+     * Moments on the animation clock later than any it has seen, each later than the
+     * last, so tests can move it forward whatever order they run in.
      */
-    private static List<TextColor> pillColumns() {
-        return ComponentTextEditor.flatten(NotificationAccessor.smoothWynnPill(
-                        "Yggdrasil", GRADIENT, GRADIENT, TextColor.fromRgb(0x1F2126), null, null))
-                .stream()
-                .filter(fragment -> fragment.text().contains(NotificationAccessor.PILL_COLUMN))
-                .map(fragment -> fragment.style().getColor())
-                .toList();
+    private static long lastMoment = System.nanoTime() / 1_000_000L + 1_000_000_000L;
+
+    private static synchronized long later(long millis) {
+        lastMoment += millis;
+        return lastMoment;
     }
 
-    private static List<RankGradientAnimation.Span> spans(List<TextColor> columns, double phase) {
-        return columns.stream().map(column -> RankGradientAnimation.animateSpan(column, phase)).toList();
-    }
-
-    /** Each column must end on exactly the colour the next one starts on. */
-    private static void assertSeamless(List<RankGradientAnimation.Span> spans) {
-        for (int index = 1; index < spans.size(); index++) {
-            assertEquals(
-                    spans.get(index - 1).rightRgb(),
-                    spans.get(index).leftRgb(),
-                    "seam between columns " + (index - 1) + " and " + index);
+    private static <T> T withAnimationSpeed(int percent, Supplier<T> body) {
+        Setting.IntSetting previous = SeqClient.gradientAnimationSpeedSetting;
+        try {
+            SeqClient.gradientAnimationSpeedSetting =
+                    new Setting.IntSetting("gradient_animation_speed", "chat", percent, 10, 500, 5);
+            return body.get();
+        } finally {
+            SeqClient.gradientAnimationSpeedSetting = previous;
         }
     }
 

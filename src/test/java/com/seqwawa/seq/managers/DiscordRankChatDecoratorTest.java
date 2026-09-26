@@ -18,12 +18,14 @@ import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.seqwawa.seq.utils.RankGradientAnimation;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
+import com.seqwawa.seq.utils.WynncraftTextShaderColor;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.IntStream;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
@@ -516,7 +518,7 @@ class DiscordRankChatDecoratorTest {
                     .getColor();
 
             assertEquals(0x4CB4FA, storedNameColor.getValue());
-            assertEquals(PARTY_SPEAKER_GOLD, RankGradientAnimation.animate(storedNameColor).getValue());
+            assertEquals(PARTY_SPEAKER_GOLD, RankGradientAnimation.resolve(storedNameColor).getValue());
         });
     }
 
@@ -555,7 +557,7 @@ class DiscordRankChatDecoratorTest {
                     .style()
                     .getColor();
             assertEquals(0x4CB4FA, storedNameColor.getValue(), "the role color remains available to turn back on");
-            assertNull(RankGradientAnimation.animate(storedNameColor), "rendering restores the inherited base color");
+            assertNull(RankGradientAnimation.resolve(storedNameColor), "rendering restores the inherited base color");
         });
     }
 
@@ -603,7 +605,7 @@ class DiscordRankChatDecoratorTest {
             assertEquals(1, fragments.size());
             TextColor storedColor = fragments.getFirst().style().getColor();
             assertEquals(0x4CB4FA, storedColor.getValue());
-            assertEquals(0xABCDEF, RankGradientAnimation.animate(storedColor).getValue());
+            assertEquals(0xABCDEF, RankGradientAnimation.resolve(storedColor).getValue());
             assertEquals("ArcLeRetour", fragments.getFirst().style().getInsertion());
         });
     }
@@ -720,8 +722,8 @@ class DiscordRankChatDecoratorTest {
                 .toList();
 
         assertEquals("Ascended nunot", name.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
-        assertEquals(0xFF007B, name.getFirst().style().getColor().getValue());
-        assertEquals(0xC54FA3, name.getLast().style().getColor().getValue());
+        assertEquals(0xFF007B, pillStartColor(decorated), "the pill opens the gradient");
+        assertEquals(0xC54FA3, rightEdgeColor(name.getLast()), "and the whole nickname carries it to the end");
     }
 
     @Test
@@ -744,8 +746,8 @@ class DiscordRankChatDecoratorTest {
 
             assertEquals(nickname, name.stream().map(ComponentTextEditor.Fragment::text)
                     .reduce("", String::concat), nickname);
-            assertEquals(0xFF0000, name.getFirst().style().getColor().getValue());
-            assertEquals(0x0000FF, name.getLast().style().getColor().getValue());
+            assertEquals(0xFF0000, pillStartColor(decorated), nickname);
+            assertEquals(0x0000FF, rightEdgeColor(name.getLast()), nickname);
             assertTrue(name.stream().allMatch(fragment -> fragment.style().isItalic()));
             assertTrue(name.stream().allMatch(fragment -> style.getHoverEvent().equals(fragment.style().getHoverEvent())));
             assertTrue(decorated.getString().endsWith(nickname + ": test"));
@@ -933,35 +935,62 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void paintsAGradientRoleAcrossThePillAPixelColumnAtATime() {
+    void paintsAGradientRoleAcrossThePillFromEndToEnd() {
         RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x000000, 0xFFFFFF);
 
         Component pill = DiscordRankChatDecorator.rankPill(gradient, null);
-        List<Integer> columns = pillColumnColors(pill);
+        List<TextColor> blocks = ComponentTextEditor.flatten(pill).stream()
+                .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
+                .map(fragment -> fragment.style().getColor())
+                .toList();
 
-        assertTrue(pillBackgroundColors(pill).isEmpty(), "no letter-sized block may remain");
-        assertEquals(3 * NotificationAccessor.PILL_BG_WIDTH, columns.size(), "one column per pixel of each block");
-        assertEquals(0x000000, columns.getFirst());
-        assertEquals(0xFFFFFF, columns.getLast());
-        for (int index = 1; index < columns.size(); index++) {
-            assertTrue(
-                    columns.get(index) > columns.get(index - 1),
-                    "every column must step further along the ramp, was " + columns);
-        }
+        assertEquals(3, blocks.size(), "one background block per letter");
+        assertTrue(
+                blocks.get(0).getValue() < blocks.get(1).getValue()
+                        && blocks.get(1).getValue() < blocks.get(2).getValue(),
+                "each block's own colour steps along the ramp");
+        RankGradientAnimation.Shade first = RankGradientAnimation.shade(blocks.getFirst());
+        RankGradientAnimation.Shade last = RankGradientAnimation.shade(blocks.getLast());
+        assertEquals(0x000000, first.rgbAt(0f), "graded from the first stop at the pill's start");
+        assertEquals(0xFFFFFF, last.rgbAt(NotificationAccessor.PILL_BG_WIDTH), "to the last at its end");
     }
 
     @Test
-    void uncoloredGradientPillReturnsEveryColumnToTheBaseColor() {
+    void uncoloredGradientPillReturnsEveryBlockToTheBaseColor() {
         RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x000000, 0xFFFFFF);
         Component pill = DiscordRankChatDecorator.rankPill(gradient, null, TextColor.fromRgb(GUILD_AQUA));
 
-        withRankColoring(false, true, () -> assertEquals(
-                Set.of(GUILD_AQUA),
-                Set.copyOf(ComponentTextEditor.flatten(pill).stream()
-                        .filter(fragment -> fragment.text().contains(NotificationAccessor.PILL_COLUMN))
-                        .map(fragment -> RankGradientAnimation.animate(fragment.style().getColor()))
-                        .map(TextColor::getValue)
-                        .toList())));
+        withRankColoring(false, true, () -> assertEquals(Set.of(GUILD_AQUA), Set.copyOf(renderedPillBackgroundColors(pill))));
+    }
+
+    @Test
+    void joinsTheSpeakerNameOntoThePillsGradient() {
+        RankPresentation gradient = presentation("rank.yggdrasil", "Ygg", 120, 0x000000, 0xFFFFFF);
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(DiscordRankChatDecorator.decorateGuildChat(
+                guildLine("RECRUITER", "ArcLeRetour", "ArcLeRetour", "hi"), ignored -> gradient));
+
+        RankGradientAnimation.Shade lastBlock = RankGradientAnimation.shade(fragments.stream()
+                .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
+                .reduce((first, second) -> second)
+                .orElseThrow()
+                .style()
+                .getColor());
+        RankGradientAnimation.Shade firstLetter = RankGradientAnimation.shade(fragments.stream()
+                .filter(fragment -> "A".equals(fragment.text()))
+                .findFirst()
+                .orElseThrow()
+                .style()
+                .getColor());
+
+        assertEquals(lastBlock.length(), firstLetter.length(), 1e-6, "one gradient runs through both");
+        assertTrue(firstLetter.origin() > lastBlock.origin() + NotificationAccessor.PILL_BG_WIDTH, "the name comes after");
+        assertEquals(0xFFFFFF, RankGradientAnimation.shade(fragments.stream()
+                        .filter(fragment -> "r".equals(fragment.text()))
+                        .reduce((first, second) -> second)
+                        .orElseThrow()
+                        .style()
+                        .getColor())
+                .rgbAt(5f), "and the name finishes it");
     }
 
     @Test
@@ -1049,8 +1078,16 @@ class DiscordRankChatDecoratorTest {
                 DiscordRankChatDecorator.colouredName(username, gradient, Style.EMPTY.withInsertion(username)));
 
         assertEquals(username, fragments.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
-        assertEquals(0x9AEC13, fragments.get(12).style().getColor().getValue());
-        assertEquals(0xA2EC0F, fragments.get(13).style().getColor().getValue());
+        ColorRamp ramp = ColorRamp.of(List.of(0x40FF40, 0xC0E100));
+        assertTrue(
+                IntStream.rangeClosed(0, 100).anyMatch(step -> !isSafe(ramp.sample(step / 100d))),
+                "the ramp does cross Wynncraft's movement markers");
+        for (ComponentTextEditor.Fragment fragment : fragments) {
+            TextColor stored = fragment.style().getColor();
+            RankGradientAnimation.Shade shade = RankGradientAnimation.shade(stored);
+            assertTrue(isSafe(stored.getValue()), "stored " + Integer.toHexString(stored.getValue()));
+            assertTrue(isSafe(shade.rgbAt(0f)) && isSafe(shade.rgbAt(NAME_GLYPH_WIDTH)), "graded " + fragment.text());
+        }
         assertTrue(fragments.stream().allMatch(fragment -> username.equals(fragment.style().getInsertion())));
     }
 
@@ -1067,11 +1104,11 @@ class DiscordRankChatDecoratorTest {
         assertEquals("ArcLeRetour", name.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
         assertEquals("A", name.getFirst().text());
         assertEquals("r", name.getLast().text());
-        assertEquals(0x123456, name.getFirst().style().getColor().getValue());
-        assertEquals(0xFFFFFF, name.getLast().style().getColor().getValue());
+        assertEquals(0x123456, pillStartColor(decorated), "the pill opens the gradient");
+        assertEquals(0xFFFFFF, rightEdgeColor(name.getLast()), "and the name closes it");
         assertTrue(
-                name.get(1).style().getColor().getValue() > 0x123456,
-                "the middle of the name must be sampled from inside the ramp");
+                name.get(1).style().getColor().getValue() > name.get(0).style().getColor().getValue(),
+                "each letter is sampled further along the ramp");
     }
 
     @Test
@@ -1089,25 +1126,22 @@ class DiscordRankChatDecoratorTest {
         withPerUserColors(true, () -> assertEquals(
                 Set.of(0xFF00FF),
                 Set.copyOf(stored.stream()
-                        .map(RankGradientAnimation::animate)
+                        .map(RankGradientAnimation::resolve)
                         .map(TextColor::getValue)
                         .toList())));
         withPerUserColors(false, () -> {
-            List<Integer> rendered = stored.stream()
-                    .map(RankGradientAnimation::animate)
-                    .map(TextColor::getValue)
-                    .toList();
-            assertEquals(0x000000, rendered.getFirst());
-            assertEquals(0xFFFFFF, rendered.getLast());
+            assertEquals(0x000000, RankGradientAnimation.shade(stored.getFirst()).rgbAt(0f));
+            assertEquals(0xFFFFFF, RankGradientAnimation.shade(stored.getLast()).rgbAt(NAME_GLYPH_WIDTH));
         });
     }
 
     @Test
     void keepsGradientRegistrationWhenItsEndStopMatchesTheBaseColor() {
+        // Held on white past the middle, so the last letter's own colour is the base's.
         RankPresentation presentation = new RankPresentation(
                 new DiscordRank("rank.treant", "Treant", 102),
                 ColorRamp.of(0xFF00FF),
-                ColorRamp.of(List.of(0xFF0000, 0xFFFFFF)));
+                ColorRamp.of(List.of(0xFF0000, 0xFFFFFF, 0xFFFFFF)));
         List<TextColor> stored = ComponentTextEditor.flatten(DiscordRankChatDecorator.colouredName(
                         "MrHmar", presentation, Style.EMPTY.withColor(0xFFFFFF)))
                 .stream()
@@ -1117,7 +1151,7 @@ class DiscordRankChatDecoratorTest {
         assertEquals(0xFFFFFF, stored.getLast().getValue());
         withPerUserColors(false, () -> assertEquals(
                 0xFF00FF,
-                RankGradientAnimation.animate(stored.getLast()).getValue(),
+                RankGradientAnimation.resolve(stored.getLast()).getValue(),
                 "the white endpoint must remain a registered gradient colour"));
     }
 
@@ -1207,6 +1241,30 @@ class DiscordRankChatDecoratorTest {
             SeqClient.colorRankPillsSetting = previousPills;
             SeqClient.colorUsernamesSetting = previousUsernames;
         }
+    }
+
+    /** How wide a letter is drawn without a loaded font: it advances six, one of them spacing. */
+    private static final float NAME_GLYPH_WIDTH = 5f;
+
+    /** Where a decorated line's gradient starts: the left edge of its pill's first block. */
+    private static int pillStartColor(Component line) {
+        return RankGradientAnimation.shade(ComponentTextEditor.flatten(line).stream()
+                        .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
+                        .findFirst()
+                        .orElseThrow()
+                        .style()
+                        .getColor())
+                .rgbAt(0f);
+    }
+
+    /** The colour {@code glyph}'s right edge is drawn in. */
+    private static int rightEdgeColor(ComponentTextEditor.Fragment glyph) {
+        return RankGradientAnimation.shade(glyph.style().getColor()).rgbAt(NAME_GLYPH_WIDTH);
+    }
+
+    /** Whether Wynncraft's text shader would leave {@code rgb} alone rather than read it as a marker. */
+    private static boolean isSafe(int rgb) {
+        return WynncraftTextShaderColor.safeTextColor(rgb).getValue() == rgb;
     }
 
     private static void withPerUserColors(boolean enabled, Runnable body) {
@@ -1427,18 +1485,10 @@ class DiscordRankChatDecoratorTest {
                 .toList();
     }
 
-    /** Colours of a gradient pill's one-pixel background columns, in order. */
-    private static List<Integer> pillColumnColors(Component pill) {
-        return ComponentTextEditor.flatten(pill).stream()
-                .filter(fragment -> fragment.text().contains(NotificationAccessor.PILL_COLUMN))
-                .map(fragment -> fragment.style().getColor().getValue())
-                .toList();
-    }
-
     private static List<Integer> renderedPillBackgroundColors(Component pill) {
         return ComponentTextEditor.flatten(pill).stream()
                 .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
-                .map(fragment -> RankGradientAnimation.animate(fragment.style().getColor()))
+                .map(fragment -> RankGradientAnimation.resolve(fragment.style().getColor()))
                 .map(TextColor::getValue)
                 .toList();
     }

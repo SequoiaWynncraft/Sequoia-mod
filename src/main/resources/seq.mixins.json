@@ -16,6 +16,7 @@
     "FontPreparedTextBuilderMixin",
     "GameRendererMixin",
     "GlyphInstanceAccessor",
+    "GuiGlyphMixin",
     "GuildAllianceSnapshotPacketMixin",
     "InGameHudMixin",
     "NameTagFeatureRendererMixin",

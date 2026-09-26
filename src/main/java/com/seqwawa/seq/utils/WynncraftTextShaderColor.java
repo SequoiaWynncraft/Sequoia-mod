@@ -71,6 +71,48 @@ public final class WynncraftTextShaderColor {
         return normalized;
     }
 
+    /**
+     * Whether blending from {@code from} to {@code to} passes through a marker, as the
+     * GPU blends a glyph whose corners are coloured differently.
+     * <p>
+     * Wynncraft's text shader tests colours per pixel too, not only per corner: a pixel
+     * whose blended colour lands on a movement marker is painted white. Two safe corner
+     * colours are therefore not enough; every colour between them, rounded per channel
+     * as the shader rounds it, has to stay clear of the marker families above.
+     */
+    public static boolean crossesMarker(int from, int to) {
+        return crosses(from, to, 0, 0xFF, MOVEMENT_GREEN_MIN, MOVEMENT_GREEN_MAX, MOVEMENT_BLUE_MAX)
+                || crosses(from, to, 0, 0xFF, DIRECT_MOVEMENT_GREEN, DIRECT_MOVEMENT_GREEN, DIRECT_MOVEMENT_BLUE_MAX)
+                || crosses(from, to, 0, EFFECT_RED_MAX, EFFECT_GREEN_MIN, EFFECT_GREEN_MAX, EFFECT_BLUE_MAX)
+                || crosses(from, to, 0, 0, DIRECT_EFFECT_GREEN, DIRECT_EFFECT_GREEN, DIRECT_EFFECT_BLUE_MAX);
+    }
+
+    /**
+     * Whether the blend from {@code from} to {@code to} has a point whose rounded red,
+     * green and blue all fall in the given ranges, blue counting up from zero. Each
+     * channel narrows down the stretch of the blend where it is in range, and a marker
+     * is only reached where all three stretches overlap.
+     */
+    private static boolean crosses(int from, int to, int redMin, int redMax, int greenMin, int greenMax, int blueMax) {
+        double[] window = {0d, 1d};
+        return narrow(window, from >>> 16 & 0xFF, to >>> 16 & 0xFF, redMin, redMax)
+                && narrow(window, from >>> 8 & 0xFF, to >>> 8 & 0xFF, greenMin, greenMax)
+                && narrow(window, from & 0xFF, to & 0xFF, 0, blueMax);
+    }
+
+    /** Narrows {@code window} to where a channel blending from {@code a} to {@code b} rounds into range. */
+    private static boolean narrow(double[] window, int a, int b, int min, int max) {
+        if (a == b) {
+            return a >= min && a <= max;
+        }
+        // A shader rounds to the nearest level, so everything within half a level counts.
+        double start = (min - 0.5d - a) / (b - a);
+        double end = (max + 0.5d - a) / (b - a);
+        window[0] = Math.max(window[0], Math.min(start, end));
+        window[1] = Math.min(window[1], Math.max(start, end));
+        return window[0] <= window[1];
+    }
+
     private static int withGreen(int rgb, int green) {
         return (rgb & RED_BLUE_MASK) | (green << 8);
     }

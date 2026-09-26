@@ -389,8 +389,16 @@ class ChatManagerTest {
                 .toList();
 
         assertEquals("Name", name.stream().map(ComponentTextEditor.Fragment::text).reduce("", String::concat));
-        assertEquals(0x123456, name.getFirst().style().getColor().getValue());
-        assertEquals(0xFFFFFF, name.getLast().style().getColor().getValue());
+        RankGradientAnimation.Shade pillStart = RankGradientAnimation.shade(ComponentTextEditor.flatten(line).stream()
+                .filter(fragment -> fragment.text().indexOf(WynnPillGlyphs.BACKGROUND) >= 0)
+                .findFirst()
+                .orElseThrow()
+                .style()
+                .getColor());
+        RankGradientAnimation.Shade lastLetter = RankGradientAnimation.shade(name.getLast().style().getColor());
+        assertEquals(0x123456, pillStart.rgbAt(0f), "the pill opens the sender's gradient");
+        assertEquals(0xFFFFFF, lastLetter.rgbAt(5f), "and their name closes it");
+        assertEquals(pillStart.length(), lastLetter.length(), 1e-6, "as one gradient");
     }
 
     @Test
@@ -445,7 +453,7 @@ class ChatManagerTest {
                     .getColor();
 
             assertEquals(0x4CB4FA, stored.getValue());
-            assertEquals(ChatFormatting.WHITE.getColor(), RankGradientAnimation.animate(stored).getValue());
+            assertEquals(ChatFormatting.WHITE.getColor(), RankGradientAnimation.resolve(stored).getValue());
         } finally {
             SeqClient.colorUsernamesSetting = previous;
         }
@@ -474,7 +482,7 @@ class ChatManagerTest {
                     .getColor();
 
             assertEquals(0x4CB4FA, stored.getValue());
-            assertEquals(0xA1B2C3, RankGradientAnimation.animate(stored).getValue());
+            assertEquals(0xA1B2C3, RankGradientAnimation.resolve(stored).getValue());
         } finally {
             SeqClient.colorRankPillsSetting = previousPills;
             SeqClient.discordChatTextColorSetting = previousTextColor;

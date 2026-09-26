@@ -35,15 +35,6 @@ public final class WynnPillGlyphs {
     /** INVISIBLE PLUS, used by Wynncraft as a zero-width padding character. */
     public static final char SEPARATOR = '\u2064';
 
-    /**
-     * A one-pixel slice of {@link #BACKGROUND} in the mod's {@code rank_pill} font, so a
-     * gradient pill can be graded a column at a time, and the step back that butts the
-     * next column against it. They are mod glyphs, but a run of them belongs to the pill
-     * around it, so a column pill decodes exactly like a block pill.
-     */
-    public static final char COLUMN = '\uF8F3';
-    public static final char COLUMN_STEP_BACK = '\uF8F4';
-
     private static final char LETTER_FIRST = '\uE040';
     private static final char LETTER_LAST = '\uE059';
     private static final char DIGIT_FIRST = '\uE060';
@@ -65,8 +56,8 @@ public final class WynnPillGlyphs {
 
     /**
      * Tail of that block reserved for glyphs this mod draws itself: the Discord bridge
-     * marker and its continuation bar, the insignia, the rank pill's pixel column, and
-     * the advance spacers (see {@code assets/seq/font}).
+     * marker and its continuation bar, the insignia, and the advance spacers (see
+     * {@code assets/seq/font}).
      * <p>
      * They are private-use characters exactly like Wynncraft's, so without carving them
      * out the decorator cannot tell its own output from a server badge, and replaces
@@ -234,8 +225,7 @@ public final class WynnPillGlyphs {
                 // NotificationAccessor represents a space with a background block but
                 // no text-offset/glyph pair. That missing pair is the only information
                 // needed to recover the gap in a multi-word label.
-                if (endsBackground(text, current, index)
-                        && (index >= text.length() || text.charAt(index) != TEXT_OFFSET)) {
+                if (current == BACKGROUND && (index >= text.length() || text.charAt(index) != TEXT_OFFSET)) {
                     label.append(' ');
                     continue;
                 }
@@ -254,16 +244,6 @@ public final class WynnPillGlyphs {
             }
         }
         return List.copyOf(runs);
-    }
-
-    /**
-     * Whether {@code current}, just read before {@code next}, closes one character's
-     * background: a whole block, or the last of its columns, which alone has no step
-     * back after it.
-     */
-    private static boolean endsBackground(String text, char current, int next) {
-        return current == BACKGROUND
-                || (current == COLUMN && (next >= text.length() || text.charAt(next) != COLUMN_STEP_BACK));
     }
 
     private static boolean hasMinimumLabelLength(CharSequence label) {
@@ -331,7 +311,7 @@ public final class WynnPillGlyphs {
     }
 
     private static boolean isGlyphChar(char glyph) {
-        return isPrivateUse(glyph) || isPadding(glyph) || glyph == COLUMN || glyph == COLUMN_STEP_BACK;
+        return isPrivateUse(glyph) || isPadding(glyph);
     }
 
     private static boolean isPrivateUse(char glyph) {
