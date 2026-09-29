@@ -12,19 +12,26 @@ import java.util.Objects;
  * into this list, not as a version string. Getting the order wrong silently resolves every item in
  * a shared link to the wrong ID.
  *
- * <p>Upstream keeps the list in {@code js/load_item.js}. It is exactly the set of numeric directory
- * names under {@code data/} in ascending numeric order, so {@link #merge} can extend a stale
- * built-in list from a directory listing without shipping a mod update. Non-numeric entries such as
- * {@code baseline} are not part of the list and must be filtered out before merging.
+ * <p>Upstream keeps the list as {@code wynn_version_names} in {@code js/load_item.js}, which
+ * {@link #parseUpstreamScript} reads and {@link #adopt} takes as-is: it is what the website itself
+ * decodes links with. Failing that, the list is exactly the set of numeric directory names under
+ * {@code data/} in ascending numeric order, so {@link #merge} can extend a stale built-in list from a
+ * directory listing. Non-numeric entries such as {@code baseline} are not part of the list and must
+ * be filtered out before merging.
  */
 public final class WynnDataVersions {
-    /** Snapshot of the upstream list; extended at runtime through {@link #merge}. */
+    /** Snapshot of the upstream list; replaced or extended at runtime. */
     private static final List<String> BUILT_IN = List.of(
             "2.0.1.1", "2.0.1.2", "2.0.2.1", "2.0.2.3", "2.0.3.1", "2.0.4.1", "2.0.4.3", "2.0.4.4",
             "2.1.0.0", "2.1.0.1", "2.1.1.0", "2.1.1.1", "2.1.1.2", "2.1.1.3", "2.1.1.4", "2.1.1.5",
             "2.1.1.6", "2.1.1.7", "2.1.2.0", "2.1.3.0", "2.1.3.4", "2.1.4.0", "2.1.5.0", "2.1.6.0",
             "2.2.0.0", "2.2.0.7", "2.2.0.12", "2.2.0.14", "2.2.0.19", "2.2.0.21", "2.2.0.31",
-            "2.2.1.0", "2.2.2.0", "2.2.3.0");
+            "2.2.1.0", "2.2.2.0", "2.2.3.0", "2.2.4.0");
+
+    /** The array literal upstream declares the list in, up to its closing bracket. */
+    private static final java.util.regex.Pattern UPSTREAM_DECLARATION =
+            java.util.regex.Pattern.compile("wynn_version_names\\s*=\\s*\\[([^\\]]*)\\]");
+    private static final java.util.regex.Pattern QUOTED = java.util.regex.Pattern.compile("['\"]([^'\"]*)['\"]");
 
     /** Orders "2.2.0.7" before "2.2.0.12", which a plain string sort would get backwards. */
     public static final Comparator<String> NUMERIC_ORDER = (left, right) -> {
@@ -81,6 +88,48 @@ public final class WynnDataVersions {
         }
         merged.sort(NUMERIC_ORDER);
         return new WynnDataVersions(merged);
+    }
+
+    /**
+     * Takes upstream's own list in place of this one.
+     *
+     * <p>Upstream's order is the one links are encoded against, so it is used exactly as given
+     * rather than merged and re-sorted. A list that looks damaged — a non-numeric entry, a
+     * duplicate, or fewer versions than already known, as a truncated download would give — is
+     * ignored and this list kept.
+     */
+    public WynnDataVersions adopt(List<String> upstream) {
+        if (upstream == null || upstream.size() < versions.size()) {
+            return this;
+        }
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (String version : upstream) {
+            if (!isNumericVersion(version) || !seen.add(version)) {
+                return this;
+            }
+        }
+        return upstream.equals(versions) ? this : new WynnDataVersions(upstream);
+    }
+
+    /**
+     * Extracts {@code wynn_version_names} from upstream's {@code load_item.js}.
+     *
+     * @return the versions in declaration order, or an empty list when the declaration is missing
+     */
+    public static List<String> parseUpstreamScript(String script) {
+        if (script == null) {
+            return List.of();
+        }
+        java.util.regex.Matcher declaration = UPSTREAM_DECLARATION.matcher(script);
+        if (!declaration.find()) {
+            return List.of();
+        }
+        List<String> names = new ArrayList<>();
+        java.util.regex.Matcher quoted = QUOTED.matcher(declaration.group(1));
+        while (quoted.find()) {
+            names.add(quoted.group(1).trim());
+        }
+        return names;
     }
 
     public static boolean isNumericVersion(String name) {

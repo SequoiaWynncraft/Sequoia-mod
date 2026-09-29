@@ -13,6 +13,21 @@ import org.junit.jupiter.api.Test;
 class IdentificationRollsTest {
 
     @Test
+    void aStaticStatOnARollingItemKeepsItsValue() {
+        // Knucklebones writes its attack speed this way; read as a plain number it vanished.
+        var item = com.seqwawa.seq.wynnbuilder.data.WynnItem.parse(com.google.gson.JsonParser.parseString(
+                """
+                {"name": "Knuckles", "category": "accessory", "type": "bracelet", "tier": "Legendary",
+                 "lvl": 99, "id": 7, "atkTier": {"static": true, "raw": 3}, "lb": 18}
+                """).getAsJsonObject());
+
+        assertEquals(3, item.identifications().get("atkTier"));
+        assertTrue(IdentificationRolls.ranges(item).get("atkTier").isFixed());
+        assertEquals(3, IdentificationRolls.resolve(item, IdentificationRolls.RollMode.WORST).get("atkTier"));
+        assertTrue(!IdentificationRolls.ranges(item).get("lb").isFixed(), "the item's other stats still roll");
+    }
+
+    @Test
     void beneficialStatsRollBetweenThirtyAndOneHundredThirtyPercent() {
         Range range = IdentificationRolls.range("sdPct", 10, false);
         assertEquals(3, range.worst());

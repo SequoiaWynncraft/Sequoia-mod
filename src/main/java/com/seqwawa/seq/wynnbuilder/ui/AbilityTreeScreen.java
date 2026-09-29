@@ -90,8 +90,8 @@ public final class AbilityTreeScreen extends Screen {
 
         AbilityTree tree = state.tree();
 
-        // Header summary: points and archetype progress.
-        String points = state.remainingPoints() + " / " + state.abilityPoints() + " points";
+        // Header summary: points and archetype progress. Spent over cap, as the website shows it.
+        String points = state.spentPoints() + " / " + state.abilityPoints() + " points";
         WynnBuilderUi.drawRight(canvas, points, width - WynnBuilderUi.OUTER_MARGIN,
                 WynnBuilderUi.HEADER_HEIGHT / 2f, 12,
                 state.remainingPoints() < 0 ? color(CONTROL_DANGER) : color(CONTROL_SUCCESS));

@@ -46,6 +46,16 @@ public final class DamageMultipliers {
      * @param useSpellDamage whether this is a spell, which excludes the melee-only bonuses
      */
     public static Resolved damage(Map<String, Integer> stats, String partId, boolean useSpellDamage) {
+        return damage(stats, partId, useSpellDamage, java.util.List.of());
+    }
+
+    /**
+     * As above, leaving out the bonuses a part declares it ignores.
+     *
+     * @param ignored bonus names as they follow the prefix, such as {@code BloodPact}
+     */
+    public static Resolved damage(
+            Map<String, Integer> stats, String partId, boolean useSpellDamage, java.util.List<String> ignored) {
         double global = 1;
         double[] perElement = new double[DamageCalc.ELEMENTS];
         java.util.Arrays.fill(perElement, 1);
@@ -55,7 +65,7 @@ public final class DamageMultipliers {
                 continue;
             }
             String key = entry.getKey().substring(DAMAGE_PREFIX.length());
-            if (!appliesToPart(key, partId)) {
+            if (!appliesToPart(key, partId) || ignored.contains(key)) {
                 continue;
             }
             double factor = 1 + entry.getValue() / 100.0;

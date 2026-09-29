@@ -49,12 +49,18 @@ public final class AbilityTreeState {
         this.abilityPoints = abilityPoints;
     }
 
-    /** Points spent on the current selection; the root is free. */
+    /**
+     * Points spent on the current selection.
+     *
+     * <p>The root counts like any other node: it is always taken, but every class's root costs a
+     * point, and upstream charges it. Leaving it out showed a full tree as 49/50 and let a build
+     * spend a point it does not have.
+     */
     public int spentPoints() {
         int spent = 0;
         for (int id : active) {
             AbilityNode node = tree.node(id);
-            if (node != null && !node.isRoot()) {
+            if (node != null) {
                 spent += node.cost();
             }
         }

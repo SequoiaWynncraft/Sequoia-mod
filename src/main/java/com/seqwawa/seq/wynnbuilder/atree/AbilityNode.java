@@ -52,7 +52,23 @@ public record AbilityNode(
         if (id < 0) {
             return null;
         }
-        JsonObject display = object.getAsJsonObject("display");
+        return build(object, id);
+    }
+
+    /**
+     * Parses an ability that lives outside the tree, as a major identification grants it.
+     *
+     * <p>Those carry no ID of their own: they either extend a tree ability through
+     * {@code base_abil}, or stand alone. The caller supplies an ID that cannot collide with the tree.
+     */
+    public static AbilityNode parseDetached(JsonObject object, int syntheticId) {
+        return build(object, syntheticId);
+    }
+
+    private static AbilityNode build(JsonObject object, int id) {
+        JsonObject display = object.has("display") && object.get("display").isJsonObject()
+                ? object.getAsJsonObject("display")
+                : null;
         List<Effect> effects = new ArrayList<>();
         JsonElement effectsElement = object.get("effects");
         if (effectsElement != null && effectsElement.isJsonArray()) {

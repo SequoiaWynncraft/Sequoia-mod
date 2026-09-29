@@ -98,45 +98,130 @@ public final class DamageSources {
         String weaponName = weaponName(build, data);
         double critChance = DamageCalc.critChance(stats);
 
-        DamageCalc.Result meleeHit = DamageCalc.meleeHit(stats, weapon);
-        Source melee = new Source(
-                "Melee",
-                "per hit",
-                meleeHit.expected(critChance),
-                DamageCalc.meleeDps(stats, weapon),
-                false);
-
+        Source melee = null;
         List<SpellGroup> spells = new ArrayList<>();
         for (AbilityTreeEngine.Spell spell : evaluation.spells()) {
-            List<Source> parts = new ArrayList<>();
-            // Damage parts only; totals are kept apart so one cannot feed another.
-            java.util.Map<String, Double> byName = new java.util.LinkedHashMap<>();
-            java.util.Map<String, Double> totalsByName = new java.util.LinkedHashMap<>();
-            double damageSum = 0;
-            for (AbilityTreeEngine.Part part : spell.parts()) {
-                String partId = DamageMultipliers.partId(spell.baseSpell(), part.name());
+            SpellGroup group = evaluate(spell, stats, weapon, critChance);
+            if (group == null) {
+                continue;
+            }
+            if (spell.baseSpell() == 0) {
+                // The basic attack is spell 0, which the tree reshapes like any other: Spear
+                // Proficiency raises its multiplier, Bloodied Armory adds swipes to it. Its headline is
+                // one attack, and the swing rate turns that into damage per second.
+                melee = new Source(group.name(), "per hit", group.headline(),
+                        group.headline() * DamageCalc.attacksPerSecond(weapon.effectiveAttackSpeed()), false);
+                continue;
+            }
+            spells.add(group);
+        }
+        if (melee == null) {
+            // No ability tree to shape the attack, as when its data is unavailable: a plain swing.
+            DamageCalc.Result meleeHit = DamageCalc.meleeHit(stats, weapon);
+            melee = new Source("Melee", "per hit", meleeHit.expected(critChance),
+                    DamageCalc.meleeDps(stats, weapon), false);
+        }
 
-                if ("heal".equals(part.type())) {
-                    double healed = SpellCalc.heal(stats, part.power(), partId);
-                    parts.add(new Source(part.name(), "heal", healed, 0, false));
-                    continue;
+        String message = spells.isEmpty()
+                ? "Select abilities in the ability tree to see spell damage"
+                : "";
+        return new Report(melee, spells, weaponName, weapon.effectiveAttackSpeed(), message);
+    }
+
+    /** What one part works out to: expected damage or healing, and the calculation behind a hit. */
+    private record Evaluated(boolean heal, double amount, DamageCalc.Result result) {}
+
+    /**
+     * Works out every part of a spell the way upstream does.
+     *
+     * <p>A total names the parts it adds up, and those are looked up by name wherever they sit in the
+     * spell, a total included. A total of heals is itself a heal. Parts the data hides are still
+     * worked out, since totals build on them, but are not listed.
+     */
+    private static SpellGroup evaluate(
+            AbilityTreeEngine.Spell spell, BuildStats stats, DamageCalc.Weapon weapon, double critChance) {
+        java.util.Map<String, AbilityTreeEngine.Part> byName = new java.util.LinkedHashMap<>();
+        for (AbilityTreeEngine.Part part : spell.parts()) {
+            byName.put(part.name(), part);
+        }
+        java.util.Map<String, Evaluated> done = new java.util.HashMap<>();
+        java.util.function.Function<String, Evaluated> lookup = new java.util.function.Function<>() {
+            private final java.util.Set<String> visiting = new java.util.HashSet<>();
+
+            @Override
+            public Evaluated apply(String name) {
+                Evaluated known = done.get(name);
+                AbilityTreeEngine.Part part = byName.get(name);
+                // A total that names itself, directly or not, would recurse forever.
+                if (known != null || part == null || !visiting.add(name)) {
+                    return known;
                 }
-                if ("total".equals(part.type())) {
-                    // A total restates earlier parts, each counted as many times as it lands. Parts
-                    // are declared in dependency order, so a total may legitimately build on another
-                    // total that came before it.
-                    double summed = 0;
-                    for (java.util.Map.Entry<String, Double> hit : part.hits().entrySet()) {
-                        summed += byName.getOrDefault(hit.getKey(), 0.0) * hit.getValue();
-                    }
-                    parts.add(new Source(part.name(), "total", summed, 0, false, null, null,
-                            java.util.Map.copyOf(part.hits())));
-                    byName.put(part.name(), summed);
-                    totalsByName.put(part.name(), summed);
-                    continue;
-                }
-                // A spell says how it scales and whether the weapon's speed multiplies it. A relik's
-                // own swing scales as melee and ignores the speed multiplier, since its attack rate
+                Evaluated result = evaluatePart(spell, part, this, stats, weapon, critChance);
+                visiting.remove(name);
+                done.put(name, result);
+                return result;
+            }
+        };
+
+        List<Source> parts = new ArrayList<>();
+        double damageSum = 0;
+        double largestTotal = -1;
+        for (AbilityTreeEngine.Part part : spell.parts()) {
+            Evaluated result = lookup.apply(part.name());
+            if (result == null) {
+                continue;
+            }
+            boolean total = "total".equals(part.type());
+            if (!result.heal() && !total) {
+                damageSum += result.amount();
+            }
+            if (!result.heal() && total) {
+                largestTotal = Math.max(largestTotal, result.amount());
+            }
+            if (!part.display()) {
+                continue;
+            }
+            String name = part.name().isEmpty() ? spell.name() : part.name();
+            if (total) {
+                parts.add(new Source(name, result.heal() ? "heal" : "total", result.amount(), 0, false, null, null,
+                        java.util.Map.copyOf(part.hits())));
+            } else if (result.heal()) {
+                parts.add(new Source(name, "heal", result.amount(), 0, false));
+            } else {
+                parts.add(new Source(name, "", result.amount(), 0, false, result.result(), part.multipliers()));
+            }
+        }
+        if (parts.isEmpty()) {
+            return null;
+        }
+        // Spells 1-4 have a mana cost that item and skill point modifiers change.
+        double cost = spell.baseSpell() >= 1 && spell.baseSpell() <= 4
+                ? SpellCalc.cost(stats, spell.baseSpell(), spell.cost())
+                : spell.cost();
+        double casts = SpellCalc.castsPerSecond(stats, cost);
+
+        // The ability data names the part that represents the spell; without one, the largest total,
+        // or failing that the sum of its damage parts, is the honest headline. Inventing an extra
+        // total on top of a declared one double counts.
+        Evaluated displayed = done.get(spell.display());
+        double headline = displayed != null && !displayed.heal()
+                ? displayed.amount()
+                : largestTotal >= 0 ? largestTotal : damageSum;
+        return new SpellGroup(spell.name(), cost, casts, casts * headline, headline, parts);
+    }
+
+    private static Evaluated evaluatePart(
+            AbilityTreeEngine.Spell spell,
+            AbilityTreeEngine.Part part,
+            java.util.function.Function<String, Evaluated> lookup,
+            BuildStats stats,
+            DamageCalc.Weapon weapon,
+            double critChance) {
+        String partId = DamageMultipliers.partId(spell.baseSpell(), part.name());
+        switch (part.type()) {
+            case "damage" -> {
+                // A spell says how it scales and whether the weapon's speed multiplies it. The basic
+                // attack scales as melee and ignores the speed multiplier, since its attack rate
                 // already accounts for how often it lands.
                 DamageCalc.Result result = DamageCalc.calculate(
                         stats,
@@ -145,41 +230,39 @@ public final class DamageSources {
                         spell.spellScaling(),
                         !spell.useAttackSpeed(),
                         part.useStrength(),
-                        partId);
-                double expected = result.expected(critChance);
-                String name = part.name().isEmpty() ? spell.name() : part.name();
-                byName.put(name, expected);
-                damageSum += expected;
-                parts.add(new Source(name, "", expected, 0, false, result, part.multipliers()));
+                        partId,
+                        part.ignoredMults());
+                return new Evaluated(false, result.expected(critChance), result);
             }
-            if (!parts.isEmpty()) {
-                // Spells 1-4 have a mana cost that item and skill point modifiers change.
-                double cost = spell.baseSpell() >= 1 && spell.baseSpell() <= 4
-                        ? SpellCalc.cost(stats, spell.baseSpell(), spell.cost())
-                        : spell.cost();
-                double casts = SpellCalc.castsPerSecond(stats, cost);
-
-                // The ability data names the part that represents the spell; without one, the sum of
-                // its damage parts is the honest headline. Inventing an extra total on top of a
-                // declared one double counts.
-                Double headline = totalsByName.get(spell.display());
-                if (headline == null) {
-                    headline = byName.get(spell.display());
+            case "heal" -> {
+                return new Evaluated(true, SpellCalc.heal(stats, part.power(), partId), null);
+            }
+            default -> {
+                Boolean heal = null;
+                double amount = 0;
+                for (java.util.Map.Entry<String, Double> hit : part.hits().entrySet()) {
+                    Evaluated counted = lookup.apply(hit.getKey());
+                    // Upstream refuses to add damage to healing; skipping the odd one out is kinder.
+                    if (counted == null || (heal != null && heal != counted.heal())) {
+                        continue;
+                    }
+                    heal = counted.heal();
+                    double hits = part.tickRounding() ? tickRounded(hit.getValue()) : hit.getValue();
+                    amount += counted.amount() * hits;
                 }
-                if (headline == null && !totalsByName.isEmpty()) {
-                    headline = totalsByName.values().stream().mapToDouble(Double::doubleValue).max().orElse(0);
-                }
-                if (headline == null) {
-                    headline = damageSum;
-                }
-                spells.add(new SpellGroup(spell.name(), cost, casts, casts * headline, headline, parts));
+                return new Evaluated(heal != null && heal, amount, null);
             }
         }
+    }
 
-        String message = spells.isEmpty()
-                ? "Select abilities in the ability tree to see spell damage"
-                : "";
-        return new Report(melee, spells, weaponName, weapon.effectiveAttackSpeed(), message);
+    /**
+     * Snaps a rate to what the game can deliver: effects land on ticks, twenty a second, so the gap
+     * between two hits is a whole number of ticks. Three hits a second really lands every six ticks,
+     * which is 3.33 a second.
+     */
+    private static double tickRounded(double hitsPerSecond) {
+        double ticksBetweenHits = Math.floor(1.0 / hitsPerSecond * 20);
+        return ticksBetweenHits <= 0 ? hitsPerSecond : 1.0 / (ticksBetweenHits * 0.05);
     }
 
     /** The weapon's damage profile, whether it is a dropped item or a craft. */

@@ -11,7 +11,7 @@ import java.util.Set;
  *
  * <p>A stat rolls between 30% and 130% of its base value in the direction that helps the player, and
  * between 130% and 70% in the direction that hurts. Items flagged {@code fixID} always roll exactly
- * their base value.
+ * their base value, as does a single stat the data marks static.
  *
  * <p>The two ends of a range are named {@code worst} and {@code best} rather than minimum and
  * maximum on purpose: they are ordered by how good the roll is, not numerically. For a drawback such
@@ -112,7 +112,7 @@ public final class IdentificationRolls {
     public static Map<String, Range> ranges(WynnItem item) {
         Map<String, Range> ranges = new LinkedHashMap<>();
         for (Map.Entry<String, Integer> entry : item.identifications().entrySet()) {
-            ranges.put(entry.getKey(), range(entry.getKey(), entry.getValue(), item.fixedIds()));
+            ranges.put(entry.getKey(), range(entry.getKey(), entry.getValue(), item.isFixed(entry.getKey())));
         }
         return ranges;
     }
@@ -121,7 +121,7 @@ public final class IdentificationRolls {
     public static Map<String, Integer> resolve(WynnItem item, RollMode mode) {
         Map<String, Integer> resolved = new LinkedHashMap<>();
         for (Map.Entry<String, Integer> entry : item.identifications().entrySet()) {
-            Range range = range(entry.getKey(), entry.getValue(), item.fixedIds());
+            Range range = range(entry.getKey(), entry.getValue(), item.isFixed(entry.getKey()));
             int value = range.value(mode);
             if (value != 0) {
                 resolved.put(entry.getKey(), value);

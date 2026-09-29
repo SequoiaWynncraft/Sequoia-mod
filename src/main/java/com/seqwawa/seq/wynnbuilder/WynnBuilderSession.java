@@ -43,6 +43,7 @@ public final class WynnBuilderSession {
     private boolean statsDirty = true;
     private String message = "";
     private boolean messageIsError;
+    private String lastEvaluationFailure;
 
     private com.seqwawa.seq.wynnbuilder.atree.AbilityTreeState abilityTreeState;
     private String abilityTreeClass;
@@ -160,29 +161,46 @@ public final class WynnBuilderSession {
             return null;
         }
         if (statsDirty || cachedStats == null) {
-            // Two passes: some abilities scale off the build's own totals, so a first pass without
-            // them produces the stats the second pass reads. One extra pass settles it; iterating
-            // further would chase a fixed point for a bonus that is small by construction.
-            var firstPass = abilityTreeEvaluation(Map.of());
             double skillPointBoost =
                     com.seqwawa.seq.wynnbuilder.calc.ExternalBoosts.skillPointMultiplier(enabledExternalBoosts);
-            BuildStats provisional = BuildStats.compute(
-                    build, data, rollMode, withBuffs(firstPass.statBonuses()), skillPointBoost);
-            // Major identifications can rewrite a spell's own properties, so they have to be known
-            // before the spells are assembled rather than merged into the stats afterwards.
-            var propertyModifiers = com.seqwawa.seq.wynnbuilder.atree.AbilityTreeEngine
-                    .collectPropertyModifiers(majorIdAbilities(provisional));
-            var secondPass = abilityTreeEvaluation(provisional.identifications(), propertyModifiers);
-            Map<String, Integer> combined = withBuffs(secondPass.statBonuses());
-            // Major identifications carry ability effects of their own, from gear and raid buffs
-            // alike, and they read the totals the earlier pass produced.
-            majorIdEffects(provisional, combined.keySet())
-                    .forEach((key, value) -> combined.merge(key, value, Integer::sum));
-            cachedStats = BuildStats.compute(build, data, rollMode, combined, skillPointBoost);
-            cachedEvaluation = secondPass;
+            try {
+                // Two passes: some abilities scale off the build's own totals, so a first pass
+                // without them produces the stats the second pass reads. One extra pass settles it;
+                // iterating further would chase a fixed point for a bonus that is small by
+                // construction.
+                var firstPass = abilityTreeEvaluation(Map.of(), List.of());
+                BuildStats provisional = BuildStats.compute(
+                        build, data, rollMode, withBuffs(firstPass.statBonuses()), skillPointBoost);
+                // Aspects and major identifications graft abilities onto the tree, the latter from
+                // gear and raid buffs alike, so the gear has to be known before the tree is evaluated
+                // for real. Upstream applies aspects first.
+                List<com.google.gson.JsonObject> granted = new java.util.ArrayList<>(aspectAbilities());
+                granted.addAll(majorIdAbilities(provisional));
+                var secondPass = abilityTreeEvaluation(provisional.identifications(), granted);
+                cachedStats = BuildStats.compute(
+                        build, data, rollMode, withBuffs(secondPass.statBonuses()), skillPointBoost);
+                cachedEvaluation = secondPass;
+            } catch (RuntimeException exception) {
+                // Upstream reshapes its data from time to time. Something unexpected in it must cost
+                // the ability tree's contribution, not the whole screen, which would otherwise throw
+                // on every frame and draw nothing at all.
+                reportEvaluationFailure(exception);
+                cachedStats = BuildStats.compute(build, data, rollMode, withBuffs(Map.of()), skillPointBoost);
+                cachedEvaluation = com.seqwawa.seq.wynnbuilder.atree.AbilityTreeEngine.Evaluation.empty();
+            }
             statsDirty = false;
         }
         return cachedStats;
+    }
+
+    /** Logs a failure once per distinct cause, since a broken build recomputes on every edit. */
+    private void reportEvaluationFailure(RuntimeException exception) {
+        String signature = exception.getClass().getName() + ": " + exception.getMessage();
+        if (!signature.equals(lastEvaluationFailure)) {
+            lastEvaluationFailure = signature;
+            SeqClient.LOGGER.warn("[WynnBuilder] Ability effects could not be applied.", exception);
+        }
+        setMessage("Ability effects could not be applied; see the log", true);
     }
 
     /**
@@ -282,18 +300,13 @@ public final class WynnBuilderSession {
     }
 
     private com.seqwawa.seq.wynnbuilder.atree.AbilityTreeEngine.Evaluation abilityTreeEvaluation(
-            Map<String, Integer> buildStats) {
-        return abilityTreeEvaluation(buildStats, Map.of());
-    }
-
-    private com.seqwawa.seq.wynnbuilder.atree.AbilityTreeEngine.Evaluation abilityTreeEvaluation(
-            Map<String, Integer> buildStats, Map<String, double[]> propertyModifiers) {
+            Map<String, Integer> buildStats, List<com.google.gson.JsonObject> grantedAbilities) {
         var state = abilityTreeState();
         if (state == null) {
             return com.seqwawa.seq.wynnbuilder.atree.AbilityTreeEngine.Evaluation.empty();
         }
         return com.seqwawa.seq.wynnbuilder.atree.AbilityTreeEngine.evaluate(
-                state, sliderValues, enabledToggles, buildStats, propertyModifiers);
+                state, sliderValues, enabledToggles, buildStats, grantedAbilities);
     }
 
     /** Drops the cached tree so the next access rebuilds it from the build's bits. */
@@ -337,7 +350,32 @@ public final class WynnBuilderSession {
         return majorIds;
     }
 
-    /** The stat effects of every major identification the build has. */
+    /**
+     * The ability definitions the build's aspects contribute at their chosen tiers.
+     *
+     * <p>An aspect is always for the class that equips it, so its abilities are stamped with that
+     * class; they still wait on any ability they depend on.
+     */
+    private java.util.List<com.google.gson.JsonObject> aspectAbilities() {
+        java.util.List<com.google.gson.JsonObject> abilities = new java.util.ArrayList<>();
+        String playerClass = playerClass();
+        if (data == null || build == null || playerClass == null) {
+            return abilities;
+        }
+        for (WynnBuild.AspectSelection selection : build.aspects()) {
+            var aspect = selection == null ? null : data.aspect(playerClass, selection.aspectId());
+            if (aspect == null || selection.tier() < 1 || selection.tier() > aspect.tiers().size()) {
+                continue;
+            }
+            for (var modification : aspect.tiers().get(selection.tier() - 1).abilities()) {
+                com.google.gson.JsonObject ability = modification.definition().deepCopy();
+                ability.addProperty("class", playerClass);
+                abilities.add(ability);
+            }
+        }
+        return abilities;
+    }
+
     /** The ability definitions every major identification on the build contributes. */
     private java.util.List<com.google.gson.JsonObject> majorIdAbilities(BuildStats provisional) {
         java.util.List<com.google.gson.JsonObject> abilities = new java.util.ArrayList<>();
@@ -358,16 +396,6 @@ public final class WynnBuilderSession {
             }
         }
         return abilities;
-    }
-
-    private Map<String, Integer> majorIdEffects(BuildStats provisional, java.util.Set<String> ignored) {
-        java.util.List<String> names = new java.util.ArrayList<>(provisional.majorIds());
-        names.addAll(buffMajorIds());
-        if (names.isEmpty() || data == null) {
-            return Map.of();
-        }
-        return com.seqwawa.seq.wynnbuilder.atree.AbilityTreeEngine.applyAbilityEffects(
-                majorIdAbilities(provisional), sliderValues, enabledToggles, provisional.identifications());
     }
 
     public java.util.Set<String> enabledExternalBoosts() {
@@ -406,13 +434,14 @@ public final class WynnBuilderSession {
         statsDirty = true;
     }
 
-    /** Sets the value of an ability slider, such as the number of hits landed. */
+    /**
+     * Sets the value of an ability slider, such as the number of hits landed.
+     *
+     * <p>Zero is kept as a real choice rather than cleared: some sliders start above it, and
+     * clearing would snap them back to their default instead of emptying them.
+     */
     public void setSliderValue(String name, int value) {
-        if (value <= 0) {
-            sliderValues.remove(name);
-        } else {
-            sliderValues.put(name, value);
-        }
+        sliderValues.put(name, Math.max(0, value));
         statsDirty = true;
     }
 

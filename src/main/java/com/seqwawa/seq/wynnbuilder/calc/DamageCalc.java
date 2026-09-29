@@ -178,6 +178,23 @@ public final class DamageCalc {
             boolean ignoreAttackSpeed,
             boolean useStrength,
             String partId) {
+        return calculate(stats, weapon, multipliers, useSpellDamage, ignoreAttackSpeed, useStrength, partId, List.of());
+    }
+
+    /**
+     * As above, for a part that declares multiplicative bonuses it ignores.
+     *
+     * @param ignoredMults bonus names, such as {@code BloodPact}, that do not apply to this part
+     */
+    public static Result calculate(
+            BuildStats stats,
+            Weapon weapon,
+            double[] multipliers,
+            boolean useSpellDamage,
+            boolean ignoreAttackSpeed,
+            boolean useStrength,
+            String partId,
+            List<String> ignoredMults) {
 
         // 1. The weapon's own damage, and which elements it actually deals.
         double[][] damages = new double[ELEMENTS][2];
@@ -310,7 +327,7 @@ public final class DamageCalc {
 
         // 7. The multiplicative bonuses abilities grant, scoped to this part.
         DamageMultipliers.Resolved bonuses =
-                DamageMultipliers.damage(stats.identifications(), partId, useSpellDamage);
+                DamageMultipliers.damage(stats.identifications(), partId, useSpellDamage, ignoredMults);
         // The share each element ends up carrying, once powders have converted damage and the
         // multipliers have been applied. This is what a part is labelled with, and it is why a
         // spell reading "100%" in the ability data can show as several hundred percent.

@@ -95,6 +95,7 @@ public final class BuilderScreen extends Screen {
     private EquipmentSlot powderSlot;
     private final List<Track> tracks = new ArrayList<>();
     private Track draggedTrack;
+    private String lastTabFailure;
 
     /** A slider track and the value range it maps a pointer position onto. */
     private record Track(Rect bounds, StatLine.Slider slider) {
@@ -433,13 +434,19 @@ public final class BuilderScreen extends Screen {
         float contentTop = y + 32;
         float contentHeight = Math.max(0, height - (contentTop - y) - 8);
 
-        List<StatLine> lines = switch (activeTab) {
-            case BUILD -> buildStatLines(stats);
-            case ITEMS -> buildItemLines();
-            case DAMAGE -> buildDamageLines(stats);
-            case LOADOUT -> buildLoadoutLines();
-            case LIBRARY -> buildLibraryLines();
-        };
+        List<StatLine> lines;
+        try {
+            lines = switch (activeTab) {
+                case BUILD -> buildStatLines(stats);
+                case ITEMS -> buildItemLines();
+                case DAMAGE -> buildDamageLines(stats);
+                case LOADOUT -> buildLoadoutLines();
+                case LIBRARY -> buildLibraryLines();
+            };
+        } catch (RuntimeException exception) {
+            // A tab that throws would do so on every frame; say so once and keep the rest usable.
+            lines = failedTabLines(exception);
+        }
         float total = StatLineRenderer.contentHeight(lines, width);
         maxStatsScroll = Math.max(0, total - contentHeight);
         statsScroll = WynnBuilderUi.clamp(statsScroll, 0, maxStatsScroll);
@@ -461,6 +468,18 @@ public final class BuilderScreen extends Screen {
                     }
                 });
         StatLineRenderer.drawScrollbar(canvas, x, contentTop, width, contentHeight, statsScroll, total);
+    }
+
+    private List<StatLine> failedTabLines(RuntimeException exception) {
+        String signature = activeTab + ": " + exception;
+        if (!signature.equals(lastTabFailure)) {
+            lastTabFailure = signature;
+            SeqClient.LOGGER.warn("[WynnBuilder] The {} tab could not be drawn.", activeTab.label(), exception);
+        }
+        List<StatLine> lines = new ArrayList<>();
+        lines.add(StatLine.text("This tab could not be drawn", "", color(CONTROL_DANGER)));
+        lines.add(StatLine.text("The details are in the game log", "", color(TEXT_MUTED)));
+        return lines;
     }
 
     private List<StatLine> buildStatLines(BuildStats stats) {
@@ -855,7 +874,7 @@ public final class BuilderScreen extends Screen {
         }
         // Sliders drive effects that scale with something the player does, such as hits landed.
         for (AbilityTreeEngine.Slider slider : evaluation.sliders()) {
-            int value = session.sliderValues().getOrDefault(slider.name(), 0);
+            int value = slider.valueFrom(session.sliderValues());
             lines.add(StatLine.sliderRow(slider.name(), value, slider.maximum(),
                     next -> session.setSliderValue(slider.name(), next)));
         }

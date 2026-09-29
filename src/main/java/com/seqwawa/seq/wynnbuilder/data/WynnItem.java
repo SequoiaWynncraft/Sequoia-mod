@@ -30,6 +30,7 @@ public record WynnItem(
         Map<String, Integer> baseDefences,
         int baseHealth,
         Map<String, Integer> identifications,
+        java.util.Set<String> staticIdentifications,
         List<String> majorIds,
         String setName,
         boolean fixedIds,
@@ -40,7 +41,13 @@ public record WynnItem(
         requirements = Map.copyOf(requirements);
         baseDefences = Map.copyOf(baseDefences);
         identifications = Map.copyOf(identifications);
+        staticIdentifications = java.util.Set.copyOf(staticIdentifications);
         majorIds = List.copyOf(majorIds);
+    }
+
+    /** Whether a stat always shows its base value, either because the item is fixed or the stat is. */
+    public boolean isFixed(String identification) {
+        return fixedIds || staticIdentifications.contains(identification);
     }
 
     /** Item rarities, ordered from most common to rarest. */
@@ -125,12 +132,24 @@ public record WynnItem(
         }
 
         Map<String, Integer> identifications = new LinkedHashMap<>();
+        java.util.Set<String> staticIdentifications = new java.util.HashSet<>();
         for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
             String key = Identifications.normalise(entry.getKey());
             if (key == null || !Identifications.isIdentification(key)) {
                 continue;
             }
-            Integer value = Json.optionalInteger(entry.getValue());
+            JsonElement element = entry.getValue();
+            // A stat that does not roll on an otherwise rolling item is written as
+            // {"static": true, "raw": 3}, as Knucklebones' attack speed is. Read as a plain number it
+            // is lost entirely, and the build swings three tiers slower than it does.
+            if (element != null && element.isJsonObject()) {
+                JsonObject wrapped = element.getAsJsonObject();
+                if (Json.bool(wrapped, "static")) {
+                    staticIdentifications.add(key);
+                }
+                element = wrapped.get("raw");
+            }
+            Integer value = Json.optionalInteger(element);
             if (value != null && value != 0) {
                 identifications.merge(key, value, Integer::sum);
             }
@@ -162,6 +181,7 @@ public record WynnItem(
                 defences,
                 Json.integer(object, "hp", 0),
                 identifications,
+                staticIdentifications,
                 majorIds,
                 Json.string(object, "set"),
                 Json.bool(object, "fixID"),

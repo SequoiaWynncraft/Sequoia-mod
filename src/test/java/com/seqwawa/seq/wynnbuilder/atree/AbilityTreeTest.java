@@ -97,6 +97,19 @@ class AbilityTreeTest {
     }
 
     @Test
+    void aRootThatCostsAPointIsCharged() {
+        // Every real class's root costs one point; a full tree reads 50/50 on the website.
+        AbilityTree tree = AbilityTree.parseAll(TREE_JSON.replaceFirst("\"cost\": 0", "\"cost\": 1")).get("Archer");
+        AbilityTreeState state = new AbilityTreeState(tree);
+        state.setAbilityPoints(2);
+
+        assertEquals(1, state.spentPoints());
+        assertTrue(state.toggle(1));
+        assertEquals(0, state.remainingPoints());
+        assertFalse(state.canActivate(2), "the root's point is not available to spend twice");
+    }
+
+    @Test
     void abilitiesNeedAConnectedParent() {
         AbilityTreeState state = new AbilityTreeState(tree());
 

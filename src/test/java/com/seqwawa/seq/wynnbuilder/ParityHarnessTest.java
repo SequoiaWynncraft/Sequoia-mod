@@ -44,7 +44,9 @@ class ParityHarnessTest {
                 contents.put(file, Files.readString(path));
             }
         }
-        WynnDataSet data = WynnDataSet.parse("2.2.3.0", contents);
+        // The directory is named after its data version, as in the game's cache, so a link written
+        // against that version decodes with its own constants and nothing is fetched.
+        WynnDataSet data = WynnDataSet.parse(directory.getFileName().toString(), contents);
         WynnBuilderSession session = WynnBuilderSession.offline(data);
         String link = System.getenv("WB_LINK");
         session.importBuildLink(link == null || link.isBlank() ? DEFAULT_LINK : link);
@@ -59,6 +61,7 @@ class ParityHarnessTest {
                 java.util.Arrays.toString(stats.assignedSkillPoints()),
                 stats.assignedTotal(),
                 stats.availableSkillPoints());
+        System.out.println("link sp      = " + java.util.Arrays.toString(session.build().assignedSkillPoints()));
         System.out.println("aspects      = " + session.build().aspects());
         System.out.println("tomes        = " + session.build().tomeIds());
         for (com.seqwawa.seq.wynnbuilder.data.EquipmentSlot slot :
@@ -67,7 +70,13 @@ class ParityHarnessTest {
                     + "  powders=" + session.build().powders(slot));
         }
         System.out.println("problems     = " + stats.problems());
+        var tree = session.abilityTreeState();
+        if (tree != null) {
+            System.out.println("ability tree = " + tree.spentPoints() + "/" + tree.abilityPoints()
+                    + " points, active " + new java.util.TreeSet<>(tree.active()));
+        }
         System.out.println("toggles      = " + session.abilityTreeEvaluation().toggles());
+        System.out.println("sliders      = " + session.abilityTreeEvaluation().sliders());
         System.out.println("major ids    = " + stats.majorIds());
 
         System.out.println("identifications (non-zero):");

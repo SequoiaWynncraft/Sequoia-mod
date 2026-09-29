@@ -24,8 +24,14 @@ public record WynnAspect(int id, String displayName, WynnItem.Tier tier, String 
         }
     }
 
-    /** An aspect tier modifying an existing ability, by property overrides or added effects. */
-    public record AbilityModification(int baseAbilityId, JsonObject properties, List<JsonObject> effects) {
+    /**
+     * An aspect tier modifying an existing ability, by property overrides or added effects.
+     *
+     * @param definition the ability as the data declares it, dependencies included, which is what
+     *     the ability tree engine evaluates
+     */
+    public record AbilityModification(
+            int baseAbilityId, JsonObject properties, List<JsonObject> effects, JsonObject definition) {
         public AbilityModification {
             effects = List.copyOf(effects);
         }
@@ -77,7 +83,8 @@ public record WynnAspect(int id, String displayName, WynnItem.Tier tier, String 
                         abilities.add(new AbilityModification(
                                 WynnItem.Json.integer(ability, "base_abil", -1),
                                 properties != null && properties.isJsonObject() ? properties.getAsJsonObject() : new JsonObject(),
-                                effects));
+                                effects,
+                                ability));
                     }
                 }
                 tiers.add(new Tier(
