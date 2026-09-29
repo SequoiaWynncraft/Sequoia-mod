@@ -96,6 +96,13 @@ public final class DiscordRankChatDecorator {
     static final String BRIDGE_CONTINUATION_GLYPH = "\uF8F1";
     /** Discord mark dropped into the middle of Wynncraft's arrow. */
     static final String BRIDGE_ICON_GLYPH = "\uF8F2";
+    /** Connector rising from a bridged reply to the line quoting what it answers. */
+    static final String BRIDGE_REPLY_GLYPH = "\uF8F3";
+    /**
+     * Grey of the connector drawn from a reply to its quote: the "Replying to" beside it.
+     * Discord's own darker grey all but vanished against chat's background in game.
+     */
+    private static final TextColor REPLY_CONNECTOR_COLOR = TextColor.fromRgb(0xB5BAC1);
     /** One pixel of positive advance, repeated to widen a prefix. */
     private static final char BRIDGE_ADVANCE_PAD = '\uF8FD';
     /** One pixel of negative advance, repeated to narrow one. */
@@ -158,8 +165,10 @@ public final class DiscordRankChatDecorator {
         // Every ordinary chat line ends the current bridge block. A bridged line must
         // not, so it is recognised by identity as well as by the suppression flag:
         // another mod may queue the message and deliver it here after
-        // displayUndecorated has returned, closing the very block it opened.
-        boolean ownLine = suppressed || message == lastBridgeLine;
+        // displayUndecorated has returned, closing the very block it opened. A reply's
+        // quote is recognised by its connector too, since its reply follows at once and
+        // the delayed quote would otherwise cut the block between the two.
+        boolean ownLine = suppressed || message == lastBridgeLine || isBridgeReplyQuote(message);
         if (!ownLine) {
             bridgeSequenceOpen = false;
         }
@@ -809,6 +818,32 @@ public final class DiscordRankChatDecorator {
      */
     public static MutableComponent bridgePrefix() {
         return alignToGuildColumn(bridgeSequenceOpen ? continuationBar() : discordMark());
+    }
+
+    /**
+     * The connector drawn at the start of a reply's quote: it rises from the reply's
+     * pill below and turns right towards the quoted name. No shadow, which would
+     * double its one-pixel line.
+     */
+    public static MutableComponent replyConnector() {
+        return Component.literal(BRIDGE_REPLY_GLYPH)
+                .withStyle(style -> style.withFont(BRIDGE_PREFIX_FONT).withColor(REPLY_CONNECTOR_COLOR).withoutShadow());
+    }
+
+    /**
+     * Whether {@code message} is the line quoting what a bridged reply answers. It is
+     * recognised by its connector, which nothing else draws, so it is still recognised
+     * once another mod has copied it or added a timestamp.
+     */
+    public static boolean isBridgeReplyQuote(Component message) {
+        return message != null
+                && message.visit(
+                                (style, text) -> BRIDGE_PREFIX_FONT.equals(style.getFont())
+                                                && text.contains(BRIDGE_REPLY_GLYPH)
+                                        ? Optional.of(Boolean.TRUE)
+                                        : Optional.<Boolean>empty(),
+                                Style.EMPTY)
+                        .orElse(false);
     }
 
     /** Pure continuation form used for visual lines created by Minecraft's wrapping. */

@@ -1935,11 +1935,13 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         // because older backends do not send it, in which case
                         // matching falls back to the name.
                         String discordId = extractPrimitiveString(json, "discord_id");
+                        DiscordChatMessage.Reply reply = discordChatReply(json);
                         SeqClient.LOGGER.info(
-                                "[WebSocket] Dispatching discord_chat from {} discordId={}",
+                                "[WebSocket] Dispatching discord_chat from {} discordId={} reply={}",
                                 username,
-                                discordId != null);
-                        discordChatHandler.accept(new DiscordChatMessage(username, msg, discordId));
+                                discordId != null,
+                                reply != null);
+                        discordChatHandler.accept(new DiscordChatMessage(username, msg, discordId, reply));
                     } else {
                         SeqClient.LOGGER.warn("[WebSocket] Received discord_chat but handler is not registered");
                     }
@@ -2598,6 +2600,20 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         notify("Sequoia is outdated. Some " + feature + " may not work until you update to " + targetVersion + ".");
     }
 
+    /**
+     * The message a bridged Discord message replies to, or {@code null} when it is not a
+     * reply or the backend predates {@code reply_to}. Such a backend still names the
+     * replied-to author in the text itself; see {@code BridgeReply}.
+     */
+    static DiscordChatMessage.Reply discordChatReply(JsonObject json) {
+        if (!json.has("reply_to") || !json.get("reply_to").isJsonObject()) {
+            return null;
+        }
+        JsonObject reply = json.getAsJsonObject("reply_to");
+        String username = extractPrimitiveString(reply, "username");
+        return username == null ? null : new DiscordChatMessage.Reply(username, extractPrimitiveString(reply, "message"));
+    }
+
     private static String extractPrimitiveString(JsonObject json, String key) {
         if (!json.has(key) || !json.get(key).isJsonPrimitive()) {
             return null;
@@ -2721,12 +2737,24 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
      *                  does not supply one. Prefer it over {@code username} for any
      *                  identity matching: it is stable, whereas a display name can be
      *                  changed or shared.
+     * @param reply     the message this one replies to, or {@code null} when it is not a
+     *                  reply or the backend does not say
      */
-    public record DiscordChatMessage(String username, String message, String discordId) {
+    public record DiscordChatMessage(String username, String message, String discordId, Reply reply) {
 
         public DiscordChatMessage(String username, String message) {
             this(username, message, null);
         }
+
+        public DiscordChatMessage(String username, String message, String discordId) {
+            this(username, message, discordId, null);
+        }
+
+        /**
+         * A replied-to Discord message: its author, as the backend names bridge senders,
+         * and an excerpt of it, or {@code null} when it has nothing to show.
+         */
+        public record Reply(String username, String message) {}
     }
 
     public record PartyFinderUpdateMessage(String action, JsonObject listingJson) {}

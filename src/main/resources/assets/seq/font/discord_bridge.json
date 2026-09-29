@@ -20,6 +20,16 @@
       ]
     },
     {
+      "comment": "Connector from a bridged reply up to the line quoting what it answers: it rises from the reply's pill and turns right. White, tinted grey at render time.",
+      "type": "bitmap",
+      "file": "seq:font/discord_reply.png",
+      "ascent": 8,
+      "height": 9,
+      "chars": [
+        "\uF8F3"
+      ]
+    },
+    {
       "comment": "One pixel of advance each way, repeated by the mod so the Discord mark takes exactly the room of the guild marker it replaces, and so both bridge prefixes put their text on the same column.",
       "type": "space",
       "advances": {

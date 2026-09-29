@@ -9,9 +9,12 @@ import com.seqwawa.seq.managers.DiscordRankChatDecorator;
 import com.seqwawa.seq.managers.GuildChatMarkers;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.minecraft.client.StringSplitter;
 import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.FormattedText;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.FormattedCharSequence;
@@ -108,6 +111,33 @@ class ChatBridgeLineWrappingTest {
         Component retainedPrefix = DiscordRankChatDecorator.bridgeContinuationPrefixFor(bridgeLine);
         assertNotNull(retainedPrefix);
         assertSame(retainedPrefix, DiscordRankChatDecorator.bridgeContinuationPrefixFor(bridgeLine));
+    }
+
+    @Test
+    void cutsAReplysQuoteToOneLineEndingInAnEllipsis() {
+        StringSplitter sixWide = new StringSplitter((codePoint, style) -> 6f);
+        Style grey = Style.EMPTY.withColor(0xB5BAC1);
+        Component quote = Component.empty()
+                .append(Component.literal("Target"))
+                .append(Component.literal(" anyone up for a raid?").withStyle(grey));
+
+        FormattedText cut = ChatBridgeLineWrapping.cutToWidth(quote, 66, sixWide);
+
+        // Eleven glyphs of room: eight of the quote, then the three of the ellipsis.
+        assertEquals("Target a...", cut.getString());
+        assertEquals(grey, lastStyle(cut), "in the colour of the words it cuts short");
+        assertSame(quote, ChatBridgeLineWrapping.cutToWidth(quote, 1000, sixWide), "a quote that fits is left whole");
+    }
+
+    private static Style lastStyle(FormattedText text) {
+        Style[] last = {null};
+        text.visit(
+                (style, piece) -> {
+                    last[0] = style;
+                    return Optional.empty();
+                },
+                Style.EMPTY);
+        return last[0];
     }
 
     private static FormattedCharSequence sequence(String text) {

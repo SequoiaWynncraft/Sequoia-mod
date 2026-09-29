@@ -61,7 +61,8 @@ public class ChatComponentMixin {
     /**
      * Minecraft creates visual chat lines only after the component enters its display
      * queue. Reserve room for the bridge rail at that point, then put the rail on every
-     * automatically wrapped line after the sender line.
+     * automatically wrapped line after the sender line. A reply's quote is not wrapped
+     * but cut to one line, since only here is the room it has known.
      */
     @Redirect(
             method = "addMessageToDisplayQueue",
@@ -75,6 +76,9 @@ public class ChatComponentMixin {
             message = new GuiMessage(message.addedTime(), tagged, message.signature(), message.tag());
         }
         List<FormattedCharSequence> initialLines = message.splitLines(font, maxWidth);
+        if (DiscordRankChatDecorator.isBridgeReplyQuote(message.content())) {
+            return ChatBridgeLineWrapping.keepToOneLine(initialLines, message, font, maxWidth);
+        }
         Component continuationPrefix = DiscordRankChatDecorator.bridgeContinuationPrefixFor(message.content());
         if (continuationPrefix == null) {
             return initialLines;

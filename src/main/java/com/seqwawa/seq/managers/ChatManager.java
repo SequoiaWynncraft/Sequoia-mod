@@ -2,6 +2,7 @@ package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.mixins.ClientPacketListenerMixin;
 import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
@@ -55,6 +56,8 @@ public class ChatManager {
      * shout uses §#bd45ffff, territory/battle info uses §c, etc.
      */
     private static final int GUILD_CHAT_COLOR = 0x55FFFF;
+    /** Discord's muted grey for the text a reply quotes. */
+    private static final int REPLY_EXCERPT_COLOR = 0xB5BAC1;
     private static final String BACKEND_GUILD_NAME = "Sequoia";
     private static long nextAchievementSendAt;
 
@@ -785,11 +788,22 @@ public class ChatManager {
      * with breaks embedded in it. Minecraft draws an embedded break flush against the
      * left margin, which loses the marker column and detaches the rest of the message
      * from its sender; separate lines each receive the appropriate bridge prefix.
+     * <p>
+     * A reply is shown as Discord shows one: a line quoting what it answers, then the
+     * reply itself, rather than with "Replying to" written into the message. The quote
+     * opens the bridge block, so it carries the Discord mark and the reply the bar.
      */
     private void displayBridgeMessage(ConnectionManager.DiscordChatMessage msg) {
-        List<String> lines = splitMessageLines(msg.message());
+        BridgeReply reply = BridgeReply.of(msg);
+        String text = reply == null ? msg.message() : reply.text();
+        List<String> lines = splitMessageLines(text);
         RankPresentation rank = DiscordRankChatDecorator.bridgeRank(msg.username(), msg.discordId());
 
+        if (reply != null) {
+            MutableComponent quote = bridgeReplyQuoteLine(reply, rank != null);
+            DiscordRankChatDecorator.displayUndecorated(
+                    quote, () -> mc.player.displayClientMessage(quote, false), rank != null);
+        }
         for (int index = 0; index < lines.size(); index++) {
             MutableComponent line = index == 0
                     ? bridgeSenderLine(msg, lines.get(index), rank)
@@ -832,6 +846,60 @@ public class ChatManager {
         TextColor textColor = DiscordRankChatDecorator.discordChatTextColor();
         return line.append(Component.literal(": ").withStyle(style -> style.withColor(textColor)))
                 .append(Component.literal(text).withStyle(style -> style.withColor(textColor)));
+    }
+
+    /**
+     * The line drawn above a bridged reply, saying what it answers: a connector rising
+     * to it from the reply, "Replying to" and the replied-to author in their rank
+     * colours, and the start of their message when the backend sends it, whole in the
+     * tooltip. {@code railed} opens it with the bridge
+     * prefix, as the first line of the reply's bridge block; the plain bridge
+     * presentation has none.
+     * <p>
+     * It is cut to one line where chat wraps lines, since only there is the room left
+     * by timestamps and chat width known; see {@link DiscordRankChatDecorator#isBridgeReplyQuote}.
+     */
+    static MutableComponent bridgeReplyQuoteLine(BridgeReply reply, boolean railed) {
+        RankPresentation rank = repliedToRank(reply.username());
+        String name = bridgeDisplayName(reply.username(), rank);
+        MutableComponent author = rank == null
+                ? Component.literal(name).withStyle(style -> style.withColor(ChatFormatting.WHITE))
+                : DiscordRankChatDecorator.colouredName(name, rank, Style.EMPTY);
+
+        MutableComponent tooltip = Component.literal("Replying to ")
+                .withStyle(ChatFormatting.GRAY)
+                .append(author.copy());
+        // Said in so many words, in italics: a connector and a name alone did not read
+        // as a reply.
+        MutableComponent quote = Component.empty()
+                .append(DiscordRankChatDecorator.replyConnector())
+                .append(Component.literal(" Replying to ")
+                        .withStyle(style -> style.withColor(REPLY_EXCERPT_COLOR).withItalic(true)))
+                .append(author);
+        if (reply.excerpt() != null) {
+            quote.append(Component.literal(": " + reply.excerpt())
+                    .withStyle(style -> style.withColor(REPLY_EXCERPT_COLOR)));
+            tooltip.append(CommonComponents.NEW_LINE)
+                    .append(Component.literal(reply.excerpt()).withStyle(style -> style.withColor(REPLY_EXCERPT_COLOR)));
+        }
+        quote.withStyle(style -> style.withHoverEvent(new HoverEvent.ShowText(tooltip)));
+
+        return Component.empty()
+                .append(railed ? DiscordRankChatDecorator.bridgePrefix() : Component.empty())
+                .append(quote);
+    }
+
+    /**
+     * The rank of a replied-to author. A game message relayed to Discord is posted under
+     * {@code "<account>/<nickname>"}, which is what a reply to it names, so the account
+     * before the slash answers when the whole name does not.
+     */
+    private static RankPresentation repliedToRank(String name) {
+        RankPresentation rank = DiscordRankChatDecorator.bridgeRank(name, null);
+        int slash = name.indexOf('/');
+        return rank != null || slash <= 0
+                ? rank
+                : DiscordRankChatDecorator.bridgeRank(name.substring(0, slash).strip(), null);
     }
 
     /**

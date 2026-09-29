@@ -16,6 +16,7 @@ import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.seqwawa.seq.utils.RankGradientAnimation;
 import com.seqwawa.seq.utils.WynnPillGlyphs;
 import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
@@ -515,6 +516,104 @@ class ChatManagerTest {
         } finally {
             SeqClient.discordChatTextColorSetting = previous;
         }
+    }
+
+    @Test
+    void readsAReplyFromTheMessageItQuotesAndDropsTheWrittenPrefix() {
+        BridgeReply reply = BridgeReply.of(new ConnectionManager.DiscordChatMessage(
+                "OwORawr",
+                "Replying to a3pki/rice field worker: wharffff",
+                null,
+                new ConnectionManager.DiscordChatMessage.Reply(
+                        "a3pki/rice field worker", "  anyone" + System.lineSeparator() + "  up for a raid? ")));
+
+        assertEquals(new BridgeReply("a3pki/rice field worker", "anyone up for a raid?", "wharffff"), reply);
+    }
+
+    @Test
+    void readsTheRepliedToNameBackFromAnOlderBackendsPrefix() {
+        BridgeReply reply = BridgeReply.of(new ConnectionManager.DiscordChatMessage(
+                "OwORawr", "Replying to a3pki/rice field worker: wharffff: really"));
+
+        assertEquals(new BridgeReply("a3pki/rice field worker", null, "wharffff: really"), reply);
+    }
+
+    @Test
+    void leavesAMessageThatRepliesToNobodyAlone() {
+        assertNull(BridgeReply.of(new ConnectionManager.DiscordChatMessage("Name", "hello")));
+        assertNull(BridgeReply.of(new ConnectionManager.DiscordChatMessage("Name", "Replying to nobody")));
+        assertNull(BridgeReply.of(new ConnectionManager.DiscordChatMessage("Name", "Replying to : hi")));
+    }
+
+    @Test
+    void saysWhatAReplyAnswersOnALineOfItsOwn() {
+        MutableComponent quote = ChatManager.bridgeReplyQuoteLine(
+                new BridgeReply("Target", "anyone up for a raid?", "sure"), false);
+
+        assertEquals(
+                DiscordRankChatDecorator.BRIDGE_REPLY_GLYPH + " Replying to Target: anyone up for a raid?",
+                quote.getString());
+        assertTrue(DiscordRankChatDecorator.isBridgeReplyQuote(quote), "recognised where chat wraps lines");
+        Style label = fragmentStyle(quote, " Replying to ");
+        assertEquals(0xB5BAC1, label.getColor().getValue());
+        assertTrue(label.isItalic(), "set apart from what anyone said");
+        assertFragmentColor(quote, "Target", ChatFormatting.WHITE);
+        assertFalse(fragmentStyle(quote, "Target").isItalic());
+        assertFragmentColor(quote, ": anyone up for a raid?", 0xB5BAC1);
+        Style connector = fragmentStyle(quote, DiscordRankChatDecorator.BRIDGE_REPLY_GLYPH);
+        assertEquals(0xB5BAC1, connector.getColor().getValue(), "in the grey of the words beside it");
+        assertEquals(0, connector.getShadowColor(), "a one-pixel connector, drawn without a shadow");
+        HoverEvent hover = fragmentStyle(quote, ": anyone up for a raid?").getHoverEvent();
+        assertEquals(
+                "Replying to Target" + CommonComponents.NEW_LINE.getString() + "anyone up for a raid?",
+                ((HoverEvent.ShowText) hover).value().getString());
+    }
+
+    @Test
+    void namesOnlyTheAuthorWhenTheBackendSendsNoExcerpt() {
+        MutableComponent quote = ChatManager.bridgeReplyQuoteLine(new BridgeReply("Target", null, "sure"), false);
+
+        assertEquals(DiscordRankChatDecorator.BRIDGE_REPLY_GLYPH + " Replying to Target", quote.getString());
+    }
+
+    @Test
+    void aSenderLineIsNotAReplyQuote() {
+        MutableComponent line = ChatManager.bridgeSenderLine(
+                new ConnectionManager.DiscordChatMessage("MrHmar", "hello", "215820027700576258"), "hello", null);
+
+        assertFalse(DiscordRankChatDecorator.isBridgeReplyQuote(line));
+        assertFalse(DiscordRankChatDecorator.isBridgeReplyQuote(Component.literal("Replying to Target: sure")));
+    }
+
+    @Test
+    void aReplysQuoteOpensItsBridgeBlockWithTheDiscordMark() {
+        GuildChatMarkers.reset();
+        DiscordRankChatDecorator.decorateGuildChat(Component.literal("ordinary chat ends any block"));
+
+        MutableComponent quote = ChatManager.bridgeReplyQuoteLine(new BridgeReply("Target", "hi", "sure"), true);
+        DiscordRankChatDecorator.displayUndecorated(quote, () -> {}, true);
+        // Handed to chat late by another mod, the quote still does not cut the block.
+        DiscordRankChatDecorator.decorateGuildChat(quote);
+
+        assertTrue(quote.getString().contains(DiscordRankChatDecorator.BRIDGE_ICON_GLYPH), "the mark on the left");
+        assertTrue(
+                DiscordRankChatDecorator.bridgePrefix()
+                        .getString()
+                        .contains(DiscordRankChatDecorator.BRIDGE_CONTINUATION_GLYPH),
+                "and the bar beside the reply under it");
+        assertTrue(
+                ChatManager.bridgeReplyQuoteLine(new BridgeReply("Target", "hi", "sure"), true)
+                        .getString()
+                        .contains(DiscordRankChatDecorator.BRIDGE_CONTINUATION_GLYPH),
+                "inside a block, a quote carries the bar on");
+    }
+
+    private static Style fragmentStyle(Component component, String text) {
+        return ComponentTextEditor.flatten(component).stream()
+                .filter(fragment -> fragment.text().equals(text))
+                .findFirst()
+                .orElseThrow()
+                .style();
     }
 
     private static void assertFragmentColor(Component component, String text, ChatFormatting expected) {

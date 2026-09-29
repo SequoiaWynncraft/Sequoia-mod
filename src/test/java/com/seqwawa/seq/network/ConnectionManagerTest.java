@@ -493,4 +493,32 @@ class ConnectionManagerTest {
                         .toList()));
     }
 
+    @Test
+    void discordChatReadsTheMessageItRepliesTo() {
+        var json = com.google.gson.JsonParser.parseString(
+                        "{\"type\":\"discord_chat\",\"username\":\"OwORawr\",\"message\":\"Replying to Target: sure\","
+                                + "\"reply_to\":{\"username\":\"Target\",\"message\":\"anyone up for a raid?\"}}")
+                .getAsJsonObject();
+
+        assertEquals(
+                new ConnectionManager.DiscordChatMessage.Reply("Target", "anyone up for a raid?"),
+                ConnectionManager.discordChatReply(json));
+    }
+
+    @Test
+    void discordChatWithoutAReplyOrAReplyWithoutAnAuthorHasNoReply() {
+        assertNull(ConnectionManager.discordChatReply(com.google.gson.JsonParser.parseString(
+                        "{\"type\":\"discord_chat\",\"username\":\"OwORawr\",\"message\":\"hello\"}")
+                .getAsJsonObject()));
+        assertNull(ConnectionManager.discordChatReply(com.google.gson.JsonParser.parseString(
+                        "{\"reply_to\":{\"username\":\" \",\"message\":\"hi\"}}")
+                .getAsJsonObject()));
+        assertEquals(
+                new ConnectionManager.DiscordChatMessage.Reply("Target", null),
+                ConnectionManager.discordChatReply(com.google.gson.JsonParser.parseString(
+                                "{\"reply_to\":{\"username\":\"Target\"}}")
+                        .getAsJsonObject()),
+                "an author with nothing quoted, as for a sticker");
+    }
+
 }
