@@ -125,6 +125,15 @@ dependencies {
     // Theme files
     include(implementation("org.snakeyaml:snakeyaml-engine:3.0.1"))
 
+    // WebP, which Java cannot read: Discord's GIF picker (Klipy) sends its GIFs as
+    // animated WebP. Nested jars are not transitive, so every module is listed.
+    include(implementation("com.twelvemonkeys.imageio:imageio-webp:${project.twelvemonkeys_version}"))
+    include("com.twelvemonkeys.imageio:imageio-core:${project.twelvemonkeys_version}")
+    include("com.twelvemonkeys.imageio:imageio-metadata:${project.twelvemonkeys_version}")
+    include("com.twelvemonkeys.common:common-lang:${project.twelvemonkeys_version}")
+    include("com.twelvemonkeys.common:common-io:${project.twelvemonkeys_version}")
+    include("com.twelvemonkeys.common:common-image:${project.twelvemonkeys_version}")
+
     testImplementation(platform("org.junit:junit-bom:5.12.1"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

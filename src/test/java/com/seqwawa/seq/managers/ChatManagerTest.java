@@ -11,6 +11,7 @@ import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.model.DiscordRank;
 import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.network.ConnectionManager;
+import com.seqwawa.seq.utils.BridgeMedia;
 import com.seqwawa.seq.utils.ColorRamp;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.seqwawa.seq.utils.RankGradientAnimation;
@@ -606,6 +607,65 @@ class ChatManagerTest {
                         .getString()
                         .contains(DiscordRankChatDecorator.BRIDGE_CONTINUATION_GLYPH),
                 "inside a block, a quote carries the bar on");
+    }
+
+    @Test
+    void aLinkToAPictureShownBeneathReadsAsItsLabelAndOpensThePictureItself() {
+        String link = "https://klipy.com/gifs/cat-dance";
+        BridgeMedia.Picture picture = new BridgeMedia.Picture(
+                java.net.URI.create("https://static.klipy.com/ii/a/b/c/cat.webp"), BridgeMedia.Kind.ANIMATED, "cat.webp");
+
+        MutableComponent text = ChatManager.bridgeText(
+                "look " + link + " here", TextColor.fromRgb(0x55FFFF), java.util.Map.of(link, picture));
+
+        assertEquals("look [GIF] here", text.getString());
+        Style label = fragmentStyle(text, "[GIF]");
+        assertEquals(
+                picture.fetch(),
+                ((net.minecraft.network.chat.ClickEvent.OpenUrl) label.getClickEvent()).uri(),
+                "the GIF itself, not the page linked to it");
+        assertTrue(label.isUnderlined());
+        assertFragmentColor(text, "look ", 0x55FFFF);
+    }
+
+    @Test
+    void showsNoAddressAndOpensOnlySafeImageLinks() {
+        String attachment = "https://cdn.discordapp.com/attachments/1/2/gregory.gif";
+        MutableComponent text = ChatManager.bridgeText(
+                attachment + " https://evil.example/cat.png https://youtube.com/watch?v=abc",
+                TextColor.fromRgb(0x55FFFF),
+                java.util.Map.of());
+
+        assertEquals("[GIF] [Image] [Link]", text.getString(), "not one address shown");
+        assertEquals(
+                attachment,
+                ((net.minecraft.network.chat.ClickEvent.OpenUrl) fragmentStyle(text, "[GIF]").getClickEvent())
+                        .uri()
+                        .toString(),
+                "an attachment on Discord opens");
+        assertNull(fragmentStyle(text, "[Image]").getClickEvent(), "an image elsewhere does not");
+        assertNull(fragmentStyle(text, "[Link]").getClickEvent(), "nor does any other link");
+    }
+
+    @Test
+    void quotesNoAddressInAReplyEither() {
+        MutableComponent quote = ChatManager.bridgeReplyQuoteLine(
+                new BridgeReply("Target", "look https://evil.example/page", "sure"), false);
+
+        assertFalse(quote.getString().contains("evil.example"));
+        assertTrue(quote.getString().endsWith("look [Link]"));
+    }
+
+    @Test
+    void leavesOutALineHoldingNothingButLinksToPicturesShownBeneath() {
+        String link = "https://cdn.discordapp.com/attachments/1/2/cat.png";
+        java.util.Map<String, BridgeMedia.Picture> labels = java.util.Map.of(link, new BridgeMedia.Picture(
+                java.net.URI.create(link), BridgeMedia.Kind.STILL, "cat.png"));
+
+        assertTrue(ChatManager.isOnlyPictureLinks("  " + link + " ", labels));
+        assertFalse(ChatManager.isOnlyPictureLinks("see " + link, labels), "words stay");
+        assertFalse(ChatManager.isOnlyPictureLinks("https://example.com/page", labels), "other links stay");
+        assertFalse(ChatManager.isOnlyPictureLinks(link, java.util.Map.of()));
     }
 
     private static Style fragmentStyle(Component component, String text) {

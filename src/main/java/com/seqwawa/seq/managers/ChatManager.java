@@ -2,6 +2,7 @@ package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.mixins.ClientPacketListenerMixin;
 import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
@@ -17,15 +18,19 @@ import com.seqwawa.seq.model.ChatItemPreview;
 import com.seqwawa.seq.model.RankPresentation;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
+import com.seqwawa.seq.render.BridgeImageRows;
+import com.seqwawa.seq.utils.BridgeMedia;
 import com.seqwawa.seq.utils.ChatIdentityResolver;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -777,6 +782,16 @@ public class ChatManager {
                 }
             });
         });
+        ConnectionManager.onDiscordMedia(media -> {
+            if (!SeqClient.getShowDiscordChatSetting().getValue())
+                return;
+
+            mc.execute(() -> {
+                if (mc.player != null) {
+                    displayLateBridgePictures(media);
+                }
+            });
+        });
     }
 
     /**
@@ -792,12 +807,20 @@ public class ChatManager {
      * A reply is shown as Discord shows one: a line quoting what it answers, then the
      * reply itself, rather than with "Replying to" written into the message. The quote
      * opens the bridge block, so it carries the Discord mark and the reply the bar.
+     * <p>
+     * Images and GIFs follow the message, drawn in chat itself; see
+     * {@link BridgeImageRows}. A link standing for one reads as a short label instead,
+     * and a line holding nothing but such links is left out, as Discord leaves out the
+     * link to an attachment it shows.
      */
     private void displayBridgeMessage(ConnectionManager.DiscordChatMessage msg) {
         BridgeReply reply = BridgeReply.of(msg);
         String text = reply == null ? msg.message() : reply.text();
         List<String> lines = splitMessageLines(text);
         RankPresentation rank = DiscordRankChatDecorator.bridgeRank(msg.username(), msg.discordId());
+        BridgeMedia.Presentation media = BridgeImageCache.enabled()
+                ? BridgeMedia.present(text, msg.mediaUrls())
+                : BridgeMedia.Presentation.NONE;
 
         if (reply != null) {
             MutableComponent quote = bridgeReplyQuoteLine(reply, rank != null);
@@ -805,16 +828,73 @@ public class ChatManager {
                     quote, () -> mc.player.displayClientMessage(quote, false), rank != null);
         }
         for (int index = 0; index < lines.size(); index++) {
+            if (index > 0 && isOnlyPictureLinks(lines.get(index), media.linkLabels())) {
+                continue;
+            }
             MutableComponent line = index == 0
-                    ? bridgeSenderLine(msg, lines.get(index), rank)
-                    : bridgeContinuationLine(lines.get(index), rank != null);
+                    ? bridgeSenderLine(msg, lines.get(index), rank, media.linkLabels())
+                    : bridgeContinuationLine(lines.get(index), rank != null, media.linkLabels());
             DiscordRankChatDecorator.displayUndecorated(
                     line, () -> mc.player.displayClientMessage(line, false), rank != null);
         }
+        displayBridgePictures(media.pictures(), rank != null);
+    }
+
+    /**
+     * Shows pictures Discord found for a bridged message only after it was relayed,
+     * such as the GIF behind a Tenor link. They follow whatever chat shows by then,
+     * which is nearly always still their message: Discord finds a preview within a
+     * second or so.
+     */
+    private void displayLateBridgePictures(ConnectionManager.DiscordMediaMessage media) {
+        if (!BridgeImageCache.enabled()) {
+            return;
+        }
+        RankPresentation rank = DiscordRankChatDecorator.bridgeRank(media.username(), null);
+        displayBridgePictures(BridgeMedia.present("", media.mediaUrls()).pictures(), rank != null);
+    }
+
+    /**
+     * Each picture as a chat entry of its own, which chat lays out as the lines it is
+     * drawn across. {@code railed} continues the bridge block's rail beside it.
+     */
+    private void displayBridgePictures(List<BridgeMedia.Picture> pictures, boolean railed) {
+        for (BridgeMedia.Picture picture : pictures) {
+            BridgeImageCache.request(picture);
+            MutableComponent pictureLine = BridgeImageRows.message(
+                    picture, railed ? DiscordRankChatDecorator.bridgePrefix() : Component.empty());
+            DiscordRankChatDecorator.displayUndecorated(
+                    pictureLine, () -> mc.player.displayClientMessage(pictureLine, false), railed);
+        }
+    }
+
+    /** Whether {@code line} holds nothing but links to pictures shown beneath the message. */
+    static boolean isOnlyPictureLinks(String line, Map<String, BridgeMedia.Picture> linkLabels) {
+        if (linkLabels.isEmpty() || line.isBlank()) {
+            return false;
+        }
+        StringBuilder rest = new StringBuilder(line);
+        List<BridgeMedia.Link> links = BridgeMedia.links(line);
+        for (int index = links.size() - 1; index >= 0; index--) {
+            BridgeMedia.Link link = links.get(index);
+            if (!linkLabels.containsKey(link.url())) {
+                return false;
+            }
+            rest.delete(link.start(), link.end());
+        }
+        return !links.isEmpty() && rest.toString().isBlank();
     }
 
     static MutableComponent bridgeSenderLine(
             ConnectionManager.DiscordChatMessage msg, String text, RankPresentation rank) {
+        return bridgeSenderLine(msg, text, rank, Map.of());
+    }
+
+    static MutableComponent bridgeSenderLine(
+            ConnectionManager.DiscordChatMessage msg,
+            String text,
+            RankPresentation rank,
+            Map<String, BridgeMedia.Picture> linkLabels) {
         if (rank == null) {
             return NotificationAccessor.prefixComponent()
                     .append(Component.literal(msg.username())
@@ -822,8 +902,7 @@ public class ChatManager {
                                     .withColor(ChatFormatting.WHITE)
                                     .withInsertion(msg.username())))
                     .append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-                    .append(Component.literal(text).withStyle(style -> style.withColor(
-                            DiscordRankChatDecorator.discordChatTextColor())));
+                    .append(bridgeText(text, DiscordRankChatDecorator.discordChatTextColor(), linkLabels));
         }
 
         MutableComponent line = Component.empty().append(DiscordRankChatDecorator.bridgePrefix());
@@ -845,7 +924,53 @@ public class ChatManager {
         }
         TextColor textColor = DiscordRankChatDecorator.discordChatTextColor();
         return line.append(Component.literal(": ").withStyle(style -> style.withColor(textColor)))
-                .append(Component.literal(text).withStyle(style -> style.withColor(textColor)));
+                .append(bridgeText(text, textColor, linkLabels));
+    }
+
+    /**
+     * A bridged line's text in {@code color}, with no address shown: each link reads as
+     * a short label instead. A link standing for a picture shown beneath the message
+     * reads as that picture's label, and opens the picture itself; one to an image or
+     * GIF elsewhere reads as such, and opens only when it is itself a safe image link;
+     * any other link reads as {@code [Link]} and opens nothing.
+     */
+    static MutableComponent bridgeText(String text, TextColor color, Map<String, BridgeMedia.Picture> linkLabels) {
+        MutableComponent body = Component.empty();
+        int cursor = 0;
+        for (BridgeMedia.Link link : BridgeMedia.links(text)) {
+            if (link.start() > cursor) {
+                body.append(Component.literal(text.substring(cursor, link.start()))
+                        .withStyle(style -> style.withColor(color)));
+            }
+            body.append(linkLabel(link.url(), linkLabels.get(link.url()), color));
+            cursor = link.end();
+        }
+        if (cursor < text.length() || cursor == 0) {
+            body.append(Component.literal(text.substring(cursor)).withStyle(style -> style.withColor(color)));
+        }
+        return body;
+    }
+
+    /** What a link reads as; see {@link #bridgeText}. */
+    private static MutableComponent linkLabel(String url, BridgeMedia.Picture picture, TextColor color) {
+        if (picture != null) {
+            return Component.literal(picture.label())
+                    .withStyle(BridgeImageRows.linkStyle(picture).withColor(color).withUnderlined(true));
+        }
+        BridgeMedia.LinkKind kind = BridgeMedia.linkKind(url);
+        if (kind != BridgeMedia.LinkKind.OTHER && BridgeMedia.isSafeMediaLink(url)) {
+            return Component.literal(kind.label()).withStyle(style -> style
+                    .withColor(color)
+                    .withUnderlined(true)
+                    .withClickEvent(new ClickEvent.OpenUrl(URI.create(url)))
+                    .withHoverEvent(new HoverEvent.ShowText(
+                            Component.literal("Open image in browser").withStyle(ChatFormatting.GRAY))));
+        }
+        return Component.literal(kind.label()).withStyle(style -> style
+                .withColor(ChatFormatting.GRAY)
+                .withHoverEvent(new HoverEvent.ShowText(Component.literal(
+                                "Links from Discord are hidden; only images from Discord and its GIF sites open.")
+                        .withStyle(ChatFormatting.GRAY))));
     }
 
     /**
@@ -877,10 +1002,12 @@ public class ChatManager {
                         .withStyle(style -> style.withColor(REPLY_EXCERPT_COLOR).withItalic(true)))
                 .append(author);
         if (reply.excerpt() != null) {
-            quote.append(Component.literal(": " + reply.excerpt())
+            // Quoted text shows no address either.
+            String excerpt = BridgeMedia.hideLinks(reply.excerpt());
+            quote.append(Component.literal(": " + excerpt)
                     .withStyle(style -> style.withColor(REPLY_EXCERPT_COLOR)));
             tooltip.append(CommonComponents.NEW_LINE)
-                    .append(Component.literal(reply.excerpt()).withStyle(style -> style.withColor(REPLY_EXCERPT_COLOR)));
+                    .append(Component.literal(excerpt).withStyle(style -> style.withColor(REPLY_EXCERPT_COLOR)));
         }
         quote.withStyle(style -> style.withHoverEvent(new HoverEvent.ShowText(tooltip)));
 
@@ -925,15 +1052,18 @@ public class ChatManager {
     }
 
     static MutableComponent bridgeContinuationLine(String text, boolean colored) {
-        if (!colored) {
-            return NotificationAccessor.prefixComponent()
-                    .append(Component.literal(text).withStyle(style -> style.withColor(
-                            DiscordRankChatDecorator.discordChatTextColor())));
-        }
+        return bridgeContinuationLine(text, colored, Map.of());
+    }
+
+    static MutableComponent bridgeContinuationLine(
+            String text, boolean colored, Map<String, BridgeMedia.Picture> linkLabels) {
         TextColor textColor = DiscordRankChatDecorator.discordChatTextColor();
+        if (!colored) {
+            return NotificationAccessor.prefixComponent().append(bridgeText(text, textColor, linkLabels));
+        }
         return Component.empty()
                 .append(DiscordRankChatDecorator.bridgePrefix())
-                .append(Component.literal(text).withStyle(style -> style.withColor(textColor)));
+                .append(bridgeText(text, textColor, linkLabels));
     }
 
     /**

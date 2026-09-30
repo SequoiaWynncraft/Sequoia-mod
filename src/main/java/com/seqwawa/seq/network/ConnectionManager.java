@@ -123,6 +123,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     // Callbacks for new message types
     private static Consumer<DiscordChatMessage> discordChatHandler;
+    private static Consumer<DiscordMediaMessage> discordMediaHandler;
     private static Consumer<PartyFinderUpdateMessage> partyFinderUpdateHandler;
     private static Consumer<PartyFinderInviteMessage> partyFinderInviteHandler;
     private static Consumer<PartyFinderStaleWarningMessage> partyFinderStaleWarningHandler;
@@ -1936,14 +1937,33 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         // matching falls back to the name.
                         String discordId = extractPrimitiveString(json, "discord_id");
                         DiscordChatMessage.Reply reply = discordChatReply(json);
+                        // Discord's media-proxy URLs for the message's attachments and
+                        // embeds, which is what lets the bridge show them as pictures.
+                        List<String> mediaUrls = mediaUrls(json);
                         SeqClient.LOGGER.info(
-                                "[WebSocket] Dispatching discord_chat from {} discordId={} reply={}",
+                                "[WebSocket] Dispatching discord_chat from {} discordId={} reply={} media={}",
                                 username,
                                 discordId != null,
-                                reply != null);
-                        discordChatHandler.accept(new DiscordChatMessage(username, msg, discordId, reply));
+                                reply != null,
+                                mediaUrls.size());
+                        discordChatHandler.accept(new DiscordChatMessage(username, msg, discordId, reply, mediaUrls));
                     } else {
                         SeqClient.LOGGER.warn("[WebSocket] Received discord_chat but handler is not registered");
+                    }
+                }
+                case "discord_media" -> {
+                    // Pictures Discord found for a message after it was relayed, such as
+                    // the GIF behind a Tenor link, sent on their own.
+                    String username = extractPrimitiveString(json, "username");
+                    List<String> mediaUrls = mediaUrls(json);
+                    ConfigManager configManager = SeqClient.getConfigManager();
+                    boolean ignored = username != null
+                            && configManager != null
+                            && shouldIgnoreDiscordChatSender(username, configManager.ignoredBridgeUsers());
+                    if (discordMediaHandler != null && username != null && !mediaUrls.isEmpty() && !ignored) {
+                        SeqClient.LOGGER.info(
+                                "[WebSocket] Dispatching discord_media from {} media={}", username, mediaUrls.size());
+                        discordMediaHandler.accept(new DiscordMediaMessage(username, mediaUrls));
                     }
                 }
                 case "party_finder_update" -> {
@@ -2145,6 +2165,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     public static void onDiscordChat(Consumer<DiscordChatMessage> handler) {
         SeqClient.LOGGER.info("[WebSocket] Registering discord_chat handler present={}", handler != null);
         discordChatHandler = handler;
+    }
+
+    public static void onDiscordMedia(Consumer<DiscordMediaMessage> handler) {
+        SeqClient.LOGGER.info("[WebSocket] Registering discord_media handler present={}", handler != null);
+        discordMediaHandler = handler;
     }
 
     public static void onPartyFinderUpdate(Consumer<PartyFinderUpdateMessage> handler) {
@@ -2643,6 +2668,13 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return List.copyOf(requestedTypes);
     }
 
+    /** A bridge message's {@code media_urls}, or none when it has none or the backend predates them. */
+    static List<String> mediaUrls(JsonObject json) {
+        return json.has("media_urls") && json.get("media_urls").isJsonArray()
+                ? parsePrimitiveStringArray(json.getAsJsonArray("media_urls"))
+                : List.of();
+    }
+
     private static List<String> parsePrimitiveStringArray(JsonArray jsonArray) {
         if (jsonArray == null) {
             return List.of();
@@ -2739,8 +2771,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
      *                  changed or shared.
      * @param reply     the message this one replies to, or {@code null} when it is not a
      *                  reply or the backend does not say
+     * @param mediaUrls Discord media-proxy URLs of the message's attachments and
+     *                  embeds, in the order Discord lists them; empty when there are
+     *                  none or the backend is too old to send them
      */
-    public record DiscordChatMessage(String username, String message, String discordId, Reply reply) {
+    public record DiscordChatMessage(
+            String username, String message, String discordId, Reply reply, List<String> mediaUrls) {
+
+        public DiscordChatMessage {
+            mediaUrls = mediaUrls == null ? List.of() : List.copyOf(mediaUrls);
+        }
 
         public DiscordChatMessage(String username, String message) {
             this(username, message, null);
@@ -2750,11 +2790,28 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             this(username, message, discordId, null);
         }
 
+        public DiscordChatMessage(String username, String message, String discordId, Reply reply) {
+            this(username, message, discordId, reply, List.of());
+        }
+
         /**
          * A replied-to Discord message: its author, as the backend names bridge senders,
          * and an excerpt of it, or {@code null} when it has nothing to show.
          */
         public record Reply(String username, String message) {}
+    }
+
+    /**
+     * Pictures Discord found for a bridged message only after it was relayed, as it does
+     * for a link it previews, such as a Tenor GIF.
+     *
+     * @param username  the sender, as {@link DiscordChatMessage#username()} names them
+     * @param mediaUrls Discord media-proxy URLs of the newly found embeds
+     */
+    public record DiscordMediaMessage(String username, List<String> mediaUrls) {
+        public DiscordMediaMessage {
+            mediaUrls = mediaUrls == null ? List.of() : List.copyOf(mediaUrls);
+        }
     }
 
     public record PartyFinderUpdateMessage(String action, JsonObject listingJson) {}

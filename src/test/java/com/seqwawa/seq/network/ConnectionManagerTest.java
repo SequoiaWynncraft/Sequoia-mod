@@ -494,6 +494,19 @@ class ConnectionManagerTest {
     }
 
     @Test
+    void discordChatReadsTheMediaItCarries() {
+        var json = com.google.gson.JsonParser.parseString(
+                        "{\"media_urls\":[\"https://media.discordapp.net/attachments/1/2/cat.gif\", \" \", 5]}")
+                .getAsJsonObject();
+
+        assertEquals(
+                List.of("https://media.discordapp.net/attachments/1/2/cat.gif", "5"),
+                ConnectionManager.mediaUrls(json));
+        assertEquals(List.of(), ConnectionManager.mediaUrls(com.google.gson.JsonParser.parseString("{}")
+                .getAsJsonObject()), "an older backend sends none");
+    }
+
+    @Test
     void discordChatReadsTheMessageItRepliesTo() {
         var json = com.google.gson.JsonParser.parseString(
                         "{\"type\":\"discord_chat\",\"username\":\"OwORawr\",\"message\":\"Replying to Target: sure\","

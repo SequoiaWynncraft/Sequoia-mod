@@ -1,0 +1,11 @@
+{
+  "providers": [
+    {
+      "comment": "Marks a chat message that stands for a picture sent over the Discord bridge. Zero width, so a copy of the message that reaches chat without being laid out as the picture shows only its fallback label.",
+      "type": "space",
+      "advances": {
+        "\uF8F5": 0
+      }
+    }
+  ]
+}

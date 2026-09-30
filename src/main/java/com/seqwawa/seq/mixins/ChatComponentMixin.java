@@ -3,6 +3,7 @@ package com.seqwawa.seq.mixins;
 import com.seqwawa.seq.managers.DiscordRankChatDecorator;
 import com.seqwawa.seq.managers.PrivateMessageGuildTagDecorator;
 import com.seqwawa.seq.managers.WorldSwitchChatDecorator;
+import com.seqwawa.seq.render.BridgeImageRows;
 import com.seqwawa.seq.utils.ChatBridgeLineWrapping;
 import java.util.List;
 import net.minecraft.client.GuiMessage;
@@ -62,7 +63,8 @@ public class ChatComponentMixin {
      * Minecraft creates visual chat lines only after the component enters its display
      * queue. Reserve room for the bridge rail at that point, then put the rail on every
      * automatically wrapped line after the sender line. A reply's quote is not wrapped
-     * but cut to one line, since only here is the room it has known.
+     * but cut to one line, since only here is the room it has known, and a picture sent
+     * over the bridge is laid out as the lines it is drawn across.
      */
     @Redirect(
             method = "addMessageToDisplayQueue",
@@ -71,6 +73,13 @@ public class ChatComponentMixin {
                     target = "Lnet/minecraft/client/GuiMessage;splitLines(Lnet/minecraft/client/gui/Font;I)Ljava/util/List;"))
     private List<FormattedCharSequence> seq$wrapBridgeContinuations(
             GuiMessage message, Font font, int maxWidth) {
+        // A picture from the bridge is laid out as the lines it is drawn across.
+        List<FormattedCharSequence> pictureRows =
+                BridgeImageRows.rows(message.content(), font, maxWidth, seq$refreshGuildTags);
+        if (pictureRows != null) {
+            return pictureRows;
+        }
+
         Component tagged = PrivateMessageGuildTagDecorator.decorate(message.content(), seq$refreshGuildTags);
         if (tagged != message.content()) {
             message = new GuiMessage(message.addedTime(), tagged, message.signature(), message.tag());

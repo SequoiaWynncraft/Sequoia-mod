@@ -28,6 +28,7 @@ import com.seqwawa.seq.events.MinecraftFinishedLoading;
 import com.seqwawa.seq.halcyon.HalcyonRangeVisualiserClient;
 import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.BombShareManager;
+import com.seqwawa.seq.managers.BridgeImageCache;
 import com.seqwawa.seq.managers.ChatManager;
 import com.seqwawa.seq.managers.ChatRegexFilterManager;
 import com.seqwawa.seq.managers.FontManager;
@@ -151,6 +152,12 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static Setting.BooleanSetting colorDiscordBridgeSetting;
+
+    @Getter
+    public static Setting.BooleanSetting showBridgeImagesSetting;
+
+    @Getter
+    public static Setting.IntSetting bridgeImageLinesSetting;
 
     @Getter
     public static Setting.ColorSetting discordChatTextColorSetting;
@@ -822,6 +829,9 @@ public class SeqClient implements ClientModInitializer {
         showChatInsigniasSetting = new Setting.BooleanSetting("show_chat_insignias", "chat", false);
         usePerUserColorsSetting = new Setting.BooleanSetting("use_per_user_colors", "chat", true);
         colorDiscordBridgeSetting = new Setting.BooleanSetting("color_discord_bridge", "chat", true);
+        showBridgeImagesSetting = new Setting.BooleanSetting("show_bridge_images", "chat", true);
+        bridgeImageLinesSetting = new Setting.IntSetting(
+                "bridge_image_lines", "chat", BridgeImageCache.DEFAULT_MAX_LINES, 3, 16);
         discordChatTextColorSetting = new Setting.ColorSetting("discord_chat_text_color", "chat", 0x55FFFF)
                 .withValueOverride(PrincessMode::paletteColorOverride);
         inGameGuildChatTextColorSetting =
@@ -858,6 +868,16 @@ public class SeqClient implements ClientModInitializer {
                 "Discord chat");
         colorDiscordBridgeSetting.setParentSetting(showDiscordChatSetting);
         colorDiscordBridgeSetting.setEnabledCondition(showDiscordRanksSetting::getValue);
+        showBridgeImagesSetting.setPresentation(
+                "Show Discord images and GIFs in chat",
+                "Display images and animated GIFs sent from Discord directly in chat instead of their links.",
+                "Discord chat");
+        showBridgeImagesSetting.setParentSetting(showDiscordChatSetting);
+        bridgeImageLinesSetting.setPresentation(
+                "Discord image height (lines)",
+                "The most chat lines an image or GIF from Discord may take.",
+                "Discord chat");
+        bridgeImageLinesSetting.setParentSetting(showBridgeImagesSetting);
         discordChatTextColorSetting.setPresentation(
                 "Discord message text color",
                 "Choose the text color used for messages forwarded from Discord.",
@@ -1090,6 +1110,8 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(showPrivateMessageGuildTagsSetting);
         getConfigManager().register(announceAchievementsSetting);
         getConfigManager().register(colorDiscordBridgeSetting);
+        getConfigManager().register(showBridgeImagesSetting);
+        getConfigManager().register(bridgeImageLinesSetting);
         getConfigManager().register(discordChatTextColorSetting);
         getConfigManager().register(inGameGuildChatTextColorSetting);
         getConfigManager().register(showDiscordRanksSetting);
