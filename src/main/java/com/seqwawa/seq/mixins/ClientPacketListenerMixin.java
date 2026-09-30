@@ -8,6 +8,7 @@ import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
+import com.seqwawa.seq.consumables.WarConsumableOverlay;
 import com.seqwawa.seq.managers.ChatManager;
 import com.seqwawa.seq.managers.GuildBankTracker;
 import com.seqwawa.seq.managers.GuildStorageTracker;
@@ -99,6 +100,7 @@ public class ClientPacketListenerMixin {
             SeqClient.getWarTerritoryQueueManager().onSystemChat(content);
         }
         RaidTracker.onSystemChat(content);
+        WarConsumableOverlay.onSystemChat(content);
         GuildStorageTracker.getInstance().onSystemChat(content);
         GuildBankTracker.getInstance().onSystemChat(content);
         if (SeqClient.getGuildRewardAutomationManager() != null) {

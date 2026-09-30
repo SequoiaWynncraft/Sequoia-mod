@@ -1,6 +1,7 @@
 package com.seqwawa.seq.mixins;
 
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.consumables.WarConsumableOverlay;
 import com.seqwawa.seq.managers.RaidGambitRosterTracker;
 import com.seqwawa.seq.ui.GuildStorageShortcutOverlay;
 import net.minecraft.client.Minecraft;
@@ -38,6 +39,18 @@ public abstract class AbstractContainerScreenMixin<T extends AbstractContainerMe
     private void seq$renderGuildStorageShortcut(
             GuiGraphics graphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
         GuildStorageShortcutOverlay.render(graphics, menu, leftPos, topPos, imageWidth, mouseX, mouseY);
+    }
+
+    // Between the item and its decorations, so the charge count stays above the outline.
+    @Inject(
+            method = "renderSlot",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/GuiGraphics;renderItemDecorations"
+                            + "(Lnet/minecraft/client/gui/Font;Lnet/minecraft/world/item/ItemStack;IILjava/lang/String;)V"))
+    private void seq$renderWarConsumableOverlay(
+            GuiGraphics graphics, Slot slot, int mouseX, int mouseY, CallbackInfo ci) {
+        WarConsumableOverlay.renderSlot(graphics, slot);
     }
 
     @Inject(method = "renderContents", at = @At("TAIL"))

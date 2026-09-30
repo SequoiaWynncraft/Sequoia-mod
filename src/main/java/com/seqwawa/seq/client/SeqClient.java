@@ -65,6 +65,7 @@ import com.seqwawa.seq.network.auth.StoredAuthSession;
 import com.seqwawa.seq.radiance.RadianceCheckerClient;
 import com.seqwawa.seq.raids.tna.TnaLineupHelper;
 import com.seqwawa.seq.raids.tna.TnaSahurSoundDetector;
+import com.seqwawa.seq.consumables.WarConsumableOverlay;
 import com.seqwawa.seq.scroll.CraftedScrollRangeVisualiserClient;
 import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.AchievementsScreen;
@@ -193,6 +194,18 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static Setting.BooleanSetting trackGuildWarsSetting;
+
+    @Getter
+    public static Setting.BooleanSetting warConsumableOverlaySetting;
+
+    @Getter
+    public static Setting.ColorSetting warConsumableUsedColorSetting;
+
+    @Getter
+    public static Setting.ColorSetting warConsumableNextColorSetting;
+
+    @Getter
+    public static Setting.ColorSetting warConsumableUnusedColorSetting;
 
     @Getter
     public static Setting.BooleanSetting checkUpdatesSetting;
@@ -396,6 +409,7 @@ public class SeqClient implements ClientModInitializer {
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
         CraftedScrollRangeVisualiserClient.initialize();
+        WarConsumableOverlay.initialize();
         IngredientWaypointRenderer.initialize();
         TnaLineupHelper.initialize();
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
@@ -966,6 +980,24 @@ public class SeqClient implements ClientModInitializer {
         tnaBeamIndicatorXSetting.setVisibilityCondition(() -> false);
         tnaBeamIndicatorYSetting.setVisibilityCondition(() -> false);
         trackGuildWarsSetting = new Setting.BooleanSetting("track_guild_wars", "guild_wars", true);
+        warConsumableOverlaySetting = new Setting.BooleanSetting("consumable_overlay", "guild_wars", true);
+        warConsumableOverlaySetting.setPresentation(
+                "Consumable overlay",
+                "Outline crafted potions, food and scrolls in your inventory and hotbar: red while their"
+                        + " effect lasts, green for the one to use next (bonus-only first, negative stats last),"
+                        + " orange for the rest. Effects also end when you change server or class.",
+                "War consumables");
+        warConsumableUsedColorSetting = new Setting.ColorSetting(
+                "consumable_used_color", "guild_wars", WarConsumableOverlay.DEFAULT_USED_RGB);
+        warConsumableUsedColorSetting.setPresentation("Used color", null, "War consumables");
+        warConsumableNextColorSetting = new Setting.ColorSetting(
+                "consumable_next_color", "guild_wars", WarConsumableOverlay.DEFAULT_NEXT_RGB);
+        warConsumableNextColorSetting.setPresentation("Use next color", null, "War consumables");
+        warConsumableUnusedColorSetting = new Setting.ColorSetting(
+                "consumable_unused_color", "guild_wars", WarConsumableOverlay.DEFAULT_UNUSED_RGB);
+        warConsumableUnusedColorSetting.setPresentation("Unused color", null, "War consumables");
+        List.of(warConsumableUsedColorSetting, warConsumableNextColorSetting, warConsumableUnusedColorSetting)
+                .forEach(setting -> setting.setParentSetting(warConsumableOverlaySetting));
         checkUpdatesSetting = new Setting.BooleanSetting("check_updates", "updates", true);
         trackGuildStorageSetting = new Setting.BooleanSetting("track_guild_storage", "guild_storage", true);
         guildStorageEmeraldNotifyValueSetting =
@@ -1093,6 +1125,10 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(worldLinkRunsSwitchSetting);
         getConfigManager().register(raidAutoAnnounceSetting);
         getConfigManager().register(trackGuildWarsSetting);
+        getConfigManager().register(warConsumableOverlaySetting);
+        getConfigManager().register(warConsumableUsedColorSetting);
+        getConfigManager().register(warConsumableNextColorSetting);
+        getConfigManager().register(warConsumableUnusedColorSetting);
         getConfigManager().register(checkUpdatesSetting);
         getConfigManager().register(trackGuildStorageSetting);
         getConfigManager().register(guildStorageEmeraldNotifyValueSetting);

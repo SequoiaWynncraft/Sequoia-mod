@@ -5,7 +5,10 @@ import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import com.seqwawa.seq.accessors.EventBusAccessor;
+import com.seqwawa.seq.consumables.WarConsumableOverlay;
 import com.seqwawa.seq.events.Render2DEvent;
 import com.seqwawa.seq.raids.tna.TnaBeamIndicatorHudRenderer;
 import com.seqwawa.seq.ui.SequoiaScreen;
@@ -27,6 +30,25 @@ public class InGameHudMixin implements EventBusAccessor {
         if (mc.screen instanceof SequoiaScreen || mc.screen instanceof SettingsScreen) {
             ci.cancel();
         }
+    }
+
+    // Between the item and its decorations, so the charge count stays above the outline.
+    @Inject(
+            method = "renderSlot",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/GuiGraphics;renderItemDecorations"
+                            + "(Lnet/minecraft/client/gui/Font;Lnet/minecraft/world/item/ItemStack;II)V"))
+    private void seq$renderWarConsumableOverlay(
+            GuiGraphics context,
+            int x,
+            int y,
+            DeltaTracker deltaTracker,
+            Player player,
+            ItemStack stack,
+            int seed,
+            CallbackInfo ci) {
+        WarConsumableOverlay.renderHotbarSlot(context, x, y, stack);
     }
 
     @Inject(method = "render", at = @At("TAIL"))
