@@ -56,6 +56,7 @@ import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.managers.WorldEventManager;
 import com.seqwawa.seq.managers.WarPlannerManager;
 import com.seqwawa.seq.managers.WarTerritoryQueueManager;
+import com.seqwawa.seq.managers.WarTerritoryBoundsReminder;
 import com.seqwawa.seq.map.IngredientWaypointRenderer;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
@@ -106,6 +107,8 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static WarTerritoryQueueManager warTerritoryQueueManager;
+
+    public static WarTerritoryBoundsReminder warTerritoryBoundsReminder;
 
     @Getter
     public static PrincessRaidStatsManager princessRaidStatsManager;
@@ -309,6 +312,12 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting warQueueMissMessagesSetting;
 
     @Getter
+    public static Setting.BooleanSetting warQueueBoundsReminderSetting;
+
+    @Getter
+    public static Setting.IntSetting warQueueBoundsReminderIntervalSetting;
+
+    @Getter
     public static Setting.IntSetting warQueueHudMaxRowsSetting;
 
     @Getter
@@ -368,6 +377,7 @@ public class SeqClient implements ClientModInitializer {
         partyFinderManager = new PartyFinderManager();
         warPlannerManager = new WarPlannerManager();
         warTerritoryQueueManager = new WarTerritoryQueueManager();
+        warTerritoryBoundsReminder = new WarTerritoryBoundsReminder();
         princessRaidStatsManager = new PrincessRaidStatsManager();
         wynnPartySyncManager = new WynnPartySyncManager();
         guildWarTracker = GuildWarTrackers.create();
@@ -402,7 +412,10 @@ public class SeqClient implements ClientModInitializer {
             GlobalSoundListener.shutdown();
             MinecraftUiRenderer.shutdown();
         });
-        ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> resetWarTrackingState());
+        ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> {
+            resetWarTrackingState();
+            warTerritoryBoundsReminder.clear();
+        });
         LightRoom.init();
 
         KeyMapping.Category category =
@@ -511,6 +524,9 @@ public class SeqClient implements ClientModInitializer {
             }
             if (warTerritoryQueueManager != null) {
                 warTerritoryQueueManager.tick();
+            }
+            if (warTerritoryBoundsReminder != null) {
+                warTerritoryBoundsReminder.tick(client);
             }
 
             if (partyFinderManager != null) {
@@ -1022,6 +1038,10 @@ public class SeqClient implements ClientModInitializer {
                 new Setting.BooleanSetting("queue_hud_only_owned_or_joined", "war_planner", false);
         warQueueMissMessagesSetting =
                 new Setting.BooleanSetting("queue_miss_messages", "war_planner", false);
+        warQueueBoundsReminderSetting =
+                new Setting.BooleanSetting("queue_bounds_reminders", "war_planner", false);
+        warQueueBoundsReminderIntervalSetting =
+                new Setting.IntSetting("queue_bounds_reminder_interval_seconds", "war_planner", 60, 30, 300, 30);
         warQueueHudMaxRowsSetting =
                 new Setting.IntSetting("queue_hud_max_rows", "war_planner", 6, 1, 20);
         warPlannerLockTerritoriesSetting =
@@ -1033,6 +1053,8 @@ public class SeqClient implements ClientModInitializer {
                         warQueueHudTextSizeSetting,
                         warQueueHudOnlyOwnedOrJoinedSetting,
                         warQueueMissMessagesSetting,
+                        warQueueBoundsReminderSetting,
+                        warQueueBoundsReminderIntervalSetting,
                         warQueueHudMaxRowsSetting,
                         warPlannerLockTerritoriesSetting)
                 .forEach(setting -> setting.setPresentationCategory("guild_wars"));
@@ -1059,6 +1081,14 @@ public class SeqClient implements ClientModInitializer {
         warQueueMissMessagesSetting.setPresentation(
                 "Queue miss messages",
                 "Show a blame message when nobody enters a queued territory war.",
+                "War queue messages");
+        warQueueBoundsReminderSetting.setPresentation(
+                "War territory reminders",
+                "Show chat reminders while you are inside a territory with an active queued war.",
+                "War queue messages");
+        warQueueBoundsReminderIntervalSetting.setPresentation(
+                "War reminder interval (seconds)",
+                "Set how often chat reminders repeat while inside a queued war territory.",
                 "War queue messages");
         warQueueHudMaxRowsSetting.setPresentation(
                 "Maximum queue rows",
@@ -1133,6 +1163,8 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(warQueueHudXSetting);
         getConfigManager().register(warQueueHudYSetting);
         getConfigManager().register(warQueueMissMessagesSetting);
+        getConfigManager().register(warQueueBoundsReminderSetting);
+        getConfigManager().register(warQueueBoundsReminderIntervalSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.
