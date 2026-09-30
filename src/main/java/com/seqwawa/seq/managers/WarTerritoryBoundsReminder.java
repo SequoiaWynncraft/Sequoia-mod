@@ -52,7 +52,8 @@ public final class WarTerritoryBoundsReminder {
         }
 
         if (currentQueue == null) {
-            if (chatRemindersEnabled && trackedTerritory != null) {
+            if (shouldShowLeaveMessage(
+                    chatRemindersEnabled, trackedTerritory, null)) {
                 client.player.displayClientMessage(NotificationAccessor.prefixed(
                         leaveMessage(trackedTerritory)), false);
             }
@@ -61,8 +62,8 @@ public final class WarTerritoryBoundsReminder {
         }
 
         long remainingSeconds = Math.max(0L, Duration.between(now, currentQueue.expiresAt()).getSeconds());
-        if (titleEnabled() && remainingSeconds < titleCountdownSeconds() && remainingSeconds > 0L) {
-            showWarTitle(client, "War starts in " + remainingSeconds + "s");
+        if (shouldShowCountdown(titleEnabled(), remainingSeconds, titleCountdownSeconds())) {
+            showWarTitle(client, countdownTitle(remainingSeconds));
         }
         if (remainingSeconds < MINIMUM_REMAINING_SECONDS_FOR_MESSAGE) {
             // Don't send left bounds message if being teleported into the war.
@@ -70,8 +71,10 @@ public final class WarTerritoryBoundsReminder {
             return;
         }
 
-        if (!currentQueue.territory().equalsIgnoreCase(trackedTerritory)) {
-            if (chatRemindersEnabled && trackedTerritory != null) {
+        if (shouldShowEntryMessage(
+                true, trackedTerritory, currentQueue.territory())) {
+            if (shouldShowLeaveMessage(
+                    chatRemindersEnabled, trackedTerritory, currentQueue.territory())) {
                 client.player.displayClientMessage(NotificationAccessor.prefixed(
                         leaveMessage(trackedTerritory)), false);
             }
@@ -112,5 +115,25 @@ public final class WarTerritoryBoundsReminder {
 
     private static String leaveMessage(String territory) {
         return "You've left bounds of the war for " + territory;
+    }
+
+    static boolean shouldShowCountdown(boolean enabled, long remainingSeconds, int countdownSeconds) {
+        return enabled && remainingSeconds > 0L && remainingSeconds < countdownSeconds;
+    }
+
+    static boolean shouldShowEntryMessage(boolean enabled, String trackedTerritory, String currentTerritory) {
+        return enabled && currentTerritory != null && !sameTerritory(trackedTerritory, currentTerritory);
+    }
+
+    static boolean shouldShowLeaveMessage(boolean enabled, String trackedTerritory, String currentTerritory) {
+        return enabled && trackedTerritory != null && !sameTerritory(trackedTerritory, currentTerritory);
+    }
+
+    static String countdownTitle(long remainingSeconds) {
+        return "War starts in " + remainingSeconds + "s";
+    }
+
+    private static boolean sameTerritory(String first, String second) {
+        return first != null && second != null && first.equalsIgnoreCase(second);
     }
 }
