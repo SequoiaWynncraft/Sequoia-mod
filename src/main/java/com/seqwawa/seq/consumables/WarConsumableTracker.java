@@ -88,6 +88,17 @@ public final class WarConsumableTracker {
         return statuses.get(fingerprint);
     }
 
+    /** When the next active effect wears off, or {@link Long#MAX_VALUE} when none will. */
+    public long nextExpiryMillis(long nowMillis) {
+        long next = Long.MAX_VALUE;
+        for (long activeUntil : activeUntilMillis.values()) {
+            if (activeUntil > nowMillis && activeUntil < next) {
+                next = activeUntil;
+            }
+        }
+        return next;
+    }
+
     /** Fingerprints of the held consumables in the order they should be used. */
     public List<String> order() {
         return order;

@@ -6,7 +6,7 @@ import java.util.TreeSet;
 /**
  * A crafted potion, food or scroll carrying stats, as the war consumable tracker sees it.
  *
- * @param fingerprint identifies the consumable independently of its remaining charges and
+ * @param fingerprint identifies the consumable independently of its name, remaining charges and
  *     rolled values, so every copy of one consumable shares it
  * @param uses charges left
  * @param durationSeconds how long its effect lasts, or 0 when unknown
@@ -17,12 +17,12 @@ public record WarConsumable(
         String fingerprint, int uses, int durationSeconds, int positiveStats, int negativeStats) {
 
     /**
-     * Identifies a consumable by what it affects rather than by how much: crafting rolls each
-     * stat within a range, so copies of one recipe carry different values, yet Wynncraft treats
-     * them as the same consumable.
+     * Identifies a consumable by the stats it affects. Copies of one crafted consumable differ in
+     * name and rolled values, yet Wynncraft refuses any of them while another one's effect is
+     * active.
      */
-    public static String fingerprint(String type, String name, Collection<String> affectedStats) {
-        return type + '|' + name + '|' + String.join("|", new TreeSet<>(affectedStats));
+    public static String fingerprint(String type, Collection<String> affectedStats) {
+        return type + '|' + String.join("|", new TreeSet<>(affectedStats));
     }
 
     /**

@@ -78,8 +78,7 @@ public final class WynntilsWarConsumableAccess {
             return Optional.empty();
         }
 
-        String fingerprint = WarConsumable.fingerprint(
-                String.valueOf(item.getConsumableType()), item.getName(), affectedStats);
+        String fingerprint = WarConsumable.fingerprint(String.valueOf(item.getConsumableType()), affectedStats);
         CappedValue uses = item.getUses();
         return Optional.of(new WarConsumable(
                 fingerprint,

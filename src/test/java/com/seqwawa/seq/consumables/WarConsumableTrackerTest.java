@@ -69,6 +69,19 @@ class WarConsumableTrackerTest {
     }
 
     @Test
+    void nextExpiryIsTheSoonestActiveEffectEnd() {
+        tracker.observe(SESSION, Map.of(0, consumable("scroll", 3, 2, 0), 1, consumable("food", 3, 2, 0)), 0);
+        assertEquals(Long.MAX_VALUE, tracker.nextExpiryMillis(0));
+
+        tracker.observe(SESSION, Map.of(0, consumable("scroll", 2, 2, 0), 1, consumable("food", 3, 2, 0)), 1_000);
+        tracker.observe(SESSION, Map.of(0, consumable("scroll", 2, 2, 0), 1, consumable("food", 2, 2, 0)), 5_000);
+
+        assertEquals(1_000 + DURATION_MILLIS, tracker.nextExpiryMillis(5_000));
+        assertEquals(5_000 + DURATION_MILLIS, tracker.nextExpiryMillis(1_000 + DURATION_MILLIS));
+        assertEquals(Long.MAX_VALUE, tracker.nextExpiryMillis(5_000 + DURATION_MILLIS));
+    }
+
+    @Test
     void effectWithoutKnownDurationLastsUntilTheSessionEnds() {
         WarConsumable fresh = new WarConsumable("scroll", 3, 0, 2, 0);
         tracker.observe(SESSION, Map.of(0, fresh), 0);
@@ -169,8 +182,8 @@ class WarConsumableTrackerTest {
     @Test
     void fingerprintIgnoresStatOrder() {
         assertEquals(
-                WarConsumable.fingerprint("SCROLL", "Earth Scroll", List.of("earthDamage", "walkSpeed")),
-                WarConsumable.fingerprint("SCROLL", "Earth Scroll", List.of("walkSpeed", "earthDamage")));
+                WarConsumable.fingerprint("SCROLL", List.of("earthDamage", "walkSpeed")),
+                WarConsumable.fingerprint("SCROLL", List.of("walkSpeed", "earthDamage")));
     }
 
     @Test
