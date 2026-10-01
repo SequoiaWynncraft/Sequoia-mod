@@ -309,6 +309,9 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting warQueueHudOnlyOwnedOrJoinedSetting;
 
     @Getter
+    public static Setting.BooleanSetting warQueueAutoWaypointSetting;
+
+    @Getter
     public static Setting.BooleanSetting warQueueMissMessagesSetting;
 
     @Getter
@@ -1039,6 +1042,8 @@ public class SeqClient implements ClientModInitializer {
         warQueueHudYSetting.setVisibilityCondition(() -> false);
         warQueueHudOnlyOwnedOrJoinedSetting =
                 new Setting.BooleanSetting("queue_hud_only_owned_or_joined", "war_planner", false);
+        warQueueAutoWaypointSetting =
+                new Setting.BooleanSetting("queue_auto_waypoint", "war_planner", true);
         warQueueMissMessagesSetting =
                 new Setting.BooleanSetting("queue_miss_messages", "war_planner", false);
         warQueueBoundsReminderSetting =
@@ -1057,6 +1062,7 @@ public class SeqClient implements ClientModInitializer {
                         warPlannerBackgroundOpacitySetting,
                         warQueueHudTextSizeSetting,
                         warQueueHudOnlyOwnedOrJoinedSetting,
+                        warQueueAutoWaypointSetting,
                         warQueueMissMessagesSetting,
                         warQueueBoundsReminderSetting,
                         warQueueBoundsReminderTitleSetting,
@@ -1088,6 +1094,10 @@ public class SeqClient implements ClientModInitializer {
                 "Queue miss messages",
                 "Show a blame message when nobody enters a queued territory war.",
                 "War queue messages");
+        warQueueAutoWaypointSetting.setPresentation(
+                "Auto-waypoint my next war",
+                "Show a waypoint at the territory of your soonest war queue. Only includes wars you personally queued.",
+                "War queue HUD");
         warQueueBoundsReminderSetting.setPresentation(
                 "Queued war in-bounds alerts",
                 "Show chat reminders when you move in and out of bounds of an impending war.",
@@ -1168,6 +1178,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(warPlannerBackgroundOpacitySetting);
         getConfigManager().register(warPlannerLockTerritoriesSetting);
         getConfigManager().register(warQueueHudOnlyOwnedOrJoinedSetting);
+        getConfigManager().register(warQueueAutoWaypointSetting);
         getConfigManager().register(warQueueHudMaxRowsSetting);
         getConfigManager().register(warQueueHudTextSizeSetting);
         getConfigManager().register(warQueueHudXSetting);
