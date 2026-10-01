@@ -983,9 +983,7 @@ public class SeqClient implements ClientModInitializer {
         warConsumableOverlaySetting = new Setting.BooleanSetting("consumable_overlay", "guild_wars", true);
         warConsumableOverlaySetting.setPresentation(
                 "Consumable overlay",
-                "Outline crafted potions, food and scrolls in your inventory and hotbar: red while their"
-                        + " effect lasts, green for the one to use next (bonus-only first, negative stats last),"
-                        + " orange for the rest. Effects also end when you change server or class.",
+                "Outline consumables: red while active, green to use next, orange otherwise.",
                 "War consumables");
         warConsumableUsedColorSetting = new Setting.ColorSetting(
                 "consumable_used_color", "guild_wars", WarConsumableOverlay.DEFAULT_USED_RGB);
