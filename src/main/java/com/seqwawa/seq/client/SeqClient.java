@@ -1047,7 +1047,7 @@ public class SeqClient implements ClientModInitializer {
         warQueueMissMessagesSetting =
                 new Setting.BooleanSetting("queue_miss_messages", "war_planner", false);
         warQueueBoundsReminderSetting =
-                new Setting.BooleanSetting("queue_bounds_reminders", "war_planner", true);
+                new Setting.BooleanSetting("queue_bounds_reminders", "war_planner", false);
         warQueueBoundsReminderTitleSetting =
                 new Setting.BooleanSetting("queue_bounds_reminder_title", "war_planner", true);
         warQueueBoundsReminderTitleCountdownSetting =
