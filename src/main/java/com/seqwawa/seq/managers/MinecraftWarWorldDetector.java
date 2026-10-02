@@ -14,7 +14,7 @@ import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Scoreboard;
 
 /** Detects Wynncraft's pre-war world without depending on Wynntils. */
-final class MinecraftWarWorldDetector {
+public final class MinecraftWarWorldDetector {
     private static final Pattern WAR_HEADER = Pattern.compile("(?i)(?:^|\\s)War\\s*:");
     private static String enteredTerritory;
 
@@ -39,7 +39,7 @@ final class MinecraftWarWorldDetector {
         enteredTerritory = null;
     }
 
-    static boolean isWarInstance() {
+    public static boolean isWarInstance() {
         Minecraft client = Minecraft.getInstance();
         return hasWarSidebar(sidebarLines(client)) || hasWarInstanceCoordinates(client);
     }

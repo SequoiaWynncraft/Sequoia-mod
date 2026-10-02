@@ -26,6 +26,7 @@ import org.joml.Vector3fc;
 public final class IngredientWaypointRenderer {
     private static final int SPAWN_COLOR = 0xFF55FFFF;
     private static final int TOTEM_COLOR = 0xFFFFAA33;
+    private static final int WAR_QUEUE_COLOR = 0xFFFFD700;
     private static final int INSIDE_RADIUS_COLOR = 0xFF55FF55;
     private static final int OUTSIDE_RADIUS_COLOR = 0xFFFF5555;
     private static final int SCREEN_MARGIN = 18;
@@ -113,6 +114,8 @@ public final class IngredientWaypointRenderer {
         for (Waypoint waypoint : IngredientWaypointManager.getInstance().waypoints()) {
             renderWaypoint(guiGraphics, client, waypoint);
         }
+        WarQueueWaypointProvider.current(client.player.getY())
+                .ifPresent(waypoint -> renderWaypoint(guiGraphics, client, waypoint));
     }
 
     private static void renderWaypoint(
@@ -128,7 +131,11 @@ public final class IngredientWaypointRenderer {
         ScreenPosition screenPosition = project(client, worldPosition, guiGraphics.guiWidth(), guiGraphics.guiHeight());
         int x = Math.round(screenPosition.x());
         int y = Math.round(screenPosition.y());
-        int markerColor = waypoint.kind() == Kind.TOTEM_SPOT ? TOTEM_COLOR : SPAWN_COLOR;
+        int markerColor = switch (waypoint.kind()) {
+            case INGREDIENT_SPAWN -> SPAWN_COLOR;
+            case TOTEM_SPOT -> TOTEM_COLOR;
+            case WAR_QUEUE -> WAR_QUEUE_COLOR;
+        };
 
         if (waypoint.icon().stack().isEmpty()) {
             renderFallbackMarker(guiGraphics, x, y, markerColor);
