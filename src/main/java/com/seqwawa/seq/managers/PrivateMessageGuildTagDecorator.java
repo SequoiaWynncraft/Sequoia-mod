@@ -3,10 +3,10 @@ package com.seqwawa.seq.managers;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.integrations.WynntilsChatAccess;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.utils.ChatIdentityResolver;
 import com.seqwawa.seq.utils.ComponentTextEditor;
-import com.wynntils.core.components.Models;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -26,9 +26,7 @@ public final class PrivateMessageGuildTagDecorator {
     private static final Pattern REVEALED_NAME = Pattern.compile(".*\\(([a-zA-Z0-9_]{3,16})\\)");
     private static final Pattern GUILD_TAG = Pattern.compile("[A-Za-z0-9]{1,5}");
     private static final PrivateMessageGuildTagCache TAGS = new PrivateMessageGuildTagCache(
-            username -> Models.Player.getPlayer(username).thenApply(player -> player == null ? null
-                    : player.guildInfo().map(guild -> guild.guildPrefix()).orElse("")),
-            System::currentTimeMillis);
+            WynntilsChatAccess::lookupGuildTag, System::currentTimeMillis);
     // Identity keys: distinct styled messages must never share cached parsing by visible text alone.
     private static final Cache<Component, ParsedMessage> MESSAGES =
             CacheBuilder.newBuilder().weakKeys().maximumSize(2048).build();
@@ -39,6 +37,7 @@ public final class PrivateMessageGuildTagDecorator {
     private PrivateMessageGuildTagDecorator() {}
 
     public static boolean enabled() {
+        if (!WynntilsChatAccess.isAvailable()) return false;
         Minecraft client = Minecraft.getInstance();
         return (SeqClient.getShowPrivateMessageGuildTagsSetting() == null
                 || SeqClient.getShowPrivateMessageGuildTagsSetting().getValue())
@@ -61,12 +60,12 @@ public final class PrivateMessageGuildTagDecorator {
 
     /** Called once per client tick, including for inactive Wynntils chat tabs. */
     public static void tick() {
-        checkSession();
         if (!enabled()) {
             TAGS.clear();
             DIRTY_VIEWS.clear();
             return;
         }
+        checkSession();
         TAGS.tick();
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(2);
         int views = DIRTY_VIEWS.size();

@@ -1,13 +1,12 @@
 package com.seqwawa.seq.mixins;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import com.seqwawa.seq.integrations.WynntilsChatAccess;
 import com.seqwawa.seq.managers.DiscordRankChatDecorator;
 import com.seqwawa.seq.managers.PrivateMessageGuildTagDecorator;
 import com.seqwawa.seq.managers.PrivateMessageGuildTagView;
 import com.seqwawa.seq.managers.WorldSwitchChatDecorator;
 import com.seqwawa.seq.utils.ChatBridgeLineWrapping;
-import com.wynntils.core.events.MixinHelper;
-import com.wynntils.mc.event.AddGuiMessageLineEvent;
 import java.util.List;
 import net.minecraft.client.GuiMessage;
 import net.minecraft.client.gui.Font;
@@ -66,7 +65,7 @@ public class ChatComponentMixin {
     private void seq$updateGuildTagLines() {
         chatScrollbarPos = seq$guildTagView.refresh(
                 trimmedMessages, chatScrollbarPos, getLinesPerPage(), seq$chatHistoryLimit,
-                (message, line) -> MixinHelper.post(new AddGuiMessageLineEvent(message, line)));
+                WynntilsChatAccess::postAddedLine);
     }
 
     /**
