@@ -1,0 +1,50 @@
+package com.seqwawa.seq.ui;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import org.junit.jupiter.api.Test;
+
+class GuildMembersScreenTest {
+
+    @Test
+    void formatsTheBusyCountdownAsMinutesAndSeconds() {
+        assertEquals("8:00", GuildMembersScreen.formatCountdown(480_000L));
+        assertEquals("7:30", GuildMembersScreen.formatCountdown(450_000L));
+        assertEquals("0:09", GuildMembersScreen.formatCountdown(9_000L));
+    }
+
+    @Test
+    void roundsPartialSecondsUpSoTheChipNeverReadsZeroWhileStillBusy() {
+        assertEquals("0:01", GuildMembersScreen.formatCountdown(1L));
+        assertEquals("0:01", GuildMembersScreen.formatCountdown(999L));
+        assertEquals("1:00", GuildMembersScreen.formatCountdown(59_001L));
+    }
+
+    @Test
+    void clampsExpiredAndNegativeRemainders() {
+        assertEquals("0:00", GuildMembersScreen.formatCountdown(0L));
+        assertEquals("0:00", GuildMembersScreen.formatCountdown(-5_000L));
+    }
+
+    @Test
+    void textWithNoRoomIsDroppedRatherThanDrawnOverTheNextColumn() {
+        // A column whose gap has been squeezed to nothing draws nothing, which is what
+        // stops a heading from running into its neighbour.
+        assertEquals("", GuildMembersScreen.fitToWidth("GRAIDS", "font", 9f, 0f));
+        assertEquals("", GuildMembersScreen.fitToWidth("GRAIDS", "font", 9f, -20f));
+    }
+
+    @Test
+    void emptyInputStaysEmpty() {
+        assertEquals("", GuildMembersScreen.fitToWidth(null, "font", 9f, 100f));
+        assertEquals("", GuildMembersScreen.fitToWidth("", "font", 9f, 100f));
+    }
+
+    @Test
+    void theTailFirstVariantDropsTextWithNoRoomAndKeepsEmptyInputEmpty() {
+        assertEquals("", GuildMembersScreen.fitTail("a long note", "font", 10f, 0f));
+        assertEquals("", GuildMembersScreen.fitTail("a long note", "font", 10f, -5f));
+        assertEquals("", GuildMembersScreen.fitTail(null, "font", 10f, 100f));
+        assertEquals("", GuildMembersScreen.fitTail("", "font", 10f, 100f));
+    }
+}

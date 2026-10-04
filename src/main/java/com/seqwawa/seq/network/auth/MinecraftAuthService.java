@@ -22,6 +22,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Supplier;
 
 public class MinecraftAuthService {
 
@@ -44,6 +45,13 @@ public class MinecraftAuthService {
 
     private volatile CompletableFuture<StoredAuthSession> inFlightAuthentication;
     private long authenticationGeneration;
+
+    /**
+     * The last join-and-complete sequence handed out. Mojang keeps only the latest
+     * server id a profile joined, so two sign-ins (the main one and the raid profiles
+     * one) interleaving would fail whichever backend asked Mojang second.
+     */
+    private CompletableFuture<?> lastJoin = CompletableFuture.completedFuture(null);
 
     public static synchronized MinecraftAuthService getInstance() {
         if (instance == null) {
@@ -78,7 +86,7 @@ public class MinecraftAuthService {
             CompletableFuture<StoredAuthSession> future = ApiClient.getInstance()
                     .requestMinecraftAuthChallenge()
                     .thenApply(MinecraftAuthService::validateChallenge)
-                    .thenCompose(challenge -> authenticateMinecraftSession(startedFor, challenge))
+                    .thenCompose(challenge -> oneJoinAtATime(() -> authenticateMinecraftSession(startedFor, challenge)))
                     .thenApply(response -> storeSession(startedFor, response))
                     .handle((session, throwable) -> {
                         if (throwable != null) {
@@ -117,6 +125,37 @@ public class MinecraftAuthService {
         }
     }
 
+    /**
+     * Runs the whole challenge flow against another backend and returns that backend's
+     * session, without storing it or touching this service's state.
+     * <p>
+     * Each backend signs tokens with its own secret, so a feature served from a second
+     * backend needs a sign-in of its own. Keeping it out of the config file and out of
+     * {@link #getState()} means the main session, and the connection screen that
+     * reports it, are unaffected either way.
+     */
+    public CompletableFuture<StoredAuthSession> authenticateAgainst(String apiBaseUrl) {
+        if (apiBaseUrl == null || !apiBaseUrl.startsWith("https://")) {
+            return CompletableFuture.failedFuture(new AuthException(
+                    AuthErrorCode.TRANSPORT_INSECURE, "Refusing Minecraft authentication over insecure transport."));
+        }
+        return ApiClient.getInstance()
+                .requestMinecraftAuthChallenge(apiBaseUrl)
+                .thenApply(MinecraftAuthService::validateChallenge)
+                .thenCompose(challenge -> oneJoinAtATime(() -> CompletableFuture
+                        .supplyAsync(() -> joinServer(challenge), executor)
+                        .thenCompose(username -> ApiClient.getInstance()
+                                .completeMinecraftAuthentication(
+                                        apiBaseUrl, new MinecraftAuthCompleteRequest(challenge.challengeId(), username)))))
+                .thenApply(response -> toStoredSession(unwrapCompleteResponse(response)))
+                .handle((session, throwable) -> {
+                    if (throwable != null) {
+                        throw new CompletionException(mapException(throwable));
+                    }
+                    return session;
+                });
+    }
+
     static MinecraftAuthChallengeResponse validateChallenge(MinecraftAuthChallengeResponse response) {
         if (response == null
                 || response.challengeId() == null
@@ -141,21 +180,37 @@ public class MinecraftAuthService {
                 .supplyAsync(
                         () -> {
                             advanceAuthentication(startedFor, AuthState.JOINING_MINECRAFT_SESSION);
-                            User user = requireLoggedInUser();
-                            try {
-                                resolveSessionService().joinServer(
-                                        user.getProfileId(), user.getAccessToken(), challenge.serverId());
-                                return user.getName();
-                            } catch (AuthenticationException exception) {
-                                throw new AuthException(
-                                        AuthErrorCode.SESSION_JOIN_FAILED,
-                                        "Minecraft session verification failed. Restart Minecraft and try again.",
-                                        true,
-                                        exception);
-                            }
+                            return joinServer(challenge);
                         },
                         executor)
                 .thenCompose(username -> completeAuthentication(startedFor, challenge.challengeId(), username));
+    }
+
+    /**
+     * Runs {@code joinAndComplete} once the previous sequence has finished, whatever
+     * its outcome, so each backend checks Mojang while its own server id is the latest.
+     */
+    private synchronized <T> CompletableFuture<T> oneJoinAtATime(Supplier<CompletableFuture<T>> joinAndComplete) {
+        CompletableFuture<T> next = lastJoin
+                .handle((ignored, throwable) -> null)
+                .thenCompose(ignored -> joinAndComplete.get());
+        lastJoin = next;
+        return next;
+    }
+
+    /** Proves to Mojang that this client owns the account, for the backend to check. */
+    private String joinServer(MinecraftAuthChallengeResponse challenge) {
+        User user = requireLoggedInUser();
+        try {
+            resolveSessionService().joinServer(user.getProfileId(), user.getAccessToken(), challenge.serverId());
+            return user.getName();
+        } catch (AuthenticationException exception) {
+            throw new AuthException(
+                    AuthErrorCode.SESSION_JOIN_FAILED,
+                    "Minecraft session verification failed. Restart Minecraft and try again.",
+                    true,
+                    exception);
+        }
     }
 
     private CompletableFuture<MinecraftAuthCompleteResponse> completeAuthentication(

@@ -88,6 +88,11 @@ public class RaidTracker {
                 RaidGambitRosterTracker::reset,
                 () -> GuildRaidProgressService.getInstance().onLocalRaidCompleted());
 
+        // Wynncraft broadcasts every guild raid completion to guild chat, so this fires
+        // for other members' raids too. That is what lets the members panel mark someone
+        // busy without the backend having to relay anything back to us.
+        GuildRaidActivityTracker.recordCompletion(resolved.partyMembers());
+
         if (!ConnectionManager.isConnected()) {
             SeqClient.LOGGER.warn(
                     "[RaidTracker] Skipping raid announcement because backend is disconnected raw='{}'",

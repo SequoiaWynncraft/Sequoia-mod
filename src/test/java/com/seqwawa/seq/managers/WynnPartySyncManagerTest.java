@@ -15,6 +15,28 @@ import org.junit.jupiter.api.Test;
 class WynnPartySyncManagerTest {
 
     @Test
+    void enablingAutomaticSyncPersistsOnceAndRepublishesExistingRoster() throws Exception {
+        WynnPartySyncManager manager = new WynnPartySyncManager();
+        manager.onSystemChat(Component.literal("Party members: Leader, and Guest"));
+        setField(manager, "lastSentSnapshotKey", "previous-snapshot");
+        setField(manager, "lastSentSnapshotAt", Instant.now());
+        var setting = new com.seqwawa.seq.config.Setting.BooleanSetting("sync_with_wynn_party", "party_finder", false);
+        var saves = new java.util.concurrent.atomic.AtomicInteger();
+
+        manager.enableAutomaticSync(setting, saves::incrementAndGet);
+
+        assertTrue(setting.getValue());
+        assertEquals(1, saves.get());
+        assertTrue(manager.hasActiveParty());
+        assertEquals(List.of("Leader", "Guest"), manager.getObservedMemberUsernames());
+        Field key = WynnPartySyncManager.class.getDeclaredField("lastSentSnapshotKey");
+        key.setAccessible(true);
+        assertNull(key.get(manager));
+        manager.enableAutomaticSync(setting, saves::incrementAndGet);
+        assertEquals(1, saves.get());
+    }
+
+    @Test
     void preInitLeaveEventIsIgnored() throws Exception {
         WynnPartySyncManager manager = new WynnPartySyncManager();
 
