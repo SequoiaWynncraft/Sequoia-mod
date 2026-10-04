@@ -48,6 +48,7 @@ import com.seqwawa.seq.managers.PartyHealthCache;
 import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.PrincessMode;
 import com.seqwawa.seq.managers.PrincessRaidStatsManager;
+import com.seqwawa.seq.managers.PrivateMessageGuildTagDecorator;
 import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.RaidProfileStore;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
@@ -58,6 +59,7 @@ import com.seqwawa.seq.managers.WynnPartySyncManager;
 import com.seqwawa.seq.managers.WorldEventManager;
 import com.seqwawa.seq.managers.WarPlannerManager;
 import com.seqwawa.seq.managers.WarTerritoryQueueManager;
+import com.seqwawa.seq.managers.WarTerritoryBoundsReminder;
 import com.seqwawa.seq.map.IngredientWaypointRenderer;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.ConnectionManager;
@@ -111,6 +113,8 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static WarTerritoryQueueManager warTerritoryQueueManager;
+
+    public static WarTerritoryBoundsReminder warTerritoryBoundsReminder;
 
     @Getter
     public static PrincessRaidStatsManager princessRaidStatsManager;
@@ -311,7 +315,19 @@ public class SeqClient implements ClientModInitializer {
     public static Setting.BooleanSetting warQueueHudOnlyOwnedOrJoinedSetting;
 
     @Getter
+    public static Setting.BooleanSetting warQueueAutoWaypointSetting;
+
+    @Getter
     public static Setting.BooleanSetting warQueueMissMessagesSetting;
+
+    @Getter
+    public static Setting.BooleanSetting warQueueBoundsReminderSetting;
+
+    @Getter
+    public static Setting.BooleanSetting warQueueBoundsReminderTitleSetting;
+
+    @Getter
+    public static Setting.IntSetting warQueueBoundsReminderTitleCountdownSetting;
 
     @Getter
     public static Setting.IntSetting warQueueHudMaxRowsSetting;
@@ -373,6 +389,7 @@ public class SeqClient implements ClientModInitializer {
         partyFinderManager = new PartyFinderManager();
         warPlannerManager = new WarPlannerManager();
         warTerritoryQueueManager = new WarTerritoryQueueManager();
+        warTerritoryBoundsReminder = new WarTerritoryBoundsReminder();
         princessRaidStatsManager = new PrincessRaidStatsManager();
         wynnPartySyncManager = new WynnPartySyncManager();
         guildWarTracker = GuildWarTrackers.create();
@@ -407,7 +424,10 @@ public class SeqClient implements ClientModInitializer {
             GlobalSoundListener.shutdown();
             MinecraftUiRenderer.shutdown();
         });
-        ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> resetWarTrackingState());
+        ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> {
+            resetWarTrackingState();
+            warTerritoryBoundsReminder.clear();
+        });
         LightRoom.init();
 
         KeyMapping.Category category =
@@ -430,6 +450,7 @@ public class SeqClient implements ClientModInitializer {
                 "key.sequoia-mod.share_bombs", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            PrivateMessageGuildTagDecorator.tick();
             ConnectionManager.tickGuildRankObservations();
             while (openScreenKey.consumeClick()) {
                 if (client.screen == null) {
@@ -516,6 +537,9 @@ public class SeqClient implements ClientModInitializer {
             }
             if (warTerritoryQueueManager != null) {
                 warTerritoryQueueManager.tick();
+            }
+            if (warTerritoryBoundsReminder != null) {
+                warTerritoryBoundsReminder.tick(client);
             }
 
             if (partyFinderManager != null) {
@@ -1057,8 +1081,16 @@ public class SeqClient implements ClientModInitializer {
         warQueueHudYSetting.setVisibilityCondition(() -> false);
         warQueueHudOnlyOwnedOrJoinedSetting =
                 new Setting.BooleanSetting("queue_hud_only_owned_or_joined", "war_planner", false);
+        warQueueAutoWaypointSetting =
+                new Setting.BooleanSetting("queue_auto_waypoint", "war_planner", true);
         warQueueMissMessagesSetting =
                 new Setting.BooleanSetting("queue_miss_messages", "war_planner", false);
+        warQueueBoundsReminderSetting =
+                new Setting.BooleanSetting("queue_bounds_reminders", "war_planner", false);
+        warQueueBoundsReminderTitleSetting =
+                new Setting.BooleanSetting("queue_bounds_reminder_title", "war_planner", true);
+        warQueueBoundsReminderTitleCountdownSetting =
+                new Setting.IntSetting("queue_bounds_reminder_title_countdown_seconds", "war_planner", 15, 5, 60);
         warQueueHudMaxRowsSetting =
                 new Setting.IntSetting("queue_hud_max_rows", "war_planner", 6, 1, 20);
         warPlannerLockTerritoriesSetting =
@@ -1069,7 +1101,11 @@ public class SeqClient implements ClientModInitializer {
                         warPlannerBackgroundOpacitySetting,
                         warQueueHudTextSizeSetting,
                         warQueueHudOnlyOwnedOrJoinedSetting,
+                        warQueueAutoWaypointSetting,
                         warQueueMissMessagesSetting,
+                        warQueueBoundsReminderSetting,
+                        warQueueBoundsReminderTitleSetting,
+                        warQueueBoundsReminderTitleCountdownSetting,
                         warQueueHudMaxRowsSetting,
                         warPlannerLockTerritoriesSetting)
                 .forEach(setting -> setting.setPresentationCategory("guild_wars"));
@@ -1096,6 +1132,22 @@ public class SeqClient implements ClientModInitializer {
         warQueueMissMessagesSetting.setPresentation(
                 "Queue miss messages",
                 "Show a blame message when nobody enters a queued territory war.",
+                "War queue messages");
+        warQueueAutoWaypointSetting.setPresentation(
+                "Auto-waypoint my next war",
+                "Show a waypoint at the territory of your soonest war queue. Only includes wars you personally queued.",
+                "War queue HUD");
+        warQueueBoundsReminderSetting.setPresentation(
+                "Queued war in-bounds alerts",
+                "Show chat reminders when you move in and out of bounds of an impending war.",
+                "War queue messages");
+        warQueueBoundsReminderTitleSetting.setPresentation(
+                "Show war countdown title",
+                "Show a warning title when in bounds of an impending war.",
+                "War queue messages");
+        warQueueBoundsReminderTitleCountdownSetting.setPresentation(
+                "Title countdown (seconds)",
+                "Show the war countdown title during the configured final seconds before a war starts.",
                 "War queue messages");
         warQueueHudMaxRowsSetting.setPresentation(
                 "Maximum queue rows",
@@ -1165,11 +1217,15 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(warPlannerBackgroundOpacitySetting);
         getConfigManager().register(warPlannerLockTerritoriesSetting);
         getConfigManager().register(warQueueHudOnlyOwnedOrJoinedSetting);
+        getConfigManager().register(warQueueAutoWaypointSetting);
         getConfigManager().register(warQueueHudMaxRowsSetting);
         getConfigManager().register(warQueueHudTextSizeSetting);
         getConfigManager().register(warQueueHudXSetting);
         getConfigManager().register(warQueueHudYSetting);
         getConfigManager().register(warQueueMissMessagesSetting);
+        getConfigManager().register(warQueueBoundsReminderSetting);
+        getConfigManager().register(warQueueBoundsReminderTitleSetting);
+        getConfigManager().register(warQueueBoundsReminderTitleCountdownSetting);
         getConfigManager().load(); // reload to pick up saved values for new settings
 
         // Auto-connect if enabled. The auth service will refresh or mint a backend token as needed.

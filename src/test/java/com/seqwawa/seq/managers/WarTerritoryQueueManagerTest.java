@@ -27,6 +27,30 @@ class WarTerritoryQueueManagerTest {
     private static final Instant NOW = Instant.parse("2026-08-24T12:00:00Z");
 
     @Test
+    void activeQueuesOrderTiesAndAdvanceUsingServerTimeEvenWhenPollingFails() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        availability.available = true;
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability);
+        manager.tick();
+        gateway.fetchRequests.getFirst().complete(feed(1, NOW.plusSeconds(30), List.of(
+                queue(4, "Ragni", "self-uuid", "Self", NOW, NOW.plusSeconds(60), List.of()),
+                queue(3, "Alekin", "self-uuid", "Self", NOW, NOW.plusSeconds(60), List.of()),
+                queue(2, "Alekin", "self-uuid", "Self", NOW, NOW.plusSeconds(60), List.of()),
+                queue(1, "Alekin", "self-uuid", "Self", NOW, NOW.plusSeconds(30), List.of()),
+                queue(5, "Ragni", "self-uuid", "Self", NOW, NOW.plusSeconds(90), List.of()))));
+
+        assertEquals(List.of(2L, 3L, 4L, 5L), manager.activeQueues().stream().map(TerritoryQueue::id).toList());
+        clock.advance(Duration.ofSeconds(30));
+        manager.tick();
+        gateway.fetchRequests.getLast().completeExceptionally(new RuntimeException("Offline"));
+        assertEquals(List.of(5L), manager.activeQueues().stream().map(TerritoryQueue::id).toList());
+        clock.advance(Duration.ofSeconds(30));
+        assertTrue(manager.activeQueues().isEmpty());
+    }
+
+    @Test
     void findsLocalTerritoryWhenItsTimerExpiresAtThePreparationRoom() {
         FakeGateway gateway = new FakeGateway();
         MutableClock clock = new MutableClock(NOW);

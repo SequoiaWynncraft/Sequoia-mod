@@ -357,8 +357,10 @@ public final class DiscordRankChatDecorator {
      * Upper bound of the speaker's displayed name, i.e. where Wynncraft's
      * {@code Nickname(RealUsername)} reveal begins.
      * <p>
-     * The cut is the first fragment carrying the resolved username, the one piece of
-     * information known to be right here. Colours and brackets are not usable:
+     * The cut is the first fragment carrying a complete resolved username token.
+     * A substring of a nickname, such as reyzhia in reyzhianator, is not a reveal.
+     * Token boundaries are checked across the full name region, since styles may
+     * split a nickname into several fragments. Colours and brackets are not usable:
      * Wynncraft and Wynntils both build these lines with legacy {@code §} codes
      * inside the text, so a fragment's own colour says nothing about how it renders.
      * When the name and the reveal share one fragment there is no safe cut, and this
@@ -395,6 +397,15 @@ public final class DiscordRankChatDecorator {
             return colonIndex;
         }
 
+        Matcher accountName = Pattern.compile(
+                        "(?<![a-zA-Z0-9_])" + Pattern.quote(username) + "(?![a-zA-Z0-9_])",
+                        Pattern.CASE_INSENSITIVE)
+                .matcher(region);
+        if (!accountName.find()) {
+            return colonIndex;
+        }
+        int accountNameStart = nameStart + accountName.start();
+
         int cursor = 0;
         for (ComponentTextEditor.Fragment fragment : fragments) {
             int fragmentStart = cursor;
@@ -402,7 +413,7 @@ public final class DiscordRankChatDecorator {
             if (cursor <= nameStart || fragmentStart >= colonIndex) {
                 continue;
             }
-            if (!containsIgnoreCase(fragment.text(), username)) {
+            if (accountNameStart < fragmentStart || accountNameStart >= cursor) {
                 continue;
             }
             // A fragment that is exactly the username is the name itself, not a
@@ -412,10 +423,6 @@ public final class DiscordRankChatDecorator {
                     : Math.max(nameStart, fragmentStart);
         }
         return colonIndex;
-    }
-
-    private static boolean containsIgnoreCase(String haystack, String needle) {
-        return haystack.toLowerCase(Locale.ROOT).contains(needle.toLowerCase(Locale.ROOT));
     }
 
     /**

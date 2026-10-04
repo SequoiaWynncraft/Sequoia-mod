@@ -724,6 +724,66 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void colorsNicknamesContainingTheAccountNameAcrossTheirWholeGradient() {
+        RankPresentation rank = presentation("rank.druid", "Druid", 92, 0xFF0000, 0x0000FF);
+        for (String nickname : List.of("reyzhianator", "SuperReYzHiA", "xxreyzhiaxx", "reyzhia_2")) {
+            Style style = Style.EMPTY.withColor(DARK_AQUA).withItalic(true)
+                    .withHoverEvent(new HoverEvent.ShowText(
+                            Component.literal(nickname + "'s real username is reyzhia")));
+            Component message = Component.empty()
+                    .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
+                    .append(Component.literal(nickname).withStyle(style))
+                    .append(Component.literal(": test").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+
+            Component decorated = DiscordRankChatDecorator.decorateGuildChat(
+                    message, candidate -> candidate.equalsIgnoreCase("reyzhia") ? rank : null);
+            List<ComponentTextEditor.Fragment> name = ComponentTextEditor.flatten(decorated).stream()
+                    .filter(fragment -> "reyzhia".equals(fragment.style().getInsertion()))
+                    .toList();
+
+            assertEquals(nickname, name.stream().map(ComponentTextEditor.Fragment::text)
+                    .reduce("", String::concat), nickname);
+            assertEquals(0xFF0000, name.getFirst().style().getColor().getValue());
+            assertEquals(0x0000FF, name.getLast().style().getColor().getValue());
+            assertTrue(name.stream().allMatch(fragment -> fragment.style().isItalic()));
+            assertTrue(name.stream().allMatch(fragment -> style.getHoverEvent().equals(fragment.style().getHoverEvent())));
+            assertTrue(decorated.getString().endsWith(nickname + ": test"));
+        }
+    }
+
+    @Test
+    void nicknameTokenBoundariesIgnoreComponentStyleSplits() {
+        Component message = Component.empty()
+                .append(Component.literal("  "))
+                .append(Component.literal("reyzhia").withStyle(Style.EMPTY.withItalic(true)))
+                .append(Component.literal("nator").withStyle(Style.EMPTY.withBold(true)))
+                .append(Component.literal(": test"));
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(message);
+        String text = ComponentTextEditor.textOf(fragments);
+
+        assertEquals(text.indexOf(':'), DiscordRankChatDecorator.speakerNameEnd(
+                fragments, text, 2, text.indexOf(':'), "reyzhia"));
+    }
+
+    @Test
+    void colorsTheNicknameContainingTheAccountNameButPreservesItsSeparateReveal() {
+        for (String reveal : List.of("(reyzhia)", "[ReYzHiA]")) {
+            Component message = Component.empty()
+                    .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUITER") + " "))
+                    .append(Component.literal("reyzhianator")
+                            .withStyle(Style.EMPTY.withColor(DARK_AQUA).withInsertion("reyzhia")))
+                    .append(Component.literal(reveal).withStyle(Style.EMPTY.withColor(0xFF5555)))
+                    .append(Component.literal(": test").withStyle(Style.EMPTY.withColor(GUILD_AQUA)));
+            Component decorated = DiscordRankChatDecorator.decorateGuildChat(
+                    message, candidate -> candidate.equalsIgnoreCase("reyzhia") ? DRUID : null);
+            List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(decorated);
+
+            assertEquals(0xD7BCEA, colorOfFragmentContaining(fragments, "reyzhianator"));
+            assertEquals(0xFF5555, colorOfFragmentContaining(fragments, reveal));
+        }
+    }
+
+    @Test
     void resolvesAUsernameAfterASpacedClassNickname() {
         Component message = guildLine("RECRUITER", "I Burger/pat_crafter07", null, "test");
 

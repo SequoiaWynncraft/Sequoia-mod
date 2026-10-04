@@ -49,7 +49,8 @@ public final class IngredientWaypointManager {
 
     public enum Kind {
         INGREDIENT_SPAWN,
-        TOTEM_SPOT
+        TOTEM_SPOT,
+        WAR_QUEUE
     }
 
     public record Waypoint(
