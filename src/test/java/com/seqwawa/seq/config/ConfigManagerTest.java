@@ -23,6 +23,31 @@ class ConfigManagerTest {
     Path tempDir;
 
     @Test
+    void gearsharingProtectionDefaultsOnAndPersistsDisabledValue() throws Exception {
+        Path configPath = tempDir.resolve("sequoia.json");
+        Files.writeString(configPath, "{}");
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        var setting = com.seqwawa.seq.managers.GearSharingProtectionManager.createSetting();
+        manager.register(setting);
+        manager.load();
+        assertTrue(setting.getValue());
+        assertTrue(setting.isVisible());
+        assertEquals("Automatically disable Wynntils armor/accessory sharing", setting.getDisplayName());
+        assertEquals("Gearsharing", setting.getSection());
+        assertEquals("wynntils", setting.getCategory());
+        setting.setValue(false);
+        manager.save();
+        assertTrue(Files.readString(configPath).contains("\"wynntils.auto_disable_wynntils_gearsharing\": false"));
+        ConfigManager reloaded = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        var restored = com.seqwawa.seq.managers.GearSharingProtectionManager.createSetting();
+        reloaded.register(restored);
+        reloaded.load();
+        assertFalse(restored.getValue());
+        restored.reset();
+        assertTrue(restored.getValue());
+    }
+
+    @Test
     void doesNotPersistAuthSessionInConfig() throws Exception {
         Path configPath = tempDir.resolve("config").resolve("sequoia.json");
         ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
