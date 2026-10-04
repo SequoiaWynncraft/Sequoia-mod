@@ -1,17 +1,15 @@
 package com.seqwawa.seq.managers;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.utils.ChatIdentityResolver;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import com.wynntils.core.components.Models;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -27,101 +25,139 @@ public final class PrivateMessageGuildTagDecorator {
     private static final Pattern HEADER = Pattern.compile("\\s*(.+?)\\s+\uE003\\s+(.+?):\\s");
     private static final Pattern REVEALED_NAME = Pattern.compile(".*\\(([a-zA-Z0-9_]{3,16})\\)");
     private static final Pattern GUILD_TAG = Pattern.compile("[A-Za-z0-9]{1,5}");
-    private static final Map<String, CachedTag> TAGS = new LinkedHashMap<>();
-    private static final long CACHE_MILLIS = TimeUnit.MINUTES.toMillis(5);
-
-    record CachedTag(long fetchedAt, CompletableFuture<String> value, Set<Runnable> waitingViews) {
-        CachedTag(long fetchedAt, CompletableFuture<String> value) {
-            this(fetchedAt, value, new LinkedHashSet<>());
-        }
-
-        String read(Runnable refreshChat) {
-            if (!value.isDone()) waitingViews.add(refreshChat);
-            return value.getNow("");
-        }
-
-        void refreshWaitingViews() {
-            List<Runnable> refreshes = List.copyOf(waitingViews);
-            waitingViews.clear();
-            refreshes.forEach(Runnable::run);
-        }
-    }
+    private static final PrivateMessageGuildTagCache TAGS = new PrivateMessageGuildTagCache(
+            username -> Models.Player.getPlayer(username).thenApply(player -> player == null ? null
+                    : player.guildInfo().map(guild -> guild.guildPrefix()).orElse("")),
+            System::currentTimeMillis);
+    // Identity keys: distinct styled messages must never share cached parsing by visible text alone.
+    private static final Cache<Component, ParsedMessage> MESSAGES =
+            CacheBuilder.newBuilder().weakKeys().maximumSize(2048).build();
+    private static final Set<Runnable> DIRTY_VIEWS = new LinkedHashSet<>();
+    private static Object connection;
+    private static String localUsername = "";
 
     private PrivateMessageGuildTagDecorator() {}
 
-    public static Component decorate(Component message, Runnable refreshChat) {
-        if (SeqClient.getShowPrivateMessageGuildTagsSetting() != null
-                && !SeqClient.getShowPrivateMessageGuildTagsSetting().getValue()) {
-            return message;
-        }
+    public static boolean enabled() {
         Minecraft client = Minecraft.getInstance();
-        if (message == null || client.player == null || !WynncraftServerPolicy.isCurrentServerAllowed()) {
-            return message;
-        }
-        return decorate(message, client.getUser().getName(), username -> cachedTag(username, refreshChat));
+        return (SeqClient.getShowPrivateMessageGuildTagsSetting() == null
+                || SeqClient.getShowPrivateMessageGuildTagsSetting().getValue())
+                && client.player != null && WynncraftServerPolicy.isCurrentServerAllowed();
     }
 
-    /** Lookups never hold up chat. Rewrapping updates the same line, preserving its position and age. */
-    private static String cachedTag(String username, Runnable refreshChat) {
-        String key = username.toLowerCase(Locale.ROOT);
-        long now = System.currentTimeMillis();
-        CachedTag cached = TAGS.get(key);
-        if (cached == null || now - cached.fetchedAt() >= CACHE_MILLIS) {
-            CompletableFuture<String> value = Models.Player.getPlayer(username)
-                    .thenApply(player -> player == null ? "" : player.guildInfo()
-                            .map(guild -> guild.guildPrefix()).orElse(""))
-                    .completeOnTimeout("", 5, TimeUnit.SECONDS)
-                    .exceptionally(error -> "");
-            CachedTag pending = new CachedTag(now, value);
-            TAGS.put(key, pending);
-            if (TAGS.size() > 128) {
-                TAGS.remove(TAGS.keySet().iterator().next());
-            }
-            Minecraft client = Minecraft.getInstance();
-            var connection = client.getConnection();
-            value.thenAccept(tag -> {
-                if (!tag.isBlank()) {
-                    // Always queue: an already cached Wynntils response may complete inside splitLines.
-                    client.schedule(() -> {
-                        if (client.getConnection() == connection) pending.refreshWaitingViews();
-                        else pending.waitingViews().clear();
-                    });
-                } else {
-                    client.schedule(() -> pending.waitingViews().clear());
-                }
-            });
-            cached = TAGS.get(key);
+    public static boolean isPrivateMessage(Component message) {
+        return message != null && enabled() && parsed(message).username != null;
+    }
+
+    public static Component decorate(Component message, Runnable changed) {
+        if (message == null || !enabled()) return message;
+        ParsedMessage parsed = parsed(message);
+        return parsed.username == null ? message : parsed.decorate(TAGS.read(parsed.username, changed));
+    }
+
+    public static void queueRefresh(Runnable refresh) {
+        DIRTY_VIEWS.add(refresh);
+    }
+
+    /** Called once per client tick, including for inactive Wynntils chat tabs. */
+    public static void tick() {
+        checkSession();
+        if (!enabled()) {
+            TAGS.clear();
+            DIRTY_VIEWS.clear();
+            return;
         }
-        return cached.read(refreshChat);
+        TAGS.tick();
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(2);
+        int views = DIRTY_VIEWS.size();
+        while (views-- > 0 && !DIRTY_VIEWS.isEmpty()) {
+            Runnable refresh = DIRTY_VIEWS.iterator().next();
+            DIRTY_VIEWS.remove(refresh);
+            refresh.run();
+            if (System.nanoTime() >= deadline) break;
+        }
+    }
+
+    private static void checkSession() {
+        Minecraft client = Minecraft.getInstance();
+        String username = client.getUser().getName();
+        if (connection != client.getConnection() || !localUsername.equals(username)) {
+            connection = client.getConnection();
+            localUsername = username;
+            TAGS.clear();
+            MESSAGES.invalidateAll();
+            DIRTY_VIEWS.clear();
+        }
+    }
+
+    private static ParsedMessage parsed(Component message) {
+        checkSession();
+        ParsedMessage parsed = MESSAGES.getIfPresent(message);
+        if (parsed == null) {
+            parsed = parse(message, localUsername);
+            MESSAGES.put(message, parsed);
+        }
+        return parsed;
     }
 
     static Component decorate(Component message, String localUsername, Function<String, String> guildLookup) {
-        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(message);
-        String text = ComponentTextEditor.textOf(fragments);
+        ParsedMessage parsed = parse(message, localUsername);
+        return parsed.username == null ? message : parsed.decorate(guildLookup.apply(parsed.username));
+    }
+
+    static ParsedMessage parse(Component message, String localUsername) {
+        ParsedMessage unchanged = new ParsedMessage(message, null, List.of(), 0);
+        String text = message.getString();
         int marker = text.indexOf('\uE007');
+        if (marker < 0 && text.indexOf('\uE001') < 0) return unchanged;
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(message);
         if (marker < 0) {
             marker = text.indexOf('\uE001');
-            if (marker < 0 || !hasPrivateColor(fragments, marker)) return message;
+            if (!hasPrivateColor(fragments, marker)) return unchanged;
         }
         String masked = maskDecorations(text);
-        if (!TIMESTAMP.matcher(masked.substring(0, marker)).matches()) return message;
+        if (!TIMESTAMP.matcher(masked.substring(0, marker)).matches()) return unchanged;
         Matcher header = HEADER.matcher(masked);
         header.region(marker + 1, masked.length());
-        if (!header.lookingAt()) return message;
+        if (!header.lookingAt()) return unchanged;
 
         String from = username(fragments, header.start(1), header.end(1));
         String to = username(fragments, header.start(2), header.end(2));
         boolean fromLocal = isLocal(from, localUsername);
         boolean toLocal = isLocal(to, localUsername);
-        if (fromLocal == toLocal) return message;
+        if (fromLocal == toLocal) return unchanged;
         int group = fromLocal ? 2 : 1;
         String other = fromLocal ? to : from;
-        if (!ChatIdentityResolver.isValidUsername(other)) return message;
-        String tag = guildLookup.apply(other);
-        if (tag == null || !GUILD_TAG.matcher(tag).matches()) return message;
-        Component prefix = Component.literal("[" + tag + "] ")
-                .withStyle(styleAt(fragments, header.start(group)));
-        return ComponentTextEditor.toComponent(ComponentTextEditor.insertAt(fragments, header.start(group), prefix));
+        if (!ChatIdentityResolver.isValidUsername(other)) return unchanged;
+        return new ParsedMessage(message, other, fragments, header.start(group));
+    }
+
+    static final class ParsedMessage {
+        final Component original;
+        final String username;
+        final List<ComponentTextEditor.Fragment> fragments;
+        final int insertAt;
+        private String lastTag = "";
+        private Component decorated;
+
+        ParsedMessage(Component original, String username, List<ComponentTextEditor.Fragment> fragments, int insertAt) {
+            this.original = original;
+            this.username = username;
+            this.fragments = fragments;
+            this.insertAt = insertAt;
+            this.decorated = original;
+        }
+
+        Component decorate(String tag) {
+            if (tag == null || !GUILD_TAG.matcher(tag).matches()) tag = "";
+            if (!tag.equals(lastTag)) {
+                lastTag = tag;
+                Component prefix = Component.literal("[" + tag + "] ").withStyle(styleAt(fragments, insertAt));
+                decorated = tag.isEmpty() ? original
+                        : ComponentTextEditor.toComponent(ComponentTextEditor.insertAt(fragments, insertAt, prefix));
+            }
+            return decorated;
+        }
     }
 
     private static boolean isLocal(String username, String localUsername) {

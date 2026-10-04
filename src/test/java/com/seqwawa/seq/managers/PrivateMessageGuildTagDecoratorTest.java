@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import com.seqwawa.seq.utils.ComponentTextEditor;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
@@ -17,21 +16,14 @@ class PrivateMessageGuildTagDecoratorTest {
     private static final String ARROW = " \uE003 ";
 
     @Test
-    void completedLookupRefreshesEveryWaitingChatViewOnce() {
-        var lookup = new CompletableFuture<String>();
-        var cached = new PrivateMessageGuildTagDecorator.CachedTag(0, lookup);
-        List<String> refreshed = new ArrayList<>();
-        Runnable allChat = () -> refreshed.add("all");
-        Runnable privateChat = () -> refreshed.add("private");
-        assertEquals("", cached.read(allChat));
-        assertEquals("", cached.read(privateChat));
-        assertEquals("", cached.read(privateChat));
-        lookup.complete("VERNA");
-        cached.refreshWaitingViews();
-        assertEquals(List.of("all", "private"), refreshed);
-        assertEquals("VERNA", cached.read(privateChat));
-        cached.refreshWaitingViews();
-        assertEquals(List.of("all", "private"), refreshed);
+    void reusesParsedDecorationUntilTheTagChangesAndCanRemoveIt() {
+        Component message = Component.literal(MARKER + "Baptiste" + ARROW + "You: hello");
+        var parsed = PrivateMessageGuildTagDecorator.parse(message, "LocalPlayer");
+        assertSame(message, parsed.decorate(""));
+        Component tagged = parsed.decorate("SEQ");
+        assertSame(tagged, parsed.decorate("SEQ"));
+        assertEquals(message.getString().replace("Baptiste", "[NEW] Baptiste"), parsed.decorate("NEW").getString());
+        assertSame(message, parsed.decorate(""));
     }
 
     @Test

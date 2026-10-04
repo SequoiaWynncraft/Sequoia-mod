@@ -47,6 +47,7 @@ import com.seqwawa.seq.managers.PartyHealthCache;
 import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.PrincessMode;
 import com.seqwawa.seq.managers.PrincessRaidStatsManager;
+import com.seqwawa.seq.managers.PrivateMessageGuildTagDecorator;
 import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.SeqBadgeNametagRendererHandle;
 import com.seqwawa.seq.managers.SeqBadgeNametagRenderers;
@@ -444,6 +445,7 @@ public class SeqClient implements ClientModInitializer {
                 "key.sequoia-mod.share_bombs", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            PrivateMessageGuildTagDecorator.tick();
             ConnectionManager.tickGuildRankObservations();
             while (openScreenKey.consumeClick()) {
                 if (client.screen == null) {
