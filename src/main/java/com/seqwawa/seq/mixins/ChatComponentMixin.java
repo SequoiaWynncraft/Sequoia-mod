@@ -1,9 +1,13 @@
 package com.seqwawa.seq.mixins;
 
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.seqwawa.seq.managers.DiscordRankChatDecorator;
 import com.seqwawa.seq.managers.PrivateMessageGuildTagDecorator;
+import com.seqwawa.seq.managers.PrivateMessageGuildTagView;
 import com.seqwawa.seq.managers.WorldSwitchChatDecorator;
 import com.seqwawa.seq.utils.ChatBridgeLineWrapping;
+import com.wynntils.core.events.MixinHelper;
+import com.wynntils.mc.event.AddGuiMessageLineEvent;
 import java.util.List;
 import net.minecraft.client.GuiMessage;
 import net.minecraft.client.gui.Font;
@@ -32,11 +36,37 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 public class ChatComponentMixin {
 
     @Unique
-    private final Runnable seq$refreshGuildTags = this::refreshTrimmedMessages;
+    private final Runnable seq$refreshGuildTags = this::seq$updateGuildTagLines;
+
+    @Unique
+    private final PrivateMessageGuildTagView seq$guildTagView = new PrivateMessageGuildTagView(
+            () -> PrivateMessageGuildTagDecorator.queueRefresh(seq$refreshGuildTags));
+
+    @Unique
+    private int seq$chatHistoryLimit = 100;
 
     @Shadow
-    private void refreshTrimmedMessages() {
+    private List<GuiMessage.Line> trimmedMessages;
+
+    @Shadow
+    private int chatScrollbarPos;
+
+    @Shadow
+    public int getLinesPerPage() {
         throw new AssertionError();
+    }
+
+    @ModifyExpressionValue(method = "addMessageToDisplayQueue", at = @At(value = "CONSTANT", args = "intValue=100"))
+    private int seq$captureHistoryLimit(int limit) {
+        seq$chatHistoryLimit = limit;
+        return limit;
+    }
+
+    @Unique
+    private void seq$updateGuildTagLines() {
+        chatScrollbarPos = seq$guildTagView.refresh(
+                trimmedMessages, chatScrollbarPos, getLinesPerPage(), seq$chatHistoryLimit,
+                (message, line) -> MixinHelper.post(new AddGuiMessageLineEvent(message, line)));
     }
 
     /**
@@ -70,9 +100,10 @@ public class ChatComponentMixin {
                     target = "Lnet/minecraft/client/GuiMessage;splitLines(Lnet/minecraft/client/gui/Font;I)Ljava/util/List;"))
     private List<FormattedCharSequence> seq$wrapBridgeContinuations(
             GuiMessage message, Font font, int maxWidth) {
-        Component tagged = PrivateMessageGuildTagDecorator.decorate(message.content(), seq$refreshGuildTags);
-        if (tagged != message.content()) {
-            message = new GuiMessage(message.addedTime(), tagged, message.signature(), message.tag());
+        if (PrivateMessageGuildTagDecorator.isPrivateMessage(message.content())) {
+            return seq$guildTagView.wrap(message, PrivateMessageGuildTagDecorator::decorate,
+                    tagged -> new GuiMessage(message.addedTime(), tagged, message.signature(), message.tag())
+                            .splitLines(font, maxWidth));
         }
         List<FormattedCharSequence> initialLines = message.splitLines(font, maxWidth);
         Component continuationPrefix = DiscordRankChatDecorator.bridgeContinuationPrefixFor(message.content());
