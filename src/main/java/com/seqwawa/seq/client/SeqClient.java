@@ -32,6 +32,7 @@ import com.seqwawa.seq.managers.ChatManager;
 import com.seqwawa.seq.managers.ChatRegexFilterManager;
 import com.seqwawa.seq.managers.FontManager;
 import com.seqwawa.seq.managers.GameManager;
+import com.seqwawa.seq.managers.GearSharingProtectionManager;
 import com.seqwawa.seq.managers.GlobalSoundListener;
 import com.seqwawa.seq.managers.GuildPresenceManager;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
@@ -145,6 +146,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static Setting.BooleanSetting announceAchievementsSetting;
+
+    @Getter
+    public static Setting.BooleanSetting autoDisableWynntilsGearsharingSetting;
 
     @Getter
     public static Setting.BooleanSetting showDiscordRanksSetting;
@@ -424,7 +428,10 @@ public class SeqClient implements ClientModInitializer {
             GlobalSoundListener.shutdown();
             MinecraftUiRenderer.shutdown();
         });
+        GearSharingProtectionManager gearSharingProtectionManager = new GearSharingProtectionManager();
         ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> {
+            gearSharingProtectionManager.onWorldChange(
+                    autoDisableWynntilsGearsharingSetting != null && autoDisableWynntilsGearsharingSetting.getValue());
             resetWarTrackingState();
             warTerritoryBoundsReminder.clear();
         });
@@ -867,6 +874,7 @@ public class SeqClient implements ClientModInitializer {
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
         showPrivateMessageGuildTagsSetting = new Setting.BooleanSetting("show_private_message_guild_tags", "chat", true);
         announceAchievementsSetting = new Setting.BooleanSetting("announce_achievements", "chat", true);
+        autoDisableWynntilsGearsharingSetting = GearSharingProtectionManager.createSetting();
         showPrivateMessageGuildTagsSetting.setPresentation(
                 "Show guild tags in private messages",
                 "Show the other player's guild tag before their name in /msg conversations.",
@@ -1163,6 +1171,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(showPrivateMessageGuildTagsSetting);
         getConfigManager().register(announceAchievementsSetting);
+        getConfigManager().register(autoDisableWynntilsGearsharingSetting);
         getConfigManager().register(colorDiscordBridgeSetting);
         getConfigManager().register(discordChatTextColorSetting);
         getConfigManager().register(inGameGuildChatTextColorSetting);
