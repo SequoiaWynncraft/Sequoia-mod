@@ -130,7 +130,7 @@ public final class GuildRankNametagDecorator {
      * step with the rest of the rank.
      */
     static Decoration decorate(Component nameTag, Function<String, Member> members) {
-        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flatten(nameTag);
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flattenFormatted(nameTag);
         String text = ComponentTextEditor.textOf(fragments);
         DisplayedName name = displayedName(text, members);
         if (name == null) {
@@ -379,7 +379,8 @@ public final class GuildRankNametagDecorator {
     private static List<String> registeredNames(String username, Component nameTag) {
         List<String> names = new ArrayList<>(3);
         addRegisteredName(names, username);
-        for (String candidate : nameCandidates(nameTag == null ? "" : nameTag.getString())) {
+        for (String candidate : nameCandidates(
+                ComponentTextEditor.textOf(ComponentTextEditor.flattenFormatted(nameTag)))) {
             addRegisteredName(names, candidate);
         }
         return List.copyOf(names);

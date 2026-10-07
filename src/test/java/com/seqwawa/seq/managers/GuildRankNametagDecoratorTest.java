@@ -28,6 +28,7 @@ import net.minecraft.network.chat.FontDescription;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.StringDecomposer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -81,6 +82,28 @@ class GuildRankNametagDecoratorTest {
         assertNotSame(nameTag, decorated);
         assertEquals(List.of("dryad"), badgeLabels(decorated));
         assertTrue(decorated.getString().endsWith(" ArcLeRetour"), decorated.getString());
+    }
+
+    @Test
+    void consumesLegacyColorCodesBeforeReplacingTheBadgeAndPaintingTheName() {
+        Component nameTag = Component.literal("\u00a76" + CHAMPION_BADGE + " \u00a7fArcLeRetour");
+
+        Component decorated = decorate(nameTag);
+
+        assertNotSame(nameTag, decorated);
+        assertEquals(List.of("dryad"), badgeLabels(decorated));
+        assertTrue(StringDecomposer.getPlainText(decorated).endsWith(" ArcLeRetour"));
+        assertFalse(decorated.getString().contains("\u00a7"));
+        assertFalse(decorated.getString().contains("fArcLeRetour"));
+    }
+
+    @Test
+    void consumesLegacyColorCodesWhenAddingABadge() {
+        Component decorated = decorate(Component.literal("\u00a7fArcLeRetour"));
+
+        assertEquals(List.of("dryad"), badgeLabels(decorated));
+        assertTrue(StringDecomposer.getPlainText(decorated).endsWith(" ArcLeRetour"));
+        assertFalse(decorated.getString().contains("\u00a7"));
     }
 
     @Test

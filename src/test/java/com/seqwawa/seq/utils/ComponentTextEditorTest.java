@@ -23,6 +23,21 @@ class ComponentTextEditorTest {
     }
 
     @Test
+    void convertsLegacyFormattingIntoStylesAndKeepsOtherMetadata() {
+        Style base = Style.EMPTY.withColor(0x112233).withInsertion("Player");
+        Component message = Component.literal("\u00a7fName\u00a7lBold\u00a7rTail").withStyle(base);
+
+        List<ComponentTextEditor.Fragment> fragments = ComponentTextEditor.flattenFormatted(message);
+
+        assertEquals(List.of("Name", "Bold", "Tail"), fragments.stream()
+                .map(ComponentTextEditor.Fragment::text).toList());
+        assertEquals(0xFFFFFF, fragments.get(0).style().getColor().getValue());
+        assertEquals(true, fragments.get(1).style().isBold());
+        assertEquals(base, fragments.get(2).style());
+        fragments.forEach(fragment -> assertEquals("Player", fragment.style().getInsertion()));
+    }
+
+    @Test
     void replacesRangeSpanningMultipleFragmentsAndKeepsSurroundingStyles() {
         Component message = Component.empty()
                 .append(Component.literal("keep-"))

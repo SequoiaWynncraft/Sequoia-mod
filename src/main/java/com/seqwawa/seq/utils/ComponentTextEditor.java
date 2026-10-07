@@ -7,6 +7,7 @@ import java.util.function.UnaryOperator;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.util.StringDecomposer;
 
 /**
  * Flattens a chat {@link Component} into styled text fragments so callers can
@@ -29,6 +30,28 @@ public final class ComponentTextEditor {
             if (!text.isEmpty()) {
                 fragments.add(new Fragment(text, leaf.getStyle()));
             }
+        }
+        return fragments;
+    }
+
+    /** Flattens rendered text, converting legacy section-sign codes into styles. */
+    public static List<Fragment> flattenFormatted(Component component) {
+        List<Fragment> fragments = new ArrayList<>();
+        for (Fragment fragment : flatten(component)) {
+            if (fragment.text().indexOf('\u00a7') < 0) {
+                fragments.add(fragment);
+                continue;
+            }
+            StringDecomposer.iterateFormatted(fragment.text(), fragment.style(), (index, style, codePoint) -> {
+                String character = new String(Character.toChars(codePoint));
+                if (!fragments.isEmpty() && fragments.getLast().style().equals(style)) {
+                    Fragment previous = fragments.removeLast();
+                    fragments.add(new Fragment(previous.text() + character, style));
+                } else {
+                    fragments.add(new Fragment(character, style));
+                }
+                return true;
+            });
         }
         return fragments;
     }
