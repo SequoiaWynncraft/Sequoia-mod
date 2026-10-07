@@ -265,11 +265,7 @@ public final class WarPlannerScreen extends Screen {
                     color(ACCENT_PRIMARY_HOVER), UiCanvas.HorizontalAlign.RIGHT);
             WarPlannerSnapshot current = manager.snapshot();
             RosterMember caller = current == null ? null : current.caller();
-            boolean rolesEditable = current != null
-                    && current.discordRolesAvailable()
-                    && caller != null
-                    && caller.discordId() != null
-                    && !caller.discordId().isBlank();
+            boolean rolesEditable = caller != null;
             HeaderControls header = headerControls(width);
             renderDropdown(canvas, header.section(), tab.label, sectionDropdownOpen);
             primaryButton(canvas, header.roles().x(), 6, header.roles().width(), 18, "My roles",
@@ -1897,8 +1893,8 @@ public final class WarPlannerScreen extends Screen {
         canvas.fillRect(0, 0, width, height, color(BACKGROUND_MODAL_OVERLAY));
         canvas.fillRect(x, y, w, h, plannerBackground(color(BACKGROUND_BODY_OPAQUE)));
         canvas.strokeRect(x, y, w, h, 1, color(CONTROL_BORDER));
-        text(canvas, "Your Discord war roles", x + 14, y + 22, 16, color(ACCENT_PRIMARY), false);
-        text(canvas, "Only Solo, DPS, and Tank are changed. Other Discord roles stay untouched.",
+        text(canvas, "Your war capabilities", x + 14, y + 22, 16, color(ACCENT_PRIMARY), false);
+        text(canvas, "Select every war capability you can play.",
                 x + 14, y + 43, 9, color(TEXT_MUTED), false);
 
         float optionY = y + 62;
@@ -3211,15 +3207,7 @@ public final class WarPlannerScreen extends Screen {
     private void beginRoleEdit() {
         WarPlannerSnapshot snapshot = manager.snapshot();
         RosterMember caller = snapshot == null ? null : snapshot.caller();
-        if (snapshot == null
-                || !snapshot.discordRolesAvailable()
-                || caller == null
-                || caller.discordId() == null
-                || caller.discordId().isBlank()
-                || manager.isMutating()) {
-            flashMessage = caller != null && (caller.discordId() == null || caller.discordId().isBlank())
-                    ? "Link and verify your Discord account before editing war roles."
-                    : "Discord roles are temporarily unavailable.";
+        if (caller == null || manager.isMutating()) {
             return;
         }
         selectedCompositionRoles.clear();
@@ -3442,7 +3430,7 @@ public final class WarPlannerScreen extends Screen {
         if (manager.state() == WarPlannerManager.State.READY
                 && current != null
                 && !current.discordRolesAvailable()) {
-            return "Live · roles unavailable";
+            return "Live · Discord unavailable";
         }
         return switch (manager.state()) {
             case UNKNOWN -> "Waiting";

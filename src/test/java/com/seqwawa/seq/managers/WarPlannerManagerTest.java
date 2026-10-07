@@ -252,7 +252,7 @@ class WarPlannerManagerTest {
     }
 
     @Test
-    void regularMemberCanReplaceOwnDiscordCompositionRoles() {
+    void regularMemberCanReplaceOwnCompositionRoles() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
         loadSnapshot(manager, gateway, snapshot(3, false));
@@ -263,7 +263,7 @@ class WarPlannerManagerTest {
         gateway.next.complete(snapshot(3, false));
 
         assertTrue(result.join().success());
-        assertEquals("Discord war roles updated.", result.join().message());
+        assertEquals("War capabilities updated.", result.join().message());
         assertEquals(2, gateway.calls);
     }
 
