@@ -213,9 +213,9 @@ public final class WarPlannerManager {
 
     public CompletableFuture<ActionResult> updateCompositionRoles(List<WarCompositionRole> roles) {
         if (roles == null || roles.stream().anyMatch(Objects::isNull)) {
-            return CompletableFuture.completedFuture(new ActionResult(false, "Choose valid war roles."));
+            return CompletableFuture.completedFuture(new ActionResult(false, "Choose valid war capabilities."));
         }
-        return mutate(() -> gateway.updateCompositionRoles(roles), "Discord war roles updated.");
+        return mutate(() -> gateway.updateCompositionRoles(roles), "War capabilities updated.");
     }
 
     public CompletableFuture<ActionResult> pingPlayer(String playerUuid) {

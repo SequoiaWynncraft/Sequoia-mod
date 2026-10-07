@@ -4,7 +4,7 @@ import com.google.gson.annotations.SerializedName;
 import java.util.Arrays;
 import java.util.List;
 
-/** Read-only war composition capabilities sourced from Discord roles. */
+/** Persisted war composition capabilities. */
 public enum WarCompositionRole {
     @SerializedName("SOLO")
     SOLO("Solo", "mage"),
