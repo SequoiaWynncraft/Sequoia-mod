@@ -27,24 +27,24 @@ import org.junit.jupiter.api.Test;
 class WarPlannerScreenTest {
     @Test
     void zoomedOutMapKeepsFocusButSuppressesTinyOutlinesAndUnrelatedConnections() {
-        assertEquals(0, WarPlannerScreen.territoryOutlineWeight(3, 1.2f));
-        assertTrue(WarPlannerScreen.territoryOutlineWeight(10, 1.2f)
-                < WarPlannerScreen.territoryOutlineWeight(50, 1.2f));
-        assertEquals(2, WarPlannerScreen.territoryOutlineWeight(3, 2));
-        assertFalse(WarPlannerScreen.warConnectionVisible(.08f, false));
-        assertTrue(WarPlannerScreen.warConnectionVisible(.08f, true));
-        assertTrue(WarPlannerScreen.warConnectionVisible(.3f, false));
+        assertEquals(0, WarMapGeometry.territoryOutlineWeight(3, 1.2f));
+        assertTrue(WarMapGeometry.territoryOutlineWeight(10, 1.2f)
+                < WarMapGeometry.territoryOutlineWeight(50, 1.2f));
+        assertEquals(2, WarMapGeometry.territoryOutlineWeight(3, 2));
+        assertFalse(WarMapGeometry.warConnectionVisible(.08f, false));
+        assertTrue(WarMapGeometry.warConnectionVisible(.08f, true));
+        assertTrue(WarMapGeometry.warConnectionVisible(.3f, false));
     }
 
     @Test
     void resourceModePreservesBordersAndConnectionsAtEveryZoom() {
         for (float size : new float[] {2, 4, 10, 50}) {
             for (float weight : new float[] {.55f, .75f, 1.8f}) {
-                assertEquals(weight, WarPlannerScreen.territoryOutlineWeight(size, weight, true));
+                assertEquals(weight, WarMapGeometry.territoryOutlineWeight(size, weight, true));
             }
         }
-        assertTrue(WarPlannerScreen.warConnectionVisible(.08f, false, true));
-        assertFalse(WarPlannerScreen.warConnectionVisible(.08f, false, false));
+        assertTrue(WarMapGeometry.warConnectionVisible(.08f, false, true));
+        assertFalse(WarMapGeometry.warConnectionVisible(.08f, false, false));
     }
 
     @Test
@@ -73,7 +73,7 @@ class WarPlannerScreenTest {
             assertTrue(header.refresh().x() + header.refresh().width() < width - (width < 420 ? 70 : 125));
             var opacity = header.opacity();
             assertTrue(opacity.x() >= 0 && opacity.x() + opacity.width() <= width);
-            assertTrue(opacity.y() + opacity.height() <= WarPlannerScreen.headerHeight(width));
+            assertTrue(opacity.y() + opacity.height() <= WarMapGeometry.headerHeight(width));
             if (width >= 660) {
                 assertTrue(opacity.x() > header.refresh().x() + header.refresh().width());
                 assertTrue(opacity.x() + opacity.width() < width - 125);
@@ -86,13 +86,13 @@ class WarPlannerScreenTest {
 
     @Test
     void panelOpacityScalesTheConfiguredThemeAlpha() {
-        assertEquals(100, WarPlannerScreen.opacityAlpha(200, 50));
+        assertEquals(100, WarPlannerDialogUi.opacityAlpha(200, 50));
         for (int alpha : new int[] {0, 1, 42, 127, 254, 255}) {
-            assertEquals(alpha, WarPlannerScreen.opacityAlpha(alpha, 100));
-            assertEquals(0, WarPlannerScreen.opacityAlpha(alpha, 0));
+            assertEquals(alpha, WarPlannerDialogUi.opacityAlpha(alpha, 100));
+            assertEquals(0, WarPlannerDialogUi.opacityAlpha(alpha, 0));
         }
-        assertFalse(WarPlannerScreen.shouldBlurBackground(95));
-        assertTrue(WarPlannerScreen.shouldBlurBackground(100));
+        assertFalse(WarPlannerDialogUi.shouldBlurBackground(95));
+        assertTrue(WarPlannerDialogUi.shouldBlurBackground(100));
     }
 
     @Test
@@ -111,9 +111,9 @@ class WarPlannerScreenTest {
     @Test
     void mapSwitchesStayInTheBottomRightAndColorDropdownStaysInTheSidebar() {
         for (float width : new float[] {280, 320, 500, 820, 1780}) {
-            var layout = WarPlannerScreen.warMapLayout(width, 86, 610);
+            var layout = WarMapGeometry.warMapLayout(width, 86, 610);
             for (boolean manager : new boolean[] {false, true}) {
-                var controls = WarPlannerScreen.warMapControls(layout, manager);
+                var controls = WarMapGeometry.warMapControls(layout, manager);
                 for (var control : List.of(controls.fit(), controls.panel(), controls.queues(), controls.players())) {
                     assertTrue(control.x() >= layout.mapX());
                     assertTrue(control.x() + control.width() <= layout.mapX() + layout.mapWidth());
@@ -132,15 +132,15 @@ class WarPlannerScreenTest {
 
     @Test
     void warMapKeepsOneCanvasAndACompactSidebar() {
-        assertEquals(220, WarPlannerScreen.warMapSidebarWidth(1200));
-        assertEquals(220, WarPlannerScreen.warMapSidebarWidth(900));
-        assertEquals(160, WarPlannerScreen.warMapSidebarWidth(640));
-        assertEquals(150, WarPlannerScreen.warMapSidebarWidth(320));
+        assertEquals(220, WarMapGeometry.warMapSidebarWidth(1200));
+        assertEquals(220, WarMapGeometry.warMapSidebarWidth(900));
+        assertEquals(160, WarMapGeometry.warMapSidebarWidth(640));
+        assertEquals(150, WarMapGeometry.warMapSidebarWidth(320));
     }
 
     @Test
     void warMapLayoutKeepsMapAndSidebarSeparateOnNarrowScreens() {
-        var layout = WarPlannerScreen.warMapLayout(320, 86, 430);
+        var layout = WarMapGeometry.warMapLayout(320, 86, 430);
         assertEquals(12, layout.mapX());
         assertEquals(138, layout.mapWidth());
         assertEquals(158, layout.sidebarX());
@@ -149,7 +149,7 @@ class WarPlannerScreenTest {
 
     @Test
     void wideWarMapUsesTheFullContentHeight() {
-        var layout = WarPlannerScreen.warMapLayout(1200, 86, 610);
+        var layout = WarMapGeometry.warMapLayout(1200, 86, 610);
         assertEquals(948, layout.mapWidth());
         assertEquals(524, layout.mapHeight());
         assertEquals(968, layout.sidebarX());
@@ -165,8 +165,8 @@ class WarPlannerScreenTest {
         WarPlannerSnapshot.Zone south = new WarPlannerSnapshot.Zone(
                 2, "South", "#E05A65", List.of(), 1L, List.of("B"));
 
-        assertEquals(List.of(north), WarPlannerScreen.visibleZones(List.of(north, south), java.util.Set.of(2L)));
-        assertEquals(List.of(north, south), WarPlannerScreen.visibleZones(List.of(north, south), java.util.Set.of()));
+        assertEquals(List.of(north), WarZoneSidebar.visibleZones(List.of(north, south), java.util.Set.of(2L)));
+        assertEquals(List.of(north, south), WarZoneSidebar.visibleZones(List.of(north, south), java.util.Set.of()));
     }
 
     @Test
@@ -178,7 +178,7 @@ class WarPlannerScreenTest {
         WarPlannerSnapshot.Zone hiddenCategory = new WarPlannerSnapshot.Zone(
                 3, "Hidden category", "#E0A65A", List.of(), 1L, List.of("Unlocked Only"), 9L, 0);
 
-        List<WarPlannerSnapshot.Zone> displayed = WarPlannerScreen.visibleZones(
+        List<WarPlannerSnapshot.Zone> displayed = WarZoneSidebar.visibleZones(
                 List.of(shown, hidden, hiddenCategory), Set.of(2L), Set.of(9L));
         GuildTerritory alekin = GuildTerritory.fromCorners("Alekin", 0, 0, 10, 10);
         GuildTerritory context = GuildTerritory.fromCorners("Context Only", 20, 0, 30, 10);
@@ -186,13 +186,13 @@ class WarPlannerScreenTest {
         List<GuildTerritory> allTerritories = List.of(alekin, context, unlocked);
         Map<String, WarPlannerSnapshot.TerritoryDetails> details = Map.of(
                 "Alekin", new WarPlannerSnapshot.TerritoryDetails("Alekin", List.of("Context Only"), List.of()));
-        Set<String> labelTerritories = WarPlannerScreen.shownZoneTerritoryNames(displayed);
+        Set<String> labelTerritories = WarMapGeometry.shownZoneTerritoryNames(displayed);
 
         assertEquals(Set.of("alekin", "shared territory"), labelTerritories);
-        assertEquals(allTerritories, WarPlannerScreen.visibleMapTerritories(allTerritories, displayed, false));
+        assertEquals(allTerritories, WarMapGeometry.visibleMapTerritories(allTerritories, displayed, false));
         assertEquals(
                 List.of(context),
-                WarPlannerScreen.oneHopContextTerritories(allTerritories, List.of(alekin), details));
+                WarMapGeometry.oneHopContextTerritories(allTerritories, List.of(alekin), details));
         assertFalse(labelTerritories.contains("context only"));
         assertFalse(labelTerritories.contains("unlocked only"));
     }
@@ -215,23 +215,23 @@ class WarPlannerScreenTest {
                         new Participant("two", "Two", 1),
                         new Participant("three", "Three", 2)));
 
-        assertEquals("xiaolongbao", WarPlannerScreen.warQueueMapUsername(queue));
-        assertEquals("xiao…", WarPlannerScreen.fitWarQueueText("xiaolongbao", 5, String::length));
+        assertEquals("xiaolongbao", WarQueueMapOverlay.warQueueMapUsername(queue));
+        assertEquals("xiao…", WarQueueMapOverlay.fitWarQueueText("xiaolongbao", 5, String::length));
         assertEquals(
                 List.of("Party 5/5 ·", "One, Two,", "Three"),
-                WarPlannerScreen.wrapWarQueueText("Party 5/5 · One, Two, Three", 12, String::length));
+                WarQueueMapOverlay.wrapWarQueueText("Party 5/5 · One, Two, Three", 12, String::length));
         assertEquals(
                 List.of(
                         "xiaolongbao/Soup Person",
                         "Alekin · Defense Very Low/Very High",
                         "Queued 12m 19s ago · 02:40 remaining",
                         "Party 3/5 · One, Two, Three"),
-                WarPlannerScreen.warQueueTooltipLines(queue, now));
+                WarQueueMapOverlay.warQueueTooltipLines(queue, now));
         assertEquals(
                 "You own this queue · owner remains joined",
-                WarPlannerScreen.warQueueActionHint(queue, "queuer-uuid"));
-        assertEquals("Double-click to leave", WarPlannerScreen.warQueueActionHint(queue, "two"));
-        assertEquals("Double-click to join", WarPlannerScreen.warQueueActionHint(queue, "other"));
+                WarQueueMapOverlay.warQueueActionHint(queue, "queuer-uuid"));
+        assertEquals("Double-click to leave", WarQueueMapOverlay.warQueueActionHint(queue, "two"));
+        assertEquals("Double-click to join", WarQueueMapOverlay.warQueueActionHint(queue, "other"));
     }
 
     @Test
@@ -250,19 +250,19 @@ class WarPlannerScreenTest {
                 List.of());
         GuildTerritory alekin = GuildTerritory.fromCorners("Alekin", 0, 0, 20, 10);
 
-        assertEquals("Unknown", WarPlannerScreen.warQueueMapUsername(provisional));
+        assertEquals("Unknown", WarQueueMapOverlay.warQueueMapUsername(provisional));
         assertEquals(
                 List.of(
                         "Unknown",
                         "Alekin · Defense Unknown",
                         "Queued 19s ago · 01:41 remaining",
                         "Party 1/5"),
-                WarPlannerScreen.warQueueTooltipLines(provisional, now));
-        assertEquals("Double-click to join", WarPlannerScreen.warQueueActionHint(provisional, "self"));
+                WarQueueMapOverlay.warQueueTooltipLines(provisional, now));
+        assertEquals("Double-click to join", WarQueueMapOverlay.warQueueActionHint(provisional, "self"));
         assertEquals(
                 provisional,
-                WarPlannerScreen.warQueueForTerritory(
-                        WarPlannerScreen.warQueueMapMarkers(
+                WarQueueMapOverlay.warQueueForTerritory(
+                        WarQueueMapOverlay.warQueueMapMarkers(
                                 List.of(provisional), Set.of("alekin"), Map.of("Alekin", alekin)),
                         "Alekin"));
 
@@ -281,19 +281,19 @@ class WarPlannerScreenTest {
                         new Participant("two", "Two", 2),
                         new Participant("three", "Three", 3),
                         new Participant("four", "Four", 4)));
-        assertEquals("Party 5/5 · One, Two, Three, Four", WarPlannerScreen.warQueueTooltipLines(full, now).get(3));
-        assertEquals("Queue full", WarPlannerScreen.warQueueActionHint(full, "self"));
-        assertEquals("Double-click to leave", WarPlannerScreen.warQueueActionHint(full, "four"));
+        assertEquals("Party 5/5 · One, Two, Three, Four", WarQueueMapOverlay.warQueueTooltipLines(full, now).get(3));
+        assertEquals("Queue full", WarQueueMapOverlay.warQueueActionHint(full, "self"));
+        assertEquals("Double-click to leave", WarQueueMapOverlay.warQueueActionHint(full, "four"));
     }
 
     @Test
     void queuedMapLabelBoundsRemainInsideTheProjectedTerritoryBox() {
         GuildTerritory territory = GuildTerritory.fromCorners("Alekin", 0, 0, 20, 10);
 
-        WarPlannerScreen.WarQueueLabelBounds label = WarPlannerScreen.warQueueLabelBounds(
+        WarQueueMapOverlay.WarQueueLabelBounds label = WarQueueMapOverlay.warQueueLabelBounds(
                 territory, new MapBounds(0, 0, 100, 100), 10, 20, 2, 25, 12);
 
-        assertEquals(new WarPlannerScreen.WarQueueLabelBounds(17.5f, 24, 25, 12), label);
+        assertEquals(new WarQueueMapOverlay.WarQueueLabelBounds(17.5f, 24, 25, 12), label);
         assertTrue(label.x() >= 10 && label.x() + label.width() <= 50);
         assertTrue(label.y() >= 20 && label.y() + label.height() <= 40);
     }
@@ -307,15 +307,15 @@ class WarPlannerScreenTest {
         TerritoryQueue hidden = territoryQueue(3, "Context Only", "Medium", null);
         TerritoryQueue missing = territoryQueue(4, "Unknown", "Low", null);
 
-        List<WarPlannerScreen.WarQueueMapMarker> markers = WarPlannerScreen.warQueueMapMarkers(
+        List<WarQueueMapOverlay.WarQueueMapMarker> markers = WarQueueMapOverlay.warQueueMapMarkers(
                 List.of(shown, duplicate, hidden, missing),
                 Set.of(" ALEKIN "),
                 Map.of("Alekin", alekin, "Context Only", context));
 
-        assertEquals(List.of(new WarPlannerScreen.WarQueueMapMarker(shown, alekin)), markers);
-        assertEquals(shown, WarPlannerScreen.warQueueForTerritory(markers, "ALEKIN"));
-        assertEquals(null, WarPlannerScreen.warQueueForTerritory(markers, "Context Only"));
-        assertEquals(List.of(), WarPlannerScreen.warQueueMapMarkers(null, Set.of("alekin"), Map.of()));
+        assertEquals(List.of(new WarQueueMapOverlay.WarQueueMapMarker(shown, alekin)), markers);
+        assertEquals(shown, WarQueueMapOverlay.warQueueForTerritory(markers, "ALEKIN"));
+        assertEquals(null, WarQueueMapOverlay.warQueueForTerritory(markers, "Context Only"));
+        assertEquals(List.of(), WarQueueMapOverlay.warQueueMapMarkers(null, Set.of("alekin"), Map.of()));
     }
 
     @Test
@@ -346,13 +346,13 @@ class WarPlannerScreenTest {
 
         assertEquals(
                 List.of(unrelated, owned, joined),
-                WarPlannerScreen.warQueuesForMap(List.of(unrelated, owned, joined), "self", false));
+                WarQueueMapOverlay.warQueuesForMap(List.of(unrelated, owned, joined), "self", false));
         assertEquals(
                 List.of(owned, joined),
-                WarPlannerScreen.warQueuesForMap(List.of(unrelated, owned, joined), "self", true));
+                WarQueueMapOverlay.warQueuesForMap(List.of(unrelated, owned, joined), "self", true));
         assertEquals(
                 List.of(),
-                WarPlannerScreen.warQueuesForMap(List.of(owned, joined), null, true));
+                WarQueueMapOverlay.warQueuesForMap(List.of(owned, joined), null, true));
     }
 
     @Test
@@ -360,11 +360,11 @@ class WarPlannerScreenTest {
         TerritoryQueue exactQueue = territoryQueue(1, "Alekin", "Very Low", "Very High");
         TerritoryQueue observedQueue = territoryQueue(2, "Detlas", null, "Very High");
 
-        assertEquals("Very Low", WarPlannerScreen.warQueuePulseDefense(exactQueue));
-        assertEquals("Very High", WarPlannerScreen.warQueuePulseDefense(observedQueue));
-        Color trough = WarPlannerScreen.warQueuePulseColor(exactQueue, 0);
-        Color peak = WarPlannerScreen.warQueuePulseColor(exactQueue, 800);
-        Color observed = WarPlannerScreen.warQueuePulseColor(observedQueue, 800);
+        assertEquals("Very Low", WarQueueMapOverlay.warQueuePulseDefense(exactQueue));
+        assertEquals("Very High", WarQueueMapOverlay.warQueuePulseDefense(observedQueue));
+        Color trough = WarQueueMapOverlay.warQueuePulseColor(exactQueue, 0);
+        Color peak = WarQueueMapOverlay.warQueuePulseColor(exactQueue, 800);
+        Color observed = WarQueueMapOverlay.warQueuePulseColor(observedQueue, 800);
         assertEquals(new Color(0x00AA00), new Color(trough.getRed(), trough.getGreen(), trough.getBlue()));
         assertEquals(new Color(0x00AA00), new Color(peak.getRed(), peak.getGreen(), peak.getBlue()));
         assertEquals(
@@ -373,17 +373,17 @@ class WarPlannerScreenTest {
         assertEquals(36, trough.getAlpha());
         assertEquals(96, peak.getAlpha());
 
-        assertEquals(36, WarPlannerScreen.warQueuePulseAlpha(0));
-        assertEquals(66, WarPlannerScreen.warQueuePulseAlpha(400));
-        assertEquals(96, WarPlannerScreen.warQueuePulseAlpha(800));
-        assertEquals(66, WarPlannerScreen.warQueuePulseAlpha(1_200));
-        assertEquals(36, WarPlannerScreen.warQueuePulseAlpha(1_600));
-        assertEquals(96, WarPlannerScreen.warQueuePulseAlpha(-800));
+        assertEquals(36, WarQueueMapOverlay.warQueuePulseAlpha(0));
+        assertEquals(66, WarQueueMapOverlay.warQueuePulseAlpha(400));
+        assertEquals(96, WarQueueMapOverlay.warQueuePulseAlpha(800));
+        assertEquals(66, WarQueueMapOverlay.warQueuePulseAlpha(1_200));
+        assertEquals(36, WarQueueMapOverlay.warQueuePulseAlpha(1_600));
+        assertEquals(96, WarQueueMapOverlay.warQueuePulseAlpha(-800));
         assertEquals(
-                WarPlannerScreen.warQueuePulseAlpha(137),
-                WarPlannerScreen.warQueuePulseAlpha(1_737));
+                WarQueueMapOverlay.warQueuePulseAlpha(137),
+                WarQueueMapOverlay.warQueuePulseAlpha(1_737));
         for (long elapsed = -3_200; elapsed <= 3_200; elapsed += 37) {
-            int alpha = WarPlannerScreen.warQueuePulseAlpha(elapsed);
+            int alpha = WarQueueMapOverlay.warQueuePulseAlpha(elapsed);
             assertTrue(alpha >= 36 && alpha <= 96);
         }
     }
@@ -400,21 +400,21 @@ class WarPlannerScreenTest {
 
     @Test
     void queuedTerritoryDoubleClickRequiresSameQueueTimeWindowAndPointerLocation() {
-        WarPlannerScreen.PendingWarQueueClick first =
-                new WarPlannerScreen.PendingWarQueueClick(42, "Alekin", 100, 80, 1_000);
+        WarQueueMapOverlay.PendingWarQueueClick first =
+                new WarQueueMapOverlay.PendingWarQueueClick(42, "Alekin", 100, 80, 1_000);
 
-        assertTrue(WarPlannerScreen.isWarQueueDoubleClick(first, 42, "alekin", 102, 81, 1_350));
-        assertFalse(WarPlannerScreen.isWarQueueDoubleClick(first, 42, "Alekin", 102, 81, 1_351));
-        assertFalse(WarPlannerScreen.isWarQueueDoubleClick(first, 43, "Alekin", 102, 81, 1_200));
-        assertFalse(WarPlannerScreen.isWarQueueDoubleClick(first, 42, "Lutho", 102, 81, 1_200));
-        assertFalse(WarPlannerScreen.isWarQueueDoubleClick(first, 42, "Alekin", 104, 80, 1_200));
-        assertTrue(WarPlannerScreen.warQueueClickMoved(first, 104, 80));
+        assertTrue(WarQueueMapOverlay.isWarQueueDoubleClick(first, 42, "alekin", 102, 81, 1_350));
+        assertFalse(WarQueueMapOverlay.isWarQueueDoubleClick(first, 42, "Alekin", 102, 81, 1_351));
+        assertFalse(WarQueueMapOverlay.isWarQueueDoubleClick(first, 43, "Alekin", 102, 81, 1_200));
+        assertFalse(WarQueueMapOverlay.isWarQueueDoubleClick(first, 42, "Lutho", 102, 81, 1_200));
+        assertFalse(WarQueueMapOverlay.isWarQueueDoubleClick(first, 42, "Alekin", 104, 80, 1_200));
+        assertTrue(WarQueueMapOverlay.warQueueClickMoved(first, 104, 80));
     }
 
     @Test
     void fittedWarMapViewportCentersAndFitsRequestedBounds() {
-        WarPlannerScreen.WarMapLayout layout = new WarPlannerScreen.WarMapLayout(12, 100, 400, 300, 420, 180);
-        MapViewport viewport = WarPlannerScreen.fittedWarMapViewport(
+        WarMapGeometry.WarMapLayout layout = new WarMapGeometry.WarMapLayout(12, 100, 400, 300, 420, 180);
+        MapViewport viewport = WarMapGeometry.fittedWarMapViewport(
                 new MapBounds(-1000, -3000, 1000, -2000), layout);
 
         assertEquals(0, viewport.centerX());
@@ -427,11 +427,11 @@ class WarPlannerScreenTest {
     @Test
     void fittedViewportUsesWiderCanvasAndKeepsRequestedWorldBoundsInteractive() {
         MapBounds requested = new MapBounds(-1500, -500, 1500, 500);
-        WarPlannerScreen.WarMapLayout narrowLayout = WarPlannerScreen.warMapLayout(320, 110, 430);
-        WarPlannerScreen.WarMapLayout wideLayout = WarPlannerScreen.warMapLayout(1200, 110, 610);
+        WarMapGeometry.WarMapLayout narrowLayout = WarMapGeometry.warMapLayout(320, 110, 430);
+        WarMapGeometry.WarMapLayout wideLayout = WarMapGeometry.warMapLayout(1200, 110, 610);
 
-        MapViewport narrow = WarPlannerScreen.fittedWarMapViewport(requested, narrowLayout);
-        MapViewport wide = WarPlannerScreen.fittedWarMapViewport(requested, wideLayout);
+        MapViewport narrow = WarMapGeometry.fittedWarMapViewport(requested, narrowLayout);
+        MapViewport wide = WarMapGeometry.fittedWarMapViewport(requested, wideLayout);
 
         assertTrue(wide.pixelsPerBlock() > narrow.pixelsPerBlock());
         assertEquals(wideLayout.mapX(), wide.screenX());
@@ -454,15 +454,15 @@ class WarPlannerScreenTest {
 
     @Test
     void lockedWarMapKeepsManualCameraUntilModeOrViewportChanges() {
-        WarPlannerScreen.WarMapLayout layout = WarPlannerScreen.warMapLayout(1200, 110, 610);
+        WarMapGeometry.WarMapLayout layout = WarMapGeometry.warMapLayout(1200, 110, 610);
 
-        assertFalse(WarPlannerScreen.shouldRefitWarMap(
+        assertFalse(WarMapGeometry.shouldRefitWarMap(
                 true, layout.mapWidth(), layout.mapHeight(), true, layout, true));
-        assertTrue(WarPlannerScreen.shouldRefitWarMap(
+        assertTrue(WarMapGeometry.shouldRefitWarMap(
                 false, layout.mapWidth(), layout.mapHeight(), true, layout, true));
-        assertTrue(WarPlannerScreen.shouldRefitWarMap(
+        assertTrue(WarMapGeometry.shouldRefitWarMap(
                 true, layout.mapWidth(), layout.mapHeight(), false, layout, true));
-        assertTrue(WarPlannerScreen.shouldRefitWarMap(
+        assertTrue(WarMapGeometry.shouldRefitWarMap(
                 true, layout.mapWidth() - 1, layout.mapHeight(), true, layout, true));
     }
 
@@ -477,7 +477,7 @@ class WarPlannerScreenTest {
 
         assertEquals(
                 List.of(b),
-                WarPlannerScreen.oneHopContextTerritories(List.of(a, b, c), List.of(a), details));
+                WarMapGeometry.oneHopContextTerritories(List.of(a, b, c), List.of(a), details));
     }
 
     @Test
@@ -486,9 +486,9 @@ class WarPlannerScreenTest {
         GuildTerritoryIndex index = new GuildTerritoryIndex(List.of(territory));
         MapViewport viewport = new MapViewport(5, 5, 10, 0, 0, 100, 100);
 
-        assertEquals(territory, WarPlannerScreen.territoryAt(index, viewport, java.util.Set.of("detlas"), 50, 50));
-        assertEquals(null, WarPlannerScreen.territoryAt(index, viewport, java.util.Set.of(), 50, 50));
-        assertEquals(null, WarPlannerScreen.territoryAt(index, viewport, java.util.Set.of("detlas"), 150, 50));
+        assertEquals(territory, WarMapGeometry.territoryAt(index, viewport, java.util.Set.of("detlas"), 50, 50));
+        assertEquals(null, WarMapGeometry.territoryAt(index, viewport, java.util.Set.of(), 50, 50));
+        assertEquals(null, WarMapGeometry.territoryAt(index, viewport, java.util.Set.of("detlas"), 150, 50));
     }
 
     @Test
@@ -501,13 +501,13 @@ class WarPlannerScreenTest {
                         new WarPlannerSnapshot.Team(3, "FFA 2", 1L, List.of())),
                 List.of());
 
-        assertEquals(WarTeamType.VLOW_MUNCH, WarPlannerScreen.defaultTeamType(snapshot));
-        assertEquals("VLow Munch 1", WarPlannerScreen.automaticTeamName(snapshot, WarTeamType.VLOW_MUNCH, null));
-        assertEquals("FFA 1", WarPlannerScreen.automaticTeamName(snapshot, WarTeamType.FFA, null));
-        assertFalse(WarPlannerScreen.teamTypeSelectable(snapshot, WarTeamType.HQ, null));
-        assertTrue(WarPlannerScreen.teamTypeSelectable(snapshot, WarTeamType.HQ, 1L));
-        assertEquals("HQ Team", WarPlannerScreen.automaticTeamName(snapshot, WarTeamType.HQ, 1L));
-        assertFalse(WarPlannerScreen.teamTypeSelectable(snapshot, WarTeamType.UNKNOWN, null));
+        assertEquals(WarTeamType.VLOW_MUNCH, WarTeamEditor.defaultTeamType(snapshot));
+        assertEquals("VLow Munch 1", WarTeamEditor.automaticTeamName(snapshot, WarTeamType.VLOW_MUNCH, null));
+        assertEquals("FFA 1", WarTeamEditor.automaticTeamName(snapshot, WarTeamType.FFA, null));
+        assertFalse(WarTeamEditor.teamTypeSelectable(snapshot, WarTeamType.HQ, null));
+        assertTrue(WarTeamEditor.teamTypeSelectable(snapshot, WarTeamType.HQ, 1L));
+        assertEquals("HQ Team", WarTeamEditor.automaticTeamName(snapshot, WarTeamType.HQ, 1L));
+        assertFalse(WarTeamEditor.teamTypeSelectable(snapshot, WarTeamType.UNKNOWN, null));
     }
 
     @Test
@@ -516,7 +516,7 @@ class WarPlannerScreenTest {
                 7, "Alpha", WarTeamType.FFA, 3L, WarCompositionTargets.NONE, List.of());
 
         assertEquals(WarTeamType.FFA, team.teamType());
-        assertEquals("Alpha", WarPlannerScreen.automaticTeamName(snapshot(List.of(team), List.of()), WarTeamType.FFA, 7L));
+        assertEquals("Alpha", WarTeamEditor.automaticTeamName(snapshot(List.of(team), List.of()), WarTeamType.FFA, 7L));
     }
 
     @Test
@@ -528,7 +528,7 @@ class WarPlannerScreenTest {
                 3L,
                 WarCompositionTargets.NONE,
                 List.of(new WarPlannerSnapshot.TeamMember("a", "A", 0)));
-        WarPlannerScreen.TeamEditorBase base = WarPlannerScreen.TeamEditorBase.from(original);
+        WarTeamEditor.TeamEditorBase base = WarTeamEditor.TeamEditorBase.from(original);
 
         assertTrue(base.matches(original));
         assertFalse(base.matches(new WarPlannerSnapshot.Team(
@@ -549,8 +549,8 @@ class WarPlannerScreenTest {
         WarPlannerSnapshot.Team target = new WarPlannerSnapshot.Team(
                 9, "FFA 2", WarTeamType.FFA, 5L, WarCompositionTargets.NONE, List.of());
 
-        TeamMemberMoveDraft betweenTeams = WarPlannerScreen.teamMemberMoveDraft(7L, 3L, target);
-        TeamMemberMoveDraft toRoster = WarPlannerScreen.teamMemberMoveDraft(7L, 3L, null);
+        TeamMemberMoveDraft betweenTeams = WarTeamsTab.teamMemberMoveDraft(7L, 3L, target);
+        TeamMemberMoveDraft toRoster = WarTeamsTab.teamMemberMoveDraft(7L, 3L, null);
 
         assertEquals(7L, betweenTeams.sourceTeamId());
         assertEquals(3L, betweenTeams.sourceVersion());
@@ -562,17 +562,17 @@ class WarPlannerScreenTest {
 
     @Test
     void teamCardsGiveMembersReadableSpacing() {
-        assertEquals(80, WarPlannerScreen.teamCardHeight(0));
-        assertEquals(80, WarPlannerScreen.teamCardHeight(1));
-        assertEquals(80, WarPlannerScreen.teamCardHeight(2));
-        assertEquals(116, WarPlannerScreen.teamCardHeight(5));
+        assertEquals(80, WarTeamsTab.teamCardHeight(0));
+        assertEquals(80, WarTeamsTab.teamCardHeight(1));
+        assertEquals(80, WarTeamsTab.teamCardHeight(2));
+        assertEquals(116, WarTeamsTab.teamCardHeight(5));
     }
 
     @Test
     void narrowManagerTeamActionsStackInsideTheCard() {
         float cardsRight = 120;
-        WarPlannerScreen.TeamActionLayout actions =
-                WarPlannerScreen.teamActionLayout(cardsRight, true, true);
+        WarTeamsTab.TeamActionLayout actions =
+                WarTeamsTab.teamActionLayout(cardsRight, true, true);
 
         assertTrue(actions.editX() >= 12);
         assertTrue(actions.deleteX() + actions.deleteWidth() <= cardsRight);
@@ -580,15 +580,15 @@ class WarPlannerScreenTest {
         assertTrue(actions.selfX() + actions.selfWidth() <= cardsRight);
         assertTrue(actions.selfY() > actions.managerY());
         assertTrue(actions.memberTop() > actions.selfY() + 22);
-        assertTrue(WarPlannerScreen.teamCardHeight(1, actions) >= actions.memberTop() + 16);
+        assertTrue(WarTeamsTab.teamCardHeight(1, actions) >= actions.memberTop() + 16);
     }
 
     @Test
     void teamSidebarAndEditorStayCompactOnWideScreens() {
-        assertEquals(234, WarPlannerScreen.teamSidebarWidth(780), .01f);
-        assertEquals(220, WarPlannerScreen.teamSidebarWidth(640), .01f);
-        assertEquals(560, WarPlannerScreen.teamEditorWidth(780));
-        assertEquals(496, WarPlannerScreen.teamEditorWidth(520));
+        assertEquals(234, WarTeamsTab.teamSidebarWidth(780), .01f);
+        assertEquals(220, WarTeamsTab.teamSidebarWidth(640), .01f);
+        assertEquals(560, WarTeamEditor.teamEditorWidth(780));
+        assertEquals(496, WarTeamEditor.teamEditorWidth(520));
     }
 
     @Test
@@ -596,13 +596,13 @@ class WarPlannerScreenTest {
         float top = 118;
         float bottom = 600;
 
-        WarPlannerScreen.TeamsLayout compact = WarPlannerScreen.teamsLayout(519, top, bottom, 4);
-        WarPlannerScreen.TeamsLayout oneColumnAtBoundary =
-                WarPlannerScreen.teamsLayout(520, top, bottom, 4);
-        WarPlannerScreen.TeamsLayout oneColumnBelowGrid =
-                WarPlannerScreen.teamsLayout(899, top, bottom, 4);
-        WarPlannerScreen.TeamsLayout twoColumnsAtBoundary =
-                WarPlannerScreen.teamsLayout(900, top, bottom, 4);
+        WarTeamsTab.TeamsLayout compact = WarTeamsTab.teamsLayout(519, top, bottom, 4);
+        WarTeamsTab.TeamsLayout oneColumnAtBoundary =
+                WarTeamsTab.teamsLayout(520, top, bottom, 4);
+        WarTeamsTab.TeamsLayout oneColumnBelowGrid =
+                WarTeamsTab.teamsLayout(899, top, bottom, 4);
+        WarTeamsTab.TeamsLayout twoColumnsAtBoundary =
+                WarTeamsTab.teamsLayout(900, top, bottom, 4);
 
         assertTrue(compact.compactAuxiliary());
         assertEquals(1, compact.columns());
@@ -617,16 +617,16 @@ class WarPlannerScreenTest {
     @Test
     void adaptiveTeamPlacementsStayVisibleAndUseSeparateGridColumns() {
         List<WarPlannerSnapshot.Team> teams = teams(4);
-        WarPlannerScreen.TeamsLayout layout = WarPlannerScreen.teamsLayout(1_000, 118, 600, teams.size());
+        WarTeamsTab.TeamsLayout layout = WarTeamsTab.teamsLayout(1_000, 118, 600, teams.size());
 
-        List<WarPlannerScreen.TeamPlacement> placements =
-                WarPlannerScreen.teamPlacements(teams, 0, layout, true, true);
+        List<WarTeamsTab.TeamPlacement> placements =
+                WarTeamsTab.teamPlacements(teams, 0, layout, true, true);
 
         assertEquals(4, placements.size());
         assertTrue(placements.get(0).x() < placements.get(1).x());
         assertEquals(placements.get(0).y(), placements.get(1).y(), .01f);
-        assertEquals(2, placements.stream().map(WarPlannerScreen.TeamPlacement::x).distinct().count());
-        for (WarPlannerScreen.TeamPlacement placement : placements) {
+        assertEquals(2, placements.stream().map(WarTeamsTab.TeamPlacement::x).distinct().count());
+        for (WarTeamsTab.TeamPlacement placement : placements) {
             assertTrue(placement.x() >= layout.cardsX());
             assertTrue(placement.x() + placement.width() <= layout.cardsX() + layout.cardsWidth() + .01f);
             assertTrue(placement.y() >= layout.cardsTop());
@@ -639,20 +639,20 @@ class WarPlannerScreenTest {
     @Test
     void teamGridScrollStartBackfillsTheLastFullRow() {
         List<WarPlannerSnapshot.Team> teams = teams(5);
-        WarPlannerScreen.TeamsLayout layout = WarPlannerScreen.teamsLayout(1_000, 118, 600, teams.size());
+        WarTeamsTab.TeamsLayout layout = WarTeamsTab.teamsLayout(1_000, 118, 600, teams.size());
 
-        assertEquals(3, WarPlannerScreen.teamScrollStart(4, teams.size(), 2));
+        assertEquals(3, WarTeamsTab.teamScrollStart(4, teams.size(), 2));
         assertEquals(
                 List.of(3, 4),
-                WarPlannerScreen.teamPlacements(teams, 4, layout, false, false).stream()
-                        .map(WarPlannerScreen.TeamPlacement::index)
+                WarTeamsTab.teamPlacements(teams, 4, layout, false, false).stream()
+                        .map(WarTeamsTab.TeamPlacement::index)
                         .toList());
     }
 
     @Test
     void compactAndRailSupportPlacementsRemainInsideTheirPanels() {
-        WarPlannerScreen.TeamsLayout compact = WarPlannerScreen.teamsLayout(519, 118, 600, 4);
-        WarPlannerScreen.TeamsLayout rail = WarPlannerScreen.teamsLayout(640, 118, 600, 4);
+        WarTeamsTab.TeamsLayout compact = WarTeamsTab.teamsLayout(519, 118, 600, 4);
+        WarTeamsTab.TeamsLayout rail = WarTeamsTab.teamsLayout(640, 118, 600, 4);
 
         assertTrue(compact.compactAuxiliary());
         assertFalse(rail.compactAuxiliary());
@@ -663,11 +663,11 @@ class WarPlannerScreenTest {
     @Test
     void clippedTeamCardsDoNotExposeInvisibleActionsOrHitArea() {
         List<WarPlannerSnapshot.Team> teams = teams(1);
-        WarPlannerScreen.TeamsLayout shortLayout =
-                WarPlannerScreen.teamsLayout(640, 118, 138, teams.size());
+        WarTeamsTab.TeamsLayout shortLayout =
+                WarTeamsTab.teamsLayout(640, 118, 138, teams.size());
 
-        WarPlannerScreen.TeamPlacement placement =
-                WarPlannerScreen.teamPlacements(teams, 0, shortLayout, true, true).getFirst();
+        WarTeamsTab.TeamPlacement placement =
+                WarTeamsTab.teamPlacements(teams, 0, shortLayout, true, true).getFirst();
 
         assertEquals(20, placement.visibleHeight());
         assertFalse(placement.fullyShows(placement.actions().managerY(), 22));
@@ -678,8 +678,8 @@ class WarPlannerScreenTest {
 
     @Test
     void compactTeamRolesFollowTheNameWithoutOverflowingTheMemberChip() {
-        assertEquals(44, WarPlannerScreen.compactRoleX(10, 30, 150, 12));
-        assertEquals(138, WarPlannerScreen.compactRoleX(10, 200, 150, 12));
+        assertEquals(44, WarTeamsTab.compactRoleX(10, 30, 150, 12));
+        assertEquals(138, WarTeamsTab.compactRoleX(10, 200, 150, 12));
     }
 
     @Test
@@ -691,8 +691,8 @@ class WarPlannerScreenTest {
 
         assertEquals(
                 List.of(WarCompositionRole.SOLO, WarCompositionRole.DPS),
-                WarPlannerScreen.teamMemberRoles(snapshot, "member"));
-        assertEquals(List.of(), WarPlannerScreen.teamMemberRoles(snapshot, "missing"));
+                WarTeamsTab.teamMemberRoles(snapshot, "member"));
+        assertEquals(List.of(), WarTeamsTab.teamMemberRoles(snapshot, "missing"));
     }
 
     @Test
@@ -713,8 +713,8 @@ class WarPlannerScreenTest {
                         new WarPlannerSnapshot.TeamMember("tank", "Tank", 1)));
         WarPlannerSnapshot snapshot = snapshot(List.of(team), List.of(dps, tank));
 
-        assertEquals(1, WarPlannerScreen.teamCompositionCount(snapshot, team, WarCompositionRole.DPS));
-        assertEquals("Need D1", WarPlannerScreen.compositionTargetStatus(snapshot, team));
+        assertEquals(1, WarTeamsTab.teamCompositionCount(snapshot, team, WarCompositionRole.DPS));
+        assertEquals("Need D1", WarTeamsTab.compositionTargetStatus(snapshot, team));
     }
 
     @Test
@@ -730,7 +730,7 @@ class WarPlannerScreenTest {
 
         assertEquals(
                 List.of("free"),
-                WarPlannerScreen.unassignedOnlineRoster(snapshot(List.of(), List.of(offline, assigned, free))).stream()
+                WarTeamsTab.unassignedOnlineRoster(snapshot(List.of(), List.of(offline, assigned, free))).stream()
                         .map(WarPlannerSnapshot.RosterMember::playerUuid)
                         .toList());
     }
@@ -743,18 +743,18 @@ class WarPlannerScreenTest {
                 "self", "Self", null, null, List.of(WarCompositionRole.SOLO), true, true, null, null);
         WarPlannerSnapshot soloSnapshot = snapshot(List.of(hq, ffa), List.of(solo));
 
-        assertTrue(WarPlannerScreen.canChangeOwnTeam(soloSnapshot, hq));
-        assertEquals("Join", WarPlannerScreen.teamMembershipActionLabel(soloSnapshot, hq));
-        assertTrue(WarPlannerScreen.canChangeOwnTeam(soloSnapshot, ffa));
-        assertEquals("Join", WarPlannerScreen.teamMembershipActionLabel(soloSnapshot, ffa));
+        assertTrue(WarTeamsTab.canChangeOwnTeam(soloSnapshot, hq));
+        assertEquals("Join", WarTeamsTab.teamMembershipActionLabel(soloSnapshot, hq));
+        assertTrue(WarTeamsTab.canChangeOwnTeam(soloSnapshot, ffa));
+        assertEquals("Join", WarTeamsTab.teamMembershipActionLabel(soloSnapshot, ffa));
 
         WarPlannerSnapshot.RosterMember tank = new WarPlannerSnapshot.RosterMember(
                 "self", "Self", null, null, List.of(WarCompositionRole.SOLO, WarCompositionRole.TANK),
                 true, true, null, 1L);
         WarPlannerSnapshot tankSnapshot = snapshot(List.of(hq, ffa), List.of(tank));
-        assertTrue(WarPlannerScreen.canChangeOwnTeam(tankSnapshot, hq));
-        assertEquals("Leave", WarPlannerScreen.teamMembershipActionLabel(tankSnapshot, hq));
-        assertEquals("Switch", WarPlannerScreen.teamMembershipActionLabel(tankSnapshot, ffa));
+        assertTrue(WarTeamsTab.canChangeOwnTeam(tankSnapshot, hq));
+        assertEquals("Leave", WarTeamsTab.teamMembershipActionLabel(tankSnapshot, hq));
+        assertEquals("Switch", WarTeamsTab.teamMembershipActionLabel(tankSnapshot, ffa));
     }
 
     @Test
@@ -799,7 +799,7 @@ class WarPlannerScreenTest {
                 "offline-empty", "Echo", null, null, List.of(),
                 false, false, null, null);
 
-        List<String> ordered = WarPlannerScreen.teamEditorRoster(
+        List<String> ordered = WarTeamEditor.teamEditorRoster(
                         snapshot(List.of(), List.of(
                                 offlineWithoutRoles,
                                 bravo,
@@ -832,13 +832,13 @@ class WarPlannerScreenTest {
 
         assertEquals(
                 List.of("online-sage", "royal-id"),
-                WarPlannerScreen.teamEditorRoster(snapshot, "  SaGe ").stream()
+                WarTeamEditor.teamEditorRoster(snapshot, "  SaGe ").stream()
                         .map(WarPlannerSnapshot.RosterMember::playerUuid)
                         .toList());
-        assertEquals(List.of(offline), WarPlannerScreen.teamEditorRoster(snapshot, "discordalias"));
-        assertEquals(List.of(offline), WarPlannerScreen.teamEditorRoster(snapshot, "ROYAL-ID"));
-        assertEquals(3, WarPlannerScreen.teamEditorRoster(snapshot, "   ").size());
-        assertTrue(WarPlannerScreen.teamEditorRoster(snapshot, "missing").isEmpty());
+        assertEquals(List.of(offline), WarTeamEditor.teamEditorRoster(snapshot, "discordalias"));
+        assertEquals(List.of(offline), WarTeamEditor.teamEditorRoster(snapshot, "ROYAL-ID"));
+        assertEquals(3, WarTeamEditor.teamEditorRoster(snapshot, "   ").size());
+        assertTrue(WarTeamEditor.teamEditorRoster(snapshot, "missing").isEmpty());
     }
 
     @Test
@@ -859,39 +859,39 @@ class WarPlannerScreenTest {
         WarPlannerSnapshot snapshot = snapshot(
                 List.of(), List.of(linked, offline, unlinked, self, linkedFirst));
 
-        assertTrue(WarPlannerScreen.canPingPlayer(snapshot, linked));
-        assertFalse(WarPlannerScreen.canPingPlayer(snapshot, offline));
-        assertFalse(WarPlannerScreen.canPingPlayer(snapshot, unlinked));
-        assertFalse(WarPlannerScreen.canPingPlayer(snapshot, self));
-        assertFalse(WarPlannerScreen.canPingPlayer(snapshot.withCanManage(false), linked));
+        assertTrue(WarPingPicker.canPingPlayer(snapshot, linked));
+        assertFalse(WarPingPicker.canPingPlayer(snapshot, offline));
+        assertFalse(WarPingPicker.canPingPlayer(snapshot, unlinked));
+        assertFalse(WarPingPicker.canPingPlayer(snapshot, self));
+        assertFalse(WarPingPicker.canPingPlayer(snapshot.withCanManage(false), linked));
         assertEquals(
                 List.of("linked-first", "linked"),
-                WarPlannerScreen.pingCandidates(snapshot, "").stream()
+                WarPingPicker.pingCandidates(snapshot, "").stream()
                         .map(WarPlannerSnapshot.RosterMember::playerUuid)
                         .toList());
-        assertEquals(List.of(linked), WarPlannerScreen.pingCandidates(snapshot, "discordalias"));
-        assertTrue(WarPlannerScreen.pingCandidates(snapshot, "missing").isEmpty());
-        assertTrue(WarPlannerScreen.pingCandidates(snapshot.withCanManage(false), "").isEmpty());
+        assertEquals(List.of(linked), WarPingPicker.pingCandidates(snapshot, "discordalias"));
+        assertTrue(WarPingPicker.pingCandidates(snapshot, "missing").isEmpty());
+        assertTrue(WarPingPicker.pingCandidates(snapshot.withCanManage(false), "").isEmpty());
     }
 
     @Test
     void warPingCannotClickAPartiallyClippedPickerRow() {
-        assertTrue(WarPlannerScreen.warPingRowFullyVisible(100, 130));
-        assertFalse(WarPlannerScreen.warPingRowFullyVisible(100, 129));
-        assertEquals(1, WarPlannerScreen.warPingScrollStart(19, 2));
-        assertEquals(0, WarPlannerScreen.warPingScrollStart(19, 0));
+        assertTrue(WarPingPicker.warPingRowFullyVisible(100, 130));
+        assertFalse(WarPingPicker.warPingRowFullyVisible(100, 129));
+        assertEquals(1, WarPingPicker.warPingScrollStart(19, 2));
+        assertEquals(0, WarPingPicker.warPingScrollStart(19, 0));
     }
 
     @Test
     void zonePreviewUsesAContextCropOverTheCalibratedMapImage() {
         GuildTerritory selected = GuildTerritory.fromCorners("Selected", -1000, -3000, -800, -2800);
-        MapBounds fitted = WarPlannerScreen.zonePreviewBounds(List.of(selected));
+        MapBounds fitted = WarMapGeometry.zonePreviewBounds(List.of(selected));
 
         assertEquals(new MapBounds(-1180, -3180, -620, -2620), fitted);
-        assertEquals(fitted, WarPlannerScreen.warMapFitBounds(List.of(selected), true));
-        assertEquals(MapCalibration.fullBounds(), WarPlannerScreen.warMapFitBounds(List.of(selected), false));
-        assertEquals(MapCalibration.fullBounds(), WarPlannerScreen.warMapFitBounds(List.of(), true));
-        assertEquals(MapCalibration.fullBounds(), WarPlannerScreen.mapImageBounds());
+        assertEquals(fitted, WarMapGeometry.warMapFitBounds(List.of(selected), true));
+        assertEquals(MapCalibration.fullBounds(), WarMapGeometry.warMapFitBounds(List.of(selected), false));
+        assertEquals(MapCalibration.fullBounds(), WarMapGeometry.warMapFitBounds(List.of(), true));
+        assertEquals(MapCalibration.fullBounds(), WarMapGeometry.mapImageBounds());
     }
 
     @Test
@@ -913,13 +913,13 @@ class WarPlannerScreenTest {
 
         assertEquals(
                 List.of(zoned, free),
-                WarPlannerScreen.visibleMapTerritories(List.of(zoned, free), withZone, false));
+                WarMapGeometry.visibleMapTerritories(List.of(zoned, free), withZone, false));
         assertEquals(
                 List.of(zoned),
-                WarPlannerScreen.visibleMapTerritories(List.of(zoned, free), withZone, true));
+                WarMapGeometry.visibleMapTerritories(List.of(zoned, free), withZone, true));
         assertEquals(
                 java.util.Set.of("Zoned"),
-                WarPlannerScreen.visibleTerritoryNames(
+                WarMapGeometry.visibleTerritoryNames(
                         withZone, java.util.Set.of("Zoned", "Free"), true));
     }
 
@@ -937,11 +937,11 @@ class WarPlannerScreenTest {
                 12, "Loose", "#334455", List.of(), 1L, List.of("C"), null, 0);
         WarPlannerSnapshot snapshot = categorizedSnapshot(List.of(north, loose, center), List.of(back, front));
 
-        List<WarPlannerScreen.ZoneSidebarEntry> entries = WarPlannerScreen.zoneSidebarEntries(snapshot);
+        List<WarZoneSidebar.ZoneSidebarEntry> entries = WarZoneSidebar.zoneSidebarEntries(snapshot);
 
         assertEquals(List.of("Front", "Center", "North", "Back", "Uncategorized", "Loose"),
-                entries.stream().map(WarPlannerScreen.ZoneSidebarEntry::label).toList());
-        assertEquals(List.of(loose), WarPlannerScreen.visibleZones(snapshot.zones(), java.util.Set.of(10L), java.util.Set.of(5L)));
+                entries.stream().map(WarZoneSidebar.ZoneSidebarEntry::label).toList());
+        assertEquals(List.of(loose), WarZoneSidebar.visibleZones(snapshot.zones(), java.util.Set.of(10L), java.util.Set.of(5L)));
     }
 
     @Test
@@ -961,8 +961,8 @@ class WarPlannerScreenTest {
 
         assertEquals(
                 List.of("Front", "Back", "South", "Uncategorized"),
-                WarPlannerScreen.zoneSidebarEntries(snapshot, folded).stream()
-                        .map(WarPlannerScreen.ZoneSidebarEntry::label)
+                WarZoneSidebar.zoneSidebarEntries(snapshot, folded).stream()
+                        .map(WarZoneSidebar.ZoneSidebarEntry::label)
                         .toList());
     }
 
@@ -973,13 +973,13 @@ class WarPlannerScreenTest {
                 10, "First", "#112233", List.of(), 2L, List.of("A"), 5L, 0);
         WarPlannerSnapshot.Zone last = new WarPlannerSnapshot.Zone(
                 11, "Last", "#223344", List.of(), 3L, List.of("B"), 5L, 1);
-        List<WarPlannerScreen.ZoneSidebarEntry> entries = List.of(
-                WarPlannerScreen.ZoneSidebarEntry.category(front),
-                WarPlannerScreen.ZoneSidebarEntry.zone(5L, first),
-                WarPlannerScreen.ZoneSidebarEntry.zone(5L, last));
+        List<WarZoneSidebar.ZoneSidebarEntry> entries = List.of(
+                WarZoneSidebar.ZoneSidebarEntry.category(front),
+                WarZoneSidebar.ZoneSidebarEntry.zone(5L, first),
+                WarZoneSidebar.ZoneSidebarEntry.zone(5L, last));
 
-        assertEquals(1, WarPlannerScreen.zoneSidebarScrollStart(99, entries, 96));
-        assertEquals(0, WarPlannerScreen.zoneSidebarScrollStart(99, entries, 128));
+        assertEquals(1, WarZoneSidebar.zoneSidebarScrollStart(99, entries, 96));
+        assertEquals(0, WarZoneSidebar.zoneSidebarScrollStart(99, entries, 128));
     }
 
     @Test
@@ -990,17 +990,17 @@ class WarPlannerScreenTest {
         WarPlannerSnapshot.Zone second = new WarPlannerSnapshot.Zone(
                 11, "Second", "#223344", List.of(), 3L, List.of("B"), 5L, 1);
         WarPlannerSnapshot snapshot = categorizedSnapshot(List.of(first, second), List.of(front));
-        WarPlannerScreen.ZoneSidebarPlacement header = new WarPlannerScreen.ZoneSidebarPlacement(
-                WarPlannerScreen.ZoneSidebarEntry.category(front), 50, 0);
-        WarPlannerScreen.ZoneSidebarPlacement secondRow = new WarPlannerScreen.ZoneSidebarPlacement(
-                WarPlannerScreen.ZoneSidebarEntry.zone(5L, second), 100, 2);
+        WarZoneSidebar.ZoneSidebarPlacement header = new WarZoneSidebar.ZoneSidebarPlacement(
+                WarZoneSidebar.ZoneSidebarEntry.category(front), 50, 0);
+        WarZoneSidebar.ZoneSidebarPlacement secondRow = new WarZoneSidebar.ZoneSidebarPlacement(
+                WarZoneSidebar.ZoneSidebarEntry.zone(5L, second), 100, 2);
 
-        assertEquals(new WarPlannerScreen.ZoneDropTarget(5L, 0),
-                WarPlannerScreen.zoneDropTarget(snapshot, header, 55, 10));
-        assertEquals(new WarPlannerScreen.ZoneDropTarget(5L, 0),
-                WarPlannerScreen.zoneDropTarget(snapshot, secondRow, 110, 10));
-        assertEquals(new WarPlannerScreen.ZoneDropTarget(5L, 1),
-                WarPlannerScreen.zoneDropTarget(snapshot, secondRow, 150, 10));
+        assertEquals(new WarZoneSidebar.ZoneDropTarget(5L, 0),
+                WarZoneSidebar.zoneDropTarget(snapshot, header, 55, 10));
+        assertEquals(new WarZoneSidebar.ZoneDropTarget(5L, 0),
+                WarZoneSidebar.zoneDropTarget(snapshot, secondRow, 110, 10));
+        assertEquals(new WarZoneSidebar.ZoneDropTarget(5L, 1),
+                WarZoneSidebar.zoneDropTarget(snapshot, secondRow, 150, 10));
     }
 
     private static WarPlannerSnapshot categorizedSnapshot(
@@ -1059,10 +1059,10 @@ class WarPlannerScreenTest {
                 .toList();
     }
 
-    private static void assertSupportPlacementsInside(WarPlannerScreen.TeamsLayout layout) {
-        List<WarPlannerScreen.SupportPlacement> placements = WarPlannerScreen.supportPlacements(layout);
+    private static void assertSupportPlacementsInside(WarTeamsTab.TeamsLayout layout) {
+        List<WarTeamsTab.SupportPlacement> placements = WarTeamsTab.supportPlacements(layout);
         assertEquals(4, placements.size());
-        for (WarPlannerScreen.SupportPlacement placement : placements) {
+        for (WarTeamsTab.SupportPlacement placement : placements) {
             assertTrue(placement.x() >= layout.supportX());
             assertTrue(placement.x() + placement.width() <= layout.supportX() + layout.supportWidth() + .01f);
             assertTrue(placement.y() >= layout.supportY());
