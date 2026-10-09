@@ -1,0 +1,38 @@
+[
+  {
+    "x": -1751,
+    "y": 59,
+    "z": -4420,
+    "angle": 0,
+    "type": "CORNER",
+    "resource": "COPPER",
+    "level": 1
+  },
+  {
+    "x": -2222,
+    "y": 55,
+    "z": -3856,
+    "angle": 0,
+    "type": "NODE",
+    "resource": "OAK",
+    "level": 1
+  },
+  {
+    "x": -2098,
+    "y": 34,
+    "z": -742,
+    "angle": 0,
+    "type": "NODE",
+    "resource": "WHEAT",
+    "level": 1
+  },
+  {
+    "x": -1534,
+    "y": 43,
+    "z": -5273,
+    "angle": 0,
+    "type": "NODE",
+    "resource": "GUDGEON",
+    "level": 1
+  }
+]

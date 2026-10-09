@@ -4,69 +4,165 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.seqwawa.seq.client.SeqClient;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
+import java.util.Map;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import com.seqwawa.seq.client.SeqClient;
+import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
 public final class GatheringNodeService {
     private static final String STATIC_NODES_RESOURCE = "assets/seq/map/gathering-nodes.json";
+    static final URI DEFAULT_ENDPOINT = URI.create("https://api.wynncraft.com/v3/map/gathering-nodes");
+    // Wynncraft caches this route for one hour.
+    static final long REFRESH_INTERVAL_MS = Duration.ofHours(1).toMillis();
+    static final long RETRY_INTERVAL_MS = Duration.ofMinutes(1).toMillis();
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
+    private static final GatheringNodeService INSTANCE = new GatheringNodeService();
 
-    private static GatheringNodeService instance;
-
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
-        Thread thread = new Thread(runnable, "seq-gathering-nodes");
-        thread.setDaemon(true);
-        return thread;
-    });
-
-    private volatile List<GatheringNode> nodes = List.of();
-    private volatile boolean loadRequested;
+    private final HttpClient httpClient;
+    private final URI endpoint;
+    private final LongSupplier currentTimeMillis;
+    private final Executor executor;
+    private final Supplier<InputStream> bundledNodes;
+    private final Map<GatheringNodeSource, Cache> caches = Map.of(
+            GatheringNodeSource.STATIC, new Cache(), GatheringNodeSource.WYNN_API, new Cache());
 
     public static GatheringNodeService getInstance() {
-        if (instance == null) {
-            instance = new GatheringNodeService();
+        return INSTANCE;
+    }
+
+    private GatheringNodeService() {
+        this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build(),
+                DEFAULT_ENDPOINT, System::currentTimeMillis,
+                // A slow API request must not hold up switching to the local file.
+                Executors.newFixedThreadPool(2, runnable -> {
+                    Thread thread = new Thread(runnable, "seq-gathering-nodes");
+                    thread.setDaemon(true);
+                    return thread;
+                }));
+    }
+
+    GatheringNodeService(HttpClient httpClient, URI endpoint, LongSupplier currentTimeMillis, Executor executor) {
+        this(httpClient, endpoint, currentTimeMillis, executor,
+                () -> GatheringNodeService.class.getClassLoader().getResourceAsStream(STATIC_NODES_RESOURCE));
+    }
+
+    GatheringNodeService(HttpClient httpClient, URI endpoint, LongSupplier currentTimeMillis, Executor executor,
+            Supplier<InputStream> bundledNodes) {
+        this.httpClient = httpClient;
+        this.endpoint = endpoint;
+        this.currentTimeMillis = currentTimeMillis;
+        this.executor = executor;
+        this.bundledNodes = bundledNodes;
+    }
+
+    public List<GatheringNode> nodes(GatheringNodeSource source) {
+        return caches.get(source).nodes;
+    }
+
+    public String status(GatheringNodeSource source) {
+        return caches.get(source).status;
+    }
+
+    public boolean isLoading(GatheringNodeSource source) {
+        return caches.get(source).loading;
+    }
+
+    public synchronized boolean requestRefresh(GatheringNodeSource source) {
+        Cache cache = caches.get(source);
+        long now = currentTimeMillis.getAsLong();
+        if (cache.loading || (source == GatheringNodeSource.STATIC && !cache.nodes.isEmpty())
+                || (cache.attempted && now - cache.lastAttemptAtMs < cache.refreshIntervalMs)) {
+            return false;
         }
-        return instance;
-    }
-
-    private GatheringNodeService() {}
-
-    public List<GatheringNode> nodes() {
-        return nodes;
-    }
-
-    public void loadBundledNodes() {
-        if (loadRequested) {
-            return;
+        cache.attempted = true;
+        cache.lastAttemptAtMs = now;
+        cache.loading = true;
+        cache.status = source == GatheringNodeSource.STATIC ? "Loading static nodes..."
+                : cache.nodes.isEmpty() ? "Loading nodes..." : "Refreshing nodes...";
+        try {
+            // Both loading and parsing stay off the render thread. The source is
+            // captured here, so completion only updates that source's cache.
+            executor.execute(() -> fetchNodes(source));
+            return true;
+        } catch (RuntimeException exception) {
+            failRefresh(source, exception);
+            return false;
         }
-        loadRequested = true;
-
-        CompletableFuture.runAsync(this::loadStaticResource, executor);
     }
 
-    private void loadStaticResource() {
-        // TODO: Replace this static load with a Wynncraft API fetch once the gathering-nodes API is fixed.
-        try (InputStream input = GatheringNodeService.class.getClassLoader()
-                .getResourceAsStream(STATIC_NODES_RESOURCE)) {
-            if (input == null) {
-                throw new IllegalStateException("Missing bundled node resource " + STATIC_NODES_RESOURCE);
+    private void fetchNodes(GatheringNodeSource source) {
+        try {
+            List<GatheringNode> fetchedNodes;
+            if (source == GatheringNodeSource.STATIC) {
+                try (InputStream input = bundledNodes.get()) {
+                    if (input == null) {
+                        throw new IllegalStateException("Missing bundled node resource " + STATIC_NODES_RESOURCE);
+                    }
+                    fetchedNodes = parseNodes(new String(input.readAllBytes(), StandardCharsets.UTF_8));
+                }
+            } else {
+                HttpRequest request = HttpRequest.newBuilder(endpoint)
+                        .header("Accept", "application/json")
+                        .header("User-Agent", "Sequoia-Mod")
+                        .timeout(REQUEST_TIMEOUT)
+                        .GET()
+                        .build();
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    throw new IllegalStateException("API returned HTTP " + response.statusCode());
+                }
+                fetchedNodes = parseNodes(response.body());
             }
-
-            String body = new String(input.readAllBytes(), StandardCharsets.UTF_8);
-            List<GatheringNode> bundledNodes = parseNodes(body);
-            nodes = bundledNodes;
+            completeRefresh(source, fetchedNodes);
         } catch (Exception exception) {
-            SeqClient.LOGGER.warn("[GatheringMap] Failed to load bundled gathering nodes.", exception);
+            if (exception instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            failRefresh(source, exception);
         }
     }
 
-    private List<GatheringNode> parseNodes(String body) {
+    private synchronized void completeRefresh(GatheringNodeSource source, List<GatheringNode> fetchedNodes) {
+        Cache cache = caches.get(source);
+        if (!cache.nodes.equals(fetchedNodes)) {
+            cache.nodes = fetchedNodes;
+        }
+        cache.refreshIntervalMs = REFRESH_INTERVAL_MS;
+        cache.status = "Loaded " + cache.nodes.size() + " nodes";
+        cache.loading = false;
+    }
+
+    private synchronized void failRefresh(GatheringNodeSource source, Exception exception) {
+        Cache cache = caches.get(source);
+        cache.refreshIntervalMs = RETRY_INTERVAL_MS;
+        cache.status = source == GatheringNodeSource.STATIC ? "Static node load failed; retrying..."
+                : cache.nodes.isEmpty() ? "Node load failed; retrying..." : "Refresh failed; using cached nodes";
+        cache.loading = false;
+        SeqClient.LOGGER.warn("[GatheringMap] Failed to load gathering nodes from {}.", source.label(), exception);
+    }
+
+    private static final class Cache {
+        private volatile List<GatheringNode> nodes = List.of();
+        private volatile String status = "Not loaded";
+        private volatile boolean loading;
+        private boolean attempted;
+        private long lastAttemptAtMs;
+        private long refreshIntervalMs;
+    }
+
+    static List<GatheringNode> parseNodes(String body) {
         JsonElement root = JsonParser.parseString(body);
         JsonArray array = nodeArray(root);
         List<GatheringNode> parsed = new ArrayList<>(array.size());
@@ -88,8 +184,8 @@ public final class GatheringNodeService {
                 // Skip malformed nodes while keeping the rest of the map usable.
             }
         }
-        if (parsed.isEmpty() && array.size() > 0) {
-            throw new IllegalArgumentException("Bundled gathering nodes did not contain any valid nodes.");
+        if (parsed.isEmpty()) {
+            throw new IllegalArgumentException("Gathering-node response did not contain any valid nodes.");
         }
         return List.copyOf(parsed);
     }
@@ -104,20 +200,20 @@ public final class GatheringNodeService {
                 return data.getAsJsonArray();
             }
         }
-        throw new IllegalArgumentException("Bundled gathering nodes root must be an array or object with data array.");
+        throw new IllegalArgumentException("Gathering nodes must be an array or an object with a data array.");
     }
 
     private static int readInt(JsonObject object, String key) {
         JsonElement element = object.get(key);
-        if (element == null || !element.isJsonPrimitive()) {
+        if (element == null || !element.isJsonPrimitive() || !element.getAsJsonPrimitive().isNumber()) {
             throw new IllegalArgumentException("Missing integer field " + key);
         }
-        return element.getAsInt();
+        return element.getAsBigDecimal().intValueExact();
     }
 
     private static String readString(JsonObject object, String key) {
         JsonElement element = object.get(key);
-        if (element == null || !element.isJsonPrimitive()) {
+        if (element == null || !element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) {
             throw new IllegalArgumentException("Missing string field " + key);
         }
         String value = element.getAsString().trim();
