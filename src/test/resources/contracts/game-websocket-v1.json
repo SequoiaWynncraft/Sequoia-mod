@@ -1,0 +1,445 @@
+{
+  "contract": "sequoia-game-websocket",
+  "fixture_version": 1,
+  "guild_chat": {
+    "message_limit_utf16_units": 400,
+    "length_rule": "Java String.length() after String.trim()",
+    "required_fields": [
+      "type",
+      "message"
+    ],
+    "cases": [
+      {
+        "id": "legacy_minimal",
+        "payload": {
+          "type": "guild_chat",
+          "message": "hello guild"
+        },
+        "accepted": true,
+        "client_payload": {
+          "type": "guild_chat",
+          "message": "hello guild"
+        }
+      },
+      {
+        "id": "null_optional_fields",
+        "payload": {
+          "type": "guild_chat",
+          "username": null,
+          "nickname": null,
+          "message": "hello guild",
+          "avatar_url": null,
+          "item_previews": null,
+          "should_be_displayed": null
+        },
+        "accepted": true,
+        "client_payload": {
+          "type": "guild_chat",
+          "message": "hello guild"
+        }
+      },
+      {
+        "id": "trimmed_identity",
+        "payload": {
+          "type": "guild_chat",
+          "username": " Player_1 ",
+          "nickname": " Nick ",
+          "message": " hello guild ",
+          "avatar_url": " https://example.test/avatar "
+        },
+        "accepted": true,
+        "client_payload": {
+          "type": "guild_chat",
+          "username": "Player_1",
+          "nickname": "Nick",
+          "message": "hello guild",
+          "avatar_url": "https://example.test/avatar"
+        }
+      },
+      {
+        "id": "invalid_optional_identity_omitted",
+        "payload": {
+          "type": "guild_chat",
+          "username": "not a username",
+          "nickname": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+          "message": "hello guild",
+          "avatar_url": "javascript:alert(1)"
+        },
+        "accepted": true,
+        "client_payload": {
+          "type": "guild_chat",
+          "message": "hello guild"
+        }
+      },
+      {
+        "id": "400_utf16_units",
+        "payload": {
+          "type": "guild_chat",
+          "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        "accepted": true,
+        "client_payload": {
+          "type": "guild_chat",
+          "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      },
+      {
+        "id": "401_utf16_units",
+        "payload": {
+          "type": "guild_chat",
+          "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        "accepted": false,
+        "error": {
+          "type": "error",
+          "code": "invalid_request",
+          "message": "Guild chat message is too long"
+        }
+      },
+      {
+        "id": "512_utf16_units",
+        "payload": {
+          "type": "guild_chat",
+          "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        "accepted": false,
+        "error": {
+          "type": "error",
+          "code": "invalid_request",
+          "message": "Guild chat message is too long"
+        }
+      },
+      {
+        "id": "trim_before_count",
+        "payload": {
+          "type": "guild_chat",
+          "message": " \txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n "
+        },
+        "accepted": true,
+        "client_payload": {
+          "type": "guild_chat",
+          "message": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      },
+      {
+        "id": "200_supplementary_characters",
+        "payload": {
+          "type": "guild_chat",
+          "message": "🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲"
+        },
+        "accepted": true,
+        "client_payload": {
+          "type": "guild_chat",
+          "message": "🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲"
+        }
+      },
+      {
+        "id": "201_supplementary_characters",
+        "payload": {
+          "type": "guild_chat",
+          "message": "🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲🌲"
+        },
+        "accepted": false,
+        "error": {
+          "type": "error",
+          "code": "invalid_request",
+          "message": "Guild chat message is too long"
+        }
+      },
+      {
+        "id": "empty_message",
+        "payload": {
+          "type": "guild_chat",
+          "message": ""
+        },
+        "accepted": false,
+        "error": {
+          "type": "error",
+          "code": "invalid_request",
+          "message": "Guild chat message is required"
+        }
+      },
+      {
+        "id": "blank_message",
+        "payload": {
+          "type": "guild_chat",
+          "message": " \t\n "
+        },
+        "accepted": false,
+        "error": {
+          "type": "error",
+          "code": "invalid_request",
+          "message": "Guild chat message is required"
+        }
+      },
+      {
+        "id": "unicode_blank_message",
+        "payload": {
+          "type": "guild_chat",
+          "message": "  "
+        },
+        "accepted": false,
+        "error": {
+          "type": "error",
+          "code": "invalid_request",
+          "message": "Guild chat message is required"
+        }
+      },
+      {
+        "id": "null_message",
+        "payload": {
+          "type": "guild_chat",
+          "message": null
+        },
+        "accepted": false,
+        "error": {
+          "type": "error",
+          "code": "invalid_request",
+          "message": "Guild chat message is required"
+        }
+      },
+      {
+        "id": "missing_message",
+        "payload": {
+          "type": "guild_chat"
+        },
+        "accepted": false,
+        "error": {
+          "type": "error",
+          "code": "invalid_request",
+          "message": "Guild chat message is required"
+        }
+      },
+      {
+        "id": "legacy_item_preview",
+        "payload": {
+          "type": "guild_chat",
+          "message": "look at this",
+          "item_previews": [
+            {
+              "name": "Gale's Force",
+              "subtitle": "Mythic Bow",
+              "color": 11141290,
+              "attributes": [
+                "3 rerolls"
+              ],
+              "stat_lines": [
+                "+26% Walk Speed"
+              ]
+            }
+          ]
+        },
+        "accepted": true,
+        "client_payload": {
+          "type": "guild_chat",
+          "message": "look at this",
+          "item_previews": [
+            {
+              "name": "Gale's Force",
+              "subtitle": "Mythic Bow",
+              "color": 11141290,
+              "attributes": [
+                "3 rerolls"
+              ],
+              "stat_lines": [
+                "+26% Walk Speed"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "additive_item_sections",
+        "payload": {
+          "type": "guild_chat",
+          "message": "look at this",
+          "item_previews": [
+            {
+              "name": "Gale's Force",
+              "subtitle": "Mythic Bow",
+              "color": 11141290,
+              "attributes": [
+                "3 rerolls"
+              ],
+              "stat_lines": [
+                "+26% Walk Speed"
+              ],
+              "sections": [
+                {
+                  "title": "Major ID: Hawkeye",
+                  "lines": [
+                    "Arrow Storm fires five arrows."
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "accepted": true,
+        "client_payload": {
+          "type": "guild_chat",
+          "message": "look at this",
+          "item_previews": [
+            {
+              "name": "Gale's Force",
+              "subtitle": "Mythic Bow",
+              "color": 11141290,
+              "attributes": [
+                "3 rerolls"
+              ],
+              "stat_lines": [
+                "+26% Walk Speed"
+              ],
+              "sections": [
+                {
+                  "title": "Major ID: Hawkeye",
+                  "lines": [
+                    "Arrow Storm fires five arrows."
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "additive_unknown_field",
+        "payload": {
+          "type": "guild_chat",
+          "message": "hello guild",
+          "future_metadata": {
+            "revision": 2
+          }
+        },
+        "accepted": true,
+        "client_payload": {
+          "type": "guild_chat",
+          "message": "hello guild"
+        }
+      },
+      {
+        "id": "optional_display_flag",
+        "payload": {
+          "type": "guild_chat",
+          "message": "hello guild",
+          "should_be_displayed": true
+        },
+        "accepted": true,
+        "client_payload": {
+          "type": "guild_chat",
+          "message": "hello guild"
+        }
+      }
+    ]
+  },
+  "discord_chat": {
+    "cases": [
+      {
+        "id": "legacy_without_optional_fields",
+        "payload": {
+          "type": "discord_chat",
+          "username": "DiscordUser",
+          "message": "hello"
+        },
+        "expected": {
+          "username": "DiscordUser",
+          "message": "hello",
+          "discord_id": null
+        },
+        "server_payload": {
+          "type": "discord_chat",
+          "username": "DiscordUser",
+          "message": "hello",
+          "media_urls": []
+        }
+      },
+      {
+        "id": "nullable_identity_and_additive_media",
+        "payload": {
+          "type": "discord_chat",
+          "username": "DiscordUser",
+          "message": "hello",
+          "discord_id": null,
+          "media_urls": [
+            "https://example.test/image.png"
+          ]
+        },
+        "expected": {
+          "username": "DiscordUser",
+          "message": "hello",
+          "discord_id": null
+        },
+        "server_payload": {
+          "type": "discord_chat",
+          "username": "DiscordUser",
+          "message": "hello",
+          "media_urls": [
+            "https://example.test/image.png"
+          ]
+        }
+      },
+      {
+        "id": "additive_sender_identity_and_unknown_field",
+        "payload": {
+          "type": "discord_chat",
+          "username": "DiscordUser",
+          "message": "hello",
+          "discord_id": "123456789012345678",
+          "future_metadata": {
+            "revision": 2
+          }
+        },
+        "expected": {
+          "username": "DiscordUser",
+          "message": "hello",
+          "discord_id": "123456789012345678"
+        },
+        "server_payload": {
+          "type": "discord_chat",
+          "username": "DiscordUser",
+          "message": "hello",
+          "media_urls": []
+        }
+      }
+    ]
+  },
+  "rejected_envelopes": {
+    "cases": [
+      {
+        "id": "missing_type",
+        "payload": {
+          "message": "hello"
+        },
+        "error": {
+          "type": "error",
+          "code": "invalid_request",
+          "message": "Invalid message format"
+        }
+      },
+      {
+        "id": "null_type",
+        "payload": {
+          "type": null,
+          "message": "hello"
+        },
+        "error": {
+          "type": "error",
+          "code": "invalid_request",
+          "message": "Invalid message format"
+        }
+      },
+      {
+        "id": "unknown_type",
+        "payload": {
+          "type": "future_message_type",
+          "message": "hello"
+        },
+        "error": {
+          "type": "error",
+          "code": "invalid_request",
+          "message": "Invalid message format"
+        }
+      }
+    ]
+  }
+}

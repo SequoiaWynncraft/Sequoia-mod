@@ -451,3 +451,8 @@ when eligible. The backend can resolve a renamed guild member through the cached
 Wynncraft UUID roster before checking their link. Unlinked or ineligible players
 remain observed occupancy; a later sync can upgrade them once a verified link is
 available. This does not create or verify account links on anyone's behalf.
+
+## Developer contracts
+
+Shared client/backend wire checks and fixture maintenance are documented in
+[`docs/game-websocket-contract.md`](docs/game-websocket-contract.md).

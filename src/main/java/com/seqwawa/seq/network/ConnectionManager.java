@@ -55,7 +55,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static final long RECONNECT_BASE_MS = 1_000;
     private static final long RECONNECT_CAP_MS = 60_000;
     private static final int MAX_AUTO_RECONNECT_ATTEMPTS = 5;
-    private static final int MAX_GUILD_CHAT_MESSAGE_LENGTH = 512;
+    // Java UTF-16 units after trim(), matching the backend guild_chat contract.
+    private static final int MAX_GUILD_CHAT_MESSAGE_LENGTH = 400;
     private static final long AUTH_BACKOFF_BASE_MS = 2_000;
     private static final long AUTH_BACKOFF_CAP_MS = 60_000;
     private static final long PRIVILEGED_SEND_THROTTLE_MS = 50;
@@ -980,11 +981,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
 
         String cleanedMessage = message == null ? "" : message.trim();
-        if (cleanedMessage.isEmpty()) {
+        if (cleanedMessage.isBlank()) {
             SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat dropped: empty message");
             return;
         }
-        if (cleanedMessage.length() > MAX_GUILD_CHAT_MESSAGE_LENGTH) {
+        JsonObject msg;
+        try {
+            msg = buildGuildChatPayload(username, nickname, cleanedMessage, avatarUrl, itemPreviews);
+        } catch (IllegalArgumentException exception) {
             SeqClient.LOGGER.warn(
                     "[ConnectionManager] sendGuildChat dropped: message too long={} max={}",
                     cleanedMessage.length(),
@@ -992,17 +996,30 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             notify("Guild chat message too long.");
             return;
         }
-        String safeAvatarUrl = sanitizeAvatarUrl(avatarUrl);
-        String safeReportedUsername = sanitizeMinecraftUsername(username);
-        String safeNickname = sanitizeNickname(nickname);
-
         SeqClient.LOGGER.info(
                 "[ConnectionManager] Sending guild_chat uri={} username='{}' nickname='{}' message='{}'",
                 getURI(),
-                safeReportedUsername,
-                safeNickname,
+                extractPrimitiveString(msg, "username"),
+                extractPrimitiveString(msg, "nickname"),
                 cleanedMessage);
+        send("guild_chat", msg);
+    }
+
+    /** Builds the wire payload used by sendGuildChat, before session/throttle checks. */
+    static JsonObject buildGuildChatPayload(
+            String username, String nickname, String message, String avatarUrl, List<ChatItemPreview> itemPreviews) {
+        String cleanedMessage = message == null ? "" : message.trim();
+        if (cleanedMessage.isBlank()) {
+            throw new IllegalArgumentException("Guild chat message is required");
+        }
+        if (cleanedMessage.length() > MAX_GUILD_CHAT_MESSAGE_LENGTH) {
+            throw new IllegalArgumentException("Guild chat message is too long");
+        }
+        String safeAvatarUrl = sanitizeAvatarUrl(avatarUrl);
+        String safeReportedUsername = sanitizeMinecraftUsername(username);
+        String safeNickname = sanitizeNickname(nickname);
         JsonObject msg = new JsonObject();
+        msg.addProperty("type", "guild_chat");
         if (safeReportedUsername != null) {
             msg.addProperty("username", safeReportedUsername);
         }
@@ -1015,7 +1032,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         if (itemPreviewArray.size() > 0) {
             msg.add("item_previews", itemPreviewArray);
         }
-        send("guild_chat", msg);
+        return msg;
     }
 
     public boolean sendGuildAllianceUpdate(String action, String guildName) {
