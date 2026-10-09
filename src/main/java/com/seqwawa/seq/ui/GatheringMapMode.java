@@ -16,6 +16,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
+import java.util.function.Consumer;
 import org.lwjgl.glfw.GLFW;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.map.ClusterScoreMode;
@@ -24,6 +26,7 @@ import com.seqwawa.seq.map.GatheringClusterCache;
 import com.seqwawa.seq.map.GatheringNode;
 import com.seqwawa.seq.map.GatheringNodeCluster;
 import com.seqwawa.seq.map.GatheringNodeService;
+import com.seqwawa.seq.map.GatheringNodeSource;
 import com.seqwawa.seq.map.GatheringProfession;
 import com.seqwawa.seq.map.GatheringTotemHitTester;
 import com.seqwawa.seq.map.GatheringTotemSearchTarget;
@@ -72,7 +75,10 @@ final class GatheringMapMode {
     private static final double TERRITORY_FOCUS_MAX_PIXELS_PER_BLOCK = 1.25;
 
     private static final int SIDEBAR_CLUSTER_LIMIT = 5;
-    private final GatheringNodeService nodeService = GatheringNodeService.getInstance();
+    private final Function<GatheringNodeSource, List<GatheringNode>> nodes;
+    private final Function<GatheringNodeSource, String> nodeStatus;
+    private final Consumer<GatheringNodeSource> refreshNodes;
+    private GatheringNodeSource cachedNodeSource;
     private final GuildTerritoryService territoryService = GuildTerritoryService.getInstance();
     private GatheringTotemSession.Request cachedTotemRequest;
     private final GatheringTotemPanel totemPanel;
@@ -123,7 +129,17 @@ final class GatheringMapMode {
     private final MapSidebar sidebar = new MapSidebar();
     private WorldMapFrame frame;
     GatheringMapMode(WorldMapSettings settings, Actions actions) {
+        this(settings, actions, GatheringNodeService.getInstance()::nodes,
+                GatheringNodeService.getInstance()::status, GatheringNodeService.getInstance()::requestRefresh);
+    }
+
+    GatheringMapMode(WorldMapSettings settings, Actions actions, Function<GatheringNodeSource, List<GatheringNode>> nodes,
+            Function<GatheringNodeSource, String> nodeStatus, Consumer<GatheringNodeSource> refreshNodes) {
+        this.nodes = nodes;
+        this.nodeStatus = nodeStatus;
+        this.refreshNodes = refreshNodes;
         this.mapSettings = settings; this.actions = actions;
+        this.cachedNodeSource = settings.gatheringNodeSource();
         this.totemPanel = new GatheringTotemPanel(mapSettings,
             new GatheringTotemSession(request -> CompletableFuture.supplyAsync(() -> GatheringTotemSolver.solveAll(
                     request.nodes(), request.resources(), request.territory(), request.clusterNodes())),
@@ -141,11 +157,22 @@ final class GatheringMapMode {
         territoryService.loadBundledTerritories();
         territoryIndex = territoryService.index();
         restoreSelectedTerritory();
-        nodeService.loadBundledNodes();
 
     }
     void refresh(WorldMapFrame frame) {
         this.frame = frame;
+        GatheringNodeSource source = mapSettings.gatheringNodeSource();
+        if (source != cachedNodeSource) {
+            cachedNodeSource = source;
+            selectedNode = null;
+            selectedCluster = null;
+            clearHover();
+            hoveredGatheringTotemPlacement = null;
+            cachedTotemRequest = null;
+            totemPanel.reset();
+            cachedClusterKey = "";
+        }
+        refreshNodes.accept(source);
         showDebugInfo = mapSettings.showDebugInfo();
         refreshClusterAnalysisIfNeeded(); refreshGatheringTotemPlacement();
     }
@@ -340,6 +367,12 @@ final class GatheringMapMode {
                 selectedTerritory == null ? gatheringAnalysisScope.label() : selectedTerritory.name(),
                 WorldMapSidebarPanel.MAP_AND_TERRITORY, frame, mapSettings);
         if (panelExpanded(WorldMapSidebarPanel.MAP_AND_TERRITORY)) {
+            drawText(canvas, PADDING, sidebar.y(layout.sourceLabelY()), 12, "Node source", color(MAP_SUBTEXT), TextAlignment.LEFT);
+            float sourceWidth = (SIDEBAR_WIDTH - PADDING * 2 - SPLIT_CONTROL_GAP) / 2;
+            drawButton(canvas, PADDING, sidebar.y(layout.sourceY()), sourceWidth, BUTTON_HEIGHT,
+                    GatheringNodeSource.STATIC.label(), cachedNodeSource == GatheringNodeSource.STATIC);
+            drawButton(canvas, PADDING + sourceWidth + SPLIT_CONTROL_GAP, sidebar.y(layout.sourceY()), sourceWidth, BUTTON_HEIGHT,
+                    GatheringNodeSource.WYNN_API.label(), cachedNodeSource == GatheringNodeSource.WYNN_API);
             renderTerritoryToggles(canvas, sidebar.y(layout.territoryToggleY()));
             drawText(canvas, PADDING, sidebar.y(layout.scopeLabelY()), 12, "Gathering Scope", color(MAP_SUBTEXT), TextAlignment.LEFT);
             drawScopeControl(canvas, sidebar.y(layout.scopeY()));
@@ -415,7 +448,8 @@ final class GatheringMapMode {
         drawInsightRow(canvas, contentX, layout.overviewY() + 18, contentWidth, "Scope", gatheringAnalysisScope.label());
         drawInsightRow(canvas, contentX, layout.overviewY() + 34, contentWidth, "Matching nodes", String.valueOf(cachedFilteredNodes.size()));
         drawInsightRow(canvas, contentX, layout.overviewY() + 50, contentWidth, "Clusters", String.valueOf(cachedClusters.size()));
-        float overviewRowY = layout.overviewY() + 66;
+        drawInsightRow(canvas, contentX, layout.overviewY() + 66, contentWidth, cachedNodeSource.label(), nodeStatus.apply(cachedNodeSource));
+        float overviewRowY = layout.overviewY() + 82;
         if (showDebugInfo) {
             drawInsightRow(canvas, contentX, overviewRowY, contentWidth, "Map source", displayMapImageSource());
             drawInsightRow(canvas, contentX, overviewRowY + 16, contentWidth, "HQ status", GatheringMapImageService.getInstance().hqStatus());
@@ -666,7 +700,7 @@ final class GatheringMapMode {
         MapViewport viewport = frame.viewport();
         InsightsLayout insights = insightsLayout();
         if (totemPanel.enabled() && totemPanel.selected() != null) {
-            float totemRowsY = insights.overviewY() + 58 + (showDebugInfo ? 32 : 0);
+            float totemRowsY = insights.overviewY() + 74 + (showDebugInfo ? 32 : 0);
             if (insightsSidebarOpen
                     && isHovered(
                             mx,
@@ -874,7 +908,7 @@ final class GatheringMapMode {
     }
 
     private void refreshClusterAnalysisIfNeeded() {
-        List<GatheringNode> sourceNodes = nodeService.nodes();
+        List<GatheringNode> sourceNodes = nodes.apply(cachedNodeSource);
         GuildTerritoryIndex currentTerritoryIndex = territoryService.index();
         boolean territoryIndexChanged = currentTerritoryIndex != territoryIndex;
         if (territoryIndexChanged) {
@@ -1189,7 +1223,7 @@ final class GatheringMapMode {
 
     private InsightsLayout insightsLayout() {
         float overviewY = 60;
-        float y = overviewY + (showDebugInfo ? 106 : 74);
+        float y = overviewY + (showDebugInfo ? 122 : 90);
         if (totemPanel.enabled()) {
             y += 48;
         }
@@ -1209,6 +1243,8 @@ final class GatheringMapMode {
         y += BUTTON_HEIGHT + 18;
         float mapPanelY = y;
         y += PANEL_HEADER_HEIGHT;
+        float sourceLabelY = -1;
+        float sourceY = -1;
         float territoryToggleY = -1;
         float scopeLabelY = -1;
         float scopeY = -1;
@@ -1216,6 +1252,10 @@ final class GatheringMapMode {
         float territoryInputY = -1;
         if (panelExpanded(WorldMapSidebarPanel.MAP_AND_TERRITORY)) {
             y += 8;
+            sourceLabelY = y;
+            y += 12;
+            sourceY = y;
+            y += BUTTON_HEIGHT + 14;
             territoryToggleY = y;
             y += BUTTON_HEIGHT + 14;
             scopeLabelY = y;
@@ -1260,6 +1300,8 @@ final class GatheringMapMode {
         return new SidebarLayout(
                 centerY,
                 mapPanelY,
+                sourceLabelY,
+                sourceY,
                 territoryToggleY,
                 scopeLabelY,
                 scopeY,
@@ -1312,6 +1354,8 @@ final class GatheringMapMode {
     record SidebarLayout(
             float centerY,
             float mapPanelY,
+            float sourceLabelY,
+            float sourceY,
             float territoryToggleY,
             float scopeLabelY,
             float scopeY,
@@ -1378,6 +1422,19 @@ final class GatheringMapMode {
         }
         if (isHovered(mx, sidebarMy, PADDING, layout.filtersPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)) {
             togglePanel(WorldMapSidebarPanel.RESOURCE_FILTERS);
+            return true;
+        }
+        if (layout.sourceY() >= 0 && my >= SIDEBAR_PANEL_TOP && my <= screenHeight
+                && isHovered(mx, sidebarMy, PADDING, layout.sourceY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+            float sourceWidth = (SIDEBAR_WIDTH - PADDING * 2 - SPLIT_CONTROL_GAP) / 2;
+            GatheringNodeSource source = mx <= PADDING + sourceWidth ? GatheringNodeSource.STATIC
+                    : mx >= PADDING + sourceWidth + SPLIT_CONTROL_GAP ? GatheringNodeSource.WYNN_API : null;
+            if (source != null && source != mapSettings.gatheringNodeSource()) {
+                mapSettings.setGatheringNodeSource(source);
+                if (SeqClient.getConfigManager() != null) SeqClient.getConfigManager().save();
+                closeSearchDropdowns();
+                refresh(frame);
+            }
             return true;
         }
         float territoryToggleWidth = SIDEBAR_WIDTH - PADDING * 2;
@@ -1671,6 +1728,12 @@ final class GatheringMapMode {
             }
         }
         renderGatheringTotemPlacements(canvas, viewport);
+        if (cachedSourceNodes.isEmpty()) {
+            float statusX = viewport.screenX() + viewport.screenWidth() / 2;
+            float statusY = viewport.screenY() + viewport.screenHeight() / 2;
+            drawFittedText(canvas, statusX, statusY, 14, nodeStatus.apply(cachedNodeSource), color(MAP_TEXT),
+                    Math.max(0, viewport.screenWidth() - PADDING * 2), TextAlignment.CENTER);
+        }
         actions.renderPlayer(canvas, viewport);
         GatheringTerritoryLayer.renderTerritoryNames(canvas, viewport, territoryIndex, selectedTerritory, hoveredTerritory, showTerritories, showTerritoryNames);
         if (!frame.dragging() && hoveredGatheringTotemPlacement != null) {

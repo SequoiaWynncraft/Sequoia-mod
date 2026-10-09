@@ -1167,6 +1167,7 @@ public class SeqClient implements ClientModInitializer {
                 "War planner display");
         warPlannerLockTerritoriesSetting.setVisibilityCondition(
                 () -> warPlannerManager != null && warPlannerManager.canManage());
+        getConfigManager().register(com.seqwawa.seq.map.WorldMapSettings.getInstance().gatheringNodeSourceSetting());
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
         getConfigManager().register(showPrivateMessageGuildTagsSetting);

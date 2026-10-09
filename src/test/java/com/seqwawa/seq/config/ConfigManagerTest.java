@@ -23,6 +23,38 @@ class ConfigManagerTest {
     Path tempDir;
 
     @Test
+    void gatheringSourceDefaultsToStaticAndPersistsApiOptIn() throws Exception {
+        Path configPath = tempDir.resolve("sequoia.json");
+        Files.writeString(configPath, "{}");
+        var manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        var setting = com.seqwawa.seq.map.WorldMapSettings.createGatheringNodeSourceSetting();
+        manager.register(setting);
+        manager.load();
+        assertEquals(com.seqwawa.seq.map.GatheringNodeSource.STATIC, setting.getValue());
+        setting.setValue(com.seqwawa.seq.map.GatheringNodeSource.WYNN_API);
+        manager.save();
+        assertTrue(Files.readString(configPath).contains("\"world_map.gathering_node_source\": \"WYNN_API\""));
+        var restored = com.seqwawa.seq.map.WorldMapSettings.createGatheringNodeSourceSetting();
+        var reloaded = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        reloaded.register(restored);
+        reloaded.load();
+        assertEquals(com.seqwawa.seq.map.GatheringNodeSource.WYNN_API, restored.getValue());
+        restored.reset();
+        assertEquals(com.seqwawa.seq.map.GatheringNodeSource.STATIC, restored.getValue());
+    }
+
+    @Test
+    void invalidSavedGatheringSourceUsesStaticDefault() throws Exception {
+        Path configPath = tempDir.resolve("sequoia.json");
+        Files.writeString(configPath, "{\"world_map.gathering_node_source\":\"unknown\"}");
+        var manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        var setting = com.seqwawa.seq.map.WorldMapSettings.createGatheringNodeSourceSetting();
+        manager.register(setting);
+        manager.load();
+        assertEquals(com.seqwawa.seq.map.GatheringNodeSource.STATIC, setting.getValue());
+    }
+
+    @Test
     void gearsharingProtectionDefaultsOnAndPersistsDisabledValue() throws Exception {
         Path configPath = tempDir.resolve("sequoia.json");
         Files.writeString(configPath, "{}");

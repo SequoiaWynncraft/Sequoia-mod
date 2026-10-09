@@ -1,5 +1,6 @@
 package com.seqwawa.seq.map;
 
+import com.seqwawa.seq.config.Setting;
 import java.util.EnumMap;
 import java.util.Set;
 import java.util.TreeSet;
@@ -10,6 +11,7 @@ public final class WorldMapSettings {
     private final EnumMap<GatheringProfession, Boolean> professionToggles = new EnumMap<>(GatheringProfession.class);
     private final EnumMap<WorldMapSidebarPanel, Boolean> sidebarPanels = new EnumMap<>(WorldMapSidebarPanel.class);
     private final Set<String> resourceFilters = new TreeSet<>();
+    private final Setting.EnumSetting<GatheringNodeSource> gatheringNodeSource = createGatheringNodeSourceSetting();
     private int clusterEps = GatheringNodeClusterer.DEFAULT_EPS;
     private int clusterMinSamples = GatheringNodeClusterer.DEFAULT_MIN_SAMPLES;
     private boolean showClusters = true;
@@ -44,6 +46,26 @@ public final class WorldMapSettings {
 
     public static WorldMapSettings getInstance() {
         return INSTANCE;
+    }
+
+    public static Setting.EnumSetting<GatheringNodeSource> createGatheringNodeSourceSetting() {
+        var setting = new Setting.EnumSetting<>("gathering_node_source", "world_map",
+                GatheringNodeSource.STATIC, GatheringNodeSource.class);
+        setting.setPresentation("Gathering node source",
+                "Use the bundled static file or fetch gathering nodes from the Wynncraft API.", "Gathering");
+        return setting;
+    }
+
+    public Setting.EnumSetting<GatheringNodeSource> gatheringNodeSourceSetting() {
+        return gatheringNodeSource;
+    }
+
+    public synchronized GatheringNodeSource gatheringNodeSource() {
+        return gatheringNodeSource.getValue();
+    }
+
+    public synchronized void setGatheringNodeSource(GatheringNodeSource source) {
+        gatheringNodeSource.setValue(source == null ? GatheringNodeSource.STATIC : source);
     }
 
     public synchronized int clusterEps() {
