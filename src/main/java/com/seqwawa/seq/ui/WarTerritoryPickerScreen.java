@@ -1,5 +1,11 @@
 package com.seqwawa.seq.ui;
 
+import static com.seqwawa.seq.ui.WarQueueMapOverlay.*;
+
+import static com.seqwawa.seq.ui.WarMapSettings.*;
+
+import static com.seqwawa.seq.ui.WarMapGeometry.*;
+
 import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.PickerControlLayout.HEADER_HEIGHT;
 import static com.seqwawa.seq.ui.PickerControlLayout.HEADER_LOCK_WIDTH;
@@ -43,7 +49,6 @@ import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 import com.seqwawa.seq.ui.widget.ColorWidget;
 import java.awt.Color;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -138,7 +143,7 @@ public final class WarTerritoryPickerScreen extends Screen {
 
     @Override
     public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        if (WarPlannerScreen.shouldBlurBackground(WarPlannerScreen.backgroundOpacityPercent())) {
+        if (WarPlannerDialogUi.shouldBlurBackground(WarPlannerDialogUi.backgroundOpacityPercent())) {
             super.renderBackground(graphics, mouseX, mouseY, partialTick);
         }
     }
@@ -166,7 +171,7 @@ public final class WarTerritoryPickerScreen extends Screen {
                 layout.header().y(),
                 layout.header().width(),
                 layout.header().height(),
-                WarPlannerScreen.plannerBackground(color(MAP_HEADER)));
+                WarPlannerDialogUi.plannerBackground(color(MAP_HEADER)));
         if (layout.headerTitleVisible()) {
             text(
                     canvas,
@@ -183,8 +188,8 @@ public final class WarTerritoryPickerScreen extends Screen {
                 canvas,
                 layout.resourceToggle(),
                 layout.resourceToggle().width() < HEADER_RESOURCE_WIDTH
-                        ? WarPlannerScreen.resourceColorsEnabled() ? "Res ✓" : "Res"
-                        : WarPlannerScreen.resourceColorsEnabled() ? "Resources ✓" : "Resources",
+                        ? WarMapSettings.resourceColorsEnabled() ? "Res ✓" : "Res"
+                        : WarMapSettings.resourceColorsEnabled() ? "Resources ✓" : "Resources",
                 false,
                 false,
                 isKeyboardTarget(RESOURCE_COLORS));
@@ -193,8 +198,8 @@ public final class WarTerritoryPickerScreen extends Screen {
                     canvas,
                     layout.lockToggle(),
                     layout.lockToggle().width() < HEADER_LOCK_WIDTH
-                            ? WarPlannerScreen.territoriesLocked() ? "Map ✓" : "Lock map"
-                            : WarPlannerScreen.territoriesLocked() ? "Main map locked ✓" : "Lock main map",
+                            ? WarMapSettings.territoriesLocked() ? "Map ✓" : "Lock map"
+                            : WarMapSettings.territoriesLocked() ? "Main map locked ✓" : "Lock main map",
                     false,
                     false,
                     isKeyboardTarget(LOCK_MAIN_MAP));
@@ -215,7 +220,7 @@ public final class WarTerritoryPickerScreen extends Screen {
         MapBounds visible = viewport.visibleBounds();
         Color selectedColor = new Color(zoneColorSetting.getValue());
         Map<String, WarPlannerSnapshot.TerritoryDetails> details = territoryDetails();
-        if (WarPlannerScreen.resourceColorsEnabled()) {
+        if (WarMapSettings.resourceColorsEnabled()) {
             for (GuildTerritory territory : territoryIndex.territories()) {
                 if (!access.isVisible(territory.name()) || !intersects(visible, territory.bounds())) continue;
                 MapBounds bounds = territory.bounds();
@@ -270,7 +275,7 @@ public final class WarTerritoryPickerScreen extends Screen {
                     nvgMouseY + 10,
                     tooltipWidth,
                     49,
-                    WarPlannerScreen.plannerBackground(color(BACKGROUND_POPUP)));
+                    WarPlannerDialogUi.plannerBackground(color(BACKGROUND_POPUP)));
             text(canvas, hoveredTerritory.name(), nvgMouseX + 17, nvgMouseY + 21, 10, color(TEXT_PRIMARY), false);
             text(canvas, resourceText, nvgMouseX + 17, nvgMouseY + 36, 9, color(TEXT_MUTED), false);
             text(canvas, actionText, nvgMouseX + 17, nvgMouseY + 48, 9,
@@ -285,7 +290,7 @@ public final class WarTerritoryPickerScreen extends Screen {
                 layout.sidebar().y(),
                 layout.sidebar().width(),
                 layout.sidebar().height(),
-                WarPlannerScreen.plannerBackground(color(MAP_SIDEBAR)));
+                WarPlannerDialogUi.plannerBackground(color(MAP_SIDEBAR)));
         text(canvas, "War map zone", PADDING, 20, 17, color(ACCENT_PRIMARY), false);
         label(canvas, "Name", layout.nameField().y() - 14);
         field(canvas, layout.nameField(), zoneName, focus == Focus.NAME || isKeyboardTarget(NAME), saving);
@@ -628,12 +633,12 @@ public final class WarTerritoryPickerScreen extends Screen {
     }
 
     private void toggleResourceColors() {
-        SeqClient.getWarPlannerResourceColorsSetting().setValue(!WarPlannerScreen.resourceColorsEnabled());
+        SeqClient.getWarPlannerResourceColorsSetting().setValue(!WarMapSettings.resourceColorsEnabled());
         SeqClient.getConfigManager().save();
     }
 
     private void toggleMainMapLock() {
-        SeqClient.getWarPlannerLockTerritoriesSetting().setValue(!WarPlannerScreen.territoriesLocked());
+        SeqClient.getWarPlannerLockTerritoriesSetting().setValue(!WarMapSettings.territoriesLocked());
         SeqClient.getConfigManager().save();
     }
 
@@ -852,7 +857,7 @@ public final class WarTerritoryPickerScreen extends Screen {
                         .filter(java.util.Objects::nonNull)
                         .toList();
         MapBounds bounds = focusSelection && !selected.isEmpty()
-                ? WarPlannerScreen.zonePreviewBounds(selected)
+                ? WarMapGeometry.zonePreviewBounds(selected)
                 : MapCalibration.fullBounds();
         double centerX = (bounds.minX() + bounds.maxX()) / 2;
         double centerZ = (bounds.minZ() + bounds.maxZ()) / 2;

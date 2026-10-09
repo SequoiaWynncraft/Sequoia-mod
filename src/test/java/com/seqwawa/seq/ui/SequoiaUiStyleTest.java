@@ -36,8 +36,8 @@ class SequoiaUiStyleTest {
         Color fallback = new Color(10, 20, 30, 0);
         try {
             ThemeManager.previewTheme(new Theme("marker-alpha-check", Map.of(TEXT_SECONDARY, fallback)));
-            assertEquals(fallback, WarPlannerScreen.warQueuePulseColor(null, 0));
-            assertEquals(fallback, WarPlannerScreen.warQueuePulseColor(null, 750));
+            assertEquals(fallback, WarQueueMapOverlay.warQueuePulseColor(null, 0));
+            assertEquals(fallback, WarQueueMapOverlay.warQueuePulseColor(null, 750));
         } finally {
             ThemeManager.previewTheme(previous);
         }
