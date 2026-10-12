@@ -128,6 +128,7 @@ public final class DiscordRankChatDecorator {
     private static volatile boolean debug;
     private static boolean suppressed;
     private static boolean bridgeSequenceOpen;
+    private static boolean guildSequenceOpen;
     /** The last line this mod displayed itself, kept so it can be recognised by identity. */
     private static Component lastBridgeLine;
     /** Bridge components and their exact styled rail while Minecraft may still rewrap them. */
@@ -158,6 +159,7 @@ public final class DiscordRankChatDecorator {
                 || RECENT_COLORED_BRIDGE_LINES.stream().anyMatch(line -> line.message() == message);
         if (!ownLine) {
             bridgeSequenceOpen = false;
+            guildSequenceOpen = false;
         }
 
         if (message == null || ownLine) {
@@ -786,10 +788,24 @@ public final class DiscordRankChatDecorator {
                         .append(continuation ? Component.empty() : Component.literal(" "));
     }
 
+    /** Uses the guild arrow for a new block, then the bar for consecutive relayed messages. */
+    static MutableComponent guildSenderPrefix() {
+        return guildPrefix(guildSequenceOpen);
+    }
+
     /** Retains guild wrapping and bypasses re-decoration without opening a Discord block. */
     static void displayGuildLine(Component line, Runnable display) {
         rememberColoredBridgeLine(line, guildPrefix(true));
         displayUndecorated(line, display, false);
+        guildSequenceOpen = true;
+    }
+
+    /** Chat clearing and disconnects must start the next relayed message with a full prefix. */
+    public static void resetChatSequences() {
+        bridgeSequenceOpen = false;
+        guildSequenceOpen = false;
+        lastBridgeLine = null;
+        RECENT_COLORED_BRIDGE_LINES.clear();
     }
 
     /**
@@ -1059,6 +1075,7 @@ public final class DiscordRankChatDecorator {
         try {
             display.run();
             bridgeSequenceOpen = opensBridgeSequence;
+            guildSequenceOpen = false;
         } finally {
             suppressed = false;
         }

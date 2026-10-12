@@ -826,7 +826,7 @@ public class ChatManager {
     static MutableComponent guildSenderLine(
             ConnectionManager.GuildChatMessage msg, String text, RankPresentation rank) {
         return RankGradientAnimation.batchRegistrations(() -> {
-            MutableComponent line = Component.empty().append(DiscordRankChatDecorator.guildPrefix(false));
+            MutableComponent line = Component.empty().append(DiscordRankChatDecorator.guildSenderPrefix());
             TextColor textColor = DiscordRankChatDecorator.inGameGuildChatTextColor();
             if (rank != null) {
                 line.append(DiscordRankChatDecorator.rankPill(rank, null, textColor, msg.username()))
