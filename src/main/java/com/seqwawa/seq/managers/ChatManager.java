@@ -798,11 +798,16 @@ public class ChatManager {
                 line.append(DiscordRankChatDecorator.rankPill(rank, null, textColor, msg.username()))
                         .append(Component.literal(" "));
             }
-            String name = msg.nickname() == null || msg.nickname().isBlank() ? msg.username() : msg.nickname();
-            Style identity = Style.EMPTY.withColor(ChatFormatting.DARK_AQUA).withInsertion(msg.username());
+            boolean hasNickname = msg.nickname() != null && !msg.nickname().isBlank();
+            String name = hasNickname ? msg.nickname() : msg.username();
+            Style identity = Style.EMPTY.withColor(ChatFormatting.DARK_AQUA)
+                    .withInsertion(msg.username()).withItalic(hasNickname);
             if (!name.equals(msg.username())) {
                 identity = identity.withHoverEvent(new HoverEvent.ShowText(
-                        Component.literal(name + "'s real username is " + msg.username())));
+                        Component.empty()
+                                .append(Component.literal(name + "'s ").withStyle(ChatFormatting.WHITE))
+                                .append(Component.literal("real name is ").withStyle(ChatFormatting.GRAY))
+                                .append(Component.literal(msg.username()).withStyle(ChatFormatting.WHITE))));
             }
             line.append(rank == null ? Component.literal(name).withStyle(identity)
                     : DiscordRankChatDecorator.colouredName(name, rank, identity));

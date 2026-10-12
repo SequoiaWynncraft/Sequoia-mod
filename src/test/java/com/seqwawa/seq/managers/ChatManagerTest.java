@@ -58,7 +58,7 @@ class ChatManagerTest {
             GuildChatMarkers.observe(ComponentTextEditor.flatten(Component.literal("abcd").withStyle(style)), 4);
             GuildChatMarkers.observe(ComponentTextEditor.flatten(Component.literal("x").withStyle(style)), 1);
             assertEquals("abcd ", DiscordRankChatDecorator.guildPrefix(false).getString());
-            assertEquals("x ", DiscordRankChatDecorator.guildPrefix(true).getString());
+            assertEquals("x", DiscordRankChatDecorator.guildPrefix(true).getString());
             assertEquals(style, ComponentTextEditor.flatten(DiscordRankChatDecorator.guildPrefix(false)).getFirst().style());
         } finally {
             GuildChatMarkers.reset();

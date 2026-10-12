@@ -783,7 +783,7 @@ public final class DiscordRankChatDecorator {
         return marker == null
                 ? Component.literal(continuation ? "│ " : "➜ ").withStyle(ChatFormatting.AQUA)
                 : Component.empty().append(Component.literal(marker.glyphs()).withStyle(marker.style()))
-                        .append(Component.literal(" "));
+                        .append(continuation ? Component.empty() : Component.literal(" "));
     }
 
     /** Retains guild wrapping and bypasses re-decoration without opening a Discord block. */
