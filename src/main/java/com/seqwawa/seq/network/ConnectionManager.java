@@ -79,7 +79,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             Map.entry("war_status", 5),
             Map.entry("war_tower_update", 5));
 
-    private static ConnectionManager instance;
+    private static volatile ConnectionManager instance;
     private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "seq-reconnect");
         t.setDaemon(true);
@@ -92,7 +92,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     });
 
     @Getter
-    private boolean authenticated = false;
+    private volatile boolean authenticated = false;
     private volatile boolean guildRankTrackingSupported;
     private static final GuildRankObservationQueue guildRankObservations = new GuildRankObservationQueue();
 
@@ -1082,6 +1082,18 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         }
     }
 
+    /** Rechecks delivery eligibility when the client thread runs, rather than when the socket receives it. */
+    static Runnable guildChatDelivery(
+            JsonObject json, BooleanSupplier currentSession, BooleanSupplier inQueue) {
+        return () -> {
+            if (!currentSession.getAsBoolean()) {
+                SeqClient.LOGGER.debug("[WebSocket] Ignoring guild_chat from an expired socket or game session");
+                return;
+            }
+            dispatchGuildChat(json, inQueue.getAsBoolean());
+        };
+    }
+
     private static String guildChatString(JsonObject json, String key) {
         var value = json.get(key);
         return value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isString()
@@ -1998,7 +2010,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                             emeraldCurrent, emeraldMax, aspectCurrent, aspectMax));
                 }
                 case "guild_chat" -> {
-                    Minecraft.getInstance().execute(() -> dispatchGuildChat(json, ServerQueueDetector.isInQueue()));
+                    Minecraft minecraft = Minecraft.getInstance();
+                    var receivedConnection = minecraft.getConnection();
+                    User receivedUser = minecraft.getUser();
+                    minecraft.execute(guildChatDelivery(json,
+                            () -> instance == this && isOpen() && authenticated
+                                    && receivedConnection != null && receivedConnection == minecraft.getConnection()
+                                    && receivedUser != null && receivedUser == minecraft.getUser(),
+                            ServerQueueDetector::isInQueue));
                 }
                 case "discord_chat" -> {
                     if (discordChatHandler != null) {

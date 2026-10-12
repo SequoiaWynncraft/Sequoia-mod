@@ -125,6 +125,42 @@ class ChatManagerTest {
     }
 
     @Test
+    void guildContinuationSpacingMatchesTheFullPrefixAndPreservesTheMarkerFont() {
+        GuildChatMarkers.reset();
+        java.util.function.ToIntFunction<Component> width = component -> component.getString().codePoints()
+                .map(glyph -> switch (glyph) {
+                    case '➜', ' ' -> 4;
+                    case '\uF8FE' -> -1;
+                    default -> 1;
+                }).sum();
+        try {
+            Component fallbackArrow = DiscordRankChatDecorator.guildPrefix(false);
+            var fallbackBar = DiscordRankChatDecorator.alignPrefixToReference(
+                    DiscordRankChatDecorator.guildPrefix(true), fallbackArrow, width);
+            assertEquals(width.applyAsInt(fallbackArrow), width.applyAsInt(fallbackBar));
+            assertEquals("│ " + "\uF8FD".repeat(3), fallbackBar.getString());
+
+            var style = Style.EMPTY.withFont(new net.minecraft.network.chat.FontDescription.Resource(
+                    net.minecraft.resources.Identifier.fromNamespaceAndPath("test", "guild")))
+                    .withColor(ChatFormatting.AQUA);
+            GuildChatMarkers.observe(ComponentTextEditor.flatten(Component.literal("abcd").withStyle(style)), 4);
+            GuildChatMarkers.observe(ComponentTextEditor.flatten(Component.literal("x").withStyle(style)), 1);
+            Component arrow = DiscordRankChatDecorator.guildPrefix(false);
+            var bar = DiscordRankChatDecorator.alignPrefixToReference(
+                    DiscordRankChatDecorator.guildPrefix(true), arrow, width);
+            assertEquals(width.applyAsInt(arrow), width.applyAsInt(bar));
+            assertEquals("x" + "\uF8FD".repeat(7), bar.getString());
+            var fragments = ComponentTextEditor.flatten(bar);
+            assertEquals(style, fragments.getFirst().style());
+            assertEquals(new net.minecraft.network.chat.FontDescription.Resource(
+                    net.minecraft.resources.Identifier.fromNamespaceAndPath("seq", "discord_bridge")),
+                    fragments.getLast().style().getFont());
+        } finally {
+            GuildChatMarkers.reset();
+        }
+    }
+
+    @Test
     void forwardedGuildChatUsesRankAndBlankNicknameFallsBackToUsername() {
         RankPresentation rank = new RankPresentation(new DiscordRank("rank.sapling", "Sapling", 88), ColorRamp.of(0x4CB4FA));
         var line = ChatManager.guildSenderLine(new ConnectionManager.GuildChatMessage("RealName", " ", "hello"), "hello", rank);

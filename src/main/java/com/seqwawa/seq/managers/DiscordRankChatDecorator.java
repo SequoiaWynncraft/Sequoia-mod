@@ -20,6 +20,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.ToIntFunction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.minecraft.ChatFormatting;
@@ -782,10 +783,11 @@ public final class DiscordRankChatDecorator {
 
     static MutableComponent guildPrefix(boolean continuation) {
         GuildChatMarkers.Marker marker = continuation ? GuildChatMarkers.bar() : GuildChatMarkers.arrow();
-        return marker == null
+        MutableComponent prefix = marker == null
                 ? Component.literal(continuation ? "│ " : "➜ ").withStyle(ChatFormatting.AQUA)
                 : Component.empty().append(Component.literal(marker.glyphs()).withStyle(marker.style()))
                         .append(continuation ? Component.empty() : Component.literal(" "));
+        return continuation ? alignToGuildColumn(prefix, true) : prefix;
     }
 
     /** Uses the guild arrow for a new block, then the bar for consecutive relayed messages. */
@@ -880,28 +882,26 @@ public final class DiscordRankChatDecorator {
      * captured yet — which is what made the alignment come and go.
      */
     private static MutableComponent alignToGuildColumn(MutableComponent prefix) {
+        return alignToGuildColumn(prefix, false);
+    }
+
+    private static MutableComponent alignToGuildColumn(MutableComponent prefix, boolean useFallbackGuildArrow) {
+        if (GuildChatMarkers.arrow() == null && !useFallbackGuildArrow) {
+            return prefix;
+        }
         try {
             Font font = Minecraft.getInstance().font;
-            int target = guildColumnWidth(font);
-            return target < 0 ? prefix : appendAdvance(prefix, target - font.width(prefix));
+            return alignPrefixToReference(prefix, guildPrefix(false), font::width);
         } catch (RuntimeException | LinkageError ignored) {
             // No client available (unit tests); the prefix keeps its natural width.
             return prefix;
         }
     }
 
-    /**
-     * Width of everything Wynncraft draws before a guild badge: its marker plus the
-     * space after it. Negative until a guild line has been seen, since the marker is
-     * captured from real chat rather than redrawn.
-     */
-    private static int guildColumnWidth(Font font) {
-        GuildChatMarkers.Marker marker = GuildChatMarkers.arrow();
-        if (marker == null) {
-            return -1;
-        }
-        return font.width(Component.literal(marker.glyphs()).withStyle(marker.style()))
-                + font.width(Component.literal(" "));
+    /** Shares the same invisible spacing for guild and Discord prefixes, using their rendered font widths. */
+    static MutableComponent alignPrefixToReference(
+            MutableComponent prefix, Component reference, ToIntFunction<Component> width) {
+        return appendAdvance(prefix, width.applyAsInt(reference) - width.applyAsInt(prefix));
     }
 
     /**

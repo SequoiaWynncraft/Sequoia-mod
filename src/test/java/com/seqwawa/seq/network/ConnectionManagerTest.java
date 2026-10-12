@@ -15,9 +15,48 @@ import com.seqwawa.seq.model.WynnClassType;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 
 class ConnectionManagerTest {
+
+    @Test
+    void delayedGuildChatIsDroppedWhenItsSessionExpiresBeforeDelivery() {
+        var received = new java.util.ArrayList<ConnectionManager.GuildChatMessage>();
+        var currentSession = new AtomicBoolean(true);
+        var payload = JsonParser.parseString(
+                "{\"username\":\"Sender\",\"message\":\"hello\",\"should_be_displayed\":true}").getAsJsonObject();
+        ConnectionManager.onGuildChat(received::add);
+        try {
+            Runnable delivery = ConnectionManager.guildChatDelivery(payload, currentSession::get, () -> {
+                throw new AssertionError("Expired sessions must be rejected before reading queue state");
+            });
+            // Simulate a disconnect, socket replacement, or game/account change while waiting on the client thread.
+            currentSession.set(false);
+            delivery.run();
+            assertTrue(received.isEmpty());
+        } finally {
+            ConnectionManager.onGuildChat(null);
+        }
+    }
+
+    @Test
+    void delayedGuildChatUsesQueueStateAtDeliveryForTheCurrentSession() {
+        var received = new java.util.ArrayList<ConnectionManager.GuildChatMessage>();
+        var inQueue = new AtomicBoolean(false);
+        var payload = JsonParser.parseString(
+                "{\"username\":\"Sender\",\"message\":\"hello\",\"should_be_displayed\":false}").getAsJsonObject();
+        ConnectionManager.onGuildChat(received::add);
+        try {
+            Runnable delivery = ConnectionManager.guildChatDelivery(payload, () -> true, inQueue::get);
+            assertTrue(received.isEmpty());
+            inQueue.set(true);
+            delivery.run();
+            assertEquals(List.of(new ConnectionManager.GuildChatMessage("Sender", null, "hello")), received);
+        } finally {
+            ConnectionManager.onGuildChat(null);
+        }
+    }
 
     private static void dispatchGuildChat(String payload, boolean inQueue) {
         ConnectionManager.dispatchGuildChat(JsonParser.parseString(payload).getAsJsonObject(), inQueue);
