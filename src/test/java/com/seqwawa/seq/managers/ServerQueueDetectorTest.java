@@ -12,7 +12,7 @@ class ServerQueueDetectorTest {
     private static final Component SUBTITLE = Component.literal("You are in position 12");
 
     @Test
-    void requiresBothExactPrefixesAndAnActiveTitle() {
+    void requiresBothQueuePhrasesAndAnActiveTitle() {
         assertTrue(ServerQueueDetector.matchesQueueTitle(TITLE, SUBTITLE, 1, true));
         assertFalse(ServerQueueDetector.matchesQueueTitle(TITLE, SUBTITLE, 0, true));
         assertFalse(ServerQueueDetector.matchesQueueTitle(TITLE, SUBTITLE, -1, true));
@@ -23,7 +23,17 @@ class ServerQueueDetectorTest {
         assertFalse(ServerQueueDetector.matchesQueueTitle(TITLE, Component.literal("Loading"), 20, true));
         assertFalse(ServerQueueDetector.matchesQueueTitle(Component.literal("queueing for WC1"), SUBTITLE, 20, true));
         assertFalse(ServerQueueDetector.matchesQueueTitle(TITLE, Component.literal("you are in position 12"), 20, true));
-        assertFalse(ServerQueueDetector.matchesQueueTitle(Component.literal(" Queueing for WC1"), SUBTITLE, 20, true));
+        assertTrue(ServerQueueDetector.matchesQueueTitle(Component.literal(" Queueing for WC1"), SUBTITLE, 20, true));
+    }
+
+    @Test
+    void findsQueuePhrasesAfterLiteralColorCodesAndOtherLeadingText() {
+        assertTrue(ServerQueueDetector.matchesQueueTitle(
+                Component.literal("§6§lQueueing for WC1"),
+                Component.literal("§eYou are in position 12"), 20, true));
+        assertTrue(ServerQueueDetector.matchesQueueTitle(
+                Component.literal("[Server] Queueing for WC1"),
+                Component.literal("[Queue] You are in position 12"), 20, true));
     }
 
     @Test

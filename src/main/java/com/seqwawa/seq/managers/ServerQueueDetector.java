@@ -23,7 +23,7 @@ public final class ServerQueueDetector {
     static boolean matchesQueueTitle(
             Component title, Component subtitle, int titleTime, boolean connectedToMainServer) {
         return connectedToMainServer && titleTime > 0 && title != null && subtitle != null
-                && title.getString().startsWith("Queueing for")
-                && subtitle.getString().startsWith("You are in position");
+                && title.getString().contains("Queueing for")
+                && subtitle.getString().contains("You are in position");
     }
 }
