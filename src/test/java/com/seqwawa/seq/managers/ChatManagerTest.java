@@ -28,6 +28,47 @@ import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
 class ChatManagerTest {
 
     @Test
+    void queueCommandsExtractOnlyLowercaseGuildShorthand() {
+        assertEquals("hello", ChatManager.queueGuildCommandMessage("g hello"));
+        assertEquals("chat hello", ChatManager.queueGuildCommandMessage("g chat hello"));
+        assertEquals("hello  guild", ChatManager.queueGuildCommandMessage("g \t hello  guild  "));
+        assertEquals("hello", ChatManager.queueGuildCommandMessage("g\thello"));
+        for (String command : List.of("g", "g ", "g\t  ", "G hello", "guild chat hello", "gc hello", "ghello", " g hello", "seq connect")) {
+            assertNull(ChatManager.queueGuildCommandMessage(command), command);
+        }
+        assertNull(ChatManager.queueGuildCommandMessage(null));
+    }
+
+    @Test
+    void queuedGuildCommandsSendOnceAndCancelEvenWhenSendingFails() {
+        var sent = new java.util.ArrayList<String>();
+        var failures = new java.util.concurrent.atomic.AtomicInteger();
+        assertFalse(ChatManager.allowQueueGuildCommand("g hello", true, message -> {
+            sent.add(message);
+            return true;
+        }, failures::incrementAndGet));
+        assertEquals(List.of("hello"), sent);
+        assertEquals(0, failures.get());
+
+        assertFalse(ChatManager.allowQueueGuildCommand("g another", true, message -> {
+            sent.add(message);
+            return false;
+        }, failures::incrementAndGet));
+        assertEquals(List.of("hello", "another"), sent);
+        assertEquals(1, failures.get());
+
+        assertTrue(ChatManager.allowQueueGuildCommand("g normal", false, message -> {
+            throw new AssertionError("Non-queue commands must pass through");
+        }, failures::incrementAndGet));
+        for (String command : List.of("g", "g ", "guild chat hello", "seq connect")) {
+            assertTrue(ChatManager.allowQueueGuildCommand(command, true, message -> {
+                throw new AssertionError("Unmatched commands must pass through");
+            }, failures::incrementAndGet));
+        }
+        assertEquals(1, failures.get());
+    }
+
+    @Test
     void guildStylingIsIndependentOfDiscordSettingsAndHonorsGuildDecorationGate() {
         var previousRanks = SeqClient.showDiscordRanksSetting;
         var previousChat = SeqClient.showDiscordChatSetting;

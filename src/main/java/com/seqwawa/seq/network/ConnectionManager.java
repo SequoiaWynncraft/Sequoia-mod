@@ -41,6 +41,7 @@ import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.model.ChatItemPreview;
 import com.seqwawa.seq.managers.GuildRankEventParser;
 import com.seqwawa.seq.managers.GuildStorageTracker;
+import com.seqwawa.seq.managers.ServerQueueDetector;
 import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.model.BombShareType;
 import com.seqwawa.seq.model.GuildWarSubmission;
@@ -967,35 +968,42 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     public void sendGuildChat(
             String username, String nickname, String message, String avatarUrl, List<ChatItemPreview> itemPreviews) {
+        sendGuildChat(username, nickname, message, avatarUrl, itemPreviews, false);
+    }
+
+    /** Returns true when handed to the socket; delivery is confirmed by the backend echo. */
+    public boolean sendGuildChat(
+            String username, String nickname, String message, String avatarUrl,
+            List<ChatItemPreview> itemPreviews, boolean shouldBeDisplayed) {
         if (!isOpen()) {
             SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat dropped: socket not open uri={}", getURI());
-            return;
+            return false;
         }
         if (!authenticated) {
             SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat dropped: not authenticated uri={}", getURI());
-            return;
+            return false;
         }
         if (authFailed || notInGuild) {
             SeqClient.LOGGER.warn(
                     "[ConnectionManager] sendGuildChat dropped: authFailed={} notInGuild={}", authFailed, notInGuild);
-            return;
+            return false;
         }
 
         String cleanedMessage = message == null ? "" : message.trim();
         if (cleanedMessage.isBlank()) {
             SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat dropped: empty message");
-            return;
+            return false;
         }
         JsonObject msg;
         try {
-            msg = buildGuildChatPayload(username, nickname, cleanedMessage, avatarUrl, itemPreviews);
+            msg = buildGuildChatPayload(username, nickname, cleanedMessage, avatarUrl, itemPreviews, shouldBeDisplayed);
         } catch (IllegalArgumentException exception) {
             SeqClient.LOGGER.warn(
                     "[ConnectionManager] sendGuildChat dropped: message too long={} max={}",
                     cleanedMessage.length(),
                     MAX_GUILD_CHAT_MESSAGE_LENGTH);
-            notify("Guild chat message too long.");
-            return;
+            if (!shouldBeDisplayed) notify("Guild chat message too long.");
+            return false;
         }
         SeqClient.LOGGER.info(
                 "[ConnectionManager] Sending guild_chat uri={} username='{}' nickname='{}' message='{}'",
@@ -1003,12 +1011,23 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 extractPrimitiveString(msg, "username"),
                 extractPrimitiveString(msg, "nickname"),
                 cleanedMessage);
-        send("guild_chat", msg);
+        try {
+            return send("guild_chat", msg);
+        } catch (WebsocketNotConnectedException exception) {
+            SeqClient.LOGGER.warn("[ConnectionManager] sendGuildChat failed: socket closed during send");
+            return false;
+        }
     }
 
     /** Builds the wire payload used by sendGuildChat, before session/throttle checks. */
     static JsonObject buildGuildChatPayload(
             String username, String nickname, String message, String avatarUrl, List<ChatItemPreview> itemPreviews) {
+        return buildGuildChatPayload(username, nickname, message, avatarUrl, itemPreviews, false);
+    }
+
+    static JsonObject buildGuildChatPayload(
+            String username, String nickname, String message, String avatarUrl,
+            List<ChatItemPreview> itemPreviews, boolean shouldBeDisplayed) {
         String cleanedMessage = message == null ? "" : message.trim();
         if (cleanedMessage.isBlank()) {
             throw new IllegalArgumentException("Guild chat message is required");
@@ -1021,7 +1040,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         String safeNickname = sanitizeNickname(nickname);
         JsonObject msg = new JsonObject();
         msg.addProperty("type", "guild_chat");
-        msg.addProperty("should_be_displayed", false);
+        msg.addProperty("should_be_displayed", shouldBeDisplayed);
         if (safeReportedUsername != null) {
             msg.addProperty("username", safeReportedUsername);
         }
@@ -1037,18 +1056,30 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return msg;
     }
 
-    static boolean shouldDisplayGuildChat(JsonObject json) {
+    static boolean shouldDisplayGuildChat(JsonObject json, boolean inQueue) {
         var flag = json.get("should_be_displayed");
-        return flag != null && flag.isJsonPrimitive() && flag.getAsJsonPrimitive().isBoolean()
-                && flag.getAsBoolean();
+        return inQueue || (flag != null && flag.isJsonPrimitive() && flag.getAsJsonPrimitive().isBoolean()
+                && flag.getAsBoolean());
     }
 
     static GuildChatMessage parseGuildChatMessage(JsonObject json) {
-        if (!shouldDisplayGuildChat(json)) return null;
         String username = guildChatString(json, "username");
         String message = guildChatString(json, "message");
         if (username == null || message == null) return null;
         return new GuildChatMessage(username, guildChatString(json, "nickname"), message);
+    }
+
+    /** Called on the client thread so queue eligibility uses the current GUI state. */
+    static void dispatchGuildChat(JsonObject json, boolean inQueue) {
+        if (!shouldDisplayGuildChat(json, inQueue)) return;
+        GuildChatMessage msg = parseGuildChatMessage(json);
+        if (msg == null) {
+            SeqClient.LOGGER.warn("[WebSocket] Ignoring malformed displayable guild_chat");
+        } else if (guildChatHandler != null) {
+            guildChatHandler.accept(msg);
+        } else {
+            SeqClient.LOGGER.warn("[WebSocket] Received guild_chat but handler is not registered");
+        }
     }
 
     private static String guildChatString(JsonObject json, String key) {
@@ -1967,15 +1998,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                             emeraldCurrent, emeraldMax, aspectCurrent, aspectMax));
                 }
                 case "guild_chat" -> {
-                    if (!shouldDisplayGuildChat(json)) return;
-                    GuildChatMessage msg = parseGuildChatMessage(json);
-                    if (msg == null) {
-                        SeqClient.LOGGER.warn("[WebSocket] Ignoring malformed displayable guild_chat");
-                    } else if (guildChatHandler != null) {
-                        guildChatHandler.accept(msg);
-                    } else {
-                        SeqClient.LOGGER.warn("[WebSocket] Received guild_chat but handler is not registered");
-                    }
+                    Minecraft.getInstance().execute(() -> dispatchGuildChat(json, ServerQueueDetector.isInQueue()));
                 }
                 case "discord_chat" -> {
                     if (discordChatHandler != null) {
