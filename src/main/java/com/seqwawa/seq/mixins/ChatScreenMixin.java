@@ -2,6 +2,7 @@ package com.seqwawa.seq.mixins;
 
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
+import com.seqwawa.seq.images.ImagePreviews;
 import com.seqwawa.seq.utils.SequoiaProfileLinks;
 import java.net.URI;
 import net.minecraft.client.Minecraft;
@@ -37,6 +38,10 @@ public abstract class ChatScreenMixin extends Screen {
             cancellable = true)
     private void seq$openSequoiaProfile(
             Style style, boolean insertionMode, CallbackInfoReturnable<Boolean> callback) {
+        if (ImagePreviews.click(style, insertionMode, this)) {
+            callback.setReturnValue(true);
+            return;
+        }
         if (!insertionMode || style == null || !isEnabled()) {
             return;
         }

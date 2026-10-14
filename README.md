@@ -19,6 +19,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Automatic backend authentication
 - Automatic connection to Sequoia services
 - In-game Discord chat bridge
+- Hover previews for image and GIF links in chat, decoded in a sandboxed helper process
 - Wynntils item links rendered in Discord with item-encoding-v3 stats, major IDs, crafted details, and mounts
 - Clickable world names in chat, so a called-out world is one click away
 - Guild members panel: who is online, on which world, which raid builds they own, and who is mid-raid
@@ -76,6 +77,8 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/allyraids [minutes]`: show recent shared raids with current allies (Sequoia members only)
 - `/seq ignore <IGN>`: hide incoming Discord bridge messages from a Minecraft username
 - `/seq unignore <IGN>`: show incoming Discord bridge messages from that username again
+- `/seqimages preview <url>`: show a supported image link as a previewable chat line
+- `/seqimages clear`: drop cached previews and cancel any still loading
 
 <details>
 <summary>Full command list</summary>
@@ -373,6 +376,20 @@ presenting missing data as zero completions.
 Tier colours use the `achievement.bronze` through `achievement.mythril` theme keys. See
 [`docs/theme-template.theme.yml`](docs/theme-template.theme.yml) for the complete palette schema.
 
+## Chat image previews
+
+Supported links in chat become **[View Image]** or **[View GIF]**: hover to preview, click to enlarge,
+shift-click to insert the URL. **Show image and GIF previews** (under Discord chat) turns the feature and all
+of its requests off.
+
+- **Sources:** HTTPS GIF, PNG and JPEG links from Discord, Tenor, Giphy, Imgur and Klipy, plus Klipy's MP4
+  renditions of GIFs.
+- **Privacy:** previews are fetched only from those hosts, which see your IP address as a browser would.
+  Other hosts, redirects off the list, private addresses, bodies over 8 MiB and downloads over 20 seconds
+  are refused.
+- **Decoding:** media is never decoded in the game. A bundled helper runs a fixed FFmpeg build in WebAssembly
+  under an OS sandbox (seccomp on Linux, Seatbelt on macOS, an AppContainer on Windows).
+
 ## Settings
 
 The settings screen includes controls for:
@@ -439,6 +456,11 @@ theme token for disabled, active, and hover states. Add alpha adjustments only w
 
 MIT: `LICENSE.txt`.
 
+The chat image decoder bundles third-party components (FFmpeg, zlib, wasi-libc, Wasmtime and
+other Rust crates, the Rust standard library). Their notices ship in the JAR under `licenses/`,
+indexed by `licenses/NOTICES.txt`. Each release also publishes
+`sequoia-images-native-source.zip`, the corresponding source of the bundled decoder.
+
 ### Player List party synchronization
 
 Inviting through Player List enables and saves **Sync with Wynn party** when the
@@ -456,3 +478,6 @@ available. This does not create or verify account links on anyone's behalf.
 
 Shared client/backend wire checks and fixture maintenance are documented in
 [`docs/game-websocket-contract.md`](docs/game-websocket-contract.md).
+
+Native image decoder builds and upstream verification are documented in
+[`native/README.md`](native/README.md).
