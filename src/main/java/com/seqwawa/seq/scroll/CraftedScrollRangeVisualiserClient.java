@@ -69,10 +69,17 @@ public final class CraftedScrollRangeVisualiserClient {
             return;
         }
 
+        // This event runs before the frame installs its matrix stack, so the first
+        // frame of a world has none yet and simply goes unringed.
+        PoseStack matrices = context.matrices();
+        if (matrices == null) {
+            return;
+        }
+
         float tickDelta = client.getDeltaTracker().getGameTimeDeltaPartialTick(false);
         Vec3 center = client.player.getPosition(tickDelta);
         Vec3 camera = client.gameRenderer.getMainCamera().position();
-        PoseStack.Pose pose = context.matrices().last();
+        PoseStack.Pose pose = matrices.last();
         VertexConsumer vertices = context.consumers().getBuffer(RenderTypes.debugQuads());
         renderRingWall(vertices, pose, center, camera, RANGE, configuredColor(), RING_ALPHA);
     }
