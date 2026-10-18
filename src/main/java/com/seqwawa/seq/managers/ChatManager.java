@@ -261,7 +261,7 @@ public class ChatManager {
         if (!shouldRelayForLocalGuild())
             return;
 
-        ParsedMessage parsed = parseGuildMessage(message);
+        ParsedMessage parsed = parseGuildMessage(message, true);
         if (parsed == null)
             return;
 
@@ -392,6 +392,10 @@ public class ChatManager {
      * the component with a valid username insertion to identify the speaker.
      */
     static ParsedMessage parseGuildMessage(Component message) {
+        return parseGuildMessage(message, false);
+    }
+
+    static ParsedMessage parseGuildMessage(Component message, boolean useCachedNickname) {
         String cleaned = PacketTextNormalizer.normalizeForParsing(message == null ? null : message.getString());
         Matcher matcher = CHAT_PATTERN.matcher(cleaned);
 
@@ -413,6 +417,9 @@ public class ChatManager {
         // Search the component tree for the real username. Prefer candidates that
         // differ from the displayed nickname (e.g. nicked/decorated names).
         String realUsername = findRealUsername(message, displayedName);
+        if (useCachedNickname && (realUsername == null || !realUsername.matches("[a-zA-Z0-9_]{3,16}"))) {
+            realUsername = NicknameResolverCache.resolveUsername(displayedName);
+        }
         String avatarUsername = resolveAvatarUsername(displayedName, realUsername);
         String senderUsername = avatarUsername == null ? normalizeDisplayNameAsUsername(displayedName) : avatarUsername;
         if (senderUsername == null) {
@@ -436,7 +443,9 @@ public class ChatManager {
                         + URLEncoder.encode(avatarUsername, StandardCharsets.UTF_8).replace("+", "%20")
                         + "/128";
         String nickname = deriveNickname(displayedName, senderUsername);
-        NicknameResolverCache.remember(displayedName, senderUsername);
+        if (realUsername != null && realUsername.matches("[a-zA-Z0-9_]{3,16}")) {
+            NicknameResolverCache.remember(displayedName, realUsername);
+        }
         return new ParsedMessage(senderUsername, nickname, content, avatarUrl, itemPreviewResult.previews());
     }
 
