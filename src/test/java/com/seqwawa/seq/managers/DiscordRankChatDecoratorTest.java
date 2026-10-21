@@ -32,6 +32,7 @@ import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
 import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class DiscordRankChatDecoratorTest {
@@ -40,6 +41,12 @@ class DiscordRankChatDecoratorTest {
     @BeforeEach
     void forgetCapturedMarkers() {
         GuildChatMarkers.reset();
+        NicknameResolverCache.reset();
+    }
+
+    @AfterEach
+    void forgetNicknameCache() {
+        NicknameResolverCache.reset();
     }
 
     private static final RankPresentation SAPLING = presentation("rank.sapling", "Sapling", 88, 0x4CB4FA);
@@ -103,6 +110,86 @@ class DiscordRankChatDecoratorTest {
 
         assertEquals(List.of("sapling"), pillLabels(decorated));
         assertTrue(decorated.getString().contains("EightySix(ArcLeRetour): =')"));
+    }
+
+    @Test
+    void poisonedPartyCacheCannotGiveAnUnrankedAccountYearnmsDruidRank() {
+        NicknameResolverCache.remember("IChooseThou", "Yearnm");
+        Component message = guildLine("RECRUIT", "IChooseThou", "IChooseThou", "hello");
+        assertSame(message, DiscordRankChatDecorator.decorateGuildChat(
+                message, name -> name.equalsIgnoreCase("Yearnm") ? DRUID : null));
+    }
+
+    @Test
+    void plainOutsiderWithRankedInsertionCannotBorrowASequoiaIdentity() {
+        Component message = guildLine("RECRUIT", "IChooseThou", "Yearnm", "hello");
+        assertSame(message, DiscordRankChatDecorator.decorateSupportedChat(
+                message, name -> name.equalsIgnoreCase("Yearnm") ? DRUID : null, name -> null,
+                true, false, name -> name.equalsIgnoreCase("Yearnm")));
+    }
+
+    @Test
+    void cachedUnrankedRealAccountWinsOverRankedItalicNickname() {
+        NicknameResolverCache.remember("ArcLeRetour", "IChooseThou");
+        Component message = Component.empty()
+                .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUIT") + " "))
+                .append(Component.literal("ArcLeRetour").withStyle(Style.EMPTY.withItalic(true)
+                        .withInsertion("ArcLeRetour")))
+                .append(Component.literal(": hello"));
+        assertSame(message, DiscordRankChatDecorator.decorateGuildChat(message, DiscordRankChatDecoratorTest::lookup));
+    }
+
+    @Test
+    void unrankedRealAccountHoverOverridesRankedNicknameInsertionAndCache() {
+        NicknameResolverCache.remember("ArcLeRetour", "pat_crafter07");
+        Style identity = Style.EMPTY.withItalic(true).withInsertion("pat_crafter07")
+                .withHoverEvent(new HoverEvent.ShowText(
+                        Component.literal("ArcLeRetour's real username is IChooseThou")));
+        Component message = Component.empty()
+                .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUIT") + " "))
+                .append(Component.literal("ArcLeRetour").withStyle(identity))
+                .append(Component.literal(": hello"));
+        assertSame(message, DiscordRankChatDecorator.decorateGuildChat(message, DiscordRankChatDecoratorTest::lookup));
+    }
+
+    @Test
+    void unrankedExplicitAccountRevealCannotFallThroughToRankedNicknameOrCache() {
+        NicknameResolverCache.remember("ArcLeRetour(IChooseThou)", "pat_crafter07");
+        Component message = guildLine("RECRUIT", "ArcLeRetour(IChooseThou)", "pat_crafter07", "hello");
+        assertSame(message, DiscordRankChatDecorator.decorateGuildChat(message, DiscordRankChatDecoratorTest::lookup));
+    }
+
+    @Test
+    void guildColoringRequiresConfirmedSequoiaMembershipEvenForRankedAccounts() {
+        Component message = guildLine("RECRUIT", "ArcLeRetour", "ArcLeRetour", "hello");
+        assertSame(message, DiscordRankChatDecorator.decorateSupportedChat(
+                message, DiscordRankChatDecoratorTest::lookup, DiscordRankChatDecoratorTest::lookup,
+                true, false, username -> false));
+        assertEquals(List.of("sapling"), pillLabels(DiscordRankChatDecorator.decorateSupportedChat(
+                message, DiscordRankChatDecoratorTest::lookup, DiscordRankChatDecoratorTest::lookup,
+                true, false, username -> username.equalsIgnoreCase("ArcLeRetour"))));
+        assertNull(DiscordRankChatDecorator.guildRank("ArcLeRetour", DiscordRankChatDecoratorTest::lookup, name -> false));
+    }
+
+    @Test
+    void partyColoringKeepsItsOwnLookupAndDoesNotRequireGuildMembership() {
+        Component message = partyLine("ArcLeRetour", "ArcLeRetour", "ready");
+        Component decorated = DiscordRankChatDecorator.decorateSupportedChat(
+                message, name -> null, DiscordRankChatDecoratorTest::lookup, true, true, name -> false);
+        assertEquals(message.getString(), decorated.getString());
+        assertEquals(0x4CB4FA, colorOfFragmentContaining(ComponentTextEditor.flatten(decorated), "ArcLeRetour"));
+    }
+
+    @Test
+    void realAccountHoverWinsWhenInsertionContainsOnlyTheNickname() {
+        Component message = Component.empty()
+                .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUIT") + " "))
+                .append(Component.literal("Burger").withStyle(Style.EMPTY.withInsertion("Burger")
+                        .withHoverEvent(new HoverEvent.ShowText(
+                                Component.literal("Burger's real username is pat_crafter07")))))
+                .append(Component.literal(": hello"));
+        assertEquals(List.of("druid"), pillLabels(DiscordRankChatDecorator.decorateGuildChat(
+                message, DiscordRankChatDecoratorTest::lookup)));
     }
 
     @Test
@@ -648,26 +735,22 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
-    void resolvesSpeakersShownAsUsernameSlashNickname() {
+    void leavesAmbiguousUsernameSlashNicknameAloneWithoutAccountMetadata() {
         Component message = guildLine("RECRUITER", "ArcLeRetour/EightySix", null, "hi");
 
         Component decorated =
                 DiscordRankChatDecorator.decorateGuildChat(message, DiscordRankChatDecoratorTest::lookup);
 
-        assertEquals(List.of("sapling"), pillLabels(decorated));
-        assertTrue(decorated.getString().contains("ArcLeRetour/EightySix: hi"));
+        assertSame(message, decorated);
     }
 
     @Test
-    void resolvesSpeakersWhenTheNicknameComesFirst() {
-        // Which half is the account name depends on the add-on, so both are offered and
-        // the roster picks.
+    void leavesAmbiguousNicknameFirstSlashNamesAloneWithoutAccountMetadata() {
+        // A matching rank cannot prove which half names the actual account.
         Component message = guildLine("RECRUITER", "EightySix/ArcLeRetour", null, "hi");
 
-        assertEquals(
-                List.of("sapling"),
-                pillLabels(DiscordRankChatDecorator.decorateGuildChat(
-                        message, DiscordRankChatDecoratorTest::lookup)));
+        assertSame(message, DiscordRankChatDecorator.decorateGuildChat(
+                message, DiscordRankChatDecoratorTest::lookup));
     }
 
     @Test
