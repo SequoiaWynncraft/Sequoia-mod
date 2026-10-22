@@ -689,7 +689,7 @@ public final class DiscordRankChatDecorator {
                 continue;
             }
             italicName |= fragment.style().isItalic();
-            String realUsername = ChatManager.extractHoverRealUsername(fragment.style());
+            String realUsername = ChatManager.extractHoverRealUsername(fragment.style(), displayedName);
             if (realUsername != null) {
                 realUsernames.add(realUsername);
             }
@@ -796,7 +796,7 @@ public final class DiscordRankChatDecorator {
             if (cursor <= regionStart || fragmentStart >= regionEnd) {
                 continue;
             }
-            addUsernameCandidate(candidates, ChatManager.extractHoverRealUsername(fragment.style()));
+            addUsernameCandidate(candidates, ChatManager.extractHoverRealUsername(fragment.style(), displayedName));
             addUsernameCandidate(candidates, ChatManager.extractInsertionUsername(fragment.style()));
         }
 

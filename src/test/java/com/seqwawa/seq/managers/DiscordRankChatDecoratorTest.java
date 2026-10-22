@@ -181,6 +181,54 @@ class DiscordRankChatDecoratorTest {
     }
 
     @Test
+    void partyNicknameMatchingAnotherAccountUsesNunotsRole() {
+        for (String apostrophe : List.of("'", "\u2019")) {
+            NicknameResolverCache.remember("Reyzhia", "reyzhia");
+            Style name = Style.EMPTY.withColor(PARTY_SPEAKER_GOLD).withItalic(true).withInsertion("reyzhia")
+                    .withHoverEvent(new HoverEvent.ShowText(
+                            Component.literal("Reyzhia" + apostrophe + "s real name is nunot")));
+            Component message = Component.empty()
+                    .append(Component.literal(PARTY_ICON_GLYPHS + " ").withStyle(Style.EMPTY.withColor(PARTY_YELLOW)))
+                    .append(Component.literal("Reyzhia").withStyle(name))
+                    .append(Component.literal(": hello").withStyle(Style.EMPTY.withColor(PARTY_YELLOW)));
+
+            Component decorated = DiscordRankChatDecorator.decoratePartyChat(
+                    message, username -> username.equalsIgnoreCase("nunot") ? SAPLING : DRUID);
+
+            assertEquals(message.getString(), decorated.getString());
+            assertEquals(0x4CB4FA, colorOfFragmentContaining(ComponentTextEditor.flatten(decorated), "Reyzhia"));
+            assertSame(message, DiscordRankChatDecorator.decoratePartyChat(
+                    message, username -> username.equalsIgnoreCase("reyzhia") ? DRUID : null));
+        }
+    }
+
+    @Test
+    void partyColorIgnoresAnInheritedHoverDescribingAnotherPlayer() {
+        Component message = Component.empty().withStyle(Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
+                        Component.literal("OtherNick's real name is RaidKeeper"))))
+                .append(Component.literal(PARTY_ICON_GLYPHS + " ").withStyle(Style.EMPTY.withColor(PARTY_YELLOW)))
+                .append(Component.literal("GaztheCat").withStyle(Style.EMPTY.withInsertion("GaztheCat")))
+                .append(Component.literal(": hello OtherNick"));
+
+        Component decorated = DiscordRankChatDecorator.decoratePartyChat(
+                message, username -> username.equalsIgnoreCase("GaztheCat") ? SAPLING : DRUID);
+
+        assertEquals(0x4CB4FA, colorOfFragmentContaining(ComponentTextEditor.flatten(decorated), "GaztheCat"));
+    }
+
+    @Test
+    void unresolvedSpacedPartyNicknameCannotBorrowAnInheritedHoverIdentity() {
+        Component message = Component.empty().withStyle(Style.EMPTY.withHoverEvent(new HoverEvent.ShowText(
+                        Component.literal("OtherNick's real name is RaidKeeper"))))
+                .append(Component.literal(PARTY_ICON_GLYPHS + " ").withStyle(Style.EMPTY.withColor(PARTY_YELLOW)))
+                .append(Component.literal("Some Nick"))
+                .append(Component.literal(": hello OtherNick"));
+
+        assertSame(message, DiscordRankChatDecorator.decoratePartyChat(
+                message, username -> username.equalsIgnoreCase("RaidKeeper") ? DRUID : null));
+    }
+
+    @Test
     void realAccountHoverWinsWhenInsertionContainsOnlyTheNickname() {
         Component message = Component.empty()
                 .append(Component.literal(WynnPillGlyphs.encodePlainPill("RECRUIT") + " "))
