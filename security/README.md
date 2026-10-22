@@ -1,7 +1,7 @@
 # Java TLS trust
 
 Standalone JVMs need the certificate blocklist update from the [OpenJDK advisory](https://openjdk.org/groups/vulnerability/advisories/2026-10-21).
-Java 21.0.13 and Java 25.0.5 alone do not contain this fix.
+A Java version pin alone does not establish that its trust store contains the fix.
 
 `blocked.certs` contains the SHA-256 entries published at
 <https://ops.java/unix/blocked.certs> and <https://ops.java/windows/blocked.certs>.
@@ -19,3 +19,13 @@ Java. Restart it after applying the update. This does not change a custom
 application trust manager or another launcher-managed Java installation. Do not
 edit a distribution-managed Java store; use that distribution's security update
 and Java trust-store synchronization instead.
+
+## Protection limit
+
+This installs an exact-certificate fingerprint blocklist, not a complete trust
+policy. [Re-encoded intermediates can bypass fingerprint-only blocking](https://www.sonatype.com/blog/the-limits-of-fingerprint-blocklists-a-reproducible-java-certificate-bypass).
+Rejecting the 14 published incident chains does not test that bypass. Keep a
+production rollout gated on a vendor trust-store update or another policy that
+also rejects equivalent re-encoded chains. Validate legitimate service chains
+before removing the affected roots or enabling strict revocation checks. This
+installer does neither and must not be treated as proof of complete containment.
