@@ -14,6 +14,10 @@ Before starting a standalone build, server or Minecraft launcher JVM, apply:
 bash scripts/install-java-blocklist.sh "$JAVA_HOME"
 ```
 
+This installer supports Java 17 and later. Java 8 uses `blacklisted.certs` and
+is not supported by this script; follow the linked OpenJDK advisory or your
+distribution's security update instructions for that runtime.
+
 Use the JVM home actually selected by the service or launcher, not just the shell
 Java. Restart it after applying the update. This does not change a custom
 application trust manager or another launcher-managed Java installation. Do not

@@ -14,6 +14,19 @@ grep -qx "$operator" "$target"
 expected="$(grep -Ec '^[0-9A-Fa-f]{64}$' "$root/security/blocked.certs")"
 actual="$(grep -Ec '^[0-9A-Fa-f]{64}$' "$target")"
 [[ "$actual" == "$((expected + 1))" ]]
+# Existing Java Properties keys and annotations must remain untouched.
+printf '  %s=incident-ticket\n\t%s:operator-note\n%s # note\n' \
+  "${operator/A/B}" "${operator/A/C}" "${operator/A/D}" >> "$target"
+printf '%s\\\n%s=continued-note\n' "${operator:0:32}" "${operator:32}" >> "$target"
+cp "$target" "$work/annotated"
+bash "$root/scripts/install-java-blocklist.sh" "$work/jdk"
+cmp "$target" "$work/annotated"
+# A read-only file in a writable directory can still be replaced safely.
+chmod 444 "$target"
+bash "$root/scripts/install-java-blocklist.sh" "$work/jdk"
+cmp "$target" "$work/annotated"
+[[ "$(stat -c '%a' "$target" 2>/dev/null || stat -f '%Lp' "$target")" == 444 ]]
+chmod 600 "$target"
 mode="$(stat -c '%a' "$target" 2>/dev/null || stat -f '%Lp' "$target")"
 [[ "$mode" == 600 ]]
 cp "$target" "$work/first"
@@ -31,6 +44,22 @@ if PATH="$work/bin:$PATH" bash "$root/scripts/install-java-blocklist.sh" "$work/
 fi
 cmp "$target" "$work/first"
 shopt -s nullglob
+leftovers=("$target".*)
+[[ "${#leftovers[@]}" == 0 ]]
+rm "$work/bin/cp"
+real_stat="$(PATH="$(getconf PATH)" command -v stat)"
+cat > "$work/bin/stat" <<'STAT'
+#!/usr/bin/env bash
+if [[ "${@: -1}" == *.?????? ]]; then printf '99999:99999:600\n'; exit 0; fi
+exec "$TEST_REAL_STAT" "$@"
+STAT
+chmod +x "$work/bin/stat"
+if TEST_REAL_STAT="$real_stat" PATH="$work/bin:$PATH" \
+  bash "$root/scripts/install-java-blocklist.sh" "$work/jdk" 2>/dev/null; then
+  printf 'Silent metadata mismatch unexpectedly accepted\n' >&2
+  exit 1
+fi
+cmp "$target" "$work/first"
 leftovers=("$target".*)
 [[ "${#leftovers[@]}" == 0 ]]
 printf 'Algorithm=SHA-1\n' > "$target"
