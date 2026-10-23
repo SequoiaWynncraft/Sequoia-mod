@@ -62,6 +62,14 @@ fi
 cmp "$target" "$work/first"
 leftovers=("$target".*)
 [[ "${#leftovers[@]}" == 0 ]]
+# A fingerprint embedded in a continued value is not a certificate-block key.
+fingerprint="$(grep -m 1 -E '^[0-9A-F]{64}$' "$root/security/blocked.certs")"
+printf 'Algorithm=SHA-256\noperator.reason=continued\\\n%s\n' "$fingerprint" > "$target"
+bash "$root/scripts/install-java-blocklist.sh" "$work/jdk"
+[[ "$(grep -Fxc "$fingerprint" "$target")" == 2 ]]
+cp "$target" "$work/continued"
+bash "$root/scripts/install-java-blocklist.sh" "$work/jdk"
+cmp "$target" "$work/continued"
 printf 'Algorithm=SHA-1\n' > "$target"
 if bash "$root/scripts/install-java-blocklist.sh" "$work/jdk" 2>/dev/null; then
   printf 'Unsupported algorithm unexpectedly accepted\n' >&2
