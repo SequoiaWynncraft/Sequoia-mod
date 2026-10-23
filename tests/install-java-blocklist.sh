@@ -19,18 +19,20 @@ mode="$(stat -c '%a' "$target" 2>/dev/null || stat -f '%Lp' "$target")"
 cp "$target" "$work/first"
 bash "$root/scripts/install-java-blocklist.sh" "$work/jdk"
 cmp "$target" "$work/first"
-# Emulate BSD stat's option interface. This is not a native macOS test.
-real_stat="$(PATH="$(getconf PATH)" command -v stat)"
-cat > "$work/bin/stat" <<'STAT'
+# Metadata-copy failure must leave the active blocklist untouched.
+cat > "$work/bin/cp" <<'COPY'
 #!/usr/bin/env bash
-if [[ "$1" == -c ]]; then exit 1; fi
-[[ "$1" == -f && "$2" == '%Lp' ]]
-exec "$TEST_REAL_STAT" -c '%a' "$3"
-STAT
-chmod +x "$work/bin/stat"
-TEST_REAL_STAT="$real_stat" PATH="$work/bin:$PATH" \
-  bash "$root/scripts/install-java-blocklist.sh" "$work/jdk"
+exit 1
+COPY
+chmod +x "$work/bin/cp"
+if PATH="$work/bin:$PATH" bash "$root/scripts/install-java-blocklist.sh" "$work/jdk"; then
+  printf 'Metadata-copy failure unexpectedly accepted\n' >&2
+  exit 1
+fi
 cmp "$target" "$work/first"
+shopt -s nullglob
+leftovers=("$target".*)
+[[ "${#leftovers[@]}" == 0 ]]
 printf 'Algorithm=SHA-1\n' > "$target"
 if bash "$root/scripts/install-java-blocklist.sh" "$work/jdk" 2>/dev/null; then
   printf 'Unsupported algorithm unexpectedly accepted\n' >&2
@@ -43,4 +45,4 @@ if bash "$root/scripts/install-java-blocklist.sh" "$work/jdk" 2>/dev/null; then
   printf 'Missing target unexpectedly accepted\n' >&2
   exit 1
 fi
-printf 'PASS: CRLF, unterminated entry, all bundled hashes, mode, idempotency, BSD stat fallback, fail-closed checks\n'
+printf 'PASS: CRLF, unterminated entry, all bundled hashes, mode, idempotency, metadata-copy failure, cleanup, fail-closed checks\n'
