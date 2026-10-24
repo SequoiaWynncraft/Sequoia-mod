@@ -1,5 +1,3 @@
-
-
 # Security installer and certificate properties must work in Git Bash.
 /scripts/*.sh text eol=lf
 /tests/*.sh text eol=lf

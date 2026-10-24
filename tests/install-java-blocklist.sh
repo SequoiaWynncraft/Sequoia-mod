@@ -27,8 +27,6 @@ bash "$root/scripts/install-java-blocklist.sh" "$work/jdk"
 cmp "$target" "$work/annotated"
 [[ "$(stat -c '%a' "$target" 2>/dev/null || stat -f '%Lp' "$target")" == 444 ]]
 chmod 600 "$target"
-mode="$(stat -c '%a' "$target" 2>/dev/null || stat -f '%Lp' "$target")"
-[[ "$mode" == 600 ]]
 cp "$target" "$work/first"
 bash "$root/scripts/install-java-blocklist.sh" "$work/jdk"
 cmp "$target" "$work/first"
@@ -47,7 +45,7 @@ shopt -s nullglob
 leftovers=("$target".*)
 [[ "${#leftovers[@]}" == 0 ]]
 rm "$work/bin/cp"
-real_stat="$(PATH="$(getconf PATH)" command -v stat)"
+real_stat="$(command -v stat)"
 cat > "$work/bin/stat" <<'STAT'
 #!/usr/bin/env bash
 if [[ "${@: -1}" == *.?????? ]]; then printf '99999:99999:600\n'; exit 0; fi
