@@ -28,6 +28,8 @@ import com.seqwawa.seq.config.Setting;
 import com.seqwawa.seq.events.GameStartEvent;
 import com.seqwawa.seq.events.MinecraftFinishedLoading;
 import com.seqwawa.seq.halcyon.HalcyonRangeVisualiserClient;
+import com.seqwawa.seq.images.ImagePreviews;
+import com.seqwawa.seq.images.ImagePreviewSettings;
 import com.seqwawa.seq.managers.AssetManager;
 import com.seqwawa.seq.managers.BombShareManager;
 import com.seqwawa.seq.managers.ChatManager;
@@ -424,6 +426,7 @@ public class SeqClient implements ClientModInitializer {
         ingredientGuideManager = IngredientGuideManager.getInstance();
         authService = MinecraftAuthService.getInstance();
         SeqCommand.register();
+        ImagePreviews.initialize();
         PrincessRaidCelebration.initialize();
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
@@ -893,6 +896,7 @@ public class SeqClient implements ClientModInitializer {
         // Network settings
         autoConnectSetting = new Setting.BooleanSetting("auto_connect", "network", true);
         showDiscordChatSetting = new Setting.BooleanSetting("show_discord_bridge", "chat", true);
+        ImagePreviewSettings.setting().setParentSetting(showDiscordChatSetting);
         showPrivateMessageGuildTagsSetting = new Setting.BooleanSetting("show_private_message_guild_tags", "chat", true);
         announceAchievementsSetting = new Setting.BooleanSetting("announce_achievements", "chat", true);
         autoDisableWynntilsGearsharingSetting = GearSharingProtectionManager.createSetting();
@@ -1197,6 +1201,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(com.seqwawa.seq.map.WorldMapSettings.getInstance().gatheringNodeSourceSetting());
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);
+        getConfigManager().register(ImagePreviewSettings.setting());
         getConfigManager().register(showPrivateMessageGuildTagsSetting);
         getConfigManager().register(announceAchievementsSetting);
         getConfigManager().register(autoDisableWynntilsGearsharingSetting);
