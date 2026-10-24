@@ -7,6 +7,9 @@ import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
 import com.seqwawa.seq.accessors.EventBusAccessor;
 import com.seqwawa.seq.events.Render2DEvent;
+import com.seqwawa.seq.courage.CourageAlertHudRenderer;
+import com.seqwawa.seq.courage.CourageCoverageHudRenderer;
+import com.seqwawa.seq.courage.CourageOwnRangeHudRenderer;
 import com.seqwawa.seq.raids.tna.TnaBeamIndicatorHudRenderer;
 import com.seqwawa.seq.ui.SequoiaScreen;
 import com.seqwawa.seq.ui.SettingsScreen;
@@ -36,11 +39,17 @@ public class InGameHudMixin implements EventBusAccessor {
             UiRenderer.renderHud(canvas -> {
                 seqdispatch(new Render2DEvent(context, tickCounter.getGameTimeDeltaPartialTick(true)));
                 TnaBeamIndicatorHudRenderer.render(canvas);
+                CourageOwnRangeHudRenderer.render(canvas);
+                CourageCoverageHudRenderer.render(canvas);
+                CourageAlertHudRenderer.render(canvas);
                 WarTerritoryQueueHudRenderer.render(canvas);
             });
         } else if (isChatScreen(currentScreen.getClass())) {
             UiRenderer.renderScreen(currentScreen, canvas -> {
                 TnaBeamIndicatorHudRenderer.render(canvas);
+                CourageOwnRangeHudRenderer.render(canvas);
+                CourageCoverageHudRenderer.render(canvas);
+                CourageAlertHudRenderer.render(canvas);
                 WarTerritoryQueueHudRenderer.render(canvas);
             });
         }
