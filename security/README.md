@@ -8,7 +8,7 @@ A Java version pin alone does not establish that its trust store contains the fi
 The published entry sets are identical. The installer preserves existing vendor
 and operator blocks and requires SHA-256 format.
 
-Before starting a standalone build, server or Minecraft launcher JVM, apply:
+Before starting a standalone build or server JVM, or a JVM you selected for a Minecraft launcher, apply:
 
 ```sh
 bash scripts/install-java-blocklist.sh "$JAVA_HOME"
@@ -20,7 +20,8 @@ distribution's security update instructions for that runtime.
 
 Use the JVM home actually selected by the service or launcher, not just the shell
 Java. Restart it after applying the update. This does not change a custom
-application trust manager or another launcher-managed Java installation. Do not
+application trust manager or a Java runtime that a launcher downloads and manages
+itself, such as the official Minecraft launcher's bundled runtime. Do not
 edit a distribution-managed Java store; use that distribution's security update
 and Java trust-store synchronization instead.
 

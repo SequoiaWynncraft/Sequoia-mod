@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'printf "FAIL at line %s\n" "$LINENO" >&2' ERR
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 work="$(mktemp -d "${TMPDIR:-/tmp}/java-blocklist-test.XXXXXX")"
 trap 'rm -rf -- "$work"' EXIT
@@ -12,6 +13,7 @@ chmod 600 "$target"
 bash "$root/scripts/install-java-blocklist.sh" "$work/jdk"
 grep -qx "$operator" "$target"
 expected="$(grep -Ec '^[0-9A-Fa-f]{64}$' "$root/security/blocked.certs")"
+(( expected > 0 ))
 actual="$(grep -Ec '^[0-9A-Fa-f]{64}$' "$target")"
 [[ "$actual" == "$((expected + 1))" ]]
 # Existing Java Properties keys and annotations must remain untouched.
@@ -68,6 +70,13 @@ bash "$root/scripts/install-java-blocklist.sh" "$work/jdk"
 cp "$target" "$work/continued"
 bash "$root/scripts/install-java-blocklist.sh" "$work/jdk"
 cmp "$target" "$work/continued"
+# A CRLF copy of the bundled list must still install every entry.
+mkdir -p "$work/crlf/scripts" "$work/crlf/security"
+cp "$root/scripts/install-java-blocklist.sh" "$work/crlf/scripts/"
+awk '{ printf "%s\r\n", $0 }' "$root/security/blocked.certs" > "$work/crlf/security/blocked.certs"
+printf 'Algorithm=SHA-256\n' > "$target"
+bash "$work/crlf/scripts/install-java-blocklist.sh" "$work/jdk"
+[[ "$(grep -Ec '^[0-9A-F]{64}$' "$target")" == "$expected" ]]
 printf 'Algorithm=SHA-1\n' > "$target"
 if bash "$root/scripts/install-java-blocklist.sh" "$work/jdk" 2>/dev/null; then
   printf 'Unsupported algorithm unexpectedly accepted\n' >&2

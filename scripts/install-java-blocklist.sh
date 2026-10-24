@@ -34,6 +34,7 @@ contains_fingerprint() {
 # Keep the original Properties syntax, annotations and continuations byte-for-byte.
 appended=false
 while IFS= read -r fingerprint || [[ -n "$fingerprint" ]]; do
+  fingerprint="${fingerprint%$'\r'}"
   [[ "$fingerprint" =~ ^[0-9A-F]{64}$ ]] || continue
   if ! contains_fingerprint "$fingerprint"; then
     if [[ "$appended" == false ]]; then printf '\n\n' >> "$temporary"; appended=true; fi
@@ -41,5 +42,7 @@ while IFS= read -r fingerprint || [[ -n "$fingerprint" ]]; do
   fi
 done < "$source_file"
 chmod "${original_metadata##*:}" "$temporary"
-[[ "$(metadata "$temporary")" == "$original_metadata" ]] || exit 1
-mv -- "$temporary" "$target"
+[[ "$(metadata "$temporary")" == "$original_metadata" ]] || {
+  printf 'Java blocklist metadata changed during update\n' >&2; exit 1;
+}
+mv -f -- "$temporary" "$target"

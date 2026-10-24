@@ -46,7 +46,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Temurin has not published 21.0.13 for Windows; Zulu ships the same October update.
+      # Temurin has no 21.0.13 Windows build yet; Zulu ships the same October update.
+      # Return to temurin 21.0.13+9 once Adoptium publishes it for Windows x64.
       - name: Setup Java 21
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
