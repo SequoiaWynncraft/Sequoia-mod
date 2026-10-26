@@ -69,7 +69,7 @@ jobs:
           if [[ "$changelog" == "[no-release-notes]" ]]; then
             changelog=""
             generate_release_notes=false
-          elif [[ -z "$changelog" || "$changelog" == "$GITHUB_REF_NAME" ]]; then
+          elif [[ -z "${changelog//[[:space:]]/}" || "$changelog" == "$GITHUB_REF_NAME" ]]; then
             echo "An annotated tag with explicit release notes is required." >&2
             exit 1
           fi
