@@ -429,6 +429,7 @@ public class SeqClient implements ClientModInitializer {
         ImagePreviews.initialize();
         PrincessRaidCelebration.initialize();
         com.seqwawa.seq.ui.CheapestQueueEffect.initialize();
+        com.seqwawa.seq.managers.GuildWarStateObserver.initialize();
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
         CraftedScrollRangeVisualiserClient.initialize();

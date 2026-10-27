@@ -363,8 +363,7 @@ public final class WarPlannerScreen extends Screen {
                     && manager.canManage()
                     && snapshot != null) {
                 float height = MinecraftUiRenderer.screenHeight();
-                if (zones.rightClickZoneName(snapshot, mx, my, viewport.width(), height)
-                        || zones.rightClickWarMapTerritory(snapshot, mx, my, viewport.width(), height)) {
+                if (zones.rightClickZoneName(snapshot, mx, my, viewport.width(), height)) {
                     return true;
                 }
             }

@@ -66,7 +66,7 @@ public abstract class AbstractContainerScreenMixin<T extends AbstractContainerMe
         }
 
         if (slot != null && Minecraft.getInstance().screen != null) {
-            com.seqwawa.seq.ui.CheapestQueueEffect.onAttackClick(
+            com.seqwawa.seq.managers.GuildWarStateObserver.onAttackClick(
                     Minecraft.getInstance().screen.getTitle().getString(), slot.getItem());
         }
 

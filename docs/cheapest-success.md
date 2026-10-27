@@ -1,33 +1,44 @@
-# Cheapest success
+# Shared HQ, trade style, and cheapest success
 
-After you click Attack and the server confirms that the same territory's war has been queued,
+Sequoia learns your actual HQ from the server's `… set the guild headquarters to …` notice or a
+validated `<territory> (HQ)` entry in your guild's Territories / Select Territories menu. It reads
+server menu slots only, including individual slot updates. Trade styles come from the existing
+`… changed the style of <territory> to cheapest/fastest` server notices, even when eco chat filters
+hide them.
+
+Current Sequoia members automatically share these observations through the backend. The lightweight
+guild-state feed refreshes every 15 seconds, so a joining client can use evidence already seen by
+another member. Collection works independently of war availability, full planner screens, Wynntils,
+and the flash/Easter-eggs settings. The map's shared HQ now comes from in-game observations;
+right-clicking the map no longer assigns an HQ manually.
+
+HQ and trade style expire independently six hours after observation. First deployment starts with
+unknown HQ/style: existing manual map markers are discarded, and at least one client must observe
+the relevant real menu/notice. The mod never guesses trade style from queue duration, defense
+rating, or an unverified menu field.
+
+## Cheapest success effect
+
+After you click Attack and the server confirms the same territory's war within 15 seconds,
 Sequoia shows one white flash fading over 0.9 seconds and a “CHEAPEST SUCCESS” message for 2.4
-seconds if **your own HQ** is known to use cheapest. The attacked territory can be any territory.
-It does not play a sound, block input, or alter the queue.
+seconds if **your own HQ** is known to use cheapest. Any territory can be attacked. No sound is
+played, input is not blocked, and the queue is not changed.
 
 The effect defaults to enabled. Disable **Guild wars → Cheapest success flash** or the global
-**Easter eggs** setting to turn it off. Minecraft's **Screen Effects** intensity scales the
-entire effect; zero hides it. It works without Wynntils, war telemetry, or a backend connection.
+**Easter eggs** setting to hide it. Minecraft's **Screen Effects** intensity scales the entire
+effect; zero hides it. Turning off visuals does not stop sharing observations.
 
-## What the client can establish
+A subsequent attack replaces the pending attempt. HQ moves, HQ style changes, loadout notices,
+disconnects, world/account changes, or loss of shared-state authorization invalidate the relevant
+evidence. Local observations can still establish a local HQ/style when sharing is unavailable.
+Loadout notices invalidate styles without inventing a replacement style.
 
-The mod learns your HQ from the server's `… set the guild headquarters to …` notice or a verified
-`<territory> (HQ)` entry in the guild's Territories / Select Territories menu. It only examines
-server menu slots, excluding your inventory. Trade styles come from the server's existing
-`… changed the style of <territory> to cheapest/fastest` notices, even when chat filters hide them.
+Reports preserve their original capture time against a fixed, backend-calibrated session clock.
+Requests are bounded, short-lived, and dropped across resets; offline history is not replayed.
+Backend-derived data is never reported back as a new local observation. Shared and local evidence
+is merged by observation time even after uploads fail. Expiry is checked independently of pending
+network work, including at the point a queue could trigger the effect.
 
-**Initial style is unknown.** If HQ was already set to cheapest before joining, the effect does
-not activate until its style is observed changing in the current world session. Opening the
-territory menu establishes HQ identity but does not establish trade style. To establish both,
-open the guild territory menu and observe an HQ style-change notice (or observe both an HQ move
-and its style change). The mod never guesses style from queue duration or defense rating.
-
-Only your own local Attack click arms the effect. A matching server success must arrive within
-15 seconds, and the HQ must still have the same known-cheapest state. The effect fires once.
-Another attack replaces the pending attempt. HQ moves, HQ style updates, loadout notices,
-disconnects, world changes, or disabling the feature invalidate pending evidence. A loadout
-notice clears known styles because a loadout may change style without a separate style notice.
-
-The visual and packet hooks still require an in-game check. Automated coverage exercises the
-known server notice formats, HQ discovery, style transitions, queue confirmation, timeout,
-duplicates, reset, and flash intensity/fade behavior.
+Automated coverage exercises parsing, menu-slot snapshots, shared-state syncing, ordering,
+timeouts, expiry, reset, and fade intensity. Visual rendering and packet integration still need
+an in-game check.

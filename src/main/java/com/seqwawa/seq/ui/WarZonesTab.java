@@ -453,26 +453,6 @@ final class WarZonesTab {
     boolean rightClickZoneName(WarPlannerSnapshot snapshot, float mx, float my, float width, float height) {
         return sidebar.rightClickZoneName(snapshot, mx, my, width, height);
     }
-    boolean rightClickWarMapTerritory(
-            WarPlannerSnapshot snapshot, float mx, float my, float width, float height) {
-        WarMapLayout layout = warMapLayout(width, contentTop(width), height - PADDING);
-        if (!layout.containsMap(mx, my)) return false;
-        boolean locked = manager.canManage() && territoriesLocked();
-        List<GuildTerritory> displayedTerritories = warMapDisplayedTerritories(snapshot, locked);
-        Set<String> displayedNames = displayedTerritories.stream()
-                .map(GuildTerritory::name)
-                .map(name -> name.toLowerCase(Locale.ROOT))
-                .collect(java.util.stream.Collectors.toSet());
-        GuildTerritory territory = territoryAt(
-                territoryIndex, warMapViewport(layout, displayedTerritories, locked), displayedNames, mx, my);
-        if (territory == null) return false;
-        if (!manager.isMutating()) {
-            String nextHq = territory.name().equalsIgnoreCase(snapshot.hqTerritory()) ? null : territory.name();
-            actions.result(manager.setHqTerritory(nextHq, snapshot.mapVersion()));
-        }
-        return true;
-    }
-
     boolean click(WarPlannerSnapshot snapshot, float mx, float my, float width, float height) {
         float top = contentTop(width);
         WarMapLayout layout = warMapLayout(width, top, height - PADDING);

@@ -2,20 +2,13 @@ package com.seqwawa.seq.ui;
 
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.config.Setting;
-import com.seqwawa.seq.managers.CheapestQueueTracker;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientWorldEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.network.chat.Component;
-import net.minecraft.world.inventory.MenuType;
-import net.minecraft.world.item.ItemStack;
 
 /** One fading flash after the local player queues with a known-cheapest own HQ. */
 public final class CheapestQueueEffect {
@@ -24,8 +17,6 @@ public final class CheapestQueueEffect {
     private static final Setting.BooleanSetting ENABLED =
             new Setting.BooleanSetting("cheapest_success_flash", "guild_wars", true);
     private static final AtomicBoolean RESET_REQUESTED = new AtomicBoolean();
-    private static final CheapestQueueTracker TRACKER =
-            new CheapestQueueTracker(CheapestQueueEffect::nowMs, ignored -> startedAtMs = nowMs());
     private static long startedAtMs = -1;
 
     static {
@@ -64,48 +55,8 @@ public final class CheapestQueueEffect {
         return true;
     }
 
-    public static void onSystemChat(Component message) {
-        if (ready() && message != null) TRACKER.onSystemChat(message.getString());
-    }
-
-    public static void onAttackClick(String screenTitle, ItemStack stack) {
-        if (ready() && stack != null && !stack.isEmpty()) {
-            TRACKER.onAttackClick(screenTitle, stack.getHoverName().getString());
-        }
-    }
-
-    public static void onMenuOpened(int id, Component title, MenuType<?> type) {
-        if (!ready()) return;
-        List<MenuType<?>> supported = List.of(
-                MenuType.GENERIC_9x1, MenuType.GENERIC_9x2, MenuType.GENERIC_9x3,
-                MenuType.GENERIC_9x4, MenuType.GENERIC_9x5, MenuType.GENERIC_9x6);
-        int rowIndex = supported.indexOf(type);
-        TRACKER.onMenuOpened(id, title.getString(), rowIndex < 0 ? 0 : (rowIndex + 1) * 9);
-    }
-
-    public static void onMenuContents(int id, List<ItemStack> items) {
-        if (!ready()) return;
-        int slots = TRACKER.menuSlots(id);
-        if (slots == 0 || items.size() < slots) return;
-        var entries = new ArrayList<CheapestQueueTracker.TerritoryEntry>();
-        for (int slot = 0; slot < slots; slot++) entries.add(entry(items.get(slot)));
-        TRACKER.onMenuContents(id, entries);
-    }
-
-    public static void onMenuSlot(int id, int slot, ItemStack item) {
-        if (ready() && slot >= 0 && slot < TRACKER.menuSlots(id)) TRACKER.onMenuSlot(id, slot, entry(item));
-    }
-
-    private static CheapestQueueTracker.TerritoryEntry entry(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) return null;
-        var lore = stack.get(DataComponents.LORE);
-        if (lore == null || lore.lines().isEmpty()) return null;
-        return new CheapestQueueTracker.TerritoryEntry(
-                stack.getHoverName().getString(), lore.lines().getLast().getString());
-    }
-
-    public static void onMenuClosed(int id) {
-        TRACKER.onMenuClosed(id);
+    public static void trigger(String territory) {
+        if (ready() && Minecraft.getInstance().player != null) startedAtMs = nowMs();
     }
 
     public static boolean isActive() {
@@ -158,7 +109,6 @@ public final class CheapestQueueEffect {
     }
 
     private static void reset() {
-        TRACKER.reset();
         startedAtMs = -1;
     }
 
