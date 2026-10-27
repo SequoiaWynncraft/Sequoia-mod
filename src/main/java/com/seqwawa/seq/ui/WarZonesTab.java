@@ -342,14 +342,16 @@ final class WarZonesTab {
                     2);
         }
         TerritoryQueue hoveredQueue = null;
+        WarQueueLabelBounds hqQueueLabel = null;
         if (!queueMarkers.isEmpty()) {
-            drawWarQueueLabels(
+            hqQueueLabel = drawWarQueueLabels(
                     canvas,
                     queueMarkers,
                     coordinateBounds,
                     offsetX,
                     offsetY,
-                    scale);
+                    scale,
+                    hqTerritory == null ? null : hqTerritory.name());
             if (hoveredWarMapTerritory != null) {
                 hoveredQueue = warQueueForTerritory(queueMarkers, hoveredWarMapTerritory.name());
             }
@@ -358,7 +360,12 @@ final class WarZonesTab {
             drawTerritoryName(canvas, hoveredWarMapTerritory, coordinateBounds, offsetX, offsetY, scale, layout);
         }
         if (hqTerritory != null && displayedNames.contains(hqTerritory.name().toLowerCase(Locale.ROOT))) {
-            drawHqIcon(canvas, hqTerritory, coordinateBounds, offsetX, offsetY, scale);
+            WarMapButtonBounds hqLabel = hoveredQueue == null && hoveredWarMapTerritory != null
+                            && hqTerritory.name().equalsIgnoreCase(hoveredWarMapTerritory.name())
+                    ? territoryNameBounds(hqTerritory, coordinateBounds, offsetX, offsetY, scale, layout)
+                    : hqQueueLabel == null ? null
+                    : new WarMapButtonBounds(hqQueueLabel.x(), hqQueueLabel.y(), hqQueueLabel.width(), hqQueueLabel.height());
+            drawHqIcon(canvas, hqTerritory, coordinateBounds, offsetX, offsetY, scale, layout, hqLabel);
         }
         canvas.resetScissor();
         if (warMapPlayersEnabled()) telemetryPlayerOverlay.render(canvas, viewport, territoryIndex);
@@ -453,26 +460,6 @@ final class WarZonesTab {
     boolean rightClickZoneName(WarPlannerSnapshot snapshot, float mx, float my, float width, float height) {
         return sidebar.rightClickZoneName(snapshot, mx, my, width, height);
     }
-    boolean rightClickWarMapTerritory(
-            WarPlannerSnapshot snapshot, float mx, float my, float width, float height) {
-        WarMapLayout layout = warMapLayout(width, contentTop(width), height - PADDING);
-        if (!layout.containsMap(mx, my)) return false;
-        boolean locked = manager.canManage() && territoriesLocked();
-        List<GuildTerritory> displayedTerritories = warMapDisplayedTerritories(snapshot, locked);
-        Set<String> displayedNames = displayedTerritories.stream()
-                .map(GuildTerritory::name)
-                .map(name -> name.toLowerCase(Locale.ROOT))
-                .collect(java.util.stream.Collectors.toSet());
-        GuildTerritory territory = territoryAt(
-                territoryIndex, warMapViewport(layout, displayedTerritories, locked), displayedNames, mx, my);
-        if (territory == null) return false;
-        if (!manager.isMutating()) {
-            String nextHq = territory.name().equalsIgnoreCase(snapshot.hqTerritory()) ? null : territory.name();
-            actions.result(manager.setHqTerritory(nextHq, snapshot.mapVersion()));
-        }
-        return true;
-    }
-
     boolean click(WarPlannerSnapshot snapshot, float mx, float my, float width, float height) {
         float top = contentTop(width);
         WarMapLayout layout = warMapLayout(width, top, height - PADDING);

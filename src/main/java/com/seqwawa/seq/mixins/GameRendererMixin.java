@@ -42,7 +42,8 @@ public class GameRendererMixin {
                     shift = At.Shift.AFTER))
     private void seq$renderUiLayers(DeltaTracker deltaTracker, boolean renderLevel, CallbackInfo ci) {
         MinecraftUiRenderer.flush();
-        if (!(minecraft.screen instanceof MinecraftGuiOverlay overlay)) {
+        MinecraftGuiOverlay overlay = minecraft.screen instanceof MinecraftGuiOverlay current ? current : null;
+        if (overlay == null && !com.seqwawa.seq.ui.CheapestQueueEffect.isActive()) {
             return;
         }
 
@@ -53,7 +54,10 @@ public class GameRendererMixin {
                     guiRenderState,
                     minecraft.getWindow().getGuiScaledWidth(),
                     minecraft.getWindow().getGuiScaledHeight());
-            overlay.renderMinecraftGuiOverlay(guiGraphics, MinecraftUiRenderer.metrics());
+            if (overlay != null) {
+                overlay.renderMinecraftGuiOverlay(guiGraphics, MinecraftUiRenderer.metrics());
+            }
+            com.seqwawa.seq.ui.CheapestQueueEffect.render(guiGraphics);
             guiGraphics.renderDeferredElements();
             guiRenderer.render(fogRenderer.getBuffer(FogRenderer.FogMode.NONE));
         } finally {

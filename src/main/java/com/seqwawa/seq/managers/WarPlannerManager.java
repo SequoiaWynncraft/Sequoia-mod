@@ -79,7 +79,6 @@ public final class WarPlannerManager {
 
         CompletableFuture<WarPlannerSnapshot> deleteZoneCategory(long id, long version);
 
-        CompletableFuture<WarPlannerSnapshot> setHqTerritory(String territory, long version);
     }
 
     public record ActionResult(boolean success, String code, String message) {
@@ -315,19 +314,6 @@ public final class WarPlannerManager {
                     new ActionResult(false, "invalid_version", "Reload the category before deleting it."));
         }
         return mutate(() -> gateway.deleteZoneCategory(id, version), "Zone category deleted.");
-    }
-
-    public CompletableFuture<ActionResult> setHqTerritory(String territory, long version) {
-        if (!canManage()) {
-            return managementDenied();
-        }
-        if (version <= 0) {
-            return CompletableFuture.completedFuture(
-                    new ActionResult(false, "invalid_version", "Refresh the planner before changing its HQ."));
-        }
-        return mutate(
-                () -> gateway.setHqTerritory(territory, version),
-                territory == null ? "HQ territory cleared." : territory + " marked as HQ.");
     }
 
     private static CompletableFuture<ActionResult> managementDenied() {
@@ -762,9 +748,6 @@ public final class WarPlannerManager {
             return api.deleteWarPlannerZoneCategory(id, version);
         }
 
-        @Override
-        public CompletableFuture<WarPlannerSnapshot> setHqTerritory(String territory, long version) {
-            return api.setWarPlannerHqTerritory(territory, version);
-        }
+
     }
 }

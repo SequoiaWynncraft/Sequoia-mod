@@ -65,6 +65,11 @@ public abstract class AbstractContainerScreenMixin<T extends AbstractContainerMe
             return;
         }
 
+        if (slot != null && Minecraft.getInstance().screen != null) {
+            com.seqwawa.seq.managers.GuildWarStateObserver.onAttackClick(
+                    Minecraft.getInstance().screen.getTitle().getString(), slot.getItem());
+        }
+
         if (SeqClient.getGuildWarTracker() != null && slot != null && Minecraft.getInstance().screen != null) {
             SeqClient.getGuildWarTracker().onSlotClick(Minecraft.getInstance().screen.getTitle().getString(), slot.getItem());
         }

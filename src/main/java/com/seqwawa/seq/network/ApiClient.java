@@ -588,26 +588,16 @@ public class ApiClient {
                 WarPlannerSnapshot.class);
     }
 
-    public CompletableFuture<WarPlannerSnapshot> setWarPlannerHqTerritory(String territory, long version) {
-        return put(
-                "/war-planner/map/hq-territory",
-                buildWarHqTerritoryPayload(territory, version),
-                WarPlannerSnapshot.class);
+    public CompletableFuture<com.seqwawa.seq.model.war.GuildWarState> getGuildWarState() {
+        return get("/war-planner/guild-state", com.seqwawa.seq.model.war.GuildWarState.class);
     }
 
-    static JsonObject buildWarHqTerritoryPayload(String territory, long version) {
-        if (version <= 0) {
-            throw new IllegalArgumentException("A positive map version is required.");
-        }
-        JsonObject body = new JsonObject();
-        if (territory == null) {
-            body.add("territory", JsonNull.INSTANCE);
-        } else {
-            body.addProperty("territory", territory);
-        }
-        body.addProperty("version", version);
-        return body;
+    public CompletableFuture<com.seqwawa.seq.model.war.GuildWarState> observeGuildWarState(
+            com.seqwawa.seq.model.war.GuildWarObservation report) {
+        return post("/war-planner/guild-state/observations", gson.toJsonTree(report).getAsJsonObject(),
+                com.seqwawa.seq.model.war.GuildWarState.class);
     }
+
 
     static JsonObject buildWarZonePlacementPayload(ZonePlacementDraft draft) {
         if (draft == null) throw new IllegalArgumentException("Zone placement draft is required.");

@@ -268,21 +268,6 @@ class WarPlannerManagerTest {
     }
 
     @Test
-    void managerCanReplaceTheSharedHqTerritory() {
-        FakeGateway gateway = new FakeGateway();
-        WarPlannerManager manager = manager(gateway);
-        loadSnapshot(manager, gateway, snapshot(3, true));
-        gateway.next = new CompletableFuture<>();
-
-        CompletableFuture<WarPlannerManager.ActionResult> result = manager.setHqTerritory("Detlas", 42L);
-        gateway.next.complete(snapshot(3, true));
-
-        assertTrue(result.join().success());
-        assertEquals("Detlas", gateway.hqTerritory);
-        assertEquals(42L, gateway.hqVersion);
-    }
-
-    @Test
     void managerRequiredMutationDowngradesCachedSnapshotToViewOnly() {
         FakeGateway gateway = new FakeGateway();
         WarPlannerManager manager = manager(gateway);
@@ -586,10 +571,6 @@ class WarPlannerManagerTest {
             deleteVersion = version;
             return call();
         }
-        @Override public CompletableFuture<WarPlannerSnapshot> setHqTerritory(String territory, long version) {
-            hqTerritory = territory;
-            hqVersion = version;
-            return call();
-        }
+
     }
 }
