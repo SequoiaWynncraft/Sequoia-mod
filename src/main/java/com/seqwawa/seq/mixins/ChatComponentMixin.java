@@ -1,6 +1,7 @@
 package com.seqwawa.seq.mixins;
 
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import com.seqwawa.seq.images.ImagePreviews;
 import com.seqwawa.seq.integrations.WynntilsChatAccess;
 import com.seqwawa.seq.managers.DiscordRankChatDecorator;
 import com.seqwawa.seq.managers.PrivateMessageGuildTagDecorator;
@@ -93,7 +94,7 @@ public class ChatComponentMixin {
         Component decorated = DiscordRankChatDecorator.decorateGuildChat(message);
         Component linked = WorldSwitchChatDecorator.decorate(decorated);
         DiscordRankChatDecorator.retainBridgeRail(decorated, linked);
-        return linked;
+        return ImagePreviews.decorate(linked);
     }
 
     /**

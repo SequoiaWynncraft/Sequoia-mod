@@ -26,6 +26,7 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
+import com.seqwawa.seq.images.BridgeMedia;
 import com.seqwawa.seq.model.GuildWarQueueCancellation;
 import com.seqwawa.seq.model.GuildWarQueueSubmission;
 import com.seqwawa.seq.model.WarStatusUpdate;
@@ -1882,6 +1883,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // ── Incoming message handler ──
 
     private void handleMessage(String message) {
+        message = BridgeMedia.rewrite(message);
+        if (message == null) return;
         try {
             JsonObject json = GSON.fromJson(message, JsonObject.class);
             if (json == null || !json.has("type")) {

@@ -122,3 +122,10 @@ runs/
 # Avoid ignoring Gradle wrapper jar file (.jar files are usually ignored)
 !gradle-wrapper.jar
 /.devauth/microsoft_accounts.json
+
+# Image decoder builds; native/out/ is outside build/ so Gradle's clean keeps it.
+native/decoder/target/
+native/out/
+__pycache__/
+# Rust binary sources, despite the bin pattern above.
+!native/decoder/src/bin/
