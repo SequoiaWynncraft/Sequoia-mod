@@ -135,15 +135,17 @@ final class WarQueueMapOverlay {
                 warQueuePulseAlpha(elapsedMillis));
     }
 
-    static void drawWarQueueLabels(
+    static WarQueueLabelBounds drawWarQueueLabels(
             UiCanvas canvas,
             List<WarQueueMapMarker> markers,
             MapBounds fitted,
             float offsetX,
             float offsetY,
-            float scale) {
+            float scale,
+            String trackedTerritory) {
+        WarQueueLabelBounds trackedBounds = null;
         for (WarQueueMapMarker marker : markers) {
-            drawWarQueueLabel(
+            WarQueueLabelBounds bounds = drawWarQueueLabel(
                     canvas,
                     marker.territory(),
                     warQueueMapUsername(marker.queue()),
@@ -151,10 +153,12 @@ final class WarQueueMapOverlay {
                     offsetX,
                     offsetY,
                     scale);
+            if (marker.territory().name().equalsIgnoreCase(trackedTerritory)) trackedBounds = bounds;
         }
+        return trackedBounds;
     }
 
-    static void drawWarQueueLabel(
+    static WarQueueLabelBounds drawWarQueueLabel(
             UiCanvas canvas,
             GuildTerritory territory,
             String displayName,
@@ -162,13 +166,13 @@ final class WarQueueMapOverlay {
             float offsetX,
             float offsetY,
             float scale) {
-        if (displayName == null || displayName.isBlank()) return;
+        if (displayName == null || displayName.isBlank()) return null;
         WarQueueLabelBounds available = warQueueLabelBounds(
                 territory, fitted, offsetX, offsetY, scale, Float.MAX_VALUE, Float.MAX_VALUE);
-        if (available == null) return;
+        if (available == null) return null;
 
         float fontSize = Math.min(WAR_QUEUE_MAP_MAX_FONT_SIZE, available.height() - 4);
-        if (fontSize < WAR_QUEUE_MAP_MIN_FONT_SIZE) return;
+        if (fontSize < WAR_QUEUE_MAP_MIN_FONT_SIZE) return null;
         String font = SeqClient.getFontManager().getSelectedFont();
         float maxTextWidth = available.width() - 6;
         while (fontSize > WAR_QUEUE_MAP_MIN_FONT_SIZE
@@ -180,12 +184,12 @@ final class WarQueueMapOverlay {
                 displayName,
                 maxTextWidth,
                 value -> UiRenderer.measureText(value, font, fittedFontSize).width());
-        if (label.isBlank()) return;
+        if (label.isBlank()) return null;
 
         float textWidth = UiRenderer.measureText(label, font, fontSize).width();
         WarQueueLabelBounds labelBounds = warQueueLabelBounds(
                 territory, fitted, offsetX, offsetY, scale, textWidth + 6, fontSize + 4);
-        if (labelBounds == null) return;
+        if (labelBounds == null) return null;
         canvas.fillRect(
                 labelBounds.x(),
                 labelBounds.y(),
@@ -200,6 +204,7 @@ final class WarQueueMapOverlay {
                 fontSize,
                 color(TEXT_PRIMARY),
                 true);
+        return labelBounds;
     }
 
     static String warQueueMapUsername(TerritoryQueue queue) {

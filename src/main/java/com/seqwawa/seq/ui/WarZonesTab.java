@@ -342,14 +342,16 @@ final class WarZonesTab {
                     2);
         }
         TerritoryQueue hoveredQueue = null;
+        WarQueueLabelBounds hqQueueLabel = null;
         if (!queueMarkers.isEmpty()) {
-            drawWarQueueLabels(
+            hqQueueLabel = drawWarQueueLabels(
                     canvas,
                     queueMarkers,
                     coordinateBounds,
                     offsetX,
                     offsetY,
-                    scale);
+                    scale,
+                    hqTerritory == null ? null : hqTerritory.name());
             if (hoveredWarMapTerritory != null) {
                 hoveredQueue = warQueueForTerritory(queueMarkers, hoveredWarMapTerritory.name());
             }
@@ -358,7 +360,12 @@ final class WarZonesTab {
             drawTerritoryName(canvas, hoveredWarMapTerritory, coordinateBounds, offsetX, offsetY, scale, layout);
         }
         if (hqTerritory != null && displayedNames.contains(hqTerritory.name().toLowerCase(Locale.ROOT))) {
-            drawHqIcon(canvas, hqTerritory, coordinateBounds, offsetX, offsetY, scale);
+            WarMapButtonBounds hqLabel = hoveredQueue == null && hoveredWarMapTerritory != null
+                            && hqTerritory.name().equalsIgnoreCase(hoveredWarMapTerritory.name())
+                    ? territoryNameBounds(hqTerritory, coordinateBounds, offsetX, offsetY, scale, layout)
+                    : hqQueueLabel == null ? null
+                    : new WarMapButtonBounds(hqQueueLabel.x(), hqQueueLabel.y(), hqQueueLabel.width(), hqQueueLabel.height());
+            drawHqIcon(canvas, hqTerritory, coordinateBounds, offsetX, offsetY, scale, layout, hqLabel);
         }
         canvas.resetScissor();
         if (warMapPlayersEnabled()) telemetryPlayerOverlay.render(canvas, viewport, territoryIndex);

@@ -40,20 +40,43 @@ final class WarMapGeometry {
             MapBounds coordinateBounds,
             float offsetX,
             float offsetY,
-            float scale) {
+            float scale,
+            WarMapLayout layout,
+            WarMapButtonBounds label) {
         AssetManager.Asset asset = SeqClient.assetManager == null
                 ? null
                 : SeqClient.assetManager.getAsset("hq_icon");
         if (asset == null || asset.getImage() == null) return;
         float centerX = previewX(territory.centerX(), coordinateBounds, offsetX, scale);
         float centerY = previewY(territory.centerZ(), coordinateBounds, offsetY, scale);
+        WarMapButtonBounds icon = hqIconBounds(centerX, centerY, layout, label);
+        if (icon == null) return;
         canvas.drawImage(
                 asset.getImage(),
-                centerX - HQ_ICON_WIDTH / 2,
-                centerY - HQ_ICON_HEIGHT / 2,
-                HQ_ICON_WIDTH,
-                HQ_ICON_HEIGHT,
+                icon.x(),
+                icon.y(),
+                icon.width(),
+                icon.height(),
                 1f);
+    }
+
+    static WarMapButtonBounds hqIconBounds(
+            float centerX, float centerY, WarMapLayout layout, WarMapButtonBounds label) {
+        if (!layout.containsMap(centerX, centerY)) return null;
+        float minX = layout.mapX() + 4;
+        float maxX = layout.mapX() + layout.mapWidth() - HQ_ICON_WIDTH - 4;
+        float minY = layout.mapY() + 34;
+        float maxY = layout.mapY() + layout.mapHeight() - HQ_ICON_HEIGHT - 4;
+        if (maxX < minX || maxY < minY) return null;
+        float x = Math.clamp(centerX - HQ_ICON_WIDTH / 2, minX, maxX);
+        if (label == null) return new WarMapButtonBounds(
+                x, Math.clamp(centerY - HQ_ICON_HEIGHT / 2, minY, maxY), HQ_ICON_WIDTH, HQ_ICON_HEIGHT);
+        float above = label.y() - HQ_ICON_HEIGHT - 4;
+        float below = label.y() + label.height() + 4;
+        if (above >= minY && above <= maxY) return new WarMapButtonBounds(x, above, HQ_ICON_WIDTH, HQ_ICON_HEIGHT);
+        if (below >= minY && below <= maxY) return new WarMapButtonBounds(x, below, HQ_ICON_WIDTH, HQ_ICON_HEIGHT);
+        // In a very short viewport preserve the readable name instead of covering it.
+        return null;
     }
 
     static List<GuildTerritory> resolveTerritories(
@@ -280,6 +303,14 @@ final class WarMapGeometry {
             float offsetY,
             float scale,
             WarMapLayout layout) {
+        WarMapButtonBounds label = territoryNameBounds(territory, fitted, offsetX, offsetY, scale, layout);
+        canvas.fillRect(label.x(), label.y(), label.width(), label.height(), color(BACKGROUND_POPUP));
+        text(canvas, truncate(territory.name(), 34), label.x() + label.width() / 2, label.y() + 10,
+                9, color(MAP_TEXT), true);
+    }
+
+    static WarMapButtonBounds territoryNameBounds(
+            GuildTerritory territory, MapBounds fitted, float offsetX, float offsetY, float scale, WarMapLayout layout) {
         float labelWidth = Math.max(1,
                 Math.min(layout.mapWidth() - 12, Math.max(64, territory.name().length() * 6 + 14)));
         float centerX = previewX(territory.centerX(), fitted, offsetX, scale);
@@ -288,9 +319,7 @@ final class WarMapGeometry {
                 Math.min(centerX - labelWidth / 2, layout.mapX() + layout.mapWidth() - labelWidth - 6));
         float labelY = Math.max(layout.mapY() + 34,
                 Math.min(centerY - 11, layout.mapY() + layout.mapHeight() - 25));
-        canvas.fillRect(labelX, labelY, labelWidth, 20, color(BACKGROUND_POPUP));
-        text(canvas, truncate(territory.name(), 34), labelX + labelWidth / 2, labelY + 10,
-                9, color(MAP_TEXT), true);
+        return new WarMapButtonBounds(labelX, labelY, labelWidth, 20);
     }
 
     static void drawPreviewOutlines(
