@@ -26,7 +26,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Test source verification and packaging
-        run: python3 -m unittest discover -s native/tests -p test_build_inputs.py
+        run: |
+          python3 -m unittest discover -s native/tests -p test_build_inputs.py
+          python3 -m unittest discover -s tests -p test_release_metadata.py
       # Caches are keyed by every input; PR runs cannot write main's entries, and tag builds
       # compile everything they ship.
       - name: Restore a guest built from the same inputs

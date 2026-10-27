@@ -14,7 +14,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate release tag, notes and source version
+        run: python3 scripts/release_metadata.py
+
   build:
+    needs: preflight
     uses: ./.github/workflows/build.yml
 
   # Publishes exactly the JAR and native source archive the build job built and tested.
@@ -46,49 +57,7 @@ jobs:
         id: release_metadata
         shell: bash
         run: |
-          set -euo pipefail
-
-          version_number="${GITHUB_REF_NAME#v}"
-          minecraft_version="$(sed -n 's/^minecraft_version=//p' gradle.properties)"
-          if [[ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != tag ]]; then
-            echo "An annotated tag with explicit release notes is required." >&2
-            exit 1
-          fi
-          changelog="$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")"
-
-          mapfile -t release_jars < <(find build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' | sort)
-          if [[ "${#release_jars[@]}" -ne 1 ]]; then
-            echo "Expected exactly one release jar, found ${#release_jars[@]}" >&2
-            printf 'Found jars:\n%s\n' "${release_jars[@]}" >&2
-            exit 1
-          fi
-
-          version_type="release"
-          normalized_version="${version_number,,}"
-          if [[ "$normalized_version" == *alpha* ]]; then
-            version_type="alpha"
-          elif [[ "$normalized_version" == *beta* ]]; then
-            version_type="beta"
-          fi
-
-          generate_release_notes=false
-          if [[ "$changelog" == "[no-release-notes]" ]]; then
-            changelog=""
-            generate_release_notes=false
-          elif [[ -z "${changelog//[[:space:]]/}" || "$changelog" == "$GITHUB_REF_NAME" ]]; then
-            echo "An annotated tag with explicit release notes is required." >&2
-            exit 1
-          fi
-
-          changelog_delimiter="CHANGELOG_$(openssl rand -hex 16)"
-          {
-            echo "mod_jar=${release_jars[0]}"
-            echo "minecraft_version=${minecraft_version}"
-            echo "version_number=${version_number}"
-            echo "version_type=${version_type}"
-            echo "generate_release_notes=${generate_release_notes}"
-            printf 'changelog<<%s\n%s\n%s\n' "$changelog_delimiter" "$changelog" "$changelog_delimiter"
-          } >> "$GITHUB_OUTPUT"
+          python3 scripts/release_metadata.py --jar-directory build/libs
 
       - name: Generate SHA-256 files
         shell: bash
