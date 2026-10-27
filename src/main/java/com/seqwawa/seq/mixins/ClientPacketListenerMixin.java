@@ -42,6 +42,8 @@ public class ClientPacketListenerMixin {
                     shift = At.Shift.AFTER),
             cancellable = true)
     private void seq$onHandleOpenScreen(ClientboundOpenScreenPacket packet, CallbackInfo ci) {
+        com.seqwawa.seq.ui.CheapestQueueEffect.onMenuOpened(
+                packet.getContainerId(), packet.getTitle(), packet.getType());
         com.seqwawa.seq.managers.WorldEventLootTracker.getInstance()
                 .opened(packet.getContainerId(), packet.getTitle(), packet.getType());
         if (MinecraftCharacterClassDetector.getInstance()
@@ -58,6 +60,7 @@ public class ClientPacketListenerMixin {
                     shift = At.Shift.AFTER),
             cancellable = true)
     private void seq$onHandleContainerContent(ClientboundContainerSetContentPacket packet, CallbackInfo ci) {
+        com.seqwawa.seq.ui.CheapestQueueEffect.onMenuContents(packet.containerId(), packet.items());
         com.seqwawa.seq.managers.WorldEventLootTracker.getInstance().contents(packet.containerId(), packet.items());
         if (MinecraftCharacterClassDetector.getInstance()
                 .onCharacterInfoContents(packet.containerId(), packet.items())) {
@@ -73,6 +76,7 @@ public class ClientPacketListenerMixin {
                     shift = At.Shift.AFTER),
             cancellable = true)
     private void seq$onHandleContainerClose(ClientboundContainerClosePacket packet, CallbackInfo ci) {
+        com.seqwawa.seq.ui.CheapestQueueEffect.onMenuClosed(packet.getContainerId());
         com.seqwawa.seq.managers.WorldEventLootTracker.getInstance().closed(packet.getContainerId());
         if (MinecraftCharacterClassDetector.getInstance().onCharacterInfoClosed(packet.getContainerId())) {
             ci.cancel();
@@ -86,6 +90,7 @@ public class ClientPacketListenerMixin {
                     target = "Lnet/minecraft/network/protocol/PacketUtils;ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/network/PacketProcessor;)V",
                     shift = At.Shift.AFTER))
     private void seq$onEventRewardSlot(ClientboundContainerSetSlotPacket packet, CallbackInfo ci) {
+        com.seqwawa.seq.ui.CheapestQueueEffect.onMenuSlot(packet.getContainerId(), packet.getSlot(), packet.getItem());
         com.seqwawa.seq.managers.WorldEventLootTracker.getInstance()
                 .slot(packet.getContainerId(), packet.getSlot(), packet.getItem());
     }
@@ -110,6 +115,7 @@ public class ClientPacketListenerMixin {
         if (packet.overlay()) return;
 
         Component content = packet.content();
+        com.seqwawa.seq.ui.CheapestQueueEffect.onSystemChat(content);
         com.seqwawa.seq.managers.WorldEventLootTracker.getInstance().onChat(content);
         ChatManager.onSystemChat(content);
         if (SeqClient.getWarTerritoryQueueManager() != null) {

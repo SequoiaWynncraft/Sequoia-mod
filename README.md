@@ -28,6 +28,7 @@ If you are a Sequoia or allied guild member, the expected setup is simple: link 
 - Guild invite and removal audit relay for staff utilities
 - Party finder commands and UI
 - Seq-only war planner with timed availability, shared five-player territory queues, exclusive 1–5 player parties, a shared Lead + three Eco board, and collaborative territory zones
+- A single fading “CHEAPEST SUCCESS” flash when you queue a war with your own HQ known to use cheapest ([detection and controls](docs/cheapest-success.md))
 - Raid tracking and announcements
 - Per-player raid gambit counts parsed natively from the raid-start roster
 - Sequoia achievements: a badge gallery for raids, wars, professions, roles and raiding events

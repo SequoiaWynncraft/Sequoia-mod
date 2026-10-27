@@ -428,6 +428,7 @@ public class SeqClient implements ClientModInitializer {
         SeqCommand.register();
         ImagePreviews.initialize();
         PrincessRaidCelebration.initialize();
+        com.seqwawa.seq.ui.CheapestQueueEffect.initialize();
         RadianceCheckerClient.initialize();
         HalcyonRangeVisualiserClient.initialize();
         CraftedScrollRangeVisualiserClient.initialize();
@@ -1230,6 +1231,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(guildStorageEmeraldNotifyValueSetting);
         getConfigManager().register(guildStorageAspectNotifyValueSetting);
         getConfigManager().register(easterEggsSetting);
+        getConfigManager().register(com.seqwawa.seq.ui.CheapestQueueEffect.setting());
         getConfigManager().register(startupVideoSetting);
         getConfigManager().register(uiSizePercentSetting);
         getConfigManager().register(themeSetting);
