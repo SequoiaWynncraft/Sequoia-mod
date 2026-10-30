@@ -486,13 +486,7 @@ public final class UpdateManager {
         try {
             latest = fetchLatest();
         } catch (IOException failure) {
-            LOGGER.warn("Sequoia update check failed: {}", failure.getMessage());
-            if (local.copy() != null) {
-                show(new UpdateState.Available(local.copy(), local.note()), !manual);
-            } else {
-                state.set(new UpdateState.CheckFailed(ReleaseDownload.describe(failure), local.note()));
-                if (manual || local.note() != null) environment.showPrompt(!manual);
-            }
+            checkFailed(failure, manual, local);
             return;
         }
         String running = environment.runningVersion();
@@ -506,7 +500,13 @@ public final class UpdateManager {
             if (manual) environment.showPrompt(false);
             return;
         }
-        String verdict = rememberedIncompatibility(latest);
+        String verdict;
+        try {
+            verdict = rememberedIncompatibility(latest);
+        } catch (IOException failure) {
+            checkFailed(failure, manual, local);
+            return;
+        }
         if (verdict != null) {
             state.set(new UpdateState.Incompatible(latest, verdict));
             if (manual || !latest.tag().equals(ignoredTag)) environment.showPrompt(!manual);
@@ -521,25 +521,41 @@ public final class UpdateManager {
         if (manual || !latest.tag().equals(ignoredTag)) environment.showPrompt(!manual);
     }
 
+    private void checkFailed(IOException failure, boolean manual, Local local) {
+        LOGGER.warn("Sequoia update check failed: {}", failure.getMessage());
+        if (local.copy() != null) {
+            show(new UpdateState.Available(local.copy(), local.note()), !manual);
+        } else {
+            state.set(new UpdateState.CheckFailed(ReleaseDownload.describe(failure), local.note()));
+            if (manual || local.note() != null) environment.showPrompt(!manual);
+        }
+    }
+
     private void show(UpdateState next, boolean startup) {
         state.set(next);
         environment.showPrompt(startup);
     }
 
-    /** The recorded reason this exact release cannot run here, if nothing it checked has changed. */
-    private String rememberedIncompatibility(Release latest) {
+    /**
+     * The recorded reason this exact release cannot run here, if nothing it checked has changed.
+     * Throws if the release's .sha256 file, needed to tell, cannot be read.
+     */
+    private String rememberedIncompatibility(Release latest) throws IOException {
+        UpdateRecord.Data record;
         try {
-            UpdateRecord.Data record = UpdateRecord.read(updatesDir().resolve(UpdateRecord.FILE));
-            if (record == null || record.phase() != UpdateRecord.Phase.INCOMPATIBLE || record.environment() == null
-                    || !record.target().equals(latest.tag()) || !record.sha256().equalsIgnoreCase(String.valueOf(latest.sha256())))
-                return null;
-            return ReleaseJar.currentEnvironment(record.environment(), environment::installedVersion)
-                            .equals(record.environment())
-                    ? record.detail()
-                    : null;
+            record = UpdateRecord.read(updatesDir().resolve(UpdateRecord.FILE));
         } catch (IOException unreadable) {
             return null;
         }
+        if (record == null || record.phase() != UpdateRecord.Phase.INCOMPATIBLE || record.environment() == null
+                || !record.target().equals(latest.tag())
+                || !ReleaseJar.currentEnvironment(record.environment(), environment::installedVersion).equals(record.environment()))
+            return null;
+        // A release without a listed digest has only its .sha256 file read, within the base time limit.
+        String sha256 = latest.sha256() != null ? latest.sha256() : new ReleaseDownload.Transfer(
+                latest.checksum().url(), 0, null, latest.checksum().url(),
+                updatesDir().resolve(latest.jar().name() + ".download"), limits, timer).checksum();
+        return record.sha256().equalsIgnoreCase(sha256) ? record.detail() : null;
     }
 
     Release fetchLatest() throws IOException {

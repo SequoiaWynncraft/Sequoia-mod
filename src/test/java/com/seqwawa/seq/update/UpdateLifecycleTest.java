@@ -60,7 +60,11 @@ class UpdateLifecycleTest {
     }
 
     private static UpdateState awaitState(UpdateManager manager, Class<? extends UpdateState> type) throws InterruptedException {
-        await(() -> type.isInstance(manager.state()), WAIT, type.getSimpleName() + " (was " + manager.state() + ")");
+        try {
+            await(() -> type.isInstance(manager.state()), WAIT, type.getSimpleName());
+        } catch (AssertionError timedOut) {
+            throw new AssertionError(timedOut.getMessage() + " (was " + manager.state() + ")");
+        }
         return manager.state();
     }
 
@@ -317,6 +321,74 @@ class UpdateLifecycleTest {
         UpdateManager upgraded = manager();
         upgraded.start(true);
         awaitState(upgraded, UpdateState.Available.class);
+    }
+
+    private byte[] incompatibleChecksumOnlyRelease() throws Exception {
+        byte[] needsNewer = modJar("seq", "1.12.0", "{\"minecraft\":\"1.21.12\"}", 1000);
+        server.release("v1.12.0", needsNewer, false);
+        UpdateManager manager = manager();
+        manager.start(true);
+        awaitState(manager, UpdateState.Available.class);
+        manager.update(false);
+        awaitState(manager, UpdateState.Incompatible.class);
+        return needsNewer;
+    }
+
+    @Test
+    void withOnlyAChecksumFileAnUnchangedIncompatibleReleaseIsNotDownloadedAgain() throws Exception {
+        incompatibleChecksumOnlyRelease();
+        assertEquals(1, server.requests(CHECKSUM_PATH));
+
+        UpdateManager restarted = manager();
+        restarted.start(true);
+        var incompatible = (UpdateState.Incompatible) awaitState(restarted, UpdateState.Incompatible.class);
+        assertEquals("Sequoia 1.12.0 needs minecraft 1.21.12; this game has 1.21.11", incompatible.reason());
+        assertEquals(1, server.requests(JAR_PATH), "an unchanged release is not downloaded again");
+        assertEquals(2, server.requests(CHECKSUM_PATH), "its checksum file shows it is unchanged");
+
+        int requests = server.requests();
+        UpdateManager offline = manager();
+        offline.start(false);
+        Thread.sleep(300);
+        assertInstanceOf(UpdateState.Idle.class, offline.state());
+        assertEquals(requests, server.requests(), "with checks off nothing goes online");
+
+        game.installed.put("minecraft", "1.21.12");
+        UpdateManager upgraded = manager();
+        upgraded.start(true);
+        awaitState(upgraded, UpdateState.Available.class);
+        assertEquals(2, server.requests(CHECKSUM_PATH), "a changed game is offered it without reading the checksum");
+    }
+
+    @Test
+    void withOnlyAChecksumFileAReplacedIncompatibleReleaseIsOfferedAgain() throws Exception {
+        incompatibleChecksumOnlyRelease();
+        server.release("v1.12.0", release, false);
+
+        UpdateManager restarted = manager();
+        restarted.start(true);
+        awaitState(restarted, UpdateState.Available.class);
+        restarted.update(false);
+        awaitState(restarted, UpdateState.Installed.class);
+
+        assertArrayEquals(release, Files.readAllBytes(game.mods().resolve("sequoia-1.12.0.jar")));
+    }
+
+    @Test
+    void aChecksumFileThatCannotBeReadFailsTheCheckInsteadOfRepeatingTheOldVerdict() throws Exception {
+        byte[] needsNewer = incompatibleChecksumOnlyRelease();
+        String sidecar = sha256(needsNewer) + "  sequoia-1.12.0.jar\n";
+        server.file(CHECKSUM_PATH, Body.of(sidecar.getBytes(java.nio.charset.StandardCharsets.UTF_8)).stallingAfter(10));
+
+        UpdateManager restarted = manager();
+        restarted.start(true);
+        var failed = (UpdateState.CheckFailed) awaitState(restarted, UpdateState.CheckFailed.class);
+        assertEquals("No data received for 1 s (checksum file)", failed.reason());
+
+        server.text(CHECKSUM_PATH, 200, sidecar);
+        restarted.checkNow();
+        awaitState(restarted, UpdateState.Incompatible.class);
+        assertEquals(1, server.requests(JAR_PATH));
     }
 
     @Test
