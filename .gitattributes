@@ -1,3 +1,2 @@
 src/main/resources/licenses/** -text linguist-vendored
 *.sh text eol=lf
-/security/blocked.certs text eol=lf
