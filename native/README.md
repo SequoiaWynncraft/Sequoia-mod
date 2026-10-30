@@ -28,10 +28,12 @@ Cargo without mise.
 ## Local builds
 
 Run the tasks from the top directory of the repository or the source zip, after `mise trust`
-([development](../docs/development.md)). They need only Python and Rust from mise:
+([development](../docs/development.md)). The native tasks need Python and Rust from mise, and the
+mod build below also needs Java. Leave out `java` when you only build helpers, as from the source
+zip:
 
 ```sh
-MISE_ENABLE_TOOLS=python,rust mise install --locked
+MISE_ENABLE_TOOLS=java,python,rust mise install --locked
 ```
 
 `native:guest` and `native:wasm` run on Linux or macOS and need `bash`, `make`, `tar` and a C
@@ -56,11 +58,12 @@ The source zip contains this directory, `mise.toml`, `mise.lock`, the FFmpeg and
 under `upstream/` and the notices. Set up the tools and prerequisites in
 [local builds](#local-builds), and point `WASI_SDK_PATH` at wasi-sdk 34, such as the copy
 `mise run native:guest` unpacks under `native/out/toolchains/`. Pack a changed FFmpeg or zlib like
-the original archive and pass it in place of the one in `upstream/`:
+the original archive and pass it in place of the one in `upstream/`. `build-wasm.sh` writes the
+guest after changing directory, so give it an absolute output path:
 
 ```sh
-WASI_SDK_PATH=/path/to/wasi-sdk-34 mise run native:wasm my.wasm upstream/ffmpeg-9.0.2.tar.xz upstream/zlib-1.3.2.tar.gz
-mise run native:build linux-x86_64 --guest my.wasm
+WASI_SDK_PATH=/path/to/wasi-sdk-34 mise run native:wasm "$PWD/my.wasm" upstream/ffmpeg-9.0.2.tar.xz upstream/zlib-1.3.2.tar.gz
+mise run native:build linux-x86_64 --guest "$PWD/my.wasm"
 ```
 
 Then add the files of `native/out/sandbox/PLATFORM/` to the mod JAR at the same `sandbox/PLATFORM/`
