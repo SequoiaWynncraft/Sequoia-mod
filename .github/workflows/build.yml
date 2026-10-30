@@ -28,7 +28,7 @@ jobs:
       - name: Test source verification and packaging
         run: |
           python3 -m unittest discover -s native/tests -p test_build_inputs.py
-          python3 -m unittest discover -s tests -p test_release_metadata.py
+          python3 -m unittest discover -s tests -p 'test_*.py'
       # Caches are keyed by every input; PR runs cannot write main's entries, and tag builds
       # compile everything they ship.
       - name: Restore a guest built from the same inputs
@@ -112,8 +112,45 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  build:
+  # Packs the verified helpers once. The JAR and every Java test lane use these exact files.
+  pack:
     needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: guest
+          path: native/out/guest
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: native-*
+          merge-multiple: true
+          path: native/out
+      - name: Pack the verified helpers and assemble their corresponding source
+        run: |
+          python3 native/guest.py --sources-only
+          python3 native/package.py --require-all
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packs
+          path: |
+            native/out/sandbox/helpers-*.xz
+            native/out/sandbox/provenance.json
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: corresponding-source
+          path: native/out/dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  build:
+    needs: pack
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -128,53 +165,64 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: guest
-          path: native/out/guest
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: native-*
-          merge-multiple: true
-          path: native/out
+          name: packs
+          path: native/out/sandbox
       - name: Check the bundled notices against Cargo.lock and the toolchain
         working-directory: native/decoder
         run: |
           rustup toolchain install
           cargo fetch --locked
           python3 ../notices.py check
-      - name: Assemble the verified helpers and their corresponding source
-        run: |
-          python3 native/guest.py --sources-only
-          python3 native/package.py --require-all
       - name: Test Java blocklist installer
         shell: bash
         run: bash tests/install-java-blocklist.sh
+      # setup-java can resolve a JDK the runner image preinstalled rather than one it installs as the
+      # runner user. The installer copies with cp -p and refuses to replace the blocklist unless owner,
+      # group and mode survive, which preserving another user's ownership needs root for.
       - name: Update Java certificate blocklist
         shell: bash
-        run: bash scripts/install-java-blocklist.sh "$JAVA_HOME"
+        run: |
+          stat -c '%U:%G (%u:%g) %a %n' "$JAVA_HOME/lib/security" "$JAVA_HOME/lib/security/blocked.certs"
+          sudo bash scripts/install-java-blocklist.sh "$JAVA_HOME"
       - name: Build
         run: ./gradlew clean build remapJar --stacktrace
+      - name: Check the JAR carries exactly the tested packs
+        run: |
+          python3 - <<'EOF'
+          import hashlib, pathlib, sys, zipfile
+          jars = [p for p in pathlib.Path("build/libs").glob("*.jar") if not p.name.endswith(("-sources.jar", "-dev.jar"))]
+          with zipfile.ZipFile(jars[0]) as jar:
+              for name in ("helpers-x86_64.xz", "helpers-aarch64.xz", "provenance.json"):
+                  packed = hashlib.sha256(jar.read("sandbox/" + name)).hexdigest()
+                  tested = hashlib.sha256(pathlib.Path("native/out/sandbox", name).read_bytes()).hexdigest()
+                  print(packed, name)
+                  if packed != tested:
+                      sys.exit(f"{jars[0].name}: sandbox/{name} differs from the packs the test lanes used")
+          EOF
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: jar
           path: build/libs/*.jar
           if-no-files-found: error
           retention-days: 14
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: corresponding-source
-          path: native/out/dist/
-          if-no-files-found: error
-          retention-days: 14
 
-  windows-updater-tests:
-    needs: native
-    runs-on: windows-latest
+  # The updater and image previews on real systems: Windows file locking and helper processes,
+  # macOS Seatbelt and code signing, and unpacking the helpers on each CPU. Pull requests run the two
+  # most used systems; tags and manual runs cover all six platforms.
+  java-native-tests:
+    name: java ${{ matrix.platform }}
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON((startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && '[{"platform":"windows-x86_64","runner":"windows-2025"},{"platform":"macos-aarch64","runner":"macos-15"},{"platform":"windows-aarch64","runner":"windows-11-arm"},{"platform":"linux-aarch64","runner":"ubuntu-24.04-arm"},{"platform":"macos-x86_64","runner":"macos-15-intel"}]' || '[{"platform":"windows-x86_64","runner":"windows-2025"},{"platform":"macos-aarch64","runner":"macos-15"}]') }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Temurin has no 21.0.13 Windows build yet; Zulu ships the same October update.
+      # Temurin has no 21.0.13 Windows build yet; Zulu ships the same October update on every platform.
       # Return to temurin 21.0.13+9 once Adoptium publishes it for Windows x64.
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
@@ -182,25 +230,27 @@ jobs:
           java-version: '21.0.13'
           cache: gradle
           cache-read-only: ${{ github.event_name == 'pull_request' }}
-      # Gradle packages every platform's helper, so take all of this run's builds.
+      # The packs this run's JAR ships; the build job checks the JAR holds these exact files.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: native-*
-          merge-multiple: true
-          path: native/out
+          name: packs
+          path: native/out/sandbox
       - name: Test Java blocklist installer
         shell: bash
         run: bash tests/install-java-blocklist.sh
       - name: Update Java certificate blocklist
         shell: bash
         run: bash scripts/install-java-blocklist.sh "$JAVA_HOME"
-      - name: Run updater and image preview tests on Windows
-        run: .\gradlew.bat test --tests com.seqwawa.seq.update.UpdateManagerTest --tests com.seqwawa.seq.update.UpdateApplierTest --tests "com.seqwawa.seq.images.*" --stacktrace
-      - name: Upload Windows test reports
+      - name: Run updater and image preview tests
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then gradle=./gradlew.bat; else gradle=./gradlew; fi
+          "$gradle" test --tests "com.seqwawa.seq.update.*" --tests "com.seqwawa.seq.images.*" --stacktrace
+      - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: windows-test-reports
+          name: java-test-reports-${{ matrix.platform }}
           path: |
             build/reports/tests/test
             build/test-results/test

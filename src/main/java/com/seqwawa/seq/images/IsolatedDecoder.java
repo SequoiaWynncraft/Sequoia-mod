@@ -19,6 +19,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
@@ -66,7 +67,8 @@ final class IsolatedDecoder {
     // Windows reports no file key, but there the root is in the user's own temp directory.
     private static List<String> extractionRootIdentity;
 
-    private record BundledResource(String hash, int size) {}
+    /** A helper's expected bytes: a raw file placed in the JAR, else a member of its CPU's pack. */
+    private record BundledResource(String hash, int size, boolean packed) {}
 
     private static final Map<String, BundledResource> BUNDLED = new HashMap<>();
 
@@ -428,8 +430,13 @@ final class IsolatedDecoder {
         BundledResource bundled = BUNDLED.get(key);
         byte[] bytes = null;
         if (bundled == null) {
-            bytes = bundledBytes(key);
-            bundled = new BundledResource(hash(bytes), bytes.length);
+            bytes = rawHelper(key);
+            if (bytes != null) {
+                bundled = new BundledResource(hash(bytes), bytes.length, false);
+            } else {
+                BundledHelpers.Member member = BundledHelpers.JAR.member(key);
+                bundled = new BundledResource(member.sha256(), member.size(), true);
+            }
             BUNDLED.put(key, bundled);
         }
         String hash = bundled.hash();
@@ -447,26 +454,27 @@ final class IsolatedDecoder {
             extractionRootIdentity = identity(extractionRoot);
             extractionRoot.toFile().deleteOnExit();
         }
-        Path directory = extractionRoot.resolve(hash);
-        if (Files.isSymbolicLink(directory)) throw new IOException("Unsafe sandbox path");
-        Files.createDirectories(directory);
-        Path target = directory.resolve(name);
-        if (Files.isSymbolicLink(target)) throw new IOException("Unsafe sandbox path");
+        Path target = helperPath(hash, name);
         if (!Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
-            if (bytes == null) bytes = bundledBytes(key);
-            Path temporary = Files.createTempFile(directory, "helper-", ".tmp");
-            try {
-                Files.write(temporary, bytes);
+            if (bundled.packed()) {
+                extractPacked(platform);
+            } else {
+                if (bytes == null) bytes = rawHelper(key);
+                if (bytes == null) throw new IOException("Missing bundled sandbox");
+                Path temporary = Files.createTempFile(target.getParent(), "helper-", ".tmp");
                 try {
-                    Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
-                } catch (FileAlreadyExistsException raced) {
-                    // Another load extracted the same verified bytes first.
+                    Files.write(temporary, bytes);
+                    try {
+                        Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+                    } catch (FileAlreadyExistsException raced) {
+                        // Another load extracted the same verified bytes first.
+                    }
+                } finally {
+                    Files.deleteIfExists(temporary);
                 }
-            } finally {
-                Files.deleteIfExists(temporary);
             }
         }
-        // The cached hash comes from the JAR; check the extracted file on every launch.
+        // The expected hash comes from the JAR; check the extracted file on every launch.
         if (Files.size(target) != bundled.size()
                 || !hash(Files.readAllBytes(target)).equals(hash)) throw new IOException("Sandbox verification failed");
         if (!windows)
@@ -476,9 +484,37 @@ final class IsolatedDecoder {
                             PosixFilePermission.OWNER_READ,
                             PosixFilePermission.OWNER_WRITE,
                             PosixFilePermission.OWNER_EXECUTE));
-        directory.toFile().deleteOnExit();
+        target.getParent().toFile().deleteOnExit();
         target.toFile().deleteOnExit();
         return target;
+    }
+
+    /** {@code extractionRoot/hash/name}, refusing links planted at either level. */
+    private static Path helperPath(String hash, String name) throws IOException {
+        Path directory = extractionRoot.resolve(hash);
+        if (Files.isSymbolicLink(directory)) throw new IOException("Unsafe sandbox path");
+        Files.createDirectories(directory);
+        Path target = directory.resolve(name);
+        if (Files.isSymbolicLink(target)) throw new IOException("Unsafe sandbox path");
+        return target;
+    }
+
+    /**
+     * Extracts every packed helper of {@code platform} that is not on disk yet in one pass over its
+     * pack, so the Windows broker and decoder cost a single decompression.
+     */
+    private static void extractPacked(String platform) throws IOException {
+        Map<BundledHelpers.Member, Path> missing = new LinkedHashMap<>();
+        for (BundledHelpers.Member member : BundledHelpers.JAR.members(platform)) {
+            if (IsolatedDecoder.class.getResource("/sandbox/" + member.path()) != null) continue;
+            Path target = helperPath(member.sha256(), member.path().substring(platform.length() + 1));
+            if (!Files.exists(target, LinkOption.NOFOLLOW_LINKS)) missing.put(member, target);
+        }
+        BundledHelpers.JAR.extract(missing);
+        for (Path target : missing.values()) {
+            target.getParent().toFile().deleteOnExit();
+            target.toFile().deleteOnExit();
+        }
     }
 
     /** File key and owner of a directory; empty if the path is not a directory. */
@@ -493,11 +529,15 @@ final class IsolatedDecoder {
         }
     }
 
-    private static byte[] bundledBytes(String key) throws IOException {
+    /**
+     * A helper placed directly at sandbox/PLATFORM/NAME in the JAR, or null. It takes precedence over
+     * the packed one, which is how a modified decoder build is used (native/README.md).
+     */
+    private static byte[] rawHelper(String key) throws IOException {
         try (var input = IsolatedDecoder.class.getResourceAsStream("/sandbox/" + key)) {
-            if (input == null) throw new IOException("Missing bundled sandbox");
-            byte[] bytes = input.readNBytes(32 * 1024 * 1024 + 1);
-            if (bytes.length > 32 * 1024 * 1024) throw new IOException("Invalid sandbox resource");
+            if (input == null) return null;
+            byte[] bytes = input.readNBytes(BundledHelpers.MAX_HELPER_BYTES + 1);
+            if (bytes.length > BundledHelpers.MAX_HELPER_BYTES) throw new IOException("Invalid sandbox resource");
             return bytes;
         }
     }

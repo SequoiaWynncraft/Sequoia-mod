@@ -1,15 +1,21 @@
-"""Check the verified helpers against the guest and write the provenance and corresponding source.
+"""Check the verified helpers against the guest and write the packs, provenance and corresponding source.
 
-usage: package.py [--require-all]
+usage: package.py [--require-all] [--packs-only]
+       package.py --unpack PACK PROVENANCE DEST
 
 Every helper in native/out/sandbox/PLATFORM/ must match the files its native/out/PLATFORM/
-validation.json recorded and have been verified with native/out/guest/decoder.wasm. Writes
-native/out/sandbox/provenance.json, which the JAR ships, and the reproducible
+validation.json recorded and have been verified with native/out/guest/decoder.wasm. The helpers for
+each CPU go into one XZ stream, native/out/sandbox/helpers-ARCH.xz: the same FFmpeg guest compiled
+for three systems is mostly the same bytes, which a solid stream stores once and per-file JAR
+compression cannot. native/out/sandbox/provenance.json, which the JAR ships with the packs, lists
+every helper's offset, length and SHA-256 in its pack. Also writes the reproducible
 native/out/dist/sequoia-images-native-source.zip: the authenticated FFmpeg and zlib archives with
 FFmpeg's signature, the build recipe and helper sources, and the notices. It is a zip because
 Modrinth accepts zip files next to the JAR. --require-all fails unless all six platforms are present.
+--packs-only skips the source archive, for test builds that have no upstream archives.
+--unpack writes the helpers of a pack back to separate files, checked against the provenance.
 """
-import argparse, hashlib, json, os, pathlib, subprocess, sys, zipfile
+import argparse, hashlib, json, lzma, os, pathlib, re, subprocess, sys, zipfile
 
 import guest
 
@@ -18,6 +24,13 @@ OUT = ROOT / "native/out"
 PLATFORMS = ["windows-x86_64", "windows-aarch64", "linux-x86_64", "linux-aarch64", "macos-x86_64", "macos-aarch64"]
 SHIPPED = {"windows": ["sandbox.exe", "seqimages-decoder.exe"], "linux": ["seqimages-decoder"],
            "macos": ["seqimages-decoder"]}
+ARCHES = ["x86_64", "aarch64"]
+# The dictionary must reach back across one whole helper to find its twin for another system.
+PACK_DICT_BYTES = 16 << 20
+PACK_FILTERS = [{"id": lzma.FILTER_LZMA2, "preset": 9 | lzma.PRESET_EXTREME, "dict_size": PACK_DICT_BYTES}]
+# BundledHelpers refuses anything larger; keep the build within the limits the mod enforces.
+MAX_MEMBER_BYTES, MAX_PACK_BYTES = 32 << 20, 64 << 20
+MEMBER_PATH = re.compile(r"[a-z]+-[a-z0-9_]+/[A-Za-z0-9._-]+")
 # Repository files a recipient needs to rebuild the guest and the helpers.
 SOURCE_FILES = ["LICENSE.txt", ".github/workflows/build.yml", "native", "src/main/resources/licenses"]
 SOURCE_EXCLUDES = ("native/out", "native/decoder/target")
@@ -44,6 +57,70 @@ def platforms(out, guest_sha256, require_all):
     return found
 
 
+def pack_members(arch, found):
+    """The present helpers for one CPU, Windows first: most players then decode the least."""
+    return [f"{system}-{arch}/{name}" for system in ("windows", "linux", "macos")
+            if f"{system}-{arch}" in found for name in SHIPPED[system]]
+
+
+def check_pack(packed, entry):
+    """Decompresses a pack and checks every member against its index entry; returns the members."""
+    data = lzma.decompress(packed, format=lzma.FORMAT_XZ)
+    if len(data) != entry["uncompressed_bytes"] or sum(m["bytes"] for m in entry["members"]) != len(data):
+        raise ValueError(f"{entry['file']}: members do not cover the pack exactly")
+    members = {}
+    for member in entry["members"]:
+        if not MEMBER_PATH.fullmatch(member["path"]):
+            raise ValueError(f"{entry['file']}: unexpected member path {member['path']!r}")
+        content = data[member["offset"]:member["offset"] + member["bytes"]]
+        if len(content) != member["bytes"] or sha256(content) != member["sha256"]:
+            raise ValueError(f"{entry['file']}: {member['path']} does not match its index entry")
+        members[member["path"]] = content
+    return members
+
+
+def write_packs(out, found):
+    """Writes one XZ pack per CPU and returns the index the mod reads from provenance.json."""
+    packs = {}
+    for arch in ARCHES:
+        index, data = [], bytearray()
+        for path in pack_members(arch, found):
+            content = (out / "sandbox" / path).read_bytes()
+            if len(content) > MAX_MEMBER_BYTES:
+                raise ValueError(f"{path} is larger than the mod accepts")
+            index.append({"path": path, "offset": len(data), "bytes": len(content), "sha256": sha256(content)})
+            data += content
+        if not index:
+            continue
+        if len(data) > MAX_PACK_BYTES:
+            raise ValueError(f"the {arch} helpers are larger together than the mod accepts")
+        packed = lzma.compress(bytes(data), format=lzma.FORMAT_XZ, check=lzma.CHECK_CRC64, filters=PACK_FILTERS)
+        entry = {"file": f"helpers-{arch}.xz", "bytes": len(packed), "sha256": sha256(packed),
+                 "uncompressed_bytes": len(data), "dict_bytes": PACK_DICT_BYTES, "members": index}
+        for path, content in check_pack(packed, entry).items():
+            platform, name = path.split("/")
+            if sha256(content) != found[platform][name]:
+                raise ValueError(f"{path}: the pack does not reproduce the verified helper")
+        (out / "sandbox" / entry["file"]).write_bytes(packed)
+        packs[arch] = entry
+    return packs
+
+
+def unpack(pack, provenance, dest):
+    """Writes each helper in a pack to DEST/PLATFORM/NAME after checking it against the provenance."""
+    entries = [e for e in json.loads(provenance.read_text())["packs"].values() if e["file"] == pack.name]
+    if len(entries) != 1:
+        raise ValueError(f"{provenance} does not describe {pack.name}")
+    packed = pack.read_bytes()
+    if sha256(packed) != entries[0]["sha256"]:
+        raise ValueError(f"{pack.name} differs from the pack the provenance describes")
+    for path, content in check_pack(packed, entries[0]).items():
+        target = dest / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+        print(f"{path} {len(content)} {sha256(content)}")
+
+
 def source_archive(path):
     """A reproducible zip, so equal sources give equal bytes."""
     upstream = [guest.SOURCES[key][field] for key, field in
@@ -65,36 +142,42 @@ def source_archive(path):
     return len(members)
 
 
-def package(require_all):
+def package(require_all, packs_only=False):
     record = json.loads((OUT / "guest/guest.json").read_text())
     if guest.sha256(OUT / "guest/decoder.wasm") != record["decoder_wasm"]["sha256"]:
         raise ValueError("guest.json does not describe native/out/guest/decoder.wasm")
-    for source in (guest.SOURCES["ffmpeg"], guest.SOURCES["zlib"]):
-        guest.require_pin(guest.ARCHIVES / source["url"].rsplit("/", 1)[1], source["sha256"])
+    if not packs_only:
+        for source in (guest.SOURCES["ffmpeg"], guest.SOURCES["zlib"]):
+            guest.require_pin(guest.ARCHIVES / source["url"].rsplit("/", 1)[1], source["sha256"])
     found = platforms(OUT, record["decoder_wasm"]["sha256"], require_all)
-    archive = OUT / "dist/sequoia-images-native-source.zip"
-    count = source_archive(archive)
+    packs = write_packs(OUT, found)
     commit = os.environ.get("GITHUB_SHA") or subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
     run = (f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/"
            f"{os.environ['GITHUB_RUN_ID']}" if "GITHUB_RUN_ID" in os.environ else None)
-    provenance = {
-        "source_commit": commit,
-        "ci_run": run,
-        "guest": record,
-        "platforms": found,
-        "corresponding_source": {"file": archive.name, "sha256": guest.sha256(archive)},
-    }
+    provenance = {"source_commit": commit, "ci_run": run, "guest": record, "platforms": found}
+    summary = ", ".join(f"{e['file']} {e['bytes']} bytes" for e in packs.values())
+    if not packs_only:
+        archive = OUT / "dist/sequoia-images-native-source.zip"
+        count = source_archive(archive)
+        provenance["corresponding_source"] = {"file": archive.name, "sha256": guest.sha256(archive)}
+        summary += f"; source archive {count} files"
+    provenance["packs"] = packs
     (OUT / "sandbox/provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
-    print(f"{len(found)} platform(s) from guest {record['decoder_wasm']['sha256'][:12]}; "
-          f"source archive {count} files")
+    print(f"{len(found)} platform(s) from guest {record['decoder_wasm']['sha256'][:12]}; {summary}")
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--require-all", action="store_true")
+    parser.add_argument("--packs-only", action="store_true")
+    parser.add_argument("--unpack", nargs=3, type=pathlib.Path, metavar=("PACK", "PROVENANCE", "DEST"))
+    args = parser.parse_args()
     try:
-        package(parser.parse_args().require_all)
+        if args.unpack:
+            unpack(*args.unpack)
+        else:
+            package(args.require_all, args.packs_only)
     except ValueError as error:
         sys.exit(str(error))
 

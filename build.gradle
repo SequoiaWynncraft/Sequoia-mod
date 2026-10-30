@@ -128,6 +128,8 @@ dependencies {
 
     // Theme files
     include(implementation("org.snakeyaml:snakeyaml-engine:3.0.1"))
+    // Unpacks the image decoder helpers, which ship as one XZ stream per CPU (native/package.py).
+    include(implementation("org.tukaani:xz:1.12"))
 
     testImplementation(platform("org.junit:junit-bom:5.12.1"))
     testImplementation("org.junit.jupiter:junit-jupiter")
@@ -141,26 +143,22 @@ tasks.withType(Test).configureEach {
     }
 }
 
-// Decoder helpers come from native/build-native.py, never from tracked binaries.
+// Decoder helpers come from native/build-native.py, never from tracked binaries, and ship packed
+// by native/package.py: one XZ stream per CPU, indexed in provenance.json.
 // -Pallow_partial_native permits a local build with only some platforms.
 def nativeResources = file("native/out")
 def allowPartialNative = providers.gradleProperty("allow_partial_native").isPresent()
-def requiredNativeHelpers = [
-        "windows-x86_64/seqimages-decoder.exe", "windows-x86_64/sandbox.exe",
-        "windows-aarch64/seqimages-decoder.exe", "windows-aarch64/sandbox.exe",
-        "linux-x86_64/seqimages-decoder", "linux-aarch64/seqimages-decoder",
-        "macos-x86_64/seqimages-decoder", "macos-aarch64/seqimages-decoder"
-]
+def requiredNativeFiles = ["helpers-x86_64.xz", "helpers-aarch64.xz", "provenance.json"]
 
 processResources {
     from(nativeResources) {
-        include requiredNativeHelpers.collect { "sandbox/${it}" } + ["sandbox/provenance.json"]
+        include requiredNativeFiles.collect { "sandbox/${it}" }
     }
     inputs.property "allow_partial_native", allowPartialNative
     doFirst {
-        def missing = requiredNativeHelpers.findAll { !new File(nativeResources, "sandbox/${it}").isFile() }
+        def missing = requiredNativeFiles.findAll { !new File(nativeResources, "sandbox/${it}").isFile() }
         if (!missing.isEmpty() && !allowPartialNative) {
-            throw new GradleException("Missing native decoder builds: ${missing.join(', ')}. See native/README.md.")
+            throw new GradleException("Missing native decoder packs: ${missing.join(', ')}. See native/README.md.")
         }
     }
     inputs.property "version", project.version
@@ -279,6 +277,23 @@ jar {
         rename { "${it}_${project.archives_base_name}" }
     }
 }
+
+// Sequoia's updater up to 1.11.1 gives the whole JAR download 60 seconds; a size budget keeps a
+// release reachable for it on modest connections. Raising it is a deliberate change to gradle.properties.
+def maxReleaseJarBytes = (project.property("max_release_jar_bytes") as String).toLong()
+def checkReleaseJarSize = tasks.register("checkReleaseJarSize") {
+    def releaseJar = tasks.named("remapJar").flatMap { it.archiveFile }
+    inputs.file(releaseJar)
+    inputs.property("maxReleaseJarBytes", maxReleaseJarBytes)
+    doLast {
+        def file = releaseJar.get().asFile
+        if (file.length() > maxReleaseJarBytes) {
+            throw new GradleException("${file.name} is ${file.length()} bytes, over the ${maxReleaseJarBytes}-byte budget.")
+        }
+        logger.lifecycle("${file.name}: ${file.length()} bytes (budget ${maxReleaseJarBytes})")
+    }
+}
+tasks.named("build") { dependsOn checkReleaseJarSize }
 
 // configure the maven publication
 publishing {

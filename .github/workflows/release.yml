@@ -28,14 +28,13 @@ jobs:
     needs: preflight
     uses: ./.github/workflows/build.yml
 
-  # Publishes exactly the JAR and native source archive the build job built and tested.
+  # Stages exactly the JAR and native source archive the build job built and tested as a draft
+  # release, which nobody sees as "latest". After acceptance, promote.yml publishes these same files.
   publish:
     needs: build
     runs-on: ubuntu-24.04
     permissions:
-      contents: write # create the GitHub release and upload its assets
-    env:
-      MODRINTH_PROJECT_SLUG: sequoia
+      contents: write # create the draft release and upload its assets
 
     steps:
       - name: Checkout
@@ -68,71 +67,23 @@ jobs:
             (cd "$(dirname "$file")" && sha256sum "$(basename "$file")") > "$file.sha256"
           done
 
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          generate_release_notes: ${{ steps.release_metadata.outputs.generate_release_notes == 'true' }}
-          fail_on_unmatched_files: true
-          body: ${{ steps.release_metadata.outputs.changelog }}
-          files: |
-            build/libs/*.jar
-            build/libs/*.jar.sha256
-            build/corresponding-source/*
-
-      - name: Publish to Modrinth
-        env:
-          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
-          MOD_VERSION: ${{ steps.release_metadata.outputs.version_number }}
-          MOD_CHANGELOG: ${{ steps.release_metadata.outputs.changelog }}
-          MOD_MINECRAFT_VERSION: ${{ steps.release_metadata.outputs.minecraft_version }}
-          MOD_VERSION_TYPE: ${{ steps.release_metadata.outputs.version_type }}
-          MOD_JAR: ${{ steps.release_metadata.outputs.mod_jar }}
-          SOURCE_ARCHIVE: build/corresponding-source/sequoia-images-native-source.zip
+      - name: Stage the draft release and check it holds exactly these files
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES: ${{ steps.release_metadata.outputs.changelog }}
+          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-
-          if [[ -z "${MODRINTH_TOKEN}" ]]; then
-            echo "MODRINTH_TOKEN secret is required to publish tagged releases to Modrinth." >&2
-            exit 1
-          fi
-
-          project_id="$(curl --fail --show-error --silent \
-            -H "User-Agent: SequoiaWynncraft/sequoia-mod-release-workflow" \
-            "https://api.modrinth.com/v2/project/${MODRINTH_PROJECT_SLUG}" | jq -r '.id')"
-
-          if [[ -z "${project_id}" || "${project_id}" == "null" ]]; then
-            echo "Failed to resolve Modrinth project ID for slug ${MODRINTH_PROJECT_SLUG}." >&2
-            exit 1
-          fi
-
-          payload="$(jq -cn \
-            --arg name "Sequoia ${MOD_VERSION}" \
-            --arg version_number "${MOD_VERSION}" \
-            --arg changelog "${MOD_CHANGELOG}" \
-            --arg project_id "${project_id}" \
-            --arg minecraft_version "${MOD_MINECRAFT_VERSION}" \
-            --arg version_type "${MOD_VERSION_TYPE}" \
-            '{
-              name: $name,
-              version_number: $version_number,
-              changelog: $changelog,
-              project_id: $project_id,
-              game_versions: [$minecraft_version],
-              version_type: $version_type,
-              dependencies: [],
-              loaders: ["fabric"],
-              featured: true,
-              status: "listed",
-              file_parts: ["primary", "source"],
-              primary_file: "primary"
-            }'
-          )"
-
-          curl --fail-with-body --show-error --silent \
-            -X POST "https://api.modrinth.com/v2/version" \
-            -H "Authorization: ${MODRINTH_TOKEN}" \
-            -H "User-Agent: SequoiaWynncraft/sequoia-mod-release-workflow" \
-            --form-string "data=${payload}" \
-            -F "primary=@${MOD_JAR}" \
-            -F "source=@${SOURCE_ARCHIVE}"
+          files=(build/libs/*.jar build/libs/*.jar.sha256 build/corresponding-source/*)
+          python3 scripts/github_release.py stage "$TAG" "${files[@]}"
+          python3 scripts/github_release.py verify "$TAG" "${files[@]}"
+          {
+            echo "### Release candidate $TAG (draft)"
+            echo
+            echo "Accept the draft's own files, then run Promote release with the JAR's SHA-256:"
+            echo
+            echo '```'
+            sha256sum build/libs/*.jar
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

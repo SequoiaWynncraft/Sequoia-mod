@@ -73,6 +73,7 @@ Sequoia-only integrations for that session; later membership rejections stay sil
 - `/seq war unavailable`: clear your war availability
 - `/seq connect`: connect to the backend
 - `/seq status`: show connection state
+- `/seq update`: check for a Sequoia update and show the update prompt
 - `/seq logout`: clear the current backend session
 - `/seq request aspects`: request aspects from the guild reward queue
 - `/seq request tome <reason>`: request a tome from the guild reward queue
@@ -465,6 +466,32 @@ theme token for disabled, active, and hover states. Add alpha adjustments only w
    previews plus legacy completed-war and queue lifecycle reporting. Sequoia's core UI, live war telemetry, and
    active-class detection do not require it.
 5. Start the game and press `O`, or run `/seq`.
+
+## Updating
+
+When **Update checks on startup** is on, Sequoia asks GitHub for the latest release on the title screen
+and shows the update prompt. **Update** downloads the release with visible progress, checks its size,
+SHA-256, version and requirements, and installs it: on Linux and macOS at once, on Windows when Minecraft
+closes. **Update + Exit** closes Minecraft only after the install succeeded. A failure stays on screen
+with the reason and **Retry**; **Cancel** stops a download. `/seq update` opens the prompt at any time.
+
+What an install left behind is kept in `updates/` in the game directory: `sequoia-update.properties`
+records the last attempt and `update-helper.log` holds the Windows installer's output. The next start
+reports how the attempt ended, even with update checks off, which only stop Sequoia from going online on
+its own. The previous JAR stays in `mods` as `sequoia-VERSION.jar.previous` until the new version runs.
+
+To install a release by hand, for example on a connection that cannot finish the download:
+
+1. Download `sequoia-VERSION.jar` and `sequoia-VERSION.jar.sha256` from the
+   [releases page](https://github.com/SequoiaWynncraft/Sequoia-mod/releases) or Modrinth.
+2. Check the file: `sha256sum -c sequoia-VERSION.jar.sha256` on Linux, `shasum -a 256 -c` on macOS, or
+   compare `Get-FileHash sequoia-VERSION.jar` with the `.sha256` file on Windows.
+3. Close Minecraft, remove the old `sequoia-*.jar` from `mods`, add the new JAR and start the game.
+4. If Sequoia is missing after an interrupted install, rename `sequoia-OLD.jar.previous` in `mods` back to
+   `sequoia-OLD.jar`, or install the new JAR as above.
+
+To try a release candidate published in a fork, start Minecraft with
+`-Dsequoia.updater.repository=OWNER/REPOSITORY`; the prompt then names that repository.
 
 ## License
 
