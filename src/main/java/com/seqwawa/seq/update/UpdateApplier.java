@@ -242,7 +242,9 @@ public final class UpdateApplier {
     private static void attempt(Paths paths, Disk disk) throws IOException {
         Path backup = paths.backupJar();
         boolean replacing = !paths.currentJar().equals(paths.finalJar());
-        if (replacing && disk.exists(paths.currentJar()) && !disk.exists(backup)) {
+        // A present current JAR always moves aside. A backup already beside it is from an earlier,
+        // finished install, and the JAR being replaced now is the one worth keeping.
+        if (replacing && disk.exists(paths.currentJar())) {
             if (!disk.exists(paths.pendingJar()) && !disk.exists(paths.finalJar()))
                 throw new IOException("The staged update is missing");
             disk.move(paths.currentJar(), backup);

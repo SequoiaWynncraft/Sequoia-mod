@@ -86,6 +86,24 @@ class UpdateApplierTest {
         assertFalse(Files.exists(pending));
     }
 
+    @Test
+    void aBackupLeftByAnEarlierInstallDoesNotLeaveTheCurrentJarLoadable() throws Exception {
+        // A launcher restored its own Sequoia.jar after an earlier install, whose backup is still here.
+        Path launcherJar = mods.resolve("Sequoia.jar");
+        Files.move(current, launcherJar);
+        Files.writeString(mods.resolve("Sequoia.jar.previous"), "an older install");
+        var paths = new UpdateApplier.Paths(mods, launcherJar, pending, finalJar);
+
+        var outcome = UpdateApplier.swap(paths, 1, 0, UpdateApplier.DISK, millis -> {}, message -> {});
+
+        assertTrue(outcome.installed(), outcome.detail());
+        try (Stream<Path> files = Files.list(mods)) {
+            assertEquals(List.of("sequoia-1.12.0.jar"),
+                    files.map(p -> p.getFileName().toString()).filter(n -> n.endsWith(".jar")).sorted().toList());
+        }
+        assertEquals("current", Files.readString(mods.resolve("Sequoia.jar.previous")));
+    }
+
     /** Stops the swap dead after {@code operations} file operations, like a crash at that point. */
     private static final class Crash extends RuntimeException {}
 
