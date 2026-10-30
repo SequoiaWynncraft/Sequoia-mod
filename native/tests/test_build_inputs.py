@@ -48,6 +48,47 @@ class SourceVerificationTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.guest.require_pin(archive, sha256(b"official source"))
 
+    def test_download_recovers_from_transient_errors(self):
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(self.guest.urllib.request, "urlopen", side_effect=[
+                    self.guest.urllib.error.URLError(TimeoutError()),
+                    ConnectionResetError(), io.BytesIO(b"complete archive")]), \
+                patch.object(self.guest.time, "sleep"):
+            target = Path(temp) / "archive"
+            self.guest.download("https://example.com/archive", target)
+            self.assertEqual(b"complete archive", target.read_bytes())
+
+    def test_download_does_not_retry_permanent_http_errors(self):
+        error = self.guest.urllib.error.HTTPError("https://example.com/archive", 404, "missing", {}, None)
+        with patch.object(self.guest.urllib.request, "urlopen", side_effect=error) as request, \
+                patch.object(self.guest.time, "sleep") as sleep:
+            with self.assertRaises(self.guest.urllib.error.HTTPError):
+                self.guest.download(error.url, Path("unused"))
+            self.assertEqual(1, request.call_count)
+            sleep.assert_not_called()
+
+    def test_download_stops_after_three_failed_attempts(self):
+        with patch.object(self.guest.urllib.request, "urlopen", side_effect=ConnectionResetError()) as request, \
+                patch.object(self.guest.time, "sleep"):
+            with self.assertRaises(ConnectionResetError):
+                self.guest.download("https://example.com/archive", Path("unused"))
+            self.assertEqual(3, request.call_count)
+
+    def test_download_retry_replaces_partial_bytes(self):
+        class Interrupted(io.BytesIO):
+            def read(self, size=-1):
+                if self.tell():
+                    raise ConnectionResetError()
+                return super().read(size)
+
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(self.guest.urllib.request, "urlopen", side_effect=[
+                    Interrupted(b"partial archive is longer"), io.BytesIO(b"complete")]), \
+                patch.object(self.guest.time, "sleep"):
+            target = Path(temp) / "archive"
+            self.guest.download("https://example.com/archive", target)
+            self.assertEqual(b"complete", target.read_bytes())
+
     def test_rejects_signature_from_another_key(self):
         self.gpgv("[GNUPG:] GOODSIG 0 x\n[GNUPG:] VALIDSIG " + "A" * 40 + " 2026-01-01 1 0 4 0 1 8 00 "
                   + "B" * 40 + "\n")

@@ -8,7 +8,7 @@ native/out/guest/decoder.wasm with the pinned wasi-sdk (or WASI_SDK_PATH) and re
 guest.json. --sources-only downloads and checks the sources without building.
 """
 import argparse, base64, hashlib, json, os, pathlib, platform, shutil, subprocess, sys
-import tarfile, tempfile, urllib.request
+import http.client, tarfile, tempfile, time, urllib.error, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCES = json.loads((ROOT / "native/sources.json").read_text())
@@ -30,8 +30,18 @@ def require_pin(path, expected):
 
 
 def download(url, destination):
-    with urllib.request.urlopen(url, timeout=60) as response, open(destination, "wb") as out:
-        shutil.copyfileobj(response, out)
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response, open(destination, "wb") as out:
+                shutil.copyfileobj(response, out)
+            return
+        except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead) as error:
+            if isinstance(error, urllib.error.HTTPError) and error.code not in (408, 429) and error.code < 500:
+                raise
+            if attempt == 2:
+                raise
+            print(f"Retrying {url} after download failed: {error}", file=sys.stderr)
+            time.sleep(attempt + 1)
 
 
 def dearmor(armored):
