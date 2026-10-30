@@ -21,36 +21,61 @@ workflow produces everything else under `native/out/`:
    the same bytes, which one stream per CPU stores once; the mod unpacks only its own platform's
    helpers and checks each against its SHA-256.
 
+The Build workflow runs these steps as the `native:*` tasks in the repository's `mise.toml`, which
+also pins Python and the Rust toolchain. `decoder/rust-toolchain.toml` pins the same toolchain for
+Cargo without mise.
+
 ## Local builds
 
-With Python 3.11.4+, `gpgv`, `make` and Rust on Linux or macOS:
+Run the tasks from the top directory of the repository or the source zip, after `mise trust`
+([development](../docs/development.md)). The native tasks need Python and Rust from mise, and the
+mod build below also needs Java. Leave out `java` when you only build helpers, as from the source
+zip:
 
 ```sh
-python3 native/guest.py
-python3 native/build-native.py linux-x86_64 --target x86_64-unknown-linux-gnu  # without a musl C compiler
-python3 native/package.py --packs-only   # packs and indexes the helpers built so far
-./gradlew build -Pallow_partial_native   # without the flag, Gradle refuses a JAR missing any platform
+MISE_ENABLE_TOOLS=java,python,rust mise install --locked
 ```
+
+`native:guest` and `native:wasm` run on Linux or macOS and need `bash`, `make`, `tar` and a C
+compiler as `cc`. `native:guest` also needs `gpgv`. `native:build` runs on the platform it builds
+for, with that platform's C toolchain: musl tools on Linux (or `--target x86_64-unknown-linux-gnu`),
+Xcode's command line tools on macOS, or the Visual Studio C++ build tools on Windows.
+
+```sh
+mise run native:guest
+mise run native:build linux-x86_64 --target x86_64-unknown-linux-gnu  # without a musl C compiler
+mise run native:pack --packs-only   # packs and indexes the helpers built so far
+mise run build -Pallow_partial_native   # without the flag, Gradle refuses a JAR missing any platform
+```
+
+With both packs in `native/out/sandbox`, as in a CI run's `packs` artifact,
+`mise run native:verify-jar` checks that the JAR in `build/libs` carries exactly those packs. A
+partial build has only its own CPU's pack, so the check fails there.
 
 ## Using a modified decoder
 
-The source zip contains this directory, the FFmpeg and zlib archives under `upstream/` and the
-notices. Pack a changed FFmpeg or zlib like the original archive, then:
+The source zip contains this directory, `mise.toml`, `mise.lock`, the FFmpeg and zlib archives
+under `upstream/`, the verification media under `src/test/resources/`, and the notices. Set up the tools and prerequisites in
+[local builds](#local-builds), and point `WASI_SDK_PATH` at wasi-sdk 34, such as the copy
+`mise run native:guest` unpacks under `native/out/toolchains/`. Pack a changed FFmpeg or zlib like
+the original archive and pass it in place of the one in `upstream/`. `build-wasm.sh` writes the
+guest after changing directory, so give it an absolute output path:
 
 ```sh
-WASI_SDK_PATH=/path/to/wasi-sdk-34 bash native/build-wasm.sh my.wasm ffmpeg-9.0.2.tar.xz zlib-1.3.2.tar.gz
-python3 native/build-native.py linux-x86_64 --guest my.wasm
+WASI_SDK_PATH=/path/to/wasi-sdk-34 mise run native:wasm "$PWD/my.wasm" upstream/ffmpeg-9.0.2.tar.xz upstream/zlib-1.3.2.tar.gz
+mise run native:build linux-x86_64 --guest "$PWD/my.wasm"
 ```
 
-and add the files of `native/out/sandbox/PLATFORM/` to the mod JAR at the same `sandbox/PLATFORM/`
+Then add the files of `native/out/sandbox/PLATFORM/` to the mod JAR at the same `sandbox/PLATFORM/`
 path. A helper placed there takes precedence over the packed one; the mod runs whichever helper its
-JAR contains. `python3 native/package.py --unpack PACK PROVENANCE DEST` restores the shipped helpers
+JAR contains. `mise run native:pack --unpack PACK PROVENANCE DEST` restores the shipped helpers
 from a pack, checked against the provenance, for comparison. A helper built from another guest skips the pixel and sandbox
 checks, which expect the pinned guest and the repository's test media.
 
 ## Updating dependencies
 
 Check new versions, digests and keys in `sources.json` against the FFmpeg, zlib and wasi-sdk
-release pages; a changed digest alone proves nothing. After a crate or toolchain change, run
-`python3 native/notices.py write` and review the result. Run the build checks with
-`python3 -m unittest discover -s native/tests -p test_build_inputs.py`.
+release pages. A changed digest alone proves nothing. A Rust toolchain change updates both
+`mise.toml` and `decoder/rust-toolchain.toml`, and `mise run test:scripts` fails while they differ.
+After a crate or toolchain change, run `mise run native:notices write` and review the result. Run
+the build checks with `mise run test:scripts`.

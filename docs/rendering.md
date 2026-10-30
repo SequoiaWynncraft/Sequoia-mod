@@ -1,4 +1,4 @@
-# Rendering Architecture
+# Rendering architecture
 
 Sequoia UI rendering is split into three layers:
 
@@ -19,3 +19,14 @@ Screen commands are tied to the screen instance that submitted them. HUD command
 UI colors are semantic tokens defined by `UiColor`. Screens request tokens through `ThemeManager.color(...)`; they should not declare screen-level color palettes. Shared surface, text, control, status, and map tokens keep layout code independent from concrete RGBA values.
 
 The bundled values live in grouped YAML files under `assets/seq/themes`. `ThemeReader` validates names, duplicate or unknown keys, RGBA lists, component ranges, and required colors. Optional tokens use their built-in fallback when omitted. External `*.theme.yml` files are loaded from `config/sequoia/themes`, and the complete schema is documented in `docs/theme-template.theme.yml`. The in-game editor creates complete personal themes through `ThemeWriter`, using an atomic replacement where the filesystem supports it, and registers saved themes immediately. Bundled names cannot be overwritten. `ThemeManager` also starts with a complete built-in default, so a missing or malformed bundled asset cannot leave rendering without a theme.
+
+Use `ThemeManager.color(token)` and `SequoiaUiStyle` for new UI.
+Preserve the configured alpha instead of forcing colors opaque.
+Headings use `accent.primary_hover`, dividers use `accent.primary_dark`, and setting titles use primary text.
+Disabled, active, and hover states use their corresponding theme tokens.
+
+Map cluster hulls use 35% alpha, including selected clusters. Other themed controls preserve their configured alpha.
+The war planner's opacity setting scales panel backgrounds but does not change map imagery.
+Rendering and input must use the same control bounds, including when a search field shrinks to fit.
+
+The [theme template](theme-template.theme.yml) lists every supported token.

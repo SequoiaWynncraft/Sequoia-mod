@@ -25,13 +25,15 @@ The client joins only this derived value. The backend recomputes it from its sto
 
 The client obtains the origin from its build-selected API or WebSocket URL. The backend obtains it from `app.public-base-url` (`APP_PUBLIC_BASE_URL`). Origin normalization lowercases the hostname, removes port 443 and the path, preserves nondefault ports, and maps `wss` to `https`. Userinfo, queries, fragments, and insecure schemes are rejected. Request headers and response fields cannot override this origin. Main and raid profiles share the account purpose; distinct origins separate deployments.
 
-## Deploy both components
+## Client and backend configuration
 
-Deploy the backend to every destination used by the mod, including a separate raid-profile backend. Confirm that each `APP_PUBLIC_BASE_URL` matches its client URL origin. Then distribute the patched mod (candidate version 1.10.17). Neither deployment order provides compatibility during the interval: new clients refuse old challenges, and old clients cannot complete authentication with the new server.
+Each backend's `APP_PUBLIC_BASE_URL` must match its client's URL origin, including a separate raid-profile backend.
+The mod requires version 2 challenges, and the backend requires `client_nonce`.
+Deploy the matching backend before distributing the mod, and verify account and treasury sign-in
+against it. If the backend must roll back to an incompatible protocol, roll back the mod with it.
 
-Use the existing Minecraft-auth and treasury minimum-version settings for clear update messages. Require the release that actually contains this repair; a version string alone is not the proof. Existing unexpired application tokens retain their existing lifetime. No database migration is required.
-
-A server update cannot protect old mod installations when they contact a malicious backend. Users must update the mod. Rollback must not restore raw-seed signing or make `client_nonce` optional.
+The backend's Minecraft-auth and treasury minimum-version settings control update messages.
+Unexpired application tokens retain their existing lifetime.
 
 ## Verify the protocol
 

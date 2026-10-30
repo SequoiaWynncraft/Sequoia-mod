@@ -1,6 +1,6 @@
 # World event reward collection
 
-The **World Events → Collect world event rewards** setting is enabled by default.
+The **Collect world event rewards** setting under **World Events** is enabled by default.
 It shares personal end-chest observations through the existing authenticated Sequoia API.
 Collection is limited to the main Wynncraft server. Backend access currently follows the
 ordinary guild-member REST policy.
@@ -61,17 +61,15 @@ window may already be absent from the snapshot. `complete=true` means a full-con
 arrived within the observation window, including an empty baseline. Missing baselines remain
 incomplete and are excluded by the backend. Removals/replacements and recent updates no longer
 invalidate the capture. The game has no generation-finished marker, so rewards generated after
-the cutoff can be missed. Live gameplay verification of packet timing and the native entity-label
-fallback remains necessary; synthetic tests do not establish that.
+the cutoff can be missed.
 
 Full chests are flagged as overflow-risk observations, not proven deletion. Observed rates
 cannot recover rewards already deleted by the game.
 
 ## Delivery
 
-Deploy backend support for `rune` and `event_item` before distributing this mod version.
-An older backend rejects unknown categories and the mod discards permanent 4xx responses.
-The updated backend can also recognize matching `other` observations from older mods.
+The backend must accept `rune` and `event_item` categories.
+A backend that rejects unknown categories returns a permanent 4xx response, which discards the sample.
 
 The bounded in-memory queue retries the same payload every 30 seconds on transport/server,
 authentication and rate-limit errors. Permanent 4xx errors discard the sample. The queue
