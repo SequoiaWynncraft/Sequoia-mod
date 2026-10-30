@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Consumer;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -37,16 +38,17 @@ public class UpdatePromptScreen extends Screen {
     private static final int MAX_LINES = 7;
     private static final Duration LONG_INSTALLER_WAIT = Duration.ofMinutes(10);
 
-    private record Button(String label, Runnable action) {}
+    /** A button's label and what it does, given the open prompt. */
+    public record Button(String label, Consumer<UpdatePromptScreen> action) {}
 
-    private record Placed(Button button, float x, float y) {
+    public record Placed(Button button, float x, float y) {
         boolean contains(float pointX, float pointY) {
             return pointX >= x && pointX <= x + BUTTON_WIDTH && pointY >= y && pointY <= y + BUTTON_HEIGHT;
         }
     }
 
     /** @param progress 0..1 for a download bar, or negative for none */
-    private record Content(String title, List<String> lines, float progress, List<Button> buttons) {}
+    public record Content(String title, List<String> lines, float progress, List<Button> buttons) {}
 
     private final Screen parent;
     private float mouseX;
@@ -62,7 +64,8 @@ public class UpdatePromptScreen extends Screen {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
         this.mouseX = MinecraftUiRenderer.mouseX(mouseX);
         this.mouseY = MinecraftUiRenderer.mouseY(mouseY);
-        Content content = content(UpdateManager.getInstance().state());
+        UpdateManager manager = UpdateManager.getInstance();
+        Content content = content(manager.state(), manager.runningVersion(), manager.testSource());
 
         UiRenderer.renderScreen(this, canvas -> {
             float screenWidth = canvas.metrics().width();
@@ -102,10 +105,11 @@ public class UpdatePromptScreen extends Screen {
         if (click.button() != 0) return super.mouseClicked(click, outsideScreen);
         float x = MinecraftUiRenderer.mouseX(click.x());
         float y = MinecraftUiRenderer.mouseY(click.y());
-        Content content = content(UpdateManager.getInstance().state());
+        UpdateManager manager = UpdateManager.getInstance();
+        Content content = content(manager.state(), manager.runningVersion(), manager.testSource());
         for (Placed placed : layout(content.buttons(), MinecraftUiRenderer.screenWidth(), MinecraftUiRenderer.screenHeight())) {
             if (placed.contains(x, y)) {
-                placed.button().action().run();
+                placed.button().action().accept(this);
                 return true;
             }
         }
@@ -136,7 +140,7 @@ public class UpdatePromptScreen extends Screen {
     }
 
     /** One row of buttons, centred; rendering and clicking both place buttons with this. */
-    private static List<Placed> layout(List<Button> buttons, float screenWidth, float screenHeight) {
+    public static List<Placed> layout(List<Button> buttons, float screenWidth, float screenHeight) {
         float panelX = (screenWidth - PANEL_WIDTH) / 2f;
         float panelY = (screenHeight - PANEL_HEIGHT) / 2f;
         float rowWidth = buttons.size() * BUTTON_WIDTH + Math.max(0, buttons.size() - 1) * BUTTON_SPACING;
@@ -150,10 +154,11 @@ public class UpdatePromptScreen extends Screen {
         return placed;
     }
 
-    private Content content(UpdateState state) {
-        UpdateManager manager = UpdateManager.getInstance();
-        Button close = new Button("Close", this::close);
-        Button releasePage = new Button("Release page", manager::openReleasePage);
+    /** What the prompt shows in {@code state}; drawing and clicking both use this. */
+    public static Content content(UpdateState state, String running, String testSource) {
+        Button close = new Button("Close", UpdatePromptScreen::close);
+        Button releasePage = new Button("Release page", screen -> UpdateManager.getInstance().openReleasePage());
+        Button ignore = new Button("Ignore", UpdatePromptScreen::ignore);
         List<String> lines = new ArrayList<>();
         Content content = switch (state) {
             case UpdateState.Idle idle -> new Content("Checking for updates", lines(lines, "Asking GitHub for the latest release..."), -1, List.of(close));
@@ -162,22 +167,22 @@ public class UpdatePromptScreen extends Screen {
                     lines(lines, "Sequoia " + upToDate.running() + " is the latest release."), -1, List.of(close));
             case UpdateState.CheckFailed failed -> new Content("Couldn't check for updates",
                     lines(lines, failed.reason(), note(failed.previous())), -1,
-                    List.of(close, new Button("Try again", manager::checkNow)));
+                    List.of(close, new Button("Try again", screen -> UpdateManager.getInstance().checkNow())));
             case UpdateState.Available available when available.release().downloadedCopy() -> new Content(
                     "Sequoia update ready to install",
-                    lines(lines, "Current: " + manager.runningVersion() + "   Downloaded: " + available.release().tag(),
+                    lines(lines, "Current: " + running + "   Downloaded: " + available.release().tag(),
                             "The download is verified and ready.", platformLine(), note(available.previous())),
-                    -1, List.of(new Button("Ignore", this::ignore), new Button("Install", () -> manager.update(false)),
-                            new Button("Install + Exit", () -> manager.update(true))));
+                    -1, List.of(ignore, new Button("Install", screen -> UpdateManager.getInstance().update(false)),
+                            new Button("Install + Exit", screen -> UpdateManager.getInstance().update(true))));
             case UpdateState.Available available -> new Content("Sequoia update available",
-                    lines(lines, "Current: " + manager.runningVersion() + "   Latest: " + available.release().tag(),
+                    lines(lines, "Current: " + running + "   Latest: " + available.release().tag(),
                             UpdateState.megabytes(available.release().jar().size()) + " download. " + platformLine(),
                             note(available.previous())),
-                    -1, List.of(new Button("Ignore", this::ignore), new Button("Update", () -> manager.update(false)),
-                            new Button("Update + Exit", () -> manager.update(true))));
+                    -1, List.of(ignore, new Button("Update", screen -> UpdateManager.getInstance().update(false)),
+                            new Button("Update + Exit", screen -> UpdateManager.getInstance().update(true))));
             case UpdateState.Attention attention -> new Content("Sequoia update",
                     lines(lines, note(attention.previous())), -1,
-                    List.of(close, new Button("Check for updates", manager::checkNow)));
+                    List.of(close, new Button("Check for updates", screen -> UpdateManager.getInstance().checkNow())));
             case UpdateState.WaitingForInstaller waiting -> new Content("Sequoia update installing",
                     lines(lines, note(waiting.previous()) + (waiting.pid() > 0 ? " (installer process " + waiting.pid() + ")." : "."),
                             "Sequoia will check again when it finishes.",
@@ -189,20 +194,22 @@ public class UpdatePromptScreen extends Screen {
                     lines(lines, "Replacing the mod file..."), -1, List.of());
             case UpdateState.Installed installed -> new Content("Sequoia " + installed.release().tag() + " installed",
                     lines(lines, "Restart Minecraft to use it."), -1,
-                    List.of(close, new Button("Exit now", manager::exitNow)));
+                    List.of(close, new Button("Exit now", screen -> UpdateManager.getInstance().exitNow())));
             case UpdateState.Staged staged -> new Content("Sequoia " + staged.release().tag() + " is ready",
                     lines(lines, "It installs when Minecraft closes."), -1,
-                    List.of(new Button("Cancel install", manager::cancelStaged), close, new Button("Exit now", manager::exitNow)));
+                    List.of(new Button("Cancel install", screen -> UpdateManager.getInstance().cancelStaged()), close,
+                            new Button("Exit now", screen -> UpdateManager.getInstance().exitNow())));
             case UpdateState.Failed failed -> new Content("Sequoia update failed",
                     lines(lines, failed.reason(), "Details are in logs/latest.log."), -1,
-                    List.of(close, releasePage, new Button("Retry", manager::retry)));
+                    List.of(close, releasePage, new Button("Retry", screen -> UpdateManager.getInstance().retry())));
             case UpdateState.ManualOnly manual -> new Content("Install Sequoia " + manual.release().tag() + " by hand",
                     lines(lines, manual.reason(), "Download it from the release page and replace the Sequoia JAR in your mods folder."),
-                    -1, List.of(close, releasePage, new Button("Mods folder", manager::openModsFolder)));
+                    -1, List.of(close, releasePage,
+                            new Button("Mods folder", screen -> UpdateManager.getInstance().openModsFolder())));
             case UpdateState.Incompatible incompatible -> new Content("Sequoia " + incompatible.release().tag() + " can't run here",
-                    lines(lines, incompatible.reason()), -1, List.of(new Button("Close", this::ignore), releasePage));
+                    lines(lines, incompatible.reason()), -1, List.of(new Button("Close", UpdatePromptScreen::ignore), releasePage));
         };
-        if (manager.testSource() != null) content.lines().add("(test source: " + manager.testSource() + ")");
+        if (testSource != null) content.lines().add("(test source: " + testSource + ")");
         return content;
     }
 
@@ -215,7 +222,7 @@ public class UpdatePromptScreen extends Screen {
             lines(lines, "Waiting for data (" + downloading.secondsWithoutData() + " s)...");
         if (downloading.exitAfter()) lines(lines, "Minecraft will close when the update is installed.");
         return new Content("Downloading Sequoia update", lines, total > 0 ? Math.min(1f, (float) received / total) : 0,
-                List.of(new Button("Cancel", UpdateManager.getInstance()::cancel)));
+                List.of(new Button("Cancel", screen -> UpdateManager.getInstance().cancel())));
     }
 
     private void ignore() {
