@@ -1,8 +1,5 @@
 # Player identity contract
 
-Status: implemented for mod identity handling in 1.10.14.
-Backend protocol/delivery changes remain a separate track.
-
 ## Resolve once, then act
 
 A parser recognizes the event and supplies each person's exact range and role to
@@ -75,14 +72,8 @@ account; a verified name fallback supports roster records missing their UUID.
 Party health uses exact canonical profile-name-to-UUID matches and rejects
 conflicts, without nickname/prefix fallback after resolution.
 
-Regression coverage includes the cinfrascitizen bank poison, GaztheCat/RaidKeeper,
-Reyzhia/nunot colouring, inherited metadata, identical actor/target displays,
-explicit-name formats, cache conflicts/expiry/read purity, session changes and
-account-to-UUID health/rank attachment. A live Wynncraft smoke test remains useful.
-
-## Separate backend track
+## Backend attribution
 
 Observer authentication does not authenticate the reported speaker. Backend
 sender validation, wire evidence/versioning, report correlation, delivery
-acknowledgements and retries remain independently required. This local refactor
-does not claim those delivery changes or a verified rollout.
+acknowledgements, and retries are separate from client identity resolution.

@@ -1,298 +1,189 @@
-# Raid profiles: backend contract
+# Raid-profile API
 
-The members panel consumes the raid-profile API implemented in
-[`sequoia-backend`](https://github.com/SequoiaWynncraft/sequoia-backend).
-The Java service owns the guild's catalog and saved profiles. The mod fetches
-both through this API and caches the last response locally.
+The [Sequoia backend](https://github.com/SequoiaWynncraft/sequoia-backend) owns the build catalog and saved profiles.
+The mod parses responses with `RaidProfileStore.parseProfilesResponse` into `RaidProfilesResponse` and caches the last response locally.
+`RaidProfilesBackendContractTest` checks the saved response fixture.
 
-The Wartorn Palace is keyed `WTP`, and every profile carries a non-null
-`minecraft.uuid`. The panel matches profiles by UUID rather than username.
-See [Matching](#matching-on-uuid-not-on-username).
+All endpoints require a bearer token, `X-Sequoia-Mod-Version`, and current Sequoia membership.
+Unauthenticated requests return `401`. Non-members return `403 not_in_guild`, including website administrators without guild membership.
+Membership follows the backend's Wynncraft roster, not the token's remaining lifetime. Request headers cannot supply another player's identity.
+Fields use `snake_case` and timestamps use ISO-8601 instants.
 
-`RaidProfilesResponse` is the client's Gson model and
-`RaidProfileStore.parseProfilesResponse` is the only parser, so a payload that
-matches this document needs no client work. `RaidProfilesBackendContractTest`
-parses a saved sample response to verify client parsing. It does not run the
-backend or automatically detect changes to the server's response format.
+## Backend selection
 
-Conventions are the ones the rest of the protocol already uses: REST, `snake_case`
-fields, ISO-8601 instants, and the `Authorization: Bearer <token>` plus
-`X-Sequoia-Mod-Version` headers `ApiClient` sends on every call.
+`BuildConfig.RAID_PROFILES_API_URL` follows `BuildConfig.API_URL` unless the build sets `raid_profiles_environment`.
+Production uses `https://api.seqwawa.com/api`. Staging uses `https://staging.seqwawa.com/api`.
+To use staging profiles while the other integrations stay on their selected backend, run:
 
-Every profile endpoint requires authenticated current Sequoia membership.
-Unauthenticated calls receive `401`; non-members receive `403 not_in_guild`.
-The Java service checks its existing Wynncraft membership roster for REST and
-live updates, without granting this feature to non-member website administrators.
-Header-supplied identities are not supported. Membership freshness follows the
-backend's Wynncraft roster source, not the lifetime of an authentication token.
+```sh
+mise run build -- -Praid_profiles_environment=staging
+```
 
-Base URL is `BuildConfig.RAID_PROFILES_API_URL`, which follows `BuildConfig.API_URL`
-unless `raid_profiles_environment` is set at build time. The production and
-staging API bases are `https://api.seqwawa.com/api` and
-`https://staging.seqwawa.com/api`, respectively.
+When the two backends differ, the mod authenticates separately for raid profiles and keeps that token in memory.
+The account must be linked on that backend. If it is not linked, the mod provides the staging website's sign-in link.
+The main session is unchanged. The mod ignores live `raid_profile_update` messages in this mode because the WebSocket belongs to the main backend.
 
----
+## GET /raid-profiles
 
-## 1. `GET /raid-profiles`
-
-The single call the panel makes. Returns the meta catalog **and** every member's
-profile together, because they are always read together: a profile's build keys
-mean nothing without the catalog that names them, and shipping them apart only
-creates a window where the two disagree.
-
-Called when the panel opens, when the player presses Refresh, and after a save.
-
-### Response `200`
+The response includes the catalog and saved profiles together.
+The mod requests it when the panel opens, on Refresh, and after saving.
 
 ```json
 {
   "schema_version": 1,
   "catalog": {
     "builds": [
-      { "key": "ASCENDANCY", "label": "Ascendancy", "position": 1 },
-      { "key": "CSPRING",    "label": "Cspring",    "position": 2 },
-      { "key": "RESONANCE",  "label": "Resonance",  "position": 3 },
-      { "key": "HALCYON",    "label": "Halcyon",    "position": 4 },
-      { "key": "CATACLYSM",  "label": "Cataclysm",  "position": 5 },
-      { "key": "TCRACK",     "label": "Tcrack",     "position": 6 },
-      { "key": "HERO",       "label": "Hero",       "position": 7 },
-      { "key": "HADAL",      "label": "Hadal",      "position": 8 }
+      { "key": "ASCENDANCY", "label": "Ascendancy", "position": 1 }
     ],
     "raids": [
       {
-        "key": "TNA", "short_name": "TNA", "api_name": "The Nameless Anomaly", "position": 1,
-        "build_keys": ["ASCENDANCY", "CSPRING", "RESONANCE"]
-      },
-      {
-        "key": "TCC", "short_name": "TCC", "api_name": "The Canyon Colossus", "position": 2,
-        "build_keys": ["CSPRING", "ASCENDANCY", "HALCYON"]
-      },
-      {
-        "key": "NOTG", "short_name": "NOTG", "api_name": "Nest of the Grootslangs", "position": 3,
-        "build_keys": ["CATACLYSM", "TCRACK", "HERO", "HADAL"]
-      },
-      {
-        "key": "NOL", "short_name": "NOL", "api_name": "Orphion's Nexus of Light", "position": 4,
-        "build_keys": ["ASCENDANCY", "CATACLYSM", "HALCYON"]
-      },
-      {
-        "key": "WTP", "short_name": "WTP", "api_name": "The Wartorn Palace", "position": 5,
-        "build_keys": ["CSPRING", "ASCENDANCY", "RESONANCE"]
+        "key": "TNA",
+        "short_name": "TNA",
+        "api_name": "The Nameless Anomaly",
+        "position": 1,
+        "build_keys": ["ASCENDANCY"]
       }
     ]
   },
   "profiles": [
     {
-      "minecraft": { "uuid": "66efb975-31b4-499e-9b46-a34980edd8ee", "username": "ArcLeRetour" },
-      "builds": ["ASCENDANCY", "CSPRING", "RESONANCE"],
+      "minecraft": {
+        "uuid": "10000000-0000-0000-0000-000000000001",
+        "username": "ExamplePlayer"
+      },
+      "builds": ["ASCENDANCY"],
       "can_bring_auras": true,
       "region": "EU",
-      "status": "I am the goat",
-      "updated_at": "2026-09-05T09:21:15Z"
-    },
-    {
-      "minecraft": { "uuid": "10000000-0000-0000-0000-000000000002", "username": "Blousy" },
-      "builds": ["HADAL", "HERO"],
-      "can_bring_auras": false,
-      "region": null,
-      "status": null,
+      "status": "Available for TNA",
       "updated_at": "2026-09-05T09:21:15Z"
     }
   ]
 }
 ```
 
-### `catalog.builds[]`
+### Catalog builds
 
-| Field | Type | Notes |
-| --- | --- | --- |
-| `key` | string | **Required.** Uppercase identifier. This is what profiles store, so it must never change once members have saved with it. |
-| `label` | string | What players see. Safe to rename at any time; saved profiles are unaffected. Omitted or blank falls back to a tidied key (`CSPRING` becomes `Cspring`). |
-| `position` | int | Sort order in the setup screen and the chips. Ties break on `key`. |
+| Field | Meaning |
+| --- | --- |
+| `key` | Required uppercase identifier stored in profiles. Never reuse it for another build. |
+| `label` | Display name. A missing or blank label falls back to a tidied key. |
+| `position` | Display order. Ties sort by `key`. |
 
-### `catalog.raids[]`
+### Catalog raids
 
-| Field | Type | Notes |
-| --- | --- | --- |
-| `key` | string | **Required.** Uppercase identifier, used by the filter. |
-| `short_name` | string | The abbreviation the guild says out loud, shown on filter chips and column headings. Keep it to about four characters or it will be clipped. Defaults to `key`. |
-| `api_name` | string | **The exact string Wynncraft uses**, see below. |
-| `position` | int | Order of the filter chips and of the rows in a member's profile card. |
-| `build_keys` | string[] | Which builds are meta for this raid. Every key must also appear in `catalog.builds`, or the client ignores it. |
+| Field | Meaning |
+| --- | --- |
+| `key` | Required uppercase identifier used by the raid filter. |
+| `short_name` | Display abbreviation. Defaults to `key`. Keep it around four characters to fit. |
+| `api_name` | Exact Wynncraft raid name used to read guild raid counts. |
+| `position` | Display order. |
+| `build_keys` | Meta builds for this raid. The client ignores keys absent from `catalog.builds`. |
 
-**`api_name` matters more than it looks.** The mod reads each member's clear count
-straight off the Wynncraft guild roster, under
-`members.<rank>.<name>.globalData.currentGuildRaids.list`, where the keys are the
-raids' full names. `api_name` is what maps one to the other, so a typo silently
-turns every count into `0`. The five correct values are in the sample above, and
-`RaidProfilesBackendContractTest` asserts them.
+`api_name` must match a key in `members.<rank>.<name>.globalData.currentGuildRaids.list`.
+A mismatch displays a zero count. The supported names are:
 
-`currentGuildRaids` is deliberate: it counts raids run while in the guild, where
-`raids` would fold in everything a member did in a previous guild.
+| Key | API name |
+| --- | --- |
+| `TNA` | The Nameless Anomaly |
+| `TCC` | The Canyon Colossus |
+| `NOTG` | Nest of the Grootslangs |
+| `NOL` | Orphion's Nexus of Light |
+| `WTP` | The Wartorn Palace |
 
-### `profiles[]`
+Use `currentGuildRaids`, not `raids`. The latter includes raids completed in previous guilds.
 
-| Field | Type | Notes |
-| --- | --- | --- |
-| `minecraft.uuid` | string | **Required, never null.** This is what the client keys profiles on, and what it fetches player heads with. |
-| `minecraft.username` | string | Display text. The client shows it but never matches on it, because it changes on a rename. |
-| `builds` | string[] | Keys from `catalog.builds`. Anything the catalog does not list is skipped, so an in-flight meta edit never breaks a client. |
-| `can_bring_auras` | bool | Separate from builds on purpose: bringing auras is not a build. Defaults to `false`. |
-| `region` | string | `EU`, `NA` or `AS`. Omit when the member set none; an unknown value reads as none. |
-| `status` | string | Free text, max 64 characters. The client truncates beyond that. |
-| `updated_at` | ISO-8601 | When the member last saved. Absent is treated as "now". |
+### Profiles
 
-Include only members who actually saved a profile. Absent means "has not shared
-one", which the panel draws differently from "shared one with nothing ticked". A
-member who deliberately ticked nothing belongs here with `"builds": []`.
+| Field | Meaning |
+| --- | --- |
+| `minecraft.uuid` | Required, non-null profile identity and player-head lookup key. |
+| `minecraft.username` | Display name. It is not the profile identity. |
+| `builds` | Catalog build keys. The client skips unknown keys. |
+| `can_bring_auras` | Boolean, separate from builds. Defaults to `false`. |
+| `region` | `EU`, `NA`, or `AS`. Missing and unknown values mean no region. |
+| `status` | Free text. The client truncates it to 64 characters. |
+| `updated_at` | Last save time. Missing values use the current time. |
 
----
+Return only players who have saved a profile. A missing profile means the player has not shared one.
+A profile with `"builds": []` means the player shared a profile with no builds selected.
 
-## 2. `PUT /raid-profiles/me`
+## PUT /raid-profiles/me
 
-Called when a member saves the setup screen. The client will not leave that screen
-until this succeeds, so a failure has to come back as a real error status.
-
-### Request
+Saving sends the caller's profile without a username. The bearer token identifies the caller.
+The setup screen remains open until the request succeeds.
 
 ```json
 {
-  "builds": ["ASCENDANCY", "CSPRING"],
+  "builds": ["ASCENDANCY"],
   "can_bring_auras": true,
   "region": "EU",
-  "status": "down for tna all evening"
+  "status": "Available for TNA"
 }
 ```
 
-The caller is whoever the bearer token belongs to, so there is no username in the
-body. `updated_at` is set server-side; ignore a client-supplied one, or a wrong
-clock on someone's PC makes their profile look newest.
+`builds` may be empty. The backend sets `updated_at` and ignores a client-supplied timestamp.
+A successful `200` response is one `profiles[]` entry. The client applies that response, including normalized values, rather than its original request.
 
-`builds` may be empty. That is a member saying "I own none of the meta yet", which
-is different from having no profile, and both need to be storable.
+Errors contain `{"code": "...", "message": "..."}`. The client uses `code` for behavior and shows `message` under Save.
 
-### Response `200`
-
-One `profiles[]` entry, exactly as in `GET`. The client applies what you return
-rather than what it sent, so any normalising you do (uppercasing keys, dropping
-duplicates, truncating the status) shows up immediately and correctly.
-
-### Errors
-
-Every error body is `{"code": "...", "message": "..."}`. `code` is what the client
-branches on; `message` is shown to the player under the Save button, so write it
-for a person to read.
-
-| Status | `code` | When |
+| Status | Code | Meaning |
 | --- | --- | --- |
-| `400` | `invalid_request` | A build key outside the catalog, or a region that is not `EU`/`NA`/`AS`. |
-| `409` | `identity_unknown` | The backend holds no Minecraft identity for the caller, so a stored profile could never be listed. Recoverable: the client tells the player to rejoin and retry. |
-| `401` | `token_invalid` / `token_expired` | No or bad token. |
-| `403` | `not_in_guild` | Authenticated but not a guild member. |
-| `426` | `mod_version_unsupported` | Client below the configured minimum. |
+| `400` | `invalid_request` | Unknown build key or invalid region. |
+| `409` | `identity_unknown` | The backend has no Minecraft identity for the caller. The client asks the player to rejoin and retry. |
+| `401` | `token_invalid` or `token_expired` | Missing, invalid, or expired token. |
+| `403` | `not_in_guild` | The caller is not a current guild member. |
+| `426` | `mod_version_unsupported` | The client is below the configured minimum version. |
 
----
+## DELETE /raid-profiles/me
 
-## 3. `DELETE /raid-profiles/me`
+This optional endpoint clears the caller's profile and returns `204`.
+The mod does not call it.
 
-Optional. Clears the caller's profile so they read as "has not shared one" again.
-Respond `204`. Nothing in the mod calls this yet; it exists so a member can undo a
-mistake without a database edit.
+## WebSocket raid_profile_update
 
----
-
-## 4. WebSocket `raid_profile_update`
-
-Optional, and worth doing last. Pushed to every connected guild member when
-someone saves, so a panel left open goes stale in seconds rather than minutes.
-Same envelope as `party_finder_update`: a `type` plus the changed object.
+The optional update message refreshes open panels after a save or removal.
+Without it, the panel refreshes through GET when opened, refreshed, or saved.
 
 ```json
 {
   "type": "raid_profile_update",
   "action": "updated",
   "profile": {
-    "minecraft": { "uuid": "66efb975-31b4-499e-9b46-a34980edd8ee", "username": "ArcLeRetour" },
-    "builds": ["ASCENDANCY", "CSPRING", "RESONANCE"],
+    "minecraft": {
+      "uuid": "10000000-0000-0000-0000-000000000001",
+      "username": "ExamplePlayer"
+    },
+    "builds": ["ASCENDANCY"],
     "can_bring_auras": true,
     "region": "EU",
-    "status": "I am the goat",
+    "status": "Available for TNA",
     "updated_at": "2026-09-05T09:21:15Z"
   }
 }
 ```
 
-`action` is `updated` or `removed`. Both carry a non-null `minecraft.uuid`, which
-is what the client matches on.
+`action` is `updated` or `removed`. Both require a non-null `minecraft.uuid`.
+A removal retains the profile shape with its other fields set to `null`.
+`RaidProfileStore.onLiveUpdate` removes the entry instead of treating it as an empty shared profile.
+The backend can gate this message by mod version through `VERSION_REMINDER_INTERVALS` in `ConnectionManager`.
 
-On `removed` the payload keeps a profile's shape with its fields set to `null`
-rather than omitted. **The client must not apply that as a profile**, or the
-member reads as having shared an empty one instead of none;
-`RaidProfileStore.onLiveUpdate` branches on the action before touching anything.
+## Matching on UUID, not on username
 
-Without it the panel still refreshes when it opens, when Refresh is pressed, and
-after a save. `GET /raid-profiles` alone makes the feature work.
+Profiles use `minecraft.uuid` as their identity. A rename must update or remove the existing entry, not create a duplicate under a new username.
+This applies to GET responses and both WebSocket actions.
 
-If you gate capabilities by client version, add the type to
-`VERSION_REMINDER_INTERVALS` in `ConnectionManager` alongside
-`guild_raid_announcement`. `10` is a sensible interval: an outdated client gets
-told, but not on every save.
+`RaidProfilesResponse` also builds a lowercase-name index for offline friends known only by name.
+Roster-backed profile matching does not use that index.
 
----
+## Catalog updates
 
-## Matching on uuid, not on username
+The backend reads builds, raids, and their relationships from `raid_profile_catalog_builds`, `raid_profile_catalog_raids`, and `raid_profile_catalog_raid_builds`.
+Changes appear on the next request without a mod release.
 
-The one design point the client has to get right, and the reason removal events
-carry the uuid.
+Keep build keys stable. Retiring a key removes it from the client's display but does not delete saved references.
+Restoring the key makes those references visible again.
 
-A token is valid for days and the backend's username follows in-game renames, so
-a panel left open can hold an entry under a name that no longer exists:
+## Client-only data
 
-1. A member saves. The panel stores their profile.
-2. They rename in game. The backend now knows them under the new name.
-3. They save again, or clear. The event names them as they are now.
-
-Matched by name, step 3 misses the entry from step 1: an update adds a duplicate
-row, and a removal leaves the original on screen until the next refresh. No
-backend change fixes that, because the event has to name the member as they are
-now.
-
-The uuid is stable across renames and is present on every profile the panel ever
-receives, from `GET` and from both WebSocket actions. The client keys on
-`minecraft.uuid` and treats `username` as display text. `RaidProfilesResponse`
-also builds a lowercase-name index, used only by the friends list where a member
-may be offline and a name is all there is; that index is the one place a stale
-name can linger, and nothing with a roster row goes through it.
-
----
-
-## Changing the meta later
-
-Adding a build, retiring one, or changing which builds are meta for a raid is a
-change to `GET /raid-profiles`'s catalog and nothing else. No mod release, no
-client update, no coordination.
-
-Two rules keep old data valid:
-
-- **Never reuse a key for a different build.** Saved profiles reference keys.
-- **Retiring a key is safe.** Profiles that still name it keep it in the database;
-  the client drops it from display because the catalog no longer lists it. Put the
-  key back and those profiles light up again.
-
-The Java backend reads the catalog from `raid_profile_catalog_builds`,
-`raid_profile_catalog_raids` and `raid_profile_catalog_raid_builds`. Changes to
-these tables take effect on the next request. Catalog administration belongs
-in the backend repository; there is no editable catalog in the mod.
-
----
-
-## What the mod still keeps to itself
-
-For completeness, so nobody wonders where it went. These never touch the backend:
-
-- **Friends**, **premade parties** and **private notes**, in
-  `config/sequoia/raid-profile.json`. They are the player's own, and a private note
-  about somebody is not something to upload.
-- **A cache of the last `GET /raid-profiles`**, in
-  `config/sequoia/cache/raid-profiles.json`, so the panel is not blank while the
-  backend is unreachable. It is only ever a copy of what you served.
+Friends, premade parties, and private notes stay in `config/sequoia/raid-profile.json` and are not uploaded.
+The shared response cache at `config/sequoia/cache/raid-profiles.json` contains only the last GET response.
