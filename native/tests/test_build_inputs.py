@@ -210,20 +210,44 @@ class PackagingTest(unittest.TestCase):
             for name in self.package.JAR_FILES:
                 (out / "sandbox" / name).write_bytes(name.encode())
 
-            def jar(changed=None, missing=None):
+            def jar(changed=None, missing=None, helper=None):
                 with zipfile.ZipFile(libs / "sequoia-1.12.0.jar", "w") as archive:
                     for name in self.package.JAR_FILES:
                         if name != missing:
                             archive.writestr("sandbox/" + name, b"other" if name == changed else name.encode())
+                    if helper:
+                        archive.writestr("sandbox/" + helper, b"unverified override")
 
             jar()
             (libs / "sequoia-1.12.0-sources.jar").write_bytes(b"sources")
             with redirect_stdout(io.StringIO()):
                 self.package.verify_jar(libs, out)
-                for problem in ({"changed": "helpers-aarch64.xz"}, {"missing": "provenance.json"}):
+                overrides = [{"helper": f"{platform}/{name}"}
+                             for platform in self.package.PLATFORMS
+                             for name in self.package.SHIPPED[platform.split("-")[0]]]
+                for problem in [{"changed": "helpers-aarch64.xz"}, {"missing": "provenance.json"}, *overrides]:
                     jar(**problem)
                     with self.assertRaises(ValueError):
                         self.package.verify_jar(libs, out)
+
+    def test_source_archive_preserves_native_verification_media(self):
+        root = Path(__file__).parents[2]
+        fixtures = [root / "src/test/resources/klipy-report.mp4",
+                    *sorted((root / "src/test/resources").glob("webp-*.webp"))]
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            sources = {"ffmpeg": {"url": "https://example.invalid/ffmpeg.tar.xz",
+                                   "signature_url": "https://example.invalid/ffmpeg.tar.xz.asc"},
+                       "zlib": {"url": "https://example.invalid/zlib.tar.gz"}}
+            for name in ("ffmpeg.tar.xz", "ffmpeg.tar.xz.asc", "zlib.tar.gz"):
+                (directory / name).write_bytes(b"archive fixture")
+            with patch.object(self.package.guest, "SOURCES", sources), \
+                    patch.object(self.package.guest, "ARCHIVES", directory):
+                self.package.source_archive(directory / "source.zip")
+            with zipfile.ZipFile(directory / "source.zip") as archive:
+                for fixture in fixtures:
+                    member = "sequoia-images-native-source/" + fixture.relative_to(root).as_posix()
+                    self.assertEqual(archive.read(member), fixture.read_bytes())
 
 
 class ToolchainPinTest(unittest.TestCase):

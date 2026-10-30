@@ -17,7 +17,7 @@ Disabling previews stops their network requests.
 Keep it on with previews disabled to see plain links. Turn it off to hide media links and media-only messages, while keeping accompanying text and ordinary links.
 Hidden media makes no preview requests.
 
-Still PNG, JPEG, and WebP previews support up to 1,024 pixels per side.
+Non-animated PNG, JPEG, and WebP previews support up to 1,024 pixels per side.
 GIF, MP4, and animated WebP previews use a 256-pixel limit.
 Use `/seqimages clear` to clear cached previews and cancel pending downloads.
 

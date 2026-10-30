@@ -29,6 +29,8 @@ The client obtains the origin from its build-selected API or WebSocket URL. The 
 
 Each backend's `APP_PUBLIC_BASE_URL` must match its client's URL origin, including a separate raid-profile backend.
 The mod requires version 2 challenges, and the backend requires `client_nonce`.
+Deploy the matching backend before distributing the mod, and verify account and treasury sign-in
+against it. If the backend must roll back to an incompatible protocol, roll back the mod with it.
 
 The backend's Minecraft-auth and treasury minimum-version settings control update messages.
 Unexpired application tokens retain their existing lifetime.

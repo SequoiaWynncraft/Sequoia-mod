@@ -55,7 +55,7 @@ partial build has only its own CPU's pack, so the check fails there.
 ## Using a modified decoder
 
 The source zip contains this directory, `mise.toml`, `mise.lock`, the FFmpeg and zlib archives
-under `upstream/` and the notices. Set up the tools and prerequisites in
+under `upstream/`, the verification media under `src/test/resources/`, and the notices. Set up the tools and prerequisites in
 [local builds](#local-builds), and point `WASI_SDK_PATH` at wasi-sdk 34, such as the copy
 `mise run native:guest` unpacks under `native/out/toolchains/`. Pack a changed FFmpeg or zlib like
 the original archive and pass it in place of the one in `upstream/`. `build-wasm.sh` writes the

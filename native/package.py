@@ -37,7 +37,10 @@ MEMBER_PATH = re.compile(r"[a-z]+-[a-z0-9_]+/[A-Za-z0-9._-]+")
 # Repository files a recipient needs to rebuild the guest and the helpers. build.yml runs the
 # mise tasks and tool versions that mise.toml and mise.lock define.
 SOURCE_FILES = ["LICENSE.txt", ".github/workflows/build.yml", "mise.toml", "mise.lock", "native",
-                "src/main/resources/licenses"]
+                "src/main/resources/licenses", "src/test/resources/klipy-report.mp4",
+                "src/test/resources/webp-lossless.webp", "src/test/resources/webp-lossy.webp",
+                "src/test/resources/webp-animated.webp", "src/test/resources/webp-detail.webp",
+                "src/test/resources/webp-oversized.webp"]
 # The files the mod JAR ships under sandbox/.
 JAR_FILES = [f"helpers-{arch}.xz" for arch in ARCHES] + ["provenance.json"]
 SOURCE_EXCLUDES = ("native/out", "native/decoder/target")
@@ -135,6 +138,10 @@ def verify_jar(directory, out=OUT):
         raise ValueError(f"expected one mod JAR in {directory}, found {len(jars)}")
     with zipfile.ZipFile(jars[0]) as jar:
         shipped = set(jar.namelist())
+        for platform in PLATFORMS:
+            for name in SHIPPED[platform.split("-")[0]]:
+                if f"sandbox/{platform}/{name}" in shipped:
+                    raise ValueError(f"{jars[0].name}: sandbox/{platform}/{name} overrides a tested pack")
         for name in JAR_FILES:
             local = out / "sandbox" / name
             if f"sandbox/{name}" not in shipped or not local.is_file():

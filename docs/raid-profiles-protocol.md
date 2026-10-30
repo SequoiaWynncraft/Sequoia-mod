@@ -165,7 +165,8 @@ Without it, the panel refreshes through GET when opened, refreshed, or saved.
 `action` is `updated` or `removed`. Both require a non-null `minecraft.uuid`.
 A removal retains the profile shape with its other fields set to `null`.
 `RaidProfileStore.onLiveUpdate` removes the entry instead of treating it as an empty shared profile.
-The backend can gate this message by mod version through `VERSION_REMINDER_INTERVALS` in `ConnectionManager`.
+The backend controls version gating. `ConnectionManager.VERSION_REMINDER_INTERVALS` only throttles
+client reminders after a version rejection; it does not gate `raid_profile_update` messages.
 
 ## Matching on UUID, not on username
 

@@ -19,7 +19,7 @@ Press `O` or run `/seq` to open the menu. The sidebar links to the same screens.
 | `/seq update` | Check for an update and show the prompt. |
 | `/seq request aspects` | Request aspects from the guild reward queue. |
 | `/seq request tome <reason>` | Request a tome from the guild reward queue. |
-| `/allyraids [minutes]`, `/seq allyraids [minutes]` | Show recent raids shared with current allies. Requires Sequoia membership. |
+| `/allyraids [minutes]`, `/seq allyraids [minutes]` | Show raids shared with current allies in the last 20–120 minutes (default: 30). Requires Sequoia membership. |
 | `/seq ignore <IGN>` | Hide Discord bridge messages from a Minecraft username. |
 | `/seq unignore <IGN>` | Show that username's bridge messages again. |
 | `/seqimages preview <url>` | Add a previewable image link to chat. |
@@ -49,9 +49,7 @@ Use the screen for ordinary party management. These commands provide the same ac
 /seq party kick <username>
 /seq party promote <username>
 /seq party scan
-/seq party game create
-/seq party game invite <username>
-/seq party game invite-all
+/seq party invite-all
 ```
 
 ## Map analysis
