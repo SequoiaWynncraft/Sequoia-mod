@@ -1,0 +1,132 @@
+name: Promote release
+
+# Publishes a draft that Release staged, once the candidate it holds has been accepted. The draft's own
+# files are checked against the accepted JAR and published unchanged: nothing is rebuilt.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag of the draft, such as v1.12.0
+        required: true
+        type: string
+      jar_sha256:
+        description: SHA-256 of the accepted sequoia-VERSION.jar
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Shares Release's group, so promoting waits for a staging run of the same tag.
+concurrency:
+  group: release-refs/tags/${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # publish the draft release
+    env:
+      MODRINTH_PROJECT_SLUG: sequoia
+      TAG: ${{ inputs.tag }}
+      JAR_SHA256: ${{ inputs.jar_sha256 }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Check the inputs
+        shell: bash
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9.-]+)?$ ]] || { echo "Not a release tag: $TAG" >&2; exit 1; }
+          [[ "$JAR_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "Not a SHA-256: $JAR_SHA256" >&2; exit 1; }
+
+      - name: Checkout the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+
+      - name: Fetch the draft and check it is the accepted candidate
+        shell: bash
+        run: python3 scripts/github_release.py fetch "$TAG" "$JAR_SHA256" release
+
+      - name: Resolve release metadata
+        id: release_metadata
+        shell: bash
+        run: python3 scripts/release_metadata.py --tag "$TAG" --jar-directory release
+
+      - name: Publish the draft as the latest GitHub release
+        shell: bash
+        run: python3 scripts/github_release.py publish "$TAG" "$JAR_SHA256" release
+
+      - name: Publish the same files to Modrinth
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          MOD_VERSION: ${{ steps.release_metadata.outputs.version_number }}
+          MOD_CHANGELOG: ${{ steps.release_metadata.outputs.changelog }}
+          MOD_MINECRAFT_VERSION: ${{ steps.release_metadata.outputs.minecraft_version }}
+          MOD_VERSION_TYPE: ${{ steps.release_metadata.outputs.version_type }}
+          MOD_JAR: ${{ steps.release_metadata.outputs.mod_jar }}
+          SOURCE_ARCHIVE: release/sequoia-images-native-source.zip
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${MODRINTH_TOKEN}" ]]; then
+            echo "MODRINTH_TOKEN secret is required to publish tagged releases to Modrinth." >&2
+            exit 1
+          fi
+          api="https://api.modrinth.com/v2"
+          agent="User-Agent: SequoiaWynncraft/sequoia-mod-release-workflow"
+
+          project_id="$(curl --fail --show-error --silent -H "$agent" "$api/project/${MODRINTH_PROJECT_SLUG}" | jq -r '.id')"
+          if [[ -z "${project_id}" || "${project_id}" == "null" ]]; then
+            echo "Failed to resolve Modrinth project ID for slug ${MODRINTH_PROJECT_SLUG}." >&2
+            exit 1
+          fi
+
+          # A rerun after a later failure finds the version already there and only checks it.
+          version_id="$(curl --fail --show-error --silent -H "$agent" "$api/project/${project_id}/version" \
+            | jq -r --arg v "$MOD_VERSION" '[.[] | select(.version_number == $v)][0].id // empty')"
+          if [[ -z "$version_id" ]]; then
+            payload="$(jq -cn \
+              --arg name "Sequoia ${MOD_VERSION}" \
+              --arg version_number "${MOD_VERSION}" \
+              --arg changelog "${MOD_CHANGELOG}" \
+              --arg project_id "${project_id}" \
+              --arg minecraft_version "${MOD_MINECRAFT_VERSION}" \
+              --arg version_type "${MOD_VERSION_TYPE}" \
+              '{
+                name: $name,
+                version_number: $version_number,
+                changelog: $changelog,
+                project_id: $project_id,
+                game_versions: [$minecraft_version],
+                version_type: $version_type,
+                dependencies: [],
+                loaders: ["fabric"],
+                featured: true,
+                status: "listed",
+                file_parts: ["primary", "source"],
+                primary_file: "primary"
+              }'
+            )"
+            version_id="$(curl --fail-with-body --show-error --silent \
+              -X POST "$api/version" \
+              -H "Authorization: ${MODRINTH_TOKEN}" \
+              -H "$agent" \
+              --form-string "data=${payload}" \
+              -F "primary=@${MOD_JAR}" \
+              -F "source=@${SOURCE_ARCHIVE}" | jq -r '.id')"
+          fi
+
+          # Read the version back: Modrinth must hold exactly the accepted files.
+          version="$(curl --fail --show-error --silent -H "$agent" "$api/version/${version_id}")"
+          for file in "$MOD_JAR" "$SOURCE_ARCHIVE"; do
+            hash="$(sha512sum "$file" | cut -d' ' -f1)"
+            if ! jq -e --arg h "$hash" '[.files[].hashes.sha512] | index($h) != null' <<<"$version" >/dev/null; then
+              echo "Modrinth version ${version_id} does not hold $(basename "$file") as accepted." >&2
+              exit 1
+            fi
+          done
+          echo "Modrinth version ${version_id} holds the accepted files."
