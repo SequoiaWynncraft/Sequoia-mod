@@ -21,11 +21,15 @@ concurrency:
 env:
   # A task must not install the tools its job left out.
   MISE_TASK_RUN_AUTO_INSTALL: 'false'
+# Each job lists its tools in MISE_ENABLE_TOOLS rather than mise-action's install_args: naming
+# java there would install both of mise.toml's JDKs regardless of their os filters.
 
 jobs:
   guest:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      MISE_ENABLE_TOOLS: python
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,7 +38,6 @@ jobs:
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           version: 2026.10.23
-          install_args: python
           cache_key_prefix: mise-guest
           cache_save: ${{ github.event_name != 'pull_request' }}
       - name: Test source verification, packaging and the release scripts
@@ -104,14 +107,16 @@ jobs:
       # A restored helper skips compilation and the Rust unit tests, so it needs no Rust; the
       # probes always run.
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        env:
+          MISE_ENABLE_TOOLS: ${{ steps.cache.outputs.cache-hit == 'true' && 'python' || 'python,rust' }}
         with:
           version: 2026.10.23
-          install_args: ${{ steps.cache.outputs.cache-hit == 'true' && 'python' || 'python rust' }}
           cache_key_prefix: mise-native-${{ matrix.platform }}
           cache_save: ${{ github.event_name != 'pull_request' }}
       - name: Build, test and verify the helper
         shell: bash
         env:
+          MISE_ENABLE_TOOLS: ${{ steps.cache.outputs.cache-hit == 'true' && 'python' || 'python,rust' }}
           RESTORED: ${{ steps.cache.outputs.cache-hit }}
         run: |
           if [[ "$RESTORED" == true ]]; then set -- --verify-only; fi
@@ -130,6 +135,8 @@ jobs:
     needs: native
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      MISE_ENABLE_TOOLS: python
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -146,7 +153,6 @@ jobs:
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           version: 2026.10.23
-          install_args: python
           cache_key_prefix: mise-pack
           cache_save: ${{ github.event_name != 'pull_request' }}
       - name: Pack the verified helpers and assemble their corresponding source
@@ -172,6 +178,8 @@ jobs:
     needs: pack
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      MISE_ENABLE_TOOLS: java,python,rust
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -179,7 +187,6 @@ jobs:
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           version: 2026.10.23
-          install_args: java python rust
           cache_key_prefix: mise-build
           cache_save: ${{ github.event_name != 'pull_request' }}
       # Pull requests restore Gradle's dependency cache; only trusted runs save it.
@@ -228,6 +235,8 @@ jobs:
         include: ${{ fromJSON((startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch') && '[{"platform":"windows-x86_64","runner":"windows-2025"},{"platform":"macos-aarch64","runner":"macos-15"},{"platform":"windows-aarch64","runner":"windows-11-arm"},{"platform":"linux-aarch64","runner":"ubuntu-24.04-arm"},{"platform":"macos-x86_64","runner":"macos-15-intel"}]' || '[{"platform":"windows-x86_64","runner":"windows-2025"},{"platform":"macos-aarch64","runner":"macos-15"}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    env:
+      MISE_ENABLE_TOOLS: java
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -235,7 +244,6 @@ jobs:
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           version: 2026.10.23
-          install_args: java
           cache_key_prefix: mise-java-${{ matrix.platform }}
           cache_save: ${{ github.event_name != 'pull_request' }}
       - name: Restore the Gradle cache

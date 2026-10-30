@@ -27,7 +27,17 @@ Cargo without mise.
 
 ## Local builds
 
-On Linux or macOS with [mise](../docs/development.md), `gpgv` and `make`:
+Run the tasks from the top directory of the repository or the source zip, after `mise trust`
+([development](../docs/development.md)). They need only Python and Rust from mise:
+
+```sh
+MISE_ENABLE_TOOLS=python,rust mise install --locked
+```
+
+`native:guest` and `native:wasm` run on Linux or macOS and need `bash`, `make`, `tar` and a C
+compiler as `cc`. `native:guest` also needs `gpgv`. `native:build` runs on the platform it builds
+for, with that platform's C toolchain: musl tools on Linux (or `--target x86_64-unknown-linux-gnu`),
+Xcode's command line tools on macOS, or the Visual Studio C++ build tools on Windows.
 
 ```sh
 mise run native:guest
@@ -43,17 +53,19 @@ partial build has only its own CPU's pack, so the check fails there.
 ## Using a modified decoder
 
 The source zip contains this directory, `mise.toml`, `mise.lock`, the FFmpeg and zlib archives
-under `upstream/` and the notices. With Python 3.11.4 or later and Rust from rustup, pack a changed
-FFmpeg or zlib like the original archive, then:
+under `upstream/` and the notices. Set up the tools and prerequisites in
+[local builds](#local-builds), and point `WASI_SDK_PATH` at wasi-sdk 34, such as the copy
+`mise run native:guest` unpacks under `native/out/toolchains/`. Pack a changed FFmpeg or zlib like
+the original archive and pass it in place of the one in `upstream/`:
 
 ```sh
-WASI_SDK_PATH=/path/to/wasi-sdk-34 bash native/build-wasm.sh my.wasm ffmpeg-9.0.2.tar.xz zlib-1.3.2.tar.gz
-python3 native/build-native.py linux-x86_64 --guest my.wasm
+WASI_SDK_PATH=/path/to/wasi-sdk-34 mise run native:wasm my.wasm upstream/ffmpeg-9.0.2.tar.xz upstream/zlib-1.3.2.tar.gz
+mise run native:build linux-x86_64 --guest my.wasm
 ```
 
-and add the files of `native/out/sandbox/PLATFORM/` to the mod JAR at the same `sandbox/PLATFORM/`
+Then add the files of `native/out/sandbox/PLATFORM/` to the mod JAR at the same `sandbox/PLATFORM/`
 path. A helper placed there takes precedence over the packed one; the mod runs whichever helper its
-JAR contains. `python3 native/package.py --unpack PACK PROVENANCE DEST` restores the shipped helpers
+JAR contains. `mise run native:pack --unpack PACK PROVENANCE DEST` restores the shipped helpers
 from a pack, checked against the provenance, for comparison. A helper built from another guest skips the pixel and sandbox
 checks, which expect the pinned guest and the repository's test media.
 

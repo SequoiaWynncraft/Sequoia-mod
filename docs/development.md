@@ -10,7 +10,15 @@ developer machine and in GitHub Actions.
 1. [Install mise](https://mise.jdx.dev/getting-started.html). CI uses mise 2026.10.23. Older
    releases print a warning, and releases before 2026.4.16 refuse this configuration.
 2. In the repository, run `mise trust` once, because `mise.toml` defines tasks.
-3. Run `mise install --locked`. It installs the versions `mise.lock` records:
+3. Install the versions `mise.lock` records for this repository's tools, and only those:
+
+   ```sh
+   MISE_ENABLE_TOOLS=java,python,rust,gh,actionlint,shellcheck,zizmor mise install --locked
+   ```
+
+   In PowerShell, set `$env:MISE_ENABLE_TOOLS` to the same list first. A plain `mise install` also
+   installs the tools of your global mise configuration. `mise install java` installs both JDKs
+   below, including the one for Windows on Arm, so name the tools in `MISE_ENABLE_TOOLS` instead.
 
    | Tool | Version | Used for |
    | --- | --- | --- |
@@ -26,13 +34,16 @@ developer machine and in GitHub Actions.
 ## Build and test the mod
 
 The mod JAR ships the image decoder helpers as packs in `native/out/sandbox`, and Gradle refuses
-to build without them. To use the packs a CI run built, download its `packs` artifact:
+to build without them. To use the packs a CI run built, download its `packs` artifact. The run ID
+is the number after `/actions/runs/` in the run's URL:
 
 ```sh
-gh run download RUN_ID -n packs -D native/out/sandbox
+mise run native:fetch RUN_ID
 ```
 
-To build helpers yourself, follow [image decoder builds](../native/README.md).
+The download fails if the run has no `packs` artifact or `native/out/sandbox` already holds packs.
+Delete old packs first. To build helpers yourself, follow
+[image decoder builds](../native/README.md).
 
 `mise run build` compiles the mod, runs the unit tests and writes `build/libs/sequoia-VERSION.jar`.
 The build fails if the JAR exceeds `max_release_jar_bytes` in `gradle.properties`. Arguments after
@@ -62,7 +73,9 @@ account that `.devauth/config.toml` selects.
 | `fmt` | Formats the decoder's Rust code. `mise run fmt --check` only reports changes |
 | `lint` | Lints the workflows with actionlint and zizmor, and `native/build-wasm.sh` with ShellCheck |
 | `check` | Runs `build`, `test:scripts` and `lint` |
+| `native:fetch RUN_ID` | Downloads the helper packs a Build run made into `native/out/sandbox` |
 | `native:guest` | Builds the decoder guest from authenticated sources. `--sources-only` only checks the sources |
+| `native:wasm OUT FFMPEG ZLIB` | Compiles a guest from local FFmpeg and zlib archives with the wasi-sdk in `WASI_SDK_PATH` |
 | `native:build PLATFORM` | Builds, tests and verifies the decoder helper for this machine's platform |
 | `native:pack` | Packs the verified helpers and writes their provenance and the corresponding source |
 | `native:verify-jar` | Checks that the JAR in `build/libs` carries exactly the packs in `native/out/sandbox` |

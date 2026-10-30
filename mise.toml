@@ -67,9 +67,22 @@ run = [
 description = "Build and test the mod, test the scripts and lint the workflows"
 depends = ["build", "test:scripts", "lint"]
 
+# Without a run ID, gh would pick a recent run itself; the ID is required.
+[tasks."native:fetch"]
+description = "Download the helper packs a Build run made into native/out/sandbox"
+usage = 'arg "<run_id>" help="The Build run whose packs artifact to download"'
+run = 'gh run download "$usage_run_id" -n packs -D native/out/sandbox'
+run_windows = 'gh run download "%usage_run_id%" -n packs -D native/out/sandbox'
+
 [tasks."native:guest"]
 description = "Build the decoder guest from authenticated sources; --sources-only only checks the sources"
 run = "python native/guest.py"
+raw_args = true
+
+[tasks."native:wasm"]
+description = "Compile a guest from local archives with WASI_SDK_PATH: native:wasm OUT.wasm FFMPEG.tar.xz ZLIB.tar.gz"
+run = "bash native/build-wasm.sh"
+run_windows = "echo native:wasm runs on Linux or macOS 1>&2 && exit /b 1"
 raw_args = true
 
 [tasks."native:build"]

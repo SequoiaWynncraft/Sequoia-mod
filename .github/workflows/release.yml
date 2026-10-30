@@ -20,6 +20,8 @@ env:
 jobs:
   preflight:
     runs-on: ubuntu-24.04
+    env:
+      MISE_ENABLE_TOOLS: python
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,7 +30,6 @@ jobs:
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           version: 2026.10.23
-          install_args: python
           # Publishing jobs install their tools fresh rather than from a cache.
           cache: false
       - name: Validate release tag, notes and source version
@@ -45,6 +46,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write # create the draft release and upload its assets
+    env:
+      MISE_ENABLE_TOOLS: python,gh
 
     steps:
       - name: Checkout
@@ -65,7 +68,6 @@ jobs:
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           version: 2026.10.23
-          install_args: python gh
           # Publishing jobs install their tools fresh rather than from a cache.
           cache: false
 
