@@ -1,2 +1,111 @@
+# raw_args needs 2026.4.16; CI runs 2026.10.23.
+min_version = { hard = "2026.4.16", soft = "2026.10.23" }
+
 [tools]
-java = "temurin-21.0.13+9.0.LTS"
+java = [
+  { version = "temurin-21.0.13+9.0.LTS", os = ["linux", "macos", "windows/x64"] },
+  # Temurin publishes no Windows Arm build of 21.0.13; Zulu ships the same update.
+  { version = "zulu-21.54.109.0", os = ["windows/arm64"] },
+]
+python = "3.15.2"
+# The same toolchain as native/decoder/rust-toolchain.toml, which Cargo reads outside mise.
+rust = { version = "1.98.1", profile = "minimal", components = "rustfmt" }
+gh = "2.103.3"
+actionlint = "1.7.12"
+shellcheck = "0.11.0"
+zizmor = "1.31.1"
+
+# Gradle, Cargo and the Python scripts own their own options: extra arguments reach them unchanged.
+
+[tasks.build]
+description = "Compile, run the unit tests and build the mod JAR"
+run = "./gradlew build"
+run_windows = "gradlew.bat build"
+raw_args = true
+
+[tasks.test]
+description = "Run the unit tests"
+run = "./gradlew test"
+run_windows = "gradlew.bat test"
+raw_args = true
+
+[tasks."test:platform"]
+description = "Run the updater and image preview tests, which depend on the operating system"
+run = './gradlew test --tests "com.seqwawa.seq.update.*" --tests "com.seqwawa.seq.images.*"'
+run_windows = 'gradlew.bat test --tests "com.seqwawa.seq.update.*" --tests "com.seqwawa.seq.images.*"'
+raw_args = true
+
+[tasks."test:scripts"]
+description = "Run the tests of the native build inputs and the release scripts"
+run = [
+  "python -m unittest discover -s native/tests -p test_build_inputs.py",
+  'python -m unittest discover -s tests -p "test_*.py"',
+]
+
+[tasks.dev]
+description = "Start Minecraft with the mod built from source"
+run = "./gradlew runClient"
+run_windows = "gradlew.bat runClient"
+raw_args = true
+
+[tasks.fmt]
+description = "Format the image decoder's Rust code; --check only reports changes"
+dir = "native/decoder"
+run = "cargo fmt"
+raw_args = true
+
+[tasks.lint]
+description = "Lint the GitHub workflows and shell scripts"
+run = [
+  "actionlint",
+  "zizmor .github/workflows",
+  # build-wasm.sh splits $MAP into flags on purpose; its hash is part of the guest's recipe.
+  "shellcheck --severity=warning native/build-wasm.sh",
+]
+
+[tasks.check]
+description = "Build and test the mod, test the scripts and lint the workflows"
+depends = ["build", "test:scripts", "lint"]
+
+[tasks."native:guest"]
+description = "Build the decoder guest from authenticated sources; --sources-only only checks the sources"
+run = "python native/guest.py"
+raw_args = true
+
+[tasks."native:build"]
+description = "Build, test and verify this platform's decoder helper, such as linux-x86_64"
+run = "python native/build-native.py"
+raw_args = true
+
+[tasks."native:pack"]
+description = "Pack the verified helpers and write their provenance and corresponding source"
+run = "python native/package.py"
+raw_args = true
+
+[tasks."native:verify-jar"]
+description = "Check that the mod JAR in build/libs carries exactly the packs in native/out/sandbox"
+run = "python native/package.py --verify-jar build/libs"
+
+[tasks."native:notices"]
+description = "Check the bundled third-party notices; write regenerates them"
+dir = "native/decoder"
+usage = 'arg "[mode]" default="check" { choices "check" "write" }'
+run = [
+  "cargo fetch --locked",
+  "python ../notices.py {{usage.mode}}",
+]
+
+[tasks."release:check"]
+description = "Validate the release tag, its notes and the version; --jar-directory also checks a built JAR"
+run = "python scripts/release_metadata.py"
+raw_args = true
+
+[tasks."release:stage"]
+description = "Stage build/libs and build/corresponding-source as the draft GitHub release: release:stage TAG"
+run = "python scripts/github_release.py draft"
+raw_args = true
+
+[tasks."release:promote"]
+description = "Publish an accepted draft release to GitHub and Modrinth: release:promote TAG JAR_SHA256"
+run = "python scripts/github_release.py promote"
+raw_args = true

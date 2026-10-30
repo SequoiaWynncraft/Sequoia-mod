@@ -1,19 +1,28 @@
 """Publish a GitHub release from exactly the files that were built once and accepted.
 
-usage: github_release.py stage TAG FILE...
+usage: github_release.py draft TAG [DIRECTORY...]
+       github_release.py stage TAG FILE...
        github_release.py verify TAG FILE...
        github_release.py fetch TAG JAR_SHA256 DIRECTORY
        github_release.py publish TAG JAR_SHA256 DIRECTORY
+       github_release.py promote TAG JAR_SHA256 [DIRECTORY]
 
-stage creates the release as a draft, or replaces the files of an existing draft; it never changes a
-published release. verify checks that the release holds exactly these files, byte for byte, and that
-Sequoia's updater up to 1.11.1, which installs the first sequoia-*.jar asset that is not -sources.jar,
-can only pick the mod JAR. Neither makes the release visible: drafts are not "latest".
+draft writes FILE.sha256 next to every file in the directories (build/libs and
+build/corresponding-source by default), in the format sha256sum -c reads, then stages all of them and
+verifies the draft. stage creates the release as a draft, or replaces the
+files of an existing draft; it never changes a published release. verify checks that the release holds
+exactly these files, byte for byte, and that Sequoia's updater up to 1.11.1, which installs the first
+sequoia-*.jar asset that is not -sources.jar, can only pick the mod JAR. None of them makes the
+release visible: drafts are not "latest".
 
 fetch downloads the release into DIRECTORY and checks it is the candidate that was accepted: the JAR's
 SHA-256, every asset's GitHub digest, the JAR's version and the commit its provenance names. publish
 checks the fetched files again, publishes the draft as the latest release and reads it back; a release
 that is already published is only re-checked.
+
+promote runs the whole promotion into DIRECTORY (release by default): it checks the Modrinth token
+before anything is published, fetches the draft, validates it with release_metadata.py, publishes it
+and then publishes the same files to Modrinth with modrinth_release.py.
 
 Calls GitHub through the gh CLI; GITHUB_REPOSITORY names the repository and GH_TOKEN authorizes.
 """
@@ -127,6 +136,25 @@ def verify(tag, paths):
         print(f"  {digest}  {size}  {name}")
 
 
+def draft(tag, directories):
+    """Writes each file's .sha256, stages them all as the draft for TAG and verifies it."""
+    paths = []
+    for directory in directories:
+        for path in sorted(p for p in directory.iterdir() if p.is_file() and not p.name.endswith(".sha256")):
+            # Only the file name, so a downloaded asset checks with sha256sum -c.
+            sidecar = path.with_name(path.name + ".sha256")
+            sidecar.write_bytes(f"{sha256(path)}  {path.name}\n".encode())
+            paths += [path, sidecar]
+    stage(tag, paths)
+    verify(tag, paths)
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        jars = "".join(f"{sha256(p)}  {p.name}\n" for p in paths if p.name.endswith(".jar"))
+        with open(summary, "a", encoding="utf-8") as stream:
+            stream.write(f"### Release candidate {tag} (draft)\n\nAccept the draft's own files, then run "
+                         f"Promote release with the JAR's SHA-256:\n\n```\n{jars}```\n")
+
+
 def checked(tag, accepted_sha256, directory):
     """The release, after checking DIRECTORY holds its exact files and they are the accepted candidate."""
     release = find_release(tag)
@@ -170,18 +198,32 @@ def publish(tag, accepted_sha256, directory):
         time.sleep(3)
 
 
+def promote(tag, accepted_sha256, directory):
+    """Publishes the accepted draft on GitHub, then on Modrinth; stops before either if Modrinth cannot follow."""
+    # Sibling scripts; running this file puts scripts/ on the import path.
+    import modrinth_release, release_metadata
+    modrinth_release.check()
+    fetch(tag, accepted_sha256, directory)
+    release_metadata.release_metadata(pathlib.Path.cwd(), tag, directory)
+    publish(tag, accepted_sha256, directory)
+    modrinth_release.publish(tag, directory)
+
+
 def main(argv):
-    if len(argv) >= 3 and argv[0] in ("stage", "verify"):
+    if (argv[:1] == ["draft"] and len(argv) >= 2) or (len(argv) >= 3 and argv[0] in ("stage", "verify")):
         command, tag, paths = argv[0], argv[1], [pathlib.Path(p) for p in argv[2:]]
+        if command == "draft" and not paths:
+            paths = [pathlib.Path("build/libs"), pathlib.Path("build/corresponding-source")]
         try:
-            (stage if command == "stage" else verify)(tag, paths)
+            {"draft": draft, "stage": stage, "verify": verify}[command](tag, paths)
             return 0
-        except (ValueError, subprocess.CalledProcessError) as error:
+        except (ValueError, OSError, subprocess.CalledProcessError) as error:
             print(f"Release {command} failed: {error}", file=sys.stderr)
             return 1
-    if len(argv) == 4 and argv[0] in ("fetch", "publish"):
+    if (len(argv) == 4 and argv[0] in ("fetch", "publish")) or (argv[:1] == ["promote"] and len(argv) in (3, 4)):
+        directory = pathlib.Path(argv[3] if len(argv) == 4 else "release")
         try:
-            (fetch if argv[0] == "fetch" else publish)(argv[1], argv[2], pathlib.Path(argv[3]))
+            {"fetch": fetch, "publish": publish, "promote": promote}[argv[0]](argv[1], argv[2], directory)
             return 0
         except (ValueError, KeyError, OSError, zipfile.BadZipFile, subprocess.CalledProcessError) as error:
             print(f"Release {argv[0]} failed: {error}", file=sys.stderr)

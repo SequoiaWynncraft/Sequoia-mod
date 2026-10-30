@@ -21,21 +21,29 @@ workflow produces everything else under `native/out/`:
    the same bytes, which one stream per CPU stores once; the mod unpacks only its own platform's
    helpers and checks each against its SHA-256.
 
+The Build workflow runs these steps as the `native:*` tasks in the repository's `mise.toml`, which
+also pins Python and the Rust toolchain. `decoder/rust-toolchain.toml` pins the same toolchain for
+Cargo without mise.
+
 ## Local builds
 
-With Python 3.11.4+, `gpgv`, `make` and Rust on Linux or macOS:
+On Linux or macOS with [mise](../docs/development.md), `gpgv` and `make`:
 
 ```sh
-python3 native/guest.py
-python3 native/build-native.py linux-x86_64 --target x86_64-unknown-linux-gnu  # without a musl C compiler
-python3 native/package.py --packs-only   # packs and indexes the helpers built so far
-./gradlew build -Pallow_partial_native   # without the flag, Gradle refuses a JAR missing any platform
+mise run native:guest
+mise run native:build linux-x86_64 --target x86_64-unknown-linux-gnu  # without a musl C compiler
+mise run native:pack --packs-only   # packs and indexes the helpers built so far
+mise run build -Pallow_partial_native   # without the flag, Gradle refuses a JAR missing any platform
 ```
+
+`mise run native:verify-jar` then checks that the JAR in `build/libs` carries exactly the packs in
+`native/out/sandbox`.
 
 ## Using a modified decoder
 
-The source zip contains this directory, the FFmpeg and zlib archives under `upstream/` and the
-notices. Pack a changed FFmpeg or zlib like the original archive, then:
+The source zip contains this directory, `mise.toml`, `mise.lock`, the FFmpeg and zlib archives
+under `upstream/` and the notices. With Python 3.11.4 or later and Rust from rustup, pack a changed
+FFmpeg or zlib like the original archive, then:
 
 ```sh
 WASI_SDK_PATH=/path/to/wasi-sdk-34 bash native/build-wasm.sh my.wasm ffmpeg-9.0.2.tar.xz zlib-1.3.2.tar.gz
@@ -51,6 +59,7 @@ checks, which expect the pinned guest and the repository's test media.
 ## Updating dependencies
 
 Check new versions, digests and keys in `sources.json` against the FFmpeg, zlib and wasi-sdk
-release pages; a changed digest alone proves nothing. After a crate or toolchain change, run
-`python3 native/notices.py write` and review the result. Run the build checks with
-`python3 -m unittest discover -s native/tests -p test_build_inputs.py`.
+release pages. A changed digest alone proves nothing. A Rust toolchain change updates both
+`mise.toml` and `decoder/rust-toolchain.toml`, and `mise run test:scripts` fails while they differ.
+After a crate or toolchain change, run `mise run native:notices write` and review the result. Run
+the build checks with `mise run test:scripts`.

@@ -3,6 +3,7 @@ name: Build
 # One pipeline from source to JAR: the decoder guest is built once from authenticated sources,
 # each native helper embeds exactly that guest, and the JAR packages the verified helpers.
 # Release calls this workflow and publishes the JAR it built and tested.
+# Steps run the same mise tasks as a local checkout (mise.toml); each job installs only its tools.
 on:
   pull_request:
   push:
@@ -17,6 +18,10 @@ concurrency:
   group: build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  # A task must not install the tools its job left out.
+  MISE_TASK_RUN_AUTO_INSTALL: 'false'
+
 jobs:
   guest:
     runs-on: ubuntu-24.04
@@ -25,10 +30,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Test source verification and packaging
-        run: |
-          python3 -m unittest discover -s native/tests -p test_build_inputs.py
-          python3 -m unittest discover -s tests -p 'test_*.py'
+      # Tool caches are per job; only trusted runs write them.
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          version: 2026.10.23
+          install_args: python
+          cache_key_prefix: mise-guest
+          cache_save: ${{ github.event_name != 'pull_request' }}
+      - name: Test source verification, packaging and the release scripts
+        run: mise run test:scripts
       # Caches are keyed by every input; PR runs cannot write main's entries, and tag builds
       # compile everything they ship.
       - name: Restore a guest built from the same inputs
@@ -42,7 +52,7 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         env:
           JOBS: '4'
-        run: python3 native/guest.py
+        run: mise run native:guest
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: guest
@@ -87,22 +97,25 @@ jobs:
       - name: Install the musl linker
         if: runner.os == 'Linux' && steps.cache.outputs.cache-hit != 'true'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - name: Install the pinned Rust toolchain
-        if: steps.cache.outputs.cache-hit != 'true'
-        shell: bash
-        working-directory: native/decoder
-        run: |
-          # The Windows ARM runner's rustup may default to x64; build with the native ARM compiler.
-          if [[ "$PLATFORM" == windows-aarch64 ]]; then rustup set default-host aarch64-pc-windows-msvc; fi
-          rustup toolchain install
-      # A restored helper skips compilation and the Rust unit tests; the probes always run.
+      # The Windows Arm runner's rustup may default to x64; build with the native Arm compiler.
+      - name: Use the Arm Rust host on Windows Arm
+        if: matrix.platform == 'windows-aarch64' && steps.cache.outputs.cache-hit != 'true'
+        run: rustup set default-host aarch64-pc-windows-msvc
+      # A restored helper skips compilation and the Rust unit tests, so it needs no Rust; the
+      # probes always run.
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          version: 2026.10.23
+          install_args: ${{ steps.cache.outputs.cache-hit == 'true' && 'python' || 'python rust' }}
+          cache_key_prefix: mise-native-${{ matrix.platform }}
+          cache_save: ${{ github.event_name != 'pull_request' }}
       - name: Build, test and verify the helper
         shell: bash
         env:
           RESTORED: ${{ steps.cache.outputs.cache-hit }}
         run: |
           if [[ "$RESTORED" == true ]]; then set -- --verify-only; fi
-          python native/build-native.py "$PLATFORM" "$@"
+          mise run native:build "$PLATFORM" "$@"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-${{ matrix.platform }}
@@ -130,10 +143,16 @@ jobs:
           pattern: native-*
           merge-multiple: true
           path: native/out
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          version: 2026.10.23
+          install_args: python
+          cache_key_prefix: mise-pack
+          cache_save: ${{ github.event_name != 'pull_request' }}
       - name: Pack the verified helpers and assemble their corresponding source
         run: |
-          python3 native/guest.py --sources-only
-          python3 native/package.py --require-all
+          mise run native:guest --sources-only
+          mise run native:pack --require-all
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: packs
@@ -157,43 +176,45 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
-          distribution: temurin
-          java-version: '21.0.13+9'
-          cache: gradle
-          cache-read-only: ${{ github.event_name == 'pull_request' }}
+          version: 2026.10.23
+          install_args: java python rust
+          cache_key_prefix: mise-build
+          cache_save: ${{ github.event_name != 'pull_request' }}
+      # Pull requests restore Gradle's dependency cache; only trusted runs save it.
+      - name: Restore the Gradle cache
+        id: gradle-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle.properties') }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: packs
           path: native/out/sandbox
       - name: Check the bundled notices against Cargo.lock and the toolchain
-        working-directory: native/decoder
-        run: |
-          rustup toolchain install
-          cargo fetch --locked
-          python3 ../notices.py check
+        run: mise run native:notices
       - name: Build
-        run: ./gradlew clean build remapJar --stacktrace
+        run: mise run build --stacktrace
       - name: Check the JAR carries exactly the tested packs
-        run: |
-          python3 - <<'EOF'
-          import hashlib, pathlib, sys, zipfile
-          jars = [p for p in pathlib.Path("build/libs").glob("*.jar") if not p.name.endswith(("-sources.jar", "-dev.jar"))]
-          with zipfile.ZipFile(jars[0]) as jar:
-              for name in ("helpers-x86_64.xz", "helpers-aarch64.xz", "provenance.json"):
-                  packed = hashlib.sha256(jar.read("sandbox/" + name)).hexdigest()
-                  tested = hashlib.sha256(pathlib.Path("native/out/sandbox", name).read_bytes()).hexdigest()
-                  print(packed, name)
-                  if packed != tested:
-                      sys.exit(f"{jars[0].name}: sandbox/{name} differs from the packs the test lanes used")
-          EOF
+        run: mise run native:verify-jar
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: jar
           path: build/libs/*.jar
           if-no-files-found: error
           retention-days: 14
+      - name: Save the Gradle cache
+        if: github.event_name != 'pull_request' && steps.gradle-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ steps.gradle-cache.outputs.cache-primary-key }}
 
   # The updater and image previews on real systems: Windows file locking and helper processes,
   # macOS Seatbelt and code signing, and unpacking the helpers on each CPU. Pull requests run the two
@@ -211,24 +232,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Temurin has no 21.0.13 Windows build yet; Zulu ships the same October update on every platform.
-      # Return to temurin 21.0.13+9 once Adoptium publishes it for Windows x64.
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
-          distribution: zulu
-          java-version: '21.0.13'
-          cache: gradle
-          cache-read-only: ${{ github.event_name == 'pull_request' }}
+          version: 2026.10.23
+          install_args: java
+          cache_key_prefix: mise-java-${{ matrix.platform }}
+          cache_save: ${{ github.event_name != 'pull_request' }}
+      - name: Restore the Gradle cache
+        id: gradle-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle.properties') }}
       # The packs this run's JAR ships; the build job checks the JAR holds these exact files.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: packs
           path: native/out/sandbox
       - name: Run updater and image preview tests
-        shell: bash
-        run: |
-          if [[ "$RUNNER_OS" == Windows ]]; then gradle=./gradlew.bat; else gradle=./gradlew; fi
-          "$gradle" test --tests "com.seqwawa.seq.update.*" --tests "com.seqwawa.seq.images.*" --stacktrace
+        run: mise run test:platform --stacktrace
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -237,3 +261,11 @@ jobs:
           path: |
             build/reports/tests/test
             build/test-results/test
+      - name: Save the Gradle cache
+        if: github.event_name != 'pull_request' && steps.gradle-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ steps.gradle-cache.outputs.cache-primary-key }}

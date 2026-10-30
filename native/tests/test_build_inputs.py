@@ -8,8 +8,10 @@ from pathlib import Path
 import sys
 import tarfile
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
+import zipfile
 
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
@@ -199,6 +201,37 @@ class PackagingTest(unittest.TestCase):
             short["members"].pop()
             with self.assertRaises(ValueError):
                 self.package.check_pack(packed, short)
+
+    def test_the_jar_must_carry_exactly_the_tested_packs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            out, libs = Path(temp) / "out", Path(temp) / "libs"
+            (out / "sandbox").mkdir(parents=True)
+            libs.mkdir()
+            for name in self.package.JAR_FILES:
+                (out / "sandbox" / name).write_bytes(name.encode())
+
+            def jar(changed=None, missing=None):
+                with zipfile.ZipFile(libs / "sequoia-1.12.0.jar", "w") as archive:
+                    for name in self.package.JAR_FILES:
+                        if name != missing:
+                            archive.writestr("sandbox/" + name, b"other" if name == changed else name.encode())
+
+            jar()
+            (libs / "sequoia-1.12.0-sources.jar").write_bytes(b"sources")
+            with redirect_stdout(io.StringIO()):
+                self.package.verify_jar(libs, out)
+                for problem in ({"changed": "helpers-aarch64.xz"}, {"missing": "provenance.json"}):
+                    jar(**problem)
+                    with self.assertRaises(ValueError):
+                        self.package.verify_jar(libs, out)
+
+
+class ToolchainPinTest(unittest.TestCase):
+    def test_mise_installs_the_toolchain_cargo_reads(self):
+        root = Path(__file__).parents[2]
+        mise = tomllib.loads((root / "mise.toml").read_text())["tools"]["rust"]
+        cargo = tomllib.loads((root / "native/decoder/rust-toolchain.toml").read_text())["toolchain"]
+        self.assertEqual((cargo["channel"], cargo["profile"]), (mise["version"], mise["profile"]))
 
 
 if __name__ == "__main__":

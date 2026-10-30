@@ -2,6 +2,7 @@
 
 usage: package.py [--require-all] [--packs-only]
        package.py --unpack PACK PROVENANCE DEST
+       package.py --verify-jar DIRECTORY
 
 Every helper in native/out/sandbox/PLATFORM/ must match the files its native/out/PLATFORM/
 validation.json recorded and have been verified with native/out/guest/decoder.wasm. The helpers for
@@ -14,6 +15,8 @@ FFmpeg's signature, the build recipe and helper sources, and the notices. It is 
 Modrinth accepts zip files next to the JAR. --require-all fails unless all six platforms are present.
 --packs-only skips the source archive, for test builds that have no upstream archives.
 --unpack writes the helpers of a pack back to separate files, checked against the provenance.
+--verify-jar checks that the mod JAR in DIRECTORY carries exactly the packs and provenance in
+native/out/sandbox.
 """
 import argparse, hashlib, json, lzma, os, pathlib, re, subprocess, sys, zipfile
 
@@ -31,8 +34,12 @@ PACK_FILTERS = [{"id": lzma.FILTER_LZMA2, "preset": 9 | lzma.PRESET_EXTREME, "di
 # BundledHelpers refuses anything larger; keep the build within the limits the mod enforces.
 MAX_MEMBER_BYTES, MAX_PACK_BYTES = 32 << 20, 64 << 20
 MEMBER_PATH = re.compile(r"[a-z]+-[a-z0-9_]+/[A-Za-z0-9._-]+")
-# Repository files a recipient needs to rebuild the guest and the helpers.
-SOURCE_FILES = ["LICENSE.txt", ".github/workflows/build.yml", "native", "src/main/resources/licenses"]
+# Repository files a recipient needs to rebuild the guest and the helpers. build.yml runs the
+# mise tasks and tool versions that mise.toml and mise.lock define.
+SOURCE_FILES = ["LICENSE.txt", ".github/workflows/build.yml", "mise.toml", "mise.lock", "native",
+                "src/main/resources/licenses"]
+# The files the mod JAR ships under sandbox/.
+JAR_FILES = [f"helpers-{arch}.xz" for arch in ARCHES] + ["provenance.json"]
 SOURCE_EXCLUDES = ("native/out", "native/decoder/target")
 
 
@@ -121,6 +128,23 @@ def unpack(pack, provenance, dest):
         print(f"{path} {len(content)} {sha256(content)}")
 
 
+def verify_jar(directory, out=OUT):
+    """Raises ValueError unless the mod JAR in DIRECTORY ships exactly out/sandbox's packs."""
+    jars = sorted(p for p in directory.glob("*.jar") if not p.name.endswith(("-sources.jar", "-dev.jar")))
+    if len(jars) != 1:
+        raise ValueError(f"expected one mod JAR in {directory}, found {len(jars)}")
+    with zipfile.ZipFile(jars[0]) as jar:
+        shipped = set(jar.namelist())
+        for name in JAR_FILES:
+            local = out / "sandbox" / name
+            if f"sandbox/{name}" not in shipped or not local.is_file():
+                raise ValueError(f"{jars[0].name}: sandbox/{name} is missing from the JAR or {local}")
+            packed = sha256(jar.read(f"sandbox/{name}"))
+            print(packed, name)
+            if packed != sha256(local.read_bytes()):
+                raise ValueError(f"{jars[0].name}: sandbox/{name} differs from the tested {local}")
+
+
 def source_archive(path):
     """A reproducible zip, so equal sources give equal bytes."""
     upstream = [guest.SOURCES[key][field] for key, field in
@@ -172,10 +196,13 @@ def main():
     parser.add_argument("--require-all", action="store_true")
     parser.add_argument("--packs-only", action="store_true")
     parser.add_argument("--unpack", nargs=3, type=pathlib.Path, metavar=("PACK", "PROVENANCE", "DEST"))
+    parser.add_argument("--verify-jar", type=pathlib.Path, metavar="DIRECTORY")
     args = parser.parse_args()
     try:
         if args.unpack:
             unpack(*args.unpack)
+        elif args.verify_jar:
+            verify_jar(args.verify_jar)
         else:
             package(args.require_all, args.packs_only)
     except ValueError as error:

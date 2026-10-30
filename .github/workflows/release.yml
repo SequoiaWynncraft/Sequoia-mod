@@ -13,6 +13,10 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  # A task must not install the tools its job left out.
+  MISE_TASK_RUN_AUTO_INSTALL: 'false'
+
 jobs:
   preflight:
     runs-on: ubuntu-24.04
@@ -21,12 +25,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          version: 2026.10.23
+          install_args: python
+          # Publishing jobs install their tools fresh rather than from a cache.
+          cache: false
       - name: Validate release tag, notes and source version
-        run: python3 scripts/release_metadata.py
+        run: mise run release:check
 
   build:
     needs: preflight
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/build.yml # zizmor: ignore[self-repository] the tagged commit's own Build workflow
 
   # Stages exactly the JAR and native source archive the build job built and tested as a draft
   # release, which nobody sees as "latest". After acceptance, promote.yml publishes these same files.
@@ -52,38 +62,20 @@ jobs:
           name: corresponding-source
           path: build/corresponding-source
 
-      - name: Resolve release metadata
-        id: release_metadata
-        shell: bash
-        run: |
-          python3 scripts/release_metadata.py --jar-directory build/libs
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          version: 2026.10.23
+          install_args: python gh
+          # Publishing jobs install their tools fresh rather than from a cache.
+          cache: false
 
-      - name: Generate SHA-256 files
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Record only the file name, so a downloaded asset checks with sha256sum -c.
-          for file in build/libs/*.jar build/corresponding-source/*; do
-            (cd "$(dirname "$file")" && sha256sum "$(basename "$file")") > "$file.sha256"
-          done
+      - name: Check the built JAR against the release tag
+        id: release_metadata
+        run: mise run release:check --jar-directory build/libs
 
       - name: Stage the draft release and check it holds exactly these files
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_NOTES: ${{ steps.release_metadata.outputs.changelog }}
           TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          files=(build/libs/*.jar build/libs/*.jar.sha256 build/corresponding-source/*)
-          python3 scripts/github_release.py stage "$TAG" "${files[@]}"
-          python3 scripts/github_release.py verify "$TAG" "${files[@]}"
-          {
-            echo "### Release candidate $TAG (draft)"
-            echo
-            echo "Accept the draft's own files, then run Promote release with the JAR's SHA-256:"
-            echo
-            echo '```'
-            sha256sum build/libs/*.jar
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: mise run release:stage "$TAG"
