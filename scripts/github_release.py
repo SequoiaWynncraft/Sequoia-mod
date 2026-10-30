@@ -59,6 +59,10 @@ def check_candidate(tag, jar, accepted_sha256, tag_commit):
     """Raises ValueError unless JAR is the accepted candidate for TAG, built from the tagged commit."""
     if sha256(jar) != accepted_sha256.lower():
         raise ValueError(f"{jar.name} is not the accepted candidate {accepted_sha256}")
+    # Older updaters check the JAR against this file, so it must name and hash exactly this JAR.
+    sidecar = jar.with_name(jar.name + ".sha256")
+    if sidecar.read_text(encoding="utf-8").split() != [accepted_sha256.lower(), jar.name]:
+        raise ValueError(f"{sidecar.name} does not give {jar.name} its SHA-256 {accepted_sha256.lower()}")
     with zipfile.ZipFile(jar) as archive:
         mod = json.loads(archive.read("fabric.mod.json"))
         provenance = json.loads(archive.read("sandbox/provenance.json"))

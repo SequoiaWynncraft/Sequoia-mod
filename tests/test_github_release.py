@@ -28,7 +28,7 @@ class GitHubReleaseTest(unittest.TestCase):
         self.directory = Path(self.temp.name)
         self.files = {}
         self.write("sequoia-1.12.0.jar", self.jar())
-        self.write("sequoia-1.12.0.jar.sha256", b"x" * 85)
+        self.write("sequoia-1.12.0.jar.sha256", self.sidecar())
         self.write("sequoia-1.12.0-sources.jar", b"sources")
         self.write("sequoia-1.12.0-sources.jar.sha256", b"y" * 93)
         self.write("sequoia-images-native-source.zip", b"source zip")
@@ -41,6 +41,10 @@ class GitHubReleaseTest(unittest.TestCase):
         data = path.read_bytes()
         path.unlink()
         return data
+
+    def sidecar(self, digest=None, name="sequoia-1.12.0.jar"):
+        """The sha256sum line Release writes, by default for the JAR as written."""
+        return f"{digest or sha256(self.files['sequoia-1.12.0.jar'])}  {name}\n".encode()
 
     def write(self, name, data):
         (self.directory / name).write_bytes(data)
@@ -92,8 +96,18 @@ class GitHubReleaseTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "built from"):
             RELEASE.check_candidate(TAG, jar, sha256(self.files[jar.name]), "d" * 40)
         self.write("sequoia-1.12.0.jar", self.jar(version="1.12.1"))
+        self.write("sequoia-1.12.0.jar.sha256", self.sidecar())
         with self.assertRaisesRegex(ValueError, "not Sequoia 1.12.0"):
             RELEASE.check_candidate(TAG, jar, sha256(self.files[jar.name]), COMMIT)
+
+    def test_promotion_requires_the_checksum_file_to_name_and_hash_the_accepted_jar(self):
+        jar = self.directory / "sequoia-1.12.0.jar"
+        accepted = sha256(self.files[jar.name])
+        RELEASE.check_candidate(TAG, jar, accepted, COMMIT)
+        for wrong in (self.sidecar(digest="0" * 64), self.sidecar(name="sequoia-1.11.1.jar"), b"not a checksum\n"):
+            self.write("sequoia-1.12.0.jar.sha256", wrong)
+            with self.assertRaisesRegex(ValueError, "sha256"):
+                RELEASE.check_candidate(TAG, jar, accepted, COMMIT)
 
     def test_staging_never_changes_a_published_release(self):
         with patch.object(RELEASE, "find_release", return_value={"draft": False, "id": 1, "assets": []}), \
