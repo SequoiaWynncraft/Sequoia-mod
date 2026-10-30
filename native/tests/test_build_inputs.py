@@ -1,7 +1,9 @@
+from contextlib import redirect_stdout
 import hashlib
 import importlib.util
 import io
 import json
+import lzma
 from pathlib import Path
 import sys
 import tarfile
@@ -121,6 +123,82 @@ class PackagingTest(unittest.TestCase):
             self.helpers(out, "other guest")
             with self.assertRaises(ValueError):
                 self.package.platforms(out, "guest", require_all=True)
+
+    def packed(self, out):
+        self.helpers(out, "guest")
+        found = self.package.platforms(out, "guest", require_all=False)
+        return found, self.package.write_packs(out, found)
+
+    def test_packs_reproduce_every_verified_helper_byte_for_byte(self):
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp)
+            found, packs = self.packed(out)
+            self.assertEqual(["x86_64", "aarch64"], list(packs))
+            for arch, entry in packs.items():
+                data = lzma.decompress((out / "sandbox" / entry["file"]).read_bytes())
+                self.assertEqual(entry["uncompressed_bytes"], len(data))
+                offset = 0
+                for member in entry["members"]:
+                    self.assertEqual(offset, member["offset"])
+                    platform, name = member["path"].split("/")
+                    content = data[offset:offset + member["bytes"]]
+                    self.assertEqual((out / "sandbox" / member["path"]).read_bytes(), content)
+                    self.assertEqual(found[platform][name], member["sha256"])
+                    offset += member["bytes"]
+                self.assertTrue(entry["members"][0]["path"].startswith("windows-" + arch))
+            self.assertEqual(8, sum(len(entry["members"]) for entry in packs.values()))
+
+    def test_same_helpers_give_the_same_pack(self):
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp)
+            found, packs = self.packed(out)
+            first = (out / "sandbox/helpers-x86_64.xz").read_bytes()
+            self.assertEqual(packs, self.package.write_packs(out, found))
+            self.assertEqual(first, (out / "sandbox/helpers-x86_64.xz").read_bytes())
+
+    def test_partial_build_packs_only_present_platforms(self):
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp)
+            self.helpers(out, "guest")
+            for platform in ("windows-aarch64", "linux-aarch64", "macos-aarch64"):
+                for path in (out / "sandbox" / platform).iterdir():
+                    path.unlink()
+                (out / "sandbox" / platform).rmdir()
+            packs = self.package.write_packs(out, self.package.platforms(out, "guest", require_all=False))
+            self.assertEqual(["x86_64"], list(packs))
+            self.assertFalse((out / "sandbox/helpers-aarch64.xz").exists())
+
+    def test_unpack_restores_helpers_and_rejects_a_changed_pack(self):
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp)
+            _, packs = self.packed(out)
+            provenance = out / "provenance.json"
+            provenance.write_text(json.dumps({"packs": packs}))
+            pack = out / "sandbox/helpers-aarch64.xz"
+            with redirect_stdout(io.StringIO()):
+                self.package.unpack(pack, provenance, out / "unpacked")
+            for member in packs["aarch64"]["members"]:
+                self.assertEqual((out / "sandbox" / member["path"]).read_bytes(),
+                                 (out / "unpacked" / member["path"]).read_bytes())
+            data = bytearray(pack.read_bytes())
+            data[len(data) // 2] ^= 1
+            pack.write_bytes(bytes(data))
+            with self.assertRaises(ValueError):
+                self.package.unpack(pack, provenance, out / "again")
+
+    def test_index_entries_must_cover_the_pack_with_safe_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            out = Path(temp)
+            _, packs = self.packed(out)
+            packed = (out / "sandbox/helpers-x86_64.xz").read_bytes()
+            escaping = json.loads(json.dumps(packs["x86_64"]))
+            escaping["members"][0]["path"] = "../escape"
+            with self.assertRaises(ValueError):
+                self.package.check_pack(packed, escaping)
+            short = json.loads(json.dumps(packs["x86_64"]))
+            short["members"].pop()
+            with self.assertRaises(ValueError):
+                self.package.check_pack(packed, short)
 
 
 if __name__ == "__main__":
