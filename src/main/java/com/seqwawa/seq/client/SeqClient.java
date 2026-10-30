@@ -1283,9 +1283,8 @@ public class SeqClient implements ClientModInitializer {
 
     @Subscribe(Preference.CALLER)
     public void onGameStart(GameStartEvent ignored) {
-        if (checkUpdatesSetting == null || checkUpdatesSetting.getValue()) {
-            UpdateManager.getInstance().checkForUpdatesOnStartup();
-        }
+        // Always reconciles what an earlier update left behind; goes online only if checks are on.
+        UpdateManager.getInstance().start(checkUpdatesSetting == null || checkUpdatesSetting.getValue());
     }
 
     public static Identifier getFileLocation(String path) {

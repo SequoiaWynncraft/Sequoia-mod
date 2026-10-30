@@ -1,754 +1,983 @@
 package com.seqwawa.seq.update;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import net.fabricmc.loader.api.FabricLoader;
-import net.fabricmc.loader.api.ModContainer;
-import net.fabricmc.loader.api.metadata.ModOrigin;
-import net.minecraft.client.Minecraft;
-import com.seqwawa.seq.accessors.NotificationAccessor;
-import com.seqwawa.seq.client.SeqClient;
+import com.google.gson.JsonParser;
+import com.mojang.logging.LogUtils;
 import com.seqwawa.seq.ui.UpdatePromptScreen;
-
-import java.awt.*;
+import com.seqwawa.seq.update.UpdateState.Asset;
+import com.seqwawa.seq.update.UpdateState.Attempt;
+import com.seqwawa.seq.update.UpdateState.Release;
 import java.io.IOException;
-import java.io.InputStream;
+import java.lang.management.ManagementFactory;
 import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
-import java.util.HexFormat;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import net.fabricmc.loader.api.FabricLoader;
+import net.fabricmc.loader.api.ModContainer;
+import net.fabricmc.loader.api.Version;
+import net.fabricmc.loader.api.metadata.ModOrigin;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.toasts.SystemToast;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Util;
+import org.slf4j.Logger;
 
-public class UpdateManager implements NotificationAccessor {
-    private static final int MAX_REDIRECTS = 5;
+/**
+ * Updates Sequoia: checks GitHub for a release, downloads and verifies it, installs it and
+ * reconciles what an earlier session left behind.
+ *
+ * <p>The current {@link UpdateState} is everything the update prompt shows, and only this class
+ * changes it. Network and file work runs on one worker thread, so the game thread never waits on
+ * it. Each public action applies only in the states it names and is otherwise ignored, so a
+ * repeated or late click does nothing.
+ */
+public final class UpdateManager {
+    private static final Logger LOGGER = LogUtils.getLogger();
     private static final String MOD_ID = "seq";
-    private static final String REPO_OWNER = "SequoiaWynncraft";
-    private static final String REPO_NAME = "Sequoia-mod";
-    private static final URI DEFAULT_RELEASES_LATEST_API =
-            URI.create("https://api.github.com/repos/" + REPO_OWNER + "/" + REPO_NAME + "/releases/latest");
-    private static final Pattern SEMVER_PATTERN = Pattern.compile("^v?(\\d+)\\.(\\d+)\\.(\\d+)$");
+    private static final String DEFAULT_REPOSITORY = "SequoiaWynncraft/Sequoia-mod";
+    /** Points update checks at another GitHub repository's releases, to try a release candidate. */
+    static final String REPOSITORY_PROPERTY = "sequoia.updater.repository";
+    private static final Pattern REPOSITORY = Pattern.compile("[A-Za-z0-9-]+/[A-Za-z0-9._-]+");
+    private static final Pattern SEMVER = Pattern.compile("^v?(\\d+)\\.(\\d+)\\.(\\d+)$");
+    private static final Pattern DIGEST = Pattern.compile("(?i)sha256:([0-9a-f]{64})");
+    private static final Pattern CANDIDATE = Pattern.compile("sequoia-.+\\.jar\\.(download|pending)");
+    private static final long MAX_ASSET_BYTES = 128L * 1024 * 1024;
+    private static final long FREE_SPACE_MARGIN = 16L * 1024 * 1024;
+    private static final Duration API_TIMEOUT = Duration.ofSeconds(15);
+    private static final int IN_PROCESS_ATTEMPTS = 3;
+    private static final long IN_PROCESS_RETRY_MILLIS = 250;
+    static final String UPDATES_DIR = "updates";
+    static final String HELPER_JAR = "seq-update-helper.jar";
+    static final String HELPER_LOG = "update-helper.log";
 
-    private static UpdateManager instance;
+    /** What the updater needs from the game and the system; tests supply their own. */
+    interface Environment {
+        Path gameDir();
 
-    private final HttpClient httpClient;
-    private final ExecutorService executor;
-    private final Gson gson;
+        /** The Sequoia version Fabric loaded: what is running, whatever is on disk. */
+        String runningVersion();
+
+        /** The installed version of a mod, including minecraft, fabricloader and java. */
+        Optional<Version> installedVersion(String modId);
+
+        Instant jvmStart();
+
+        /** The JAR Fabric loaded Sequoia from, if it is a JAR file. */
+        Optional<Path> runningJar();
+
+        /** A JAR holding this version's {@link UpdateApplier}, for the Windows helper. */
+        Path helperSourceJar() throws IOException;
+
+        boolean windows();
+
+        String javaExecutable();
+
+        /** The game's process id, which the Windows helper waits on before replacing the JAR. */
+        default long pid() {
+            return ProcessHandle.current().pid();
+        }
+
+        /** Opens the prompt; at startup in a world, a toast points to /seq update instead. */
+        void showPrompt(boolean startup);
+
+        void toast(String title, String message);
+
+        void requestStop();
+
+        void addShutdownHook(Thread hook);
+
+        Process startHelper(List<String> command, Path log) throws IOException;
+
+        void open(URI uri);
+
+        void open(Path path);
+    }
+
+    private static final class Holder {
+        private static final UpdateManager INSTANCE = create();
+    }
+
+    /** Local facts from the update record; {@code settled} needs no check, {@code copy} needs no download. */
+    private record Local(Attempt note, Release copy, UpdateState settled) {
+        static final Local NONE = new Local(null, null, null);
+    }
+
+    private final Environment environment;
+    private final String repository;
     private final URI latestReleaseApi;
+    private final ReleaseDownload.Limits limits;
+    private final Duration installerPoll;
+    private final Duration launchGrace;
+    private final ExecutorService worker;
+    private final ScheduledExecutorService timer;
+    private final AtomicReference<UpdateState> state = new AtomicReference<>(new UpdateState.Idle());
+    private final AtomicBoolean started = new AtomicBoolean();
+    private final AtomicBoolean hookRegistered = new AtomicBoolean();
+    private final AtomicBoolean stopRequested = new AtomicBoolean();
+    private volatile boolean checkOnStartup;
+    private volatile String ignoredTag;
+    private ScheduledFuture<?> installerWatch;
 
-    private volatile boolean startupChecked;
-    private volatile boolean checking;
-    private volatile boolean applying;
-    private volatile String sessionIgnoredTag;
-    private volatile String statusLine = "Idle";
-    private volatile ReleaseCandidate pendingRelease;
-    private volatile PendingInstall pendingInstall;
-    private final AtomicBoolean shutdownHookRegistered = new AtomicBoolean(false);
+    UpdateManager(Environment environment, String repository, URI latestReleaseApi, ReleaseDownload.Limits limits,
+            Duration installerPoll, Duration launchGrace) {
+        this.environment = environment;
+        this.repository = repository;
+        this.latestReleaseApi = latestReleaseApi;
+        this.limits = limits;
+        this.installerPoll = installerPoll;
+        this.launchGrace = launchGrace;
+        this.worker = Executors.newSingleThreadExecutor(daemon("Sequoia updater"));
+        this.timer = Executors.newSingleThreadScheduledExecutor(daemon("Sequoia updater timer"));
+    }
+
+    private static UpdateManager create() {
+        String repository = DEFAULT_REPOSITORY;
+        String override = System.getProperty(REPOSITORY_PROPERTY);
+        if (override != null) {
+            if (REPOSITORY.matcher(override).matches()) {
+                repository = override;
+                LOGGER.warn("Checking for Sequoia updates in {} ({} is set)", repository, REPOSITORY_PROPERTY);
+            } else {
+                LOGGER.warn("Ignoring {}={}: expected owner/repository", REPOSITORY_PROPERTY, override);
+            }
+        }
+        return new UpdateManager(new FabricEnvironment(), repository,
+                URI.create("https://api.github.com/repos/" + repository + "/releases/latest"),
+                ReleaseDownload.Limits.DEFAULT, Duration.ofSeconds(2), Duration.ofSeconds(30));
+    }
 
     public static UpdateManager getInstance() {
-        if (instance == null) {
-            instance = new UpdateManager();
-        }
-        return instance;
+        return Holder.INSTANCE;
     }
 
-    UpdateManager() {
-        this(createExecutor());
+    public UpdateState state() {
+        return state.get();
     }
 
-    private UpdateManager(ExecutorService executor) {
-        this(
-                HttpClient.newBuilder()
-                        .connectTimeout(Duration.ofSeconds(10))
-                        .executor(executor)
-                        .build(),
-                executor,
-                new Gson(),
-                DEFAULT_RELEASES_LATEST_API);
+    public String runningVersion() {
+        return environment.runningVersion();
     }
 
-    UpdateManager(HttpClient httpClient, ExecutorService executor, Gson gson, URI latestReleaseApi) {
-        this.httpClient = httpClient;
-        this.executor = executor;
-        this.gson = gson;
-        this.latestReleaseApi = latestReleaseApi;
+    /** The repository update checks use, when it is not Sequoia's own. */
+    public String testSource() {
+        return repository.equals(DEFAULT_REPOSITORY) ? null : repository;
     }
 
-    private static ExecutorService createExecutor() {
-        return Executors.newFixedThreadPool(2, runnable -> {
-            Thread thread = new Thread(runnable, "seq-updater");
-            thread.setDaemon(true);
-            return thread;
+    /**
+     * Reconciles what an earlier session left behind and, if {@code checkOnStartup}, checks online.
+     * With checks off nothing goes online until the user asks.
+     */
+    public void start(boolean checkOnStartup) {
+        if (!started.compareAndSet(false, true)) return;
+        this.checkOnStartup = checkOnStartup;
+        worker.execute(() -> settle(true));
+    }
+
+    public void checkNow() {
+        UpdateState current = state.get();
+        if (!(current instanceof UpdateState.Idle || current instanceof UpdateState.UpToDate
+                || current instanceof UpdateState.CheckFailed || current instanceof UpdateState.Available
+                || current instanceof UpdateState.Attention || current instanceof UpdateState.Failed
+                || current instanceof UpdateState.ManualOnly || current instanceof UpdateState.Incompatible)) return;
+        if (!state.compareAndSet(current, new UpdateState.Checking(true))) return;
+        worker.execute(() -> {
+            Local local = reconcileSafely();
+            if (local == null) {
+                watchInstaller();
+            } else if (local.settled() != null) {
+                state.set(local.settled());
+            } else {
+                check(true, local);
+            }
         });
     }
 
-    public void checkForUpdatesOnStartup() {
-        if (startupChecked) {
-            return;
+    /** {@code /seq update}: shows the prompt and checks unless it already has something to show. */
+    public void openPrompt() {
+        UpdateState current = state.get();
+        environment.showPrompt(false);
+        if (current instanceof UpdateState.Idle || current instanceof UpdateState.UpToDate
+                || current instanceof UpdateState.CheckFailed || current instanceof UpdateState.Attention) checkNow();
+    }
+
+    /** Downloads, verifies and installs the offered release; with {@code exitAfter}, closes Minecraft on success. */
+    public void update(boolean exitAfter) {
+        UpdateState current = state.get();
+        Release release = current instanceof UpdateState.Available available ? available.release()
+                : current instanceof UpdateState.Failed failed ? failed.release() : null;
+        if (release == null) return;
+        ReleaseDownload.Transfer transfer = release.downloadedCopy() ? null : new ReleaseDownload.Transfer(
+                release.jar().url(), release.jar().size(), release.sha256(),
+                release.checksum() == null ? null : release.checksum().url(),
+                updatesDir().resolve(release.jar().name() + ".download"), limits, timer);
+        UpdateState next = transfer == null
+                ? new UpdateState.Installing(release, exitAfter)
+                : new UpdateState.Downloading(release, exitAfter, transfer);
+        if (state.compareAndSet(current, next)) worker.execute(() -> install(release, exitAfter, transfer));
+    }
+
+    public void retry() {
+        if (state.get() instanceof UpdateState.Failed failed) {
+            if (failed.release().downloadedCopy()) checkNow();
+            else update(failed.exitAfter());
         }
-        startupChecked = true;
-        checkForUpdates(false);
     }
 
-    public void checkForUpdatesManually() {
-        checkForUpdates(true);
+    /** Stops a download; the release is offered again. An install in progress cannot be undone part-way. */
+    public void cancel() {
+        if (state.get() instanceof UpdateState.Downloading downloading) downloading.transfer().cancel();
     }
 
-    public String getStatusLine() {
-        return statusLine;
-    }
-
-    public void ignoreForSession(String tag) {
-        this.sessionIgnoredTag = tag;
-        this.statusLine = "Ignored " + tag + " for this session.";
-    }
-
-    public void applyPendingUpdate(boolean exitAfterInstall) {
-        ReleaseCandidate target = pendingRelease;
-        if (target == null) {
-            sendNotification("No pending update available.");
-            statusLine = "No pending update available.";
-            return;
+    /**
+     * Before Minecraft closes, withdraws a staged Windows install. The verified file stays so the
+     * release can still be installed this session; without its record, the next start removes it.
+     */
+    public void cancelStaged() {
+        if (state.get() instanceof UpdateState.Staged staged
+                && state.compareAndSet(staged, new UpdateState.Available(staged.release(), null))) {
+            worker.execute(() -> deleteQuietly(updatesDir().resolve(UpdateRecord.FILE)));
         }
-        if (applying) {
-            sendNotification("Update install already in progress.");
-            return;
-        }
+    }
 
-        applying = true;
-        statusLine = "Installing " + target.tagName() + "...";
-        CompletableFuture.runAsync(() -> applyRelease(target, exitAfterInstall), executor)
-                .whenComplete((ignored, throwable) -> {
-                    applying = false;
-                    if (throwable != null) {
-                        statusLine = "Install failed: " + rootCauseMessage(throwable);
-                        sendNotification("Update failed: " + rootCauseMessage(throwable));
-                        SeqClient.LOGGER.error("Failed to apply update", throwable);
-                    }
-                });
+    public void exitNow() {
+        UpdateState current = state.get();
+        if (current instanceof UpdateState.Installed || current instanceof UpdateState.Staged) requestStop();
+    }
+
+    /** Leaves the offered release alone for the rest of this session. */
+    public void ignore() {
+        Release release = switch (state.get()) {
+            case UpdateState.Available available -> available.release();
+            case UpdateState.Failed failed -> failed.release();
+            case UpdateState.Incompatible incompatible -> incompatible.release();
+            default -> null;
+        };
+        if (release != null) ignoredTag = release.tag();
     }
 
     public void openReleasePage() {
-        ReleaseCandidate target = pendingRelease;
-        if (target == null) {
+        Release release = switch (state.get()) {
+            case UpdateState.Available available -> available.release();
+            case UpdateState.Failed failed -> failed.release();
+            case UpdateState.ManualOnly manual -> manual.release();
+            case UpdateState.Incompatible incompatible -> incompatible.release();
+            default -> null;
+        };
+        environment.open(release != null ? release.page() : URI.create("https://github.com/" + repository + "/releases"));
+    }
+
+    public void openModsFolder() {
+        environment.open(environment.gameDir().resolve("mods"));
+    }
+
+    private void requestStop() {
+        if (stopRequested.compareAndSet(false, true)) environment.requestStop();
+    }
+
+    // ---- Reconciling what an earlier session left behind ----
+
+    private void settle(boolean startup) {
+        Local local = reconcileSafely();
+        if (local == null) {
+            environment.showPrompt(startup);
+            watchInstaller();
             return;
         }
-        try {
-            openBrowser(target.releasePageUrl());
-        } catch (Exception e) {
-            sendClickableNotification("Open latest release", target.releasePageUrl());
-        }
-    }
-
-    private void checkForUpdates(boolean manualTrigger) {
-        if (checking) {
-            if (manualTrigger) {
-                sendNotification("Update check already running.");
-            }
+        if (local.settled() != null) {
+            state.set(local.settled());
+            environment.showPrompt(startup);
             return;
         }
-
-        checking = true;
-        statusLine = "Checking for updates...";
-        fetchLatestRelease().whenComplete((candidate, throwable) -> {
-            checking = false;
-            if (throwable != null) {
-                statusLine = "Update check failed: " + rootCauseMessage(throwable);
-                if (manualTrigger) {
-                    sendNotification("Update check failed: " + rootCauseMessage(throwable));
-                }
-                SeqClient.LOGGER.warn("Update check failed", throwable);
-                return;
-            }
-            if (candidate == null) {
-                statusLine = "No valid release found.";
-                if (manualTrigger) {
-                    sendNotification("No valid release found.");
-                }
-                return;
-            }
-
-            String installedVersion = resolveInstalledVersion();
-            if (!isNewer(candidate.tagName(), installedVersion)) {
-                pendingRelease = null;
-                statusLine = "Up to date (" + installedVersion + ").";
-                if (manualTrigger) {
-                    sendNotification("You are up to date (" + installedVersion + ").");
-                }
-                return;
-            }
-
-            if (Objects.equals(sessionIgnoredTag, candidate.tagName()) && !manualTrigger) {
-                statusLine = "Update " + candidate.tagName() + " ignored for this session.";
-                return;
-            }
-
-            pendingRelease = candidate;
-            statusLine = "Update available: " + installedVersion + " -> " + candidate.tagName();
-            showUpdatePrompt(installedVersion, candidate);
-        });
-    }
-
-    CompletableFuture<ReleaseCandidate> fetchLatestRelease() {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(latestReleaseApi)
-                .header("Accept", "application/vnd.github+json")
-                .header("User-Agent", "Sequoia-Updater")
-                .timeout(Duration.ofSeconds(15))
-                .GET()
-                .build();
-
-        return httpClient
-                .sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .thenApply(response -> {
-                    if (response.statusCode() >= 400) {
-                        throw new IllegalStateException("GitHub API returned " + response.statusCode());
-                    }
-                    JsonObject root = gson.fromJson(response.body(), JsonObject.class);
-
-                    String tagName = getString(root, "tag_name");
-                    if (tagName == null || !SEMVER_PATTERN.matcher(tagName).matches()) {
-                        throw new IllegalStateException("Release has invalid tag name: " + tagName);
-                    }
-
-                    String releasePage = getString(root, "html_url");
-                    JsonArray assets = root.has("assets") && root.get("assets").isJsonArray()
-                            ? root.getAsJsonArray("assets")
-                            : new JsonArray();
-
-                    ReleaseAsset jarAsset = null;
-                    for (JsonElement assetElement : assets) {
-                        if (!assetElement.isJsonObject()) {
-                            continue;
-                        }
-                        JsonObject assetObj = assetElement.getAsJsonObject();
-                        String name = getString(assetObj, "name");
-                        if (name == null) {
-                            continue;
-                        }
-                        if (!name.endsWith(".jar") || name.endsWith("-sources.jar")) {
-                            continue;
-                        }
-                        if (!name.startsWith("sequoia-")) {
-                            continue;
-                        }
-                        String url = getString(assetObj, "browser_download_url");
-                        if (url != null) {
-                            jarAsset = new ReleaseAsset(name, url, parseSha256Digest(getString(assetObj, "digest")));
-                            break;
-                        }
-                    }
-
-                    if (jarAsset == null) {
-                        throw new IllegalStateException("Release missing primary mod jar asset.");
-                    }
-
-                    ReleaseAsset checksumAsset = null;
-                    String expectedChecksumName = jarAsset.name() + ".sha256";
-                    for (JsonElement assetElement : assets) {
-                        if (!assetElement.isJsonObject()) {
-                            continue;
-                        }
-                        JsonObject assetObj = assetElement.getAsJsonObject();
-                        String name = getString(assetObj, "name");
-                        if (!expectedChecksumName.equals(name)) {
-                            continue;
-                        }
-                        String url = getString(assetObj, "browser_download_url");
-                        if (url != null) {
-                            checksumAsset = new ReleaseAsset(name, url);
-                            break;
-                        }
-                    }
-
-                    if (checksumAsset == null) {
-                        throw new IllegalStateException(
-                                "Release missing required checksum asset " + expectedChecksumName + ".");
-                    }
-
-                    return new ReleaseCandidate(tagName, releasePage, jarAsset, checksumAsset);
-                });
-    }
-
-    void applyRelease(ReleaseCandidate release, boolean exitAfterInstall) {
-        try {
-            Path gameDir = resolveGameDir();
-            Path modsDir = gameDir.resolve("mods");
-            Files.createDirectories(modsDir);
-
-            Path updatesDir = gameDir.resolve("updates");
-            Files.createDirectories(updatesDir);
-
-            Path tempJar = updatesDir.resolve(release.jarAsset().name() + ".download");
-            Path pendingJar = updatesDir.resolve(release.jarAsset().name() + ".pending");
-            Path finalJar = modsDir.resolve(release.jarAsset().name());
-
-            downloadToFile(release.jarAsset().downloadUrl(), tempJar);
-            String expectedChecksum = resolveExpectedChecksum(release);
-            String actualChecksum = sha256(tempJar);
-            if (!expectedChecksum.equalsIgnoreCase(actualChecksum)) {
-                Files.deleteIfExists(tempJar);
-                throw new IllegalStateException("Checksum mismatch for downloaded update.");
-            }
-
-            if (isWindows()) {
-                Path currentJar = resolveInstalledModJarPath();
-                Path helperSourceJar = resolveWindowsHelperSourceJarPath(currentJar);
-                moveAtomically(tempJar, pendingJar);
-                pendingInstall =
-                        new PendingInstall(pendingJar, finalJar, modsDir, release.tagName(), currentJar, helperSourceJar);
-                registerShutdownHookIfNeeded();
-                pendingRelease = null;
-                statusLine = "Downloaded " + release.tagName() + ". It will install on exit.";
-                sendNotification("Downloaded " + release.tagName() + ". It will install when Minecraft closes.");
-
-                if (exitAfterInstall) {
-                    requestMinecraftStop();
-                }
-                return;
-            }
-
-            installJar(tempJar, finalJar, modsDir);
-
-            pendingRelease = null;
-            statusLine = "Installed " + release.tagName() + ". Restart required.";
-            sendNotification("Installed " + release.tagName() + ". Restart Minecraft to load it.");
-
-            if (exitAfterInstall) {
-                requestMinecraftStop();
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    Path resolveGameDir() {
-        return FabricLoader.getInstance().getGameDir();
-    }
-
-    void showUpdatePrompt(String installedVersion, ReleaseCandidate candidate) {
-        Minecraft minecraft = Minecraft.getInstance();
-        minecraft.execute(
-                () -> minecraft.setScreen(new UpdatePromptScreen(minecraft.screen, installedVersion, candidate)));
-    }
-
-    void requestMinecraftStop() {
-        Minecraft.getInstance().execute(() -> Minecraft.getInstance().stop());
-    }
-
-    void sendNotification(String message) {
-        notify(message);
-    }
-
-    void sendClickableNotification(String text, String url) {
-        notifyClickable(text, url);
-    }
-
-    void openBrowser(String url) throws Exception {
-        Desktop.getDesktop().browse(URI.create(url));
-    }
-
-    private void registerShutdownHookIfNeeded() {
-        if (!shutdownHookRegistered.compareAndSet(false, true)) {
+        if (!checkOnStartup) {
+            UpdateState next = local.copy() != null ? new UpdateState.Available(local.copy(), local.note())
+                    : local.note() != null ? new UpdateState.Attention(local.note())
+                    : new UpdateState.Idle();
+            state.set(next);
+            if (!(next instanceof UpdateState.Idle)) environment.showPrompt(startup);
             return;
         }
-        addShutdownHook(new Thread(this::applyPendingInstallOnShutdown, "seq-update-shutdown"));
+        state.set(new UpdateState.Checking(false));
+        check(false, local);
     }
 
-    void addShutdownHook(Thread thread) {
-        Runtime.getRuntime().addShutdownHook(thread);
-    }
-
-    void applyPendingInstallOnShutdown() {
-        PendingInstall install = pendingInstall;
-        if (install == null || !Files.exists(install.pendingJar())) {
-            return;
-        }
-
+    private Local reconcileSafely() {
         try {
-            if (isWindows()) {
-                launchWindowsHelper(install);
-                return;
-            }
-
-            installJar(install.pendingJar(), install.finalJar(), install.modsDir());
-            SeqClient.LOGGER.info("Applied pending update {} on shutdown", install.tagName());
-        } catch (Exception e) {
-            SeqClient.LOGGER.warn("Failed to apply pending shutdown update", e);
+            return reconcile();
+        } catch (IOException | RuntimeException failure) {
+            LOGGER.warn("Could not reconcile the last Sequoia update", failure);
+            return Local.NONE;
         }
     }
 
-    private void launchWindowsHelper(PendingInstall install) {
+    /**
+     * Works out what the last attempt achieved from the record, the version Fabric loaded and the
+     * files actually present. Returns null while a Windows installer from an earlier session is
+     * still running: until it ends, its files are left alone and nothing new starts.
+     */
+    private Local reconcile() throws IOException {
+        Path updates = updatesDir();
+        Path recordFile = updates.resolve(UpdateRecord.FILE);
+        UpdateRecord.Data record;
         try {
-            Path updatesDir = install.pendingJar().getParent();
-            if (updatesDir == null) {
-                throw new IllegalStateException("Missing updates directory for pending install.");
-            }
-
-            Path sourceJar = install.helperSourceJar();
-            Path helperJar = updatesDir.resolve("seq-update-helper.jar");
-            Files.copy(sourceJar, helperJar, StandardCopyOption.REPLACE_EXISTING);
-
-            launchUpdateHelperProcess(
-                    resolveJavaExecutable(),
-                    helperJar,
-                    install.modsDir(),
-                    install.currentJar(),
-                    install.pendingJar(),
-                    install.finalJar());
-
-            SeqClient.LOGGER.info("Launched Windows update helper for {}", install.tagName());
-        } catch (Exception e) {
-            SeqClient.LOGGER.warn("Failed to launch Windows update helper", e);
+            record = UpdateRecord.read(recordFile);
+        } catch (IOException unreadable) {
+            LOGGER.warn("Discarding an unreadable update record", unreadable);
+            deleteQuietly(recordFile);
+            record = null;
         }
-    }
-
-    void launchUpdateHelperProcess(
-            String javaExe, Path helperJar, Path modsDir, Path currentJar, Path pendingJar, Path finalJar)
-            throws IOException {
-        new ProcessBuilder(
-                        javaExe,
-                        "-cp",
-                        helperJar.toString(),
-                        UpdateApplier.class.getName(),
-                        modsDir.toString(),
-                        currentJar.toString(),
-                        pendingJar.toString(),
-                        finalJar.toString(),
-                        helperJar.toString())
-                .start();
-    }
-
-    Path resolveWindowsHelperSourceJarPath(Path installedJar) {
-        try {
-            return resolveCurrentModJarPath();
-        } catch (Exception e) {
-            SeqClient.LOGGER.warn(
-                    "Falling back to installed mod jar for Windows helper source resolution", e);
-            return installedJar;
+        if (record != null && record.method() == UpdateRecord.Method.WINDOWS_HELPER && installerAlive(record, updates)) {
+            Instant since = state.get() instanceof UpdateState.WaitingForInstaller waiting ? waiting.since() : Instant.now();
+            state.set(new UpdateState.WaitingForInstaller(new Attempt(record.target(), record.phase(),
+                    "An earlier install of " + record.target() + " is still running"), record.helperPid(), since));
+            return null;
         }
-    }
-
-    Path resolveInstalledModJarPath() {
-        try {
-            return FabricLoader.getInstance()
-                    .getModContainer(MOD_ID)
-                    .map(this::resolveInstalledModJarPath)
-                    .orElseGet(this::resolveCurrentModJarPath);
-        } catch (Exception e) {
-            SeqClient.LOGGER.warn("Falling back to runtime updater jar path for installed mod resolution", e);
-            return resolveCurrentModJarPath();
+        if (record == null) {
+            removeLeftovers(updates, null);
+            return Local.NONE;
         }
-    }
-
-    private Path resolveInstalledModJarPath(ModContainer container) {
-        ModOrigin origin = container.getOrigin();
-        if (origin.getKind() != ModOrigin.Kind.PATH) {
-            throw new IllegalStateException("Fabric Loader mod origin was " + origin.getKind() + ", expected PATH.");
+        String running = environment.runningVersion();
+        int order = compareVersions(record.target(), running);
+        if (order <= 0) {
+            if (order == 0 && record.phase() != UpdateRecord.Phase.INCOMPATIBLE)
+                environment.toast("Sequoia updated", "Sequoia " + running + " is running.");
+            resolve(record, updates);
+            return Local.NONE;
         }
-
-        for (Path path : origin.getPaths()) {
-            if (Files.isRegularFile(path) && path.getFileName().toString().endsWith(".jar")) {
-                return path.toAbsolutePath().normalize();
-            }
+        if (record.phase() == UpdateRecord.Phase.INCOMPATIBLE) {
+            // Kept only so an unchanged game need not download the same release again (see check).
+            removeLeftovers(updates, null);
+            return Local.NONE;
         }
-
-        throw new IllegalStateException("Fabric Loader mod origin did not expose an installed jar path.");
-    }
-
-    Path resolveCurrentModJarPath() {
-        try {
-            URI location = UpdateManager.class
-                    .getProtectionDomain()
-                    .getCodeSource()
-                    .getLocation()
-                    .toURI();
-            Path path = Path.of(location);
-            if (!Files.isRegularFile(path)) {
-                throw new IllegalStateException(
-                        "Updater helper requires a packaged mod jar (not a development classes directory).");
-            }
-            return path;
-        } catch (Exception e) {
-            throw new IllegalStateException("Unable to resolve updater jar location.", e);
+        if (record.phase() == UpdateRecord.Phase.INSTALLED && record.updated().isAfter(environment.jvmStart())) {
+            removeLeftovers(updates, null);
+            return new Local(null, null, new UpdateState.Installed(downloadedCopy(record)));
         }
-    }
-
-    String resolveJavaExecutable() {
-        String javaHome = System.getProperty("java.home");
-        if (javaHome != null && !javaHome.isBlank()) {
-            Path javaExe = Path.of(javaHome, "bin", "java.exe");
-            if (Files.exists(javaExe)) {
-                return javaExe.toString();
-            }
-            Path javaBin = Path.of(javaHome, "bin", "java");
-            if (Files.exists(javaBin)) {
-                return javaBin.toString();
-            }
+        Release copy = null;
+        Path pending = updates.resolve(record.jar() + ".pending");
+        if (Files.exists(pending)) {
+            ReleaseJar.Verdict verdict = ReleaseJar.check(pending, record.size(), record.sha256(),
+                    version(record.target()), environment::installedVersion);
+            if (verdict instanceof ReleaseJar.Verdict.Ready) copy = downloadedCopy(record);
+            else deleteQuietly(pending);
         }
-        return "java";
+        removeLeftovers(updates, copy != null ? record.jar() : null);
+        String note = switch (record.phase()) {
+            case STAGED -> record.target() + " was downloaded but not installed: Minecraft closed before the installer started.";
+            case LAUNCHED, APPLYING -> record.method() == UpdateRecord.Method.IN_PROCESS
+                    ? "The previous install of " + record.target() + " stopped before finishing. Sequoia " + running + " is running."
+                    : "The installer for " + record.target() + " stopped before finishing (see updates/" + HELPER_LOG
+                            + "). Sequoia " + running + " is running.";
+            case FAILED -> "Last update to " + record.target() + " failed: " + record.detail();
+            case INSTALLED -> record.target() + " was installed but Minecraft started " + running
+                    + ". Another copy of Sequoia or your launcher may have replaced it.";
+            case INCOMPATIBLE -> throw new IllegalStateException("handled above");
+        };
+        return new Local(new Attempt(record.target(), record.phase(), note), copy, null);
     }
 
-    boolean isWindows() {
-        String osName = System.getProperty("os.name", "").toLowerCase();
-        return osName.contains("win");
+    /**
+     * Whether a Windows installer is still running: it holds its lock file for its whole life, and
+     * just after launch, before it takes the lock, the recorded process id must still name a process
+     * that started at the recorded instant, so a reused process id is not mistaken for it.
+     */
+    boolean installerAlive(UpdateRecord.Data record, Path updates) {
+        if (lockHeld(updates.resolve(UpdateApplier.LOCK_FILE))) return true;
+        if (record.phase() != UpdateRecord.Phase.LAUNCHED || record.helperPid() <= 0) return false;
+        Optional<ProcessHandle> process = ProcessHandle.of(record.helperPid()).filter(ProcessHandle::isAlive);
+        if (process.isEmpty()) return false;
+        Optional<Instant> started = process.get().info().startInstant();
+        if (record.helperStart() != null && started.isPresent()) return started.get().equals(Instant.parse(record.helperStart()));
+        return Duration.between(record.updated(), Instant.now()).compareTo(launchGrace) < 0;
     }
 
-    private void downloadToFile(String url, Path targetFile) throws IOException, InterruptedException {
-        HttpRequest request = buildDownloadRequest(URI.create(url), Duration.ofSeconds(60), null);
-        HttpResponse<InputStream> response =
-                sendFollowingRedirects(request, HttpResponse.BodyHandlers.ofInputStream(), MAX_REDIRECTS);
-        try (InputStream input = response.body()) {
-            Files.copy(input, targetFile, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    private String downloadToString(String url) throws IOException, InterruptedException {
-        HttpRequest request =
-                buildDownloadRequest(URI.create(url), Duration.ofSeconds(30), StandardCharsets.UTF_8.name());
-        HttpResponse<String> response = sendFollowingRedirects(
-                request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8), MAX_REDIRECTS);
-        return response.body();
-    }
-
-    private HttpRequest buildDownloadRequest(URI uri, Duration timeout, String acceptHeader) {
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(uri)
-                .header("User-Agent", "Sequoia-Updater")
-                .timeout(timeout)
-                .GET();
-        if (acceptHeader != null) {
-            builder.header("Accept", acceptHeader);
-        }
-        return builder.build();
-    }
-
-    private <T> HttpResponse<T> sendFollowingRedirects(
-            HttpRequest request, HttpResponse.BodyHandler<T> bodyHandler, int redirectsRemaining)
-            throws IOException, InterruptedException {
-        HttpResponse<T> response = httpClient.send(request, bodyHandler);
-        int status = response.statusCode();
-        if (status >= 300 && status < 400) {
-            if (redirectsRemaining == 0) {
-                throw new IllegalStateException("Download failed: too many redirects.");
-            }
-            URI redirectUri = resolveRedirectUri(request.uri(), response.headers());
-            HttpRequest redirected = buildDownloadRequest(
-                    redirectUri,
-                    request.timeout().orElse(Duration.ofSeconds(30)),
-                    request.headers().firstValue("Accept").orElse(null));
-            return sendFollowingRedirects(redirected, bodyHandler, redirectsRemaining - 1);
-        }
-        if (status >= 400) {
-            throw new IllegalStateException("Download failed with status " + status);
-        }
-        return response;
-    }
-
-    private URI resolveRedirectUri(URI originalUri, HttpHeaders headers) {
-        String location = headers.firstValue("Location")
-                .orElseThrow(() -> new IllegalStateException("Download redirect missing Location header."));
-        return originalUri.resolve(location);
-    }
-
-    private String resolveExpectedChecksum(ReleaseCandidate release) throws IOException, InterruptedException {
-        String embeddedChecksum = release.jarAsset().sha256();
-        if (embeddedChecksum != null) {
-            return embeddedChecksum;
-        }
-
-        String checksumFile = downloadToString(release.checksumAsset().downloadUrl());
-        return parseChecksum(checksumFile);
-    }
-
-    private void installJar(Path downloadedJar, Path finalJar, Path modsDir) throws IOException {
-        Map<Path, Path> backups = new LinkedHashMap<>();
-        boolean replacementAttempted = false;
-        boolean retainBackups = false;
-        try {
-            try (Stream<Path> stream = Files.list(modsDir)) {
-                for (Path jar : stream
-                        .filter(path -> path.getFileName().toString().startsWith("sequoia-"))
-                        .filter(path -> path.getFileName().toString().endsWith(".jar"))
-                        .toList()) {
-                    Path backup = Files.createTempFile(modsDir, "seq-update-", ".previous");
-                    backups.put(jar, backup);
-                    Files.copy(jar, backup, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
-                }
-            }
-            replacementAttempted = true;
-            moveAtomically(downloadedJar, finalJar);
-            deleteExistingSequoiaJars(backups.keySet(), finalJar);
-        } catch (IOException failure) {
-            if (replacementAttempted) {
-                try {
-                    if (!backups.containsKey(finalJar)) {
-                        Files.deleteIfExists(finalJar);
-                    }
-                    for (Map.Entry<Path, Path> backup : backups.entrySet()) {
-                        moveAtomically(backup.getValue(), backup.getKey());
-                    }
-                } catch (IOException rollbackFailure) {
-                    retainBackups = true;
-                    failure.addSuppressed(rollbackFailure);
-                    SeqClient.LOGGER.warn("Failed to roll back update; retained jar backups {}", backups, rollbackFailure);
-                }
-            }
-            throw failure;
-        } finally {
-            if (!retainBackups) {
-                for (Path backup : backups.values()) {
-                    try {
-                        Files.deleteIfExists(backup);
-                    } catch (IOException cleanupFailure) {
-                        SeqClient.LOGGER.warn("Failed to remove update backup {}", backup, cleanupFailure);
-                    }
-                }
-            }
-        }
-    }
-
-    void deleteExistingSequoiaJars(Iterable<Path> existingJars, Path installedJar) throws IOException {
-        for (Path jar : existingJars) {
-            if (!jar.equals(installedJar)) {
-                Files.deleteIfExists(jar);
-            }
-        }
-    }
-
-    void moveAtomically(Path source, Path destination) throws IOException {
-        try {
-            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException ignored) {
-            Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    String resolveInstalledVersion() {
-        return FabricLoader.getInstance()
-                .getModContainer(MOD_ID)
-                .map(container -> container.getMetadata().getVersion().getFriendlyString())
-                .orElse("unknown");
-    }
-
-    static boolean isNewer(String latest, String installed) {
-        Matcher latestMatcher = SEMVER_PATTERN.matcher(latest);
-        if (!latestMatcher.matches()) {
-            return false;
-        }
-
-        Matcher installedMatcher = SEMVER_PATTERN.matcher(installed);
-        if (!installedMatcher.matches()) {
-            return !latest.equals(installed);
-        }
-
-        for (int i = 1; i <= 3; i++) {
-            int latestPart = Integer.parseInt(latestMatcher.group(i));
-            int installedPart = Integer.parseInt(installedMatcher.group(i));
-            if (latestPart > installedPart) {
+    static boolean lockHeld(Path lockFile) {
+        if (!Files.exists(lockFile)) return false;
+        try (FileChannel channel = FileChannel.open(lockFile, StandardOpenOption.WRITE)) {
+            try (FileLock lock = channel.tryLock()) {
+                return lock == null;
+            } catch (OverlappingFileLockException heldInThisProcess) {
                 return true;
             }
-            if (latestPart < installedPart) {
-                return false;
+        } catch (IOException unavailable) {
+            LOGGER.warn("Could not check the update installer lock {}", lockFile, unavailable);
+            return false;
+        }
+    }
+
+    private void watchInstaller() {
+        synchronized (this) {
+            if (installerWatch != null) return;
+            long period = installerPoll.toMillis();
+            installerWatch = timer.scheduleWithFixedDelay(
+                    () -> worker.execute(this::pollInstaller), period, period, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private void pollInstaller() {
+        if (!(state.get() instanceof UpdateState.WaitingForInstaller)) return;
+        try {
+            UpdateRecord.Data record = UpdateRecord.read(updatesDir().resolve(UpdateRecord.FILE));
+            if (record != null && record.method() == UpdateRecord.Method.WINDOWS_HELPER
+                    && installerAlive(record, updatesDir())) return;
+        } catch (IOException unreadable) {
+            // Reconciliation below discards it.
+        }
+        synchronized (this) {
+            if (installerWatch != null) installerWatch.cancel(false);
+            installerWatch = null;
+        }
+        settle(true);
+    }
+
+    /** The attempt is over; removes its record and the files it owned. */
+    private void resolve(UpdateRecord.Data record, Path updates) {
+        removeLeftovers(updates, null);
+        if (record.currentJar() != null) {
+            Path backup = Path.of(record.currentJar() + ".previous");
+            if (inModsDir(backup) && environment.runningJar().map(path -> !path.equals(backup)).orElse(true))
+                deleteQuietly(backup);
+        }
+        deleteQuietly(updates.resolve(UpdateRecord.FILE));
+    }
+
+    /** Partial downloads, staged files other than {@code keepJar}'s, and the helper's copy and lock. */
+    private void removeLeftovers(Path updates, String keepJar) {
+        if (!Files.isDirectory(updates)) return;
+        try (Stream<Path> files = Files.list(updates)) {
+            for (Path file : files.toList()) {
+                String name = file.getFileName().toString();
+                if ((CANDIDATE.matcher(name).matches() && !name.equals(keepJar + ".pending"))
+                        || name.equals(HELPER_JAR) || name.equals(UpdateApplier.LOCK_FILE)) deleteQuietly(file);
             }
+        } catch (IOException unlisted) {
+            LOGGER.warn("Could not list {}", updates, unlisted);
+        }
+    }
+
+    // ---- Checking ----
+
+    private void check(boolean manual, Local local) {
+        Release latest;
+        try {
+            latest = fetchLatest();
+        } catch (IOException failure) {
+            LOGGER.warn("Sequoia update check failed: {}", failure.getMessage());
+            if (local.copy() != null) {
+                show(new UpdateState.Available(local.copy(), local.note()), !manual);
+            } else {
+                state.set(new UpdateState.CheckFailed(ReleaseDownload.describe(failure), local.note()));
+                if (manual || local.note() != null) environment.showPrompt(!manual);
+            }
+            return;
+        }
+        String running = environment.runningVersion();
+        if (!isNewer(latest.version(), running)) {
+            if (local.copy() != null) {
+                LOGGER.info("{} is no longer offered; discarding its download", local.copy().tag());
+                deleteQuietly(updatesDir().resolve(local.copy().jar().name() + ".pending"));
+                deleteQuietly(updatesDir().resolve(UpdateRecord.FILE));
+            }
+            state.set(new UpdateState.UpToDate(running));
+            if (manual) environment.showPrompt(false);
+            return;
+        }
+        String verdict = rememberedIncompatibility(latest);
+        if (verdict != null) {
+            state.set(new UpdateState.Incompatible(latest, verdict));
+            if (manual || !latest.tag().equals(ignoredTag)) environment.showPrompt(!manual);
+            return;
+        }
+        Optional<String> manualOnly = ownershipProblem();
+        if (manualOnly.isPresent()) {
+            show(new UpdateState.ManualOnly(latest, manualOnly.get()), !manual);
+            return;
+        }
+        state.set(new UpdateState.Available(latest, local.note()));
+        if (manual || !latest.tag().equals(ignoredTag)) environment.showPrompt(!manual);
+    }
+
+    private void show(UpdateState next, boolean startup) {
+        state.set(next);
+        environment.showPrompt(startup);
+    }
+
+    /** The recorded reason this exact release cannot run here, if nothing it checked has changed. */
+    private String rememberedIncompatibility(Release latest) {
+        try {
+            UpdateRecord.Data record = UpdateRecord.read(updatesDir().resolve(UpdateRecord.FILE));
+            if (record == null || record.phase() != UpdateRecord.Phase.INCOMPATIBLE || record.environment() == null
+                    || !record.target().equals(latest.tag()) || !record.sha256().equalsIgnoreCase(String.valueOf(latest.sha256())))
+                return null;
+            return ReleaseJar.currentEnvironment(record.environment(), environment::installedVersion)
+                            .equals(record.environment())
+                    ? record.detail()
+                    : null;
+        } catch (IOException unreadable) {
+            return null;
+        }
+    }
+
+    Release fetchLatest() throws IOException {
+        HttpRequest request = HttpRequest.newBuilder(latestReleaseApi)
+                .header("Accept", "application/vnd.github+json")
+                .header("User-Agent", ReleaseDownload.USER_AGENT)
+                .GET()
+                .build();
+        HttpClient http = HttpClient.newBuilder()
+                .connectTimeout(limits.connect())
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
+        HttpResponse<String> response;
+        try {
+            response = http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .get(API_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException slow) {
+            throw new IOException("GitHub did not answer within " + API_TIMEOUT.toSeconds() + " s");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted", interrupted);
+        } catch (ExecutionException failed) {
+            throw new IOException(ReleaseDownload.describe(failed.getCause()), failed.getCause());
+        } finally {
+            http.shutdownNow();
+            http.close();
+        }
+        if (response.statusCode() != 200) throw new IOException("GitHub answered HTTP " + response.statusCode());
+        return parseRelease(response.body());
+    }
+
+    /** The release's primary JAR, sequoia-VERSION.jar exactly, with its size and checksum. */
+    static Release parseRelease(String json) throws IOException {
+        try {
+            JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+            String tag = string(root, "tag_name");
+            if (tag == null || !SEMVER.matcher(tag).matches()) throw new IOException("The latest release has an invalid tag: " + tag);
+            String version = version(tag);
+            String jarName = "sequoia-" + version + ".jar";
+            Asset jar = null;
+            Asset checksum = null;
+            String digest = null;
+            for (JsonElement element : root.getAsJsonArray("assets")) {
+                JsonObject asset = element.getAsJsonObject();
+                String name = string(asset, "name");
+                String url = string(asset, "browser_download_url");
+                if (url == null) continue;
+                if (jarName.equals(name)) {
+                    long size = asset.get("size").getAsLong();
+                    if (size <= 0 || size > MAX_ASSET_BYTES) throw new IOException("The release lists an unusable size for " + name);
+                    jar = new Asset(name, URI.create(url), size);
+                    Matcher matcher = DIGEST.matcher(String.valueOf(string(asset, "digest")));
+                    if (matcher.matches()) digest = matcher.group(1).toLowerCase(java.util.Locale.ROOT);
+                } else if ((jarName + ".sha256").equals(name)) {
+                    checksum = new Asset(name, URI.create(url), asset.has("size") ? asset.get("size").getAsLong() : 0);
+                }
+            }
+            if (jar == null) throw new IOException("The latest release has no " + jarName);
+            if (digest == null && checksum == null) throw new IOException("The latest release has no checksum for " + jarName);
+            String page = string(root, "html_url");
+            return new Release(tag, version, URI.create(page != null ? page : jar.url().toString()), jar, checksum, digest);
+        } catch (RuntimeException malformed) {
+            throw new IOException("Unexpected release data from GitHub", malformed);
+        }
+    }
+
+    // ---- Installing ----
+
+    private void install(Release release, boolean exitAfter, ReleaseDownload.Transfer transfer) {
+        try {
+            Optional<String> manualOnly = ownershipProblem();
+            if (manualOnly.isPresent()) {
+                state.set(new UpdateState.ManualOnly(release, manualOnly.get()));
+                return;
+            }
+            Path updates = updatesDir();
+            Files.createDirectories(updates);
+            String name = release.jar().name();
+            Path pending = updates.resolve(name + ".pending");
+            removeOtherCandidates(updates, name);
+            String sha256 = release.sha256();
+            ReleaseJar.Verdict verdict = null;
+            if (sha256 != null && Files.exists(pending)) {
+                verdict = ReleaseJar.check(pending, release.jar().size(), sha256, release.version(), environment::installedVersion);
+                if (verdict instanceof ReleaseJar.Verdict.Mismatch) {
+                    deleteQuietly(pending);
+                    verdict = null;
+                }
+            }
+            if (verdict == null) {
+                if (transfer == null)
+                    throw new ReleaseDownload.TransferException(
+                            "The downloaded update no longer matches the release; check for updates to download it again", null);
+                requireFreeSpace(updates, release.jar().size());
+                Path download = updates.resolve(name + ".download");
+                transfer.run();
+                if (sha256 == null) sha256 = ReleaseJar.sha256(download);
+                verdict = ReleaseJar.check(download, release.jar().size(), sha256, release.version(), environment::installedVersion);
+                if (verdict instanceof ReleaseJar.Verdict.Ready) {
+                    Files.move(download, pending, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                } else {
+                    deleteQuietly(download);
+                }
+            }
+            if (transfer != null && transfer.cancelled()) {
+                state.set(new UpdateState.Available(release, null));
+                return;
+            }
+            switch (verdict) {
+                case ReleaseJar.Verdict.Mismatch mismatch -> state.set(new UpdateState.Failed(release, exitAfter, mismatch.reason()));
+                case ReleaseJar.Verdict.Incompatible incompatible -> {
+                    deleteQuietly(pending);
+                    UpdateRecord.write(updates.resolve(UpdateRecord.FILE), new UpdateRecord.Data(release.tag(),
+                            environment.runningVersion(), name, sha256, release.jar().size(), UpdateRecord.Method.IN_PROCESS,
+                            UpdateRecord.Phase.INCOMPATIBLE, null, 0, null, incompatible.environment(),
+                            incompatible.reason(), Instant.now()));
+                    state.set(new UpdateState.Incompatible(release, incompatible.reason()));
+                }
+                case ReleaseJar.Verdict.Ready ready -> {
+                    if (environment.windows()) stage(release, sha256, exitAfter);
+                    else installNow(release, sha256, exitAfter);
+                }
+            }
+        } catch (ReleaseDownload.TransferException failure) {
+            if (transfer != null && transfer.cancelled()) {
+                state.set(new UpdateState.Available(release, null));
+            } else {
+                LOGGER.warn("Sequoia update failed: {}", failure.getMessage());
+                state.set(new UpdateState.Failed(release, exitAfter, failure.getMessage()));
+            }
+        } catch (IOException | RuntimeException failure) {
+            LOGGER.warn("Sequoia update failed", failure);
+            state.set(new UpdateState.Failed(release, exitAfter, "Update failed: " + ReleaseDownload.describe(failure)));
+        }
+    }
+
+    /** Linux and macOS: the running JAR can be replaced now; the game keeps using the open file. */
+    private void installNow(Release release, String sha256, boolean exitAfter) throws IOException {
+        state.set(new UpdateState.Installing(release, exitAfter));
+        Path running = environment.runningJar().orElseThrow();
+        Path recordFile = updatesDir().resolve(UpdateRecord.FILE);
+        UpdateRecord.Data record = new UpdateRecord.Data(release.tag(), environment.runningVersion(), release.jar().name(),
+                sha256, release.jar().size(), UpdateRecord.Method.IN_PROCESS, UpdateRecord.Phase.APPLYING,
+                running.toString(), 0, null, null, null, Instant.now());
+        UpdateRecord.write(recordFile, record);
+        UpdateApplier.Outcome outcome = UpdateApplier.swap(
+                new UpdateApplier.Paths(modsDir(), running, updatesDir().resolve(release.jar().name() + ".pending"),
+                        modsDir().resolve(release.jar().name())),
+                IN_PROCESS_ATTEMPTS, IN_PROCESS_RETRY_MILLIS, UpdateApplier.DISK, UpdateManager::pause, LOGGER::info);
+        UpdateRecord.write(recordFile, record.with(
+                outcome.installed() ? UpdateRecord.Phase.INSTALLED : UpdateRecord.Phase.FAILED, outcome.detail()));
+        if (outcome.installed()) {
+            state.set(new UpdateState.Installed(release));
+            if (exitAfter) requestStop();
+        } else {
+            state.set(new UpdateState.Failed(release, exitAfter, outcome.detail()));
+        }
+    }
+
+    /** Windows: the running game locks its JAR, so a helper installs the staged file once it exits. */
+    private void stage(Release release, String sha256, boolean exitAfter) throws IOException {
+        Path running = environment.runningJar().orElseThrow();
+        UpdateRecord.write(updatesDir().resolve(UpdateRecord.FILE), new UpdateRecord.Data(release.tag(),
+                environment.runningVersion(), release.jar().name(), sha256, release.jar().size(),
+                UpdateRecord.Method.WINDOWS_HELPER, UpdateRecord.Phase.STAGED, running.toString(), 0, null, null, null,
+                Instant.now()));
+        if (hookRegistered.compareAndSet(false, true))
+            environment.addShutdownHook(new Thread(this::launchInstaller, "Sequoia update installer"));
+        state.set(new UpdateState.Staged(release));
+        if (exitAfter) requestStop();
+    }
+
+    /** Runs as the game exits: starts the helper for a staged install and records the process. */
+    void launchInstaller() {
+        if (!(state.get() instanceof UpdateState.Staged)) return;
+        Path updates = updatesDir();
+        Path recordFile = updates.resolve(UpdateRecord.FILE);
+        UpdateRecord.Data record;
+        try {
+            record = UpdateRecord.read(recordFile);
+        } catch (IOException unreadable) {
+            return;
+        }
+        if (record == null || record.phase() != UpdateRecord.Phase.STAGED) return;
+        try {
+            Path helperJar = updates.resolve(HELPER_JAR);
+            Files.copy(environment.helperSourceJar(), helperJar, StandardCopyOption.REPLACE_EXISTING);
+            Path modsDir = modsDir();
+            Process process = environment.startHelper(List.of(
+                    environment.javaExecutable(), "-Xmx64m", "-XX:+UseSerialGC", "-cp", helperJar.toString(),
+                    UpdateApplier.class.getName(),
+                    recordFile.toString(),
+                    Long.toString(environment.pid()),
+                    modsDir.toString(),
+                    record.currentJar(),
+                    updates.resolve(record.jar() + ".pending").toString(),
+                    modsDir.resolve(record.jar()).toString(),
+                    helperJar.toString()), updates.resolve(HELPER_LOG));
+            UpdateRecord.Data latest = UpdateRecord.read(recordFile);
+            if (latest != null && latest.phase() == UpdateRecord.Phase.STAGED) {
+                UpdateRecord.write(recordFile, latest.process(UpdateRecord.Phase.LAUNCHED, process.pid(),
+                        process.toHandle().info().startInstant().orElse(null), null));
+            }
+        } catch (IOException | RuntimeException failure) {
+            try {
+                UpdateRecord.write(recordFile, record.with(UpdateRecord.Phase.FAILED,
+                        "The installer could not start: " + ReleaseDownload.describe(failure)));
+            } catch (IOException unwritable) {
+                LOGGER.warn("Could not record that the update installer did not start", unwritable);
+            }
+        }
+    }
+
+    /** Self-updating replaces the JAR Fabric loaded, and only when it is this instance's mods folder. */
+    private Optional<String> ownershipProblem() {
+        Optional<Path> running = environment.runningJar();
+        if (running.isEmpty()) return Optional.of("Sequoia is not running from a JAR file, so it can't replace itself.");
+        Path mods = modsDir();
+        try {
+            Path parent = running.get().getParent();
+            if (parent == null || !Files.isDirectory(mods) || !Files.isSameFile(parent, mods))
+                return Optional.of("Sequoia is loaded from " + running.get() + ", outside this instance's mods folder.");
+        } catch (IOException unreadable) {
+            return Optional.of("Sequoia can't check where it is installed: " + ReleaseDownload.describe(unreadable));
+        }
+        if (!Files.isWritable(mods)) return Optional.of("The mods folder " + mods + " is not writable.");
+        return Optional.empty();
+    }
+
+    private static void requireFreeSpace(Path updates, long size) throws IOException {
+        long usable = Files.getFileStore(updates).getUsableSpace();
+        if (usable < size + FREE_SPACE_MARGIN)
+            throw new ReleaseDownload.TransferException("Not enough free disk space for the "
+                    + UpdateState.megabytes(size) + " update", null);
+    }
+
+    private static void removeOtherCandidates(Path updates, String keepJar) throws IOException {
+        try (Stream<Path> files = Files.list(updates)) {
+            for (Path file : files.toList()) {
+                String name = file.getFileName().toString();
+                if (CANDIDATE.matcher(name).matches() && !name.startsWith(keepJar + ".")) deleteQuietly(file);
+            }
+        }
+    }
+
+    private Release downloadedCopy(UpdateRecord.Data record) {
+        return new Release(record.target(), version(record.target()),
+                URI.create("https://github.com/" + repository + "/releases/tag/" + record.target()),
+                new Asset(record.jar(), null, record.size()), null, record.sha256());
+    }
+
+    private boolean inModsDir(Path file) {
+        Path parent = file.getParent();
+        try {
+            return parent != null && Files.isDirectory(parent) && Files.isSameFile(parent, modsDir());
+        } catch (IOException unreadable) {
+            return false;
+        }
+    }
+
+    private Path updatesDir() {
+        return environment.gameDir().resolve(UPDATES_DIR);
+    }
+
+    private Path modsDir() {
+        return environment.gameDir().resolve("mods");
+    }
+
+    // ---- Versions ----
+
+    static boolean isNewer(String latest, String installed) {
+        Matcher latestMatcher = SEMVER.matcher(latest);
+        if (!latestMatcher.matches()) return false;
+        Matcher installedMatcher = SEMVER.matcher(installed);
+        if (!installedMatcher.matches()) return !version(latest).equals(installed);
+        for (int i = 1; i <= 3; i++) {
+            int difference = Integer.compare(
+                    Integer.parseInt(latestMatcher.group(i)), Integer.parseInt(installedMatcher.group(i)));
+            if (difference != 0) return difference > 0;
         }
         return false;
     }
 
-    private String sha256(Path file) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        try (InputStream in = Files.newInputStream(file)) {
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                digest.update(buffer, 0, read);
+    /** Below zero if {@code target} is older than {@code running}, zero if the same, above if newer. */
+    static int compareVersions(String target, String running) {
+        if (isNewer(target, running)) return 1;
+        return isNewer("v" + version(running), target) ? -1 : 0;
+    }
+
+    static String version(String tag) {
+        return tag.startsWith("v") ? tag.substring(1) : tag;
+    }
+
+    private static String string(JsonObject object, String key) {
+        JsonElement value = object.get(key);
+        return value != null && value.isJsonPrimitive() ? value.getAsString() : null;
+    }
+
+    private static void deleteQuietly(Path file) {
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException busy) {
+            LOGGER.debug("Could not delete {}", file, busy);
+        }
+    }
+
+    private static void pause(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static java.util.concurrent.ThreadFactory daemon(String name) {
+        return runnable -> {
+            Thread thread = new Thread(runnable, name);
+            thread.setDaemon(true);
+            return thread;
+        };
+    }
+
+    /** Starts the Windows helper with its output in {@code log} and nothing on its standard input. */
+    static Process startProcess(List<String> command, Path log) throws IOException {
+        Process process = new ProcessBuilder(command)
+                .redirectErrorStream(true)
+                .redirectOutput(ProcessBuilder.Redirect.to(log.toFile()))
+                .start();
+        process.getOutputStream().close();
+        return process;
+    }
+
+    /** The game: Fabric Loader for versions and paths, Minecraft for screens, toasts and exiting. */
+    private static final class FabricEnvironment implements Environment {
+        private static final SystemToast.SystemToastId TOAST = new SystemToast.SystemToastId(8000);
+
+        @Override
+        public Path gameDir() {
+            return FabricLoader.getInstance().getGameDir();
+        }
+
+        @Override
+        public String runningVersion() {
+            return FabricLoader.getInstance().getModContainer(MOD_ID)
+                    .map(container -> container.getMetadata().getVersion().getFriendlyString())
+                    .orElse("unknown");
+        }
+
+        @Override
+        public Optional<Version> installedVersion(String modId) {
+            return FabricLoader.getInstance().getModContainer(modId).map(container -> container.getMetadata().getVersion());
+        }
+
+        @Override
+        public Instant jvmStart() {
+            return Instant.ofEpochMilli(ManagementFactory.getRuntimeMXBean().getStartTime());
+        }
+
+        @Override
+        public Optional<Path> runningJar() {
+            Optional<ModContainer> container = FabricLoader.getInstance().getModContainer(MOD_ID);
+            if (container.isEmpty() || container.get().getOrigin().getKind() != ModOrigin.Kind.PATH) return Optional.empty();
+            return container.get().getOrigin().getPaths().stream()
+                    .filter(path -> Files.isRegularFile(path) && path.getFileName().toString().endsWith(".jar"))
+                    .map(path -> path.toAbsolutePath().normalize())
+                    .findFirst();
+        }
+
+        @Override
+        public Path helperSourceJar() throws IOException {
+            try {
+                Path location = Path.of(UpdateApplier.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+                if (Files.isRegularFile(location)) return location;
+            } catch (Exception unresolved) {
+                LOGGER.debug("Falling back to the installed JAR for the update helper", unresolved);
             }
-        }
-        return HexFormat.of().formatHex(digest.digest());
-    }
-
-    static String parseChecksum(String raw) {
-        String trimmed = raw == null ? "" : raw.trim();
-        if (trimmed.isEmpty()) {
-            throw new IllegalStateException("Checksum file was empty.");
-        }
-        String[] split = trimmed.split("\\s+");
-        if (split.length == 0 || split[0].length() != 64) {
-            throw new IllegalStateException("Checksum file had invalid format.");
-        }
-        return split[0];
-    }
-
-    static String parseSha256Digest(String raw) {
-        if (raw == null) {
-            return null;
+            return runningJar().orElseThrow(() -> new IOException("Sequoia is not running from a JAR file"));
         }
 
-        String trimmed = raw.trim();
-        if (trimmed.isEmpty()) {
-            return null;
+        @Override
+        public boolean windows() {
+            return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
         }
 
-        String normalized = trimmed.regionMatches(true, 0, "sha256:", 0, 7) ? trimmed.substring(7) : trimmed;
-
-        if (normalized.length() != 64 || !normalized.chars().allMatch(UpdateManager::isHexCharacter)) {
-            return null;
+        @Override
+        public String javaExecutable() {
+            Path bin = Path.of(System.getProperty("java.home"), "bin");
+            for (String name : List.of("javaw.exe", "java.exe", "java")) {
+                if (Files.isRegularFile(bin.resolve(name))) return bin.resolve(name).toString();
+            }
+            return "java";
         }
 
-        return normalized.toLowerCase();
-    }
-
-    private static boolean isHexCharacter(int value) {
-        return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f') || (value >= 'A' && value <= 'F');
-    }
-
-    static String getString(JsonObject object, String key) {
-        if (!object.has(key)) {
-            return null;
+        @Override
+        public void showPrompt(boolean startup) {
+            Minecraft minecraft = Minecraft.getInstance();
+            minecraft.execute(() -> {
+                if (minecraft.screen instanceof UpdatePromptScreen) return;
+                if (startup && minecraft.level != null) {
+                    SystemToast.add(minecraft.getToastManager(), TOAST, Component.literal("Sequoia update"),
+                            Component.literal("Run /seq update for details"));
+                } else {
+                    minecraft.setScreen(new UpdatePromptScreen(minecraft.screen));
+                }
+            });
         }
-        JsonElement element = object.get(key);
-        if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) {
-            return null;
+
+        @Override
+        public void toast(String title, String message) {
+            Minecraft minecraft = Minecraft.getInstance();
+            minecraft.execute(() -> SystemToast.add(minecraft.getToastManager(), TOAST,
+                    Component.literal(title), Component.literal(message)));
         }
-        return element.getAsString();
-    }
 
-    static String rootCauseMessage(Throwable throwable) {
-        Throwable cursor = throwable;
-        while (cursor.getCause() != null) {
-            cursor = cursor.getCause();
+        @Override
+        public void requestStop() {
+            Minecraft minecraft = Minecraft.getInstance();
+            minecraft.execute(minecraft::stop);
         }
-        String message = cursor.getMessage();
-        return message == null || message.isBlank() ? cursor.getClass().getSimpleName() : message;
-    }
 
-    public record ReleaseCandidate(
-            String tagName, String releasePageUrl, ReleaseAsset jarAsset, ReleaseAsset checksumAsset) {}
+        @Override
+        public void addShutdownHook(Thread hook) {
+            Runtime.getRuntime().addShutdownHook(hook);
+        }
 
-    public record ReleaseAsset(String name, String downloadUrl, String sha256) {
-        public ReleaseAsset(String name, String downloadUrl) {
-            this(name, downloadUrl, null);
+        @Override
+        public Process startHelper(List<String> command, Path log) throws IOException {
+            return startProcess(command, log);
+        }
+
+        @Override
+        public void open(URI uri) {
+            Util.getPlatform().openUri(uri);
+        }
+
+        @Override
+        public void open(Path path) {
+            Util.getPlatform().openPath(path);
         }
     }
-
-    record PendingInstall(
-            Path pendingJar, Path finalJar, Path modsDir, String tagName, Path currentJar, Path helperSourceJar) {}
 }

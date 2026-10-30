@@ -36,6 +36,7 @@ import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.SharedSuggestionProvider;
 import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.update.UpdateManager;
 import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.managers.BombShareManager;
 import com.seqwawa.seq.managers.DiscordRankChatDecorator;
@@ -155,6 +156,11 @@ public class SeqCommand {
                                 .then(ClientCommandManager.literal("settings")
                                                 .executes(ctx -> {
                                                         SeqClient.openSettingsScreen();
+                                                        return 1;
+                                                }))
+                                .then(ClientCommandManager.literal("update")
+                                                .executes(ctx -> {
+                                                        UpdateManager.getInstance().openPrompt();
                                                         return 1;
                                                 }))
                                 .then(ClientCommandManager.literal("achievement")
