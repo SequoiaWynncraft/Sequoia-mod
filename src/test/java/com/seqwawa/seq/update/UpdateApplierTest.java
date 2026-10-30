@@ -7,11 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
-import java.nio.channels.FileChannel;
+import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -265,7 +264,9 @@ class UpdateApplierTest {
     @EnabledOnOs(OS.WINDOWS)
     void aLockedOldJarExhaustsTheRetriesAndLeavesThePreviousVersionInPlace() throws Exception {
         UpdateRecord.write(record, staged(UpdateRecord.Phase.LAUNCHED));
-        try (FileChannel held = FileChannel.open(current, StandardOpenOption.READ)) {
+        // java.io opens without FILE_SHARE_DELETE on Windows, so the JAR cannot be renamed while held;
+        // an NIO FileChannel would allow it and not exercise the retries.
+        try (RandomAccessFile held = new RandomAccessFile(current.toFile(), "r")) {
             assertNotNull(held);
             assertFalse(UpdateApplier.runHelper(record, Long.MAX_VALUE, paths(), updates.resolve("helper.jar"), 3, 100));
         }
