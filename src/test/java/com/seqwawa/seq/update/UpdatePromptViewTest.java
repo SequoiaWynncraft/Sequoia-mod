@@ -95,10 +95,19 @@ class UpdatePromptViewTest {
         UpdateState failed = new UpdateState.Failed(RELEASE, false, "word ".repeat(200));
         List<String> lines = view(failed).lines();
         assertEquals(7, lines.size());
-        assertTrue(lines.stream().allMatch(line -> line.length() <= 63), lines.toString());
+        assertTrue(lines.stream().allMatch(line -> line.length() <= 57), lines.toString());
         assertTrue(lines.getLast().endsWith("..."));
         assertEquals("(test source: owner/fork)",
                 UpdatePromptScreen.content(new UpdateState.Available(RELEASE, null), "1.11.1", "owner/fork").lines().getLast());
+    }
+
+    @Test
+    void aLongPathIsBrokenAcrossLinesInsteadOfRunningOffThePanel() {
+        String path = "/home/player/.local/share/PrismLauncher/instances/Wynncraft/minecraft/mods/sequoia-1.11.0.jar";
+        UpdateState manual = new UpdateState.ManualOnly(RELEASE, "Sequoia is loaded from " + path + ", outside this instance's mods folder.");
+        List<String> lines = view(manual).lines();
+        assertTrue(lines.stream().allMatch(line -> line.length() <= 54), lines.toString());
+        assertTrue(String.join("", lines).replace(" ", "").contains(path.replace(" ", "")), lines.toString());
     }
 
     @Test

@@ -34,7 +34,8 @@ public class UpdatePromptScreen extends Screen {
     private static final float BUTTON_HEIGHT = 22;
     private static final float BUTTON_SPACING = 10;
     private static final float LINE_HEIGHT = 15;
-    private static final int WRAP_CHARACTERS = 60;
+    /** Characters per line at the prompt's text size; leaves a margin for wide glyphs. */
+    private static final int WRAP_CHARACTERS = 54;
     private static final int MAX_LINES = 7;
     private static final Duration LONG_INSTALLER_WAIT = Duration.ofMinutes(10);
 
@@ -240,18 +241,24 @@ public class UpdatePromptScreen extends Screen {
         return attempt == null ? null : attempt.detail();
     }
 
-    /** Appends each non-null text, word-wrapped, up to the panel's line budget. */
+    /**
+     * Appends each non-null text, word-wrapped, up to the panel's line budget. A word longer than a
+     * line, such as a file path, is broken into line-sized pieces rather than running off the panel.
+     */
     private static List<String> lines(List<String> into, String... texts) {
         for (String text : texts) {
             if (text == null || text.isBlank()) continue;
             StringBuilder line = new StringBuilder();
             for (String word : text.split(" ")) {
-                if (line.length() > 0 && line.length() + 1 + word.length() > WRAP_CHARACTERS) {
-                    add(into, line.toString());
-                    line.setLength(0);
+                for (int start = 0; start < word.length() || start == 0; start += WRAP_CHARACTERS) {
+                    String piece = word.substring(start, Math.min(word.length(), start + WRAP_CHARACTERS));
+                    if (line.length() > 0 && line.length() + 1 + piece.length() > WRAP_CHARACTERS) {
+                        add(into, line.toString());
+                        line.setLength(0);
+                    }
+                    if (line.length() > 0 && start == 0) line.append(' ');
+                    line.append(piece);
                 }
-                if (line.length() > 0) line.append(' ');
-                line.append(word);
             }
             if (line.length() > 0) add(into, line.toString());
         }
