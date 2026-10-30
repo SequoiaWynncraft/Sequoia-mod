@@ -36,8 +36,9 @@ mise run native:pack --packs-only   # packs and indexes the helpers built so far
 mise run build -Pallow_partial_native   # without the flag, Gradle refuses a JAR missing any platform
 ```
 
-`mise run native:verify-jar` then checks that the JAR in `build/libs` carries exactly the packs in
-`native/out/sandbox`.
+With both packs in `native/out/sandbox`, as in a CI run's `packs` artifact,
+`mise run native:verify-jar` checks that the JAR in `build/libs` carries exactly those packs. A
+partial build has only its own CPU's pack, so the check fails there.
 
 ## Using a modified decoder
 
