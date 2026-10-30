@@ -40,6 +40,18 @@ jobs:
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9.-]+)?$ ]] || { echo "Not a release tag: $TAG" >&2; exit 1; }
           [[ "$JAR_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "Not a SHA-256: $JAR_SHA256" >&2; exit 1; }
 
+      # Checked before anything is published, so a missing secret cannot leave GitHub published
+      # without Modrinth.
+      - name: Check the Modrinth token is available
+        shell: bash
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+        run: |
+          if [[ -z "${MODRINTH_TOKEN}" ]]; then
+            echo "MODRINTH_TOKEN secret is required to publish tagged releases to Modrinth." >&2
+            exit 1
+          fi
+
       - name: Checkout the release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -71,11 +83,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          if [[ -z "${MODRINTH_TOKEN}" ]]; then
-            echo "MODRINTH_TOKEN secret is required to publish tagged releases to Modrinth." >&2
-            exit 1
-          fi
           api="https://api.modrinth.com/v2"
           agent="User-Agent: SequoiaWynncraft/sequoia-mod-release-workflow"
 
