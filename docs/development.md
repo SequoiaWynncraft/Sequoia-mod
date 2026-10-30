@@ -7,8 +7,8 @@ developer machine and in GitHub Actions.
 
 ## Set up
 
-1. [Install mise](https://mise.jdx.dev/getting-started.html). CI uses mise 2026.10.23. Older
-   releases print a warning, and releases before 2026.4.16 refuse this configuration.
+1. [Install mise](https://mise.jdx.dev/getting-started.html) 2026.10.23 or newer. CI uses 2026.10.23.
+   The repository rejects older versions to prevent them from rewriting the reviewed lockfile metadata.
 2. In the repository, run `mise trust` once, because `mise.toml` defines tasks.
 3. Install the versions `mise.lock` records for this repository's tools, and only those:
 

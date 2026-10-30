@@ -1,5 +1,5 @@
-# raw_args needs 2026.4.16; CI runs 2026.10.23.
-min_version = { hard = "2026.4.16", soft = "2026.10.23" }
+# mise 2026.10.17 rewrites this lockfile. Use the verified CI version or newer.
+min_version = { hard = "2026.10.23" }
 
 [tools]
 java = [
