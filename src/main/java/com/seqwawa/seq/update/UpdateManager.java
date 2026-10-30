@@ -621,6 +621,9 @@ public final class UpdateManager {
             Path pending = updates.resolve(name + ".pending");
             removeOtherCandidates(updates, name);
             String sha256 = release.sha256();
+            // Without a listed digest, read the release's .sha256 file first, so a staged copy is
+            // checked against the release instead of being downloaded again.
+            if (sha256 == null && transfer != null && Files.exists(pending)) sha256 = transfer.checksum();
             ReleaseJar.Verdict verdict = null;
             if (sha256 != null && Files.exists(pending)) {
                 verdict = ReleaseJar.check(pending, release.jar().size(), sha256, release.version(), environment::installedVersion);
@@ -636,7 +639,7 @@ public final class UpdateManager {
                 requireFreeSpace(updates, release.jar().size());
                 Path download = updates.resolve(name + ".download");
                 transfer.run();
-                if (sha256 == null) sha256 = ReleaseJar.sha256(download);
+                if (sha256 == null) sha256 = transfer.checksum();
                 verdict = ReleaseJar.check(download, release.jar().size(), sha256, release.version(), environment::installedVersion);
                 if (verdict instanceof ReleaseJar.Verdict.Ready) {
                     Files.move(download, pending, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);

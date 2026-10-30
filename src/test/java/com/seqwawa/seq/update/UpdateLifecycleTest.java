@@ -218,6 +218,65 @@ class UpdateLifecycleTest {
         assertEquals(0, server.requests(JAR_PATH));
     }
 
+    private static final String CHECKSUM_PATH = JAR_PATH + ".sha256";
+
+    @Test
+    void aRecoveredCopyIsReusedWhenTheReleaseListsOnlyAChecksumFile() throws Exception {
+        server.release("v1.12.0", release, false);
+        Files.createDirectories(game.updates());
+        Files.write(pending(), release);
+        writeRecord(UpdateRecord.Phase.STAGED, UpdateRecord.Method.WINDOWS_HELPER, Instant.now());
+        UpdateManager manager = manager();
+        manager.start(true);
+        var available = (UpdateState.Available) awaitState(manager, UpdateState.Available.class);
+        assertNull(available.release().sha256(), "the release lists no digest");
+
+        manager.update(false);
+        awaitState(manager, UpdateState.Installed.class);
+
+        assertEquals(0, server.requests(JAR_PATH), "the verified copy is installed, not downloaded again");
+        assertEquals(1, server.requests(CHECKSUM_PATH));
+        assertArrayEquals(release, Files.readAllBytes(game.mods().resolve("sequoia-1.12.0.jar")));
+    }
+
+    @Test
+    void withOnlyAChecksumFileAStagedCopyWithOtherBytesIsReplaced() throws Exception {
+        server.release("v1.12.0", release, false);
+        Files.createDirectories(game.updates());
+        byte[] tampered = release.clone();
+        tampered[tampered.length / 2] ^= 1;
+        Files.write(pending(), tampered);
+        UpdateManager manager = manager();
+        manager.start(true);
+        awaitState(manager, UpdateState.Available.class);
+
+        manager.update(false);
+        awaitState(manager, UpdateState.Installed.class);
+
+        assertEquals(1, server.requests(JAR_PATH));
+        assertArrayEquals(release, Files.readAllBytes(game.mods().resolve("sequoia-1.12.0.jar")));
+    }
+
+    @Test
+    void aRecoveredCopyOfAReleaseThatWasSinceReplacedIsDownloadedAgain() throws Exception {
+        byte[] earlierBuild = modJar("seq", "1.12.0", UpdateFixtures.DEPENDS, 30_000);
+        Files.createDirectories(game.updates());
+        Files.write(pending(), earlierBuild);
+        UpdateRecord.write(recordFile(), new UpdateRecord.Data("v1.12.0", "1.11.1", "sequoia-1.12.0.jar",
+                sha256(earlierBuild), earlierBuild.length, UpdateRecord.Method.WINDOWS_HELPER, UpdateRecord.Phase.STAGED,
+                game.mods().resolve("sequoia-1.11.1.jar").toString(), 0, null, null, null, Instant.now()));
+        server.release("v1.12.0", release, false);
+        UpdateManager manager = manager();
+        manager.start(true);
+        awaitState(manager, UpdateState.Available.class);
+
+        manager.update(false);
+        awaitState(manager, UpdateState.Installed.class);
+
+        assertEquals(1, server.requests(JAR_PATH));
+        assertArrayEquals(release, Files.readAllBytes(game.mods().resolve("sequoia-1.12.0.jar")));
+    }
+
     @Test
     void aStagedFileWithTheRightNameButOtherBytesIsNeverInstalled() throws Exception {
         Files.createDirectories(game.updates());

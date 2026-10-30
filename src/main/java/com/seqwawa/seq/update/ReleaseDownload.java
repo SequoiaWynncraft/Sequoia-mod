@@ -71,7 +71,6 @@ final class ReleaseDownload {
     static final class Transfer {
         private final URI url;
         private final long size;
-        private final String sha256;
         private final URI checksumUrl;
         private final Path target;
         private final Limits limits;
@@ -81,6 +80,8 @@ final class ReleaseDownload {
         private volatile long lastDataNanos = startNanos;
         private volatile boolean cancelled;
         private volatile String abortReason;
+        /** The release's SHA-256, once known: its digest, or what its .sha256 file says. */
+        private volatile String expected;
         private volatile boolean receiving;
         private volatile boolean receivingChecksum;
         private volatile HttpClient client;
@@ -94,7 +95,7 @@ final class ReleaseDownload {
                 ScheduledExecutorService timer) {
             this.url = url;
             this.size = size;
-            this.sha256 = sha256;
+            this.expected = sha256;
             this.checksumUrl = checksumUrl;
             this.target = target;
             this.limits = limits;
@@ -128,17 +129,8 @@ final class ReleaseDownload {
          * failure the partial file is deleted.
          */
         void run() throws IOException {
-            boolean complete = false;
-            HttpClient http = HttpClient.newBuilder()
-                    .connectTimeout(limits.connect())
-                    .followRedirects(HttpClient.Redirect.NORMAL)
-                    .build();
-            client = http;
-            ScheduledFuture<?> watchdog = timer.scheduleAtFixedRate(
-                    this::watch, limits.tick().toMillis(), limits.tick().toMillis(), TimeUnit.MILLISECONDS);
-            try {
-                if (abortReason != null) throw new TransferException(abortReason, null);
-                String expected = sha256 != null ? sha256 : checksum(http);
+            session("Download failed: ", http -> {
+                String checksum = expected != null ? expected : (expected = checksum(http));
                 HttpResponse<InputStream> response = headers(http, url);
                 try (InputStream in = response.body()) {
                     body = in;
@@ -149,13 +141,43 @@ final class ReleaseDownload {
                     if (declared.isPresent() && declared.getAsLong() != size)
                         throw new TransferException("The server reports " + UpdateState.megabytes(declared.getAsLong())
                                 + " but the release lists " + UpdateState.megabytes(size), null);
-                    receive(in, expected);
+                    receive(in, checksum);
                 }
+            });
+        }
+
+        /**
+         * The release's SHA-256: its digest, or else its .sha256 file, read once under the same limits
+         * and Cancel as the download. Lets a staged copy be checked without downloading it again.
+         */
+        String checksum() throws IOException {
+            if (expected == null) session("Checksum download failed: ", http -> expected = checksum(http));
+            return expected;
+        }
+
+        @FunctionalInterface
+        private interface Exchange {
+            void run(HttpClient http) throws IOException;
+        }
+
+        /** Runs one exchange with its own client and watchdog; on failure, nothing partial is left. */
+        private void session(String failurePrefix, Exchange exchange) throws IOException {
+            boolean complete = false;
+            HttpClient http = HttpClient.newBuilder()
+                    .connectTimeout(limits.connect())
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .build();
+            client = http;
+            ScheduledFuture<?> watchdog = timer.scheduleAtFixedRate(
+                    this::watch, limits.tick().toMillis(), limits.tick().toMillis(), TimeUnit.MILLISECONDS);
+            try {
+                if (abortReason != null) throw new TransferException(abortReason, null);
+                exchange.run(http);
                 complete = true;
             } catch (TransferException failure) {
                 throw failure;
             } catch (IOException failure) {
-                throw new TransferException(abortReason != null ? abortReason : "Download failed: " + describe(failure), failure);
+                throw new TransferException(abortReason != null ? abortReason : failurePrefix + describe(failure), failure);
             } finally {
                 watchdog.cancel(false);
                 body = null;

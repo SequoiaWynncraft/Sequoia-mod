@@ -232,6 +232,25 @@ class ReleaseDownloadTest {
     }
 
     @Test
+    void theChecksumAloneIsReadOnceAndBoundedLikeTheDownload() throws Exception {
+        server.text("/jar.sha256", 200, sha256(JAR) + "  sequoia.jar\n");
+        var transfer = transfer(Body.of(JAR), null, fastLimits());
+
+        assertEquals(sha256(JAR), transfer.checksum());
+        transfer.run();
+
+        assertEquals(1, server.requests("/jar.sha256"), "the checksum file is read once per transfer");
+        assertArrayEquals(JAR, Files.readAllBytes(temp.resolve("sequoia.jar.download")));
+
+        server.file("/jar.sha256", Body.of(new byte[85]).stallingAfter(0));
+        var stalled = transfer(Body.of(JAR), null, fastLimits());
+        long start = System.nanoTime();
+        assertEquals("No data received for 1 s (checksum file)",
+                assertThrows(ReleaseDownload.TransferException.class, stalled::checksum).getMessage());
+        assertTrue(Duration.ofNanos(System.nanoTime() - start).toMillis() < 5000);
+    }
+
+    @Test
     void aChecksumFileThatIsNotASha256IsRejected() {
         server.text("/jar.sha256", 200, "not a checksum\n");
         assertEquals("The release's checksum file is not a SHA-256", failure(transfer(Body.of(JAR), null, fastLimits())));
