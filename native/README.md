@@ -13,9 +13,13 @@ workflow produces everything else under `native/out/`:
    helper on a native runner: exact pixels, sandboxed before input, malformed input rejected, OS
    denials and, on Windows, broker cancellation (`tests/windows-cancellation.py`).
 3. `notices.py check` keeps `src/main/resources/licenses` in step with `Cargo.lock`.
-4. `package.py --require-all` checks each helper against the guest it was verified with and writes
-   `sandbox/provenance.json` and `sequoia-images-native-source.zip`, the corresponding source that
-   Release publishes next to the JAR on GitHub and Modrinth.
+4. `package.py --require-all` checks each helper against the guest it was verified with, packs the
+   helpers for each CPU into one XZ stream (`sandbox/helpers-x86_64.xz`, `sandbox/helpers-aarch64.xz`)
+   and writes `sandbox/provenance.json`, which lists every helper's offset, length and SHA-256 in
+   its pack, and `sequoia-images-native-source.zip`, the corresponding source that Release publishes
+   next to the JAR on GitHub and Modrinth. The same FFmpeg guest compiled for three systems is mostly
+   the same bytes, which one stream per CPU stores once; the mod unpacks only its own platform's
+   helpers and checks each against its SHA-256.
 
 ## Local builds
 
@@ -24,6 +28,7 @@ With Python 3.11.4+, `gpgv`, `make` and Rust on Linux or macOS:
 ```sh
 python3 native/guest.py
 python3 native/build-native.py linux-x86_64 --target x86_64-unknown-linux-gnu  # without a musl C compiler
+python3 native/package.py --packs-only   # packs and indexes the helpers built so far
 ./gradlew build -Pallow_partial_native   # without the flag, Gradle refuses a JAR missing any platform
 ```
 
@@ -37,8 +42,10 @@ WASI_SDK_PATH=/path/to/wasi-sdk-34 bash native/build-wasm.sh my.wasm ffmpeg-9.0.
 python3 native/build-native.py linux-x86_64 --guest my.wasm
 ```
 
-and replace `sandbox/PLATFORM/` in the mod JAR with `native/out/sandbox/PLATFORM/`. The mod runs
-whichever helper its JAR contains. A helper built from another guest skips the pixel and sandbox
+and add the files of `native/out/sandbox/PLATFORM/` to the mod JAR at the same `sandbox/PLATFORM/`
+path. A helper placed there takes precedence over the packed one; the mod runs whichever helper its
+JAR contains. `python3 native/package.py --unpack PACK PROVENANCE DEST` restores the shipped helpers
+from a pack, checked against the provenance, for comparison. A helper built from another guest skips the pixel and sandbox
 checks, which expect the pinned guest and the repository's test media.
 
 ## Updating dependencies
