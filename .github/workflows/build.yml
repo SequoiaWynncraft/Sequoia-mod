@@ -176,9 +176,14 @@ jobs:
       - name: Test Java blocklist installer
         shell: bash
         run: bash tests/install-java-blocklist.sh
+      # setup-java can resolve a JDK the runner image preinstalled rather than one it installs as the
+      # runner user. The installer copies with cp -p and refuses to replace the blocklist unless owner,
+      # group and mode survive, which preserving another user's ownership needs root for.
       - name: Update Java certificate blocklist
         shell: bash
-        run: bash scripts/install-java-blocklist.sh "$JAVA_HOME"
+        run: |
+          stat -c '%U:%G (%u:%g) %a %n' "$JAVA_HOME/lib/security" "$JAVA_HOME/lib/security/blocked.certs"
+          sudo bash scripts/install-java-blocklist.sh "$JAVA_HOME"
       - name: Build
         run: ./gradlew clean build remapJar --stacktrace
       - name: Check the JAR carries exactly the tested packs
