@@ -1152,6 +1152,61 @@ class WarTerritoryQueueManagerTest {
     }
 
     @Test
+    void rejectedObservationDoesNotEraseAnOwnedTimerWhenAvailabilityExpires() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        availability.available = true;
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability);
+        manager.tick();
+        TerritoryQueue owned = queue(
+                7, "Alekin", "self-uuid", "Self", NOW, NOW.plusSeconds(120), List.of());
+        gateway.fetchRequests.getFirst().complete(feed(4, NOW, List.of(owned)));
+
+        assertTrue(manager.onSystemChat(guildMessage("Other", "Other", "Ragni defense is Low")));
+        availability.available = false;
+        gateway.observationRequests.getFirst().completeExceptionally(new ApiClient.ApiException(
+                403,
+                "{\"code\":\"war_availability_required\",\"message\":\"Turn on war availability\"}"));
+
+        assertEquals(List.of(owned), manager.activeQueues());
+        assertTrue(manager.isActive());
+        clock.advance(Duration.ofSeconds(5));
+        manager.tick();
+        assertEquals(2, gateway.fetchCalls);
+        clock.advance(Duration.ofSeconds(115));
+        manager.tick();
+        assertTrue(manager.activeQueues().isEmpty());
+        assertFalse(manager.isActive());
+    }
+
+    @Test
+    void rejectedLeavePreservesTheJoinedTimerAndReportsTheBackendError() {
+        FakeGateway gateway = new FakeGateway();
+        FakeAvailability availability = new FakeAvailability();
+        availability.available = true;
+        WarTerritoryQueueManager manager =
+                new WarTerritoryQueueManager(gateway, Clock.fixed(NOW, ZoneOffset.UTC), availability);
+        manager.tick();
+        TerritoryQueue joined = queue(
+                7, NOW.minusSeconds(30), NOW.plusSeconds(120),
+                List.of(new Participant("self-uuid", "Self", 1)));
+        gateway.fetchRequests.getFirst().complete(feed(4, NOW, List.of(joined)));
+
+        CompletableFuture<WarTerritoryQueueManager.ActionResult> result = manager.toggleQueueMembership(7);
+        availability.available = false;
+        gateway.leaveRequests.getFirst().completeExceptionally(new ApiClient.ApiException(
+                403,
+                "{\"code\":\"war_availability_required\",\"message\":\"Turn on war availability\"}"));
+
+        assertFalse(result.join().success());
+        assertEquals("war_availability_required", result.join().code());
+        assertEquals("Turn on war availability", result.join().message());
+        assertEquals(List.of(joined), manager.activeQueues());
+        assertTrue(manager.isActive());
+    }
+
+    @Test
     void backendJoinErrorCodeAndMessageAreSurfacedWithoutReplacingFeed() {
         FakeGateway gateway = new FakeGateway();
         FakeAvailability availability = new FakeAvailability();
