@@ -116,6 +116,104 @@ class SourceVerificationTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.guest.require_license(archive, "lib-1/LICENSE", sha256(b"bundled"))
 
+class SourceReuseTest(unittest.TestCase):
+    """Authenticated archives are reused, never trusted: every pin, notice and signature check runs."""
+
+    def setUp(self):
+        self.guest = load("guest")
+        self.directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.files = {}
+        sources = {}
+        for name, suffix, member, mode in (("ffmpeg", "tar.xz", "COPYING.LGPLv2.1", "w:xz"),
+                                           ("zlib", "tar.gz", "LICENSE", "w:gz")):
+            archive = self.directory / f"{name}-1.{suffix}"
+            with tarfile.open(archive, mode) as tar:
+                info = tarfile.TarInfo(f"{name}-1/{member}")
+                info.size = len(name)
+                tar.addfile(info, io.BytesIO(name.encode()))
+            self.files[archive.name] = archive.read_bytes()
+            sources[name] = {"version": "1", "url": f"https://example.invalid/{archive.name}",
+                             "sha256": sha256(self.files[archive.name]),
+                             "license_files": {member: sha256(name.encode())}}
+        sources["ffmpeg"].update(signature_url="https://example.invalid/ffmpeg-1.tar.xz.asc",
+                                 signing_key="key.asc", signing_key_fingerprint="F" * 40)
+        self.files["ffmpeg-1.tar.xz.asc"] = b"signature"
+        (self.directory / "ffmpeg-1.tar.xz.asc").write_bytes(b"signature")
+        self.enterContext(patch.object(self.guest, "SOURCES", sources))
+        self.verify = self.enterContext(patch.object(self.guest, "verify_signature"))
+        self.download = self.enterContext(patch.object(self.guest, "download", side_effect=self.serve))
+        self.enterContext(redirect_stdout(io.StringIO()))
+        self.enterContext(patch.object(sys, "stderr", io.StringIO()))
+
+    def serve(self, url, destination):
+        destination.write_bytes(self.files[url.rsplit("/", 1)[1]])
+
+    def test_authenticated_sources_are_reused_without_downloading(self):
+        paths = self.guest.fetch_sources(self.directory)
+
+        self.download.assert_not_called()
+        self.assertEqual({"ffmpeg": self.directory / "ffmpeg-1.tar.xz",
+                          "zlib": self.directory / "zlib-1.tar.gz"}, paths)
+        self.verify.assert_called_once()
+        self.assertEqual((paths["ffmpeg"], self.directory / "ffmpeg-1.tar.xz.asc"),
+                         self.verify.call_args.args[:2])
+
+    def test_only_a_source_failing_its_pin_is_downloaded_again(self):
+        (self.directory / "zlib-1.tar.gz").write_bytes(b"truncated")
+        (self.directory / "ffmpeg-0.tar.xz").write_bytes(b"previous pin")
+
+        self.guest.fetch_sources(self.directory)
+
+        self.assertEqual(["https://example.invalid/zlib-1.tar.gz"],
+                         [call.args[0] for call in self.download.call_args_list])
+        self.assertEqual(self.files["zlib-1.tar.gz"], (self.directory / "zlib-1.tar.gz").read_bytes())
+        self.assertEqual(sorted(self.files), sorted(p.name for p in self.directory.iterdir()))
+
+    def test_a_downloaded_source_must_still_match_its_pin(self):
+        (self.directory / "zlib-1.tar.gz").unlink()
+        self.files["zlib-1.tar.gz"] = b"tampered upstream"
+
+        with self.assertRaises(ValueError):
+            self.guest.fetch_sources(self.directory)
+
+    def test_a_cached_archive_with_a_changed_notice_is_rejected_without_downloading(self):
+        self.guest.SOURCES["zlib"]["license_files"]["LICENSE"] = sha256(b"bundled")
+
+        with self.assertRaises(ValueError):
+            self.guest.fetch_sources(self.directory)
+        self.download.assert_not_called()
+
+    def test_a_cached_signature_that_does_not_verify_is_fetched_and_verified_again(self):
+        self.verify.side_effect = [ValueError("bad signature"), None]
+
+        self.guest.fetch_sources(self.directory)
+
+        self.assertEqual(["https://example.invalid/ffmpeg-1.tar.xz.asc"],
+                         [call.args[0] for call in self.download.call_args_list])
+        self.assertEqual(2, self.verify.call_count)
+
+
+class BrokerChildrenTest(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location(
+            "broker_children", Path(__file__).parent / "broker_children.py")
+        self.children = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.children)
+
+    def test_a_process_whose_creator_once_had_the_brokers_pid_is_not_its_decoder(self):
+        # Toolhelp keeps an exited creator's PID: csrss.exe still names the smss.exe instance that
+        # started it, and here the broker reused that PID.
+        processes = [(716, 588, "csrss.exe"), (4012, 588, "conhost.exe"), (4100, 3000, "python.exe"),
+                     (4200, 588, "seqimages-decoder.exe")]
+
+        self.assertEqual([4200], self.children.decoder_pids(processes, 588, "seqimages-decoder.exe"))
+
+    def test_the_decoder_image_name_is_compared_without_case(self):
+        processes = [(4200, 588, "SeqImages-Decoder.EXE"), (4300, 590, "seqimages-decoder.exe")]
+
+        self.assertEqual([4200], self.children.decoder_pids(processes, 588, "seqimages-decoder.exe"))
+
+
 class PackagingTest(unittest.TestCase):
     def setUp(self):
         self.package = load("package")

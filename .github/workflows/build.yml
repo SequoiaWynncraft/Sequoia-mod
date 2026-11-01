@@ -43,14 +43,19 @@ jobs:
       - name: Test source verification, packaging and the release scripts
         run: mise run test:scripts
       # Caches are keyed by every input; PR runs cannot write main's entries, and tag builds
-      # compile everything they ship.
+      # compile everything they ship. The guest's upstream archives are cached with it.
       - name: Restore a guest built from the same inputs
         id: cache
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: native/out/guest
+          path: |
+            native/out/guest
+            native/out/sources
           key: guest-${{ hashFiles('native/sources.json', 'native/guest.py', 'native/build-wasm.sh', 'native/wasm/decoder.c', 'native/keys/**') }}
+      # Restored archives are checked like downloads; only missing or invalid ones are fetched.
+      - name: Authenticate the upstream sources
+        run: mise run native:guest --sources-only
       - name: Build the guest from authenticated sources
         if: steps.cache.outputs.cache-hit != 'true'
         env:
@@ -60,6 +65,13 @@ jobs:
         with:
           name: guest
           path: native/out/guest/
+          if-no-files-found: error
+          retention-days: 14
+      # The pack job assembles the corresponding source from these same archives.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sources
+          path: native/out/sources/
           if-no-files-found: error
           retention-days: 14
 
@@ -150,11 +162,16 @@ jobs:
           pattern: native-*
           merge-multiple: true
           path: native/out
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sources
+          path: native/out/sources
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
           version: 2026.10.23
           cache_key_prefix: mise-pack
           cache_save: ${{ github.event_name != 'pull_request' }}
+      # --sources-only authenticates the guest job's archives again and downloads nothing they cover.
       - name: Pack the verified helpers and assemble their corresponding source
         run: |
           mise run native:guest --sources-only
