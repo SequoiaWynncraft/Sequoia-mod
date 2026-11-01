@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import net.minecraft.ChatFormatting;
 
-/** Compact top-right queue feed shown while the local player is available for wars. */
+/** Compact top-right queue feed, shown on request and independent of war availability. */
 public final class WarTerritoryQueueHudRenderer {
     static final int DEFAULT_MAX_ROWS = 6;
     static final int MAX_CONFIGURABLE_ROWS = 20;
@@ -28,13 +28,44 @@ public final class WarTerritoryQueueHudRenderer {
     private static final String PREVIEW_SECOND_LINE =
             "Queue Owner 19s ago - Detlas (Low) 01:41  1/5";
 
+    /** Last render outcome, logged on change so ordinary logs explain a blank HUD. */
+    enum Visibility {
+        SHOWN,
+        HIDDEN,
+        NO_QUEUES,
+        FILTERED
+    }
+
+    /** Render-thread only. */
+    private static Visibility lastVisibility;
+
     private WarTerritoryQueueHudRenderer() {}
+
+    /**
+     * Creates the queue HUD preference. It defaults on, including for configs saved before it
+     * existed, and only controls this HUD.
+     *
+     * @return the unregistered {@code war_planner.queue_hud_enabled} setting
+     */
+    public static Setting.BooleanSetting createEnabledSetting() {
+        Setting.BooleanSetting setting = new Setting.BooleanSetting("queue_hud_enabled", "war_planner", true);
+        setting.setPresentation(
+                "Show queue timers",
+                "Show live territory queue timers. This does not mark you available for wars.",
+                "War queue HUD");
+        return setting;
+    }
 
     public static void render(UiCanvas canvas) {
         WarTerritoryQueueManager manager = SeqClient.getWarTerritoryQueueManager();
-        if (canvas == null || manager == null || !manager.isActive()) {
+        if (canvas == null || manager == null) {
             return;
         }
+        if (!manager.isHudVisible()) {
+            noteVisibility(Visibility.HIDDEN, manager.feed().queues().size(), 0);
+            return;
+        }
+        List<TerritoryQueue> activeQueues = manager.activeQueues();
         String font = SeqClient.getFontManager() == null
                 ? "mc"
                 : SeqClient.getFontManager().getSelectedFont();
@@ -43,10 +74,11 @@ public final class WarTerritoryQueueHudRenderer {
                 maxRows(SeqClient.getWarQueueHudMaxRowsSetting()),
                 rowsFittingHeight(canvas.metrics().height(), textSize));
         List<TerritoryQueue> queues = displayedQueues(
-                manager.activeQueues(),
+                activeQueues,
                 manager.localPlayerUuid(),
                 onlyOwnedOrJoined(SeqClient.getWarQueueHudOnlyOwnedOrJoinedSetting()),
                 visibleRows);
+        noteVisibility(visibility(activeQueues.size(), queues.size()), activeQueues.size(), queues.size());
         if (queues.isEmpty()) {
             return;
         }
@@ -184,6 +216,25 @@ public final class WarTerritoryQueueHudRenderer {
             }
         }
         return List.copyOf(displayed);
+    }
+
+    static Visibility visibility(int activeQueueCount, int displayedQueueCount) {
+        if (displayedQueueCount > 0) {
+            return Visibility.SHOWN;
+        }
+        return activeQueueCount > 0 ? Visibility.FILTERED : Visibility.NO_QUEUES;
+    }
+
+    private static void noteVisibility(Visibility visibility, int queueCount, int displayedQueueCount) {
+        if (visibility == lastVisibility) {
+            return;
+        }
+        lastVisibility = visibility;
+        SeqClient.LOGGER.info(
+                "[WarTerritoryQueue] Queue HUD {} queues={} displayed={}",
+                visibility.name().toLowerCase(Locale.ROOT),
+                queueCount,
+                displayedQueueCount);
     }
 
     private static boolean includesPlayer(TerritoryQueue queue, String playerUuid) {
