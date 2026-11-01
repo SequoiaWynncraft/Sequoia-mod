@@ -168,10 +168,14 @@ public final class WarPlannerManager {
     }
 
     public void tick() {
-        boolean hasToken = SeqClient.getConfigManager() != null
+        tick(WynncraftServerPolicy.isCurrentServerAllowed(), hasSessionToken());
+    }
+
+    /** Whether a backend session token is stored; logout and session invalidation clear it. */
+    static boolean hasSessionToken() {
+        return SeqClient.getConfigManager() != null
                 && SeqClient.getConfigManager().getToken() != null
                 && !SeqClient.getConfigManager().getToken().isBlank();
-        tick(WynncraftServerPolicy.isCurrentServerAllowed(), hasToken);
     }
 
     public synchronized void tick(boolean contextAllowed, boolean hasToken) {

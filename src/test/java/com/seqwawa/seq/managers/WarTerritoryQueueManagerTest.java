@@ -6,15 +6,22 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.config.ConfigManager;
+import com.seqwawa.seq.model.war.WarPlannerAccess;
 import com.seqwawa.seq.model.war.WarTerritoryQueueFeed;
 import com.seqwawa.seq.model.war.WarTerritoryQueueFeed.Participant;
 import com.seqwawa.seq.model.war.WarTerritoryQueueFeed.TerritoryQueue;
 import com.seqwawa.seq.network.ApiClient;
+import com.seqwawa.seq.network.auth.StoredAuthSession;
+import java.lang.reflect.Proxy;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -23,9 +30,15 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class WarTerritoryQueueManagerTest {
     private static final Instant NOW = Instant.parse("2026-08-24T12:00:00Z");
+    private static final StoredAuthSession SESSION =
+            new StoredAuthSession("session-token", NOW.plusSeconds(86_400), "self-uuid", "Self");
+
+    @TempDir
+    Path tempDir;
 
     @Test
     void activeQueuesOrderTiesAndAdvanceUsingServerTimeEvenWhenPollingFails() {
@@ -1558,6 +1571,127 @@ class WarTerritoryQueueManagerTest {
         clock.advance(Duration.ofSeconds(5));
         manager.tick();
         assertEquals(2, gateway.fetchCalls);
+    }
+
+    @Test
+    void explicitLogoutClearsTheLiveFeedAndPersonalContextUntilReauthentication() throws Exception {
+        MutableClock clock = new MutableClock(NOW);
+        ArrayDeque<CompletableFuture<WarPlannerAccess>> accessResponses = new ArrayDeque<>();
+        WarPlannerManager planner = new WarPlannerManager(plannerGateway(accessResponses), clock);
+        withRuntimeSession(planner, config -> {
+            FakeGateway gateway = new FakeGateway();
+            gateway.ignoreFetchCancellation = true;
+            WarTerritoryQueueManager manager = new WarTerritoryQueueManager(
+                    gateway, clock, new WarTerritoryQueueManager.RuntimeAvailabilityContext(), () -> true);
+            TerritoryQueue foreign =
+                    queue(8, "Ragni", "other-uuid", "Other", NOW, NOW.plusSeconds(900), List.of());
+            TerritoryQueue owned = queue(7, "Alekin", "self-uuid", "Self", NOW, NOW.plusSeconds(900), List.of());
+            accessResponses.add(CompletableFuture.completedFuture(plannerAccess()));
+            planner.tick(true, true);
+            manager.tick();
+            gateway.fetchRequests.getFirst().complete(feed(1, NOW, List.of(owned, foreign)));
+            clock.advance(Duration.ofSeconds(5));
+            manager.tick();
+            assertTrue(manager.isHudVisible());
+            assertEquals(2, gateway.fetchCalls);
+
+            // Mirrors /seq logout: the session token is cleared and planner access reset.
+            config.clearAuthSession();
+            planner.reset();
+            manager.tick();
+
+            assertFalse(manager.isHudVisible());
+            assertTrue(manager.activeQueues().isEmpty());
+            assertNull(manager.localPlayerUuid());
+            gateway.fetchRequests.get(1).complete(feed(2, NOW.plusSeconds(5), List.of(owned, foreign)));
+            assertTrue(manager.activeQueues().isEmpty());
+            assertFalse(manager.refreshForViewer().join().success());
+            clock.advance(Duration.ofSeconds(30));
+            planner.tick(true, false);
+            manager.tick();
+            assertEquals(2, gateway.fetchCalls);
+
+            config.setAuthSession(SESSION);
+            accessResponses.add(CompletableFuture.completedFuture(plannerAccess()));
+            planner.tick(true, true);
+            manager.tick();
+            assertEquals(3, gateway.fetchCalls);
+            gateway.fetchRequests.get(2).complete(feed(3, NOW.plusSeconds(35), List.of(foreign)));
+            assertEquals(List.of(foreign), manager.activeQueues());
+            assertTrue(manager.isHudVisible());
+        });
+    }
+
+    @Test
+    void plannerRosterOutageWithARetainedSessionKeepsTimersLive() throws Exception {
+        MutableClock clock = new MutableClock(NOW);
+        ArrayDeque<CompletableFuture<WarPlannerAccess>> accessResponses = new ArrayDeque<>();
+        WarPlannerManager planner = new WarPlannerManager(plannerGateway(accessResponses), clock);
+        withRuntimeSession(planner, config -> {
+            FakeGateway gateway = new FakeGateway();
+            WarTerritoryQueueManager manager = new WarTerritoryQueueManager(
+                    gateway, clock, new WarTerritoryQueueManager.RuntimeAvailabilityContext(), () -> true);
+            TerritoryQueue foreign =
+                    queue(8, "Ragni", "other-uuid", "Other", NOW, NOW.plusSeconds(900), List.of());
+            accessResponses.add(CompletableFuture.completedFuture(plannerAccess()));
+            planner.tick(true, true);
+            manager.tick();
+            gateway.fetchRequests.getFirst().complete(feed(1, NOW, List.of(foreign)));
+
+            clock.advance(Duration.ofSeconds(45));
+            accessResponses.add(CompletableFuture.failedFuture(new ApiClient.ApiException(
+                    503, "{\"code\":\"guild_roster_unavailable\",\"message\":\"Roster unavailable\"}")));
+            planner.tick(true, true);
+            assertNull(planner.playerUuid());
+            assertEquals(WarPlannerManager.State.OFFLINE, planner.state());
+            manager.tick();
+
+            assertEquals(2, gateway.fetchCalls);
+            assertTrue(manager.isHudVisible());
+            assertEquals("self-uuid", manager.localPlayerUuid());
+            assertEquals(List.of(foreign), manager.activeQueues());
+        });
+    }
+
+    private interface SessionScenario {
+        void run(ConfigManager config) throws Exception;
+    }
+
+    /** Installs a real token store and planner as the runtime context sees them, then restores both. */
+    private void withRuntimeSession(WarPlannerManager planner, SessionScenario scenario) throws Exception {
+        ConfigManager previousConfig = SeqClient.configManager;
+        WarPlannerManager previousPlanner = SeqClient.warPlannerManager;
+        var constructor = ConfigManager.class.getDeclaredConstructor(Path.class, Path.class, boolean.class);
+        constructor.setAccessible(true);
+        ConfigManager config =
+                constructor.newInstance(tempDir.resolve("config.json"), tempDir.resolve("token"), false);
+        config.setAuthSession(SESSION);
+        SeqClient.configManager = config;
+        SeqClient.warPlannerManager = planner;
+        try {
+            scenario.run(config);
+        } finally {
+            SeqClient.configManager = previousConfig;
+            SeqClient.warPlannerManager = previousPlanner;
+        }
+    }
+
+    private static WarPlannerAccess plannerAccess() {
+        return new WarPlannerAccess(WarPlannerAccess.SUPPORTED_SCHEMA_VERSION, NOW, "self-uuid", null);
+    }
+
+    /** Only access() is exercised; every other planner request is a test failure. */
+    private static WarPlannerManager.Gateway plannerGateway(
+            ArrayDeque<CompletableFuture<WarPlannerAccess>> accessResponses) {
+        return (WarPlannerManager.Gateway) Proxy.newProxyInstance(
+                WarPlannerManager.Gateway.class.getClassLoader(),
+                new Class<?>[] {WarPlannerManager.Gateway.class},
+                (proxy, method, arguments) -> {
+                    if (method.getName().equals("access")) {
+                        return accessResponses.removeFirst();
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
     }
 
     private static Component guildMessage(String displayedName, String username, String content) {

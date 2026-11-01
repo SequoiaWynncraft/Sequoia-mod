@@ -92,6 +92,14 @@ public final class WarTerritoryQueueManager {
         default boolean accessDenied() {
             return false;
         }
+
+        /**
+         * Whether the backend session is still stored. Without it the cached player identity is
+         * stale, unlike a transient loss of planner access while the session remains.
+         */
+        default boolean sessionActive() {
+            return true;
+        }
     }
 
     public record Observation(
@@ -342,7 +350,7 @@ public final class WarTerritoryQueueManager {
         String playerUuid = playerUuid();
         if (playerUuid == null) {
             synchronized (this) {
-                resetLocked("player_identity_unavailable");
+                resetLocked(isSessionActive() ? "player_identity_unavailable" : "session_cleared");
             }
             return;
         }
@@ -1313,6 +1321,14 @@ public final class WarTerritoryQueueManager {
         }
     }
 
+    private boolean isSessionActive() {
+        try {
+            return availabilityContext.sessionActive();
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
     private boolean isPlannerAccessDenied() {
         try {
             return availabilityContext.accessDenied();
@@ -1342,6 +1358,9 @@ public final class WarTerritoryQueueManager {
     }
 
     private String playerUuid() {
+        if (!isSessionActive()) {
+            return null;
+        }
         try {
             String playerUuid = availabilityContext.playerUuid();
             if (playerUuid != null && !playerUuid.isBlank()) {
@@ -1512,7 +1531,7 @@ public final class WarTerritoryQueueManager {
         }
     }
 
-    private static final class RuntimeAvailabilityContext implements AvailabilityContext {
+    static final class RuntimeAvailabilityContext implements AvailabilityContext {
         @Override
         public boolean available() {
             WarPlannerManager manager = SeqClient.getWarPlannerManager();
@@ -1527,6 +1546,11 @@ public final class WarTerritoryQueueManager {
         public String playerUuid() {
             WarPlannerManager manager = SeqClient.getWarPlannerManager();
             return manager == null ? null : manager.playerUuid();
+        }
+
+        @Override
+        public boolean sessionActive() {
+            return WarPlannerManager.hasSessionToken();
         }
 
         @Override
