@@ -89,6 +89,7 @@ import com.seqwawa.seq.ui.SequoiaScreen;
 import com.seqwawa.seq.ui.SettingsScreen;
 import com.seqwawa.seq.ui.WorldMapScreen;
 import com.seqwawa.seq.ui.WarPlannerScreen;
+import com.seqwawa.seq.ui.WarTerritoryQueueHudRenderer;
 import com.seqwawa.seq.update.UpdateManager;
 import com.seqwawa.seq.utils.WynnClassCache;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
@@ -322,6 +323,9 @@ public class SeqClient implements ClientModInitializer {
 
     @Getter
     public static Setting.FloatSetting warQueueHudYSetting;
+
+    @Getter
+    public static Setting.BooleanSetting warQueueHudEnabledSetting;
 
     @Getter
     public static Setting.BooleanSetting warQueueHudOnlyOwnedOrJoinedSetting;
@@ -1120,6 +1124,7 @@ public class SeqClient implements ClientModInitializer {
         warQueueHudYSetting = new Setting.FloatSetting("queue_hud_y", "war_planner", 0f, 0f, 1f, 0.001f);
         warQueueHudXSetting.setVisibilityCondition(() -> false);
         warQueueHudYSetting.setVisibilityCondition(() -> false);
+        warQueueHudEnabledSetting = WarTerritoryQueueHudRenderer.createEnabledSetting();
         warQueueHudOnlyOwnedOrJoinedSetting =
                 new Setting.BooleanSetting("queue_hud_only_owned_or_joined", "war_planner", false);
         warQueueAutoWaypointSetting =
@@ -1140,6 +1145,7 @@ public class SeqClient implements ClientModInitializer {
                         warPlannerResourceColorsSetting,
                         warPlannerShowPlayersSetting,
                         warPlannerBackgroundOpacitySetting,
+                        warQueueHudEnabledSetting,
                         warQueueHudTextSizeSetting,
                         warQueueHudOnlyOwnedOrJoinedSetting,
                         warQueueAutoWaypointSetting,
@@ -1263,6 +1269,7 @@ public class SeqClient implements ClientModInitializer {
         getConfigManager().register(warPlannerShowPlayersSetting);
         getConfigManager().register(warPlannerBackgroundOpacitySetting);
         getConfigManager().register(warPlannerLockTerritoriesSetting);
+        getConfigManager().register(warQueueHudEnabledSetting);
         getConfigManager().register(warQueueHudOnlyOwnedOrJoinedSetting);
         getConfigManager().register(warQueueAutoWaypointSetting);
         getConfigManager().register(warQueueHudMaxRowsSetting);

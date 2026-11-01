@@ -67,6 +67,22 @@ class WarTerritoryQueueHudRendererTest {
     }
 
     @Test
+    void visibilityDistinguishesAnEmptyFeedFromOneHiddenByFilters() {
+        TerritoryQueue foreign = queue("Low", null, NOW.plusSeconds(60));
+        List<TerritoryQueue> displayed =
+                WarTerritoryQueueHudRenderer.displayedQueues(List.of(foreign), "self-uuid", true, 6);
+
+        assertTrue(displayed.isEmpty());
+        assertEquals(
+                WarTerritoryQueueHudRenderer.Visibility.FILTERED,
+                WarTerritoryQueueHudRenderer.visibility(1, displayed.size()));
+        assertEquals(
+                WarTerritoryQueueHudRenderer.Visibility.NO_QUEUES, WarTerritoryQueueHudRenderer.visibility(0, 0));
+        assertEquals(
+                WarTerritoryQueueHudRenderer.Visibility.SHOWN, WarTerritoryQueueHudRenderer.visibility(1, 1));
+    }
+
+    @Test
     void usesWynntilsDefenseColors() {
         assertEquals(new Color(0x00AA00), WarTerritoryQueueHudRenderer.defenseColor("Very Low"));
         assertEquals(new Color(0x55FF55), WarTerritoryQueueHudRenderer.defenseColor("Low"));

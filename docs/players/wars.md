@@ -25,6 +25,8 @@ Right-clicking the map does not manually assign the HQ.
 ## Display settings
 
 The **Wars** settings category controls planner display, tracking, and queues.
+**Show queue timers** keeps live guild queue timers on the HUD, even while you are unavailable.
+Viewing them does not mark you available for wars. Turning it off hides only the HUD.
 Use **HUD layout** to move the queue HUD, then set its text size, row limit, and only-my-queues filter.
 The filter is shared with the planner map. Queue-miss blame messages are off by default.
 

@@ -6,25 +6,39 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.config.ConfigManager;
+import com.seqwawa.seq.model.war.WarPlannerAccess;
 import com.seqwawa.seq.model.war.WarTerritoryQueueFeed;
 import com.seqwawa.seq.model.war.WarTerritoryQueueFeed.Participant;
 import com.seqwawa.seq.model.war.WarTerritoryQueueFeed.TerritoryQueue;
 import com.seqwawa.seq.network.ApiClient;
+import com.seqwawa.seq.network.auth.StoredAuthSession;
+import java.lang.reflect.Proxy;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class WarTerritoryQueueManagerTest {
     private static final Instant NOW = Instant.parse("2026-08-24T12:00:00Z");
+    private static final StoredAuthSession SESSION =
+            new StoredAuthSession("session-token", NOW.plusSeconds(86_400), "self-uuid", "Self");
+
+    @TempDir
+    Path tempDir;
 
     @Test
     void activeQueuesOrderTiesAndAdvanceUsingServerTimeEvenWhenPollingFails() {
@@ -161,7 +175,7 @@ class WarTerritoryQueueManagerTest {
     }
 
     @Test
-    void bootstrapsOnceThenPollsEveryFiveSecondsWhileAvailable() {
+    void disabledHudBootstrapsOnceThenPollsEveryFiveSecondsOnlyWhileAvailable() {
         FakeGateway gateway = new FakeGateway();
         MutableClock clock = new MutableClock(NOW);
         FakeAvailability availability = new FakeAvailability();
@@ -169,7 +183,6 @@ class WarTerritoryQueueManagerTest {
 
         manager.tick();
         assertEquals(1, gateway.fetchCalls);
-        assertFalse(manager.isActive());
         gateway.fetchRequests.getFirst().complete(feed(1, NOW, List.of()));
         manager.tick();
 
@@ -192,10 +205,10 @@ class WarTerritoryQueueManagerTest {
         clock.advance(Duration.ofSeconds(1));
         manager.tick();
         assertEquals(3, gateway.fetchCalls);
+        assertFalse(manager.isHudVisible());
 
         availability.available = false;
         manager.tick();
-        assertFalse(manager.isActive());
         assertEquals(1, manager.activeQueues().size());
         assertEquals(1, manager.feed().queues().size());
         assertEquals(WarTerritoryQueueManager.State.READY, manager.state());
@@ -224,7 +237,7 @@ class WarTerritoryQueueManagerTest {
                         List.of(new Participant("queuer-uuid", "Queuer", 0))))));
 
         assertTrue(viewerRefresh.join().success());
-        assertFalse(manager.isActive());
+        assertFalse(manager.isHudVisible());
         assertEquals(1, manager.activeQueues().size());
         clock.advance(Duration.ofSeconds(10));
         manager.tick();
@@ -1170,23 +1183,24 @@ class WarTerritoryQueueManagerTest {
                 "{\"code\":\"war_availability_required\",\"message\":\"Turn on war availability\"}"));
 
         assertEquals(List.of(owned), manager.activeQueues());
-        assertTrue(manager.isActive());
         clock.advance(Duration.ofSeconds(5));
         manager.tick();
         assertEquals(2, gateway.fetchCalls);
         clock.advance(Duration.ofSeconds(115));
         manager.tick();
         assertTrue(manager.activeQueues().isEmpty());
-        assertFalse(manager.isActive());
+        clock.advance(Duration.ofSeconds(5));
+        manager.tick();
+        assertEquals(2, gateway.fetchCalls);
     }
 
     @Test
     void rejectedLeavePreservesTheJoinedTimerAndReportsTheBackendError() {
         FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
         FakeAvailability availability = new FakeAvailability();
         availability.available = true;
-        WarTerritoryQueueManager manager =
-                new WarTerritoryQueueManager(gateway, Clock.fixed(NOW, ZoneOffset.UTC), availability);
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability);
         manager.tick();
         TerritoryQueue joined = queue(
                 7, NOW.minusSeconds(30), NOW.plusSeconds(120),
@@ -1203,7 +1217,9 @@ class WarTerritoryQueueManagerTest {
         assertEquals("war_availability_required", result.join().code());
         assertEquals("Turn on war availability", result.join().message());
         assertEquals(List.of(joined), manager.activeQueues());
-        assertTrue(manager.isActive());
+        clock.advance(Duration.ofSeconds(5));
+        manager.tick();
+        assertEquals(2, gateway.fetchCalls);
     }
 
     @Test
@@ -1226,6 +1242,456 @@ class WarTerritoryQueueManagerTest {
         assertEquals("territory_queue_full", result.join().code());
         assertEquals("Five people already joined", result.join().message());
         assertEquals(4, manager.feed().revision());
+    }
+
+    @Test
+    void requestedHudKeepsForeignTimersLiveAfterAvailabilityExpires() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        availability.available = true;
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability, () -> true);
+        manager.tick();
+        TerritoryQueue foreign = queue(7, "Alekin", "other-uuid", "Other", NOW, NOW.plusSeconds(300), List.of());
+        gateway.fetchRequests.getFirst().complete(feed(1, NOW, List.of(foreign)));
+
+        availability.available = false;
+        manager.tick();
+        assertTrue(manager.isHudVisible());
+        assertEquals(List.of(foreign), manager.activeQueues());
+        clock.advance(Duration.ofSeconds(4));
+        manager.tick();
+        assertEquals(1, gateway.fetchCalls);
+        clock.advance(Duration.ofSeconds(1));
+        manager.tick();
+        assertEquals(2, gateway.fetchCalls);
+        TerritoryQueue later = queue(8, "Ragni", "other-uuid", "Other", NOW, NOW.plusSeconds(200), List.of());
+        gateway.fetchRequests.get(1).complete(feed(2, NOW.plusSeconds(5), List.of(foreign, later)));
+
+        assertEquals(List.of(later, foreign), manager.activeQueues());
+        assertTrue(manager.isHudVisible());
+        assertEquals(0, availability.refreshCalls);
+    }
+
+    @Test
+    void requestedHudOutlivesTheLastPersonalQueueAndDiscoversQueuesFromAnEmptyFeed() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability, () -> true);
+        manager.tick();
+        TerritoryQueue owned = queue(7, "Alekin", "self-uuid", "Self", NOW, NOW.plusSeconds(10), List.of());
+        gateway.fetchRequests.getFirst().complete(feed(1, NOW, List.of(owned)));
+
+        clock.advance(Duration.ofSeconds(10));
+        manager.tick();
+        gateway.fetchRequests.get(1).complete(feed(2, NOW.plusSeconds(10), List.of()));
+        assertTrue(manager.activeQueues().isEmpty());
+        assertTrue(manager.isHudVisible());
+
+        clock.advance(Duration.ofSeconds(5));
+        manager.tick();
+        assertEquals(3, gateway.fetchCalls);
+        TerritoryQueue discovered =
+                queue(8, "Ragni", "other-uuid", "Other", NOW.plusSeconds(14), NOW.plusSeconds(300), List.of());
+        gateway.fetchRequests.get(2).complete(feed(3, NOW.plusSeconds(15), List.of(discovered)));
+
+        assertEquals(List.of(discovered), manager.activeQueues());
+        assertEquals(WarTerritoryQueueManager.State.READY, manager.state());
+    }
+
+    @Test
+    void disabledHudHidesTheOverlayButKeepsPersonalTrackingAndResumesWhenEnabled() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        AtomicBoolean hudEnabled = new AtomicBoolean(false);
+        WarTerritoryQueueManager manager =
+                new WarTerritoryQueueManager(gateway, clock, availability, hudEnabled::get);
+        manager.tick();
+        TerritoryQueue owned = queue(7, "Alekin", "self-uuid", "Self", NOW, NOW.plusSeconds(8), List.of());
+        gateway.fetchRequests.getFirst().complete(feed(1, NOW, List.of(owned)));
+
+        clock.advance(Duration.ofSeconds(5));
+        manager.tick();
+        assertEquals(2, gateway.fetchCalls);
+        assertFalse(manager.isHudVisible());
+        assertEquals(List.of(owned), manager.activeQueues());
+        assertEquals("Alekin", manager.queueForTerritory("Alekin").orElseThrow().territory());
+
+        clock.advance(Duration.ofSeconds(5));
+        manager.tick();
+        clock.advance(Duration.ofSeconds(10));
+        manager.tick();
+        assertEquals(2, gateway.fetchCalls);
+
+        hudEnabled.set(true);
+        manager.tick();
+        assertEquals(3, gateway.fetchCalls);
+        assertTrue(manager.isHudVisible());
+        assertEquals(WarTerritoryQueueManager.State.LOADING, manager.state());
+    }
+
+    @Test
+    void viewerRefreshUsesTheLiveHudFeedAndViewingNeverTouchesAvailabilityOrObservations() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability, () -> true);
+        manager.tick();
+
+        assertTrue(manager.refreshForViewer().join().success());
+        assertEquals(1, gateway.fetchCalls);
+        gateway.fetchRequests.getFirst().complete(feed(1, NOW, List.of()));
+        assertFalse(manager.onSystemChat(guildMessage("Other", "Other", "Ragni defense is Low")));
+        assertFalse(manager.onSystemChat(Component.literal("The war for Ragni will start in 2 minutes.")));
+
+        assertEquals(0, gateway.observationCalls);
+        assertEquals(0, manager.pendingObservationCount());
+        assertEquals(0, availability.refreshCalls);
+        assertFalse(availability.available);
+    }
+
+    @Test
+    void transientFailuresKeepAcceptedCountdownsOnTheirServerDeadlines() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability, () -> true);
+        Instant serverNow = NOW.plusSeconds(40);
+        TerritoryQueue foreign =
+                queue(7, "Alekin", "other-uuid", "Other", serverNow, serverNow.plusSeconds(20), List.of());
+        manager.tick();
+        gateway.fetchRequests.getFirst().complete(feed(1, serverNow, List.of(foreign)));
+
+        List<RuntimeException> failures = List.of(
+                new RuntimeException("Request timed out"),
+                new ApiClient.ApiException(503, "{\"code\":\"guild_roster_unavailable\",\"message\":\"Roster\"}"),
+                new ApiClient.ApiException(500, "{\"code\":\"internal_error\",\"message\":\"Boom\"}"));
+        for (int index = 0; index < failures.size(); index++) {
+            clock.advance(Duration.ofSeconds(5));
+            manager.tick();
+            assertEquals(index + 2, gateway.fetchCalls);
+            gateway.fetchRequests.getLast().completeExceptionally(failures.get(index));
+            assertEquals(List.of(foreign), manager.activeQueues());
+            assertEquals(serverNow.plusSeconds(5L * (index + 1)), manager.serverNow());
+            assertTrue(manager.isHudVisible());
+            assertEquals(WarTerritoryQueueManager.State.READY, manager.state());
+        }
+
+        clock.advance(Duration.ofSeconds(5));
+        assertTrue(manager.activeQueues().isEmpty());
+    }
+
+    @Test
+    void readDenialInvalidatesEveryConsumerBacksOffAndRecoversOnlyAfterAnAuthorizedFeed() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability, () -> true);
+        TerritoryQueue owned = queue(7, NOW.minusSeconds(20), NOW.minusSeconds(1), List.of(
+                new Participant("self-uuid", "Self", 1)));
+        TerritoryQueue foreign = queue(8, "Ragni", "other-uuid", "Other", NOW, NOW.plusSeconds(900), List.of());
+        manager.tick();
+        gateway.fetchRequests.getFirst().complete(feed(1, NOW, List.of(owned, foreign)));
+        assertEquals("Alekin", manager.enteredTerritoryForLocalPlayer().orElseThrow());
+
+        clock.advance(Duration.ofSeconds(5));
+        manager.tick();
+        gateway.fetchRequests.getLast().completeExceptionally(new ApiClient.ApiException(
+                403, "{\"code\":\"not_in_guild\",\"message\":\"Members only\"}"));
+
+        assertTrue(manager.activeQueues().isEmpty());
+        assertTrue(manager.feed().queues().isEmpty());
+        assertTrue(manager.enteredTerritoryForLocalPlayer().isEmpty());
+        assertFalse(manager.isHudVisible());
+        assertEquals(WarTerritoryQueueManager.State.OFFLINE, manager.state());
+        assertEquals("Members only", manager.lastError());
+        WarTerritoryQueueManager.ActionResult viewer = manager.refreshForViewer().join();
+        assertFalse(viewer.success());
+        assertEquals("Members only", viewer.message());
+
+        clock.advance(Duration.ofMinutes(5).minusSeconds(1));
+        manager.tick();
+        assertEquals(2, gateway.fetchCalls);
+        clock.advance(Duration.ofSeconds(1));
+        manager.tick();
+        assertEquals(3, gateway.fetchCalls);
+        gateway.fetchRequests.getLast().completeExceptionally(new ApiClient.ApiException(
+                401, "{\"code\":\"token_expired\",\"message\":\"Expired token\"}"));
+        clock.advance(Duration.ofMinutes(4));
+        manager.tick();
+        assertEquals(3, gateway.fetchCalls);
+
+        clock.advance(Duration.ofMinutes(1));
+        manager.tick();
+        gateway.fetchRequests.getLast().complete(feed(2, NOW.plusSeconds(605), List.of(foreign)));
+        assertEquals(List.of(foreign), manager.activeQueues());
+        assertTrue(manager.isHudVisible());
+        clock.advance(Duration.ofSeconds(5));
+        manager.tick();
+        assertEquals(5, gateway.fetchCalls);
+    }
+
+    @Test
+    void viewerReadDenialAlsoSuspendsBootstrapUntilTheRetryWindow() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability);
+
+        CompletableFuture<WarTerritoryQueueManager.ActionResult> viewer = manager.refreshForViewer();
+        gateway.fetchRequests.getFirst().completeExceptionally(new ApiClient.ApiException(
+                403, "{\"code\":\"not_in_guild\",\"message\":\"Members only\"}"));
+
+        assertEquals("not_in_guild", viewer.join().code());
+        manager.tick();
+        assertFalse(manager.refreshForViewer().join().success());
+        assertEquals(1, gateway.fetchCalls);
+        clock.advance(Duration.ofMinutes(5));
+        manager.tick();
+        assertEquals(2, gateway.fetchCalls);
+    }
+
+    @Test
+    void explicitPlannerDenialSuspendsReadsButRosterVerificationOutageDoesNot() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability, () -> true);
+        TerritoryQueue foreign = queue(8, "Ragni", "other-uuid", "Other", NOW, NOW.plusSeconds(900), List.of());
+        manager.tick();
+        gateway.fetchRequests.getFirst().complete(feed(1, NOW, List.of(foreign)));
+
+        // A planner roster outage clears its access, so only the cached identity remains.
+        availability.playerUuid = null;
+        clock.advance(Duration.ofSeconds(5));
+        manager.tick();
+        assertEquals(2, gateway.fetchCalls);
+        assertEquals("self-uuid", manager.localPlayerUuid());
+        assertEquals(List.of(foreign), manager.activeQueues());
+
+        availability.accessDenied = true;
+        manager.tick();
+        assertTrue(manager.activeQueues().isEmpty());
+        assertFalse(manager.isHudVisible());
+        gateway.fetchRequests.getLast().complete(feed(2, NOW.plusSeconds(5), List.of(foreign)));
+        assertTrue(manager.activeQueues().isEmpty());
+        clock.advance(Duration.ofMinutes(1));
+        manager.tick();
+        assertEquals(2, gateway.fetchCalls);
+
+        availability.accessDenied = false;
+        manager.tick();
+        assertEquals(3, gateway.fetchCalls);
+        gateway.fetchRequests.getLast().complete(feed(3, NOW.plusSeconds(65), List.of(foreign)));
+        assertEquals(List.of(foreign), manager.activeQueues());
+        assertTrue(manager.isHudVisible());
+    }
+
+    @Test
+    void contextResetsClearReadDenialSoTheNextContextReadsImmediately() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability, () -> true);
+        manager.tick();
+        gateway.fetchRequests.getFirst().completeExceptionally(new ApiClient.ApiException(
+                403, "{\"code\":\"not_in_guild\",\"message\":\"Members only\"}"));
+        manager.tick();
+        assertEquals(1, gateway.fetchCalls);
+
+        manager.resetForWorldTransition();
+        manager.tick();
+        assertEquals(2, gateway.fetchCalls);
+        gateway.fetchRequests.get(1).completeExceptionally(new ApiClient.ApiException(
+                403, "{\"code\":\"not_in_guild\",\"message\":\"Members only\"}"));
+        manager.reset();
+        assertEquals(WarTerritoryQueueManager.State.INACTIVE, manager.state());
+
+        availability.playerUuid = "next-uuid";
+        manager.tick();
+        assertEquals(3, gateway.fetchCalls);
+        TerritoryQueue foreign = queue(8, "Ragni", "other-uuid", "Other", NOW, NOW.plusSeconds(900), List.of());
+        gateway.fetchRequests.get(2).complete(feed(1, NOW, List.of(foreign)));
+        assertEquals(List.of(foreign), manager.activeQueues());
+        assertTrue(manager.isHudVisible());
+    }
+
+    @Test
+    void staleCallbacksFromAReplacedContextNeitherDenyNorRepopulateIt() {
+        FakeGateway gateway = new FakeGateway();
+        gateway.ignoreFetchCancellation = true;
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability, () -> true);
+        TerritoryQueue current = queue(8, "Ragni", "other-uuid", "Other", NOW, NOW.plusSeconds(900), List.of());
+        TerritoryQueue stale = queue(9, "Detlas", "other-uuid", "Other", NOW, NOW.plusSeconds(900), List.of());
+        manager.tick();
+        manager.reset();
+        availability.playerUuid = "next-uuid";
+        manager.tick();
+        gateway.fetchRequests.getFirst().completeExceptionally(new ApiClient.ApiException(
+                403, "{\"code\":\"not_in_guild\",\"message\":\"Members only\"}"));
+
+        assertTrue(manager.isHudVisible());
+        gateway.fetchRequests.get(1).complete(feed(1, NOW, List.of(current)));
+        assertEquals(List.of(current), manager.activeQueues());
+
+        clock.advance(Duration.ofSeconds(5));
+        manager.tick();
+        manager.resetForWorldTransition();
+        manager.tick();
+        assertEquals(4, gateway.fetchCalls);
+        gateway.fetchRequests.get(2).complete(feed(9, NOW.plusSeconds(5), List.of(stale)));
+        assertTrue(manager.activeQueues().isEmpty());
+        gateway.fetchRequests.get(3).complete(feed(2, NOW.plusSeconds(5), List.of(current)));
+        assertEquals(List.of(current), manager.activeQueues());
+    }
+
+    @Test
+    void rejectedObservationIsAWriteFailureThatLeavesThePassiveFeedLive() {
+        FakeGateway gateway = new FakeGateway();
+        MutableClock clock = new MutableClock(NOW);
+        FakeAvailability availability = new FakeAvailability();
+        availability.available = true;
+        WarTerritoryQueueManager manager = new WarTerritoryQueueManager(gateway, clock, availability, () -> true);
+        manager.tick();
+        TerritoryQueue foreign = queue(8, "Ragni", "other-uuid", "Other", NOW, NOW.plusSeconds(900), List.of());
+        gateway.fetchRequests.getFirst().complete(feed(1, NOW, List.of(foreign)));
+
+        assertTrue(manager.onSystemChat(guildMessage("Other", "Other", "Ragni defense is Low")));
+        availability.available = false;
+        gateway.observationRequests.getFirst().completeExceptionally(new ApiClient.ApiException(
+                403,
+                "{\"code\":\"war_availability_required\",\"message\":\"Turn on war availability\"}"));
+
+        assertEquals(List.of(foreign), manager.activeQueues());
+        assertTrue(manager.isHudVisible());
+        clock.advance(Duration.ofSeconds(5));
+        manager.tick();
+        assertEquals(2, gateway.fetchCalls);
+    }
+
+    @Test
+    void explicitLogoutClearsTheLiveFeedAndPersonalContextUntilReauthentication() throws Exception {
+        MutableClock clock = new MutableClock(NOW);
+        ArrayDeque<CompletableFuture<WarPlannerAccess>> accessResponses = new ArrayDeque<>();
+        WarPlannerManager planner = new WarPlannerManager(plannerGateway(accessResponses), clock);
+        withRuntimeSession(planner, config -> {
+            FakeGateway gateway = new FakeGateway();
+            gateway.ignoreFetchCancellation = true;
+            WarTerritoryQueueManager manager = new WarTerritoryQueueManager(
+                    gateway, clock, new WarTerritoryQueueManager.RuntimeAvailabilityContext(), () -> true);
+            TerritoryQueue foreign =
+                    queue(8, "Ragni", "other-uuid", "Other", NOW, NOW.plusSeconds(900), List.of());
+            TerritoryQueue owned = queue(7, "Alekin", "self-uuid", "Self", NOW, NOW.plusSeconds(900), List.of());
+            accessResponses.add(CompletableFuture.completedFuture(plannerAccess()));
+            planner.tick(true, true);
+            manager.tick();
+            gateway.fetchRequests.getFirst().complete(feed(1, NOW, List.of(owned, foreign)));
+            clock.advance(Duration.ofSeconds(5));
+            manager.tick();
+            assertTrue(manager.isHudVisible());
+            assertEquals(2, gateway.fetchCalls);
+
+            // Mirrors /seq logout: the session token is cleared and planner access reset.
+            config.clearAuthSession();
+            planner.reset();
+            manager.tick();
+
+            assertFalse(manager.isHudVisible());
+            assertTrue(manager.activeQueues().isEmpty());
+            assertNull(manager.localPlayerUuid());
+            gateway.fetchRequests.get(1).complete(feed(2, NOW.plusSeconds(5), List.of(owned, foreign)));
+            assertTrue(manager.activeQueues().isEmpty());
+            assertFalse(manager.refreshForViewer().join().success());
+            clock.advance(Duration.ofSeconds(30));
+            planner.tick(true, false);
+            manager.tick();
+            assertEquals(2, gateway.fetchCalls);
+
+            config.setAuthSession(SESSION);
+            accessResponses.add(CompletableFuture.completedFuture(plannerAccess()));
+            planner.tick(true, true);
+            manager.tick();
+            assertEquals(3, gateway.fetchCalls);
+            gateway.fetchRequests.get(2).complete(feed(3, NOW.plusSeconds(35), List.of(foreign)));
+            assertEquals(List.of(foreign), manager.activeQueues());
+            assertTrue(manager.isHudVisible());
+        });
+    }
+
+    @Test
+    void plannerRosterOutageWithARetainedSessionKeepsTimersLive() throws Exception {
+        MutableClock clock = new MutableClock(NOW);
+        ArrayDeque<CompletableFuture<WarPlannerAccess>> accessResponses = new ArrayDeque<>();
+        WarPlannerManager planner = new WarPlannerManager(plannerGateway(accessResponses), clock);
+        withRuntimeSession(planner, config -> {
+            FakeGateway gateway = new FakeGateway();
+            WarTerritoryQueueManager manager = new WarTerritoryQueueManager(
+                    gateway, clock, new WarTerritoryQueueManager.RuntimeAvailabilityContext(), () -> true);
+            TerritoryQueue foreign =
+                    queue(8, "Ragni", "other-uuid", "Other", NOW, NOW.plusSeconds(900), List.of());
+            accessResponses.add(CompletableFuture.completedFuture(plannerAccess()));
+            planner.tick(true, true);
+            manager.tick();
+            gateway.fetchRequests.getFirst().complete(feed(1, NOW, List.of(foreign)));
+
+            clock.advance(Duration.ofSeconds(45));
+            accessResponses.add(CompletableFuture.failedFuture(new ApiClient.ApiException(
+                    503, "{\"code\":\"guild_roster_unavailable\",\"message\":\"Roster unavailable\"}")));
+            planner.tick(true, true);
+            assertNull(planner.playerUuid());
+            assertEquals(WarPlannerManager.State.OFFLINE, planner.state());
+            manager.tick();
+
+            assertEquals(2, gateway.fetchCalls);
+            assertTrue(manager.isHudVisible());
+            assertEquals("self-uuid", manager.localPlayerUuid());
+            assertEquals(List.of(foreign), manager.activeQueues());
+        });
+    }
+
+    private interface SessionScenario {
+        void run(ConfigManager config) throws Exception;
+    }
+
+    /** Installs a real token store and planner as the runtime context sees them, then restores both. */
+    private void withRuntimeSession(WarPlannerManager planner, SessionScenario scenario) throws Exception {
+        ConfigManager previousConfig = SeqClient.configManager;
+        WarPlannerManager previousPlanner = SeqClient.warPlannerManager;
+        var constructor = ConfigManager.class.getDeclaredConstructor(Path.class, Path.class, boolean.class);
+        constructor.setAccessible(true);
+        ConfigManager config =
+                constructor.newInstance(tempDir.resolve("config.json"), tempDir.resolve("token"), false);
+        config.setAuthSession(SESSION);
+        SeqClient.configManager = config;
+        SeqClient.warPlannerManager = planner;
+        try {
+            scenario.run(config);
+        } finally {
+            SeqClient.configManager = previousConfig;
+            SeqClient.warPlannerManager = previousPlanner;
+        }
+    }
+
+    private static WarPlannerAccess plannerAccess() {
+        return new WarPlannerAccess(WarPlannerAccess.SUPPORTED_SCHEMA_VERSION, NOW, "self-uuid", null);
+    }
+
+    /** Only access() is exercised; every other planner request is a test failure. */
+    private static WarPlannerManager.Gateway plannerGateway(
+            ArrayDeque<CompletableFuture<WarPlannerAccess>> accessResponses) {
+        return (WarPlannerManager.Gateway) Proxy.newProxyInstance(
+                WarPlannerManager.Gateway.class.getClassLoader(),
+                new Class<?>[] {WarPlannerManager.Gateway.class},
+                (proxy, method, arguments) -> {
+                    if (method.getName().equals("access")) {
+                        return accessResponses.removeFirst();
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
     }
 
     private static Component guildMessage(String displayedName, String username, String content) {
@@ -1278,6 +1744,7 @@ class WarTerritoryQueueManagerTest {
 
     private static final class FakeAvailability implements WarTerritoryQueueManager.AvailabilityContext {
         private boolean available;
+        private boolean accessDenied;
         private String playerUuid = "self-uuid";
         private int refreshCalls;
 
@@ -1295,6 +1762,11 @@ class WarTerritoryQueueManagerTest {
         public void refreshAvailability() {
             refreshCalls++;
         }
+
+        @Override
+        public boolean accessDenied() {
+            return accessDenied;
+        }
     }
 
     private static final class FakeGateway implements WarTerritoryQueueManager.Gateway {
@@ -1307,11 +1779,20 @@ class WarTerritoryQueueManagerTest {
         private int observationCalls;
         private int joinCalls;
         private int leaveCalls;
+        /** Lets a test deliver a response after reset, as a request racing cancellation would. */
+        private boolean ignoreFetchCancellation;
 
         @Override
         public CompletableFuture<WarTerritoryQueueFeed> fetch() {
             fetchCalls++;
-            CompletableFuture<WarTerritoryQueueFeed> request = new CompletableFuture<>();
+            CompletableFuture<WarTerritoryQueueFeed> request = ignoreFetchCancellation
+                    ? new CompletableFuture<>() {
+                        @Override
+                        public boolean cancel(boolean mayInterruptIfRunning) {
+                            return false;
+                        }
+                    }
+                    : new CompletableFuture<>();
             fetchRequests.add(request);
             return request;
         }

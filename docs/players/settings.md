@@ -13,7 +13,7 @@ Settings cover these features.
 - Global UI size and theme selection.
 - War tracking, planner display, and queue controls under **Wars**.
 - Draggable queue and TNA beam countdown positions under **HUD layout**.
-- Queue HUD text size, maximum rows, and the only-my-queues filter.
+- Queue HUD visibility, text size, maximum rows, and the only-my-queues filter.
 - Optional queue-miss blame messages, off by default.
 
 ## Edit a theme

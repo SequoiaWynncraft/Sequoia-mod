@@ -55,6 +55,27 @@ class ConfigManagerTest {
     }
 
     @Test
+    void queueHudDefaultsOnForConfigsWithoutTheKeyAndPersistsDisabledValue() throws Exception {
+        Path configPath = tempDir.resolve("sequoia.json");
+        Files.writeString(configPath, "{\"war_planner.queue_hud_only_owned_or_joined\": true}");
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        var setting = com.seqwawa.seq.ui.WarTerritoryQueueHudRenderer.createEnabledSetting();
+        manager.register(setting);
+        manager.load();
+        assertTrue(setting.getValue());
+        assertEquals("Show queue timers", setting.getDisplayName());
+        assertEquals("War queue HUD", setting.getSection());
+        setting.setValue(false);
+        manager.save();
+        assertTrue(Files.readString(configPath).contains("\"war_planner.queue_hud_enabled\": false"));
+        ConfigManager reloaded = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        var restored = com.seqwawa.seq.ui.WarTerritoryQueueHudRenderer.createEnabledSetting();
+        reloaded.register(restored);
+        reloaded.load();
+        assertFalse(restored.getValue());
+    }
+
+    @Test
     void gearsharingProtectionDefaultsOnAndPersistsDisabledValue() throws Exception {
         Path configPath = tempDir.resolve("sequoia.json");
         Files.writeString(configPath, "{}");

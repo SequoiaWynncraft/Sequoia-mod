@@ -27,7 +27,7 @@ import java.util.function.Supplier;
 /** Owns the immutable war-planner snapshot and keeps all network work off the render thread. */
 public final class WarPlannerManager {
     private static final long ACCESS_POLL_MS = Duration.ofSeconds(45).toMillis();
-    private static final long FORBIDDEN_RETRY_MS = Duration.ofMinutes(5).toMillis();
+    static final long FORBIDDEN_RETRY_MS = Duration.ofMinutes(5).toMillis();
     private static final long MAX_BACKOFF_MS = Duration.ofMinutes(2).toMillis();
 
     public enum State {
@@ -168,10 +168,14 @@ public final class WarPlannerManager {
     }
 
     public void tick() {
-        boolean hasToken = SeqClient.getConfigManager() != null
+        tick(WynncraftServerPolicy.isCurrentServerAllowed(), hasSessionToken());
+    }
+
+    /** Whether a backend session token is stored; logout and session invalidation clear it. */
+    static boolean hasSessionToken() {
+        return SeqClient.getConfigManager() != null
                 && SeqClient.getConfigManager().getToken() != null
                 && !SeqClient.getConfigManager().getToken().isBlank();
-        tick(WynncraftServerPolicy.isCurrentServerAllowed(), hasToken);
     }
 
     public synchronized void tick(boolean contextAllowed, boolean hasToken) {
@@ -637,7 +641,7 @@ public final class WarPlannerManager {
         return apiError(throwable).message();
     }
 
-    private static boolean isAuthenticationError(String code) {
+    static boolean isAuthenticationError(String code) {
         if (code == null) return false;
         return code.equals("unauthorized")
                 || code.equals("authentication_required")

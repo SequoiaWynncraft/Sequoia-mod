@@ -31,7 +31,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.minecraft.network.chat.Component;
 
-/** Owns the schema-v1 queue feed: live while available, one-shot when explicitly viewed. */
+/**
+ * Owns the schema-v1 queue feed. It polls live while the queue HUD is requested, the player is
+ * available, or the player owns or joined an unexpired queue; otherwise it bootstraps once and
+ * the war map fetches one-shot snapshots. Reading the feed never changes war availability.
+ */
 public final class WarTerritoryQueueManager {
     static final Duration POLL_INTERVAL = Duration.ofSeconds(5);
     static final int MAX_PENDING_OBSERVATIONS = 24;
@@ -80,6 +84,22 @@ public final class WarTerritoryQueueManager {
         String playerUuid();
 
         default void refreshAvailability() {}
+
+        /**
+         * Whether planner access was explicitly denied (authentication or membership). Transient
+         * roster-verification failures are not denials and must keep returning {@code false}.
+         */
+        default boolean accessDenied() {
+            return false;
+        }
+
+        /**
+         * Whether the backend session is still stored. Without it the cached player identity is
+         * stale, unlike a transient loss of planner access while the session remains.
+         */
+        default boolean sessionActive() {
+            return true;
+        }
     }
 
     public record Observation(
@@ -163,6 +183,7 @@ public final class WarTerritoryQueueManager {
     private final AvailabilityContext availabilityContext;
     private final Consumer<String> missedWarNotifier;
     private final BooleanSupplier missedWarMessagesEnabled;
+    private final BooleanSupplier hudEnabled;
     private final ArrayDeque<PendingObservation> pendingObservations = new ArrayDeque<>();
     private final LinkedHashMap<String, Instant> recentObservations = new LinkedHashMap<>();
     private final LinkedHashMap<Long, TerritoryQueue> recentQueueSnapshots = new LinkedHashMap<>();
@@ -176,7 +197,13 @@ public final class WarTerritoryQueueManager {
     private String bootstrapPlayerUuid;
     private boolean bootstrapComplete;
     private volatile long serverOffsetMillis;
+    /** Live polling; distinct from the HUD preference, which is only one reason to poll. */
     private boolean active;
+    /** Set by an explicit read denial and cleared only by an authorized feed or a context reset. */
+    private boolean readAccessDenied;
+    private long readRetryAtMillis;
+    private Boolean lastHudEnabled;
+    private long lastFeedAtMillis;
     private long generation;
     private long nextPollAtMillis;
     private long nextObservationAttemptAtMillis;
@@ -192,11 +219,21 @@ public final class WarTerritoryQueueManager {
                 new RuntimeAvailabilityContext(),
                 NotificationAccessor::notifyPlayer,
                 () -> SeqClient.getWarQueueMissMessagesSetting() != null
-                        && SeqClient.getWarQueueMissMessagesSetting().getValue());
+                        && SeqClient.getWarQueueMissMessagesSetting().getValue(),
+                () -> SeqClient.getWarQueueHudEnabledSetting() == null
+                        || SeqClient.getWarQueueHudEnabledSetting().getValue());
     }
 
     WarTerritoryQueueManager(Gateway gateway, Clock clock, AvailabilityContext availabilityContext) {
         this(gateway, clock, availabilityContext, NotificationAccessor::notifyPlayer, () -> true);
+    }
+
+    WarTerritoryQueueManager(
+            Gateway gateway,
+            Clock clock,
+            AvailabilityContext availabilityContext,
+            BooleanSupplier hudEnabled) {
+        this(gateway, clock, availabilityContext, NotificationAccessor::notifyPlayer, () -> true, hudEnabled);
     }
 
     WarTerritoryQueueManager(
@@ -213,20 +250,37 @@ public final class WarTerritoryQueueManager {
             AvailabilityContext availabilityContext,
             Consumer<String> missedWarNotifier,
             BooleanSupplier missedWarMessagesEnabled) {
+        this(gateway, clock, availabilityContext, missedWarNotifier, missedWarMessagesEnabled, () -> false);
+    }
+
+    private WarTerritoryQueueManager(
+            Gateway gateway,
+            Clock clock,
+            AvailabilityContext availabilityContext,
+            Consumer<String> missedWarNotifier,
+            BooleanSupplier missedWarMessagesEnabled,
+            BooleanSupplier hudEnabled) {
         this.gateway = java.util.Objects.requireNonNull(gateway, "gateway");
         this.clock = java.util.Objects.requireNonNull(clock, "clock");
         this.availabilityContext = java.util.Objects.requireNonNull(availabilityContext, "availabilityContext");
         this.missedWarNotifier = java.util.Objects.requireNonNull(missedWarNotifier, "missedWarNotifier");
         this.missedWarMessagesEnabled =
                 java.util.Objects.requireNonNull(missedWarMessagesEnabled, "missedWarMessagesEnabled");
+        this.hudEnabled = java.util.Objects.requireNonNull(hudEnabled, "hudEnabled");
     }
 
     public State state() {
         return state;
     }
 
-    public boolean isActive() {
-        return active && (isAvailabilityActive() || hasLocalActiveQueue(playerUuid()));
+    /**
+     * Whether the queue HUD should draw: the player requested it and the live feed is running.
+     * Display never depends on, or implies, war availability.
+     *
+     * @return {@code true} when the HUD preference is on and live polling is active
+     */
+    public boolean isHudVisible() {
+        return active && isHudRequested();
     }
 
     public WarTerritoryQueueFeed feed() {
@@ -292,10 +346,11 @@ public final class WarTerritoryQueueManager {
     }
 
     public void tick() {
+        logHudPreferenceChange();
         String playerUuid = playerUuid();
         if (playerUuid == null) {
             synchronized (this) {
-                resetLocked();
+                resetLocked(isSessionActive() ? "player_identity_unavailable" : "session_cleared");
             }
             return;
         }
@@ -304,8 +359,12 @@ public final class WarTerritoryQueueManager {
                 bootstrapPlayerUuid = playerUuid;
                 bootstrapComplete = false;
             }
+            if (readsSuspendedLocked()) {
+                return;
+            }
         }
-        if (!isAvailabilityActive() && !hasLocalActiveQueue(playerUuid) && bootstrapComplete) {
+        String demand = liveDemand(playerUuid);
+        if (demand == null && bootstrapComplete) {
             synchronized (this) {
                 if (active) {
                     suspendLivePollingLocked();
@@ -319,6 +378,10 @@ public final class WarTerritoryQueueManager {
                 active = true;
                 state = State.LOADING;
                 nextPollAtMillis = 0L;
+                SeqClient.LOGGER.info(
+                        "[WarTerritoryQueue] Queue feed started reason={} cachedQueues={}",
+                        demand == null ? "bootstrap" : demand,
+                        feed.queues().size());
             }
             cleanupRecentObservations(clock.instant());
             cleanupRecentQueueSnapshots(adjustedServerNow());
@@ -335,11 +398,17 @@ public final class WarTerritoryQueueManager {
 
     /** Fetches one queue snapshot for the explicitly opened war map without enabling live polling. */
     public synchronized CompletableFuture<ActionResult> refreshForViewer() {
-        if (playerUuid() == null) {
+        String playerUuid = playerUuid();
+        if (playerUuid == null) {
             return completedFailure(
                     "player_identity_unavailable", "Your war queue identity is unavailable; try again shortly.");
         }
-        if (isAvailabilityActive()) {
+        if (readsSuspendedLocked()) {
+            return completedFailure(
+                    "territory_queue_access_denied",
+                    lastError == null ? "War queue access was denied; try again later." : lastError);
+        }
+        if (liveDemand(playerUuid) != null) {
             tick();
             return CompletableFuture.completedFuture(new ActionResult(true, null, ""));
         }
@@ -532,15 +601,18 @@ public final class WarTerritoryQueueManager {
     }
 
     public synchronized void reset() {
-        resetLocked();
+        resetLocked("context_reset");
     }
 
-    /** Clears live queue state without losing timers needed immediately after an instance teleport. */
+    /**
+     * Clears live queue state without losing timers needed immediately after an instance teleport.
+     * Like the planner's access retry, a read denial is re-verified in the new world.
+     */
     public synchronized void resetForWorldTransition() {
         String playerUuid = playerUuid();
         long recentServerOffsetMillis = serverOffsetMillis;
         LinkedHashMap<Long, TerritoryQueue> recentTimers = new LinkedHashMap<>(recentQueueSnapshots);
-        resetLocked();
+        resetLocked("world_transition");
         recentPlayerUuid = playerUuid;
         serverOffsetMillis = recentServerOffsetMillis;
         recentQueueSnapshots.putAll(recentTimers);
@@ -633,9 +705,14 @@ public final class WarTerritoryQueueManager {
         if (error != null) {
             ErrorDetails details = errorDetails(error);
             if ("war_availability_required".equals(details.code())) {
-                resetLocked();
+                resetLocked("war_availability_required");
                 return;
             }
+            if (isReadAccessDenial(error, details.code())) {
+                denyReadAccessLocked(details, clock.millis() + WarPlannerManager.FORBIDDEN_RETRY_MS);
+                return;
+            }
+            // Timeouts, 5xx and unverifiable rosters keep accepted timers on their original deadlines.
             lastError = details.message();
             state = feed.queues().isEmpty() ? State.OFFLINE : State.READY;
             return;
@@ -789,8 +866,12 @@ public final class WarTerritoryQueueManager {
         }
         if (error != null) {
             ErrorDetails details = errorDetails(error);
-            lastError = details.message();
-            state = feed.queues().isEmpty() ? State.OFFLINE : State.READY;
+            if (isReadAccessDenial(error, details.code())) {
+                denyReadAccessLocked(details, clock.millis() + WarPlannerManager.FORBIDDEN_RETRY_MS);
+            } else {
+                lastError = details.message();
+                state = feed.queues().isEmpty() ? State.OFFLINE : State.READY;
+            }
             result.complete(new ActionResult(false, details.code(), details.message()));
             return;
         }
@@ -818,7 +899,14 @@ public final class WarTerritoryQueueManager {
         bootstrapComplete = bootstrapPlayerUuid != null;
         state = State.READY;
         lastError = null;
-        nextPollAtMillis = clock.millis() + POLL_INTERVAL.toMillis();
+        lastFeedAtMillis = clock.millis();
+        nextPollAtMillis = lastFeedAtMillis + POLL_INTERVAL.toMillis();
+        if (readAccessDenied) {
+            readAccessDenied = false;
+            readRetryAtMillis = 0L;
+            SeqClient.LOGGER.info(
+                    "[WarTerritoryQueue] Queue reads recovered queues={}", received.queues().size());
+        }
         return true;
     }
 
@@ -1049,8 +1137,20 @@ public final class WarTerritoryQueueManager {
         return clock.instant().plusMillis(serverOffsetMillis);
     }
 
+    private void resetLocked(String reason) {
+        if (active || !feed.queues().isEmpty()) {
+            SeqClient.LOGGER.info(
+                    "[WarTerritoryQueue] Queue state reset reason={} clearedQueues={} lastFeedAgeSeconds={}",
+                    reason,
+                    feed.queues().size(),
+                    lastFeedAgeSeconds());
+        }
+        resetLocked();
+    }
+
     private void resetLocked() {
         if (!active
+                && !readAccessDenied
                 && state == State.INACTIVE
                 && feed.queues().isEmpty()
                 && recentPlayerUuid == null
@@ -1067,6 +1167,9 @@ public final class WarTerritoryQueueManager {
         }
         generation++;
         active = false;
+        readAccessDenied = false;
+        readRetryAtMillis = 0L;
+        lastFeedAtMillis = 0L;
         state = State.INACTIVE;
         feed = WarTerritoryQueueFeed.empty();
         lastError = null;
@@ -1105,7 +1208,66 @@ public final class WarTerritoryQueueManager {
         pendingMembershipMutations.clear();
     }
 
+    /**
+     * Invalidates the denied feed for every consumer and backs off until {@code retryAtMillis}.
+     * A zero deadline defers retry timing to the planner's own denial signal.
+     */
+    private void denyReadAccessLocked(ErrorDetails details, long retryAtMillis) {
+        String playerUuid = recentPlayerUuid;
+        int clearedQueues = feed.queues().size();
+        resetLocked();
+        recentPlayerUuid = playerUuid;
+        readAccessDenied = true;
+        readRetryAtMillis = retryAtMillis;
+        state = State.OFFLINE;
+        lastError = details.message();
+        SeqClient.LOGGER.warn(
+                "[WarTerritoryQueue] Queue reads denied code={} clearedQueues={} retryInSeconds={}",
+                details.code(),
+                clearedQueues,
+                Math.max(0L, (retryAtMillis - clock.millis()) / 1_000L));
+    }
+
+    private boolean readsSuspendedLocked() {
+        if (isPlannerAccessDenied()) {
+            if (!readAccessDenied) {
+                denyReadAccessLocked(
+                        new ErrorDetails("planner_access_denied", "War planner access was denied."), 0L);
+            }
+            return true;
+        }
+        return readAccessDenied && clock.millis() < readRetryAtMillis;
+    }
+
+    /** Returns why the feed must stay live, or {@code null} when bootstrap-once suffices. */
+    private String liveDemand(String playerUuid) {
+        if (isHudRequested()) {
+            return "hud";
+        }
+        if (isAvailabilityActive()) {
+            return "availability";
+        }
+        return hasLocalActiveQueue(playerUuid) ? "own_queue" : null;
+    }
+
+    private void logHudPreferenceChange() {
+        boolean hudRequested = isHudRequested();
+        if (lastHudEnabled != null && lastHudEnabled == hudRequested) {
+            return;
+        }
+        lastHudEnabled = hudRequested;
+        SeqClient.LOGGER.info("[WarTerritoryQueue] Queue HUD {}", hudRequested ? "enabled" : "disabled");
+    }
+
+    private long lastFeedAgeSeconds() {
+        return lastFeedAtMillis == 0L ? -1L : (clock.millis() - lastFeedAtMillis) / 1_000L;
+    }
+
     private void suspendLivePollingLocked() {
+        SeqClient.LOGGER.info(
+                "[WarTerritoryQueue] Queue feed suspended retainedQueues={} lastFeedAgeSeconds={}",
+                feed.queues().size(),
+                lastFeedAgeSeconds());
         active = false;
         state = feed.queues().isEmpty() ? State.INACTIVE : State.READY;
         nextPollAtMillis = 0L;
@@ -1151,12 +1313,54 @@ public final class WarTerritoryQueueManager {
         }
     }
 
+    private boolean isHudRequested() {
+        try {
+            return hudEnabled.getAsBoolean();
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private boolean isSessionActive() {
+        try {
+            return availabilityContext.sessionActive();
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private boolean isPlannerAccessDenied() {
+        try {
+            return availabilityContext.accessDenied();
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    /**
+     * Authentication and membership denials, matching the planner's FORBIDDEN classification.
+     * Availability is a participation rule, not read authorization.
+     */
+    private static boolean isReadAccessDenial(Throwable error, String code) {
+        int status = unwrap(error) instanceof ApiClient.ApiException apiException
+                ? apiException.getStatusCode()
+                : 0;
+        return status == 401
+                || (status == 403 && !"war_availability_required".equals(code))
+                || status == 426
+                || "not_in_guild".equals(code)
+                || WarPlannerManager.isAuthenticationError(code);
+    }
+
     private boolean hasLocalActiveQueue(String playerUuid) {
         return playerUuid != null
                 && activeQueues().stream().anyMatch(queue -> belongsToPlayer(queue, playerUuid));
     }
 
     private String playerUuid() {
+        if (!isSessionActive()) {
+            return null;
+        }
         try {
             String playerUuid = availabilityContext.playerUuid();
             if (playerUuid != null && !playerUuid.isBlank()) {
@@ -1327,7 +1531,7 @@ public final class WarTerritoryQueueManager {
         }
     }
 
-    private static final class RuntimeAvailabilityContext implements AvailabilityContext {
+    static final class RuntimeAvailabilityContext implements AvailabilityContext {
         @Override
         public boolean available() {
             WarPlannerManager manager = SeqClient.getWarPlannerManager();
@@ -1342,6 +1546,17 @@ public final class WarTerritoryQueueManager {
         public String playerUuid() {
             WarPlannerManager manager = SeqClient.getWarPlannerManager();
             return manager == null ? null : manager.playerUuid();
+        }
+
+        @Override
+        public boolean sessionActive() {
+            return WarPlannerManager.hasSessionToken();
+        }
+
+        @Override
+        public boolean accessDenied() {
+            WarPlannerManager manager = SeqClient.getWarPlannerManager();
+            return manager != null && manager.state() == WarPlannerManager.State.FORBIDDEN;
         }
 
         @Override
