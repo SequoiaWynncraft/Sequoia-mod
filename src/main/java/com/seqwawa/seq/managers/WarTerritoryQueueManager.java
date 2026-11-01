@@ -555,7 +555,6 @@ public final class WarTerritoryQueueManager {
 
     private synchronized boolean enqueueObservation(PendingObservation pending) {
         if (!isAvailabilityActive()) {
-            resetLocked();
             return false;
         }
         Observation observation = pending.observation();
@@ -694,10 +693,6 @@ public final class WarTerritoryQueueManager {
         }
         if (error != null) {
             ErrorDetails details = errorDetails(error);
-            if ("war_availability_required".equals(details.code())) {
-                resetLocked();
-                return;
-            }
             lastError = details.message();
             boolean retrying = scheduleTimedObservationRetry(pending, error);
             SeqClient.LOGGER.warn(
@@ -758,9 +753,6 @@ public final class WarTerritoryQueueManager {
             if ("territory_queue_not_found".equals(details.code())
                     || "territory_queue_full".equals(details.code())) {
                 nextPollAtMillis = 0L;
-            }
-            if ("war_availability_required".equals(details.code())) {
-                resetLocked();
             }
             pending.result().complete(new ActionResult(false, details.code(), details.message()));
             return;
