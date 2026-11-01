@@ -75,7 +75,7 @@ run = 'gh run download "$usage_run_id" -n packs -D native/out/sandbox'
 run_windows = 'gh run download "%usage_run_id%" -n packs -D native/out/sandbox'
 
 [tasks."native:guest"]
-description = "Build the decoder guest from authenticated sources; --sources-only only checks the sources"
+description = "Build the decoder guest from authenticated sources; --sources-only only checks the sources, downloading missing ones"
 run = "python native/guest.py"
 raw_args = true
 

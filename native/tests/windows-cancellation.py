@@ -15,6 +15,8 @@ import time
 import winreg
 from ctypes import wintypes
 
+from broker_children import decoder_pids
+
 kernel = ctypes.WinDLL("kernel32", use_last_error=True)
 kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
 kernel.OpenProcess.restype = wintypes.HANDLE
@@ -50,19 +52,23 @@ PNG = bytes.fromhex(
     "789c63f8cff01f00040001ff220a3af00000000049454e44ae426082")
 
 
-def children(parent):
+def processes():
+    """(pid, parent pid, image name) for every process."""
     snapshot = kernel.CreateToolhelp32Snapshot(0x2, 0)
     entry, found = ProcessEntry(), []
     entry.dwSize = ctypes.sizeof(entry)
     try:
         ok = kernel.Process32FirstW(snapshot, ctypes.byref(entry))
         while ok:
-            if entry.th32ParentProcessID == parent:
-                found.append(entry.th32ProcessID)
+            found.append((entry.th32ProcessID, entry.th32ParentProcessID, entry.szExeFile))
             ok = kernel.Process32NextW(snapshot, ctypes.byref(entry))
     finally:
         kernel.CloseHandle(snapshot)
     return found
+
+
+def decoders(parent):
+    return decoder_pids(processes(), parent, helper.name)
 
 
 def profiles():
@@ -142,9 +148,10 @@ def state():
 def open_child(parent, pid):
     """A handle to the broker's decoder, opened while it is known to be that process."""
     handle = kernel.OpenProcess(SYNCHRONIZE | TERMINATE, False, pid)
-    assert handle, ("cannot open the decoder", pid, ctypes.get_last_error())
-    # Holding the handle pins the PID; check it still names the broker's child.
-    if pid not in children(parent):
+    assert handle, ("cannot open the decoder", pid, ctypes.get_last_error(),
+                    [row for row in processes() if row[0] == pid])
+    # Holding the handle pins the PID; check it still names the broker's decoder.
+    if pid not in decoders(parent):
         kernel.CloseHandle(handle)
         raise AssertionError(("decoder exited before it could be checked", pid))
     return handle
@@ -170,7 +177,7 @@ def start(executable, scratch):
 def wait_for_child(process):
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
-        found = children(process.pid)
+        found = decoders(process.pid)
         if found:
             return open_child(process.pid, found[0])
         assert process.poll() is None, process.communicate(timeout=5)

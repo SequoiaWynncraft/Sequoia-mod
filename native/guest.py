@@ -2,10 +2,11 @@
 
 usage: guest.py [--sources-only]
 
-Downloads the FFmpeg and zlib archives into native/out/sources and stops on any mismatch with their
-SHA-256 pins, FFmpeg's signature by the pinned key, or the bundled license texts. Then it builds
+Keeps the FFmpeg and zlib archives in native/out/sources and stops on any mismatch with their
+SHA-256 pins, FFmpeg's signature by the pinned key, or the bundled license texts. Archives already
+there are checked the same way and downloaded again only if absent or invalid. Then it builds
 native/out/guest/decoder.wasm with the pinned wasi-sdk (or WASI_SDK_PATH) and records the inputs in
-guest.json. --sources-only downloads and checks the sources without building.
+guest.json. --sources-only checks the sources, downloading what is missing, without building.
 """
 import argparse, base64, hashlib, json, os, pathlib, platform, shutil, subprocess, sys
 import http.client, tarfile, tempfile, time, urllib.error, urllib.request
@@ -78,23 +79,47 @@ def require_license(archive, member, expected):
                          "inputs and native/sources.json together")
 
 
+def obtain(url, path, authenticate):
+    """Leaves an authenticated copy of URL at PATH, downloading only if PATH is absent or fails.
+
+    AUTHENTICATE raises ValueError for a file that must not be used. A copy restored from a cache
+    or an earlier job is checked exactly like a fresh download.
+    """
+    if path.is_file():
+        try:
+            authenticate(path)
+            print(f"{path.name}: using the authenticated local copy")
+            return
+        except ValueError as error:
+            print(f"Downloading {path.name} again: {error}", file=sys.stderr)
+    download(url, path)
+    authenticate(path)
+
+
 def fetch_sources(directory=ARCHIVES):
-    """Downloads and authenticates the FFmpeg and zlib archives; returns their paths."""
+    """Authenticates the FFmpeg and zlib archives in DIRECTORY, downloading any that are missing or
+    invalid, and removes everything else there; returns the archive paths."""
     ffmpeg, zlib = SOURCES["ffmpeg"], SOURCES["zlib"]
-    shutil.rmtree(directory, ignore_errors=True)
-    directory.mkdir(parents=True)
+    directory.mkdir(parents=True, exist_ok=True)
     paths = {}
     for name, source in (("ffmpeg", ffmpeg), ("zlib", zlib)):
         path = directory / source["url"].rsplit("/", 1)[1]
-        download(source["url"], path)
-        require_pin(path, source["sha256"])
+        obtain(source["url"], path, lambda file: require_pin(file, source["sha256"]))
         for member, digest in source["license_files"].items():
             require_license(path, f"{name}-{source['version']}/{member}", digest)
         paths[name] = path
     signature = directory / ffmpeg["signature_url"].rsplit("/", 1)[1]
-    download(ffmpeg["signature_url"], signature)
-    verify_signature(paths["ffmpeg"], signature, ROOT / ffmpeg["signing_key"],
-                     ffmpeg["signing_key_fingerprint"])
+    obtain(ffmpeg["signature_url"], signature,
+           lambda file: verify_signature(paths["ffmpeg"], file, ROOT / ffmpeg["signing_key"],
+                                         ffmpeg["signing_key_fingerprint"]))
+    # The directory holds exactly the corresponding source, as the old wholesale refetch did.
+    expected = {signature.name, *(path.name for path in paths.values())}
+    for leftover in directory.iterdir():
+        if leftover.name not in expected:
+            if leftover.is_dir():
+                shutil.rmtree(leftover)
+            else:
+                leftover.unlink()
     print(f"FFmpeg {ffmpeg['version']} signed by {ffmpeg['signing_key_fingerprint']}; "
           f"zlib {zlib['version']} matches its pin")
     return paths

@@ -74,7 +74,7 @@ account that `.devauth/config.toml` selects.
 | `lint` | Lints the workflows with actionlint and zizmor, and `native/build-wasm.sh` with ShellCheck |
 | `check` | Runs `build`, `test:scripts` and `lint` |
 | `native:fetch RUN_ID` | Downloads the helper packs a Build run made into `native/out/sandbox` |
-| `native:guest` | Builds the decoder guest from authenticated sources. `--sources-only` only checks the sources |
+| `native:guest` | Builds the decoder guest from authenticated sources. `--sources-only` only checks the sources, downloading any that are missing or invalid |
 | `native:wasm OUT FFMPEG ZLIB` | Compiles a guest from local FFmpeg and zlib archives with the wasi-sdk in `WASI_SDK_PATH` |
 | `native:build PLATFORM` | Builds, tests and verifies the decoder helper for this machine's platform |
 | `native:pack` | Packs the verified helpers and writes their provenance and the corresponding source |
@@ -93,12 +93,14 @@ The Build workflow runs on pull requests, on pushes to `main` and from Release:
 
 | Job | Runs |
 | --- | --- |
-| `guest` | `test:scripts`, then `native:guest` unless a guest built from the same inputs is cached |
+| `guest` | `test:scripts`, `native:guest --sources-only`, then `native:guest` unless a guest built from the same inputs is cached |
 | One job per platform | `native:build` on a runner for each of the six platforms |
-| `pack` | `native:guest --sources-only` and `native:pack --require-all`, once for every later job |
+| `pack` | `native:guest --sources-only` on the guest job's sources and `native:pack --require-all`, once for every later job |
 | `build` | `native:notices`, `build` and `native:verify-jar` |
 | `java PLATFORM` | `test:platform` on Windows x64 and macOS Arm, plus the other platforms except Linux x64 for tags and manual runs |
 
+The guest job caches the upstream archives with the guest and hands them to `pack`, which checks
+their pins, notices and FFmpeg signature again before building the source archive from them.
 Each job installs only the tools it uses. Pull requests restore the tool and Gradle caches but
 never save them. Guest and helper caches a pull request saves stay within that pull request. Tag
 builds compile the guest and helpers without their caches, and the Release and Promote release
