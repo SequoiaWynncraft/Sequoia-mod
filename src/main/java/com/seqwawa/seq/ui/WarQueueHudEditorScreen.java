@@ -11,6 +11,10 @@ import static com.seqwawa.seq.ui.theme.UiColor.TEXT_MUTED;
 import static com.seqwawa.seq.ui.theme.UiColor.TEXT_PRIMARY;
 
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.courage.CourageAlertHudRenderer;
+import com.seqwawa.seq.courage.CourageCoverageHudRenderer;
+import com.seqwawa.seq.courage.CourageHud;
+import com.seqwawa.seq.courage.CourageOwnRangeHudRenderer;
 import com.seqwawa.seq.raids.tna.TnaBeamIndicatorHudRenderer;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
@@ -78,6 +82,38 @@ public final class WarQueueHudEditorScreen extends Screen {
                     dragging == DragTarget.TNA_BEAMS);
             TnaBeamIndicatorHudRenderer.renderPreview(canvas);
 
+            CourageHud.Bounds ownRangeBounds =
+                    CourageOwnRangeHudRenderer.previewBounds(width, height);
+            drawPreviewFrame(
+                    canvas,
+                    ownRangeBounds.x(),
+                    ownRangeBounds.y(),
+                    ownRangeBounds.width(),
+                    ownRangeBounds.height(),
+                    dragging == DragTarget.COURAGE_OWN_RANGE);
+            CourageOwnRangeHudRenderer.renderPreview(canvas);
+
+            CourageHud.Bounds coverageBounds =
+                    CourageCoverageHudRenderer.previewBounds(width, height);
+            drawPreviewFrame(
+                    canvas,
+                    coverageBounds.x(),
+                    coverageBounds.y(),
+                    coverageBounds.width(),
+                    coverageBounds.height(),
+                    dragging == DragTarget.COURAGE_COVERAGE);
+            CourageCoverageHudRenderer.renderPreview(canvas);
+
+            CourageHud.Bounds alertBounds = CourageAlertHudRenderer.previewBounds(width, height);
+            drawPreviewFrame(
+                    canvas,
+                    alertBounds.x(),
+                    alertBounds.y(),
+                    alertBounds.width(),
+                    alertBounds.height(),
+                    dragging == DragTarget.COURAGE_ALERT);
+            CourageAlertHudRenderer.renderPreview(canvas);
+
             drawText(
                     canvas,
                     font,
@@ -103,6 +139,12 @@ public final class WarQueueHudEditorScreen extends Screen {
             SeqClient.getWarQueueHudYSetting().reset();
             SeqClient.getTnaBeamIndicatorXSetting().reset();
             SeqClient.getTnaBeamIndicatorYSetting().reset();
+            SeqClient.getCourageOwnRangeHudXSetting().reset();
+            SeqClient.getCourageOwnRangeHudYSetting().reset();
+            SeqClient.getCourageCoverageHudXSetting().reset();
+            SeqClient.getCourageCoverageHudYSetting().reset();
+            SeqClient.getCourageAlertXSetting().reset();
+            SeqClient.getCourageAlertYSetting().reset();
             SeqClient.getConfigManager().save();
             return true;
         }
@@ -117,6 +159,30 @@ public final class WarQueueHudEditorScreen extends Screen {
             dragging = DragTarget.TNA_BEAMS;
             dragOffsetX = x - beamBounds.x();
             dragOffsetY = y - beamBounds.y();
+            return true;
+        }
+
+        CourageHud.Bounds ownRangeBounds = CourageOwnRangeHudRenderer.previewBounds(width, height);
+        if (ownRangeBounds.contains(x, y, PADDING)) {
+            dragging = DragTarget.COURAGE_OWN_RANGE;
+            dragOffsetX = x - ownRangeBounds.x();
+            dragOffsetY = y - ownRangeBounds.y();
+            return true;
+        }
+
+        CourageHud.Bounds coverageBounds = CourageCoverageHudRenderer.previewBounds(width, height);
+        if (coverageBounds.contains(x, y, PADDING)) {
+            dragging = DragTarget.COURAGE_COVERAGE;
+            dragOffsetX = x - coverageBounds.x();
+            dragOffsetY = y - coverageBounds.y();
+            return true;
+        }
+
+        CourageHud.Bounds alertBounds = CourageAlertHudRenderer.previewBounds(width, height);
+        if (alertBounds.contains(x, y, PADDING)) {
+            dragging = DragTarget.COURAGE_ALERT;
+            dragOffsetX = x - alertBounds.x();
+            dragOffsetY = y - alertBounds.y();
             return true;
         }
 
@@ -145,6 +211,21 @@ public final class WarQueueHudEditorScreen extends Screen {
                     width, height, x - dragOffsetX, y - dragOffsetY);
             SeqClient.getTnaBeamIndicatorXSetting().setValue(position.x());
             SeqClient.getTnaBeamIndicatorYSetting().setValue(position.y());
+        } else if (dragging == DragTarget.COURAGE_OWN_RANGE) {
+            CourageHud.Position position = CourageOwnRangeHudRenderer.positionForTopLeft(
+                    width, height, x - dragOffsetX, y - dragOffsetY);
+            SeqClient.getCourageOwnRangeHudXSetting().setValue(position.x());
+            SeqClient.getCourageOwnRangeHudYSetting().setValue(position.y());
+        } else if (dragging == DragTarget.COURAGE_COVERAGE) {
+            CourageHud.Position position = CourageCoverageHudRenderer.positionForTopLeft(
+                    width, height, x - dragOffsetX, y - dragOffsetY);
+            SeqClient.getCourageCoverageHudXSetting().setValue(position.x());
+            SeqClient.getCourageCoverageHudYSetting().setValue(position.y());
+        } else if (dragging == DragTarget.COURAGE_ALERT) {
+            CourageHud.Position position = CourageAlertHudRenderer.positionForTopLeft(
+                    width, height, x - dragOffsetX, y - dragOffsetY);
+            SeqClient.getCourageAlertXSetting().setValue(position.x());
+            SeqClient.getCourageAlertYSetting().setValue(position.y());
         } else {
             WarTerritoryQueueHudRenderer.Bounds bounds =
                     WarTerritoryQueueHudRenderer.previewBounds(width, height);
@@ -252,6 +333,9 @@ public final class WarQueueHudEditorScreen extends Screen {
 
     private enum DragTarget {
         WAR_QUEUE,
-        TNA_BEAMS
+        TNA_BEAMS,
+        COURAGE_OWN_RANGE,
+        COURAGE_COVERAGE,
+        COURAGE_ALERT
     }
 }
