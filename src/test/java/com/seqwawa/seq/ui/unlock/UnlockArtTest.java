@@ -51,7 +51,7 @@ class UnlockArtTest {
 
     @Test
     void everyMedalIsAMirrorImageWithItsDiscCentredOnTheSixteenthPixel() throws IOException {
-        for (String style : List.of("unlock_medal_", "unlock_medal_ribbon_")) {
+        for (String style : List.of("unlock_medal_", "unlock_medal_ribbon_", "unlock_medal_ring_")) {
             for (String tier : List.of("bronze", "silver", "gold", "platinum", "diamond", "obsidian", "mythril", "level", "flash")) {
                 BufferedImage medal = load(style + tier);
                 assertEquals(32, medal.getWidth(), style + tier);
@@ -62,6 +62,31 @@ class UnlockArtTest {
                 }
             }
         }
+    }
+
+    @Test
+    void bothLayersOfTheVinesAreMirrorImagesThatFitSixPixelsRoundTheMedal() throws IOException {
+        for (String layer : List.of("unlock_wreath_back", "unlock_wreath_front")) {
+            BufferedImage wreath = load(layer);
+            assertEquals(44, wreath.getWidth(), layer);
+            assertEquals(44, wreath.getHeight(), layer);
+            for (int y = 0; y < 44; y++) {
+                for (int x = 0; x < 22; x++) {
+                    assertEquals(visible(wreath, x, y), visible(wreath, 43 - x, y), layer + " row " + y);
+                }
+            }
+        }
+    }
+
+    @Test
+    void framesVinesAreTheSizeTheirPlacementExpects() throws IOException {
+        // Both run along their frame three pixels in from the sprite's edge, which is where the code places them.
+        BufferedImage card = load("unlock_vine_br");
+        assertEquals(28, card.getWidth());
+        assertEquals(22, card.getHeight());
+        BufferedImage toast = load("unlock_vine_small");
+        assertEquals(20, toast.getWidth());
+        assertEquals(13, toast.getHeight());
     }
 
     @Test

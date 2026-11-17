@@ -43,25 +43,38 @@ public final class UnlockOverlay {
      * medal was the first design; switch back here to use it again.
      */
     enum MedalStyle {
+        /** A round medal with a leafy vine wound round each side: over the rim low down, behind it higher up. */
+        WREATH("unlock_medal_ring_", 32, 33, true),
         /** An octagon with a bevelled rim, like the popups' clipped-corner frames. */
-        BADGE("unlock_medal_", 32, 27),
-        /** A round medal hanging two swallowtail ribbons. */
-        RIBBON("unlock_medal_ribbon_", 42, 30);
+        BADGE("unlock_medal_", 32, 27, false),
+        /** A round medal hanging two swallowtail ribbons: the first design. */
+        RIBBON("unlock_medal_ribbon_", 42, 30, false);
 
         final String prefix;
         /** The sprite's height in art pixels; all are 32 wide. */
         final int height;
         /** How far below the medal's middle the ceremony's title sits, in art pixels. */
         final int titleBelow;
+        /**
+         * Whether the vines go round it: 44 art pixels square, 6 out from the medal on every side, in a layer
+         * behind the medal and one in front of it, so the vine can pass over the rim in places.
+         */
+        final boolean wreath;
 
-        MedalStyle(String prefix, int height, int titleBelow) {
+        MedalStyle(String prefix, int height, int titleBelow, boolean wreath) {
             this.prefix = prefix;
             this.height = height;
             this.titleBelow = titleBelow;
+            this.wreath = wreath;
+        }
+
+        /** How far the medal's drawing reaches out to its sides beyond the medal itself, in art pixels. */
+        int reach() {
+            return wreath ? 6 : 0;
         }
     }
 
-    static final MedalStyle MEDAL_STYLE = MedalStyle.BADGE;
+    static final MedalStyle MEDAL_STYLE = MedalStyle.WREATH;
 
     /** UI pixels per art pixel for toasts and cards. */
     static final float SMALL_PIXEL = 2;
@@ -171,12 +184,18 @@ public final class UnlockOverlay {
             Frame frame = UnlockAnimation.frame(Kind.CEREMONY, elapsed);
             if (frame.active()) drawCeremony(canvas, playing.popup(), frame, elapsed, width, height);
         }
-        int toastIndex = 0;
+        float toastY = toastTop(width);
+        boolean firstToast = true;
         for (Playing playing : visible) {
             long elapsed = now - playing.startedAtMs();
             Frame frame = UnlockAnimation.frame(playing.popup().kind(), elapsed);
             if (!frame.active()) continue;
-            if (playing.popup().kind() == Kind.TOAST) drawToast(canvas, playing.popup(), frame, width, toastIndex++);
+            if (playing.popup().kind() == Kind.TOAST) {
+                toastY += roomAboveToast(playing.popup(), firstToast);
+                drawToast(canvas, playing.popup(), frame, width, toastY);
+                toastY += TOAST_HEIGHT + 3 * SMALL_PIXEL;
+                firstToast = false;
+            }
             if (playing.popup().kind() == Kind.CARD) drawCard(canvas, playing.popup(), frame, elapsed, width);
         }
     }
@@ -188,10 +207,10 @@ public final class UnlockOverlay {
      * showing where the Leaf came from, and the amount and its source three
      * pixels after the tile.
      */
-    private static void drawToast(UiCanvas canvas, UnlockPopup popup, Frame frame, float screenWidth, int index) {
+    private static void drawToast(UiCanvas canvas, UnlockPopup popup, Frame frame, float screenWidth, float top) {
         float p = SMALL_PIXEL;
         float x = snap(screenWidth - 4 * p - TOAST_WIDTH + frame.slide() * (TOAST_WIDTH + 4 * p), p);
-        float y = snap(toastTop(screenWidth) + index * (TOAST_HEIGHT + 3 * p), p);
+        float y = snap(top, p);
         float a = frame.opacity();
         Color accent = color(CONTROL_SUCCESS);
         pixelPanel(canvas, x, y, TOAST_WIDTH, TOAST_HEIGHT, p, accent, a);
@@ -199,7 +218,10 @@ public final class UnlockOverlay {
         float textX = x + 26 * p;
         long counted = Math.round(popup.leaf() * frame.counter());
         leafAmount(canvas, "+" + UnlockPopup.formatCount(counted), textX, y + 10 * p, a, p);
-        fitted(canvas, popup.detail(), textX, y + 19 * p, x + TOAST_WIDTH - 4 * p - textX, 10, color(TEXT_SECONDARY), a);
+        // The vine winds along the top and right borders, three pixels either side, and ends above the detail.
+        if (hasVine(popup)) sprite(canvas, "unlock_vine_small", x + TOAST_WIDTH - (20 - VINE_REACH) * p, y - VINE_REACH * p, 20, p, a);
+        float textRight = x + TOAST_WIDTH - 4 * p;
+        fitted(canvas, popup.detail(), textX, y + 19 * p, textRight - textX, 10, color(TEXT_SECONDARY), a);
     }
 
     /**
@@ -208,7 +230,10 @@ public final class UnlockOverlay {
      */
     private static void medal(UiCanvas canvas, UnlockPopup popup, float x, float y, float scale, float a) {
         String tier = popup.tier() == null ? "gold" : popup.tier();
+        float reach = MEDAL_STYLE.reach() * scale;
+        if (MEDAL_STYLE.wreath) sprite(canvas, "unlock_wreath_back", x - reach, y - reach, 44, scale, a);
         sprite(canvas, MEDAL_STYLE.prefix + tier, x, y, 32, scale, a);
+        if (MEDAL_STYLE.wreath) sprite(canvas, "unlock_wreath_front", x - reach, y - reach, 44, scale, a);
         if ("level".equals(tier)) {
             medalNumber(canvas, popup.level(), x, y, scale, mix(color(tierToken(tier)), Color.WHITE, 0.55f), a);
             return;
@@ -236,6 +261,27 @@ public final class UnlockOverlay {
         // middle sits half a UI pixel above where digits look centred at this size.
         float y = medalY + 16 * scale + size * 0.01f;
         outlinedText(canvas, text, medalX + 16 * scale, y, size, fill, a, HorizontalAlign.CENTER);
+    }
+
+    /** A vine winding over and under the card's bottom and right borders, three pixels either side of them. */
+    private static void cornerVine(UiCanvas canvas, float x, float y, float w, float h, float p, float a) {
+        sprite(canvas, "unlock_vine_br", x + w - (28 - VINE_REACH) * p, y + h - (22 - VINE_REACH) * p, 28, p, a);
+    }
+
+    /** How far a frame's vine reaches out past the frame, in art pixels. */
+    static final int VINE_REACH = 3;
+
+    /**
+     * Extra space above a toast below another one: a toast's vine climbs over its top
+     * border, so it keeps the usual gap to the toast above by moving down by that much.
+     */
+    static float roomAboveToast(UnlockPopup popup, boolean first) {
+        return !first && hasVine(popup) ? VINE_REACH * SMALL_PIXEL : 0;
+    }
+
+    /** About one toast in three wears a small vine, chosen by what it is for, so the same reward always looks the same. */
+    static boolean hasVine(UnlockPopup popup) {
+        return Math.floorMod(java.util.Objects.hash(popup.detail(), popup.leaf()), 3) == 0;
     }
 
     /** A framed tile with a picture inside it: a raid's art, the war swords or the Sequoia icon. */
@@ -278,7 +324,7 @@ public final class UnlockOverlay {
         float textX;
         float textRight = x + w - 5 * p;
         if (milestone) {
-            float medalX = x + 5 * p;
+            float medalX = x + (5 + MEDAL_STYLE.reach()) * p;
             float medalY = snap(y + (h - MEDAL_STYLE.height * p) / 2, p);
             float medalCx = medalX + 16 * p;
             float medalCy = medalY + 16 * p;
@@ -293,11 +339,12 @@ public final class UnlockOverlay {
             // Stars twinkling at the card's right end, in their own space clear of the text and the frame.
             twinkle(canvas, x + w - 12 * p, y + 8 * p, frame, 0, p, a);
             twinkle(canvas, x + w - 19 * p, y + 21 * p, frame, 1, p, a);
-            twinkle(canvas, x + w - 11 * p, y + 33 * p, frame, 2, p, a);
-            textX = x + 43 * p;
+            cornerVine(canvas, x, y, w, h, p, a);
+            textX = medalX + (32 + 6 + MEDAL_STYLE.reach()) * p;
             textRight -= 16 * p;
         } else {
             shine(canvas, x, y, w, h, p, elapsed, a);
+            cornerVine(canvas, x, y, w, h, p, a);
             iconTile(canvas, popup.icon(), x + 5 * p, y + (h - 22 * p) / 2, 22 * p, p, accent, a);
             textX = x + 33 * p;
         }
@@ -440,9 +487,8 @@ public final class UnlockOverlay {
 
     /**
      * A ribbon banner: a band with a lit top row and a shaded bottom row, and a
-     * folded tail with a notch at each end, all a pixel at a time.
+     * folded tail with a notch at each end, all a pixel at a time. Returns its left edge.
      */
-    /** Draws the banner and returns its left edge. */
     private static float banner(UiCanvas canvas, float cx, float cy, float width, float height, float p, Color accent,
             float a) {
         if (width <= 0) return snap(cx, p);
@@ -617,12 +663,17 @@ public final class UnlockOverlay {
     /** The title banner's height in art pixels: the title, with clear space above and below it. */
     static final int BANNER_HEIGHT = 18;
 
+    /** How far the ceremony reaches below the medal's middle, in art pixels: to the reward chip's bottom. */
+    static int groupBelow() {
+        return MEDAL_STYLE.titleBelow + 35;
+    }
+
     /**
      * Where the medal's middle goes so the group, from the medal's top (17 art
-     * pixels above it) to the reward chip's bottom (65 below), sits in the middle.
+     * pixels above it) to the reward chip's bottom, sits in the middle.
      */
     static float ceremonyCentre(float screenHeight, float p) {
-        return Math.max(17 * p + 4, screenHeight / 2 - 24 * p);
+        return Math.max(17 * p + 4, screenHeight / 2 - (groupBelow() - 17) / 2f * p);
     }
 
     /** The animation's medal scales are for 3-pixel art; smaller art pops through smaller scales. */

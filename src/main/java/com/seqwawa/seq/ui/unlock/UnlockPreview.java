@@ -142,7 +142,7 @@ public final class UnlockPreview {
     static List<UnlockPopup> samplePopups() {
         return List.of(
                 popup("leaf_earned", "{\"source\":\"raid\",\"leaf\":330,\"xp\":330,\"detail\":\"The Nameless Anomaly\"}"),
-                popup("leaf_earned", "{\"source\":\"war\",\"leaf\":60,\"xp\":60,\"detail\":\"Detlas\"}"),
+                popup("leaf_earned", "{\"source\":\"war\",\"leaf\":61,\"xp\":61,\"detail\":\"Detlas\"}"),
                 popup("quest_completed", "{\"quest\":{\"slot\":\"daily\",\"title\":\"Complete 3 NOL raids\","
                         + "\"objective\":{\"type\":\"raids\",\"raid\":\"nol\"},"
                         + "\"reward\":{\"leaf\":300,\"xp\":150}}}"),

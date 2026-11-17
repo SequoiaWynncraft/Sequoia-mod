@@ -82,6 +82,15 @@ public class AssetManager {
         "textures/unlock/unlock_medal_ribbon_obsidian.png",
         "textures/unlock/unlock_medal_ribbon_platinum.png",
         "textures/unlock/unlock_medal_ribbon_silver.png",
+        "textures/unlock/unlock_medal_ring_bronze.png",
+        "textures/unlock/unlock_medal_ring_diamond.png",
+        "textures/unlock/unlock_medal_ring_flash.png",
+        "textures/unlock/unlock_medal_ring_gold.png",
+        "textures/unlock/unlock_medal_ring_level.png",
+        "textures/unlock/unlock_medal_ring_mythril.png",
+        "textures/unlock/unlock_medal_ring_obsidian.png",
+        "textures/unlock/unlock_medal_ring_platinum.png",
+        "textures/unlock/unlock_medal_ring_silver.png",
         "textures/unlock/unlock_medal_silver.png",
         "textures/unlock/unlock_raid.png",
         "textures/unlock/unlock_rays_0.png",
@@ -102,7 +111,11 @@ public class AssetManager {
         "textures/unlock/unlock_sparkle_1.png",
         "textures/unlock/unlock_sparkle_2.png",
         "textures/unlock/unlock_vignette.png",
+        "textures/unlock/unlock_vine_br.png",
+        "textures/unlock/unlock_vine_small.png",
         "textures/unlock/unlock_war.png",
+        "textures/unlock/unlock_wreath_back.png",
+        "textures/unlock/unlock_wreath_front.png",
     };
 
     @Getter
