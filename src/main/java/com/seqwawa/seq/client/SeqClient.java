@@ -41,6 +41,7 @@ import com.seqwawa.seq.managers.GlobalSoundListener;
 import com.seqwawa.seq.managers.GuildPresenceManager;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.LeafQuestService;
+import com.seqwawa.seq.managers.CombatState;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
@@ -85,6 +86,9 @@ import com.seqwawa.seq.ui.RaidProfileSetupScreen;
 import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.AchievementsScreen;
 import com.seqwawa.seq.ui.QuestBoardScreen;
+import com.seqwawa.seq.ui.unlock.UnlockOverlay;
+import com.seqwawa.seq.ui.unlock.UnlockPreview;
+import com.seqwawa.seq.network.LeafEventStream;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.ui.PrincessRaidCelebration;
 import com.seqwawa.seq.ui.SequoiaScreen;
@@ -434,6 +438,7 @@ public class SeqClient implements ClientModInitializer {
         SeqCommand.register();
         ImagePreviews.initialize();
         PrincessRaidCelebration.initialize();
+        UnlockPreview.initializeIfRequested();
         com.seqwawa.seq.ui.CheapestQueueEffect.initialize();
         com.seqwawa.seq.managers.GuildWarStateObserver.initialize();
         RadianceCheckerClient.initialize();
@@ -444,6 +449,7 @@ public class SeqClient implements ClientModInitializer {
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> NicknameResolverCache.reset());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> NicknameResolverCache.reset());
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            LeafEventStream.getInstance().stop();
             GlobalSoundListener.shutdown();
             MinecraftUiRenderer.shutdown();
         });
@@ -478,6 +484,9 @@ public class SeqClient implements ClientModInitializer {
                 "key.sequoia-mod.share_bombs", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, category));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            // Listens for Leaf rewards only on Wynncraft and while connected to Sequoia; it checks both itself.
+            LeafEventStream.getInstance().tick(true);
+            CombatState.tick();
             PrivateMessageGuildTagDecorator.tick();
             ConnectionManager.tickGuildRankObservations();
             while (openScreenKey.consumeClick()) {
@@ -675,6 +684,8 @@ public class SeqClient implements ClientModInitializer {
         RaidProfilesSession.getInstance().clear();
         GuildRaidProgressService.getInstance().reset();
         LeafQuestService.getInstance().reset();
+        LeafEventStream.getInstance().reset();
+        UnlockOverlay.getInstance().clear();
         resetWarTrackingState();
         if (guildStorageTracker != null) {
             guildStorageTracker.reset();
