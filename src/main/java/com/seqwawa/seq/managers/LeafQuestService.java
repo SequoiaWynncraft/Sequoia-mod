@@ -11,8 +11,9 @@ import java.util.function.Supplier;
 
 /**
  * The member's Leaf and quests, read from the Leaf service for the quest board.
- * The board asks for a fresh copy when it opens and at most once a minute while
- * it stays open; every read asks Leaf to count raids and wars finished moments ago.
+ * The board asks for a fresh copy when it opens, resizes and while it stays open,
+ * at most once a minute; every read asks Leaf to count raids and wars finished
+ * moments ago.
  */
 public final class LeafQuestService {
 
@@ -39,6 +40,7 @@ public final class LeafQuestService {
     private volatile Snapshot snapshot = Snapshot.EMPTY;
     private volatile State state = State.LOADING;
     private volatile boolean loading;
+    private volatile boolean refreshFailed;
     private volatile long lastAttemptAtMs;
     private volatile int generation;
 
@@ -69,31 +71,28 @@ public final class LeafQuestService {
         return state;
     }
 
+    /** Whether the last read failed while the board still shows what an earlier one found. */
+    public boolean refreshFailed() {
+        return refreshFailed;
+    }
+
     /** Forgets everything, for a different account. */
     public synchronized void reset() {
         generation++;
         loading = false;
+        refreshFailed = false;
         lastAttemptAtMs = 0;
         snapshot = Snapshot.EMPTY;
         state = State.LOADING;
     }
 
-    /** Reads now, unless a read is already running. For the board opening. */
-    public synchronized boolean refreshNow() {
-        return start(clock.getAsLong());
-    }
-
-    /** Reads when the last attempt is more than a minute old. For a board that stays open. */
+    /**
+     * Reads unless a read is running or the last attempt was under a minute ago. The
+     * first read after starting or {@link #reset()} always goes ahead.
+     */
     public synchronized boolean requestRefresh() {
         long now = clock.getAsLong();
-        if (lastAttemptAtMs != 0 && now - lastAttemptAtMs < REFRESH_INTERVAL_MS) {
-            return false;
-        }
-        return start(now);
-    }
-
-    private boolean start(long now) {
-        if (loading) {
+        if (loading || lastAttemptAtMs != 0 && now - lastAttemptAtMs < REFRESH_INTERVAL_MS) {
             return false;
         }
         loading = true;
@@ -118,15 +117,19 @@ public final class LeafQuestService {
         if (fetched != null) {
             snapshot = fetched;
             state = State.READY;
+            refreshFailed = false;
             return;
         }
         if (ApiClient.isNotLeafMember(failure)) {
             snapshot = Snapshot.EMPTY;
             state = State.NOT_MEMBER;
+            refreshFailed = false;
             return;
         }
-        // A failed refresh keeps what the board already shows.
-        if (state != State.READY) {
+        // A failed refresh keeps what the board already shows, and says it may be out of date.
+        if (state == State.READY) {
+            refreshFailed = true;
+        } else {
             state = State.UNAVAILABLE;
         }
         SeqClient.LOGGER.warn("[Quests] Could not read quests from Leaf", failure);

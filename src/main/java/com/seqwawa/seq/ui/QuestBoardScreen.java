@@ -45,6 +45,8 @@ public final class QuestBoardScreen extends Screen {
     static final List<String> SLOTS = List.of(LeafQuests.DAILY, LeafQuests.WEEKLY, LeafQuests.REPEATABLE);
     static final float CARD_HEIGHT = 160;
     static final float SUMMARY_HEIGHT = 30;
+    /** Shown beside the balance when Leaf could not be reached, over the quests from the last read that worked. */
+    static final String STALE_LINE = "Couldn't reach Leaf, showing earlier progress";
 
     private static final float MARGIN = SequoiaUiStyle.CONTENT_PADDING;
     private static final float HEADER_HEIGHT = SequoiaUiStyle.HEADER_HEIGHT;
@@ -59,6 +61,7 @@ public final class QuestBoardScreen extends Screen {
 
     private State state = State.LOADING;
     private Snapshot shown = Snapshot.EMPTY;
+    private boolean stale;
     private float scrollOffset;
     private float maxScroll;
     private float mouseX;
@@ -73,18 +76,21 @@ public final class QuestBoardScreen extends Screen {
     protected void init() {
         super.init();
         scrollOffset = 0;
-        service.refreshNow();
+        // Runs again on every resize, so it takes the once-a-minute limit like the rest.
+        service.requestRefresh();
         state = service.state();
         shown = service.snapshot();
+        stale = service.refreshFailed();
     }
 
     @Override
     public void render(GuiGraphics guiGraphics, int pointerX, int pointerY, float partialTick) {
         super.render(guiGraphics, pointerX, pointerY, partialTick);
         service.requestRefresh();
-        if (state != service.state() || !shown.equals(service.snapshot())) {
+        if (state != service.state() || !shown.equals(service.snapshot()) || stale != service.refreshFailed()) {
             state = service.state();
             shown = service.snapshot();
+            stale = service.refreshFailed();
             triggerImmediateNarration(true);
         }
         mouseX = MinecraftUiRenderer.mouseX(pointerX);
@@ -117,7 +123,7 @@ public final class QuestBoardScreen extends Screen {
         canvas.save();
         canvas.scissor(panel.x(), panel.y(), panel.width(), panel.height());
         float top = panel.y() - scrollOffset;
-        renderSummary(canvas, shown.account(), panel.x(), top + 12, contentWidth);
+        renderSummary(canvas, shown.account(), stale, panel.x(), top + 12, contentWidth);
         List<Placement> placements = placements(contentWidth, cards.size());
         for (int i = 0; i < cards.size(); i++) {
             Placement placement = placements.get(i);
@@ -132,11 +138,22 @@ public final class QuestBoardScreen extends Screen {
         }
     }
 
-    private static void renderSummary(UiCanvas canvas, LeafAccount account, float x, float y, float width) {
+    /** The balance and level, and on the right, when the last refresh failed, a note that this may be old. */
+    private static void renderSummary(UiCanvas canvas, LeafAccount account, boolean stale, float x, float y,
+            float width) {
         float after = leafAmount(canvas, formatCount(account.leaf()), x, y, 14, color(CONTROL_SUCCESS));
-        LeafAccount.Level level = account.levelOrFirst();
-        fittedText(canvas, levelLine(level), after + 14, y, Math.max(0, x + width - after - 14), 12,
-                color(TEXT_SECONDARY));
+        float room = Math.max(0, x + width - after - 14);
+        if (stale) {
+            float noteWidth = measure(STALE_LINE, 11);
+            if (noteWidth + 14 > room) {
+                // Too narrow for both: the note matters more than the level.
+                fittedText(canvas, STALE_LINE, after + 14, y, room, 11, color(CONTROL_WARNING));
+                return;
+            }
+            text(canvas, STALE_LINE, x + width, y, 11, color(CONTROL_WARNING), RIGHT);
+            room -= noteWidth + 14;
+        }
+        fittedText(canvas, levelLine(account.levelOrFirst()), after + 14, y, room, 12, color(TEXT_SECONDARY));
     }
 
     /**
@@ -168,9 +185,11 @@ public final class QuestBoardScreen extends Screen {
             centredText(canvas, line, centre, y + 100 + i * 15, inner, 13, color(TEXT_PRIMARY));
         }
 
+        // Progress on the left half of the row, the reward on the right half, with a gap between.
         float rowY = y + 132;
-        fittedText(canvas, progressLabel(quest), x + PADDING, rowY, inner / 2, 12, color(TEXT_SECONDARY));
-        renderReward(canvas, quest.reward(), x + width - PADDING, rowY, inner / 2 + 10);
+        float half = Math.max(0, inner / 2 - 4);
+        fittedText(canvas, progressLabel(quest), x + PADDING, rowY, half, 12, color(TEXT_SECONDARY));
+        renderReward(canvas, quest.reward(), x + width - PADDING, rowY, half);
         if (quest.completed()) {
             canvas.fillRect(x + PADDING, y + 145, inner, 3, color(CONTROL_SUCCESS));
         } else {
@@ -463,6 +482,7 @@ public final class QuestBoardScreen extends Screen {
         }
         narration.append(formatCount(shown.account().leaf())).append(" Leaf, ")
                 .append(levelLine(shown.account().levelOrFirst())).append(". ");
+        if (stale) narration.append(STALE_LINE).append(". ");
         for (Card card : cards(shown.quests(), Instant.now())) {
             narration.append(card.heading()).append(", ").append(card.timer()).append(": ");
             if (card.quest() == null) {

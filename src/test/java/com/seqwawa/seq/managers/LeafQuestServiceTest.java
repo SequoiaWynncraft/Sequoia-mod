@@ -47,16 +47,28 @@ class LeafQuestServiceTest {
     void showsWhatLeafSends() {
         LeafQuestService service = service();
 
-        assertTrue(service.refreshNow());
+        assertTrue(service.requestRefresh());
 
         assertEquals(State.READY, service.state());
         assertEquals(12_480, service.snapshot().account().leaf());
     }
 
     @Test
+    void reopeningOrResizingTheBoardWithinAMinuteShowsWhatItHasInsteadOfReadingAgain() {
+        LeafQuestService service = service();
+        service.requestRefresh();
+
+        now.addAndGet(5_000);
+        assertFalse(service.requestRefresh());
+
+        assertEquals(1, calls.get());
+        assertEquals(State.READY, service.state());
+    }
+
+    @Test
     void readsAtMostOnceAMinuteWhileTheBoardStaysOpen() {
         LeafQuestService service = service();
-        service.refreshNow();
+        service.requestRefresh();
 
         now.addAndGet(LeafQuestService.REFRESH_INTERVAL_MS - 1);
         assertFalse(service.requestRefresh());
@@ -71,8 +83,9 @@ class LeafQuestServiceTest {
         answer.set(new CompletableFuture<>());
         LeafQuestService service = service();
 
-        assertTrue(service.refreshNow());
-        assertFalse(service.refreshNow());
+        assertTrue(service.requestRefresh());
+        now.addAndGet(LeafQuestService.REFRESH_INTERVAL_MS);
+        assertFalse(service.requestRefresh(), "a read is still running");
 
         assertEquals(1, calls.get());
     }
@@ -82,7 +95,7 @@ class LeafQuestServiceTest {
         answer.set(CompletableFuture.failedFuture(new ApiClient.ApiException(403, "{\"code\":\"not_a_member\"}")));
         LeafQuestService service = service();
 
-        service.refreshNow();
+        service.requestRefresh();
 
         assertEquals(State.NOT_MEMBER, service.state());
     }
@@ -90,7 +103,7 @@ class LeafQuestServiceTest {
     @Test
     void keepsShowingTheLastQuestsWhenARefreshFails() {
         LeafQuestService service = service();
-        service.refreshNow();
+        service.requestRefresh();
         answer.set(CompletableFuture.failedFuture(new IllegalStateException("offline")));
 
         now.addAndGet(LeafQuestService.REFRESH_INTERVAL_MS);
@@ -98,6 +111,23 @@ class LeafQuestServiceTest {
 
         assertEquals(State.READY, service.state());
         assertEquals(12_480, service.snapshot().account().leaf());
+        assertTrue(service.refreshFailed(), "the board says what it shows may be out of date");
+    }
+
+    @Test
+    void aWorkingRefreshClearsTheOutOfDateNote() {
+        LeafQuestService service = service();
+        service.requestRefresh();
+        answer.set(CompletableFuture.failedFuture(new IllegalStateException("offline")));
+        now.addAndGet(LeafQuestService.REFRESH_INTERVAL_MS);
+        service.requestRefresh();
+
+        answer.set(CompletableFuture.completedFuture(snapshot(13_000)));
+        now.addAndGet(LeafQuestService.REFRESH_INTERVAL_MS);
+        service.requestRefresh();
+
+        assertFalse(service.refreshFailed());
+        assertEquals(13_000, service.snapshot().account().leaf());
     }
 
     @Test
@@ -105,7 +135,7 @@ class LeafQuestServiceTest {
         answer.set(CompletableFuture.failedFuture(new IllegalStateException("offline")));
         LeafQuestService service = service();
 
-        service.refreshNow();
+        service.requestRefresh();
 
         assertEquals(State.UNAVAILABLE, service.state());
     }
@@ -115,7 +145,7 @@ class LeafQuestServiceTest {
         CompletableFuture<Snapshot> late = new CompletableFuture<>();
         answer.set(late);
         LeafQuestService service = service();
-        service.refreshNow();
+        service.requestRefresh();
 
         service.reset();
         late.complete(snapshot(99));
