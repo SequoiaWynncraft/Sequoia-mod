@@ -37,6 +37,32 @@ import net.minecraft.sounds.SoundEvents;
  */
 public final class UnlockOverlay {
 
+    /**
+     * The medal's look. Both share a disc whose middle is 16 art pixels in from
+     * their top left, so emblems and numbers sit the same in either. The ribbon
+     * medal was the first design; switch back here to use it again.
+     */
+    enum MedalStyle {
+        /** An octagon with a bevelled rim, like the popups' clipped-corner frames. */
+        BADGE("unlock_medal_", 32, 27),
+        /** A round medal hanging two swallowtail ribbons. */
+        RIBBON("unlock_medal_ribbon_", 42, 30);
+
+        final String prefix;
+        /** The sprite's height in art pixels; all are 32 wide. */
+        final int height;
+        /** How far below the medal's middle the ceremony's title sits, in art pixels. */
+        final int titleBelow;
+
+        MedalStyle(String prefix, int height, int titleBelow) {
+            this.prefix = prefix;
+            this.height = height;
+            this.titleBelow = titleBelow;
+        }
+    }
+
+    static final MedalStyle MEDAL_STYLE = MedalStyle.BADGE;
+
     /** UI pixels per art pixel for toasts and cards. */
     static final float SMALL_PIXEL = 2;
     /** UI pixels per art pixel for the ceremony. */
@@ -182,7 +208,7 @@ public final class UnlockOverlay {
      */
     private static void medal(UiCanvas canvas, UnlockPopup popup, float x, float y, float scale, float a) {
         String tier = popup.tier() == null ? "gold" : popup.tier();
-        sprite(canvas, "unlock_medal_" + tier, x, y, 32, scale, a);
+        sprite(canvas, MEDAL_STYLE.prefix + tier, x, y, 32, scale, a);
         if ("level".equals(tier)) {
             medalNumber(canvas, popup.level(), x, y, scale, mix(color(tierToken(tier)), Color.WHITE, 0.55f), a);
             return;
@@ -253,7 +279,7 @@ public final class UnlockOverlay {
         float textRight = x + w - 5 * p;
         if (milestone) {
             float medalX = x + 5 * p;
-            float medalY = y + (h - 42 * p) / 2;
+            float medalY = snap(y + (h - MEDAL_STYLE.height * p) / 2, p);
             float medalCx = medalX + 16 * p;
             float medalCy = medalY + 16 * p;
             // The tier's light behind the medal, kept inside the card.
@@ -372,12 +398,12 @@ public final class UnlockOverlay {
         // The medal, popping through whole scales, white for a beat as it lands.
         int scale = medalScaleFor(frame.medalScale(), p);
         if (scale > 0) {
-            float medalWidth = 32 * scale;
-            float medalHeight = 42 * scale;
-            float mx = cx - medalWidth / 2 + sx;
-            float my = cy - medalHeight / 2 + 4 * scale + sy;
+            float mx = cx - 16 * scale + sx;
+            float my = cy - 16 * scale + sy;
             medal(canvas, popup, mx, my, scale, a);
-            if (UnlockAnimation.flashing(elapsed)) sprite(canvas, "unlock_medal_flash", mx, my, 32, scale, 0.85f * a);
+            if (UnlockAnimation.flashing(elapsed)) {
+                sprite(canvas, MEDAL_STYLE.prefix + "flash", mx, my, 32, scale, 0.85f * a);
+            }
         }
         if (elapsed > 400) {
             twinkle(canvas, cx - 30 * p, cy - 18 * p, frame, 0, p, a);
@@ -389,7 +415,7 @@ public final class UnlockOverlay {
         // The title on a ribbon banner in the tier's colours, typing itself.
         String title = popup.title() == null ? "" : popup.title().toUpperCase(Locale.ROOT);
         float titleSize = 10 * p + 10;
-        float titleY = cy + 30 * p + sy;
+        float titleY = cy + MEDAL_STYLE.titleBelow * p + sy;
         float bannerWidth = snap(measure(title, titleSize) + 16 * p, p) * UnlockAnimation.bannerOpen(elapsed);
         float bannerX = banner(canvas, cx + sx, titleY, snap(bannerWidth, p), BANNER_HEIGHT * p, p, accent, a);
         // Centred on the banner as drawn, which sits on the art-pixel grid, so the margins match.

@@ -50,6 +50,21 @@ class UnlockArtTest {
     }
 
     @Test
+    void everyMedalIsAMirrorImageWithItsDiscCentredOnTheSixteenthPixel() throws IOException {
+        for (String style : List.of("unlock_medal_", "unlock_medal_ribbon_")) {
+            for (String tier : List.of("bronze", "silver", "gold", "platinum", "diamond", "obsidian", "mythril", "level", "flash")) {
+                BufferedImage medal = load(style + tier);
+                assertEquals(32, medal.getWidth(), style + tier);
+                for (int y = 0; y < medal.getHeight(); y++) {
+                    for (int x = 0; x < 16; x++) {
+                        assertEquals(visible(medal, x, y), visible(medal, 31 - x, y), style + tier + " row " + y);
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     void theTowerAndThePortalAreMirrorImages() throws IOException {
         for (String name : List.of("unlock_war", "unlock_raid")) {
             BufferedImage image = load(name);
