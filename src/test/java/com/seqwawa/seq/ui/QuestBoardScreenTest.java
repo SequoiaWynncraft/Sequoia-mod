@@ -142,4 +142,24 @@ class QuestBoardScreenTest {
         assertEquals(QuestBoardScreen.SUMMARY_HEIGHT + 3 * QuestBoardScreen.CARD_HEIGHT + 2 * 6,
                 QuestBoardScreen.contentHeight(140, 3));
     }
+
+    @Test
+    void aRewardShrinksAndThenShortensToStayInItsHalfOfTheRow() {
+        // Six pixels a character at 13, five at 11.
+        java.util.function.BiFunction<String, Float, Float> measure = (text, size) -> text.length() * (size >= 13 ? 6f : 5f);
+
+        assertEquals(new QuestBoardScreen.LeafFit("+1,000", 13, 52), QuestBoardScreen.leafFit(1_000, 60, measure));
+        assertEquals(new QuestBoardScreen.LeafFit("+1,000", 11, 44), QuestBoardScreen.leafFit(1_000, 50, measure));
+        assertEquals(new QuestBoardScreen.LeafFit("+12.5k", 11, 44), QuestBoardScreen.leafFit(12_480, 45, measure));
+        assertNull(QuestBoardScreen.leafFit(12_480, 20, measure));
+    }
+
+    @Test
+    void shortCountsKeepOneDecimalOnlyWhenItSaysSomething() {
+        assertEquals("950", QuestBoardScreen.shortCount(950));
+        assertEquals("1k", QuestBoardScreen.shortCount(1_000));
+        assertEquals("12.5k", QuestBoardScreen.shortCount(12_480));
+        assertEquals("250k", QuestBoardScreen.shortCount(250_000));
+        assertEquals("1.5M", QuestBoardScreen.shortCount(1_500_000));
+    }
 }
