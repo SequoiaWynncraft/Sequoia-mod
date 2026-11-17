@@ -75,6 +75,24 @@ class UnlockOverlayTest {
     }
 
     @Test
+    void theCeremonyFitsShortScreensWithSmallerArt() {
+        // 360 UI pixels tall (1280x720 at GUI scale 2): 3-pixel art, the group from 58 to 301.
+        float tall = UnlockOverlay.ceremonyCentre(360, 3);
+        assertTrue(tall - 17 * 3 >= 0 && tall + 64 * 3 <= 360);
+        // 205 tall: 2-pixel art, still all on screen.
+        float short_ = UnlockOverlay.ceremonyCentre(205, 2);
+        assertTrue(short_ - 17 * 2 >= 0 && short_ + 64 * 2 <= 205);
+        assertEquals(List.of(0, 1, 2, 3, 2), List.of(0, 1, 2, 4, 3).stream()
+                .map(scale -> UnlockOverlay.medalScaleFor(scale, 2)).toList());
+    }
+
+    @Test
+    void toastsMoveUnderTheCardWhenTheScreenIsTooNarrowForBoth() {
+        assertEquals(8f, UnlockOverlay.toastTop(960));
+        assertEquals(116f, UnlockOverlay.toastTop(568));
+    }
+
+    @Test
     void framesSitOnTheArtPixelGrid() {
         assertEquals(12f, UnlockOverlay.snap(12.9f, 3));
         assertEquals(14f, UnlockOverlay.snap(13.1f, 2));

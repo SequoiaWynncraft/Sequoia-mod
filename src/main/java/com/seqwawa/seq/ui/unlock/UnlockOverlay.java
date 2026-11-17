@@ -38,6 +38,9 @@ public final class UnlockOverlay {
     /** UI pixels per art pixel for the ceremony. */
     static final float BIG_PIXEL = 3;
     static final int MAX_TOASTS = 3;
+    static final float TOAST_WIDTH = 176;
+    static final float CARD_MAX_WIDTH = 320;
+    static final float CARD_MAX_HEIGHT = 96;
     static final int MAX_WAITING = 8;
     private static final String FONT = "mc";
     private static final int PARTICLES = 16;
@@ -126,10 +129,10 @@ public final class UnlockOverlay {
 
     private static void drawToast(UiCanvas canvas, UnlockPopup popup, Frame frame, float screenWidth, int index) {
         float p = SMALL_PIXEL;
-        float w = 176;
+        float w = TOAST_WIDTH;
         float h = 44;
         float x = snap(screenWidth - 8 - w + frame.slide() * (w + 8), p);
-        float y = snap(8 + index * (h + 6), p);
+        float y = snap(toastTop(screenWidth) + index * (h + 6), p);
         float a = frame.opacity();
         pixelPanel(canvas, x, y, w, h, p, color(CONTROL_SUCCESS), a);
         sprite(canvas, "leaf", x + 6 * p, y + 3 * p - frame.bob() * p, 16, p, a);
@@ -145,8 +148,8 @@ public final class UnlockOverlay {
         float p = SMALL_PIXEL;
         boolean milestone = popup.tier() != null && !"level".equals(popup.tier()) && popup.eyebrow() != null
                 && popup.eyebrow().startsWith("Milestone");
-        float w = Math.min(320, Math.max(220, screenWidth - 32));
-        float h = milestone ? 96 : 76;
+        float w = Math.min(CARD_MAX_WIDTH, Math.max(220, screenWidth - 32));
+        float h = milestone ? CARD_MAX_HEIGHT : 76;
         float x = snap((screenWidth - w) / 2, p);
         float y = snap(12 - frame.slide() * (h + 24), p);
         float a = frame.opacity();
@@ -181,11 +184,12 @@ public final class UnlockOverlay {
 
     private static void drawCeremony(
             UiCanvas canvas, UnlockPopup popup, Frame frame, long elapsed, float screenWidth, float screenHeight) {
-        float p = BIG_PIXEL;
+        // Big art pixels when there is room, smaller ones on a short screen, so the whole group fits.
+        float p = screenHeight >= 300 ? BIG_PIXEL : SMALL_PIXEL;
         float a = frame.opacity();
         canvas.fillRect(0, 0, screenWidth, screenHeight, new Color(8, 6, 5, Math.round(165 * frame.backdrop())));
         float cx = snap(screenWidth / 2, p);
-        float cy = snap(Math.max(110, screenHeight * 0.38f), p);
+        float cy = snap(ceremonyCentre(screenHeight, p), p);
 
         float burst = 96 * p;
         sprite(canvas, "unlock_burst_" + frame.burstFrame(), cx - burst / 2, cy - burst / 2, 96, p, 0.55f * a);
@@ -200,7 +204,7 @@ public final class UnlockOverlay {
             }
         }
 
-        int scale = frame.medalScale();
+        int scale = medalScaleFor(frame.medalScale(), p);
         if (scale > 0) {
             float medalWidth = 32 * scale;
             float medalHeight = 42 * scale;
@@ -218,7 +222,7 @@ public final class UnlockOverlay {
         String title = popup.title() == null ? "" : popup.title().toUpperCase(Locale.ROOT);
         String typed = title.substring(0, UnlockAnimation.typedLetters(elapsed, title.length()));
         float titleY = cy + 30 * p;
-        shadowText(canvas, typed, cx, titleY, 40, accent, a, HorizontalAlign.CENTER, 4);
+        shadowText(canvas, typed, cx, titleY, 10 * p + 10, accent, a, HorizontalAlign.CENTER, p + 1);
         if (elapsed > 450 + UnlockAnimation.TYPE_MS_PER_LETTER * title.length() && popup.detail() != null) {
             shadowText(canvas, popup.detail(), cx, titleY + 13 * p, 20, color(TEXT_PRIMARY), a, HorizontalAlign.CENTER, 2);
         }
@@ -230,6 +234,26 @@ public final class UnlockOverlay {
             pixelPanel(canvas, chipX, chipY, chipWidth, chipHeight, p, color(CONTROL_SUCCESS), a);
             drawReward(canvas, popup, chipX + 5 * p, chipY + chipHeight / 2, frame.counter(), a, p * 2 / 3);
         }
+    }
+
+    /** Toasts sit in the top corner, or under the card's place when the screen is too narrow for both. */
+    static float toastTop(float screenWidth) {
+        boolean sideBySide = screenWidth >= CARD_MAX_WIDTH + 2 * (TOAST_WIDTH + 16);
+        return sideBySide ? 8 : 12 + CARD_MAX_HEIGHT + 8;
+    }
+
+    /**
+     * Where the medal's middle goes so the group, from the medal's top (17 art
+     * pixels above it) to the reward chip's bottom (64 below), sits in the middle.
+     */
+    static float ceremonyCentre(float screenHeight, float p) {
+        return Math.max(17 * p + 4, screenHeight / 2 - 23.5f * p);
+    }
+
+    /** The animation's medal scales are for 3-pixel art; smaller art pops through smaller scales. */
+    static int medalScaleFor(int scale, float p) {
+        if (p >= BIG_PIXEL) return scale;
+        return scale >= 4 ? 3 : Math.min(scale, 2);
     }
 
     // ── Pieces ──
