@@ -89,7 +89,17 @@ class UnlockOverlayTest {
     @Test
     void toastsMoveUnderTheCardWhenTheScreenIsTooNarrowForBoth() {
         assertEquals(8f, UnlockOverlay.toastTop(960));
-        assertEquals(116f, UnlockOverlay.toastTop(568));
+        assertEquals(120f, UnlockOverlay.toastTop(568));
+    }
+
+    @Test
+    void bannerTailsHaveAVNotchInTheMiddle() {
+        // 14 rows: two pixels deep at rows 6 and 7, one pixel at rows 5 and 8, none elsewhere.
+        assertTrue(UnlockOverlay.inNotch(6, 14, 1));
+        assertFalse(UnlockOverlay.inNotch(6, 14, 2));
+        assertTrue(UnlockOverlay.inNotch(5, 14, 0));
+        assertFalse(UnlockOverlay.inNotch(5, 14, 1));
+        assertFalse(UnlockOverlay.inNotch(0, 14, 0));
     }
 
     @Test

@@ -29,7 +29,7 @@ class UnlockPopupTest {
         UnlockPopup popup = from("quest_completed",
                 "{\"quest\":{\"slot\":\"weekly\",\"title\":\"Complete 12 TCC raids\",\"reward\":{\"leaf\":800,\"xp\":400}}}");
 
-        assertEquals(new UnlockPopup(Kind.CARD, "Weekly quest done", "Complete 12 TCC raids", null, 800, 400, "diamond"),
+        assertEquals(new UnlockPopup(Kind.CARD, "Weekly quest completed", "Complete 12 TCC raids", null, 800, 400, "diamond"),
                 popup);
     }
 
@@ -67,7 +67,7 @@ class UnlockPopupTest {
 
     @Test
     void aLevelUpIsACeremony() {
-        assertEquals(new UnlockPopup(Kind.CEREMONY, "Sequoia level", "Level 8", "Your Leaf level went up", 0, 0, "level"),
+        assertEquals(new UnlockPopup(Kind.CEREMONY, "Sequoia level", "Level 8", "Leaf level up", 0, 0, "level"),
                 from("level_up", "{\"level\":8}"));
     }
 

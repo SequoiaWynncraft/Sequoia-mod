@@ -8,7 +8,7 @@ import java.util.Set;
 /**
  * One thing worth celebrating, made from a Leaf event.
  *
- * @param eyebrow the small line above the title, such as "Daily quest done"
+ * @param eyebrow the small line above the title, such as "Daily quest completed"
  * @param title the main line, such as "Complete 3 NOL raids" or "Diamond"
  * @param detail the line under it, such as "1,000 TNA raids", or null
  * @param tier which medal and colours to use: {@code bronze} to {@code mythril}, {@code level}, or null
@@ -43,7 +43,7 @@ public record UnlockPopup(Kind kind, String eyebrow, String title, String detail
                 if (quest == null) yield null;
                 JsonObject reward = object(quest, "reward");
                 String slot = text(quest, "slot");
-                yield new UnlockPopup(Kind.CARD, slotName(slot) + " quest done", text(quest, "title"), null,
+                yield new UnlockPopup(Kind.CARD, slotName(slot) + " quest completed", text(quest, "title"), null,
                         reward == null ? 0 : number(reward, "leaf"), reward == null ? 0 : number(reward, "xp"),
                         questTier(slot));
             }
@@ -58,7 +58,7 @@ public record UnlockPopup(Kind kind, String eyebrow, String title, String detail
                         number(data, "leaf"), number(data, "xp"), tier);
             }
             case "level_up" -> new UnlockPopup(Kind.CEREMONY, "Sequoia level", "Level " + number(data, "level"),
-                    "Your Leaf level went up", 0, 0, "level");
+                    "Leaf level up", 0, 0, "level");
             default -> null;
         };
     }

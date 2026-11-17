@@ -32,7 +32,7 @@ public final class UnlockAnimation {
      * @param medalScale the medal's whole-number scale, 0 while it has not appeared
      * @param counter how far the Leaf amount has counted up, from 0 to 1
      * @param backdrop how dark the ceremony's backdrop is, from 0 to 1
-     * @param burstFrame which of the four burst frames shows
+     * @param raysFrame which of the eight ray frames shows
      * @param bob 1 every other beat, so small icons hop by one pixel
      */
     public record Frame(
@@ -42,7 +42,7 @@ public final class UnlockAnimation {
             int medalScale,
             float counter,
             float backdrop,
-            int burstFrame,
+            int raysFrame,
             int bob) {
         static final Frame INACTIVE = new Frame(false, 0, 1, 0, 0, 0, 0, 0);
     }
@@ -70,9 +70,57 @@ public final class UnlockAnimation {
                     medalScale(elapsedMs),
                     progress(elapsedMs, 1_200, 2_400),
                     Math.min(1f, elapsedMs / 400f) * fadeOut(elapsedMs, total, 600),
-                    (int) (elapsedMs / 110 % 4),
+                    (int) (elapsedMs / 90 % 8),
                     bob);
         };
+    }
+
+    /** When the medal lands, at its overshoot: the flash, the shake and the shockwave start here. */
+    static final long LAND_MS = 270;
+    static final long RING_FRAME_MS = 60;
+    static final int RING_FRAMES = 6;
+
+    /** The medal shows as a white silhouette for the first beat after it lands. */
+    static boolean flashing(long elapsedMs) {
+        return elapsedMs >= LAND_MS && elapsedMs < LAND_MS + 70;
+    }
+
+    /** A small shake on landing, in art pixels: four beats, then still. */
+    static int[] shake(long elapsedMs) {
+        if (elapsedMs < LAND_MS || elapsedMs >= LAND_MS + 160) return new int[] {0, 0};
+        int[][] beats = {{1, 0}, {-1, 1}, {0, -1}, {1, 1}};
+        return beats[(int) ((elapsedMs - LAND_MS) / 40 % beats.length)];
+    }
+
+    /** Which shockwave frame shows, or -1 when there is none. */
+    static int ringFrame(long elapsedMs) {
+        if (elapsedMs < LAND_MS) return -1;
+        long frame = (elapsedMs - LAND_MS) / RING_FRAME_MS;
+        return frame < RING_FRAMES ? (int) frame : -1;
+    }
+
+    /** The second, slower ray layer turns the other way. */
+    static int counterRaysFrame(long elapsedMs) {
+        return 7 - (int) (elapsedMs / 130 % 8);
+    }
+
+    /** How far the title banner has unrolled, in eight steps, as the title starts to type. */
+    static float bannerOpen(long elapsedMs) {
+        return steps(progress(elapsedMs, 380, 560), 8);
+    }
+
+    /**
+     * Where a rising ember is, as a fraction of the screen: it drifts up from below
+     * the bottom, sways, and starts again. Null while it is between flickers.
+     */
+    static float[] ember(int seed, long elapsedMs) {
+        float t = elapsedMs / 1000f;
+        float x = (seed * 0.61803398875f) % 1f;
+        float speed = 0.16f + (seed * 7 % 11) * 0.02f;
+        float y = 1.08f - ((t * speed + (seed * 0.37f) % 1f) % 1.16f);
+        x += (float) Math.sin(t * 2.2f + seed) * 0.012f;
+        boolean lit = (elapsedMs / 110 + seed) % 6 != 0;
+        return lit ? new float[] {x, y} : null;
     }
 
     /** Drops in from above in four steps, overshoots by one step, settles. */

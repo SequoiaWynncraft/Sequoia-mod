@@ -27,9 +27,10 @@ import net.minecraft.sounds.SoundEvents;
  * cards and ceremonies take turns in the middle. A popup's clock starts the
  * first time it is drawn, so one that arrives while a menu is open waits.
  *
- * <p>Everything is pixel art: sprites drawn at whole scales on a grid of art
- * pixels, frames drawn pixel by pixel, text in the Minecraft font at sizes
- * where each of its pixels covers whole UI pixels.
+ * <p>Everything is pixel art on a grid of art pixels: sprites at whole scales,
+ * frames and banners drawn pixel by pixel, text in the Minecraft font at sizes
+ * where each of its pixels covers whole UI pixels, and every gap a whole number
+ * of art pixels.
  */
 public final class UnlockOverlay {
 
@@ -38,12 +39,19 @@ public final class UnlockOverlay {
     /** UI pixels per art pixel for the ceremony. */
     static final float BIG_PIXEL = 3;
     static final int MAX_TOASTS = 3;
-    static final float TOAST_WIDTH = 176;
-    static final float CARD_MAX_WIDTH = 320;
-    static final float CARD_MAX_HEIGHT = 96;
     static final int MAX_WAITING = 8;
+    static final float TOAST_WIDTH = 92 * SMALL_PIXEL;
+    static final float TOAST_HEIGHT = 26 * SMALL_PIXEL;
+    static final float CARD_MAX_WIDTH = 160 * SMALL_PIXEL;
+    static final float CARD_MAX_HEIGHT = 50 * SMALL_PIXEL;
     private static final String FONT = "mc";
-    private static final int PARTICLES = 16;
+    private static final int LEAVES = 10;
+    private static final int EMBERS = 28;
+    /** Where the background stars sit, as fractions of the screen, clear of the middle. */
+    private static final float[][] STARS = {
+        {0.12f, 0.18f}, {0.84f, 0.14f}, {0.22f, 0.62f}, {0.78f, 0.58f}, {0.06f, 0.4f},
+        {0.93f, 0.36f}, {0.32f, 0.08f}, {0.66f, 0.86f}, {0.4f, 0.9f}, {0.58f, 0.06f},
+    };
 
     private static final UnlockOverlay INSTANCE =
             new UnlockOverlay(() -> System.nanoTime() / 1_000_000L, UnlockOverlay::playSound);
@@ -112,72 +120,102 @@ public final class UnlockOverlay {
         if (visible.isEmpty()) return;
         float width = canvas.metrics().width();
         float height = canvas.metrics().height();
+        // The ceremony first, so toasts and cards stay readable on top of it.
+        for (Playing playing : visible) {
+            if (playing.popup().kind() != Kind.CEREMONY) continue;
+            long elapsed = now - playing.startedAtMs();
+            Frame frame = UnlockAnimation.frame(Kind.CEREMONY, elapsed);
+            if (frame.active()) drawCeremony(canvas, playing.popup(), frame, elapsed, width, height);
+        }
         int toastIndex = 0;
         for (Playing playing : visible) {
             long elapsed = now - playing.startedAtMs();
             Frame frame = UnlockAnimation.frame(playing.popup().kind(), elapsed);
             if (!frame.active()) continue;
-            switch (playing.popup().kind()) {
-                case TOAST -> drawToast(canvas, playing.popup(), frame, width, toastIndex++);
-                case CARD -> drawCard(canvas, playing.popup(), frame, width);
-                case CEREMONY -> drawCeremony(canvas, playing.popup(), frame, elapsed, width, height);
-            }
+            if (playing.popup().kind() == Kind.TOAST) drawToast(canvas, playing.popup(), frame, width, toastIndex++);
+            if (playing.popup().kind() == Kind.CARD) drawCard(canvas, playing.popup(), frame, elapsed, width);
         }
     }
 
     // ── Toast: Leaf from one raid or war ──
 
+    /**
+     * 92 by 26 art pixels: a one-pixel frame, the Leaf icon five pixels in from the
+     * left and the top, and the text four pixels after it. The icon hops one pixel
+     * and never touches the frame.
+     */
     private static void drawToast(UiCanvas canvas, UnlockPopup popup, Frame frame, float screenWidth, int index) {
         float p = SMALL_PIXEL;
-        float w = TOAST_WIDTH;
-        float h = 44;
-        float x = snap(screenWidth - 8 - w + frame.slide() * (w + 8), p);
-        float y = snap(toastTop(screenWidth) + index * (h + 6), p);
+        float x = snap(screenWidth - 4 * p - TOAST_WIDTH + frame.slide() * (TOAST_WIDTH + 4 * p), p);
+        float y = snap(toastTop(screenWidth) + index * (TOAST_HEIGHT + 3 * p), p);
         float a = frame.opacity();
-        pixelPanel(canvas, x, y, w, h, p, color(CONTROL_SUCCESS), a);
-        sprite(canvas, "leaf", x + 6 * p, y + 3 * p - frame.bob() * p, 16, p, a);
+        pixelPanel(canvas, x, y, TOAST_WIDTH, TOAST_HEIGHT, p, color(CONTROL_SUCCESS), a);
+        sprite(canvas, "leaf", x + 5 * p, y + 5 * p - frame.bob() * p, 16, p, a);
+        float textX = x + 25 * p;
         long counted = Math.round(popup.leaf() * frame.counter());
-        shadowText(canvas, "+" + UnlockPopup.formatCount(counted), x + 21 * p, y + 8 * p, 20, color(CONTROL_SUCCESS), a,
-                HorizontalAlign.LEFT, p);
-        fitted(canvas, popup.detail(), x + 21 * p, y + 17 * p, w - 25 * p, 10, color(TEXT_SECONDARY), a);
+        outlinedText(canvas, "+" + UnlockPopup.formatCount(counted), textX, y + 10 * p, 20, color(CONTROL_SUCCESS),
+                a, HorizontalAlign.LEFT);
+        fitted(canvas, popup.detail(), textX, y + 19 * p, x + TOAST_WIDTH - 4 * p - textX, 10, color(TEXT_SECONDARY), a);
     }
 
     // ── Card: a finished quest or a Bronze to Gold milestone ──
 
-    private static void drawCard(UiCanvas canvas, UnlockPopup popup, Frame frame, float screenWidth) {
+    /**
+     * 160 art pixels wide, 42 tall for a quest and 50 for a milestone. The icon
+     * sits five pixels in; the text starts six pixels after it, with its lines
+     * ten pixels apart. A band of light sweeps across as it lands.
+     */
+    private static void drawCard(UiCanvas canvas, UnlockPopup popup, Frame frame, long elapsed, float screenWidth) {
         float p = SMALL_PIXEL;
-        boolean milestone = popup.tier() != null && !"level".equals(popup.tier()) && popup.eyebrow() != null
-                && popup.eyebrow().startsWith("Milestone");
-        float w = Math.min(CARD_MAX_WIDTH, Math.max(220, screenWidth - 32));
-        float h = milestone ? CARD_MAX_HEIGHT : 76;
+        boolean milestone = popup.eyebrow() != null && popup.eyebrow().startsWith("Milestone");
+        float w = Math.min(CARD_MAX_WIDTH, Math.max(110 * p, screenWidth - 16 * p));
+        float h = milestone ? CARD_MAX_HEIGHT : 42 * p;
         float x = snap((screenWidth - w) / 2, p);
-        float y = snap(12 - frame.slide() * (h + 24), p);
+        float y = snap(6 * p - frame.slide() * (h + 12 * p), p);
         float a = frame.opacity();
         Color accent = color(tierToken(popup.tier()));
         pixelPanel(canvas, x, y, w, h, p, accent, a);
+        shine(canvas, x, y, w, h, p, elapsed, a);
 
         float textX;
         if (milestone) {
-            sprite(canvas, "unlock_medal_" + popup.tier(), x + 5 * p, y + 3 * p, 32, p, a);
-            textX = x + 42 * p;
+            float medalY = y + (h - 42 * p) / 2;
+            sprite(canvas, "unlock_medal_" + popup.tier(), x + 5 * p, medalY, 32, p, a);
+            textX = x + 43 * p;
         } else {
-            float tile = 20 * p;
-            float tx = x + 6 * p;
-            float ty = y + (h - tile) / 2;
-            canvas.fillRect(tx, ty, tile, tile, withAlpha(color(CONTROL_INPUT), a));
-            pixelBorder(canvas, tx, ty, tile, tile, p, withAlpha(accent, a));
-            sprite(canvas, "leaf", tx + 2 * p, ty + 2 * p - frame.bob() * p, 16, p, a);
-            textX = x + 32 * p;
+            float tile = 22 * p;
+            float tileX = x + 5 * p;
+            float tileY = y + (h - tile) / 2;
+            canvas.fillRect(tileX + p, tileY + p, tile - 2 * p, tile - 2 * p, withAlpha(color(CONTROL_INPUT), a));
+            pixelBorder(canvas, tileX, tileY, tile, tile, p, withAlpha(accent, a));
+            sprite(canvas, "leaf", tileX + 3 * p, tileY + 3 * p - frame.bob() * p, 16, p, a);
+            textX = x + 33 * p;
         }
-        float textWidth = x + w - 6 * p - textX;
-        shadowText(canvas, popup.eyebrow(), textX, y + 7 * p, 10, accent, a, HorizontalAlign.LEFT, p / 2);
-        fittedShadow(canvas, popup.title(), textX, y + 17 * p, textWidth, 20, color(TEXT_PRIMARY), a, p);
-        if (popup.detail() != null) {
-            fitted(canvas, popup.detail(), textX, y + 27 * p, textWidth, 10, color(TEXT_SECONDARY), a);
+        float textWidth = x + w - 5 * p - textX;
+        outlinedText(canvas, fit(popup.eyebrow(), textWidth, 10), textX, y + 9 * p, 10, accent, a, HorizontalAlign.LEFT);
+        outlinedText(canvas, fit(popup.title(), textWidth, 20), textX, y + 19 * p, 20, color(TEXT_PRIMARY), a,
+                HorizontalAlign.LEFT);
+        if (milestone && popup.detail() != null) {
+            fitted(canvas, popup.detail(), textX, y + 28 * p, textWidth, 10, color(TEXT_SECONDARY), a);
         }
-        drawReward(canvas, popup, textX, y + h - 9 * p, frame.counter(), a, p);
-        twinkle(canvas, x + w - 7 * p, y + 3 * p, frame, 0, p, a);
-        twinkle(canvas, x + w - 15 * p, y + h - 9 * p, frame, 1, p, a);
+        drawReward(canvas, popup, textX, y + h - (milestone ? 11 : 10) * p, frame.counter(), a, p);
+    }
+
+    /** A diagonal band of light, one art pixel per row, crossing the card once as it lands. */
+    private static void shine(UiCanvas canvas, float x, float y, float w, float h, float p, long elapsed, float a) {
+        float t = UnlockAnimation.progress(elapsed, 320, 820);
+        if (t <= 0 || t >= 1) return;
+        int rows = Math.round(h / p) - 2;
+        float band = 6 * p;
+        float start = snap(x - band - rows * p / 2 + t * (w + band + rows * p), p);
+        canvas.save();
+        canvas.scissor(x + p, y + p, w - 2 * p, h - 2 * p);
+        Color light = new Color(255, 255, 255, Math.round(46 * a));
+        for (int row = 1; row <= rows; row++) {
+            float rowX = start + Math.round((rows - row) / 2f) * p;
+            canvas.fillRect(rowX, y + row * p, band, p, light);
+        }
+        canvas.restore();
     }
 
     // ── Ceremony: Platinum and up, and level ups ──
@@ -187,88 +225,168 @@ public final class UnlockOverlay {
         // Big art pixels when there is room, smaller ones on a short screen, so the whole group fits.
         float p = screenHeight >= 300 ? BIG_PIXEL : SMALL_PIXEL;
         float a = frame.opacity();
-        canvas.fillRect(0, 0, screenWidth, screenHeight, new Color(8, 6, 5, Math.round(165 * frame.backdrop())));
+        float dark = frame.backdrop();
+        String tier = popup.tier() == null ? "gold" : popup.tier();
+        Color accent = color(tierToken(popup.tier()));
+
+        // The world dims a little, and a lot towards the corners.
+        canvas.fillRect(0, 0, screenWidth, screenHeight, new Color(6, 4, 10, Math.round(75 * dark)));
+        AssetManager.Asset vignette = asset("unlock_vignette");
+        if (vignette != null) canvas.drawImage(vignette.getImage(), 0, 0, screenWidth, screenHeight, dark);
+
+        // Embers rising across the whole screen, and stars coming out one by one.
+        for (int seed = 1; seed <= EMBERS; seed++) {
+            float[] ember = UnlockAnimation.ember(seed, elapsed);
+            if (ember == null) continue;
+            float size = seed % 4 == 0 ? 2 * p : p;
+            Color colour = switch (seed % 3) {
+                case 0 -> accent;
+                case 1 -> mix(accent, Color.WHITE, 0.6f);
+                default -> new Color(255, 236, 170);
+            };
+            canvas.fillRect(snap(ember[0] * screenWidth, p), snap(ember[1] * screenHeight, p), size, size,
+                    withAlpha(colour, 0.9f * a * dark));
+        }
+        for (int i = 0; i < STARS.length; i++) {
+            if (elapsed < 250 + i * 90L) continue;
+            int step = (int) ((elapsed / 150 + i) % 3);
+            sprite(canvas, "unlock_sparkle_" + step, snap(STARS[i][0] * screenWidth, p), snap(STARS[i][1] * screenHeight, p),
+                    7, p, 0.8f * a);
+        }
+
         float cx = snap(screenWidth / 2, p);
         float cy = snap(ceremonyCentre(screenHeight, p), p);
+        int[] shake = UnlockAnimation.shake(elapsed);
+        float sx = shake[0] * p;
+        float sy = shake[1] * p;
 
-        float burst = 96 * p;
-        sprite(canvas, "unlock_burst_" + frame.burstFrame(), cx - burst / 2, cy - burst / 2, 96, p, 0.55f * a);
+        // Light: the tier's glow, breathing, and two layers of rays turning opposite ways.
+        float glow = 96 * p;
+        float breath = (elapsed / 420) % 2 == 0 ? 1f : 0.82f;
+        sprite(canvas, "unlock_glow_" + tier, cx - glow / 2 + sx, cy - glow / 2 + sy, 96, p, a * breath);
+        float slow = 96 * (p - 1);
+        sprite(canvas, "unlock_rays_" + UnlockAnimation.counterRaysFrame(elapsed), cx - slow / 2, cy - slow / 2, 96, p - 1,
+                0.45f * a);
+        float rays = 96 * p;
+        sprite(canvas, "unlock_rays_" + frame.raysFrame(), cx - rays / 2, cy - rays / 2, 96, p, 0.8f * a);
 
-        if (elapsed > 300) {
+        // The shockwave as the medal lands.
+        int ring = UnlockAnimation.ringFrame(elapsed);
+        if (ring >= 0) sprite(canvas, "unlock_ring_" + ring, cx - 32 * p, cy - 32 * p, 64, p, a);
+
+        // Leaves thrown out of the medal.
+        if (elapsed > UnlockAnimation.LAND_MS) {
             float fade = elapsed > 3_000 ? Math.max(0, 1 - (elapsed - 3_000) / 1_500f) : 1f;
-            String[] leaves = {"unlock_leaf_a", "unlock_leaf_b", "unlock_leaf_c", "unlock_leaf_gold"};
-            for (int seed = 1; seed <= PARTICLES; seed++) {
-                int[] offset = UnlockAnimation.leafOffset(seed, elapsed);
-                sprite(canvas, leaves[seed % leaves.length], cx + offset[0] * p - 3.5f * p,
-                        cy - 6 * p + offset[1] * p, 7, p, a * fade);
+            String[] leaves = {"unlock_leaf_a", "unlock_leaf_b", "unlock_leaf_c"};
+            for (int seed = 1; seed <= LEAVES; seed++) {
+                int[] offset = UnlockAnimation.leafOffset(seed * 3, elapsed - UnlockAnimation.LAND_MS + 300);
+                sprite(canvas, leaves[seed % leaves.length], cx + offset[0] * p - 3 * p, cy - 6 * p + offset[1] * p, 7, p,
+                        a * fade);
             }
         }
 
+        // The medal, popping through whole scales, white for a beat as it lands.
         int scale = medalScaleFor(frame.medalScale(), p);
         if (scale > 0) {
             float medalWidth = 32 * scale;
             float medalHeight = 42 * scale;
-            sprite(canvas, "unlock_medal_" + (popup.tier() == null ? "gold" : popup.tier()),
-                    cx - medalWidth / 2, cy - medalHeight / 2 + 4 * scale, 32, scale, a);
+            float mx = cx - medalWidth / 2 + sx;
+            float my = cy - medalHeight / 2 + 4 * scale + sy;
+            sprite(canvas, "unlock_medal_" + tier, mx, my, 32, scale, a);
+            if (UnlockAnimation.flashing(elapsed)) sprite(canvas, "unlock_medal_flash", mx, my, 32, scale, 0.85f * a);
         }
         if (elapsed > 400) {
             twinkle(canvas, cx - 30 * p, cy - 18 * p, frame, 0, p, a);
             twinkle(canvas, cx + 24 * p, cy - 24 * p, frame, 1, p, a);
-            twinkle(canvas, cx + 29 * p, cy + 6 * p, frame, 2, p, a);
-            twinkle(canvas, cx - 26 * p, cy + 14 * p, frame, 1, p, a);
+            twinkle(canvas, cx + 27 * p, cy + 8 * p, frame, 2, p, a);
+            twinkle(canvas, cx - 27 * p, cy + 12 * p, frame, 1, p, a);
         }
 
-        Color accent = color(tierToken(popup.tier()));
+        // The title on a ribbon banner in the tier's colours, typing itself.
         String title = popup.title() == null ? "" : popup.title().toUpperCase(Locale.ROOT);
+        float titleSize = 10 * p + 10;
+        float titleY = cy + 30 * p + sy;
+        float bannerWidth = snap(measure(title, titleSize) + 16 * p, p) * UnlockAnimation.bannerOpen(elapsed);
+        banner(canvas, cx + sx, titleY, snap(bannerWidth, p), 14 * p, p, accent, a);
         String typed = title.substring(0, UnlockAnimation.typedLetters(elapsed, title.length()));
-        float titleY = cy + 30 * p;
-        shadowText(canvas, typed, cx, titleY, 10 * p + 10, accent, a, HorizontalAlign.CENTER, p + 1);
+        outlinedText(canvas, typed, cx + sx, titleY, titleSize, mix(accent, Color.WHITE, 0.35f), a, HorizontalAlign.CENTER);
         if (elapsed > 450 + UnlockAnimation.TYPE_MS_PER_LETTER * title.length() && popup.detail() != null) {
-            shadowText(canvas, popup.detail(), cx, titleY + 13 * p, 20, color(TEXT_PRIMARY), a, HorizontalAlign.CENTER, 2);
+            outlinedText(canvas, popup.detail(), cx + sx, titleY + 13 * p, 20, color(TEXT_PRIMARY), a,
+                    HorizontalAlign.CENTER);
         }
         if (popup.leaf() > 0 && elapsed > 1_100) {
-            float chipWidth = 70 * p;
             float chipHeight = 13 * p;
+            float chipWidth = snap(rewardWidth(popup) + 10 * p, p);
             float chipX = snap(cx - chipWidth / 2, p);
-            float chipY = titleY + 21 * p;
+            float chipY = snap(titleY + 20 * p, p);
             pixelPanel(canvas, chipX, chipY, chipWidth, chipHeight, p, color(CONTROL_SUCCESS), a);
-            drawReward(canvas, popup, chipX + 5 * p, chipY + chipHeight / 2, frame.counter(), a, p * 2 / 3);
+            drawReward(canvas, popup, chipX + 5 * p, chipY + chipHeight / 2, frame.counter(), a, SMALL_PIXEL);
         }
-    }
-
-    /** Toasts sit in the top corner, or under the card's place when the screen is too narrow for both. */
-    static float toastTop(float screenWidth) {
-        boolean sideBySide = screenWidth >= CARD_MAX_WIDTH + 2 * (TOAST_WIDTH + 16);
-        return sideBySide ? 8 : 12 + CARD_MAX_HEIGHT + 8;
     }
 
     /**
-     * Where the medal's middle goes so the group, from the medal's top (17 art
-     * pixels above it) to the reward chip's bottom (64 below), sits in the middle.
+     * A ribbon banner: a band with a lit top row and a shaded bottom row, and a
+     * folded tail with a notch at each end, all a pixel at a time.
      */
-    static float ceremonyCentre(float screenHeight, float p) {
-        return Math.max(17 * p + 4, screenHeight / 2 - 23.5f * p);
+    private static void banner(UiCanvas canvas, float cx, float cy, float width, float height, float p, Color accent,
+            float a) {
+        if (width <= 0) return;
+        Color outline = withAlpha(mix(accent, Color.BLACK, 0.85f), a);
+        Color band = withAlpha(mix(accent, Color.BLACK, 0.6f), a * 0.92f);
+        Color tail = withAlpha(mix(accent, Color.BLACK, 0.75f), a * 0.92f);
+        Color lit = withAlpha(mix(accent, Color.BLACK, 0.3f), a);
+        float x = snap(cx - width / 2, p);
+        float y = snap(cy - height / 2, p);
+        // Tails, behind the band and a little lower, each with a V cut into its far end.
+        int rows = Math.round(height / p);
+        for (int side = 0; side < 2; side++) {
+            float tx = side == 0 ? x - 5 * p : x + width - p;
+            float ty = y + 3 * p;
+            for (int row = 0; row < rows; row++) {
+                for (int col = 0; col < 6; col++) {
+                    int fromEnd = side == 0 ? col : 5 - col;
+                    if (inNotch(row, rows, fromEnd)) continue;
+                    boolean edge = row == 0 || row == rows - 1 || fromEnd == 0 || fromEnd == 5
+                            || inNotch(row - 1, rows, fromEnd) || inNotch(row + 1, rows, fromEnd)
+                            || inNotch(row, rows, fromEnd - 1);
+                    canvas.fillRect(tx + col * p, ty + row * p, p, p, edge ? outline : tail);
+                }
+            }
+        }
+        canvas.fillRect(x, y, width, height, outline);
+        canvas.fillRect(x + p, y + p, width - 2 * p, height - 2 * p, band);
+        canvas.fillRect(x + p, y + p, width - 2 * p, p, lit);
+        canvas.fillRect(x + p, y + height - 2 * p, width - 2 * p, p, withAlpha(Color.BLACK, 0.3f * a));
     }
 
-    /** The animation's medal scales are for 3-pixel art; smaller art pops through smaller scales. */
-    static int medalScaleFor(int scale, float p) {
-        if (p >= BIG_PIXEL) return scale;
-        return scale >= 4 ? 3 : Math.min(scale, 2);
+    /** The V cut into a banner tail's far end: two pixels deep in the middle rows, one pixel either side. */
+    static boolean inNotch(int row, int rows, int fromEnd) {
+        int middle = rows / 2;
+        int depth = row == middle - 1 || row == middle ? 2 : row == middle - 2 || row == middle + 1 ? 1 : 0;
+        return fromEnd >= 0 && fromEnd < depth;
     }
 
     // ── Pieces ──
 
-    /** "+300 [leaf] +150 XP", counting up. */
+    /** "+300 [leaf] +150 XP", counting up. The leaf is 8 art pixels, the size of the font's own pixels. */
     private static void drawReward(UiCanvas canvas, UnlockPopup popup, float x, float y, float counter, float a, float p) {
         if (popup.leaf() <= 0) return;
         String amount = "+" + UnlockPopup.formatCount(Math.round(popup.leaf() * counter));
-        shadowText(canvas, amount, x, y, 20, color(CONTROL_SUCCESS), a, HorizontalAlign.LEFT, 2);
-        float after = x + measure(amount, 20) + 4;
-        sprite(canvas, "leaf", after, y - 8, 16, 1, a);
+        outlinedText(canvas, amount, x, y, 20, color(CONTROL_SUCCESS), a, HorizontalAlign.LEFT);
+        float leafX = snap(x + measure(amount, 20) + 2 * p, p);
+        sprite(canvas, "leaf_small", leafX, y - 4 * p, 8, p, a);
         if (popup.xp() > 0) {
-            shadowText(canvas, "+" + UnlockPopup.formatCount(Math.round(popup.xp() * counter)) + " XP",
-                    after + 24, y, 20, color(TEXT_SECONDARY), a, HorizontalAlign.LEFT, 2);
+            outlinedText(canvas, "+" + UnlockPopup.formatCount(Math.round(popup.xp() * counter)) + " XP",
+                    leafX + 8 * p + 4 * p, y, 20, color(TEXT_SECONDARY), a, HorizontalAlign.LEFT);
         }
+    }
+
+    /** How wide the reward line is once counted up, for sizing its chip. */
+    private static float rewardWidth(UnlockPopup popup) {
+        float p = SMALL_PIXEL;
+        float width = measure("+" + UnlockPopup.formatCount(popup.leaf()), 20) + 2 * p + 8 * p;
+        if (popup.xp() > 0) width += 4 * p + measure("+" + UnlockPopup.formatCount(popup.xp()) + " XP", 20);
+        return width;
     }
 
     /** A twinkling sparkle, out of step with its neighbours. */
@@ -295,27 +413,35 @@ public final class UnlockOverlay {
         canvas.fillRect(x + w - p, y + p, p, h - 2 * p, colour);
     }
 
+    private static AssetManager.Asset asset(String key) {
+        AssetManager.Asset asset = SeqClient.assetManager == null ? null : SeqClient.assetManager.getAsset(key);
+        return asset == null || asset.getImage() == null ? null : asset;
+    }
+
     /** Draws a square-pixel sprite at a whole scale, on the art-pixel grid. */
     private static void sprite(UiCanvas canvas, String key, float x, float y, int artWidth, float scale, float a) {
-        AssetManager.Asset asset = SeqClient.assetManager == null ? null : SeqClient.assetManager.getAsset(key);
-        if (asset == null || asset.getImage() == null || a <= 0) return;
+        AssetManager.Asset asset = asset(key);
+        if (asset == null || a <= 0) return;
         float width = artWidth * scale;
         float height = asset.getHeight() * (width / asset.getWidth());
         canvas.drawImage(asset.getImage(), Math.round(x), Math.round(y), width, height, Math.min(1f, a));
     }
 
-    /** Text with the Minecraft drop shadow: the same text, darker, one font pixel down and right. */
-    private static void shadowText(UiCanvas canvas, String value, float x, float y, float size, Color colour, float a,
-            HorizontalAlign align, float shadow) {
+    /**
+     * Text with a one-font-pixel outline all round, as pixel games letter their
+     * titles: the text in a dark tint of its colour in eight directions, then on top.
+     */
+    private static void outlinedText(UiCanvas canvas, String value, float x, float y, float size, Color colour, float a,
+            HorizontalAlign align) {
         if (value == null || value.isEmpty() || a <= 0) return;
-        Color dark = new Color(colour.getRed() / 4, colour.getGreen() / 4, colour.getBlue() / 4, Math.round(220 * a));
-        text(canvas, value, Math.round(x + shadow), Math.round(y + shadow), size, dark, align);
+        float o = Math.max(1, Math.round(size / 10));
+        Color dark = withAlpha(mix(colour, new Color(8, 6, 12), 0.82f), a);
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                if (dx != 0 || dy != 0) text(canvas, value, Math.round(x + dx * o), Math.round(y + dy * o), size, dark, align);
+            }
+        }
         text(canvas, value, Math.round(x), Math.round(y), size, withAlpha(colour, a), align);
-    }
-
-    private static void fittedShadow(UiCanvas canvas, String value, float x, float y, float width, float size, Color colour,
-            float a, float shadow) {
-        shadowText(canvas, fit(value, width, size), x, y, size, colour, a, HorizontalAlign.LEFT, shadow);
     }
 
     private static void fitted(UiCanvas canvas, String value, float x, float y, float width, float size, Color colour,
@@ -344,6 +470,26 @@ public final class UnlockOverlay {
         return UiRenderer.measureText(value, FONT, size).width();
     }
 
+    /** Toasts sit in the top corner, or under the card's place when the screen is too narrow for both. */
+    static float toastTop(float screenWidth) {
+        boolean sideBySide = screenWidth >= CARD_MAX_WIDTH + 2 * (TOAST_WIDTH + 16);
+        return sideBySide ? 4 * SMALL_PIXEL : 6 * SMALL_PIXEL + CARD_MAX_HEIGHT + 4 * SMALL_PIXEL;
+    }
+
+    /**
+     * Where the medal's middle goes so the group, from the medal's top (17 art
+     * pixels above it) to the reward chip's bottom (63 below), sits in the middle.
+     */
+    static float ceremonyCentre(float screenHeight, float p) {
+        return Math.max(17 * p + 4, screenHeight / 2 - 23 * p);
+    }
+
+    /** The animation's medal scales are for 3-pixel art; smaller art pops through smaller scales. */
+    static int medalScaleFor(int scale, float p) {
+        if (p >= BIG_PIXEL) return scale;
+        return scale >= 4 ? 3 : Math.min(scale, 2);
+    }
+
     static float snap(float value, float pixel) {
         return Math.round(value / pixel) * pixel;
     }
@@ -351,6 +497,14 @@ public final class UnlockOverlay {
     static Color withAlpha(Color colour, float a) {
         return new Color(colour.getRed(), colour.getGreen(), colour.getBlue(),
                 Math.max(0, Math.min(255, Math.round(colour.getAlpha() * a))));
+    }
+
+    static Color mix(Color from, Color to, float t) {
+        return new Color(
+                Math.round(from.getRed() + (to.getRed() - from.getRed()) * t),
+                Math.round(from.getGreen() + (to.getGreen() - from.getGreen()) * t),
+                Math.round(from.getBlue() + (to.getBlue() - from.getBlue()) * t),
+                from.getAlpha());
     }
 
     static UiColor tierToken(String tier) {

@@ -60,6 +60,35 @@ class UnlockAnimationTest {
     }
 
     @Test
+    void theMedalLandsWithAFlashAShakeAndAShockwave() {
+        long land = UnlockAnimation.LAND_MS;
+        assertFalse(UnlockAnimation.flashing(land - 1));
+        assertTrue(UnlockAnimation.flashing(land));
+        assertFalse(UnlockAnimation.flashing(land + 100));
+        assertEquals(List.of(0, 0), List.of(UnlockAnimation.shake(land - 1)[0], UnlockAnimation.shake(land - 1)[1]));
+        assertEquals(1, UnlockAnimation.shake(land)[0]);
+        assertEquals(0, UnlockAnimation.shake(land + 200)[0]);
+        assertEquals(-1, UnlockAnimation.ringFrame(land - 1));
+        assertEquals(0, UnlockAnimation.ringFrame(land));
+        assertEquals(5, UnlockAnimation.ringFrame(land + 5 * UnlockAnimation.RING_FRAME_MS));
+        assertEquals(-1, UnlockAnimation.ringFrame(land + 6 * UnlockAnimation.RING_FRAME_MS));
+    }
+
+    @Test
+    void theBannerUnrollsInStepsAndEmbersStayOnScreen() {
+        assertEquals(0f, UnlockAnimation.bannerOpen(300));
+        assertEquals(1f, UnlockAnimation.bannerOpen(1_000));
+        for (int seed = 1; seed <= 30; seed++) {
+            for (long ms = 0; ms < 6_400; ms += 250) {
+                float[] ember = UnlockAnimation.ember(seed, ms);
+                if (ember == null) continue;
+                assertTrue(ember[0] > -0.05f && ember[0] < 1.05f);
+                assertTrue(ember[1] > -0.1f && ember[1] <= 1.08f);
+            }
+        }
+    }
+
+    @Test
     void fallingLeavesStartWhereTheyAreThrownAndThenFall() {
         int[] start = UnlockAnimation.leafOffset(3, 300);
         int[] later = UnlockAnimation.leafOffset(3, 2_300);
