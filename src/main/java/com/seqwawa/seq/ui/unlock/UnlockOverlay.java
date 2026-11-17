@@ -206,9 +206,10 @@ public final class UnlockOverlay {
         float room = 17 * scale;
         float size = 10 * scale + 20;
         while (size > 10 && measure(text, size) > room) size -= 10;
-        // The font's middle allows for descenders that digits do not have, so digits sit a little low of it.
-        float y = medalY + 15.5f * scale + Math.round(size * 0.06f);
-        outlinedText(canvas, text, medalX + 15.5f * scale, y, size, fill, a, HorizontalAlign.CENTER);
+        // The disc's middle is the line between its 16th and 17th art pixels. Measured in game, the font's
+        // middle sits half a UI pixel above where digits look centred at this size.
+        float y = medalY + 16 * scale + size * 0.01f;
+        outlinedText(canvas, text, medalX + 16 * scale, y, size, fill, a, HorizontalAlign.CENTER);
     }
 
     /** A framed tile with a picture inside it: a raid's art, the war swords or the Sequoia icon. */
@@ -390,18 +391,22 @@ public final class UnlockOverlay {
         float titleSize = 10 * p + 10;
         float titleY = cy + 30 * p + sy;
         float bannerWidth = snap(measure(title, titleSize) + 16 * p, p) * UnlockAnimation.bannerOpen(elapsed);
-        banner(canvas, cx + sx, titleY, snap(bannerWidth, p), 14 * p, p, accent, a);
+        float bannerX = banner(canvas, cx + sx, titleY, snap(bannerWidth, p), BANNER_HEIGHT * p, p, accent, a);
+        // Centred on the banner as drawn, which sits on the art-pixel grid, so the margins match.
+        float titleX = bannerX + snap(bannerWidth, p) / 2;
         String typed = title.substring(0, UnlockAnimation.typedLetters(elapsed, title.length()));
-        outlinedText(canvas, typed, cx + sx, titleY, titleSize, mix(accent, Color.WHITE, 0.35f), a, HorizontalAlign.CENTER);
+        // While it types, it grows from where the whole title starts, not from the middle.
+        float titleLeft = titleX - measure(title, titleSize) / 2;
+        outlinedText(canvas, typed, titleLeft, titleY, titleSize, mix(accent, Color.WHITE, 0.35f), a, HorizontalAlign.LEFT);
         if (elapsed > 450 + UnlockAnimation.TYPE_MS_PER_LETTER * title.length() && popup.detail() != null) {
-            outlinedText(canvas, popup.detail(), cx + sx, titleY + 13 * p, 20, color(TEXT_PRIMARY), a,
+            outlinedText(canvas, popup.detail(), cx + sx, titleY + 15 * p, 20, color(TEXT_PRIMARY), a,
                     HorizontalAlign.CENTER);
         }
         if (popup.leaf() > 0 && elapsed > 1_100) {
             float chipHeight = 13 * p;
             float chipWidth = snap(rewardWidth(popup) + 10 * p, p);
             float chipX = snap(cx - chipWidth / 2, p);
-            float chipY = snap(titleY + 20 * p, p);
+            float chipY = snap(titleY + 22 * p, p);
             pixelPanel(canvas, chipX, chipY, chipWidth, chipHeight, p, color(CONTROL_SUCCESS), a);
             drawReward(canvas, popup, chipX + 5 * p, chipY + chipHeight / 2, frame.counter(), a, SMALL_PIXEL);
         }
@@ -411,9 +416,10 @@ public final class UnlockOverlay {
      * A ribbon banner: a band with a lit top row and a shaded bottom row, and a
      * folded tail with a notch at each end, all a pixel at a time.
      */
-    private static void banner(UiCanvas canvas, float cx, float cy, float width, float height, float p, Color accent,
+    /** Draws the banner and returns its left edge. */
+    private static float banner(UiCanvas canvas, float cx, float cy, float width, float height, float p, Color accent,
             float a) {
-        if (width <= 0) return;
+        if (width <= 0) return snap(cx, p);
         Color outline = withAlpha(mix(accent, Color.BLACK, 0.85f), a);
         Color band = withAlpha(mix(accent, Color.BLACK, 0.6f), a * 0.92f);
         Color tail = withAlpha(mix(accent, Color.BLACK, 0.75f), a * 0.92f);
@@ -440,6 +446,7 @@ public final class UnlockOverlay {
         canvas.fillRect(x + p, y + p, width - 2 * p, height - 2 * p, band);
         canvas.fillRect(x + p, y + p, width - 2 * p, p, lit);
         canvas.fillRect(x + p, y + height - 2 * p, width - 2 * p, p, withAlpha(Color.BLACK, 0.3f * a));
+        return x;
     }
 
     /** The V cut into a banner tail's far end: two pixels deep in the middle rows, one pixel either side. */
@@ -536,6 +543,9 @@ public final class UnlockOverlay {
     private static void outlinedText(UiCanvas canvas, String value, float x, float y, float size, Color colour, float a,
             HorizontalAlign align) {
         if (value == null || value.isEmpty() || a <= 0) return;
+        // Every glyph's advance includes the one-font-pixel gap after it, so centring the advances leaves the
+        // letters half a font pixel left of centre. Move them back.
+        if (align == HorizontalAlign.CENTER) x += size / 20;
         float o = Math.max(1, Math.round(size / 10));
         Color dark = withAlpha(mix(colour, new Color(8, 6, 12), 0.82f), a);
         for (int dx = -1; dx <= 1; dx++) {
@@ -578,12 +588,15 @@ public final class UnlockOverlay {
         return sideBySide ? 4 * SMALL_PIXEL : 6 * SMALL_PIXEL + CARD_MAX_HEIGHT + 4 * SMALL_PIXEL;
     }
 
+    /** The title banner's height in art pixels: the title, with clear space above and below it. */
+    static final int BANNER_HEIGHT = 18;
+
     /**
      * Where the medal's middle goes so the group, from the medal's top (17 art
-     * pixels above it) to the reward chip's bottom (63 below), sits in the middle.
+     * pixels above it) to the reward chip's bottom (65 below), sits in the middle.
      */
     static float ceremonyCentre(float screenHeight, float p) {
-        return Math.max(17 * p + 4, screenHeight / 2 - 23 * p);
+        return Math.max(17 * p + 4, screenHeight / 2 - 24 * p);
     }
 
     /** The animation's medal scales are for 3-pixel art; smaller art pops through smaller scales. */
