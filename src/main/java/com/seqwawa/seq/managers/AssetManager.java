@@ -43,6 +43,7 @@ public class AssetManager {
         "cross.png",
         "gaz_ears.png",
         "textures/map/HQ_icon.png",
+        "textures/leaf/leaf.png",
     };
 
     @Getter
