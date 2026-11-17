@@ -43,6 +43,7 @@ public final class LeafQuestService {
     private volatile boolean refreshFailed;
     private volatile long lastAttemptAtMs;
     private volatile int generation;
+    private volatile boolean preview;
 
     LeafQuestService(Supplier<CompletableFuture<Snapshot>> fetcher, LongSupplier clock) {
         this.fetcher = fetcher;
@@ -82,17 +83,33 @@ public final class LeafQuestService {
         loading = false;
         refreshFailed = false;
         lastAttemptAtMs = 0;
+        preview = false;
         snapshot = Snapshot.EMPTY;
         state = State.LOADING;
     }
 
+    /** Makes the next {@link #requestRefresh()} read at once: Leaf just reported a change. */
+    public void markStale() {
+        lastAttemptAtMs = 0;
+    }
+
+    /** Shows fixed sample data and never reads Leaf. Only for the development preview. */
+    public synchronized void showPreview(Snapshot sample) {
+        generation++;
+        preview = true;
+        loading = false;
+        refreshFailed = false;
+        snapshot = sample;
+        state = State.READY;
+    }
+
     /**
      * Reads unless a read is running or the last attempt was under a minute ago. The
-     * first read after starting or {@link #reset()} always goes ahead.
+     * first read after starting, {@link #reset()} or {@link #markStale()} always goes ahead.
      */
     public synchronized boolean requestRefresh() {
         long now = clock.getAsLong();
-        if (loading || lastAttemptAtMs != 0 && now - lastAttemptAtMs < REFRESH_INTERVAL_MS) {
+        if (loading || preview || lastAttemptAtMs != 0 && now - lastAttemptAtMs < REFRESH_INTERVAL_MS) {
             return false;
         }
         loading = true;

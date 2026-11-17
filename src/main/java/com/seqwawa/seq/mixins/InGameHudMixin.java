@@ -11,6 +11,7 @@ import com.seqwawa.seq.raids.tna.TnaBeamIndicatorHudRenderer;
 import com.seqwawa.seq.ui.SequoiaScreen;
 import com.seqwawa.seq.ui.SettingsScreen;
 import com.seqwawa.seq.ui.WarTerritoryQueueHudRenderer;
+import com.seqwawa.seq.ui.unlock.UnlockOverlay;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -37,11 +38,13 @@ public class InGameHudMixin implements EventBusAccessor {
                 seqdispatch(new Render2DEvent(context, tickCounter.getGameTimeDeltaPartialTick(true)));
                 TnaBeamIndicatorHudRenderer.render(canvas);
                 WarTerritoryQueueHudRenderer.render(canvas);
+                UnlockOverlay.getInstance().render(canvas);
             });
         } else if (isChatScreen(currentScreen.getClass())) {
             UiRenderer.renderScreen(currentScreen, canvas -> {
                 TnaBeamIndicatorHudRenderer.render(canvas);
                 WarTerritoryQueueHudRenderer.render(canvas);
+                UnlockOverlay.getInstance().render(canvas);
             });
         }
     }
