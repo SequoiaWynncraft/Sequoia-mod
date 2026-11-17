@@ -17,7 +17,7 @@ class UnlockOverlayTest {
     private final UnlockOverlay overlay = new UnlockOverlay(now::get, popup -> started.add(popup.title()));
 
     private static UnlockPopup popup(Kind kind, String title) {
-        return new UnlockPopup(kind, null, title, null, 100, 100, "gold");
+        return new UnlockPopup(kind, null, title, null, 100, 100, "gold", null);
     }
 
     private List<String> showing() {

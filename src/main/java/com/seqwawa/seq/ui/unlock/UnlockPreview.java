@@ -144,6 +144,7 @@ public final class UnlockPreview {
                 popup("leaf_earned", "{\"source\":\"raid\",\"leaf\":330,\"xp\":330,\"detail\":\"The Nameless Anomaly\"}"),
                 popup("leaf_earned", "{\"source\":\"war\",\"leaf\":60,\"xp\":60,\"detail\":\"Detlas\"}"),
                 popup("quest_completed", "{\"quest\":{\"slot\":\"daily\",\"title\":\"Complete 3 NOL raids\","
+                        + "\"objective\":{\"type\":\"raids\",\"raid\":\"nol\"},"
                         + "\"reward\":{\"leaf\":300,\"xp\":150}}}"),
                 popup("achievement_paid", "{\"ladder\":\"raid:NOTG\",\"milestone\":\"gold\",\"tier\":\"gold\","
                         + "\"threshold\":100,\"label\":\"Gold\",\"leaf\":1000,\"xp\":1000}"),

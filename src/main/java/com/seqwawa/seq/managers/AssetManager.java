@@ -44,7 +44,12 @@ public class AssetManager {
         "gaz_ears.png",
         "textures/map/HQ_icon.png",
         "textures/leaf/leaf.png",
-        "textures/leaf/leaf_small.png",
+        "textures/unlock/unlock_emblem_icon.png",
+        "textures/unlock/unlock_emblem_nol.png",
+        "textures/unlock/unlock_emblem_notg.png",
+        "textures/unlock/unlock_emblem_tcc.png",
+        "textures/unlock/unlock_emblem_tna.png",
+        "textures/unlock/unlock_emblem_twp.png",
         "textures/unlock/unlock_glow_bronze.png",
         "textures/unlock/unlock_glow_diamond.png",
         "textures/unlock/unlock_glow_gold.png",
@@ -83,6 +88,7 @@ public class AssetManager {
         "textures/unlock/unlock_sparkle_1.png",
         "textures/unlock/unlock_sparkle_2.png",
         "textures/unlock/unlock_vignette.png",
+        "textures/unlock/unlock_war.png",
     };
 
     @Getter

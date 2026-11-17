@@ -18,18 +18,20 @@ class UnlockPopupTest {
 
     @Test
     void leafFromARaidOrWarIsASmallToast() {
-        assertEquals(new UnlockPopup(Kind.TOAST, null, "+330", "The Nameless Anomaly", 330, 330, null),
+        assertEquals(new UnlockPopup(Kind.TOAST, null, "+330", "The Nameless Anomaly", 330, 330, null, "tna"),
                 from("leaf_earned", "{\"source\":\"raid\",\"leaf\":330,\"xp\":330,\"detail\":\"The Nameless Anomaly\"}"));
-        assertEquals("War for Detlas",
-                from("leaf_earned", "{\"source\":\"war\",\"leaf\":60,\"xp\":60,\"detail\":\"Detlas\"}").detail());
+        UnlockPopup war = from("leaf_earned", "{\"source\":\"war\",\"leaf\":60,\"xp\":60,\"detail\":\"Detlas\"}");
+        assertEquals("War for Detlas", war.detail());
+        assertEquals("unlock_war", war.icon());
     }
 
     @Test
     void aFinishedQuestIsACardInItsSlotsColours() {
         UnlockPopup popup = from("quest_completed",
-                "{\"quest\":{\"slot\":\"weekly\",\"title\":\"Complete 12 TCC raids\",\"reward\":{\"leaf\":800,\"xp\":400}}}");
+                "{\"quest\":{\"slot\":\"weekly\",\"title\":\"Complete 12 TCC raids\",\"objective\":{\"type\":\"raids\","
+                        + "\"raid\":\"tcc\"},\"reward\":{\"leaf\":800,\"xp\":400}}}");
 
-        assertEquals(new UnlockPopup(Kind.CARD, "Weekly quest completed", "Complete 12 TCC raids", null, 800, 400, "diamond"),
+        assertEquals(new UnlockPopup(Kind.CARD, "Weekly quest completed", "Complete 12 TCC raids", null, 800, 400, "diamond", "tcc"),
                 popup);
     }
 
@@ -67,8 +69,28 @@ class UnlockPopupTest {
 
     @Test
     void aLevelUpIsACeremony() {
-        assertEquals(new UnlockPopup(Kind.CEREMONY, "Sequoia level", "Level 8", "Leaf level up", 0, 0, "level"),
+        assertEquals(new UnlockPopup(Kind.CEREMONY, "Sequoia level", "Level 8", "Leaf level up", 0, 0, "level", "unlock_emblem_icon"),
                 from("level_up", "{\"level\":8}"));
+    }
+
+    @Test
+    void showsWhereTheRewardCameFrom() {
+        assertEquals("nol", UnlockPopup.raidIconByName("Orphion's Nexus of Light"));
+        assertEquals("twp", UnlockPopup.raidIconByName("The Wartorn Palace"));
+        assertEquals("icon", UnlockPopup.raidIconByName("A raid added next season"));
+        assertEquals("twp", UnlockPopup.objectiveIcon("raids", "wtp"));
+        assertEquals("icon", UnlockPopup.objectiveIcon("raids", null));
+        assertEquals("unlock_war", UnlockPopup.objectiveIcon("wars", null));
+        assertEquals("star", UnlockPopup.objectiveIcon("season_rating", null));
+    }
+
+    @Test
+    void aMilestonesMedalCarriesItsRaidsArtOrTheGuildsOrTheTower() {
+        assertEquals("unlock_emblem_tna", UnlockPopup.emblem("raid:TNA"));
+        assertEquals("unlock_emblem_twp", UnlockPopup.emblem("raid:TWP"));
+        assertEquals("unlock_emblem_icon", UnlockPopup.emblem("raid:all raids"));
+        assertEquals("unlock_war", UnlockPopup.emblem("war:completed"));
+        assertEquals("unlock_emblem_icon", UnlockPopup.emblem("raid:SOMETHING NEW"));
     }
 
     @Test
