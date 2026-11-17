@@ -34,6 +34,21 @@ class SseParserTest {
     }
 
     @Test
+    void anEventCutOffBeforeItsBlankLineIsNotResumedPast() {
+        SseParser parser = new SseParser();
+        parser.accept("id: 41");
+        parser.accept("");
+
+        parser.accept("id: 42");
+        parser.accept("event: quest_completed");
+        parser.accept("data: {\"id\":42}");
+
+        assertEquals("41", parser.lastEventId(), "the connection could drop here; 42 must be sent again");
+        parser.accept("");
+        assertEquals("42", parser.lastEventId());
+    }
+
+    @Test
     void joinsDataLinesAndIgnoresKeepAliveComments() {
         SseParser parser = new SseParser();
 

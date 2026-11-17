@@ -26,9 +26,10 @@ public final class CombatState {
             try {
                 if (WynntilsCombat.inRaidOrWar()) return true;
             } catch (Throwable unavailable) {
-                // An older or newer Wynntils without these models: fall back to the scoreboard.
+                // An older or newer Wynntils without these models: fall back to what the game itself shows.
             }
         }
-        return WynnPartyScoreboardReader.raidSidebarActive();
+        // Without Wynntils: a raid's sidebar, or a war's sidebar or instance.
+        return WynnPartyScoreboardReader.raidSidebarActive() || MinecraftWarWorldDetector.isWarInstance();
     }
 }
