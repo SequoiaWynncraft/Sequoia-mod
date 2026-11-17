@@ -49,7 +49,7 @@ public final class QuestBoardScreen extends Screen {
     private static final float MARGIN = SequoiaUiStyle.CONTENT_PADDING;
     private static final float HEADER_HEIGHT = SequoiaUiStyle.HEADER_HEIGHT;
     private static final float CARD_GAP = 6;
-    private static final float MIN_CARD_WIDTH = 200;
+    private static final float MIN_CARD_WIDTH = 140;
     private static final float PADDING = 12;
     private static final float ICON_SIZE = 40;
     private static final float SCROLL_SPEED = 30;
@@ -139,42 +139,83 @@ public final class QuestBoardScreen extends Screen {
                 color(TEXT_SECONDARY));
     }
 
+    /**
+     * One slot, laid out like a quest card in a game: the slot and its timer on
+     * top, the objective's tile in the middle, the quest under it, and progress
+     * and reward along the bottom. Narrow enough for three side by side.
+     */
     private static void renderCard(UiCanvas canvas, Card card, float x, float y, float width) {
         canvas.fillRect(x, y, width, CARD_HEIGHT, color(BACKGROUND_CONTENT));
         canvas.fillRect(x, y, width, 1, color(ACCENT_DIVIDER));
         float inner = Math.max(0, width - PADDING * 2);
-        fittedText(canvas, card.heading(), x + PADDING, y + 16, inner, 13, color(ACCENT_PRIMARY_HOVER));
-        fittedText(canvas, card.timer(), x + PADDING, y + 32, inner, 11, color(TEXT_MUTED));
+        float centre = x + width / 2;
+        centredText(canvas, card.heading(), centre, y + 16, inner, 13, color(ACCENT_PRIMARY_HOVER));
+        centredText(canvas, card.timer(), centre, y + 31, inner, 11, color(TEXT_MUTED));
 
         Quest quest = card.quest();
         if (quest == null) {
-            fittedText(canvas, card.emptyLine(), x + PADDING, y + 74, inner, 12, color(TEXT_SECONDARY));
+            List<String> lines = wrap(card.emptyLine(), inner, 12);
+            for (int i = 0; i < lines.size(); i++) {
+                centredText(canvas, lines.get(i), centre, y + 80 + i * 16, inner, 12, color(TEXT_SECONDARY));
+            }
             return;
         }
-        drawObjectiveTile(canvas, quest.objective(), slotAccent(card.slot()), x + PADDING, y + 48);
-        float textX = x + PADDING + ICON_SIZE + 10;
-        float textWidth = Math.max(0, x + width - PADDING - textX);
-        fittedText(canvas, quest.title(), textX, y + 60, textWidth, 14, color(TEXT_PRIMARY));
-        fittedText(canvas, progressLabel(quest), textX, y + 78, textWidth, 12, color(TEXT_SECONDARY));
+        drawObjectiveTile(canvas, quest.objective(), slotAccent(card.slot()), centre - ICON_SIZE / 2, y + 44);
+        centredText(canvas, quest.title(), centre, y + 101, inner, 13, color(TEXT_PRIMARY));
 
+        float rowY = y + 122;
+        fittedText(canvas, progressLabel(quest), x + PADDING, rowY, inner / 2, 12, color(TEXT_SECONDARY));
+        renderReward(canvas, quest.reward(), x + width - PADDING, rowY, inner / 2 + 10);
         if (quest.completed()) {
-            Color done = color(CONTROL_SUCCESS);
-            canvas.strokeLine(x + PADDING, y + 106, x + PADDING + 3, y + 109, 1.5f, done);
-            canvas.strokeLine(x + PADDING + 3, y + 109, x + PADDING + 9, y + 102, 1.5f, done);
-            fittedText(canvas, "Done", x + PADDING + 16, y + 106, Math.max(0, inner - 16), 11, done);
+            canvas.fillRect(x + PADDING, y + 135, inner, 3, color(CONTROL_SUCCESS));
         } else {
-            canvas.fillRect(x + PADDING, y + 102, inner, 3, color(CONTROL_INPUT));
+            canvas.fillRect(x + PADDING, y + 135, inner, 3, color(CONTROL_INPUT));
             float ratio = progressRatio(quest);
-            if (ratio > 0) canvas.fillRect(x + PADDING, y + 102, inner * ratio, 3, color(ACCENT_PRIMARY));
+            if (ratio > 0) canvas.fillRect(x + PADDING, y + 135, inner * ratio, 3, color(ACCENT_PRIMARY));
         }
-        renderReward(canvas, quest.reward(), x + PADDING, y + 128);
     }
 
-    /** "+300 [leaf] +150 XP", with the Leaf icon in place of the word. */
-    private static void renderReward(UiCanvas canvas, Reward reward, float x, float y) {
+    /**
+     * "+300 [leaf] +150 XP", right-aligned at {@code right}, with the Leaf icon in
+     * place of the word. The XP is left out when there is no room for it.
+     */
+    private static void renderReward(UiCanvas canvas, Reward reward, float right, float y, float room) {
         if (reward == null) return;
-        float after = leafAmount(canvas, "+" + formatCount(reward.leaf()), x, y, 13, color(CONTROL_SUCCESS));
-        text(canvas, "+" + formatCount(reward.xp()) + " XP", after + 10, y, 12, color(TEXT_SECONDARY), LEFT);
+        String leaf = "+" + formatCount(reward.leaf());
+        String xp = "  +" + formatCount(reward.xp()) + " XP";
+        float leafWidth = measure(leaf, 13) + 3 + 13;
+        boolean withXp = leafWidth + measure(xp, 11) <= room;
+        float x = right - leafWidth - (withXp ? measure(xp, 11) : 0);
+        float after = leafAmount(canvas, leaf, x, y, 13, color(CONTROL_SUCCESS));
+        if (withXp) text(canvas, xp, after, y, 11, color(TEXT_SECONDARY), LEFT);
+    }
+
+    private static void centredText(UiCanvas canvas, String value, float centre, float y, float width, float size,
+            Color textColor) {
+        if (value == null || width <= 0) return;
+        String shown = value;
+        if (measure(shown, size) > width) {
+            while (!shown.isEmpty() && measure(shown + "...", size) > width) shown = shown.substring(0, shown.length() - 1);
+            shown = shown.isEmpty() ? "" : shown + "...";
+        }
+        text(canvas, shown, centre, y, size, textColor, CENTER);
+    }
+
+    /** Splits text into lines no wider than {@code width}, breaking at spaces. */
+    private static List<String> wrap(String value, float width, float size) {
+        List<String> lines = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        for (String word : value.split(" ")) {
+            String tried = line.isEmpty() ? word : line + " " + word;
+            if (!line.isEmpty() && measure(tried, size) > width) {
+                lines.add(line.toString());
+                line = new StringBuilder(word);
+            } else {
+                line = new StringBuilder(tried);
+            }
+        }
+        if (!line.isEmpty()) lines.add(line.toString());
+        return lines;
     }
 
     /** Draws an amount followed by the Leaf icon, or the word when the icon is not loaded. Returns where it ends. */

@@ -130,14 +130,16 @@ class QuestBoardScreenTest {
     @Test
     void layoutPutsTheThreeCardsSideBySideWhenThereIsRoomAndStacksThemOtherwise() {
         assertEquals(3, QuestBoardScreen.columnCount(640));
-        assertEquals(2, QuestBoardScreen.columnCount(420));
-        assertEquals(1, QuestBoardScreen.columnCount(150));
+        // A 1280x720 window at GUI scale 2 leaves about 484 UI pixels beside the sidebar: still three.
+        assertEquals(3, QuestBoardScreen.columnCount(484));
+        assertEquals(2, QuestBoardScreen.columnCount(300));
+        assertEquals(1, QuestBoardScreen.columnCount(140));
 
         List<QuestBoardScreen.Placement> wide = QuestBoardScreen.placements(624, 3);
         assertEquals(List.of(0f, 210f, 420f), wide.stream().map(QuestBoardScreen.Placement::x).toList());
         assertEquals(QuestBoardScreen.SUMMARY_HEIGHT + QuestBoardScreen.CARD_HEIGHT,
                 QuestBoardScreen.contentHeight(624, 3));
         assertEquals(QuestBoardScreen.SUMMARY_HEIGHT + 3 * QuestBoardScreen.CARD_HEIGHT + 2 * 6,
-                QuestBoardScreen.contentHeight(150, 3));
+                QuestBoardScreen.contentHeight(140, 3));
     }
 }
