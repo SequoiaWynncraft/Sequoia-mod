@@ -26,6 +26,7 @@ final class SequoiaSidebarNavigation {
             Destination.INGREDIENTS,
             Destination.MAP,
             Destination.MEMBERS,
+            Destination.QUESTS,
             Destination.GITHUB);
     private static final List<Destination> WAR_DESTINATIONS = List.of(
             Destination.PARTY_FINDER,
@@ -35,6 +36,7 @@ final class SequoiaSidebarNavigation {
             Destination.INGREDIENTS,
             Destination.MAP,
             Destination.MEMBERS,
+            Destination.QUESTS,
             Destination.WAR,
             Destination.GITHUB);
 
@@ -57,15 +59,17 @@ final class SequoiaSidebarNavigation {
             float screenHeight, int rowCount, float buttonHeight, float normalSpacing) {
         int rows = Math.max(1, rowCount);
         float startY = 50;
+        // A cramped sidebar starts its rows just under the title's divider at y=40.
+        float compactStartY = 43;
         float bottomMargin = 8;
         float minimumButtonHeight = 10;
         float minimumSpacing = 1;
-        float availableHeight = Math.max(minimumButtonHeight, screenHeight - startY - bottomMargin);
         float normalBlockHeight = buttonHeight * rows + normalSpacing * (rows - 1);
-        if (normalBlockHeight <= availableHeight) {
+        if (normalBlockHeight <= screenHeight - startY - bottomMargin) {
             return new SidebarLayout(startY, buttonHeight + normalSpacing, buttonHeight, rows);
         }
 
+        float availableHeight = Math.max(minimumButtonHeight, screenHeight - compactStartY - bottomMargin);
         float fittedButtonHeight = Math.max(
                 minimumButtonHeight,
                 Math.min(buttonHeight, (availableHeight - minimumSpacing * (rows - 1)) / rows));
@@ -74,7 +78,7 @@ final class SequoiaSidebarNavigation {
                 : Math.max(
                         minimumSpacing,
                         Math.min(normalSpacing, (availableHeight - fittedButtonHeight * rows) / (rows - 1)));
-        return new SidebarLayout(startY, fittedButtonHeight + fittedSpacing, fittedButtonHeight, rows);
+        return new SidebarLayout(compactStartY, fittedButtonHeight + fittedSpacing, fittedButtonHeight, rows);
     }
 
     static void render(UiCanvas canvas, Destination active, float mouseX, float mouseY) {
@@ -128,6 +132,7 @@ final class SequoiaSidebarNavigation {
             case MAP -> SeqClient.mc.setScreen(new WorldMapScreen(parent));
             case INGREDIENTS -> SeqClient.mc.setScreen(new IngredientGuideScreen(parent));
             case ACHIEVEMENTS -> SeqClient.mc.setScreen(new AchievementsScreen(parent));
+            case QUESTS -> SeqClient.mc.setScreen(new QuestBoardScreen(parent));
             // Routed through SeqClient, which sends a member with no profile to setup first.
             case MEMBERS -> SeqClient.openGuildMembersScreen(parent);
             case GITHUB -> openGithub();
@@ -149,6 +154,7 @@ final class SequoiaSidebarNavigation {
         SETTINGS("Settings"),
         MAP("Map"),
         MEMBERS("Player List"),
+        QUESTS("Quests"),
         INGREDIENTS("Ingredients"),
         GITHUB("Github");
 

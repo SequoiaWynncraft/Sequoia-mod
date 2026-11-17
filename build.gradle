@@ -218,8 +218,18 @@ def generateBuildConfig = tasks.register("generateBuildConfig") {
                         + "staging, or the https:// base URL of your backend (the mod refuses to sign in over http).")
     }
 
+    // Leaf, the guild currency and quests, is its own service. It checks the same
+    // sign-in token as the main backend. -Pleaf_api_url points a build at another
+    // deployment; it must be https, like every other address the mod signs in to.
+    def leafApiUrl = (project.findProperty("leaf_api_url")?.toString()?.trim() ?: "https://leaf.seqwawa.com")
+            .replaceAll("/+\$", "")
+    if (!leafApiUrl.startsWith("https://")) {
+        throw new GradleException("leaf_api_url='${leafApiUrl}' must be an https:// URL.")
+    }
+
     inputs.property("env", env)
     inputs.property("raidProfilesEnv", raidProfilesEnv)
+    inputs.property("leafApiUrl", leafApiUrl)
     outputs.dir(buildConfigDir)
 
     doLast {
@@ -236,6 +246,7 @@ public final class BuildConfig {
     public static final String API_URL = "${apiUrl}";
     public static final String RAID_PROFILES_ENVIRONMENT = "${raidProfilesEnv}";
     public static final String RAID_PROFILES_API_URL = "${raidProfilesApiUrl}";
+    public static final String LEAF_API_URL = "${leafApiUrl}";
 }
 """
     }

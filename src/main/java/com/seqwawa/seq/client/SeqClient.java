@@ -40,6 +40,7 @@ import com.seqwawa.seq.managers.GearSharingProtectionManager;
 import com.seqwawa.seq.managers.GlobalSoundListener;
 import com.seqwawa.seq.managers.GuildPresenceManager;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
+import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
@@ -83,6 +84,7 @@ import com.seqwawa.seq.ui.GuildMembersScreen;
 import com.seqwawa.seq.ui.RaidProfileSetupScreen;
 import com.seqwawa.seq.ui.IngredientGuideScreen;
 import com.seqwawa.seq.ui.AchievementsScreen;
+import com.seqwawa.seq.ui.QuestBoardScreen;
 import com.seqwawa.seq.ui.PartyFinderScreen;
 import com.seqwawa.seq.ui.PrincessRaidCelebration;
 import com.seqwawa.seq.ui.SequoiaScreen;
@@ -672,6 +674,7 @@ public class SeqClient implements ClientModInitializer {
         // Its token speaks for the previous account, so a save would land on their profile.
         RaidProfilesSession.getInstance().clear();
         GuildRaidProgressService.getInstance().reset();
+        LeafQuestService.getInstance().reset();
         resetWarTrackingState();
         if (guildStorageTracker != null) {
             guildStorageTracker.reset();
@@ -852,6 +855,10 @@ public class SeqClient implements ClientModInitializer {
 
     public static void openAchievementsScreen() {
         mc.execute(() -> mc.setScreen(new AchievementsScreen(mc.screen)));
+    }
+
+    public static void openQuestBoardScreen() {
+        mc.execute(() -> mc.setScreen(new QuestBoardScreen(mc.screen)));
     }
 
     public static void openIngredientGuideScreen() {

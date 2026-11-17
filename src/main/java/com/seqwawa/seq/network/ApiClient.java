@@ -27,6 +27,8 @@ import com.seqwawa.seq.managers.ChatManager;
 import com.seqwawa.seq.model.AllyRaidReport;
 import com.seqwawa.seq.model.CreateInviteResponse;
 import com.seqwawa.seq.model.GuildRaidProgress;
+import com.seqwawa.seq.model.LeafAccount;
+import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.model.Listing;
 import com.seqwawa.seq.model.PartyJoinPolicy;
 import com.seqwawa.seq.model.PartyRegion;
@@ -79,6 +81,7 @@ public class ApiClient {
     private final String authBaseUrl;
     /** Where raid profiles live, which can differ from {@link #baseUrl}. See build.gradle. */
     private final String raidProfilesBaseUrl;
+    private final String leafBaseUrl;
 
     public static ApiClient getInstance() {
         if (instance == null) {
@@ -97,15 +100,21 @@ public class ApiClient {
                 .connectTimeout(Duration.ofSeconds(10))
                 .executor(executor)
                 .build();
-        this.gson = new GsonBuilder()
-                .registerTypeAdapter(Instant.class, (JsonDeserializer<Instant>)
-                        (json, type, ctx) -> Instant.parse(json.getAsString()))
-                .registerTypeAdapter(
-                        Instant.class, (JsonSerializer<Instant>) (src, type, ctx) -> new JsonPrimitive(src.toString()))
-                .create();
+        this.gson = newGson();
         this.baseUrl = BuildConfig.API_URL;
         this.authBaseUrl = resolveAuthBaseUrl(BuildConfig.API_URL);
         this.raidProfilesBaseUrl = BuildConfig.RAID_PROFILES_API_URL;
+        this.leafBaseUrl = BuildConfig.LEAF_API_URL;
+    }
+
+    /** The Gson every response is read with: snake_case names come from annotations, times are ISO-8601. */
+    static Gson newGson() {
+        return new GsonBuilder()
+                .registerTypeAdapter(Instant.class, (JsonDeserializer<Instant>)
+                        (json, type, ctx) -> json.isJsonNull() ? null : Instant.parse(json.getAsString()))
+                .registerTypeAdapter(
+                        Instant.class, (JsonSerializer<Instant>) (src, type, ctx) -> new JsonPrimitive(src.toString()))
+                .create();
     }
 
     // ── Party Finder: Activities ──
@@ -348,6 +357,34 @@ public class ApiClient {
             cause = cause.getCause();
         }
         return cause;
+    }
+
+    // ── Leaf ──
+
+    /** The member's Leaf, XP and level, from the Leaf service, which takes the same sign-in token. */
+    public CompletableFuture<LeafAccount> getLeafAccount() {
+        return callWithTokenRetry(
+                force -> SeqClient.getAuthService().ensureValidToken(force),
+                token -> sendAsync(newRequestWithToken(leafBaseUrl, "/v1/me", token).GET().build(), LeafAccount.class));
+    }
+
+    /**
+     * The member's quests. With {@code sync}, Leaf first reads the raids and wars
+     * finished in the last minute, so one just finished already counts.
+     */
+    public CompletableFuture<LeafQuests> getLeafQuests(boolean sync) {
+        String path = sync ? "/v1/me/quests?sync=1" : "/v1/me/quests";
+        return callWithTokenRetry(
+                force -> SeqClient.getAuthService().ensureValidToken(force),
+                token -> sendAsync(newRequestWithToken(leafBaseUrl, path, token).GET().build(), LeafQuests.class));
+    }
+
+    /** Whether Leaf refused because the player is not a current Sequoia member. */
+    public static boolean isNotLeafMember(Throwable throwable) {
+        return unwrap(throwable) instanceof ApiException api
+                && api.getStatusCode() == 403
+                && api.getResponseBody() != null
+                && api.getResponseBody().contains("\"not_a_member\"");
     }
 
     public CompletableFuture<GuildRaidProgress> getGuildRaidProgress() {

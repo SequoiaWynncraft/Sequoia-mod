@@ -29,10 +29,10 @@ class SequoiaSidebarNavigationTest {
     @Test
     void warPlannerIsOnlyListedForAuthorizedMembers() {
         assertEquals(
-                List.of(PARTY_FINDER, SETTINGS, ACHIEVEMENTS, CONNECTION, INGREDIENTS, MAP, MEMBERS, GITHUB),
+                List.of(PARTY_FINDER, SETTINGS, ACHIEVEMENTS, CONNECTION, INGREDIENTS, MAP, MEMBERS, QUESTS, GITHUB),
                 SequoiaSidebarNavigation.destinations(false));
         assertEquals(
-                List.of(PARTY_FINDER, SETTINGS, ACHIEVEMENTS, CONNECTION, INGREDIENTS, MAP, MEMBERS, WAR, GITHUB),
+                List.of(PARTY_FINDER, SETTINGS, ACHIEVEMENTS, CONNECTION, INGREDIENTS, MAP, MEMBERS, QUESTS, WAR, GITHUB),
                 SequoiaSidebarNavigation.destinations(true));
     }
 

@@ -168,6 +168,11 @@ public class SeqCommand {
                                                         SeqClient.openAchievementsScreen();
                                                         return 1;
                                                 }))
+                                .then(ClientCommandManager.literal("quests")
+                                                .executes(ctx -> {
+                                                        SeqClient.openQuestBoardScreen();
+                                                        return 1;
+                                                }))
                                 .then(buildMapCommand())
                                 .then(buildWarCommand())
                                 .then(buildAllyRaidsCommand("allyraids"))
