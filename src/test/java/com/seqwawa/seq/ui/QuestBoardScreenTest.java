@@ -38,9 +38,9 @@ class QuestBoardScreenTest {
         List<QuestBoardScreen.Card> cards = QuestBoardScreen.cards(quests, NOW);
 
         assertEquals(List.of("daily", "weekly", "repeatable"), cards.stream().map(QuestBoardScreen.Card::slot).toList());
-        assertEquals(List.of("Daily · 2 of 3 banked", "Weekly", "Repeatable"),
+        assertEquals(List.of("Daily (2/3)", "Weekly", "Repeatable"),
                 cards.stream().map(QuestBoardScreen.Card::heading).toList());
-        assertEquals(List.of("Next daily in 6h 12m", "Ends in 5d 6h", "Finish it to unlock the next"),
+        assertEquals(List.of("Next daily in 6h 12m", "Ends in 5d 6h", "Next one when done"),
                 cards.stream().map(QuestBoardScreen.Card::timer).toList());
     }
 

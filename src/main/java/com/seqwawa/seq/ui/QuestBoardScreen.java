@@ -43,7 +43,7 @@ import org.jetbrains.annotations.NotNull;
 public final class QuestBoardScreen extends Screen {
 
     static final List<String> SLOTS = List.of(LeafQuests.DAILY, LeafQuests.WEEKLY, LeafQuests.REPEATABLE);
-    static final float CARD_HEIGHT = 150;
+    static final float CARD_HEIGHT = 160;
     static final float SUMMARY_HEIGHT = 30;
 
     private static final float MARGIN = SequoiaUiStyle.CONTENT_PADDING;
@@ -161,17 +161,22 @@ public final class QuestBoardScreen extends Screen {
             return;
         }
         drawObjectiveTile(canvas, quest.objective(), slotAccent(card.slot()), centre - ICON_SIZE / 2, y + 44);
-        centredText(canvas, quest.title(), centre, y + 101, inner, 13, color(TEXT_PRIMARY));
+        // Up to two lines, so a long quest is read in full instead of cut short.
+        List<String> title = wrap(quest.title(), inner, 13);
+        for (int i = 0; i < Math.min(2, title.size()); i++) {
+            String line = i == 1 && title.size() > 2 ? String.join(" ", title.subList(1, title.size())) : title.get(i);
+            centredText(canvas, line, centre, y + 100 + i * 15, inner, 13, color(TEXT_PRIMARY));
+        }
 
-        float rowY = y + 122;
+        float rowY = y + 132;
         fittedText(canvas, progressLabel(quest), x + PADDING, rowY, inner / 2, 12, color(TEXT_SECONDARY));
         renderReward(canvas, quest.reward(), x + width - PADDING, rowY, inner / 2 + 10);
         if (quest.completed()) {
-            canvas.fillRect(x + PADDING, y + 135, inner, 3, color(CONTROL_SUCCESS));
+            canvas.fillRect(x + PADDING, y + 145, inner, 3, color(CONTROL_SUCCESS));
         } else {
-            canvas.fillRect(x + PADDING, y + 135, inner, 3, color(CONTROL_INPUT));
+            canvas.fillRect(x + PADDING, y + 145, inner, 3, color(CONTROL_INPUT));
             float ratio = progressRatio(quest);
-            if (ratio > 0) canvas.fillRect(x + PADDING, y + 135, inner * ratio, 3, color(ACCENT_PRIMARY));
+            if (ratio > 0) canvas.fillRect(x + PADDING, y + 145, inner * ratio, 3, color(ACCENT_PRIMARY));
         }
     }
 
@@ -274,7 +279,7 @@ public final class QuestBoardScreen extends Screen {
     static String heading(String slot, Daily daily) {
         return switch (slot) {
             case LeafQuests.DAILY -> daily.charges() > 0
-                    ? "Daily · " + daily.charges() + " of " + daily.chargeCap() + " banked"
+                    ? "Daily (" + daily.charges() + "/" + daily.chargeCap() + ")"
                     : "Daily";
             case LeafQuests.WEEKLY -> "Weekly";
             default -> "Repeatable";
@@ -291,7 +296,7 @@ public final class QuestBoardScreen extends Screen {
                 String left = durationLabel(Duration.between(now, quest.expiresAt()));
                 yield quest.completed() ? "Done · new weekly in " + left : "Ends in " + left;
             }
-            default -> "Finish it to unlock the next";
+            default -> "Next one when done";
         };
     }
 
