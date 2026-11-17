@@ -80,10 +80,10 @@ class UnlockOverlayTest {
     void theCeremonyFitsShortScreensWithSmallerArt() {
         // 360 UI pixels tall (1280x720 at GUI scale 2): 3-pixel art, all of the group on screen.
         float tall = UnlockOverlay.ceremonyCentre(360, 3);
-        assertTrue(tall - 17 * 3 >= 0 && tall + UnlockOverlay.groupBelow() * 3 <= 360);
+        assertTrue(tall - UnlockOverlay.groupAbove() * 3 >= 0 && tall + UnlockOverlay.groupBelow() * 3 <= 360);
         // 205 tall: 2-pixel art, still all on screen.
         float short_ = UnlockOverlay.ceremonyCentre(205, 2);
-        assertTrue(short_ - 17 * 2 >= 0 && short_ + UnlockOverlay.groupBelow() * 2 <= 205);
+        assertTrue(short_ - UnlockOverlay.groupAbove() * 2 >= 0 && short_ + UnlockOverlay.groupBelow() * 2 <= 205);
         assertEquals(List.of(0, 1, 2, 3, 2), List.of(0, 1, 2, 4, 3).stream()
                 .map(scale -> UnlockOverlay.medalScaleFor(scale, 2)).toList());
     }
@@ -136,30 +136,6 @@ class UnlockOverlayTest {
         assertTrue(UnlockOverlay.inNotch(5, 14, 0));
         assertFalse(UnlockOverlay.inNotch(5, 14, 1));
         assertFalse(UnlockOverlay.inNotch(0, 14, 0));
-    }
-
-    @Test
-    void aboutOneToastInThreeWearsAVineAndTheSameRewardAlwaysLooksTheSame() {
-        int withVine = 0;
-        for (int i = 0; i < 300; i++) {
-            UnlockPopup toast = new UnlockPopup(Kind.TOAST, null, "+" + i, "War for Territory " + i, i, i, null, null);
-            if (UnlockOverlay.hasVine(toast)) withVine++;
-            assertEquals(UnlockOverlay.hasVine(toast), UnlockOverlay.hasVine(toast));
-        }
-        assertTrue(withVine > 70 && withVine < 130, "vines on " + withVine + " of 300");
-    }
-
-    @Test
-    void aToastWithAVineMovesDownSoItsVineKeepsClearOfTheToastAbove() {
-        UnlockPopup vined = null, plain = null;
-        for (int i = 0; vined == null || plain == null; i++) {
-            UnlockPopup toast = new UnlockPopup(Kind.TOAST, null, "+" + i, "War for Territory " + i, i, i, null, null);
-            if (UnlockOverlay.hasVine(toast)) vined = toast;
-            else plain = toast;
-        }
-        assertEquals(UnlockOverlay.VINE_REACH * UnlockOverlay.SMALL_PIXEL, UnlockOverlay.roomAboveToast(vined, false));
-        assertEquals(0f, UnlockOverlay.roomAboveToast(vined, true), "the top toast's vine has the screen's margin");
-        assertEquals(0f, UnlockOverlay.roomAboveToast(plain, false));
     }
 
     @Test

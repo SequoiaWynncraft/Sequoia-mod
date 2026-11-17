@@ -2,6 +2,7 @@ package com.seqwawa.seq.ui.unlock;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -65,28 +66,21 @@ class UnlockArtTest {
     }
 
     @Test
-    void bothLayersOfTheVinesAreMirrorImagesThatFitSixPixelsRoundTheMedal() throws IOException {
-        for (String layer : List.of("unlock_wreath_back", "unlock_wreath_front")) {
-            BufferedImage wreath = load(layer);
-            assertEquals(44, wreath.getWidth(), layer);
-            assertEquals(44, wreath.getHeight(), layer);
-            for (int y = 0; y < 44; y++) {
-                for (int x = 0; x < 22; x++) {
-                    assertEquals(visible(wreath, x, y), visible(wreath, 43 - x, y), layer + " row " + y);
-                }
+    void theIvyKeepsCloseToTheMedalAndOffTheEmblem() throws IOException {
+        // The medal sits 6 pixels into the 44-pixel square, its middle on the line at 22; the emblem fills
+        // about 10 pixels round that.
+        int margin = UnlockOverlay.IVY_INSET - UnlockOverlay.MedalStyle.IVY.reach();
+        BufferedImage ivy = load("unlock_ivy");
+        assertEquals(44, ivy.getWidth());
+        assertEquals(44, ivy.getHeight());
+        for (int y = 0; y < 44; y++) {
+            for (int x = 0; x < 44; x++) {
+                if (!visible(ivy, x, y)) continue;
+                boolean inside = x >= margin && x < 44 - margin && y >= margin && y < 44 - margin;
+                assertTrue(inside, "the ivy reaches past its square at " + x + ", " + y);
+                assertTrue(Math.hypot(x + 0.5 - 22, y + 0.5 - 22) >= 10, "the ivy covers the emblem at " + x + ", " + y);
             }
         }
-    }
-
-    @Test
-    void framesVinesAreTheSizeTheirPlacementExpects() throws IOException {
-        // Both run along their frame three pixels in from the sprite's edge, which is where the code places them.
-        BufferedImage card = load("unlock_vine_br");
-        assertEquals(28, card.getWidth());
-        assertEquals(22, card.getHeight());
-        BufferedImage toast = load("unlock_vine_small");
-        assertEquals(20, toast.getWidth());
-        assertEquals(13, toast.getHeight());
     }
 
     @Test

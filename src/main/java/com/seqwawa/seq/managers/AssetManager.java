@@ -62,6 +62,7 @@ public class AssetManager {
         "textures/unlock/unlock_icon_tcc.png",
         "textures/unlock/unlock_icon_tna.png",
         "textures/unlock/unlock_icon_twp.png",
+        "textures/unlock/unlock_ivy.png",
         "textures/unlock/unlock_leaf_a.png",
         "textures/unlock/unlock_leaf_b.png",
         "textures/unlock/unlock_leaf_c.png",
@@ -111,11 +112,7 @@ public class AssetManager {
         "textures/unlock/unlock_sparkle_1.png",
         "textures/unlock/unlock_sparkle_2.png",
         "textures/unlock/unlock_vignette.png",
-        "textures/unlock/unlock_vine_br.png",
-        "textures/unlock/unlock_vine_small.png",
         "textures/unlock/unlock_war.png",
-        "textures/unlock/unlock_wreath_back.png",
-        "textures/unlock/unlock_wreath_front.png",
     };
 
     @Getter
