@@ -148,10 +148,21 @@ class QuestBoardScreenTest {
         // Six pixels a character at 13, five at 11.
         java.util.function.BiFunction<String, Float, Float> measure = (text, size) -> text.length() * (size >= 13 ? 6f : 5f);
 
-        assertEquals(new QuestBoardScreen.LeafFit("+1,000", 13, 52), QuestBoardScreen.leafFit(1_000, 60, measure));
-        assertEquals(new QuestBoardScreen.LeafFit("+1,000", 11, 44), QuestBoardScreen.leafFit(1_000, 50, measure));
-        assertEquals(new QuestBoardScreen.LeafFit("+12.5k", 11, 44), QuestBoardScreen.leafFit(12_480, 45, measure));
-        assertNull(QuestBoardScreen.leafFit(12_480, 20, measure));
+        assertEquals(new QuestBoardScreen.LeafFit("+1,000", 13, 52), QuestBoardScreen.leafFit(1_000, 60, true, measure));
+        assertEquals(new QuestBoardScreen.LeafFit("+1,000", 11, 44), QuestBoardScreen.leafFit(1_000, 50, true, measure));
+        assertEquals(new QuestBoardScreen.LeafFit("+12.5k", 11, 44), QuestBoardScreen.leafFit(12_480, 45, true, measure));
+        assertNull(QuestBoardScreen.leafFit(12_480, 20, true, measure));
+    }
+
+    @Test
+    void withoutTheIconTheWordLeafCountsTowardsTheRoom() {
+        java.util.function.BiFunction<String, Float, Float> measure = (text, size) -> text.length() * (size >= 13 ? 6f : 5f);
+
+        // "+1,000" and "Leaf" at 13: 36 + 3 + 24.
+        assertEquals(new QuestBoardScreen.LeafFit("+1,000", 13, 63), QuestBoardScreen.leafFit(1_000, 63, false, measure));
+        assertEquals(new QuestBoardScreen.LeafFit("+1,000", 11, 53), QuestBoardScreen.leafFit(1_000, 60, false, measure));
+        assertEquals(new QuestBoardScreen.LeafFit("+1k", 11, 38), QuestBoardScreen.leafFit(1_000, 40, false, measure));
+        assertNull(QuestBoardScreen.leafFit(1_000, 30, false, measure));
     }
 
     @Test

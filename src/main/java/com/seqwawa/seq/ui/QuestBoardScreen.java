@@ -206,7 +206,7 @@ public final class QuestBoardScreen extends Screen {
      */
     private static void renderReward(UiCanvas canvas, Reward reward, float right, float y, float room) {
         if (reward == null) return;
-        LeafFit fit = leafFit(reward.leaf(), room, (text, size) -> measure(text, size));
+        LeafFit fit = leafFit(reward.leaf(), room, asset("leaf") != null, (text, size) -> measure(text, size));
         if (fit == null) return;
         String xp = "  +" + formatCount(reward.xp()) + " XP";
         boolean withXp = fit.width() + measure(xp, 11) <= room;
@@ -215,25 +215,29 @@ public final class QuestBoardScreen extends Screen {
         if (withXp) text(canvas, xp, after, y, 11, color(TEXT_SECONDARY), LEFT);
     }
 
-    /** The Leaf amount as drawn: its text, its size, and its width with the icon after it. */
+    /** The Leaf amount as drawn: its text, its size, and its width with the icon (or the word) after it. */
     record LeafFit(String text, float size, float width) {}
 
     /**
      * The largest way to write a Leaf amount that fits in {@code room}: in full at 13,
      * in full at 11, then shortened ("+12.5k") at 11. Null when even that does not fit.
+     * Without the icon loaded the amount is followed by the word, as {@link #leafAmount} draws it.
      */
-    static LeafFit leafFit(long leaf, float room, java.util.function.BiFunction<String, Float, Float> measure) {
+    static LeafFit leafFit(long leaf, float room, boolean icon, java.util.function.BiFunction<String, Float, Float> measure) {
         String full = "+" + formatCount(leaf);
         String shortened = "+" + shortCount(leaf);
-        for (LeafFit fit : List.of(fitAt(full, 13, measure), fitAt(full, 11, measure), fitAt(shortened, 11, measure))) {
+        for (LeafFit fit : List.of(fitAt(full, 13, icon, measure), fitAt(full, 11, icon, measure),
+                fitAt(shortened, 11, icon, measure))) {
             if (fit.width() <= room) return fit;
         }
         return null;
     }
 
-    private static LeafFit fitAt(String text, float size, java.util.function.BiFunction<String, Float, Float> measure) {
-        // The icon is drawn as wide as the text is tall, three pixels after it.
-        return new LeafFit(text, size, measure.apply(text, size) + 3 + Math.round(size));
+    private static LeafFit fitAt(String text, float size, boolean icon,
+            java.util.function.BiFunction<String, Float, Float> measure) {
+        // Three pixels after the amount: the icon, as wide as the text is tall, or the word.
+        float after = icon ? Math.round(size) : measure.apply("Leaf", size);
+        return new LeafFit(text, size, measure.apply(text, size) + 3 + after);
     }
 
     /** "950", "1.2k", "12.5k", "250k", "1.5M": short enough for a narrow card. */
