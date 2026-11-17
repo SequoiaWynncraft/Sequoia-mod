@@ -73,6 +73,16 @@ public final class WynnPartyScoreboardReader {
         return readPartyHealthRowsWithoutFallbacks(readSidebarLineComponents(), false);
     }
 
+    /** Whether Wynncraft's raid sidebar is showing, which it does for the whole of a raid. */
+    public static boolean raidSidebarActive() {
+        try {
+            PartyObservation observation = readPartyObservation();
+            return observation != null && observation.raidSidebarActive();
+        } catch (RuntimeException unreadable) {
+            return false;
+        }
+    }
+
     static PartyObservation readPartyObservation() {
         return observeParty(readSidebarLineComponents(), wynntilsPartyMembers());
     }

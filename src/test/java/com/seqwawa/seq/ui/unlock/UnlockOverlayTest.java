@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.seqwawa.seq.ui.unlock.UnlockPopup.Kind;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 
@@ -14,7 +15,8 @@ class UnlockOverlayTest {
 
     private final AtomicLong now = new AtomicLong(10_000);
     private final List<String> started = new ArrayList<>();
-    private final UnlockOverlay overlay = new UnlockOverlay(now::get, popup -> started.add(popup.title()));
+    private final AtomicBoolean fighting = new AtomicBoolean();
+    private final UnlockOverlay overlay = new UnlockOverlay(now::get, popup -> started.add(popup.title()), fighting::get);
 
     private static UnlockPopup popup(Kind kind, String title) {
         return new UnlockPopup(kind, null, title, null, 100, 100, "gold", null);
@@ -84,6 +86,40 @@ class UnlockOverlayTest {
         assertTrue(short_ - 17 * 2 >= 0 && short_ + 64 * 2 <= 205);
         assertEquals(List.of(0, 1, 2, 3, 2), List.of(0, 1, 2, 4, 3).stream()
                 .map(scale -> UnlockOverlay.medalScaleFor(scale, 2)).toList());
+    }
+
+    @Test
+    void ceremoniesWaitOutRaidsAndWarsWhileCardsAndToastsStillPlay() {
+        fighting.set(true);
+        overlay.enqueue(popup(Kind.CEREMONY, "diamond"));
+        overlay.enqueue(popup(Kind.CARD, "daily done"));
+        overlay.enqueue(popup(Kind.TOAST, "+330"));
+
+        assertEquals(List.of("+330", "daily done"), showing());
+        now.addAndGet(UnlockAnimation.CARD_MS);
+        assertEquals(List.of(), showing());
+        now.addAndGet(60_000);
+        assertEquals(List.of(), showing());
+
+        fighting.set(false);
+        assertEquals(List.of("diamond"), showing());
+    }
+
+    @Test
+    void aCeremonyCutShortByAFightPlaysAgainFromTheStartAfterwards() {
+        overlay.enqueue(popup(Kind.CEREMONY, "diamond"));
+        assertEquals(List.of("diamond"), showing());
+        now.addAndGet(2_000);
+
+        fighting.set(true);
+        assertEquals(List.of(), showing());
+        now.addAndGet(30_000);
+        fighting.set(false);
+
+        assertEquals(List.of("diamond"), showing());
+        assertEquals(List.of("diamond", "diamond"), started);
+        now.addAndGet(UnlockAnimation.CEREMONY_MS - 1);
+        assertEquals(List.of("diamond"), showing());
     }
 
     @Test

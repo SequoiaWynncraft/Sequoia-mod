@@ -41,6 +41,7 @@ import com.seqwawa.seq.managers.GlobalSoundListener;
 import com.seqwawa.seq.managers.GuildPresenceManager;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.LeafQuestService;
+import com.seqwawa.seq.managers.CombatState;
 import com.seqwawa.seq.managers.GuildRewardAutomationManager;
 import com.seqwawa.seq.managers.GuildStorageTracker;
 import com.seqwawa.seq.managers.GuildWarTrackerHandle;
@@ -485,6 +486,7 @@ public class SeqClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             // Listens for Leaf rewards only on Wynncraft and while connected to Sequoia; it checks both itself.
             LeafEventStream.getInstance().tick(true);
+            CombatState.tick();
             PrivateMessageGuildTagDecorator.tick();
             ConnectionManager.tickGuildRankObservations();
             while (openScreenKey.consumeClick()) {

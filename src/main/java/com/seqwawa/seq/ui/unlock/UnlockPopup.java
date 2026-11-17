@@ -13,8 +13,9 @@ import java.util.Set;
  * @param title the main line, such as "Complete 3 NOL raids" or "Diamond"
  * @param detail the line under it, such as "1,000 TNA raids", or null
  * @param tier which medal and colours to use: {@code bronze} to {@code mythril}, {@code level}, or null
- * @param icon what the reward came from: a raid's art or the war tower for toasts and quests, and the
- *     pixelated emblem in the middle of a milestone's or level up's medal
+ * @param icon what the reward came from: a raid's art, the raid portal or the war tower for toasts and
+ *     quests, and the emblem in the middle of a milestone's medal. Null for a level up, whose medal shows
+ *     the level itself
  */
 public record UnlockPopup(
         Kind kind, String eyebrow, String title, String detail, long leaf, long xp, String tier, String icon) {
@@ -52,7 +53,7 @@ public record UnlockPopup(
                 yield new UnlockPopup(Kind.CARD, slotName(slot) + " quest completed", text(quest, "title"), null,
                         reward == null ? 0 : number(reward, "leaf"), reward == null ? 0 : number(reward, "xp"),
                         questTier(slot),
-                        objective == null ? SEQUOIA_ICON : objectiveIcon(text(objective, "type"), text(objective, "raid")));
+                        objective == null ? RAID_ICON : objectiveIcon(text(objective, "type"), text(objective, "raid")));
             }
             case "achievement_paid" -> {
                 String tier = text(data, "tier") == null ? null : text(data, "tier").toLowerCase(Locale.ROOT);
@@ -65,52 +66,64 @@ public record UnlockPopup(
                         number(data, "leaf"), number(data, "xp"), tier, emblem(text(data, "ladder")));
             }
             case "level_up" -> new UnlockPopup(Kind.CEREMONY, "Sequoia level", "Level " + number(data, "level"),
-                    "Leaf level up", 0, 0, "level", GUILD_EMBLEM);
+                    "Leaf level up", 0, 0, "level", null);
             default -> null;
         };
     }
 
     static final String WAR_ICON = "unlock_war";
-    static final String SEQUOIA_ICON = "icon";
     static final String SEASON_RATING_ICON = "star";
-    static final String GUILD_EMBLEM = "unlock_emblem_icon";
+    /** A raid portal: for any raid, all raids, and raids the mod has no art for yet. */
+    static final String RAID_ICON = "unlock_raid";
 
-    /**
-     * The emblem in a milestone's medal: that raid's art pixelated, the guild's
-     * own for all raids and anything else, and the tower for wars.
-     */
-    static String emblem(String ladder) {
-        if (ladder == null) return GUILD_EMBLEM;
-        if (ladder.startsWith("war:")) return WAR_ICON;
-        if (ladder.startsWith("raid:") && !ladder.equals("raid:all raids")) {
-            String raid = objectiveIcon("raids", ladder.substring("raid:".length()).toLowerCase(Locale.ROOT));
-            return SEQUOIA_ICON.equals(raid) ? GUILD_EMBLEM : "unlock_emblem_" + raid;
-        }
-        return GUILD_EMBLEM;
-    }
-
-    /** The raid's art from its full name, as Leaf reports it, or the Sequoia icon for a raid the mod does not know. */
+    /** The raid's pixelated art for a tile, from its full name as Leaf reports it. */
     static String raidIconByName(String name) {
         if (name != null) {
             String lower = name.toLowerCase(Locale.ROOT);
             for (SeqRaid raid : SeqRaid.values()) {
-                if (lower.contains(raid.displayName().toLowerCase(Locale.ROOT))) return raid.assetKey();
+                if (lower.contains(raid.displayName().toLowerCase(Locale.ROOT))) return "unlock_icon_" + raid.assetKey();
             }
         }
-        return SEQUOIA_ICON;
+        return RAID_ICON;
     }
 
-    /** The icon for a quest's objective: the raid it names, any raid, wars or season rating. */
+    /** The tile icon for a quest's objective: the raid it names, any raid, wars or season rating. */
     static String objectiveIcon(String type, String raid) {
         if ("wars".equals(type)) return WAR_ICON;
         if ("season_rating".equals(type)) return SEASON_RATING_ICON;
-        if (raid == null) return SEQUOIA_ICON;
+        String asset = raidAsset(raid);
+        return asset == null ? RAID_ICON : "unlock_icon_" + asset;
+    }
+
+    /**
+     * The emblem in a milestone's medal: that raid's art pixelated, the raid
+     * portal for all raids and anything else, and the tower for wars.
+     */
+    static String emblem(String ladder) {
+        if (ladder == null) return RAID_ICON;
+        if (ladder.startsWith("war:")) return WAR_ICON;
+        if (ladder.startsWith("raid:") && !ladder.equals("raid:all raids")) {
+            String asset = raidAsset(ladder.substring("raid:".length()));
+            return asset == null ? RAID_ICON : "unlock_emblem_" + asset;
+        }
+        return RAID_ICON;
+    }
+
+    /** The mod's asset key for a raid's short name, such as {@code tna}, or null for one it does not know. */
+    static String raidAsset(String raid) {
+        if (raid == null) return null;
         // Leaf calls The Wartorn Palace "wtp"; the mod calls it TWP.
         String code = "wtp".equalsIgnoreCase(raid) ? "TWP" : raid.toUpperCase(Locale.ROOT);
         for (SeqRaid known : SeqRaid.values()) {
             if (known.code().equals(code)) return known.assetKey();
         }
-        return SEQUOIA_ICON;
+        return null;
+    }
+
+    /** The number a level-up medal shows: the digits in its title, such as 8 from "Level 8", or 0. */
+    public long level() {
+        String digits = title == null ? "" : title.replaceAll("[^0-9]", "");
+        return digits.isEmpty() || digits.length() > 6 ? 0 : Long.parseLong(digits);
     }
 
     /** "TNA raids", "guild raids" or "guild wars", from Sierra's ladder key. */

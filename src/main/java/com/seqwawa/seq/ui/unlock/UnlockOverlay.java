@@ -5,6 +5,7 @@ import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.AssetManager;
+import com.seqwawa.seq.managers.CombatState;
 import com.seqwawa.seq.ui.theme.UiColor;
 import com.seqwawa.seq.ui.unlock.UnlockAnimation.Frame;
 import com.seqwawa.seq.ui.unlock.UnlockPopup.Kind;
@@ -15,8 +16,10 @@ import java.awt.Color;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
@@ -53,19 +56,21 @@ public final class UnlockOverlay {
         {0.93f, 0.36f}, {0.32f, 0.08f}, {0.66f, 0.86f}, {0.4f, 0.9f}, {0.58f, 0.06f},
     };
 
-    private static final UnlockOverlay INSTANCE =
-            new UnlockOverlay(() -> System.nanoTime() / 1_000_000L, UnlockOverlay::playSound);
+    private static final UnlockOverlay INSTANCE = new UnlockOverlay(
+            () -> System.nanoTime() / 1_000_000L, UnlockOverlay::playSound, CombatState::inCombat);
 
     private final LongSupplier clock;
     private final Consumer<UnlockPopup> onStart;
+    private final BooleanSupplier inCombat;
     private final Deque<UnlockPopup> waitingToasts = new ArrayDeque<>();
     private final Deque<UnlockPopup> waitingCentre = new ArrayDeque<>();
     private final List<Playing> toasts = new ArrayList<>();
     private Playing centre;
 
-    UnlockOverlay(LongSupplier clock, Consumer<UnlockPopup> onStart) {
+    UnlockOverlay(LongSupplier clock, Consumer<UnlockPopup> onStart, BooleanSupplier inCombat) {
         this.clock = clock;
         this.onStart = onStart;
+        this.inCombat = inCombat;
     }
 
     public static UnlockOverlay getInstance() {
@@ -105,9 +110,22 @@ public final class UnlockOverlay {
         if (centre != null && now - centre.startedAtMs() >= UnlockAnimation.duration(centre.popup().kind())) {
             centre = null;
         }
-        if (centre == null && !waitingCentre.isEmpty()) {
-            centre = new Playing(waitingCentre.removeFirst(), now);
-            onStart.accept(centre.popup());
+        // A ceremony covers the screen, so it never plays in a raid or a war: one that is playing when a
+        // fight starts stops and plays again from the start afterwards. Cards and toasts are small and carry on.
+        boolean fighting = inCombat.getAsBoolean();
+        if (fighting && centre != null && centre.popup().kind() == Kind.CEREMONY) {
+            waitingCentre.addFirst(centre.popup());
+            centre = null;
+        }
+        if (centre == null) {
+            for (Iterator<UnlockPopup> waiting = waitingCentre.iterator(); waiting.hasNext(); ) {
+                UnlockPopup next = waiting.next();
+                if (fighting && next.kind() == Kind.CEREMONY) continue;
+                waiting.remove();
+                centre = new Playing(next, now);
+                onStart.accept(next);
+                break;
+            }
         }
         List<Playing> visible = new ArrayList<>(toasts);
         if (centre != null) visible.add(centre);
@@ -158,16 +176,39 @@ public final class UnlockOverlay {
         fitted(canvas, popup.detail(), textX, y + 19 * p, x + TOAST_WIDTH - 4 * p - textX, 10, color(TEXT_SECONDARY), a);
     }
 
-    /** A tier's medal with the popup's emblem set into its middle, at the same whole scale. */
+    /**
+     * A tier's medal with the popup's emblem set into its middle at the same whole
+     * scale; a level up's medal shows the new level in pixel digits instead.
+     */
     private static void medal(UiCanvas canvas, UnlockPopup popup, float x, float y, float scale, float a) {
         String tier = popup.tier() == null ? "gold" : popup.tier();
         sprite(canvas, "unlock_medal_" + tier, x, y, 32, scale, a);
+        if ("level".equals(tier)) {
+            medalNumber(canvas, popup.level(), x, y, scale, mix(color(tierToken(tier)), Color.WHITE, 0.55f), a);
+            return;
+        }
         AssetManager.Asset emblem = popup.icon() == null ? null : asset(popup.icon());
         if (emblem == null) return;
         int size = Math.round(emblem.getWidth());
         // The medal's disc is centred 16 art pixels in from its top left.
         float offset = (32 - size) / 2f;
         sprite(canvas, popup.icon(), x + Math.round(offset) * scale, y + Math.round(offset) * scale, size, scale, a);
+    }
+
+    /**
+     * Writes a number in the middle of a medal's disc (21 art pixels across,
+     * centred 16 in from the medal's top left), in the same outlined pixel font as
+     * the banner title, as large as fits.
+     */
+    static void medalNumber(UiCanvas canvas, long number, float medalX, float medalY, float scale, Color fill,
+            float a) {
+        String text = Long.toString(Math.max(0, number));
+        float room = 17 * scale;
+        float size = 10 * scale + 20;
+        while (size > 10 && measure(text, size) > room) size -= 10;
+        // The font's middle allows for descenders that digits do not have, so digits sit a little low of it.
+        float y = medalY + 15.5f * scale + Math.round(size * 0.06f);
+        outlinedText(canvas, text, medalX + 15.5f * scale, y, size, fill, a, HorizontalAlign.CENTER);
     }
 
     /** A framed tile with a picture inside it: a raid's art, the war swords or the Sequoia icon. */
