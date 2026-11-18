@@ -1,9 +1,12 @@
 package com.seqwawa.seq.network;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.seqwawa.seq.network.BackendCloseClassifier.Kind;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -67,6 +70,14 @@ class BackendCloseClassifierTest {
     private static Stream<Arguments> closesThisClientSends() {
         return Stream.of(
                 Arguments.of(1000, ""),
-                Arguments.of(1008, "Treasury authentication failed"));
+                Arguments.of(1008, "Treasury authentication failed"),
+                Arguments.of(4001, "Re-authenticating"));
+    }
+
+    @Test
+    void aReauthenticationCloseReconnectsEvenOnceTheBackendEchoesIt() {
+        // onClose passes remote=false for a close this client started, whatever the echo says.
+        assertTrue(ConnectionManager.shouldReconnectAfterClose(4001, false));
+        assertFalse(ConnectionManager.shouldReconnectAfterClose(1000, false));
     }
 }

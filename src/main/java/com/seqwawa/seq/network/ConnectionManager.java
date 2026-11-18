@@ -19,7 +19,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -130,10 +129,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     // Reconnect state
     private static boolean autoReconnect = true;
     private static int reconnectAttempt = 0;
-    private static ScheduledFuture<?> reconnectTask;
+    private static final PendingReconnect pendingReconnect = new PendingReconnect();
     private static boolean autoConnectSuppressedByManualDisconnect;
     /** Set when the backend refuses us in a way no retry fixes (version, ban); an explicit connect clears it. */
     private static volatile boolean autoConnectPausedByBackend;
+    /** The close this client sends to drop a socket the backend stopped accepting as signed in; it reconnects. */
+    private static final int CLOSE_TO_REAUTHENTICATE = 4001;
     /** Set before this client closes its own socket, so onClose does not take the echo for the backend's close. */
     private volatile boolean closedByClient;
     private volatile boolean versionRejectionShown;
@@ -254,6 +255,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         if (connectInProgress) {
             notifyConnectionStatus("Already connected/connecting.");
             return;
+        }
+        if (userInitiated) {
+            // This connect replaces a reconnect still waiting to run, which would open a second socket.
+            cancelReconnect();
         }
 
         notifyConnectionStatus("Connecting to " + BuildConfig.ENVIRONMENT + "...");
@@ -460,12 +465,19 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             notifyManualConnectRequired();
             return;
         }
-        cancelReconnect();
         long delay = Math.min(RECONNECT_BASE_MS * (1L << reconnectAttempt), RECONNECT_CAP_MS);
         reconnectAttempt++;
         SeqClient.LOGGER.info("[WebSocket] Reconnecting in {}ms (attempt {})", delay, reconnectAttempt);
-        reconnectTask = scheduler.schedule(
+        pendingReconnect.replace(
+                attempt -> scheduler.schedule(attempt, delay, TimeUnit.MILLISECONDS),
                 () -> {
+                    ConnectionManager current = instance;
+                    if (current != null
+                            && !scheduledReconnectStillNeeded(current.isOpen(), current.connectInProgress)) {
+                        // A connect that started after this was scheduled is already under way.
+                        SeqClient.LOGGER.info("[WebSocket] Skipping scheduled reconnect; a connection is already live");
+                        return;
+                    }
                     instance = null;
                     try {
                         WynncraftServerPolicy.Scope reconnectScope = WynncraftServerPolicy.currentScope();
@@ -489,17 +501,16 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         SeqClient.LOGGER.error("[WebSocket] Reconnect failed", e);
                         scheduleReconnect();
                     }
-                },
-                delay,
-                TimeUnit.MILLISECONDS);
+                });
+    }
+
+    /** Replacing a live or connecting instance would orphan its socket while a second one opens. */
+    static boolean scheduledReconnectStillNeeded(boolean currentOpen, boolean currentConnecting) {
+        return !currentOpen && !currentConnecting;
     }
 
     private static void cancelReconnect() {
-        if (reconnectTask != null) {
-            SeqClient.LOGGER.debug("[WebSocket] Cancelling pending reconnect task");
-            reconnectTask.cancel(false);
-            reconnectTask = null;
-        }
+        pendingReconnect.cancel();
     }
 
     private void notifyConnectionStatus(String message) {
@@ -562,12 +573,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 || authFailed
                 || notInGuild
                 || connectedSince != null
-                || reconnectTask != null
+                || pendingReconnect.isWaiting()
                 || userInitiatedConnectFlow;
     }
 
     static boolean hasReconnectTask() {
-        return reconnectTask != null;
+        return pendingReconnect.isWaiting();
     }
 
     public static boolean canAutoConnectNow() {
@@ -576,7 +587,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                 current != null && current.isOpen(),
                 current != null && current.authenticated,
                 current != null && current.connectInProgress,
-                reconnectTask != null,
+                pendingReconnect.isWaiting(),
                 isAutomaticConnectSuppressed());
     }
 
@@ -2224,6 +2235,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                     .invalidateSession(
                                             AuthErrorCode.TOKEN_INVALID,
                                             "Backend rejected the stored token. Re-authentication required.");
+                            closeToReauthenticate();
                         } else if ("mod_version_unsupported".equalsIgnoreCase(backendCode)) {
                             autoReconnect = false;
                         }
@@ -2275,6 +2287,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                             authenticated = false;
                             registerAuthFailure();
                             notify("Invalid auth request. Run /seq connect to start a fresh backend session.");
+                            closeToReauthenticate();
                         }
                         case TOKEN_INVALID, TOKEN_EXPIRED -> {
                             boolean expired = kind == BackendErrorClassifier.Kind.TOKEN_EXPIRED;
@@ -2288,6 +2301,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                                     ? "Backend token expired. Re-authentication required."
                                                     : "Backend rejected the stored token. Re-authentication required.");
                             notify(SeqClient.getAuthService().getLastError().getMessage());
+                            closeToReauthenticate();
                         }
                         case PARTY_FINDER -> SeqClient.getPartyFinderManager().pushUiError(error);
                         case CAPABILITY_DENIED -> {
@@ -2550,6 +2564,17 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private void closeTreasuryAuthFailure() {
         if (isOpen()) {
             closeFromClient(BackendCloseClassifier.POLICY_VIOLATION, "Treasury authentication failed");
+        }
+    }
+
+    /**
+     * Drops a socket the backend no longer treats as signed in. Left open it would serve
+     * nothing, and /seq connect would only answer "Already connected". The close then
+     * reconnects as any other does, signing in afresh if the session was invalidated.
+     */
+    private void closeToReauthenticate() {
+        if (isOpen()) {
+            closeFromClient(CLOSE_TO_REAUTHENTICATE, "Re-authenticating");
         }
     }
 
