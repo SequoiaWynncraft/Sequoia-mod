@@ -153,4 +153,16 @@ class LeafQuestServiceTest {
         assertEquals(State.LOADING, service.state());
         assertEquals(Snapshot.EMPTY, service.snapshot());
     }
+
+    @Test
+    void aMissingHistoryEntryIsSkippedRatherThanFailingTheBoard() {
+        List<com.seqwawa.seq.model.LeafEvents.Event> withGap = new java.util.ArrayList<>();
+        withGap.add(null);
+        withGap.add(new com.seqwawa.seq.model.LeafEvents.Event(1, "level_up", null, new com.google.gson.JsonObject()));
+
+        Snapshot snapshot = new Snapshot(LeafAccount.EMPTY, LeafQuests.EMPTY, withGap);
+
+        assertEquals(1, snapshot.recent().size());
+        assertFalse(snapshot.recentFailed());
+    }
 }

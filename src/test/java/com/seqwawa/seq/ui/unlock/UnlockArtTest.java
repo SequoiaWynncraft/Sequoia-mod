@@ -104,19 +104,6 @@ class UnlockArtTest {
     }
 
     @Test
-    void theNextLevelsMedalIsARoundSixteenPixelMedal() throws IOException {
-        BufferedImage mini = load("unlock_medal_mini_level");
-        assertEquals(16, mini.getWidth());
-        assertEquals(16, mini.getHeight());
-        for (int y = 0; y < 16; y++) {
-            for (int x = 0; x < 8; x++) {
-                assertEquals(visible(mini, x, y), visible(mini, 15 - x, y), "row " + y + ", column " + x);
-                assertEquals(visible(mini, x, y), visible(mini, y, x), "round, not just mirrored, at " + x + ", " + y);
-            }
-        }
-    }
-
-    @Test
     void theTowerAndThePortalAreMirrorImages() throws IOException {
         for (String name : List.of("unlock_war", "unlock_raid")) {
             BufferedImage image = load(name);

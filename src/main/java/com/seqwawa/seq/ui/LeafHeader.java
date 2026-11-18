@@ -70,17 +70,11 @@ final class LeafHeader {
                 + " XP";
     }
 
-    /** "1,860 XP to go": the next level's badge at the track's end says which level. */
+    /** "1,860 XP to level 8". */
     static String toNextLine(LeafAccount.Level level) {
         long left = Math.max(0, level.xpForNextLevel() - level.xpIntoLevel());
-        return QuestBoardScreen.formatCount(left) + " XP to go";
+        return QuestBoardScreen.formatCount(left) + " XP to level " + (level.number() + 1);
     }
-
-    /** The next level's medal at the end of the track, and the disc inside its rim, in art pixels. */
-    static final int NEXT = 16;
-    static final int NEXT_DISC = 9;
-    /** How faded the next level's medal is, until it is reached. */
-    static final float NEXT_FADE = 0.7f;
 
     static float xpRatio(LeafAccount.Level level) {
         if (level.xpForNextLevel() <= 0) return 0;
@@ -105,22 +99,13 @@ final class LeafHeader {
         PixelArt.halo(canvas, "level", medalX, medalY, p, 1f);
         PixelArt.levelMedal(canvas, level.number(), medalX, medalY, p, 1f);
 
-        // The level's track: from the medal to the next level's badge, level with the medal's middle, with
-        // what it is above it and how far along under it. The medal says which level this is.
+        // The level's track, level with the medal's middle, with what it is above it and how far along under
+        // it. The medal says which level this is.
         float tx = x + layout.levelX();
         float tw = layout.levelWidth();
-        float next = NEXT * p;
-        float nextX = tx + tw - next;
-        float barWidth = tw - next - 3 * p;
+        float barWidth = tw;
         PixelArt.outlinedText(canvas, "SEQUOIA LEVEL", tx, y + 13 * p, 10, green, 1f, HorizontalAlign.LEFT);
         PixelArt.progressBar(canvas, tx, y + 19 * p, barWidth, 8 * p, p, xpRatio(level), green, 1f, 10);
-        // The next level's medal, a small copy of this one, faded until it is reached.
-        float nextY = y + (23 - NEXT / 2) * p;
-        PixelArt.sprite(canvas, "unlock_medal_mini_level", nextX, nextY, NEXT, p, NEXT_FADE);
-        String nextLevel = Long.toString(level.number() + 1L);
-        float nextSize = PixelArt.measure(nextLevel, 20) <= NEXT_DISC * p ? 20 : 10;
-        PixelArt.levelText(canvas, nextLevel, nextX + next / 2, nextY + next / 2 + 1, nextSize, NEXT_FADE,
-                HorizontalAlign.CENTER);
         PixelArt.text(canvas, xpLine(level), tx, y + 33 * p, 10, color(TEXT_SECONDARY), HorizontalAlign.LEFT);
         String toNext = toNextLine(level);
         if (PixelArt.measure(xpLine(level), 10) + PixelArt.measure(toNext, 10) + 6 * p <= barWidth) {

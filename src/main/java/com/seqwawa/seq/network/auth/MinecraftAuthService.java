@@ -10,6 +10,7 @@ import net.minecraft.client.User;
 import net.minecraft.server.Services;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
+import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.network.ApiClient;
 import com.seqwawa.seq.network.BuildConfig;
 
@@ -293,6 +294,8 @@ public class MinecraftAuthService {
             setState(AuthState.IDLE, null);
         }
         GuildRaidProgressService.getInstance().reset();
+        // The balance and quests belong to the session that just ended.
+        LeafQuestService.getInstance().reset();
     }
 
     public void invalidateSession(AuthErrorCode code, String message) {
@@ -303,6 +306,7 @@ public class MinecraftAuthService {
             setState(AuthState.FAILED, new AuthException(code, message, true));
         }
         GuildRaidProgressService.getInstance().reset();
+        LeafQuestService.getInstance().reset();
     }
 
     public void clearSessionIfNotActiveProfile(UUID activeProfileId) {

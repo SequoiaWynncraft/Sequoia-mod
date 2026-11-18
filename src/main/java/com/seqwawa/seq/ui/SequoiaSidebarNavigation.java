@@ -58,7 +58,7 @@ final class SequoiaSidebarNavigation {
     /** The buttons' layout, kept clear of the profile card at the sidebar's foot while it shows. */
     static SidebarLayout sidebarLayout(
             float screenHeight, int rowCount, float buttonHeight, float normalSpacing) {
-        return sidebarLayout(screenHeight, rowCount, buttonHeight, normalSpacing, SidebarProfile.reserved());
+        return sidebarLayout(screenHeight, rowCount, buttonHeight, normalSpacing, SidebarProfile.reserved(screenHeight));
     }
 
     /** The buttons' layout with {@code reservedBelow} UI pixels at the sidebar's foot left free. */

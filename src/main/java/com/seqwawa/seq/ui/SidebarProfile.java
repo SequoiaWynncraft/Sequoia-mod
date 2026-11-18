@@ -46,14 +46,26 @@ public final class SidebarProfile {
 
     private SidebarProfile() {}
 
-    /** Whether there is a signed-in player to show. */
-    static boolean shown() {
-        return SeqClient.mc != null && SeqClient.mc.getUser() != null;
+    /** Whether there is a signed-in player to show, and room under every sidebar button for the card. */
+    static boolean shown(float screenHeight) {
+        return SeqClient.mc != null && SeqClient.mc.getUser() != null
+                && fits(screenHeight, SequoiaSidebarNavigation.destinations().size());
     }
 
-    /** How much of the sidebar's bottom the card takes, its margin included, or nothing while it is hidden. */
-    public static float reserved() {
-        return shown() ? HEIGHT * P + MARGIN : 0;
+    /**
+     * Whether the card fits under {@code rows} sidebar buttons, packed as tightly as
+     * the sidebar packs them, on a screen this tall. On a shorter one the buttons
+     * come first: the card is left out rather than drawn over one.
+     */
+    static boolean fits(float screenHeight, int rows) {
+        float reserve = HEIGHT * P + MARGIN;
+        var layout = SequoiaSidebarNavigation.sidebarLayout(screenHeight, rows, 22, 6, reserve);
+        return layout.bottom() + MARGIN / 2 <= top(screenHeight);
+    }
+
+    /** How much of the sidebar's bottom the card takes, its margin included, or nothing while it is left out. */
+    public static float reserved(float screenHeight) {
+        return shown(screenHeight) ? HEIGHT * P + MARGIN : 0;
     }
 
     /** The card's top, for a sidebar on a screen {@code screenHeight} tall, on the art-pixel grid. */
@@ -63,7 +75,7 @@ public final class SidebarProfile {
 
     static boolean contains(float mouseX, float mouseY, float screenHeight) {
         float y = top(screenHeight);
-        return shown() && mouseX >= INSET && mouseX < INSET + WIDTH * P && mouseY >= y && mouseY < y + HEIGHT * P;
+        return shown(screenHeight) && mouseX >= INSET && mouseX < INSET + WIDTH * P && mouseY >= y && mouseY < y + HEIGHT * P;
     }
 
     /**
@@ -93,10 +105,10 @@ public final class SidebarProfile {
 
     /** Draws the card, and asks Leaf for a fresh balance at most once a minute while connected. */
     public static void render(UiCanvas canvas, float screenHeight, float mouseX, float mouseY) {
-        if (!shown()) return;
         LeafQuestService service = LeafQuestService.getInstance();
         boolean connected = ConnectionManager.isConnected();
         if (connected) service.requestRefresh();
+        if (!shown(screenHeight)) return;
         String username = SeqClient.mc.getUser().getName();
         UUID uuid = SeqClient.mc.getUser().getProfileId();
         DiscordRankService ranks = DiscordRankService.getInstance();

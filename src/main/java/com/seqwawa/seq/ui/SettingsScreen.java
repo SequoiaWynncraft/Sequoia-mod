@@ -265,7 +265,7 @@ public class SettingsScreen extends Screen {
                 float leaderboardY = sidebarLayout.bottom() + SIDEBAR_BUTTON_SPACING;
                 float availableBottom = princessPromptFits
                         ? princessPromptY(screenHeight, 1f)
-                        : screenHeight - SidebarProfile.reserved() - SIDEBAR_PADDING;
+                        : screenHeight - SidebarProfile.reserved(screenHeight) - SIDEBAR_PADDING;
                 float availableHeight = availableBottom
                         - SIDEBAR_BUTTON_SPACING
                         - leaderboardY;
@@ -540,7 +540,7 @@ public class SettingsScreen extends Screen {
         boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, width, PRINCESS_PROMPT_HEIGHT);
         // It slides up from behind the profile card, so nothing of it shows below the card's top.
         canvas.save();
-        canvas.scissor(0, 0, SIDEBAR_WIDTH, screenHeight - SidebarProfile.reserved());
+        canvas.scissor(0, 0, SIDEBAR_WIDTH, screenHeight - SidebarProfile.reserved(screenHeight));
         canvas.fillRect(
                 x,
                 y,
@@ -582,7 +582,7 @@ public class SettingsScreen extends Screen {
 
     /** The prompt sits at the sidebar's foot, above the profile card while that shows. */
     private static float princessPromptY(float screenHeight, float progress) {
-        float bottom = screenHeight - SidebarProfile.reserved();
+        float bottom = screenHeight - SidebarProfile.reserved(screenHeight);
         float visibleY = bottom - SIDEBAR_PADDING - PRINCESS_PROMPT_HEIGHT;
         return bottom + (visibleY - bottom) * progress;
     }
@@ -657,7 +657,9 @@ public class SettingsScreen extends Screen {
                 long nowMs = System.currentTimeMillis();
                 float progress = princessPrompt.slideProgress(nowMs);
                 float promptY = princessPromptY(screenHeight, progress);
-                if (progress > 0f && isHovered(mx, my, btnX, promptY, btnW, PRINCESS_PROMPT_HEIGHT)) {
+                // Only the part above the profile card shows while it slides in, so only that part takes clicks.
+                boolean visible = my < screenHeight - SidebarProfile.reserved(screenHeight);
+                if (progress > 0f && visible && isHovered(mx, my, btnX, promptY, btnW, PRINCESS_PROMPT_HEIGHT)) {
                     boolean enabled = PrincessMode.toggle();
                     if (enabled && SeqClient.getPrincessRaidStatsManager() != null) {
                         SeqClient.getPrincessRaidStatsManager().refresh();

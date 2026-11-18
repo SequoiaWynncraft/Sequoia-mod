@@ -7,6 +7,7 @@ import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.network.ApiClient;
 import java.time.Duration;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
@@ -31,15 +32,19 @@ public final class LeafQuestService {
      * What the board and the sidebar show, all from the same read: the balance and
      * level, the quests, and the latest events, newest first.
      */
-    public record Snapshot(LeafAccount account, LeafQuests quests, List<LeafEvents.Event> recent) {
+    public record Snapshot(LeafAccount account, LeafQuests quests, List<LeafEvents.Event> recent, boolean recentFailed) {
         public static final Snapshot EMPTY = new Snapshot(LeafAccount.EMPTY, LeafQuests.EMPTY);
 
         public Snapshot(LeafAccount account, LeafQuests quests) {
-            this(account, quests, List.of());
+            this(account, quests, List.of(), false);
+        }
+
+        public Snapshot(LeafAccount account, LeafQuests quests, List<LeafEvents.Event> recent) {
+            this(account, quests, recent, false);
         }
 
         public Snapshot {
-            recent = recent == null ? List.of() : List.copyOf(recent);
+            recent = recent == null ? List.of() : recent.stream().filter(Objects::nonNull).toList();
         }
     }
 
@@ -73,11 +78,15 @@ public final class LeafQuestService {
     private static CompletableFuture<Snapshot> fetch() {
         ApiClient api = ApiClient.getInstance();
         // Quests first: with sync=1 Leaf pays what was just finished, so the balance read after it includes it.
-        // The recent events are a nicety: without them the board still shows the balance and the quests.
+        // The recent events are a nicety: without them the board still shows the balance and the quests, and
+        // says the list could not be read. A blank answer is an empty list, not a failure.
         return api.getLeafQuests(true).thenCompose(quests -> {
-            CompletableFuture<LeafEvents> events = api.getLeafEvents().exceptionally(failure -> LeafEvents.EMPTY);
-            return api.getLeafAccount()
-                    .thenCombine(events, (account, recent) -> new Snapshot(account, quests, recent.eventsOrEmpty()));
+            CompletableFuture<LeafEvents> events = api.getLeafEvents()
+                    .thenApply(recent -> recent == null ? LeafEvents.EMPTY : recent)
+                    .exceptionally(failure -> null);
+            return api.getLeafAccount().thenCombine(events, (account, recent) -> recent == null
+                    ? new Snapshot(account, quests, List.of(), true)
+                    : new Snapshot(account, quests, recent.eventsOrEmpty(), false));
         });
     }
 

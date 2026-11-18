@@ -111,6 +111,7 @@ final class RecentLeaf {
     static final int ROW = 16;
     static final int FOOT = 3;
     static final String EMPTY_LINE = "Nothing yet. Raids, wars and quests you finish show up here.";
+    static final String FAILED_LINE = "Couldn't load your recent Leaf. It will try again shortly.";
 
     /** The list's height in UI pixels; with no rows it keeps one row's room for a line saying so. */
     static float height(int rows) {
@@ -121,7 +122,7 @@ final class RecentLeaf {
      * The list in a pixel frame: a tile for where each amount came from, what it
      * was and how long ago, and the Leaf it paid on the right.
      */
-    static void render(UiCanvas canvas, List<Row> rows, Instant now, float x, float y, float width) {
+    static void render(UiCanvas canvas, List<Row> rows, boolean failed, Instant now, float x, float y, float width) {
         float p = P;
         Color green = color(CONTROL_SUCCESS);
         PixelArt.pixelPanel(canvas, x, y, width, height(rows.size()), p, PixelArt.mix(green, color(BACKGROUND_POPUP), 0.35f),
@@ -130,7 +131,8 @@ final class RecentLeaf {
         PixelArt.outlinedText(canvas, "RECENT", x + 5 * p, y + 8 * p, 10, green, 1f, HorizontalAlign.LEFT);
         float listTop = y + TITLE * p;
         if (rows.isEmpty()) {
-            PixelArt.fitted(canvas, EMPTY_LINE, x + 5 * p, listTop + ROW / 2f * p, width - 10 * p, 10, color(TEXT_MUTED), 1f);
+            PixelArt.fitted(canvas, failed ? FAILED_LINE : EMPTY_LINE, x + 5 * p, listTop + ROW / 2f * p, width - 10 * p, 10,
+                    failed ? color(CONTROL_WARNING) : color(TEXT_MUTED), 1f);
             return;
         }
         for (int i = 0; i < rows.size(); i++) {

@@ -46,4 +46,11 @@ class QuestCardTest {
         assertEquals(List.of("Complete 3", "NOL raids"), QuestCard.wrap("Complete 3 NOL raids", 60, TEXT));
         assertEquals(List.of("Complete 3 NOL raids"), QuestCard.wrap("Complete 3 NOL raids", 120, TEXT));
     }
+
+    @Test
+    void aWordTooWideForTheCardIsCutToFit() {
+        // "Antidisestablishment" is 120 pixels; with "..." the room for 60 keeps 7 letters: 10 characters, exactly 60.
+        assertEquals(List.of("Antidis..."), QuestCard.wrap("Antidisestablishment", 60, TEXT));
+        assertEquals(List.of("Do", "Antidis..."), QuestCard.wrap("Do Antidisestablishment", 60, TEXT));
+    }
 }

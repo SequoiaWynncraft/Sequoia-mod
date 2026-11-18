@@ -71,7 +71,17 @@ final class QuestCard {
             }
         }
         if (!line.isEmpty()) lines.add(line.toString());
+        // A single word wider than the card is cut short rather than drawn past its edges.
+        lines.replaceAll(each -> cut(each, width, textWidth));
         return lines;
+    }
+
+    /** Text cut short with "..." to fit {@code width}, or as it is when it fits. */
+    static String cut(String value, float width, Function<String, Float> textWidth) {
+        if (textWidth.apply(value) <= width) return value;
+        String shown = value;
+        while (!shown.isEmpty() && textWidth.apply(shown + "...") > width) shown = shown.substring(0, shown.length() - 1);
+        return shown.isEmpty() ? "" : shown + "...";
     }
 
     /** One part of the bar per raid or war a short quest asks for; none for long counts or season rating. */

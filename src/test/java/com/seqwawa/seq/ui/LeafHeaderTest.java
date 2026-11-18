@@ -43,7 +43,7 @@ class LeafHeaderTest {
         LeafAccount.Level level = new LeafAccount.Level(7, 640, 2500);
 
         assertEquals("640 / 2,500 XP", LeafHeader.xpLine(level));
-        assertEquals("1,860 XP to go", LeafHeader.toNextLine(level));
+        assertEquals("1,860 XP to level 8", LeafHeader.toNextLine(level));
         assertEquals(0.256f, LeafHeader.xpRatio(level), 1e-6);
         assertEquals(0f, LeafHeader.xpRatio(new LeafAccount.Level(1, 0, 0)));
     }

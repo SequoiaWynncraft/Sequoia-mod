@@ -50,7 +50,6 @@ public class AssetManager {
         "textures/unlock/unlock_emblem_tcc.png",
         "textures/unlock/unlock_emblem_tna.png",
         "textures/unlock/unlock_emblem_twp.png",
-        "textures/unlock/unlock_medal_mini_level.png",
         "textures/unlock/unlock_halo_bronze.png",
         "textures/unlock/unlock_halo_diamond.png",
         "textures/unlock/unlock_halo_gold.png",

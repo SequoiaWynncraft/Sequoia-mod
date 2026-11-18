@@ -44,4 +44,13 @@ class SidebarProfileTest {
     void findsTheInsigniaArtTheBadgesAreLoadedUnder() {
         assertEquals("badge:insignia_gold", SidebarProfile.insigniaKey(SeqBadgeTier.GOLD));
     }
+
+    @Test
+    void isLeftOutWhereItWouldCoverASidebarButton() {
+        assertEquals(true, SidebarProfile.fits(360, 10), "a 720-pixel window at the usual size");
+        assertEquals(false, SidebarProfile.fits(200, 10), "a 600-pixel window at the largest UI size");
+        var layout = SequoiaSidebarNavigation.sidebarLayout(360, 10, 22, 6, SidebarProfile.HEIGHT * SidebarProfile.P
+                + SidebarProfile.MARGIN);
+        assertEquals(true, layout.bottom() < SidebarProfile.top(360), "the last button ends above the card");
+    }
 }

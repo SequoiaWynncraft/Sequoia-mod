@@ -132,7 +132,7 @@ public final class QuestBoardScreen extends Screen {
             Placement placement = placements.get(i);
             QuestCard.render(canvas, cards.get(i), panel.x() + placement.x(), top + placement.y(), placement.width());
         }
-        RecentLeaf.render(canvas, recent, now, panel.x(), top + recentTop, contentWidth);
+        RecentLeaf.render(canvas, recent, shown.recentFailed(), now, panel.x(), top + recentTop, contentWidth);
         canvas.restore();
         if (maxScroll > 0 && panel.height() > 0) {
             float thumb = Math.min(panel.height(), Math.max(20, panel.height() * panel.height() / (panel.height() + maxScroll)));
