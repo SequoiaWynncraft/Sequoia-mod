@@ -69,6 +69,28 @@ public class MinecraftAuthService {
         return beginAuthentication().thenApply(StoredAuthSession::token);
     }
 
+    /** Which session is current. It moves on whenever the session is cleared or invalidated. */
+    public synchronized long sessionGeneration() {
+        return authenticationGeneration;
+    }
+
+    /**
+     * {@link #ensureValidToken(boolean)} for work that began under the session
+     * {@code generation} names. Once that session has been cleared it fails
+     * instead of signing in again. The check and the start of any sign-in happen
+     * under the lock that clearing a session takes, so a clear cannot land
+     * between them, and a sign-in started before a clear is never stored.
+     */
+    public CompletableFuture<String> ensureValidToken(boolean forceRefresh, long generation) {
+        synchronized (this) {
+            if (!isCurrentAuthenticationAttempt(generation, authenticationGeneration)) {
+                return CompletableFuture.failedFuture(
+                        new CancellationException("The session this request began under has ended."));
+            }
+            return ensureValidToken(forceRefresh);
+        }
+    }
+
     public CompletableFuture<StoredAuthSession> beginAuthentication() {
         try {
             ensureSecureTransport();

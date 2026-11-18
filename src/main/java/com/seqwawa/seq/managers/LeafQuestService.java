@@ -92,8 +92,10 @@ public final class LeafQuestService {
 
     private static CompletableFuture<Snapshot> fetch(BooleanSupplier sessionCurrent) {
         ApiClient api = ApiClient.getInstance();
+        var auth = SeqClient.getAuthService();
+        long session = auth.sessionGeneration();
         Function<Boolean, CompletableFuture<String>> tokenFor = sessionToken(sessionCurrent,
-                force -> SeqClient.getAuthService().ensureValidToken(force));
+                force -> auth.ensureValidToken(force, session));
         // Quests first: with sync=1 Leaf pays what was just finished, so the balance read after it includes it.
         // The recent events are a nicety: without them the board still shows the balance and the quests, and
         // says the list could not be read. A blank answer is an empty list, not a failure.
@@ -110,9 +112,11 @@ public final class LeafQuestService {
 
     /**
      * Where a read gets its tokens, the fresh one after a 401 included: from
-     * {@code tokens} while the session the read started under is current, and
-     * nowhere once it has been cleared, so a read still running then can finish
-     * but never signs the player in again.
+     * {@code tokens} while the read is still wanted, and nowhere once the board
+     * has been reset. The tokens themselves come from the auth service bound to
+     * the session the read began under, which refuses to sign in once that
+     * session is cleared, so a read still running then can finish but never
+     * signs the player in again.
      */
     static Function<Boolean, CompletableFuture<String>> sessionToken(BooleanSupplier sessionCurrent,
             Function<Boolean, CompletableFuture<String>> tokens) {
