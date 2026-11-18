@@ -58,6 +58,26 @@ Readers on any thread see one consistent `State`: the value, whether there is on
 changes with it, whether a fetch is running, and the last failure.
 Everything else belongs to the game thread.
 
+## Sessions
+
+What one sign-in of one account reads and shows lives in that account's `Session`
+(`com.seqwawa.seq.session`): Leaf quests, guild raid progress, Princess stats, the raid-profile
+sign-in, the Leaf event stream and its popups, and the war planner and queue.
+`SessionManager` always has a current session, a signed-out one while signed out, and ends it in
+one way: `end(reason)`, for an account switch, /seq logout, Clear session or a rejected token.
+
+- **Ending stops what it owned.** An answer that arrives later lands in an object nobody reads,
+  and the ended session's token refuses without signing in.
+- **Ask your own session.** Work that belongs to a session takes its token from `Session.token`,
+  not the auth service, and hands results to its own session's objects. `getInstance()` answers
+  with whichever session is current by the time it is called.
+- **Off the game thread.** A rejected token arrives on the socket's thread: the sign-in ends
+  there and then, and the next session starts on the game thread.
+
+What lasts the whole game, whoever is signed in, lives in `AppServices` (`SeqClient.app()`).
+Which server the game is on, and joins, disconnects and world changes, come from
+`ServerScopeTracker`; listen there rather than to Fabric's events.
+
 ## Clocks
 
 - Code that throttles, waits, or gives up after a while takes a `LongSupplier` of milliseconds:
