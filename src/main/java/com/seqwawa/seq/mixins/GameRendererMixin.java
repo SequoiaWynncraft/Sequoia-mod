@@ -67,6 +67,11 @@ public class GameRendererMixin {
         }
     }
 
+    @Inject(method = "render", at = @At("RETURN"))
+    private void seq$afterFrame(DeltaTracker deltaTracker, boolean renderLevel, CallbackInfo ci) {
+        if (UnlockPreview.isRunning()) UnlockPreview.afterFrame(minecraft);
+    }
+
     /** The development preview keeps playing while its window is in the background. */
     @ModifyExpressionValue(
             method = "render",

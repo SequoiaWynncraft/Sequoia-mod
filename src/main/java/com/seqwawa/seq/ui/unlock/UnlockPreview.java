@@ -11,6 +11,7 @@ import com.seqwawa.seq.ui.QuestBoardScreen;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -45,6 +46,8 @@ public final class UnlockPreview {
     private static int stageStart;
     private static int frame;
     private static volatile boolean running;
+    /** Screenshots asked for since the last frame was drawn. */
+    private static final List<String> pendingShots = new ArrayList<>();
 
     private UnlockPreview() {}
 
@@ -58,6 +61,11 @@ public final class UnlockPreview {
 
     private static void tick(Minecraft mc) {
         ticks++;
+        if (!pendingShots.isEmpty()) {
+            // Hold the script still until the frame being screenshotted is drawn, so the shot shows what was asked.
+            stageStart++;
+            return;
+        }
         int inStage = ticks - stageStart;
         if (inStage > 4 * 60 * 20) {
             SeqClient.LOGGER.warn("[Unlock preview] Stuck at {}, giving up", stage);
@@ -87,18 +95,18 @@ public final class UnlockPreview {
                 }
             }
             case BOARD -> {
-                if (inStage == 40) grab(mc, "preview-quest-board.png");
+                if (inStage == 40) grab("preview-quest-board.png");
                 if (inStage == 44 && mc.screen instanceof QuestBoardScreen board) {
                     // Down to the recent Leaf under the cards.
                     board.scrollBy(10_000);
                 }
-                if (inStage == 52) grab(mc, "preview-quest-board-recent.png");
+                if (inStage == 52) grab("preview-quest-board-recent.png");
                 if (inStage == 54) {
                     // A narrow board: the same window with the mod's UI at its largest size, for the preview only.
                     MinecraftUiRenderer.previewUiScale = 1.5f;
                     mc.resizeDisplay();
                 }
-                if (inStage == 62) grab(mc, "preview-quest-board-narrow.png");
+                if (inStage == 62) grab("preview-quest-board-narrow.png");
                 if (inStage == 64) {
                     MinecraftUiRenderer.previewUiScale = null;
                     mc.resizeDisplay();
@@ -110,7 +118,7 @@ public final class UnlockPreview {
                 }
             }
             case POPUPS -> {
-                if (inStage % FRAME_EVERY_TICKS == 0) grab(mc, String.format("preview-unlock-%04d.png", frame++));
+                if (inStage % FRAME_EVERY_TICKS == 0) grab(String.format("preview-unlock-%04d.png", frame++));
                 if (inStage > 40 && UnlockOverlay.getInstance().isIdle()) next(Stage.DONE);
             }
             case DONE -> {
@@ -141,8 +149,21 @@ public final class UnlockPreview {
         stageStart = ticks;
     }
 
-    private static void grab(Minecraft mc, String name) {
-        Screenshot.grab(mc.gameDirectory, name, mc.getMainRenderTarget(), 1, message -> {});
+    /**
+     * Asks for a screenshot of the next frame. Minecraft can run several ticks
+     * before it draws again, so the shot is taken once that frame is drawn,
+     * and the script waits for it before changing anything else.
+     */
+    private static void grab(String name) {
+        pendingShots.add(name);
+    }
+
+    /** Called by the game renderer after each frame: saves the screenshots asked for since the last one. */
+    public static void afterFrame(Minecraft mc) {
+        for (String name : pendingShots) {
+            Screenshot.grab(mc.gameDirectory, name, mc.getMainRenderTarget(), 1, message -> {});
+        }
+        pendingShots.clear();
     }
 
     private static void createWorld(Minecraft mc) {
