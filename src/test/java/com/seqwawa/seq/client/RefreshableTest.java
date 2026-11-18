@@ -341,6 +341,39 @@ class RefreshableTest {
     }
 
     @Test
+    void isDueSaysWhatRequestWouldDoAroundTheDeadline() {
+        Refreshable<String> quick = builder().deadlineMs(45_000).build();
+        quick.request();
+        now.addAndGet(44_999);
+        assertFalse(quick.isDue());
+        assertFalse(quick.request());
+        now.addAndGet(1);
+        assertTrue(quick.isDue(), "past the deadline, and the retry interval is shorter");
+        assertTrue(quick.request());
+
+        Refreshable<String> slow = builder().retryAfterMs(60_000).deadlineMs(45_000).build();
+        slow.request();
+        now.addAndGet(45_000);
+        assertFalse(slow.isDue(), "past the deadline, but the retry interval is longer");
+        assertFalse(slow.request());
+    }
+
+    @Test
+    void intervalFromFinishCountsFromTheAnswer() {
+        Refreshable<String> value = builder().intervalFromFinish().build();
+        value.request();
+        now.addAndGet(8_000);
+        reply("roster");
+
+        now.addAndGet(REFRESH - 1);
+        assertFalse(value.isDue());
+        assertFalse(value.request());
+        now.addAndGet(1);
+        assertTrue(value.isDue());
+        assertTrue(value.request());
+    }
+
+    @Test
     void keepEqualValueKeepsTheSameInstanceAndVersion() {
         Refreshable<String> value = builder().keepEqualValue().build();
         value.request();

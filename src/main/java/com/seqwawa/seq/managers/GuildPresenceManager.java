@@ -95,6 +95,9 @@ public final class GuildPresenceManager {
                 .handBack(gameThread)
                 .refreshEveryMs(refreshIntervalMs(false))
                 .retryAfterMs(refreshIntervalMs(true))
+                // A read can wait up to eight seconds for the raid catalog before it asks
+                // Wynncraft, whose answer is cached for a minute after that request.
+                .intervalFromFinish()
                 .emptyValue(Read.EMPTY)
                 .whenFetched(read -> SeqClient.LOGGER.info(
                         "[GuildPresence] Roster refreshed guild='{}' online={} total={}",

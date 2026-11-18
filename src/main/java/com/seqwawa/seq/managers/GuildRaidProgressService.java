@@ -130,9 +130,12 @@ public final class GuildRaidProgressService {
             if (!connected.getAsBoolean()) {
                 return;
             }
-            // Behind a read already running, this reads again once that one is done.
+            // Behind a read already running, or where the scope doesn't allow reading, the next
+            // allowed tick reads.
             progress.markStale();
-            progress.request();
+            if (!offline) {
+                progress.request();
+            }
         });
     }
 

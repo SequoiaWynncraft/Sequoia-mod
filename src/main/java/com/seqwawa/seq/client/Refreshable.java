@@ -83,6 +83,7 @@ public final class Refreshable<T> {
     private final long deadlineMs;
     private final Predicate<Throwable> clearOnFailure;
     private final boolean keepEqualValue;
+    private final boolean intervalFromFinish;
     private final T emptyValue;
     private final Consumer<T> whenFetched;
     private final Consumer<Throwable> whenFailed;
@@ -92,7 +93,8 @@ public final class Refreshable<T> {
     private volatile Fetch running;
     private boolean attempted;
     private boolean lastFailed;
-    private long lastStartedAtMs;
+    /** When the current interval began: the last fetch's start, or its finish with {@code intervalFromFinish}. */
+    private long intervalFromMs;
     private boolean stale;
     private CompletableFuture<State<T>> settled;
 
@@ -107,6 +109,7 @@ public final class Refreshable<T> {
         this.deadlineMs = builder.deadlineMs;
         this.clearOnFailure = builder.clearOnFailure;
         this.keepEqualValue = builder.keepEqualValue;
+        this.intervalFromFinish = builder.intervalFromFinish;
         this.emptyValue = builder.emptyValue;
         this.whenFetched = builder.whenFetched;
         this.whenFailed = builder.whenFailed;
@@ -140,13 +143,17 @@ public final class Refreshable<T> {
         return state.loading();
     }
 
-    /** Whether {@link #request()} would fetch now: none is running and the interval has passed. Game thread only. */
+    /** Whether {@link #request()} would fetch now. Game thread only. */
     public boolean isDue() {
         ClientThread.check(owner);
-        if (running != null) {
-            return false;
+        Fetch current = running;
+        if (current != null) {
+            // request() fails a fetch past its deadline, then counts that as a failure.
+            long now = clockMs.getAsLong();
+            long from = intervalFromFinish ? now : intervalFromMs;
+            return deadlineMs > 0 && now - current.startedAtMs >= deadlineMs && now - from >= retryAfterMs;
         }
-        return !attempted || stale || clockMs.getAsLong() - lastStartedAtMs >= (lastFailed ? retryAfterMs : refreshEveryMs);
+        return !attempted || stale || clockMs.getAsLong() - intervalFromMs >= (lastFailed ? retryAfterMs : refreshEveryMs);
     }
 
     /**
@@ -166,7 +173,7 @@ public final class Refreshable<T> {
             }
             finish(current, null, new TimeoutException(name + " took longer than " + deadlineMs + " ms"));
         }
-        if (attempted && !stale && now - lastStartedAtMs < (lastFailed ? retryAfterMs : refreshEveryMs)) {
+        if (attempted && !stale && now - intervalFromMs < (lastFailed ? retryAfterMs : refreshEveryMs)) {
             return false;
         }
         start(now);
@@ -272,7 +279,7 @@ public final class Refreshable<T> {
     private void start(long now) {
         attempted = true;
         stale = false;
-        lastStartedAtMs = now;
+        intervalFromMs = now;
         Fetch started = new Fetch(now);
         running = started;
         State<T> current = state;
@@ -292,6 +299,9 @@ public final class Refreshable<T> {
             return;
         }
         running = null;
+        if (intervalFromFinish) {
+            intervalFromMs = clockMs.getAsLong();
+        }
         Throwable cause = unwrap(failure);
         if (cause == null && value == null) {
             cause = new IllegalStateException(name + " fetched nothing");
@@ -371,6 +381,7 @@ public final class Refreshable<T> {
         private long deadlineMs;
         private Predicate<Throwable> clearOnFailure = failure -> false;
         private boolean keepEqualValue;
+        private boolean intervalFromFinish;
         private T emptyValue;
         private Consumer<T> whenFetched = value -> {};
         private Consumer<Throwable> whenFailed = failure -> {};
@@ -427,6 +438,16 @@ public final class Refreshable<T> {
         /** Keeps the current value, and its version, when a fetch returns an equal one, so readers needn't redo work. */
         public Builder<T> keepEqualValue() {
             this.keepEqualValue = true;
+            return this;
+        }
+
+        /**
+         * Counts the refresh and retry intervals from when a fetch finishes rather than when
+         * it starts, for a source whose answers are cached upstream for a while after each
+         * request and whose fetch can wait before sending it.
+         */
+        public Builder<T> intervalFromFinish() {
+            this.intervalFromFinish = true;
             return this;
         }
 

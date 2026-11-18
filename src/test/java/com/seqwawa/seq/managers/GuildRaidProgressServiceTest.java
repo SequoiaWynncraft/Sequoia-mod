@@ -251,6 +251,22 @@ class GuildRaidProgressServiceTest {
     }
 
     @Test
+    void aRaidFinishedWhereReadingIsNotAllowedIsReadOnTheNextAllowedTick() {
+        GuildRaidProgressService service = service();
+        service.tick();
+        settle();
+        service.tick(false);
+        settle();
+
+        finishRaid(service);
+        assertEquals(1, calls.get(), "the scope doesn't allow reading");
+        service.tick();
+        settle();
+
+        assertEquals(2, calls.get(), "the raid isn't left for the five-minute interval");
+    }
+
+    @Test
     void aFinishedRaidPushesTheNextScheduledReadBack() {
         GuildRaidProgressService service = service();
         service.tick();
