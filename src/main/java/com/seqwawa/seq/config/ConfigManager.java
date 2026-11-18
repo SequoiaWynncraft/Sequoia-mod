@@ -52,7 +52,10 @@ public class ConfigManager {
     private final Set<String> trackedWorldEventIds = new LinkedHashSet<>();
     private final Set<Long> hiddenWarPlannerZoneIds = new LinkedHashSet<>();
     private final Set<Long> hiddenWarPlannerZoneCategoryIds = new LinkedHashSet<>();
-    /** The Discord name linked to each Minecraft account, by its UUID. Guarded by this. */
+    /**
+     * The Discord name linked to each Minecraft account, by its UUID, or an empty one when the
+     * backend said the account has none. Guarded by this.
+     */
     @Getter(AccessLevel.NONE)
     private final Map<String, String> discordUsernames = new LinkedHashMap<>();
     /** A name an older version saved for no account in particular; the first account to ask takes it. */
@@ -111,24 +114,31 @@ public class ConfigManager {
         if (claimed) {
             save();
         }
-        return name;
+        return name == null || name.isBlank() ? null : name;
     }
 
     public boolean isBombSharePromptSeen() {
         return bombSharePromptSeen;
     }
 
+    /**
+     * What the backend said when {@code account} signed in: the Discord name linked to it, or
+     * none when its reply has no name or a blank one. It speaks for that account alone, so an
+     * older version's name stays for the account that claims it.
+     */
     public void setDiscordUsername(UUID account, String discordUsername) {
         if (account == null) {
             return;
         }
         synchronized (this) {
-            discordUsernames.put(account.toString(), discordUsername);
+            // Kept even when empty, so the account no longer claims an older version's name.
+            discordUsernames.put(
+                    account.toString(), discordUsername == null || discordUsername.isBlank() ? "" : discordUsername);
         }
         save();
     }
 
-    /** Forgets the Discord name linked to {@code account}; other accounts keep theirs. */
+    /** Clear session: forgets the Discord name linked to {@code account}; other accounts keep theirs. */
     public void clearDiscordUsername(UUID account) {
         if (account == null) {
             return;

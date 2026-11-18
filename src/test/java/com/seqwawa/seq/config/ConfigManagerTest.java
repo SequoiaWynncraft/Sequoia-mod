@@ -177,6 +177,55 @@ class ConfigManagerTest {
     }
 
     @Test
+    void aSignInReplyWithNoDiscordNameLeavesAnOlderNameForTheAccountItBelongsTo() throws Exception {
+        Path configPath = tempDir.resolve("config").resolve("sequoia.json");
+        Files.createDirectories(configPath.getParent());
+        Files.writeString(configPath, "{\"_discord_username\": \"discord-user\"}");
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        manager.load();
+
+        // The alt signs in first, and the backend links no Discord name to it.
+        manager.setDiscordUsername(ALT_ACCOUNT, null);
+
+        assertNull(manager.getDiscordUsername(ALT_ACCOUNT), "the alt does not take the older name either");
+        ConfigManager restarted = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        restarted.load();
+        assertNull(restarted.getDiscordUsername(ALT_ACCOUNT), "nor after a restart");
+        assertEquals("discord-user", restarted.getDiscordUsername(MAIN_ACCOUNT));
+    }
+
+    @Test
+    void aBlankDiscordNameFromTheBackendMeansNoneLikeAMissingOne() throws Exception {
+        Path configPath = tempDir.resolve("config").resolve("sequoia.json");
+        Files.createDirectories(configPath.getParent());
+        Files.writeString(configPath, "{\"_discord_username\": \"discord-user\"}");
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        manager.load();
+        manager.setDiscordUsername(MAIN_ACCOUNT, "old-discord");
+
+        manager.setDiscordUsername(MAIN_ACCOUNT, "  ");
+        manager.setDiscordUsername(ALT_ACCOUNT, "");
+
+        assertNull(manager.getDiscordUsername(MAIN_ACCOUNT), "the stale name goes");
+        assertNull(manager.getDiscordUsername(ALT_ACCOUNT), "and the older name is not taken");
+        assertTrue(Files.readString(configPath).contains("\"_discord_username\": \"discord-user\""),
+                "it waits for the account it belongs to");
+    }
+
+    @Test
+    void clearSessionForgetsAnOlderNameNobodyClaimed() throws Exception {
+        Path configPath = tempDir.resolve("config").resolve("sequoia.json");
+        Files.createDirectories(configPath.getParent());
+        Files.writeString(configPath, "{\"_discord_username\": \"discord-user\"}");
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        manager.load();
+
+        manager.clearDiscordUsername(MAIN_ACCOUNT);
+
+        assertNull(manager.getDiscordUsername(MAIN_ACCOUNT), "the player asked to forget it");
+    }
+
+    @Test
     void loadScrubsPersistedAuthSessionWithoutLoadingToken() throws Exception {
         Path configPath = tempDir.resolve("config").resolve("sequoia.json");
         Files.createDirectories(configPath.getParent());

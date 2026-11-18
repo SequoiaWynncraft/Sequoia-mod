@@ -2,6 +2,7 @@ package com.seqwawa.seq.network;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.net.URI;
 import java.time.Instant;
@@ -2063,13 +2064,10 @@ public class ConnectionManager {
                     // Last, so a reader on another thread that sees the session sees all of the above too.
                     authenticated = true;
                     autoReconnect = true;
-                    if (json.has("discord_username")
-                            && json.get("discord_username").isJsonPrimitive()) {
-                        String discordUser = json.get("discord_username").getAsString();
-                        storeDiscordUsername(discordUser);
+                    String discordUser = discordUsernameIn(json);
+                    storeDiscordUsername(discordUser);
+                    if (discordUser != null) {
                         notifyConnectionStatus("Connected as " + discordUser);
-                    } else {
-                        clearDiscordUsername();
                     }
                     sendPrepared("get_connected", null);
                     flushPendingGuildWarEvents();
@@ -2872,15 +2870,19 @@ public class ConnectionManager {
         return false;
     }
 
-    /** Each Minecraft account keeps the Discord name the backend linked to it. */
+    /** Each Minecraft account keeps the Discord name the backend linked to it, or that it linked none. */
     private void storeDiscordUsername(String discordUsername) {
-        if (hasDiscordUsername(discordUsername)) {
-            SeqClient.getConfigManager().setDiscordUsername(SeqClient.currentMinecraftProfileId(), discordUsername);
-        }
+        SeqClient.getConfigManager().setDiscordUsername(SeqClient.currentMinecraftProfileId(), discordUsername);
     }
 
-    private void clearDiscordUsername() {
-        SeqClient.getConfigManager().clearDiscordUsername(SeqClient.currentMinecraftProfileId());
+    /** The Discord name a sign-in reply links to the account, or null when it names none: absent and blank alike. */
+    static String discordUsernameIn(JsonObject reply) {
+        JsonElement name = reply == null ? null : reply.get("discord_username");
+        if (name == null || !name.isJsonPrimitive()) {
+            return null;
+        }
+        String value = name.getAsString();
+        return hasDiscordUsername(value) ? value : null;
     }
 
     // ── Message records ──

@@ -359,6 +359,16 @@ class ConnectionManagerTest {
     }
 
     @Test
+    void aSignInReplyWithABlankDiscordNameNamesNoneLikeOneWithout() {
+        assertEquals("SequoiaUser", ConnectionManager.discordUsernameIn(
+                JsonParser.parseString("{\"discord_username\":\"SequoiaUser\"}").getAsJsonObject()));
+        for (String reply : List.of("{}", "{\"discord_username\":\"\"}", "{\"discord_username\":\"  \"}",
+                "{\"discord_username\":null}", "{\"discord_username\":{}}")) {
+            assertNull(ConnectionManager.discordUsernameIn(JsonParser.parseString(reply).getAsJsonObject()), reply);
+        }
+    }
+
+    @Test
     void discordChatIgnoreMatchesUsernameContainingIgnoredMinecraftName() {
         assertTrue(ConnectionManager.shouldIgnoreDiscordChatSender("SomeUser", List.of("someuser")));
         assertTrue(ConnectionManager.shouldIgnoreDiscordChatSender("[VIP] SomeUser", List.of("someuser")));
