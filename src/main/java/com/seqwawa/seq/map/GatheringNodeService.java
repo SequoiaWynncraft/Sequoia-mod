@@ -4,8 +4,14 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.seqwawa.seq.client.Background;
+import com.seqwawa.seq.client.ClientThread;
+import com.seqwawa.seq.client.Clocks;
+import com.seqwawa.seq.client.Refreshable;
 import com.seqwawa.seq.client.SeqClient;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -13,11 +19,12 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
@@ -32,134 +39,105 @@ public final class GatheringNodeService {
 
     private final HttpClient httpClient;
     private final URI endpoint;
-    private final LongSupplier currentTimeMillis;
-    private final Executor executor;
+    private final Executor disk;
     private final Supplier<InputStream> bundledNodes;
-    private final Map<GatheringNodeSource, Cache> caches = Map.of(
-            GatheringNodeSource.STATIC, new Cache(), GatheringNodeSource.WYNN_API, new Cache());
+    /**
+     * One per source, each keeping its last good nodes. An equal answer keeps the old
+     * list, so the map doesn't cluster the same nodes again.
+     */
+    private final Map<GatheringNodeSource, Refreshable<List<GatheringNode>>> sources =
+            new EnumMap<>(GatheringNodeSource.class);
 
     public static GatheringNodeService getInstance() {
         return INSTANCE;
     }
 
     private GatheringNodeService() {
-        this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build(),
-                DEFAULT_ENDPOINT, System::currentTimeMillis,
-                // A slow API request must not hold up switching to the local file.
-                Executors.newFixedThreadPool(2, runnable -> {
-                    Thread thread = new Thread(runnable, "seq-gathering-nodes");
-                    thread.setDaemon(true);
-                    return thread;
-                }));
+        this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build(), DEFAULT_ENDPOINT,
+                Clocks::monotonicMillis, Background.disk(), ClientThread.executor());
     }
 
-    GatheringNodeService(HttpClient httpClient, URI endpoint, LongSupplier currentTimeMillis, Executor executor) {
-        this(httpClient, endpoint, currentTimeMillis, executor,
+    GatheringNodeService(HttpClient httpClient, URI endpoint, LongSupplier clock, Executor disk, Executor handBack) {
+        this(httpClient, endpoint, clock, disk, handBack,
                 () -> GatheringNodeService.class.getClassLoader().getResourceAsStream(STATIC_NODES_RESOURCE));
     }
 
-    GatheringNodeService(HttpClient httpClient, URI endpoint, LongSupplier currentTimeMillis, Executor executor,
+    GatheringNodeService(HttpClient httpClient, URI endpoint, LongSupplier clock, Executor disk, Executor handBack,
             Supplier<InputStream> bundledNodes) {
         this.httpClient = httpClient;
         this.endpoint = endpoint;
-        this.currentTimeMillis = currentTimeMillis;
-        this.executor = executor;
+        this.disk = disk;
         this.bundledNodes = bundledNodes;
+        for (GatheringNodeSource source : GatheringNodeSource.values()) {
+            sources.put(source, Refreshable.<List<GatheringNode>>builder(
+                            "gathering nodes from " + source.label(),
+                            () -> source == GatheringNodeSource.STATIC ? readBundled() : fetchFromApi())
+                    .clock(clock)
+                    .handBack(handBack)
+                    // The bundled file never changes while the game runs, so it loads once.
+                    .refreshEveryMs(source == GatheringNodeSource.STATIC ? Long.MAX_VALUE : REFRESH_INTERVAL_MS)
+                    .retryAfterMs(RETRY_INTERVAL_MS)
+                    .keepEqualValue()
+                    .emptyValue(List.of())
+                    .whenFailed(failure -> SeqClient.LOGGER.warn(
+                            "[GatheringMap] Failed to load gathering nodes from {}.", source.label(), failure))
+                    .build());
+        }
     }
 
     public List<GatheringNode> nodes(GatheringNodeSource source) {
-        return caches.get(source).nodes;
+        return sources.get(source).value();
     }
 
     public String status(GatheringNodeSource source) {
-        return caches.get(source).status;
+        Refreshable.State<List<GatheringNode>> state = sources.get(source).state();
+        boolean bundled = source == GatheringNodeSource.STATIC;
+        if (state.loading()) {
+            return bundled ? "Loading static nodes..." : state.hasValue() ? "Refreshing nodes..." : "Loading nodes...";
+        }
+        if (state.failure() != null) {
+            return bundled ? "Static node load failed; retrying..."
+                    : state.hasValue() ? "Refresh failed; using cached nodes" : "Node load failed; retrying...";
+        }
+        return state.hasValue() ? "Loaded " + state.value().size() + " nodes" : "Not loaded";
     }
 
     public boolean isLoading(GatheringNodeSource source) {
-        return caches.get(source).loading;
+        return sources.get(source).isLoading();
     }
 
-    public synchronized boolean requestRefresh(GatheringNodeSource source) {
-        Cache cache = caches.get(source);
-        long now = currentTimeMillis.getAsLong();
-        if (cache.loading || (source == GatheringNodeSource.STATIC && !cache.nodes.isEmpty())
-                || (cache.attempted && now - cache.lastAttemptAtMs < cache.refreshIntervalMs)) {
-            return false;
-        }
-        cache.attempted = true;
-        cache.lastAttemptAtMs = now;
-        cache.loading = true;
-        cache.status = source == GatheringNodeSource.STATIC ? "Loading static nodes..."
-                : cache.nodes.isEmpty() ? "Loading nodes..." : "Refreshing nodes...";
-        try {
-            // Both loading and parsing stay off the render thread. The source is
-            // captured here, so completion only updates that source's cache.
-            executor.execute(() -> fetchNodes(source));
-            return true;
-        } catch (RuntimeException exception) {
-            failRefresh(source, exception);
-            return false;
-        }
+    /** Loads unless a load is running or the last began too recently. Neither source loads on the caller's thread. */
+    public boolean requestRefresh(GatheringNodeSource source) {
+        return sources.get(source).request();
     }
 
-    private void fetchNodes(GatheringNodeSource source) {
-        try {
-            List<GatheringNode> fetchedNodes;
-            if (source == GatheringNodeSource.STATIC) {
-                try (InputStream input = bundledNodes.get()) {
-                    if (input == null) {
-                        throw new IllegalStateException("Missing bundled node resource " + STATIC_NODES_RESOURCE);
-                    }
-                    fetchedNodes = parseNodes(new String(input.readAllBytes(), StandardCharsets.UTF_8));
+    /** Reads and parses the bundled nodes on the disk thread. */
+    private CompletableFuture<List<GatheringNode>> readBundled() {
+        return CompletableFuture.supplyAsync(() -> {
+            try (InputStream input = bundledNodes.get()) {
+                if (input == null) {
+                    throw new IllegalStateException("Missing bundled node resource " + STATIC_NODES_RESOURCE);
                 }
-            } else {
-                HttpRequest request = HttpRequest.newBuilder(endpoint)
-                        .header("Accept", "application/json")
-                        .header("User-Agent", "Sequoia-Mod")
-                        .timeout(REQUEST_TIMEOUT)
-                        .GET()
-                        .build();
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                    throw new IllegalStateException("API returned HTTP " + response.statusCode());
-                }
-                fetchedNodes = parseNodes(response.body());
+                return parseNodes(new String(input.readAllBytes(), StandardCharsets.UTF_8));
+            } catch (IOException exception) {
+                throw new UncheckedIOException(exception);
             }
-            completeRefresh(source, fetchedNodes);
-        } catch (Exception exception) {
-            if (exception instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
+        }, disk);
+    }
+
+    private CompletableFuture<List<GatheringNode>> fetchFromApi() {
+        HttpRequest request = HttpRequest.newBuilder(endpoint)
+                .header("Accept", "application/json")
+                .header("User-Agent", "Sequoia-Mod")
+                .timeout(REQUEST_TIMEOUT)
+                .GET()
+                .build();
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString()).thenApply(response -> {
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("API returned HTTP " + response.statusCode());
             }
-            failRefresh(source, exception);
-        }
-    }
-
-    private synchronized void completeRefresh(GatheringNodeSource source, List<GatheringNode> fetchedNodes) {
-        Cache cache = caches.get(source);
-        if (!cache.nodes.equals(fetchedNodes)) {
-            cache.nodes = fetchedNodes;
-        }
-        cache.refreshIntervalMs = REFRESH_INTERVAL_MS;
-        cache.status = "Loaded " + cache.nodes.size() + " nodes";
-        cache.loading = false;
-    }
-
-    private synchronized void failRefresh(GatheringNodeSource source, Exception exception) {
-        Cache cache = caches.get(source);
-        cache.refreshIntervalMs = RETRY_INTERVAL_MS;
-        cache.status = source == GatheringNodeSource.STATIC ? "Static node load failed; retrying..."
-                : cache.nodes.isEmpty() ? "Node load failed; retrying..." : "Refresh failed; using cached nodes";
-        cache.loading = false;
-        SeqClient.LOGGER.warn("[GatheringMap] Failed to load gathering nodes from {}.", source.label(), exception);
-    }
-
-    private static final class Cache {
-        private volatile List<GatheringNode> nodes = List.of();
-        private volatile String status = "Not loaded";
-        private volatile boolean loading;
-        private boolean attempted;
-        private long lastAttemptAtMs;
-        private long refreshIntervalMs;
+            return parseNodes(response.body());
+        });
     }
 
     static List<GatheringNode> parseNodes(String body) {

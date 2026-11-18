@@ -3,6 +3,7 @@ package com.seqwawa.seq.map;
 import static org.junit.jupiter.api.Assertions.*;
 import static com.seqwawa.seq.map.GatheringNodeSource.*;
 
+import com.seqwawa.seq.client.TickQueue;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -12,7 +13,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -59,25 +62,26 @@ class GatheringNodeServiceTest {
     }
 
     @Test
-    void firstRequestAtClockZeroIsQueuedWithoutBlockingAndSuppressesConcurrentRefreshes() throws Exception {
+    void theFirstRequestReturnsBeforeTheReplyAndSuppressesConcurrentRefreshes() throws Exception {
         try (var fixture = new Fixture()) {
+            fixture.releaseResponse = new CountDownLatch(1);
             var service = fixture.service;
             assertTrue(service.nodes(WYNN_API).isEmpty());
             assertEquals("Not loaded", service.status(WYNN_API));
-            assertTrue(service.requestRefresh(WYNN_API));
+            assertTrue(service.requestRefresh(WYNN_API), "The caller does not wait for the reply or parse it.");
             assertTrue(service.isLoading(WYNN_API));
             assertEquals("Loading nodes...", service.status(WYNN_API));
-            assertEquals(0, fixture.requests.get(), "The caller does not perform HTTP or parsing.");
             fixture.now.set(GatheringNodeService.REFRESH_INTERVAL_MS);
             assertFalse(service.requestRefresh(WYNN_API), "Only one request may be in flight, even beyond the TTL.");
-            assertEquals(1, fixture.work.size());
-            fixture.finishRequest();
+            fixture.releaseResponse.countDown();
+            fixture.finish(WYNN_API);
             assertFalse(service.isLoading(WYNN_API));
             assertEquals(4, service.nodes(WYNN_API).size());
             assertEquals("Loaded 4 nodes", service.status(WYNN_API));
             assertEquals("GET", fixture.method.get());
             assertEquals("application/json", fixture.accept.get());
             assertEquals("Sequoia-Mod", fixture.userAgent.get());
+            assertEquals(1, fixture.requests.get());
         }
     }
 
@@ -85,7 +89,7 @@ class GatheringNodeServiceTest {
     void refreshesHourlyRetainsIdentityForUnchangedDataAndReplacesChangedNodes() throws Exception {
         try (var fixture = new Fixture()) {
             assertTrue(fixture.service.requestRefresh(WYNN_API));
-            fixture.finishRequest();
+            fixture.finish(WYNN_API);
             List<GatheringNode> first = fixture.service.nodes(WYNN_API);
             fixture.now.set(GatheringNodeService.REFRESH_INTERVAL_MS - 1);
             assertFalse(fixture.service.requestRefresh(WYNN_API));
@@ -93,13 +97,13 @@ class GatheringNodeServiceTest {
             assertTrue(fixture.service.requestRefresh(WYNN_API));
             assertEquals("Refreshing nodes...", fixture.service.status(WYNN_API));
             assertSame(first, fixture.service.nodes(WYNN_API), "Existing nodes stay available while fetching.");
-            fixture.finishRequest();
+            fixture.finish(WYNN_API);
             assertSame(first, fixture.service.nodes(WYNN_API), "Unchanged data must not trigger reclustering.");
 
             fixture.body.set(apiFixture().replace("-1751", "-1752"));
             fixture.now.addAndGet(GatheringNodeService.REFRESH_INTERVAL_MS);
             assertTrue(fixture.service.requestRefresh(WYNN_API));
-            fixture.finishRequest();
+            fixture.finish(WYNN_API);
             assertNotSame(first, fixture.service.nodes(WYNN_API));
             assertEquals(-1752, fixture.service.nodes(WYNN_API).getFirst().x());
             assertEquals(-1751, first.getFirst().x(), "Published snapshots remain immutable.");
@@ -113,7 +117,7 @@ class GatheringNodeServiceTest {
             fixture.statusCode.set(503);
             fixture.body.set("unavailable");
             assertTrue(fixture.service.requestRefresh(WYNN_API));
-            fixture.finishRequest();
+            fixture.finish(WYNN_API);
             assertFalse(fixture.service.isLoading(WYNN_API));
             assertTrue(fixture.service.nodes(WYNN_API).isEmpty());
             assertEquals("Node load failed; retrying...", fixture.service.status(WYNN_API));
@@ -123,7 +127,7 @@ class GatheringNodeServiceTest {
             fixture.statusCode.set(200);
             fixture.body.set(apiFixture());
             assertTrue(fixture.service.requestRefresh(WYNN_API));
-            fixture.finishRequest();
+            fixture.finish(WYNN_API);
             assertEquals(4, fixture.service.nodes(WYNN_API).size());
             fixture.now.addAndGet(GatheringNodeService.RETRY_INTERVAL_MS);
             assertFalse(fixture.service.requestRefresh(WYNN_API), "Success restores the hourly TTL.");
@@ -134,14 +138,14 @@ class GatheringNodeServiceTest {
     void httpAndParseFailuresRetainLastSuccessfulSnapshotAndDoNotRetryEveryFrame() throws Exception {
         try (var fixture = new Fixture()) {
             fixture.service.requestRefresh(WYNN_API);
-            fixture.finishRequest();
+            fixture.finish(WYNN_API);
             List<GatheringNode> first = fixture.service.nodes(WYNN_API);
             fixture.now.addAndGet(GatheringNodeService.REFRESH_INTERVAL_MS);
             for (String badBody : List.of("HTTP 429", "{}", "[]", "[{}]", "not JSON")) {
                 fixture.statusCode.set(badBody.startsWith("HTTP") ? 429 : 200);
                 fixture.body.set(badBody);
                 assertTrue(fixture.service.requestRefresh(WYNN_API));
-                fixture.finishRequest();
+                fixture.finish(WYNN_API);
                 assertFalse(fixture.service.isLoading(WYNN_API));
                 assertSame(first, fixture.service.nodes(WYNN_API));
                 assertEquals("Refresh failed; using cached nodes", fixture.service.status(WYNN_API));
@@ -150,7 +154,7 @@ class GatheringNodeServiceTest {
             }
             fixture.body.set(apiFixture());
             fixture.service.requestRefresh(WYNN_API);
-            fixture.finishRequest();
+            fixture.finish(WYNN_API);
             assertEquals("Loaded 4 nodes", fixture.service.status(WYNN_API));
         }
     }
@@ -159,43 +163,43 @@ class GatheringNodeServiceTest {
     void networkAndRequestSetupFailuresReleaseInFlightState() throws Exception {
         var now = new AtomicLong();
         var work = new ArrayDeque<Runnable>();
+        var ticks = new TickQueue(now::get);
         URI closedEndpoint;
         try (var fixture = new Fixture()) {
             closedEndpoint = fixture.endpoint();
         }
         for (URI endpoint : List.of(closedEndpoint, URI.create("file:///invalid-http-endpoint"))) {
             var service = new GatheringNodeService(HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(1)).build(), endpoint, now::get, work::add);
+                    .connectTimeout(Duration.ofSeconds(1)).build(), endpoint, now::get, work::add, ticks);
             assertTrue(service.requestRefresh(WYNN_API));
-            work.remove().run();
-            assertFalse(service.isLoading(WYNN_API));
+            finish(service, work, ticks, WYNN_API);
             assertTrue(service.nodes(WYNN_API).isEmpty());
             assertEquals("Node load failed; retrying...", service.status(WYNN_API));
             assertFalse(service.requestRefresh(WYNN_API));
             now.addAndGet(GatheringNodeService.RETRY_INTERVAL_MS);
             assertTrue(service.requestRefresh(WYNN_API));
-            work.remove().run();
-            assertFalse(service.isLoading(WYNN_API));
+            finish(service, work, ticks, WYNN_API);
         }
     }
 
     @Test
-    void executorRejectionDoesNotLeaveServicePermanentlyLoading() throws Exception {
+    void aDiskThreadThatRefusesWorkDoesNotLeaveTheBundledNodesLoadingForGood() throws Exception {
         try (var fixture = new Fixture()) {
             var rejected = new AtomicInteger();
-            var service = new GatheringNodeService(HttpClient.newHttpClient(), fixture.endpoint(),
-                    fixture.now::get, task -> {
+            byte[] bundled = ("{\"data\":" + apiFixture() + "}").getBytes(StandardCharsets.UTF_8);
+            var service = new GatheringNodeService(HttpClient.newHttpClient(), fixture.endpoint(), fixture.now::get,
+                    task -> {
                         if (rejected.getAndIncrement() == 0) throw new RejectedExecutionException("test rejection");
                         fixture.work.add(task);
-                    });
-            assertFalse(service.requestRefresh(WYNN_API));
-            assertFalse(service.isLoading(WYNN_API));
-            assertFalse(service.requestRefresh(WYNN_API));
+                    }, fixture.ticks, () -> new java.io.ByteArrayInputStream(bundled));
+            service.requestRefresh(STATIC);
+            assertFalse(service.isLoading(STATIC));
+            assertEquals("Static node load failed; retrying...", service.status(STATIC));
+            assertFalse(service.requestRefresh(STATIC));
             fixture.now.set(GatheringNodeService.RETRY_INTERVAL_MS);
-            assertTrue(service.requestRefresh(WYNN_API));
-            fixture.finishRequest();
-            assertFalse(service.isLoading(WYNN_API));
-            assertEquals(4, service.nodes(WYNN_API).size());
+            assertTrue(service.requestRefresh(STATIC));
+            fixture.finish(service, STATIC);
+            assertEquals(4, service.nodes(STATIC).size());
         }
     }
 
@@ -206,7 +210,7 @@ class GatheringNodeServiceTest {
             assertEquals(STATIC, source);
             assertTrue(fixture.service.requestRefresh(source));
             assertFalse(fixture.service.requestRefresh(source));
-            fixture.finishRequest();
+            fixture.finish(source);
             List<GatheringNode> bundled = fixture.service.nodes(source);
             assertTrue(bundled.size() > 10_000, "The original bundled dataset is present and readable.");
             assertTrue(bundled.stream().anyMatch(node -> node.x() == -1751 && node.resource().equals("COPPER")));
@@ -222,17 +226,19 @@ class GatheringNodeServiceTest {
     }
 
     @Test
-    void loadingStaticWhileApiIsPendingDoesNotLetLateApiCompletionReplaceStaticCache() throws Exception {
+    void theBundledNodesLoadWhileTheApiReplyIsHeldAndTheLateReplyLeavesThemAlone() throws Exception {
         try (var fixture = new Fixture()) {
+            fixture.releaseResponse = new CountDownLatch(1);
             assertTrue(fixture.service.requestRefresh(WYNN_API));
-            Runnable apiRequest = fixture.work.remove();
+            assertTrue(fixture.responseStarted.await(3, TimeUnit.SECONDS));
             assertTrue(fixture.service.requestRefresh(STATIC));
-            fixture.finishRequest();
+            fixture.finish(STATIC);
             List<GatheringNode> bundled = fixture.service.nodes(STATIC);
             String staticStatus = fixture.service.status(STATIC);
             assertFalse(fixture.service.isLoading(STATIC));
-            assertTrue(fixture.service.isLoading(WYNN_API));
-            apiRequest.run();
+            assertTrue(fixture.service.isLoading(WYNN_API), "API is still waiting for its response.");
+            fixture.releaseResponse.countDown();
+            fixture.finish(WYNN_API);
             assertEquals(4, fixture.service.nodes(WYNN_API).size());
             assertSame(bundled, fixture.service.nodes(STATIC));
             assertEquals(staticStatus, fixture.service.status(STATIC));
@@ -246,10 +252,10 @@ class GatheringNodeServiceTest {
             var missing = new java.util.concurrent.atomic.AtomicBoolean(true);
             byte[] bundled = ("{\"data\":" + apiFixture() + "}").getBytes(StandardCharsets.UTF_8);
             var service = new GatheringNodeService(HttpClient.newHttpClient(), fixture.endpoint(),
-                    fixture.now::get, fixture.work::add,
+                    fixture.now::get, fixture.work::add, fixture.ticks,
                     () -> missing.get() ? null : new java.io.ByteArrayInputStream(bundled));
             assertTrue(service.requestRefresh(STATIC));
-            fixture.finishRequest();
+            fixture.finish(service, STATIC);
             assertFalse(service.isLoading(STATIC));
             assertEquals("Static node load failed; retrying...", service.status(STATIC));
             assertTrue(service.nodes(STATIC).isEmpty());
@@ -258,35 +264,25 @@ class GatheringNodeServiceTest {
             fixture.now.addAndGet(GatheringNodeService.RETRY_INTERVAL_MS);
             missing.set(false);
             assertTrue(service.requestRefresh(STATIC));
-            fixture.finishRequest();
+            fixture.finish(service, STATIC);
             assertEquals(4, service.nodes(STATIC).size());
             assertEquals(0, fixture.requests.get());
         }
     }
 
-    @Test
-    void staticLoadingCompletesWhileAnotherWorkerIsBlockedOnApi() throws Exception {
-        var workers = java.util.concurrent.Executors.newFixedThreadPool(2);
-        var firstCompleted = new java.util.concurrent.CountDownLatch(1);
-        try (var fixture = new Fixture()) {
-            fixture.releaseResponse = new java.util.concurrent.CountDownLatch(1);
-            try {
-                byte[] bundled = ("{\"data\":" + apiFixture() + "}").getBytes(StandardCharsets.UTF_8);
-                var service = new GatheringNodeService(HttpClient.newHttpClient(), fixture.endpoint(), fixture.now::get,
-                        task -> workers.execute(() -> { task.run(); firstCompleted.countDown(); }),
-                        () -> new java.io.ByteArrayInputStream(bundled));
-                assertTrue(service.requestRefresh(WYNN_API));
-                assertTrue(fixture.responseStarted.await(3, java.util.concurrent.TimeUnit.SECONDS));
-                assertTrue(service.requestRefresh(STATIC));
-                assertTrue(firstCompleted.await(3, java.util.concurrent.TimeUnit.SECONDS));
-                assertFalse(service.isLoading(STATIC));
-                assertEquals(4, service.nodes(STATIC).size());
-                assertTrue(service.isLoading(WYNN_API), "API is still waiting for its response.");
-            } finally {
-                fixture.releaseResponse.countDown();
-            }
-        } finally {
-            workers.shutdownNow();
+    /**
+     * Runs the disk work a request queued, then waits for its reply to reach the game
+     * thread and applies it, as a client tick would.
+     */
+    private static void finish(GatheringNodeService service, ArrayDeque<Runnable> work, TickQueue ticks,
+            GatheringNodeSource source) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (true) {
+            while (!work.isEmpty()) work.remove().run();
+            ticks.runDue();
+            if (!service.isLoading(source)) return;
+            assertTrue(System.nanoTime() < deadline, "The " + source + " request never finished.");
+            Thread.sleep(5);
         }
     }
 
@@ -299,7 +295,10 @@ class GatheringNodeServiceTest {
         final AtomicReference<String> accept = new AtomicReference<>();
         final AtomicReference<String> userAgent = new AtomicReference<>();
         final AtomicLong now = new AtomicLong();
+        /** Work for the disk thread, run when a test finishes a request. */
         final ArrayDeque<Runnable> work = new ArrayDeque<>();
+        /** Where finished loads wait for the game thread. */
+        final TickQueue ticks = new TickQueue(now::get);
         final GatheringNodeService service;
         final java.util.concurrent.CountDownLatch responseStarted = new java.util.concurrent.CountDownLatch(1);
         volatile java.util.concurrent.CountDownLatch releaseResponse;
@@ -325,14 +324,18 @@ class GatheringNodeServiceTest {
                 exchange.close();
             });
             server.start();
-            service = new GatheringNodeService(HttpClient.newHttpClient(), endpoint(), now::get, work::add);
+            service = new GatheringNodeService(HttpClient.newHttpClient(), endpoint(), now::get, work::add, ticks);
         }
 
         URI endpoint() {
             return URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/gathering-nodes");
         }
 
-        void finishRequest() { work.remove().run(); }
+        void finish(GatheringNodeSource source) throws InterruptedException { finish(service, source); }
+
+        void finish(GatheringNodeService target, GatheringNodeSource source) throws InterruptedException {
+            GatheringNodeServiceTest.finish(target, work, ticks, source);
+        }
         public void close() { server.stop(0); }
     }
 }

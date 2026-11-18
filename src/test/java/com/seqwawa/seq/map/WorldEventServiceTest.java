@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.client.TickQueue;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -108,13 +109,17 @@ class WorldEventServiceTest {
             server.createContext("/world-events", exchange -> respond(exchange, statusCode.get(), responseBody.get()));
             server.start();
             AtomicLong now = new AtomicLong(1_000_000);
+            TickQueue ticks = new TickQueue(now::get);
             WorldEventService service = new WorldEventService(
                     HttpClient.newHttpClient(),
                     java.net.URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/world-events"),
-                    now::get);
+                    now::get,
+                    ticks);
 
             assertTrue(service.requestRefresh());
-            await(() -> service.snapshot().version() == 1);
+            assertEquals("Loading...", service.status());
+            await(ticks, () -> service.snapshot().version() == 1);
+            assertEquals("Updated 1 events", service.status());
             assertEquals("Active", service.snapshot().events().getFirst().name());
             assertFalse(service.requestRefresh());
 
@@ -122,7 +127,8 @@ class WorldEventServiceTest {
             responseBody.set("unavailable");
             now.addAndGet(WorldEventService.REFRESH_INTERVAL_MS);
             assertTrue(service.requestRefresh());
-            await(() -> service.status().equals("Refresh failed"));
+            assertEquals("Refreshing...", service.status());
+            await(ticks, () -> service.status().equals("Refresh failed"));
 
             assertEquals(1, service.snapshot().version());
             assertEquals("Active", service.snapshot().events().getFirst().name());
@@ -138,10 +144,12 @@ class WorldEventServiceTest {
         exchange.close();
     }
 
-    private static void await(BooleanSupplier condition) throws InterruptedException {
+    /** Waits for the reply, running what it hands to the game thread, as a client tick would. */
+    private static void await(TickQueue ticks, BooleanSupplier condition) throws InterruptedException {
         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(3);
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) {
             Thread.sleep(10);
+            ticks.runDue();
         }
         assertTrue(condition.getAsBoolean(), "Timed out waiting for asynchronous refresh.");
     }

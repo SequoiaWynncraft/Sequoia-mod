@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.model.IngredientGuideEntry;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -248,13 +249,15 @@ class IngredientGuideManagerTest {
             });
             server.start();
             AtomicLong now = new AtomicLong(1_000_000);
+            TickQueue ticks = new TickQueue(now::get);
             IngredientGuideManager manager = new IngredientGuideManager(
                     HttpClient.newHttpClient(),
                     java.net.URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/ingredients"),
-                    now::get);
+                    now::get,
+                    ticks);
 
             assertTrue(manager.requestRefresh());
-            await(() -> manager.snapshot().version() == 1);
+            await(ticks, () -> manager.snapshot().version() == 1);
             assertEquals("POST", method.get());
             assertEquals("{\"type\":\"ingredient\"}", requestBody.get());
             assertEquals("Coastal Sand", manager.snapshot().ingredients().getFirst().displayName());
@@ -264,10 +267,43 @@ class IngredientGuideManagerTest {
             responseBody.set("unavailable");
             now.addAndGet(IngredientGuideManager.REFRESH_INTERVAL_MS);
             assertTrue(manager.requestRefresh());
-            await(() -> manager.status().equals("Refresh failed"));
+            await(ticks, () -> manager.status().equals("Refresh failed"));
 
             assertEquals(1, manager.snapshot().version());
             assertEquals("Coastal Sand", manager.snapshot().ingredients().getFirst().displayName());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void waitsAMinuteAfterAFailedFirstLoadUnlessForced() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        try {
+            server.createContext("/ingredients", exchange -> {
+                requests.incrementAndGet();
+                respond(exchange, 503, "unavailable");
+            });
+            server.start();
+            AtomicLong now = new AtomicLong(1_000_000);
+            TickQueue ticks = new TickQueue(now::get);
+            IngredientGuideManager manager = new IngredientGuideManager(
+                    HttpClient.newHttpClient(),
+                    java.net.URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/ingredients"),
+                    now::get,
+                    ticks);
+
+            assertTrue(manager.requestRefresh());
+            await(ticks, () -> !manager.isLoading());
+            assertEquals("Refresh failed", manager.status());
+            assertFalse(manager.requestRefresh(), "opening the guide again does not hammer a failing API");
+            now.addAndGet(IngredientGuideManager.RETRY_INTERVAL_MS);
+            assertTrue(manager.requestRefresh());
+            await(ticks, () -> !manager.isLoading());
+            assertTrue(manager.requestRefresh(true), "the refresh button still asks at once");
+            await(ticks, () -> !manager.isLoading());
+            assertEquals(3, requests.get());
         } finally {
             server.stop(0);
         }
@@ -304,10 +340,12 @@ class IngredientGuideManagerTest {
         exchange.close();
     }
 
-    private static void await(BooleanSupplier condition) throws InterruptedException {
+    /** Waits for the reply, running what it hands to the game thread, as a client tick would. */
+    private static void await(TickQueue ticks, BooleanSupplier condition) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
         while (!condition.getAsBoolean() && System.nanoTime() < deadline) {
             Thread.sleep(10);
+            ticks.runDue();
         }
         assertTrue(condition.getAsBoolean(), "Timed out waiting for asynchronous refresh.");
     }

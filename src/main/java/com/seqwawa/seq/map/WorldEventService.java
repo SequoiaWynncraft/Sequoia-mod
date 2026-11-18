@@ -4,6 +4,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.seqwawa.seq.client.ClientThread;
+import com.seqwawa.seq.client.Clocks;
+import com.seqwawa.seq.client.Refreshable;
 import com.seqwawa.seq.client.SeqClient;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -15,7 +18,8 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.function.LongSupplier;
 
@@ -27,86 +31,70 @@ public final class WorldEventService {
 
     private final HttpClient httpClient;
     private final URI endpoint;
-    private final LongSupplier currentTimeMillis;
-    private volatile Snapshot snapshot = Snapshot.empty();
-    private volatile String status = "Not loaded";
-    private volatile long lastAttemptAtMs;
-    private volatile boolean loading;
+    /** A failed refresh keeps the events from the last good one. */
+    private final Refreshable<List<WorldEventDefinition>> events;
 
     public static WorldEventService getInstance() {
         return INSTANCE;
     }
 
     private WorldEventService() {
-        ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "seq-world-events");
-            thread.setDaemon(true);
-            return thread;
-        });
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .executor(executor)
-                .build();
-        this.endpoint = DEFAULT_ENDPOINT;
-        this.currentTimeMillis = System::currentTimeMillis;
+        this(HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .executor(Executors.newSingleThreadExecutor(runnable -> {
+                            Thread thread = new Thread(runnable, "seq-world-events");
+                            thread.setDaemon(true);
+                            return thread;
+                        }))
+                        .build(),
+                DEFAULT_ENDPOINT,
+                Clocks::monotonicMillis,
+                ClientThread.executor());
     }
 
-    WorldEventService(HttpClient httpClient, URI endpoint) {
-        this(httpClient, endpoint, System::currentTimeMillis);
-    }
-
-    WorldEventService(HttpClient httpClient, URI endpoint, LongSupplier currentTimeMillis) {
+    WorldEventService(HttpClient httpClient, URI endpoint, LongSupplier clock, Executor handBack) {
         this.httpClient = httpClient;
         this.endpoint = endpoint;
-        this.currentTimeMillis = currentTimeMillis;
+        this.events = Refreshable.<List<WorldEventDefinition>>builder("world events", this::fetch)
+                .clock(clock)
+                .handBack(handBack)
+                .refreshEveryMs(REFRESH_INTERVAL_MS)
+                .emptyValue(List.of())
+                .whenFailed(failure -> SeqClient.LOGGER.warn(
+                        "[WorldEvents] Failed to refresh Wynncraft world events.", failure))
+                .build();
     }
 
     public Snapshot snapshot() {
-        return snapshot;
+        Refreshable.State<List<WorldEventDefinition>> state = events.state();
+        return new Snapshot(state.value(), state.version());
     }
 
     public String status() {
-        return status;
+        Refreshable.State<List<WorldEventDefinition>> state = events.state();
+        if (state.loading()) return state.hasValue() ? "Refreshing..." : "Loading...";
+        if (state.failure() != null) return "Refresh failed";
+        return state.hasValue() ? "Updated " + state.value().size() + " events" : "Not loaded";
     }
 
-    public synchronized boolean requestRefresh() {
-        long now = currentTimeMillis.getAsLong();
-        if (loading || now - lastAttemptAtMs < REFRESH_INTERVAL_MS) {
-            return false;
-        }
-        loading = true;
-        lastAttemptAtMs = now;
-        status = snapshot.version() == 0 ? "Loading..." : "Refreshing...";
+    /** Fetches unless a fetch is running or the last began under two minutes ago. Game thread only. */
+    public boolean requestRefresh() {
+        return events.request();
+    }
 
+    private CompletableFuture<List<WorldEventDefinition>> fetch() {
         HttpRequest request = HttpRequest.newBuilder(endpoint)
                 .header("Accept", "application/json")
                 .header("User-Agent", "Sequoia-Mod")
                 .timeout(REQUEST_TIMEOUT)
                 .GET()
                 .build();
-        httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .whenComplete((response, throwable) -> completeRefresh(response, throwable));
-        return true;
-    }
-
-    private synchronized void completeRefresh(HttpResponse<String> response, Throwable throwable) {
-        try {
-            if (throwable != null) {
-                throw new IllegalStateException("request failed", throwable);
-            }
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString()).thenApply(response -> {
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new IllegalStateException("API returned HTTP " + response.statusCode());
             }
-            List<WorldEventDefinition> events = parseEvents(response.body());
-            Instant fetchedAt = Instant.now();
-            snapshot = new Snapshot(events, snapshot.version() + 1, fetchedAt);
-            status = "Updated " + events.size() + " events";
-        } catch (Exception exception) {
-            status = "Refresh failed";
-            SeqClient.LOGGER.warn("[WorldEvents] Failed to refresh Wynncraft world events.", exception);
-        } finally {
-            loading = false;
-        }
+            return parseEvents(response.body());
+        });
     }
 
     static List<WorldEventDefinition> parseEvents(String body) {
@@ -244,13 +232,10 @@ public final class WorldEventService {
         }
     }
 
-    public record Snapshot(List<WorldEventDefinition> events, long version, Instant fetchedAt) {
+    /** The events, and a version that changes whenever they do, so readers can tell a new list. 0 before the first. */
+    public record Snapshot(List<WorldEventDefinition> events, long version) {
         public Snapshot {
             events = List.copyOf(events);
-        }
-
-        private static Snapshot empty() {
-            return new Snapshot(List.of(), 0, null);
         }
     }
 }

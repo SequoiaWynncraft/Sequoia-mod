@@ -48,7 +48,7 @@ class RecentLeafTest {
                 + "{\"type\":\"wars\",\"raid\":null,\"title\":\"Take part in 24 wars\",\"progress\":24,\"target\":24}],"
                 + "\"reward\":{\"leaf\":200,\"xp\":100}}}"));
 
-        assertEquals(new Row(Kind.QUEST, "unlock_war", "bronze", "Take part in 24 wars", "Repeatable quest", 200, 0, AT), row);
+        assertEquals(new Row(Kind.QUEST, "unlock_war", "bronze", "Take part in 24 wars", "Endless quest", 200, 0, AT), row);
     }
 
     @Test

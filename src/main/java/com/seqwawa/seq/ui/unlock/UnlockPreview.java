@@ -3,11 +3,16 @@ package com.seqwawa.seq.ui.unlock;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.managers.IngredientGuideManager;
 import com.seqwawa.seq.managers.LeafQuestService;
+import com.seqwawa.seq.map.GatheringNodeService;
+import com.seqwawa.seq.map.GatheringNodeSource;
+import com.seqwawa.seq.map.WorldEventService;
 import com.seqwawa.seq.model.LeafAccount;
 import com.seqwawa.seq.model.LeafEvents;
 import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.ui.QuestBoardScreen;
+import com.seqwawa.seq.ui.WorldMapScreen;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,7 +46,7 @@ public final class UnlockPreview {
     private static final long SEED = 4_247_016_918_311L;
     private static final int FRAME_EVERY_TICKS = 2;
 
-    private enum Stage { WAIT_FOR_TITLE, WAIT_FOR_WORLD, SETTLE, BOARD, POPUPS, DONE }
+    private enum Stage { WAIT_FOR_TITLE, WAIT_FOR_WORLD, SETTLE, BOARD, POPUPS, MAP, DONE }
 
     private static Stage stage = Stage.WAIT_FOR_TITLE;
     private static int ticks;
@@ -141,7 +146,27 @@ public final class UnlockPreview {
             }
             case POPUPS -> {
                 if (inStage % FRAME_EVERY_TICKS == 0) grab(String.format("preview-unlock-%04d.png", frame++));
-                if (inStage > 40 && UnlockOverlay.getInstance().isIdle()) next(Stage.DONE);
+                if (inStage > 40 && UnlockOverlay.getInstance().isIdle()) {
+                    // The world map loads the bundled gathering nodes, the ingredients and the world events
+                    // in the background, and their results reach it through ClientThread: this runs that path
+                    // in the real game.
+                    mc.setScreen(new WorldMapScreen(null));
+                    // Whichever node source the run folder's settings chose, the bundled one is what this checks.
+                    GatheringNodeService.getInstance().requestRefresh(GatheringNodeSource.STATIC);
+                    WorldEventService.getInstance().requestRefresh();
+                    next(Stage.MAP);
+                }
+            }
+            case MAP -> {
+                List<String> statuses = List.of(
+                        GatheringNodeService.getInstance().status(GatheringNodeSource.STATIC),
+                        IngredientGuideManager.getInstance().status(),
+                        WorldEventService.getInstance().status());
+                if (inStage > 20 && statuses.stream().noneMatch(each -> each.endsWith("...") || each.equals("Not loaded"))) {
+                    SeqClient.LOGGER.info("[Unlock preview] World map data: {}", String.join("; ", statuses));
+                    grab("preview-world-map.png");
+                    next(Stage.DONE);
+                }
             }
             case DONE -> {
                 if (inStage == 20) {
@@ -207,7 +232,7 @@ public final class UnlockPreview {
 
     /**
      * A member two dailies into their bank, partway through each quest: a daily and a
-     * repeatable that raids or wars can finish, and a weekly for season rating.
+     * endless quest that raids or wars can finish, and a weekly for season rating.
      */
     static LeafQuestService.Snapshot sampleBoard() {
         Instant now = Instant.now();

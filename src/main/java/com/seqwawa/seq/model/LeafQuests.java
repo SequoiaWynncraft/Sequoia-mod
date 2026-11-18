@@ -9,8 +9,9 @@ import java.util.Objects;
  * The signed-in member's quests, as Leaf's {@code GET /v1/me/quests} sends them.
  *
  * <p>There is at most one quest per slot: a daily (dailies bank up, so missing a
- * day costs nothing), a weekly that ends on Monday, and a repeatable that is
- * replaced as soon as it is finished.
+ * day costs nothing), a weekly that ends on Monday, and an endless quest that is
+ * replaced as soon as it is finished. Leaf calls that slot {@code repeatable};
+ * players see it as Endless.
  */
 public record LeafQuests(
         Daily daily,

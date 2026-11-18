@@ -17,7 +17,7 @@ class WorldEventMapModeTest {
             settings.setSidebarPanelExpanded(WorldMapSidebarPanel.EVENT_TRACKING, true);
             var event = new WorldEventDefinition("Alpha", "alpha", null, null, null, null,
                     List.of(new WorldEventLocation(1, 2, 3, 4, 5)), Instant.now());
-            var mode = new WorldEventMapMode(() -> new WorldEventService.Snapshot(List.of(event), 1, Instant.now()),
+            var mode = new WorldEventMapMode(() -> new WorldEventService.Snapshot(List.of(event), 1),
                     () -> "Ready", settings, new WorldEventMapMode.Tracking() {
                         public Set<String> ids() { return tracked; }
                         public void setTracked(String id, boolean value) { if (value) tracked.add(id); else tracked.remove(id); }
@@ -48,7 +48,7 @@ class WorldEventMapModeTest {
         boolean previous = settings.sidebarPanelExpanded(WorldMapSidebarPanel.EVENT_TRACKING);
         try {
             settings.setSidebarPanelExpanded(WorldMapSidebarPanel.EVENT_TRACKING, true);
-            var mode = new WorldEventMapMode(() -> new WorldEventService.Snapshot(List.of(), 0, null),
+            var mode = new WorldEventMapMode(() -> new WorldEventService.Snapshot(List.of(), 0),
                     () -> "Ready", settings, new WorldEventMapMode.Tracking() {
                         public Set<String> ids() { return Set.of(); }
                         public void setTracked(String id, boolean value) { fail(); }

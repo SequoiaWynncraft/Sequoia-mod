@@ -1,6 +1,8 @@
 package com.seqwawa.seq.managers;
 
 import com.mojang.blaze3d.platform.NativeImage;
+import com.seqwawa.seq.client.Background;
+import com.seqwawa.seq.client.ClientThread;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.RankProfilesResponse;
 import com.seqwawa.seq.model.SeqBadge;
@@ -32,14 +34,20 @@ final class RankProfileBadgeAssetCache {
 
     private RankProfileBadgeAssetCache() {}
 
+    /**
+     * Loads the catalog's badge art: reading, checking and decoding run on the disk
+     * thread (downloads on the web client's), and only registering a texture runs on
+     * the game thread.
+     */
     static void refresh(RankProfilesResponse.Catalog catalog) {
-        supportedAssets(catalog).forEach((badge, asset) -> load(badge, asset).exceptionally(throwable -> {
+        Map<SeqBadge, RankProfilesResponse.AssetDefinition> assets = supportedAssets(catalog);
+        Background.disk().execute(() -> assets.forEach((badge, asset) -> load(badge, asset).exceptionally(throwable -> {
             SeqClient.LOGGER.debug(
                     "[LeaderboardBadges] Could not load catalog asset {}: {}",
                     asset.key(),
                     rootMessage(throwable));
             return null;
-        }));
+        })));
     }
 
     static Map<SeqBadge, RankProfilesResponse.AssetDefinition> supportedAssets(
@@ -111,7 +119,8 @@ final class RankProfileBadgeAssetCache {
                 .header("Accept", "image/png")
                 .GET()
                 .build();
-        return HTTP.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray()).thenApply(response -> {
+        // Checked, written and decoded on the disk thread, which also keeps two downloads of one badge in order.
+        return HTTP.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray()).thenApplyAsync(response -> {
             if (response.statusCode() != 200) {
                 throw new IllegalStateException("asset request returned status " + response.statusCode());
             }
@@ -123,7 +132,7 @@ final class RankProfileBadgeAssetCache {
             }
             write(cached, bytes);
             return bytes;
-        });
+        }, Background.disk());
     }
 
     private static CompletableFuture<Void> register(
@@ -136,7 +145,7 @@ final class RankProfileBadgeAssetCache {
         }
 
         CompletableFuture<Void> registered = new CompletableFuture<>();
-        Minecraft.getInstance().execute(() -> {
+        ClientThread.execute(() -> {
             try {
                 DynamicTexture texture = new DynamicTexture(() -> "Sequoia badge " + asset.key(), image);
                 Minecraft.getInstance().getTextureManager().register(badge.textureId(), texture);

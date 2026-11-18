@@ -1,9 +1,13 @@
 package com.seqwawa.seq.managers;
 
+import com.seqwawa.seq.client.ClientThread;
+import com.seqwawa.seq.client.Clocks;
+import com.seqwawa.seq.client.Refreshable;
 import com.seqwawa.seq.network.WynncraftGuildClient;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
@@ -15,66 +19,50 @@ public final class SequoiaGuildMembership {
 
     private record Snapshot(WynncraftGuildClient.GuildRoster roster, long fetchedAtMs) {}
 
-    private final Supplier<CompletableFuture<WynncraftGuildClient.GuildRoster>> fetcher;
     private final LongSupplier clock;
-    private volatile Snapshot snapshot;
-    private boolean loading;
-    private boolean attempted;
-    private long lastAttemptAtMs;
-    private long generation;
+    /** Cleared when a refresh fails: an old roster must not keep decorating a player who left. */
+    private final Refreshable<Snapshot> roster;
 
     SequoiaGuildMembership(
-            Supplier<CompletableFuture<WynncraftGuildClient.GuildRoster>> fetcher, LongSupplier clock) {
-        this.fetcher = Objects.requireNonNull(fetcher);
+            Supplier<CompletableFuture<WynncraftGuildClient.GuildRoster>> fetcher, LongSupplier clock, Executor handBack) {
+        Objects.requireNonNull(fetcher);
         this.clock = Objects.requireNonNull(clock);
+        this.roster = Refreshable.<Snapshot>builder("Sequoia guild membership", () -> fetcher.get().thenApply(fetched -> {
+                    if (fetched == null || !"SEQ".equalsIgnoreCase(fetched.guildPrefix())) {
+                        throw new IllegalStateException("The roster is not Sequoia's");
+                    }
+                    return new Snapshot(fetched, clock.getAsLong());
+                }))
+                .clock(clock)
+                .handBack(handBack)
+                .refreshEveryMs(REFRESH_INTERVAL_MS)
+                .clearOnFailure()
+                .build();
     }
 
     public static synchronized SequoiaGuildMembership getInstance() {
         if (instance == null) {
             instance = new SequoiaGuildMembership(
-                    () -> WynncraftGuildClient.getInstance().fetchRoster("SEQ", null), System::currentTimeMillis);
+                    () -> WynncraftGuildClient.getInstance().fetchRoster("SEQ", null),
+                    Clocks::monotonicMillis,
+                    ClientThread.executor());
         }
         return instance;
     }
 
     /** Unknown and expired membership never authorize decoration. No I/O on the rendering path. */
     public boolean isMember(String username) {
-        Snapshot current = snapshot;
+        Snapshot current = roster.value();
         long age = current == null ? -1 : clock.getAsLong() - current.fetchedAtMs();
         return current != null && age >= 0 && age < MAX_AGE_MS && current.roster().member(username) != null;
     }
 
     /** Refreshes asynchronously at most once per upstream cache interval. */
-    public synchronized void tick() {
-        long now = clock.getAsLong();
-        if (loading || (attempted && now - lastAttemptAtMs < REFRESH_INTERVAL_MS)) {
-            return;
-        }
-        loading = true;
-        attempted = true;
-        lastAttemptAtMs = now;
-        long requestedFor = generation;
-        try {
-            fetcher.get().whenComplete((roster, failure) -> accept(requestedFor, roster, failure));
-        } catch (RuntimeException failure) {
-            accept(requestedFor, null, failure);
-        }
+    public void tick() {
+        roster.request();
     }
 
-    private synchronized void accept(long requestedFor, WynncraftGuildClient.GuildRoster roster, Throwable failure) {
-        if (requestedFor != generation) {
-            return;
-        }
-        loading = false;
-        snapshot = failure == null && roster != null && "SEQ".equalsIgnoreCase(roster.guildPrefix())
-                ? new Snapshot(roster, clock.getAsLong())
-                : null;
-    }
-
-    public synchronized void reset() {
-        generation++;
-        loading = false;
-        attempted = false;
-        snapshot = null;
+    public void reset() {
+        roster.reset();
     }
 }

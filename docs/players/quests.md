@@ -25,7 +25,7 @@ Under it are three quests:
 
 - **Daily.** One new daily becomes available each UTC day, and up to three bank up, shown as pips beside the title. Playing every third day loses nothing, and there are no streaks. Finishing one starts the next banked one at once.
 - **Weekly.** One per week, Monday to Monday in UTC. It ends with the week.
-- **Repeatable.** The next one starts as soon as you finish it.
+- **Endless.** The next one starts as soon as you finish it.
 
 Each card shows what to do, the Leaf and XP it pays, and how far along you are.
 

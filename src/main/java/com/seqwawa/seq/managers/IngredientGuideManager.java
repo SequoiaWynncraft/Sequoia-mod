@@ -4,6 +4,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.seqwawa.seq.client.ClientThread;
+import com.seqwawa.seq.client.Clocks;
+import com.seqwawa.seq.client.Refreshable;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.IngredientGuideEntry;
 import com.seqwawa.seq.model.IngredientGuideEntry.CraftingModifiers;
@@ -17,7 +20,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -26,74 +28,84 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.function.LongSupplier;
 
 public final class IngredientGuideManager {
     static final URI DEFAULT_ENDPOINT = URI.create("https://api.wynncraft.com/v3/item/search?fullResult");
     static final long REFRESH_INTERVAL_MS = Duration.ofHours(1).toMillis();
+    /** After a failed load, even the first, the guide waits this long before asking again. */
+    static final long RETRY_INTERVAL_MS = Duration.ofMinutes(1).toMillis();
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
     private static final String SEARCH_BODY = "{\"type\":\"ingredient\"}";
     private static final IngredientGuideManager INSTANCE = new IngredientGuideManager();
 
     private final HttpClient httpClient;
     private final URI endpoint;
-    private final LongSupplier currentTimeMillis;
-    private volatile Snapshot snapshot = Snapshot.empty();
-    private volatile String status = "Not loaded";
-    private volatile long lastAttemptAtMs;
-    private volatile boolean loading;
+    /** A failed refresh keeps the ingredients from the last good one. */
+    private final Refreshable<List<IngredientGuideEntry>> ingredients;
 
     public static IngredientGuideManager getInstance() {
         return INSTANCE;
     }
 
     private IngredientGuideManager() {
-        ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "seq-ingredient-guide");
-            thread.setDaemon(true);
-            return thread;
-        });
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .executor(executor)
-                .build();
-        this.endpoint = DEFAULT_ENDPOINT;
-        this.currentTimeMillis = System::currentTimeMillis;
+        this(HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .executor(Executors.newSingleThreadExecutor(runnable -> {
+                            Thread thread = new Thread(runnable, "seq-ingredient-guide");
+                            thread.setDaemon(true);
+                            return thread;
+                        }))
+                        .build(),
+                DEFAULT_ENDPOINT,
+                Clocks::monotonicMillis,
+                ClientThread.executor());
     }
 
-    IngredientGuideManager(HttpClient httpClient, URI endpoint, LongSupplier currentTimeMillis) {
+    IngredientGuideManager(HttpClient httpClient, URI endpoint, LongSupplier clock, Executor handBack) {
         this.httpClient = httpClient;
         this.endpoint = endpoint;
-        this.currentTimeMillis = currentTimeMillis;
+        this.ingredients = Refreshable.<List<IngredientGuideEntry>>builder("ingredient guide", this::fetch)
+                .clock(clock)
+                .handBack(handBack)
+                .refreshEveryMs(REFRESH_INTERVAL_MS)
+                .retryAfterMs(RETRY_INTERVAL_MS)
+                .emptyValue(List.of())
+                .whenFailed(failure -> SeqClient.LOGGER.warn(
+                        "[IngredientGuide] Failed to refresh Wynncraft ingredients.", failure))
+                .build();
     }
 
     public Snapshot snapshot() {
-        return snapshot;
+        Refreshable.State<List<IngredientGuideEntry>> state = ingredients.state();
+        return new Snapshot(state.value(), state.version());
     }
 
     public String status() {
-        return status;
+        Refreshable.State<List<IngredientGuideEntry>> state = ingredients.state();
+        if (state.loading()) return state.hasValue() ? "Refreshing ingredients..." : "Loading ingredients...";
+        if (state.failure() != null) return "Refresh failed";
+        return state.hasValue() ? "Loaded " + state.value().size() + " ingredients" : "Not loaded";
     }
 
     public boolean isLoading() {
-        return loading;
+        return ingredients.isLoading();
     }
 
-    public synchronized boolean requestRefresh() {
-        return requestRefresh(false);
+    /** Loads unless a load is running or the last began too recently. Game thread only. */
+    public boolean requestRefresh() {
+        return ingredients.request();
     }
 
-    public synchronized boolean requestRefresh(boolean force) {
-        long now = currentTimeMillis.getAsLong();
-        if (loading || (!force && snapshot.version() > 0 && now - lastAttemptAtMs < REFRESH_INTERVAL_MS)) {
-            return false;
-        }
-        loading = true;
-        lastAttemptAtMs = now;
-        status = snapshot.version() == 0 ? "Loading ingredients..." : "Refreshing ingredients...";
+    /** With {@code force}, loads now whatever the interval, unless a load is running. */
+    public boolean requestRefresh(boolean force) {
+        return force ? ingredients.force() : ingredients.request();
+    }
 
+    private CompletableFuture<List<IngredientGuideEntry>> fetch() {
         HttpRequest request = HttpRequest.newBuilder(endpoint)
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json")
@@ -101,28 +113,12 @@ public final class IngredientGuideManager {
                 .timeout(REQUEST_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString(SEARCH_BODY))
                 .build();
-        httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .whenComplete(this::completeRefresh);
-        return true;
-    }
-
-    private synchronized void completeRefresh(HttpResponse<String> response, Throwable throwable) {
-        try {
-            if (throwable != null) {
-                throw new IllegalStateException("request failed", throwable);
-            }
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString()).thenApply(response -> {
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new IllegalStateException("API returned HTTP " + response.statusCode());
             }
-            List<IngredientGuideEntry> ingredients = parseIngredients(response.body());
-            snapshot = new Snapshot(ingredients, snapshot.version() + 1, Instant.now());
-            status = "Loaded " + ingredients.size() + " ingredients";
-        } catch (Exception exception) {
-            status = "Refresh failed";
-            SeqClient.LOGGER.warn("[IngredientGuide] Failed to refresh Wynncraft ingredients.", exception);
-        } finally {
-            loading = false;
-        }
+            return parseIngredients(response.body());
+        });
     }
 
     public static List<IngredientGuideEntry> filter(
@@ -543,13 +539,10 @@ public final class IngredientGuideManager {
         }
     }
 
-    public record Snapshot(List<IngredientGuideEntry> ingredients, long version, Instant fetchedAt) {
+    /** The ingredients, and a version that changes whenever they do, so screens can tell a new list. 0 before the first. */
+    public record Snapshot(List<IngredientGuideEntry> ingredients, long version) {
         public Snapshot {
             ingredients = List.copyOf(ingredients);
-        }
-
-        private static Snapshot empty() {
-            return new Snapshot(List.of(), 0, null);
         }
     }
 }
