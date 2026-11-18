@@ -1,0 +1,43 @@
+name: Retry jobs no runner took
+
+# GitHub sometimes finds no hosted runner for a job, most often on macOS Arm, and fails it after about
+# fifteen minutes without running a step: "The job was not acquired by Runner of type hosted even
+# after multiple attempts". That says nothing about the code, so the run's failed jobs are run again,
+# at most twice, instead of the run waiting for someone to notice. A run that also has a job which
+# ran and failed is left alone, so a real failure is never retried.
+on:
+  # zizmor: ignore[dangerous-triggers] nothing from the run is checked out or executed; this only reads its jobs and asks GitHub to rerun them
+  workflow_run:
+    workflows: [Build, Release]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  retry:
+    # A run superseded by a newer push ends "cancelled", not "failure", and is not retried.
+    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt < 3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write # rerun the failed jobs
+    steps:
+      - name: Rerun the failed jobs when no runner took them
+        shell: bash
+        env:
+          # The runner's own gh: this job checks out nothing, so mise and its pinned gh are not here.
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          jobs=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" --paginate \
+            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "cancelled")
+                  | if (.steps | length) == 0 and (.runner_name // "") == "" then "unplaced" else "ran" end')
+          unplaced=$(grep -c '^unplaced$' <<<"$jobs" || true)
+          ran=$(grep -c '^ran$' <<<"$jobs" || true)
+          echo "Failed jobs no runner took: $unplaced; failed jobs that ran: $ran"
+          if [ "$unplaced" -gt 0 ] && [ "$ran" -eq 0 ]; then
+            gh run rerun "$RUN_ID" --failed --repo "$REPO"
+            echo "Asked GitHub to run them again."
+          fi
