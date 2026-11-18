@@ -162,6 +162,8 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
         List<Card> cards = new ArrayList<>(SLOTS.size());
         for (String slot : SLOTS) {
             Quest quest = source.quest(slot);
+            // A quest whose time is up is gone, even before the next refresh says so.
+            if (quest != null && quest.expiresAt() != null && !now.isBefore(quest.expiresAt())) quest = null;
             Daily daily = source.dailyOrEmpty();
             boolean isDaily = LeafQuests.DAILY.equals(slot);
             cards.add(new Card(slot, heading(slot, daily), timer(slot, quest, daily, source.timed(), now), quest,
@@ -194,7 +196,10 @@ public final class QuestBoardScreen extends SequoiaPanelScreen {
             case LeafQuests.TIMED -> {
                 Instant next = timed == null ? null : timed.nextAt();
                 String nextIn = next == null ? null : durationLabel(Duration.between(now, next));
-                if (quest == null) yield nextIn == null ? "Every four hours" : "Next in " + nextIn;
+                if (quest == null) {
+                    if (next == null) yield "";
+                    yield now.isBefore(next) ? "Next in " + nextIn : "Opening now";
+                }
                 if (quest.completed()) yield nextIn == null ? "Done" : "Done · next in " + nextIn;
                 yield quest.expiresAt() == null
                         ? "Ends soon"

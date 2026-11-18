@@ -89,8 +89,20 @@ class QuestBoardScreenTest {
         QuestBoardScreen.Card empty = QuestBoardScreen.cards(new LeafQuests(daily, between, List.of(), List.of()), NOW)
                 .getLast();
         assertEquals("A timed quest opens for the whole guild every four hours.", empty.emptyLine());
-        assertEquals("Every four hours", QuestBoardScreen.timer("timed", null, daily, null, NOW),
-                "an older Leaf sends no timed block");
+        assertEquals("", QuestBoardScreen.timer("timed", null, daily, null, NOW),
+                "an older Leaf sends no timed block, so the card promises no time");
+    }
+
+    @Test
+    void aTimedQuestWhoseWindowClosedIsGoneBeforeTheNextRefresh() {
+        Quest open = quest("timed", new Objective("raids", null), 1, 2, TIMED.endsAt(), null);
+        LeafQuests board = new LeafQuests(new Daily(1, 3, null), TIMED, List.of(open), List.of());
+
+        QuestBoardScreen.Card closed = QuestBoardScreen.cards(board, TIMED.endsAt()).getLast();
+        assertNull(closed.quest());
+        assertEquals("Next in 2h 0m", closed.timer());
+        assertEquals("Opening now", QuestBoardScreen.cards(board, TIMED.nextAt().plusSeconds(5)).getLast().timer(),
+                "until the refresh brings the new quest");
     }
 
     @Test
