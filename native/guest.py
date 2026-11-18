@@ -4,7 +4,8 @@ usage: guest.py [--sources-only]
 
 Keeps the FFmpeg and zlib archives in native/out/sources and stops on any mismatch with their
 SHA-256 pins, FFmpeg's signature by the pinned key, or the bundled license texts. Archives already
-there are checked the same way and downloaded again only if absent or invalid. Then it builds
+there are checked the same way and downloaded again only if absent or invalid. A source with mirrors
+is tried at each in turn until a copy passes its checks; every copy must match the same pin. Then it builds
 native/out/guest/decoder.wasm with the pinned wasi-sdk (or WASI_SDK_PATH) and records the inputs in
 guest.json. --sources-only checks the sources, downloading what is missing, without building.
 """
@@ -79,11 +80,23 @@ def require_license(archive, member, expected):
                          "inputs and native/sources.json together")
 
 
-def obtain(url, path, authenticate):
-    """Leaves an authenticated copy of URL at PATH, downloading only if PATH is absent or fails.
+def describe(path):
+    """What a download that failed its checks holds, to tell a bad reply from a changed archive."""
+    head = path.read_bytes()[:64]
+    kind = ("a gzip archive" if head.startswith(b"\x1f\x8b") else
+            "an xz archive" if head.startswith(b"\xfd7zXZ") else
+            "an HTML page" if head.lstrip().lower().startswith((b"<!doctype", b"<html")) else
+            "unrecognised data")
+    return f"{path.stat().st_size} bytes of {kind}"
 
-    AUTHENTICATE raises ValueError for a file that must not be used. A copy restored from a cache
-    or an earlier job is checked exactly like a fresh download.
+
+def obtain(urls, path, authenticate):
+    """Leaves an authenticated copy at PATH, downloading only if PATH is absent or fails.
+
+    URLS are the places to download it from, in order; a copy from one that fails AUTHENTICATE is
+    reported and the next is tried, so one host answering with the wrong bytes does not stop the
+    build. AUTHENTICATE raises ValueError for a file that must not be used. A copy restored from a
+    cache or an earlier job is checked exactly like a fresh download.
     """
     if path.is_file():
         try:
@@ -92,8 +105,17 @@ def obtain(url, path, authenticate):
             return
         except ValueError as error:
             print(f"Downloading {path.name} again: {error}", file=sys.stderr)
-    download(url, path)
-    authenticate(path)
+    failures = []
+    for url in urls:
+        download(url, path)
+        try:
+            authenticate(path)
+            return
+        except ValueError as error:
+            failures.append(f"{url} gave {describe(path)}: {error}")
+            print(f"Not using {failures[-1]}", file=sys.stderr)
+    path.unlink(missing_ok=True)
+    raise ValueError(f"No copy of {path.name} passed its checks:\n" + "\n".join(failures))
 
 
 def fetch_sources(directory=ARCHIVES):
@@ -104,12 +126,13 @@ def fetch_sources(directory=ARCHIVES):
     paths = {}
     for name, source in (("ffmpeg", ffmpeg), ("zlib", zlib)):
         path = directory / source["url"].rsplit("/", 1)[1]
-        obtain(source["url"], path, lambda file: require_pin(file, source["sha256"]))
+        obtain([source["url"], *source.get("mirrors", [])], path,
+               lambda file: require_pin(file, source["sha256"]))
         for member, digest in source["license_files"].items():
             require_license(path, f"{name}-{source['version']}/{member}", digest)
         paths[name] = path
     signature = directory / ffmpeg["signature_url"].rsplit("/", 1)[1]
-    obtain(ffmpeg["signature_url"], signature,
+    obtain([ffmpeg["signature_url"]], signature,
            lambda file: verify_signature(paths["ffmpeg"], file, ROOT / ffmpeg["signing_key"],
                                          ffmpeg["signing_key_fingerprint"]))
     # The directory holds exactly the corresponding source, as the old wholesale refetch did.

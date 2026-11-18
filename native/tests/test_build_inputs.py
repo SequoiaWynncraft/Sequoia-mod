@@ -123,6 +123,8 @@ class SourceReuseTest(unittest.TestCase):
         self.guest = load("guest")
         self.directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.files = {}
+        # What a URL answers with instead of the file its name says.
+        self.replies = {}
         sources = {}
         for name, suffix, member, mode in (("ffmpeg", "tar.xz", "COPYING.LGPLv2.1", "w:xz"),
                                            ("zlib", "tar.gz", "LICENSE", "w:gz")):
@@ -146,7 +148,7 @@ class SourceReuseTest(unittest.TestCase):
         self.enterContext(patch.object(sys, "stderr", io.StringIO()))
 
     def serve(self, url, destination):
-        destination.write_bytes(self.files[url.rsplit("/", 1)[1]])
+        destination.write_bytes(self.replies.get(url, self.files[url.rsplit("/", 1)[1]]))
 
     def test_authenticated_sources_are_reused_without_downloading(self):
         paths = self.guest.fetch_sources(self.directory)
@@ -175,6 +177,32 @@ class SourceReuseTest(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             self.guest.fetch_sources(self.directory)
+
+    def test_a_source_one_host_serves_wrongly_is_taken_from_its_mirror(self):
+        (self.directory / "zlib-1.tar.gz").unlink()
+        mirror = "https://mirror.invalid/zlib-1.tar.gz"
+        self.guest.SOURCES["zlib"]["mirrors"] = [mirror]
+        self.replies["https://example.invalid/zlib-1.tar.gz"] = b"<!DOCTYPE html><title>Just a moment</title>"
+
+        self.guest.fetch_sources(self.directory)
+
+        self.assertEqual(["https://example.invalid/zlib-1.tar.gz", mirror],
+                         [call.args[0] for call in self.download.call_args_list])
+        self.assertEqual(self.files["zlib-1.tar.gz"], (self.directory / "zlib-1.tar.gz").read_bytes())
+        self.assertIn("an HTML page", sys.stderr.getvalue(), "the bad reply is described")
+
+    def test_a_source_no_host_serves_as_pinned_fails_and_leaves_nothing(self):
+        (self.directory / "zlib-1.tar.gz").unlink()
+        mirror = "https://mirror.invalid/zlib-1.tar.gz"
+        self.guest.SOURCES["zlib"]["mirrors"] = [mirror]
+        self.replies["https://example.invalid/zlib-1.tar.gz"] = b"tampered upstream"
+        self.replies[mirror] = b"also tampered"
+
+        with self.assertRaises(ValueError) as raised:
+            self.guest.fetch_sources(self.directory)
+
+        self.assertIn(mirror, str(raised.exception))
+        self.assertFalse((self.directory / "zlib-1.tar.gz").exists())
 
     def test_a_cached_archive_with_a_changed_notice_is_rejected_without_downloading(self):
         self.guest.SOURCES["zlib"]["license_files"]["LICENSE"] = sha256(b"bundled")
