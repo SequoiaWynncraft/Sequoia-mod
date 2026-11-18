@@ -18,7 +18,9 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
+import net.minecraft.client.gui.screens.AccessibilityOnboardingScreen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.tutorial.TutorialSteps;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LevelSettings;
@@ -89,8 +91,13 @@ public final class UnlockPreview {
         }
         switch (stage) {
             case WAIT_FOR_TITLE -> {
-                if (mc.screen instanceof TitleScreen && SeqClient.assetManager != null
+                // A new run folder opens Minecraft's accessibility onboarding first. Close it as Esc would.
+                if (mc.screen instanceof AccessibilityOnboardingScreen onboarding) {
+                    onboarding.onClose();
+                } else if (mc.screen instanceof TitleScreen && SeqClient.assetManager != null
                         && SeqClient.assetManager.getAsset("unlock_medal_gold") != null && inStage > 60) {
+                    // Nor should the movement tutorial's hint sit over the screenshots.
+                    mc.getTutorial().setStep(TutorialSteps.NONE);
                     createWorld(mc);
                     next(Stage.WAIT_FOR_WORLD);
                 }
@@ -198,16 +205,23 @@ public final class UnlockPreview {
                 new WorldOptions(SEED, false, false), WorldPresets::createNormalWorldDimensions, mc.screen);
     }
 
-    /** A member two dailies into their bank, partway through each quest. */
+    /**
+     * A member two dailies into their bank, partway through each quest: a daily and a
+     * repeatable that raids or wars can finish, and a weekly for season rating.
+     */
     static LeafQuestService.Snapshot sampleBoard() {
         Instant now = Instant.now();
         LeafQuests quests = new LeafQuests(
                 new LeafQuests.Daily(2, 3, now.plus(Duration.ofMinutes(372))),
                 List.of(
-                        quest("daily", "Complete 3 NOL raids", "raids", "nol", 1, 3, 300, 150, null),
-                        quest("weekly", "Complete 12 TCC raids", "raids", "tcc", 5, 12, 800, 400,
-                                now.plus(Duration.ofHours(70))),
-                        quest("repeatable", "Complete 8 raids", "raids", null, 3, 8, 200, 100, null)),
+                        quest("daily", "Complete 3 NOL raids or 9 wars", 300, 150, null,
+                                new LeafQuests.Goal("raids", "nol", "Complete 3 NOL raids", 1, 3),
+                                new LeafQuests.Goal("wars", null, "Take part in 9 wars", 4, 9)),
+                        quest("weekly", "Earn 6,000 season rating", 800, 400, now.plus(Duration.ofHours(70)),
+                                new LeafQuests.Goal("season_rating", null, "Earn 6,000 season rating", 2_350, 6_000)),
+                        quest("repeatable", "Complete 8 raids or 24 wars", 200, 100, null,
+                                new LeafQuests.Goal("raids", null, "Complete 8 raids", 3, 8),
+                                new LeafQuests.Goal("wars", null, "Take part in 24 wars", 0, 24))),
                 List.of());
         Instant at = Instant.now();
         List<LeafEvents.Event> recent = List.of(
@@ -215,9 +229,7 @@ public final class UnlockPreview {
                         "{\"source\":\"raid\",\"leaf\":330,\"xp\":330,\"detail\":\"The Nameless Anomaly\"}"),
                 event(5, "leaf_earned", at.minus(Duration.ofMinutes(41)),
                         "{\"source\":\"war\",\"leaf\":146,\"xp\":146,\"detail\":\"Detlas\",\"in_claim\":true}"),
-                event(4, "quest_completed", at.minus(Duration.ofMinutes(75)),
-                        "{\"quest\":{\"slot\":\"daily\",\"title\":\"Complete 3 NOL raids\","
-                                + "\"objective\":{\"type\":\"raids\",\"raid\":\"nol\"},\"reward\":{\"leaf\":300,\"xp\":150}}}"),
+                event(4, "quest_completed", at.minus(Duration.ofMinutes(75)), FINISHED_BY_WARS),
                 event(3, "achievement_paid", at.minus(Duration.ofHours(3)),
                         "{\"ladder\":\"raid:NOTG\",\"milestone\":\"gold\",\"tier\":\"gold\",\"threshold\":100,"
                                 + "\"label\":\"Gold\",\"leaf\":1000,\"xp\":1000}"),
@@ -232,11 +244,25 @@ public final class UnlockPreview {
         return new LeafEvents.Event(id, type, at, JsonParser.parseString(data).getAsJsonObject());
     }
 
-    private static LeafQuests.Quest quest(String slot, String title, String type, String raid, long progress, long target,
-            long leaf, long xp, Instant expiresAt) {
+    /** A daily that raids or wars could finish, finished by wars, as Leaf's event sends it. */
+    private static final String FINISHED_BY_WARS = "{\"quest\":{\"slot\":\"daily\","
+            + "\"title\":\"Complete 3 NOL raids or 9 wars\",\"objective\":{\"type\":\"wars\",\"raid\":null},"
+            + "\"progress\":9,\"target\":9,\"goals\":["
+            + "{\"type\":\"raids\",\"raid\":\"nol\",\"title\":\"Complete 3 NOL raids\",\"progress\":1,\"target\":3},"
+            + "{\"type\":\"wars\",\"raid\":null,\"title\":\"Take part in 9 wars\",\"progress\":9,\"target\":9}],"
+            + "\"reward\":{\"leaf\":300,\"xp\":150}}}";
+
+    /** A quest as Leaf sends it: its goals, and the one nearest to being met as its objective. */
+    private static LeafQuests.Quest quest(String slot, String title, long leaf, long xp, Instant expiresAt,
+            LeafQuests.Goal... goals) {
         Instant now = Instant.now();
-        return new LeafQuests.Quest(slot + ":1", slot, title, new LeafQuests.Objective(type, raid), progress, target,
-                new LeafQuests.Reward(leaf, xp), now.minus(Duration.ofHours(3)), expiresAt, null);
+        LeafQuests.Goal leading = goals[0];
+        for (LeafQuests.Goal goal : goals) {
+            if ((double) goal.progress() / goal.target() > (double) leading.progress() / leading.target()) leading = goal;
+        }
+        return new LeafQuests.Quest(slot + ":1", slot, title, new LeafQuests.Objective(leading.type(), leading.raid()),
+                leading.progress(), leading.target(), List.of(goals), new LeafQuests.Reward(leaf, xp),
+                now.minus(Duration.ofHours(3)), expiresAt, null);
     }
 
     /** One of each popup, made from the same JSON Leaf sends, so the preview also exercises the mapping. */
@@ -244,9 +270,7 @@ public final class UnlockPreview {
         return List.of(
                 popup("leaf_earned", "{\"source\":\"raid\",\"leaf\":330,\"xp\":330,\"detail\":\"The Nameless Anomaly\"}"),
                 popup("leaf_earned", "{\"source\":\"war\",\"leaf\":146,\"xp\":146,\"detail\":\"Detlas\",\"in_claim\":true}"),
-                popup("quest_completed", "{\"quest\":{\"slot\":\"daily\",\"title\":\"Complete 3 NOL raids\","
-                        + "\"objective\":{\"type\":\"raids\",\"raid\":\"nol\"},"
-                        + "\"reward\":{\"leaf\":300,\"xp\":150}}}"),
+                popup("quest_completed", FINISHED_BY_WARS),
                 popup("achievement_paid", "{\"ladder\":\"raid:NOTG\",\"milestone\":\"gold\",\"tier\":\"gold\","
                         + "\"threshold\":100,\"label\":\"Gold\",\"leaf\":1000,\"xp\":1000}"),
                 popup("achievement_paid", "{\"ladder\":\"raid:TNA\",\"milestone\":\"diamond\",\"tier\":\"diamond\","

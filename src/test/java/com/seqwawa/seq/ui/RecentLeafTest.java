@@ -41,6 +41,17 @@ class RecentLeafTest {
     }
 
     @Test
+    void aQuestFinishedByWarsIsListedByItsWarGoal() {
+        Row row = RecentLeaf.row(event(1, "quest_completed", "{\"quest\":{\"slot\":\"repeatable\","
+                + "\"title\":\"Complete 8 raids or 24 wars\",\"objective\":{\"type\":\"wars\",\"raid\":null},"
+                + "\"goals\":[{\"type\":\"raids\",\"raid\":null,\"title\":\"Complete 8 raids\",\"progress\":5,\"target\":8},"
+                + "{\"type\":\"wars\",\"raid\":null,\"title\":\"Take part in 24 wars\",\"progress\":24,\"target\":24}],"
+                + "\"reward\":{\"leaf\":200,\"xp\":100}}}"));
+
+        assertEquals(new Row(Kind.QUEST, "unlock_war", "bronze", "Take part in 24 wars", "Repeatable quest", 200, 0, AT), row);
+    }
+
+    @Test
     void aLevelUpShowsTheLevelAndTheLeafItPaid() {
         Row row = RecentLeaf.row(event(1, "level_up", "{\"level\":8,\"leaf\":250}"));
 

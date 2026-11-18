@@ -3,6 +3,7 @@ package com.seqwawa.seq.ui;
 import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
+import com.seqwawa.seq.model.LeafQuests.Goal;
 import com.seqwawa.seq.model.LeafQuests.Objective;
 import com.seqwawa.seq.model.LeafQuests.Quest;
 import com.seqwawa.seq.model.LeafQuests;
@@ -22,6 +23,10 @@ import java.util.function.Function;
  * framed tile, the quest, the Leaf it pays, and its progress bar with the count
  * written on it.
  *
+ * <p>A quest that raids or wars can finish splits into two columns, one per goal:
+ * each goal's picture over its own bar, with "or" between the pictures, so both
+ * counts show at once. Once it is done it is one bar again.
+ *
  * <p>Measured in art pixels two UI pixels wide; 80 tall.
  */
 final class QuestCard {
@@ -33,6 +38,8 @@ final class QuestCard {
     static final int TILE = 22;
     static final int PAD = 5;
     static final int PIP = 3;
+    /** Art pixels between the two goals' bars. */
+    static final int GOAL_GAP = 3;
 
     private QuestCard() {}
 
@@ -40,6 +47,24 @@ final class QuestCard {
     static String tileIcon(Objective objective) {
         if (objective == null) return UnlockPopup.RAID_ICON;
         return UnlockPopup.objectiveIcon(objective.type(), objective.raid());
+    }
+
+    static String goalIcon(Goal goal) {
+        return UnlockPopup.objectiveIcon(goal.type(), goal.raid());
+    }
+
+    /**
+     * Where a two-goal card's columns go: two equal widths, {@link #GOAL_GAP} apart,
+     * filling the card inside its padding, on whole art pixels. The second takes
+     * any odd pixel left over.
+     */
+    record Columns(float leftX, float leftWidth, float rightX, float rightWidth) {}
+
+    static Columns columns(float x, float width, float p) {
+        float inside = width - 2 * PAD * p;
+        float left = Math.max(0, (float) Math.floor((inside - GOAL_GAP * p) / 2 / p) * p);
+        float rightX = x + PAD * p + left + GOAL_GAP * p;
+        return new Columns(x + PAD * p, left, rightX, x + width - PAD * p - rightX);
     }
 
     /**
@@ -95,6 +120,25 @@ final class QuestCard {
         return lines;
     }
 
+    /**
+     * A quest's title on one line, or two when it is too long. A quest raids or wars
+     * can finish breaks before its "or", so each way reads whole: "Complete 3 NOL
+     * raids", "or 9 wars". A third line's words join the second, cut short to fit.
+     */
+    static List<String> titleLines(String title, float width, Function<String, Float> textWidth) {
+        if (title == null) return List.of();
+        if (textWidth.apply(title) <= width) return List.of(title);
+        int or = title.lastIndexOf(" or ");
+        if (or > 0) {
+            String first = title.substring(0, or);
+            String second = title.substring(or + 1);
+            if (textWidth.apply(first) <= width && textWidth.apply(second) <= width) return List.of(first, second);
+        }
+        List<String> lines = wrap(title, width, textWidth);
+        if (lines.size() <= 2) return lines;
+        return List.of(lines.get(0), PixelArt.fit(String.join(" ", lines.subList(1, lines.size())), width, textWidth));
+    }
+
     /** One part of the bar per raid or war a short quest asks for; none for long counts or season rating. */
     static int notches(long target) {
         return target >= 2 && target <= 12 ? (int) target : 0;
@@ -147,12 +191,22 @@ final class QuestCard {
             return;
         }
 
-        float tileX = PixelArt.snap(cx - TILE * p / 2, p);
-        PixelArt.iconTile(canvas, tileIcon(quest.objective()), tileX, y + 22 * p, TILE * p, p, accent, 1f);
+        List<Goal> goals = quest.goalsOrObjective();
+        boolean either = goals.size() > 1 && !quest.completed();
+        Columns columns = columns(x, w, p);
+        float tileY = y + 22 * p;
+        if (either) {
+            // Each goal's picture over the middle of its own bar, and "or" between them.
+            tile(canvas, goalIcon(goals.get(0)), columns.leftX() + columns.leftWidth() / 2, tileY, accent);
+            tile(canvas, goalIcon(goals.get(1)), columns.rightX() + columns.rightWidth() / 2, tileY, accent);
+            PixelArt.text(canvas, "or", cx, tileY + TILE * p / 2, 10, color(TEXT_MUTED), HorizontalAlign.CENTER);
+        } else {
+            // A finished quest shows the goal that finished it, which Leaf sends as its objective.
+            tile(canvas, tileIcon(quest.objective()), cx, tileY, accent);
+        }
 
         // The quest, on up to two lines, the pair centred on where one line would sit.
-        List<String> title = wrap(quest.title(), inner, text -> PixelArt.measure(text, 10));
-        if (title.size() > 2) title = List.of(title.get(0), PixelArt.fit(String.join(" ", title.subList(1, title.size())), inner, 10));
+        List<String> title = titleLines(quest.title(), inner, text -> PixelArt.measure(text, 10));
         float titleY = y + (title.size() > 1 ? 49 : 51) * p;
         for (int i = 0; i < title.size(); i++) {
             PixelArt.text(canvas, title.get(i), cx, titleY + i * 6 * p, 10, color(TEXT_PRIMARY), HorizontalAlign.CENTER);
@@ -173,15 +227,36 @@ final class QuestCard {
                         HorizontalAlign.LEFT);
             }
         }
-        float barX = x + PAD * p;
         float barY = y + 67 * p;
-        float barW = w - 2 * PAD * p;
         float barH = 9 * p;
-        Color fill = quest.completed() ? color(CONTROL_SUCCESS) : accent;
-        PixelArt.progressBar(canvas, barX, barY, barW, barH, p, QuestBoardScreen.progressRatio(quest), fill, 1f,
-                notches(quest.target()));
-        String progress = quest.completed() ? "Done" : QuestBoardScreen.progressLabel(quest);
-        PixelArt.outlinedText(canvas, PixelArt.fit(progress, barW - 4 * p, 10), cx, barY + barH / 2, 10,
+        if (either) {
+            bar(canvas, goals.get(0), columns.leftX(), barY, columns.leftWidth(), barH, accent);
+            bar(canvas, goals.get(1), columns.rightX(), barY, columns.rightWidth(), barH, accent);
+            return;
+        }
+        float barX = x + PAD * p;
+        float barW = w - 2 * PAD * p;
+        if (quest.completed()) {
+            PixelArt.progressBar(canvas, barX, barY, barW, barH, p, 1f, color(CONTROL_SUCCESS), 1f, 0);
+            barLabel(canvas, "Done", barX, barY, barW, barH);
+            return;
+        }
+        bar(canvas, goals.getFirst(), barX, barY, barW, barH, accent);
+    }
+
+    private static void tile(UiCanvas canvas, String icon, float centreX, float y, Color accent) {
+        PixelArt.iconTile(canvas, icon, PixelArt.snap(centreX - TILE * P / 2, P), y, TILE * P, P, accent, 1f);
+    }
+
+    /** One goal's bar, a part per raid or war, with how far along written on it. */
+    private static void bar(UiCanvas canvas, Goal goal, float x, float y, float width, float height, Color accent) {
+        PixelArt.progressBar(canvas, x, y, width, height, P, QuestBoardScreen.progressRatio(goal), accent, 1f,
+                notches(goal.target()));
+        barLabel(canvas, QuestBoardScreen.progressLabel(goal), x, y, width, height);
+    }
+
+    private static void barLabel(UiCanvas canvas, String label, float x, float y, float width, float height) {
+        PixelArt.outlinedText(canvas, PixelArt.fit(label, width - 4 * P, 10), x + width / 2, y + height / 2, 10,
                 color(TEXT_PRIMARY), 1f, HorizontalAlign.CENTER);
     }
 }

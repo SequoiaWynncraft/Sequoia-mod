@@ -2,7 +2,9 @@ package com.seqwawa.seq.ui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.model.LeafQuests.Goal;
 import com.seqwawa.seq.model.LeafQuests.Objective;
 import java.util.List;
 import java.util.function.Function;
@@ -23,6 +25,26 @@ class QuestCardTest {
         assertEquals("unlock_war", QuestCard.tileIcon(new Objective("wars", null)));
         assertEquals("star", QuestCard.tileIcon(new Objective("season_rating", null)));
         assertEquals("unlock_raid", QuestCard.tileIcon(null));
+    }
+
+    @Test
+    void eachGoalShowsItsOwnPicture() {
+        assertEquals("unlock_icon_nol", QuestCard.goalIcon(new Goal("raids", "nol", "Complete 3 NOL raids", 1, 3)));
+        assertEquals("unlock_war", QuestCard.goalIcon(new Goal("wars", null, "Take part in 9 wars", 4, 9)));
+    }
+
+    @Test
+    void twoGoalsSplitTheCardIntoEqualColumnsOnWholePixels() {
+        QuestCard.Columns wide = QuestCard.columns(100, 300, 2);
+
+        assertEquals(new QuestCard.Columns(110, 136, 252, 138), wide,
+                "inside the padding, 6 apart, and the second takes the odd pixel");
+        assertEquals(400 - 10, wide.rightX() + wide.rightWidth());
+
+        QuestCard.Columns narrowest = QuestCard.columns(0, 140, 2);
+        assertEquals(56, narrowest.leftWidth());
+        assertTrue(narrowest.leftWidth() >= QuestCard.TILE * QuestCard.P, "each goal's picture fits over its bar");
+        assertTrue(narrowest.rightWidth() >= QuestCard.TILE * QuestCard.P);
     }
 
     @Test
@@ -49,6 +71,18 @@ class QuestCardTest {
         assertEquals(12, QuestCard.notches(12));
         assertEquals(0, QuestCard.notches(20), "too many to tell apart");
         assertEquals(0, QuestCard.notches(1), "one part is no division at all");
+    }
+
+    @Test
+    void aTitleWithTwoWaysBreaksBeforeItsOr() {
+        assertEquals(List.of("Complete 3 NOL raids", "or 9 wars"),
+                QuestCard.titleLines("Complete 3 NOL raids or 9 wars", 130, TEXT));
+        assertEquals(List.of("Complete 3 NOL raids or 9 wars"),
+                QuestCard.titleLines("Complete 3 NOL raids or 9 wars", 180, TEXT));
+        assertEquals(List.of("Complete 3 NOL", "raids or 9 wars"),
+                QuestCard.titleLines("Complete 3 NOL raids or 9 wars", 114, TEXT),
+                "too narrow for each way on its own line, so it wraps as words");
+        assertEquals(List.of("Earn 6,000 season", "rating"), QuestCard.titleLines("Earn 6,000 season rating", 110, TEXT));
     }
 
     @Test

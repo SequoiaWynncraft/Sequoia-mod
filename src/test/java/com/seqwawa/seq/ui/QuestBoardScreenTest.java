@@ -7,6 +7,7 @@ import com.seqwawa.seq.managers.LeafQuestService.State;
 import com.seqwawa.seq.model.LeafAccount;
 import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.model.LeafQuests.Daily;
+import com.seqwawa.seq.model.LeafQuests.Goal;
 import com.seqwawa.seq.model.LeafQuests.Objective;
 import com.seqwawa.seq.model.LeafQuests.Quest;
 import com.seqwawa.seq.model.LeafQuests.Reward;
@@ -22,7 +23,7 @@ class QuestBoardScreenTest {
 
     private static Quest quest(String slot, Objective objective, long progress, long target, Instant expiresAt,
             Instant completedAt) {
-        return new Quest(slot + ":1", slot, "A quest", objective, progress, target, new Reward(300, 150),
+        return new Quest(slot + ":1", slot, "A quest", objective, progress, target, null, new Reward(300, 150),
                 NOW.minusSeconds(3600), expiresAt, completedAt);
     }
 
@@ -68,7 +69,6 @@ class QuestBoardScreenTest {
                 NOW.minusSeconds(60));
 
         assertEquals("Done · new weekly in 5d 6h", QuestBoardScreen.timer("weekly", weekly, new Daily(1, 3, null), NOW));
-        assertEquals(1f, QuestBoardScreen.progressRatio(weekly));
     }
 
     @Test
@@ -85,8 +85,18 @@ class QuestBoardScreenTest {
         assertEquals("1 / 3", QuestBoardScreen.progressLabel(quest("daily", new Objective("raids", "nol"), 1, 3, null, null)));
         assertEquals("2,350 / 6,000 SR", QuestBoardScreen.progressLabel(
                 quest("weekly", new Objective("season_rating", null), 2350, 6000, null, null)));
-        assertEquals(0.5f, QuestBoardScreen.progressRatio(quest("daily", null, 4, 8, null, null)));
-        assertEquals(0f, QuestBoardScreen.progressRatio(quest("daily", null, 4, 0, null, null)));
+        assertEquals(0.5f, QuestBoardScreen.progressRatio(new Goal("raids", null, "Complete 8 raids", 4, 8)));
+        assertEquals(0f, QuestBoardScreen.progressRatio(new Goal("raids", null, "A quest", 4, 0)));
+    }
+
+    @Test
+    void readsOutEachGoalsCountForAQuestRaidsOrWarsCanFinish() {
+        Quest either = new Quest("daily:1", "daily", "Complete 3 NOL raids or 9 wars", new Objective("wars", null), 4, 9,
+                List.of(new Goal("raids", "nol", "Complete 3 NOL raids", 1, 3),
+                        new Goal("wars", null, "Take part in 9 wars", 4, 9)),
+                new Reward(300, 150), NOW.minusSeconds(3600), null, null);
+
+        assertEquals("1 / 3 raids, 4 / 9 wars", QuestBoardScreen.progressLabel(either));
     }
 
     @Test
