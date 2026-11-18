@@ -5,8 +5,6 @@ import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
-import com.seqwawa.seq.accessors.EventBusAccessor;
-import com.seqwawa.seq.events.Render2DEvent;
 import com.seqwawa.seq.raids.tna.TnaBeamIndicatorHudRenderer;
 import com.seqwawa.seq.ui.SequoiaScreen;
 import com.seqwawa.seq.ui.SettingsScreen;
@@ -21,7 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import static com.seqwawa.seq.client.SeqClient.mc;
 
 @Mixin(Gui.class)
-public class InGameHudMixin implements EventBusAccessor {
+public class InGameHudMixin {
 
     @Inject(method = "renderCrosshair", at = @At("HEAD"), cancellable = true)
     private void seq$onRenderCrosshair(GuiGraphics context, DeltaTracker deltaTracker, CallbackInfo ci) {
@@ -35,7 +33,6 @@ public class InGameHudMixin implements EventBusAccessor {
         Screen currentScreen = mc.screen;
         if (currentScreen == null) {
             UiRenderer.renderHud(canvas -> {
-                seqdispatch(new Render2DEvent(context, tickCounter.getGameTimeDeltaPartialTick(true)));
                 TnaBeamIndicatorHudRenderer.render(canvas);
                 WarTerritoryQueueHudRenderer.render(canvas);
                 UnlockOverlay.getInstance().render(canvas);

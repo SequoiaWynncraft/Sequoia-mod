@@ -12,7 +12,6 @@ import com.seqwawa.seq.accessors.NotificationAccessor;
 import com.seqwawa.seq.client.ClientThread;
 import com.seqwawa.seq.client.Clocks;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.events.DiscordChatEvent;
 import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
 import com.seqwawa.seq.integrations.WynntilsChatAccess;
 import java.util.function.BiFunction;
@@ -570,10 +569,6 @@ public class ChatManager {
             mc.execute(() -> {
                 if (mc.player != null) {
                     displayBridgeMessage(msg);
-                }
-
-                if (SeqClient.getEventBus() != null) {
-                    SeqClient.getEventBus().dispatch(new DiscordChatEvent(msg.username(), msg.message()));
                 }
             });
         });

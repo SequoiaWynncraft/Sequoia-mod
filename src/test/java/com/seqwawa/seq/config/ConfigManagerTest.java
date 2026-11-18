@@ -55,6 +55,22 @@ class ConfigManagerTest {
     }
 
     @Test
+    void aSavedValueThatCannotBeReadKeepsItsSettingAndTheRestStillLoad() throws Exception {
+        Path configPath = tempDir.resolve("sequoia.json");
+        Files.writeString(configPath, "{\"ui.ui_size_percent\": 1e10000, \"ui.enabled\": false}");
+        ConfigManager manager = new ConfigManager(configPath, tempDir.resolve(".seq_token"), false);
+        var size = new Setting.IntSetting("ui_size_percent", "ui", 100, 50, 200);
+        var enabled = new Setting.BooleanSetting("enabled", "ui", true);
+        manager.register(size);
+        manager.register(enabled);
+
+        manager.load();
+
+        assertEquals(100, size.getValue());
+        assertFalse(enabled.getValue());
+    }
+
+    @Test
     void queueHudDefaultsOnForConfigsWithoutTheKeyAndPersistsDisabledValue() throws Exception {
         Path configPath = tempDir.resolve("sequoia.json");
         Files.writeString(configPath, "{\"war_planner.queue_hud_only_owned_or_joined\": true}");

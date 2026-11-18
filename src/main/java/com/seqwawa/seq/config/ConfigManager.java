@@ -408,7 +408,12 @@ public class ConfigManager {
                     }
                 }
                 if (element != null) {
-                    setting.deserialize(element);
+                    try {
+                        setting.deserialize(element);
+                    } catch (RuntimeException e) {
+                        // A hand-edited value, such as 1e10000 for a whole number, keeps the setting as it was.
+                        SeqClient.LOGGER.warn("Ignoring the saved value of {}", key, e);
+                    }
                 }
             }
         } catch (IOException | JsonSyntaxException e) {
