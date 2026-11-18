@@ -50,7 +50,7 @@ public record UnlockPopup(
                 JsonObject reward = object(quest, "reward");
                 String slot = text(quest, "slot");
                 JsonObject objective = object(quest, "objective");
-                yield new UnlockPopup(Kind.CARD, slotName(slot) + " quest completed", text(quest, "title"), null,
+                yield new UnlockPopup(Kind.CARD, slotName(slot) + " quest completed", finishedQuestTitle(quest), null,
                         reward == null ? 0 : number(reward, "leaf"), reward == null ? 0 : number(reward, "xp"),
                         questTier(slot),
                         objective == null ? RAID_ICON : objectiveIcon(text(objective, "type"), text(objective, "raid")));
@@ -154,6 +154,25 @@ public record UnlockPopup(
     private static String capitalise(String value) {
         if (value == null || value.isEmpty()) return "";
         return value.substring(0, 1).toUpperCase(Locale.ROOT) + value.substring(1);
+    }
+
+    /**
+     * What a finished quest says it was: the goal that finished it, such as "Take part
+     * in 9 wars" for a quest that raids or wars could finish, or the quest's title
+     * when Leaf sends no goals.
+     */
+    public static String finishedQuestTitle(JsonObject quest) {
+        JsonElement goals = quest.get("goals");
+        if (goals != null && goals.isJsonArray()) {
+            for (JsonElement element : goals.getAsJsonArray()) {
+                if (element == null || !element.isJsonObject()) continue;
+                JsonObject goal = element.getAsJsonObject();
+                long target = number(goal, "target");
+                String title = text(goal, "title");
+                if (target > 0 && number(goal, "progress") >= target && title != null) return title;
+            }
+        }
+        return text(quest, "title");
     }
 
     private static String text(JsonObject object, String field) {

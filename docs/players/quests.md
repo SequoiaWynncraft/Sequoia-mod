@@ -28,6 +28,12 @@ Under it are three quests:
 - **Repeatable.** The next one starts as soon as you finish it.
 
 Each card shows what to do, the Leaf and XP it pays, and how far along you are.
+
+Most quests can be finished by raiding or by warring, such as **Complete 3 NOL raids or 9 wars**.
+The card shows both, each picture over its own bar, and whichever you finish first completes the quest.
+A war goal asks about three wars for each raid, since a war takes about a third of a raid's time.
+Season rating quests count raids and wars together, so they keep one bar.
+
 Under the cards, **Recent** lists the last six things that paid Leaf, finished a quest, or reached a level.
 
 The board refreshes at most once a minute while it is open.

@@ -82,7 +82,7 @@ final class RecentLeaf {
                 yield new Row(Kind.QUEST,
                         objective == null ? UnlockPopup.RAID_ICON
                                 : UnlockPopup.objectiveIcon(text(objective, "type"), text(objective, "raid")),
-                        UnlockPopup.questTier(slot), orElse(text(quest, "title"), "Quest"),
+                        UnlockPopup.questTier(slot), orElse(UnlockPopup.finishedQuestTitle(quest), "Quest"),
                         UnlockPopup.slotName(slot) + " quest", reward == null ? 0 : number(reward, "leaf"), 0, at);
             }
             case "achievement_paid" -> {

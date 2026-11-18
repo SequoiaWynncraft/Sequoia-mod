@@ -12,6 +12,7 @@ import com.seqwawa.seq.managers.LeafQuestService.State;
 import com.seqwawa.seq.model.LeafAccount;
 import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.model.LeafQuests.Daily;
+import com.seqwawa.seq.model.LeafQuests.Goal;
 import com.seqwawa.seq.model.LeafQuests.Quest;
 import com.seqwawa.seq.model.LeafQuests.Reward;
 import com.seqwawa.seq.ui.theme.UiColor;
@@ -26,6 +27,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -222,15 +224,30 @@ public final class QuestBoardScreen extends Screen {
         return "under a minute";
     }
 
-    static String progressLabel(Quest quest) {
-        String counts = formatCount(quest.progress()) + " / " + formatCount(quest.target());
-        return quest.objective() != null && "season_rating".equals(quest.objective().type()) ? counts + " SR" : counts;
+    /** "1 / 3", or "2,350 / 6,000 SR" for season rating. */
+    static String progressLabel(Goal goal) {
+        String counts = formatCount(goal.progress()) + " / " + formatCount(goal.target());
+        return "season_rating".equals(goal.type()) ? counts + " SR" : counts;
     }
 
-    static float progressRatio(Quest quest) {
-        if (quest.completed()) return 1f;
-        if (quest.target() <= 0) return 0f;
-        return Math.min(1f, Math.max(0f, (float) quest.progress() / quest.target()));
+    static float progressRatio(Goal goal) {
+        if (goal.target() <= 0) return 0f;
+        return Math.min(1f, Math.max(0f, (float) goal.progress() / goal.target()));
+    }
+
+    /** Every goal's count, as narration reads them: "1 / 3 raids, 4 / 9 wars". */
+    static String progressLabel(Quest quest) {
+        List<Goal> goals = quest.goalsOrObjective();
+        if (goals.size() == 1) return progressLabel(goals.getFirst());
+        return goals.stream().map(goal -> progressLabel(goal) + unit(goal)).collect(Collectors.joining(", "));
+    }
+
+    private static String unit(Goal goal) {
+        return switch (goal.type() == null ? "" : goal.type()) {
+            case "raids" -> " raids";
+            case "wars" -> " wars";
+            default -> "";
+        };
     }
 
     static UiColor slotAccent(String slot) {
