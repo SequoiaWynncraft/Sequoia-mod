@@ -95,15 +95,19 @@ jobs:
         with:
           name: guest
           path: native/out/guest
-      # The cache key: the helper's inputs as committed, which read the same on every runner whatever
-      # its line endings, and the guest it embeds. The platform jobs compute it the same way.
+      # The cache key: the helper's inputs and checks as committed, which read the same on every runner
+      # whatever its line endings, and the guest it embeds. The platform jobs compute it the same way.
       - name: Digest the helpers' inputs
         id: inputs
         shell: bash
+        # Git alone, which every runner has (macOS has no sha256sum). The checks are inputs too: a
+        # cached helper skips them, so changing one must miss the cache.
         run: |
-          { git ls-tree -r HEAD -- native/decoder native/sandbox.cpp native/windows-probe.cpp native/build-native.py
-            sha256sum native/out/guest/decoder.wasm | cut -d ' ' -f 1
-          } | sha256sum | cut -d ' ' -f 1 | sed 's/^/digest=/' >> "$GITHUB_OUTPUT"
+          {
+            git ls-tree -r HEAD -- native/decoder native/sandbox.cpp native/windows-probe.cpp native/build-native.py \
+              native/tests/windows-cancellation.py native/tests/broker_children.py src/test/resources/klipy-report.mp4
+            git hash-object --no-filters native/out/guest/decoder.wasm
+          } | git hash-object --stdin | sed 's/^/digest=/' >> "$GITHUB_OUTPUT"
       - name: Restore the windows-x86_64 helper
         id: windows_x86_64
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -261,15 +265,19 @@ jobs:
         with:
           name: guest
           path: native/out/guest
-      # The cache key: the helper's inputs as committed, which read the same on every runner whatever
-      # its line endings, and the guest it embeds. native-cache computes it the same way.
+      # The cache key: the helper's inputs and checks as committed, which read the same on every runner
+      # whatever its line endings, and the guest it embeds. native-cache computes it the same way.
       - name: Digest the helper's inputs
         id: inputs
         shell: bash
+        # Git alone, which every runner has (macOS has no sha256sum). The checks are inputs too: a
+        # cached helper skips them, so changing one must miss the cache.
         run: |
-          { git ls-tree -r HEAD -- native/decoder native/sandbox.cpp native/windows-probe.cpp native/build-native.py
-            sha256sum native/out/guest/decoder.wasm | cut -d ' ' -f 1
-          } | sha256sum | cut -d ' ' -f 1 | sed 's/^/digest=/' >> "$GITHUB_OUTPUT"
+          {
+            git ls-tree -r HEAD -- native/decoder native/sandbox.cpp native/windows-probe.cpp native/build-native.py \
+              native/tests/windows-cancellation.py native/tests/broker_children.py src/test/resources/klipy-report.mp4
+            git hash-object --no-filters native/out/guest/decoder.wasm
+          } | git hash-object --stdin | sed 's/^/digest=/' >> "$GITHUB_OUTPUT"
       # Saves the helper this job builds, for native-cache to restore on Linux; enableCrossOsArchive
       # makes a Windows runner's cache readable there. The key matches native-cache's.
       - name: Restore a helper built from the same inputs
