@@ -59,14 +59,6 @@ public final class SessionManager {
 
         void resetNicknames();
 
-        /** Stops the Leaf stream and forgets where it was: the next account's starts from now. */
-        void resetLeafEvents();
-
-        /** Stops the Leaf stream, dropping what it had yet to show, but the next session resumes from it. */
-        void endLeafEventsKeepingCursor();
-
-        void clearPopups();
-
         void resetWarTracking();
 
         /** The war planner and the war queue. */
@@ -93,7 +85,7 @@ public final class SessionManager {
         this.auth = Objects.requireNonNull(auth, "auth");
         this.services = Objects.requireNonNull(services, "services");
         this.gameThread = Objects.requireNonNull(gameThread, "gameThread");
-        this.current = newSession();
+        this.current = newSession(null);
         // A board that found no session can read Leaf now, without waiting out its minute.
         auth.whenSignedIn(this::signedIn);
     }
@@ -108,7 +100,7 @@ public final class SessionManager {
                 SessionManager created = new SessionManager(
                         new LiveSessionSteps(),
                         MinecraftAuthService.getInstance(),
-                        new LiveSessionServices(),
+                        new LiveSessionServices(ClientThread.executor()),
                         ClientThread.executor());
                 RaidProfilesSession.findCurrentWith(() -> created.current().raidProfiles());
                 instance = created;
@@ -117,8 +109,8 @@ public final class SessionManager {
         }
     }
 
-    private Session newSession() {
-        return new Session(auth.currentSignIn(), auth::ensureSessionToken, services);
+    private Session newSession(String resumeLeafAfter) {
+        return new Session(auth.currentSignIn(), auth::ensureSessionToken, services, resumeLeafAfter);
     }
 
     /** A sign-in completed, on the auth thread: the session it was for can read Leaf at once. */
@@ -205,7 +197,7 @@ public final class SessionManager {
                 gameThread.execute(() -> {
                     // Another end may have got there first; the session it started is not this one's to end.
                     if (current == refused) {
-                        startNextSession();
+                        startNextSession(true);
                     }
                     endSessionState();
                 });
@@ -214,26 +206,26 @@ public final class SessionManager {
     }
 
     /**
-     * Starts the next session with the auth service's current sign-in, then ends the one
-     * before it, which stops everything it owned: what it read with its token, and its
-     * raid-profile sign-in.
+     * Ends the current session, which stops everything it owned: what it read with its
+     * token, its raid-profile sign-in, its Leaf stream and its popups. Then starts the next
+     * one with the auth service's current sign-in. {@code samePlayer} when the account
+     * stays: its Leaf stream then resumes from the last event the ended one saw, so nothing
+     * that happened in between is missed.
      */
-    private void startNextSession() {
+    private void startNextSession(boolean samePlayer) {
         Session ended = current;
-        current = newSession();
+        // Stopped first, so its stream's place no longer moves.
         ended.end();
+        current = newSession(samePlayer ? ended.leafCursor() : null);
     }
 
     /**
      * The rest of what belonged to the sign-in, for a session that ends while the account
-     * stays: the party it was in, what was waiting to show, and the war planner. The Leaf
-     * stream resumes from where it was, since the events are the same player's. The
-     * connection reconnects by itself, so it is not touched here.
+     * stays: the party it was in and the war planner. The connection reconnects by itself,
+     * so it is not touched here.
      */
     private void endSessionState() {
         steps.resetPartyFinder();
-        steps.endLeafEventsKeepingCursor();
-        steps.clearPopups();
         steps.resetWarPlanning();
     }
 
@@ -244,7 +236,7 @@ public final class SessionManager {
             steps.clearSignIn();
         }
         // Kept or not, the sign-in is the new account's now, and so is the session.
-        startNextSession();
+        startNextSession(false);
         steps.forgetPartyClassBroadcast();
         steps.resetPartyFinder();
         steps.resetWynnPartySync();
@@ -252,8 +244,6 @@ public final class SessionManager {
         steps.resetGuildPresence();
         steps.resetGuildMembership();
         steps.resetNicknames();
-        steps.resetLeafEvents();
-        steps.clearPopups();
         steps.resetWarTracking();
         steps.resetWarPlanning();
     }
@@ -264,7 +254,7 @@ public final class SessionManager {
      */
     private void signOut() {
         steps.signOut();
-        startNextSession();
+        startNextSession(true);
         steps.disconnect();
         steps.resetPartyFinder();
     }

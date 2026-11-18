@@ -3,10 +3,12 @@ package com.seqwawa.seq.session;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.managers.PrincessRaidStatsManager;
+import com.seqwawa.seq.network.LeafEventStream;
 import com.seqwawa.seq.network.auth.NotSignedInException;
 import com.seqwawa.seq.network.auth.RaidProfilesSession;
 import com.seqwawa.seq.network.auth.SignIn;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
+import com.seqwawa.seq.ui.unlock.UnlockOverlay;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -42,11 +44,18 @@ public final class Session {
         PrincessRaidStatsManager princessStats(Session session);
 
         RaidProfilesSession raidProfiles(Session session);
+
+        /** Resumes after {@code resumeAfter}, the last event the previous session's stream saw, or from now. */
+        LeafEventStream leafEvents(Session session, String resumeAfter);
+
+        UnlockOverlay popups(Session session);
     }
 
     private final SignIn signIn;
     private final Tokens tokens;
     private final Services services;
+    /** Where this session's Leaf stream starts: after the previous one's last event when the account is the same. */
+    private final String resumeLeafAfter;
     private volatile boolean ended;
     /** Guarded by this. */
     private final List<Runnable> endActions = new ArrayList<>();
@@ -54,11 +63,14 @@ public final class Session {
     private GuildRaidProgressService raidProgress;
     private PrincessRaidStatsManager princessStats;
     private RaidProfilesSession raidProfiles;
+    private LeafEventStream leafEvents;
+    private UnlockOverlay popups;
 
-    Session(SignIn signIn, Tokens tokens, Services services) {
+    Session(SignIn signIn, Tokens tokens, Services services, String resumeLeafAfter) {
         this.signIn = Objects.requireNonNull(signIn, "signIn");
         this.tokens = Objects.requireNonNull(tokens, "tokens");
         this.services = Objects.requireNonNull(services, "services");
+        this.resumeLeafAfter = resumeLeafAfter;
     }
 
     /** The session's id, as the auth service counts sessions. */
@@ -118,6 +130,27 @@ public final class Session {
             raidProfiles = services.raidProfiles(this);
         }
         return raidProfiles;
+    }
+
+    /** Leaf's event stream, read with this session's token, which hands its popups to {@link #popups()}. */
+    public synchronized LeafEventStream leafEvents() {
+        if (leafEvents == null) {
+            leafEvents = services.leafEvents(this, resumeLeafAfter);
+        }
+        return leafEvents;
+    }
+
+    /** The popups this session's rewards brought. Once it has ended, nothing draws them. */
+    public synchronized UnlockOverlay popups() {
+        if (popups == null) {
+            popups = services.popups(this);
+        }
+        return popups;
+    }
+
+    /** The last Leaf event this session saw, for a next session of the same player to resume after. */
+    synchronized String leafCursor() {
+        return leafEvents == null ? resumeLeafAfter : leafEvents.cursor();
     }
 
     /**

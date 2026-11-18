@@ -3,10 +3,23 @@ package com.seqwawa.seq.session;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.managers.PrincessRaidStatsManager;
+import com.seqwawa.seq.network.LeafEventStream;
 import com.seqwawa.seq.network.auth.RaidProfilesSession;
+import com.seqwawa.seq.ui.unlock.UnlockOverlay;
+import com.seqwawa.seq.ui.unlock.UnlockPopup;
+import java.util.Objects;
+import java.util.concurrent.Executor;
+import java.util.function.Consumer;
 
 /** A session's objects as the game makes them, each stopped when its session ends. */
 final class LiveSessionServices implements Session.Services {
+
+    /** Where the Leaf stream hands its popups: the game thread, where the queue lives. */
+    private final Executor gameThread;
+
+    LiveSessionServices(Executor gameThread) {
+        this.gameThread = Objects.requireNonNull(gameThread, "gameThread");
+    }
 
     @Override
     public LeafQuestService leafQuests(Session session) {
@@ -35,5 +48,35 @@ final class LiveSessionServices implements Session.Services {
         RaidProfilesSession raidProfiles = RaidProfilesSession.create();
         session.onEnd(raidProfiles::clear);
         return raidProfiles;
+    }
+
+    @Override
+    public LeafEventStream leafEvents(Session session, String resumeAfter) {
+        LeafEventStream stream = new LeafEventStream(
+                session::token,
+                resumeAfter,
+                intoQueueOf(session, gameThread),
+                () -> {
+                    if (!session.isEnded()) {
+                        session.leafQuests().markStale();
+                    }
+                });
+        session.onEnd(stream::stop);
+        return stream;
+    }
+
+    @Override
+    public UnlockOverlay popups(Session session) {
+        UnlockOverlay popups = UnlockOverlay.create();
+        session.onEnd(popups::clear);
+        return popups;
+    }
+
+    /**
+     * Hands a popup to {@code session}'s own queue, on the game thread. Once that session has
+     * ended nothing draws its queue, so a popup that arrives late never reaches the next account.
+     */
+    static Consumer<UnlockPopup> intoQueueOf(Session session, Executor gameThread) {
+        return popup -> gameThread.execute(() -> session.popups().enqueue(popup));
     }
 }

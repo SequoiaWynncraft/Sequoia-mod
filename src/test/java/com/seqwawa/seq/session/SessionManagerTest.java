@@ -48,7 +48,7 @@ class SessionManagerTest {
     private final RecordingSteps steps = new RecordingSteps(auth);
     /** The game thread: what an end from another thread hands over waits here until a test runs it. */
     private final TickQueue ticks = new TickQueue(() -> 0L);
-    private final RecordingServices services = new RecordingServices(steps.calls);
+    private final RecordingServices services = new RecordingServices(steps.calls, ticks);
     private final SessionManager sessions = new SessionManager(steps, auth, services, ticks);
 
     @Test
@@ -68,8 +68,6 @@ class SessionManagerTest {
                 "resetGuildPresence",
                 "resetGuildMembership",
                 "resetNicknames",
-                "resetLeafEvents",
-                "clearPopups",
                 "resetWarTracking",
                 "resetWarPlanning"), steps.calls);
     }
@@ -137,8 +135,6 @@ class SessionManagerTest {
         assertEquals(List.of(
                 "end session",
                 "resetPartyFinder",
-                "endLeafEventsKeepingCursor",
-                "clearPopups",
                 "resetWarPlanning"), steps.calls);
     }
 
@@ -149,7 +145,6 @@ class SessionManagerTest {
 
         assertFalse(steps.calls.contains("disconnect"));
         assertFalse(steps.calls.contains("signOut"), "a rejected token is not the player signing out");
-        assertFalse(steps.calls.contains("resetLeafEvents"), "the same account's stream resumes");
     }
 
     @Test
@@ -312,6 +307,98 @@ class SessionManagerTest {
         assertEquals(List.of("raidProgress stopped"), services.stopped);
     }
 
+    @Test
+    void aPopupThePreviousAccountsStreamHandsOverAfterASwitchNeverShows() {
+        Session previous = sessions.current();
+        var handOver = LiveSessionServices.intoQueueOf(previous, ticks);
+
+        sessions.end(new EndReason.AccountSwitch(OPERATOR, SHARED_ACCOUNT, false));
+        // The previous stream had read an event just before it stopped.
+        handOver.accept(popup("+330"));
+        ticks.runDue();
+
+        assertTrue(sessions.current().popups().isIdle(), "the new account's queue never sees it");
+        assertNotSame(previous.popups(), sessions.current().popups());
+    }
+
+    @Test
+    void aPopupFromTheCurrentSessionsStreamShows() {
+        LiveSessionServices.intoQueueOf(sessions.current(), ticks).accept(popup("+330"));
+        assertTrue(sessions.current().popups().isIdle(), "not before the game thread runs it");
+
+        ticks.runDue();
+
+        assertFalse(sessions.current().popups().isIdle());
+    }
+
+    @Test
+    void endingASessionStopsItsLeafStreamAndDropsItsWaitingPopups() {
+        Session first = sessions.current();
+        first.leafEvents();
+        first.popups().enqueue(popup("+330"));
+
+        sessions.end(EndReason.SIGN_OUT);
+
+        assertEquals(List.of("leafEvents stopped", "popups stopped"), services.stopped);
+        assertTrue(sessions.current().popups().isIdle());
+    }
+
+    @Test
+    void theSamePlayersNextSessionResumesTheLeafStreamWhereTheLastOneWas() {
+        for (EndReason samePlayer : List.of(
+                EndReason.SIGN_OUT,
+                EndReason.CLEAR_SESSION,
+                new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Rejected."))) {
+            seenLeafEvent("event-41");
+
+            sessions.end(samePlayer);
+            ticks.runDue();
+
+            assertEquals("event-41", sessions.current().leafEvents().cursor(), samePlayer + " keeps the place");
+        }
+    }
+
+    @Test
+    void anotherAccountsStreamStartsFromNow() {
+        seenLeafEvent("event-41");
+
+        sessions.end(new EndReason.AccountSwitch(OPERATOR, SHARED_ACCOUNT, false));
+
+        assertNull(sessions.current().leafEvents().cursor());
+    }
+
+    @Test
+    void anOperatorSwitchingBackKeepsTheSignInButNotTheSharedAccountsStreamPlace() {
+        seenLeafEvent("event-41");
+
+        sessions.end(new EndReason.AccountSwitch(SHARED_ACCOUNT, OPERATOR, true));
+
+        assertNull(sessions.current().leafEvents().cursor());
+    }
+
+    @Test
+    void aCursorCarriesAcrossSessionsThatNeverOpenedAStream() {
+        seenLeafEvent("event-41");
+        sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Rejected."));
+        ticks.runDue();
+
+        // This session ends before its stream is ever asked for.
+        sessions.end(EndReason.SIGN_OUT);
+
+        assertEquals("event-41", sessions.current().leafEvents().cursor());
+    }
+
+    /** Has the current session's stream seen {@code eventId}, as if it had read it from Leaf. */
+    private void seenLeafEvent(String eventId) {
+        services.nextStreamHasSeen = eventId;
+        sessions.current().leafEvents();
+    }
+
+    private static com.seqwawa.seq.ui.unlock.UnlockPopup popup(String title) {
+        return new com.seqwawa.seq.ui.unlock.UnlockPopup(
+                com.seqwawa.seq.ui.unlock.UnlockPopup.Kind.TOAST, null, title, "The Nameless Anomaly", 330, 330, null, null);
+    }
+
     private static void assertNotSignedIn(CompletableFuture<String> token) {
         CompletionException failure = assertThrows(CompletionException.class, token::join);
         assertInstanceOf(NotSignedInException.class, failure.getCause());
@@ -322,13 +409,16 @@ class SessionManagerTest {
      * them it stopped. Nothing here reads the network until asked to.
      */
     static final class RecordingServices implements Session.Services {
-        private final Session.Services live = new LiveSessionServices();
+        private final Session.Services live;
         private final List<String> calls;
         final List<String> stopped = new ArrayList<>();
+        /** The next stream made starts as if it had already read this event, once. */
+        String nextStreamHasSeen;
         private final java.util.Set<Session> watched = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
-        RecordingServices(List<String> calls) {
+        RecordingServices(List<String> calls, java.util.concurrent.Executor gameThread) {
             this.calls = calls;
+            this.live = new LiveSessionServices(gameThread);
         }
 
         /** Notes in the step list the moment {@code session} ends. */
@@ -357,6 +447,16 @@ class SessionManagerTest {
         @Override public com.seqwawa.seq.network.auth.RaidProfilesSession raidProfiles(Session session) {
             watch(session, "raidProfiles");
             return live.raidProfiles(session);
+        }
+        @Override public com.seqwawa.seq.network.LeafEventStream leafEvents(Session session, String resumeAfter) {
+            watch(session, "leafEvents");
+            String seen = nextStreamHasSeen;
+            nextStreamHasSeen = null;
+            return live.leafEvents(session, seen != null ? seen : resumeAfter);
+        }
+        @Override public com.seqwawa.seq.ui.unlock.UnlockOverlay popups(Session session) {
+            watch(session, "popups");
+            return live.popups(session);
         }
     }
 
@@ -394,9 +494,6 @@ class SessionManagerTest {
         @Override public void resetGuildPresence() { calls.add("resetGuildPresence"); }
         @Override public void resetGuildMembership() { calls.add("resetGuildMembership"); }
         @Override public void resetNicknames() { calls.add("resetNicknames"); }
-        @Override public void resetLeafEvents() { calls.add("resetLeafEvents"); }
-        @Override public void endLeafEventsKeepingCursor() { calls.add("endLeafEventsKeepingCursor"); }
-        @Override public void clearPopups() { calls.add("clearPopups"); }
         @Override public void resetWarTracking() { calls.add("resetWarTracking"); }
         @Override public void resetWarPlanning() { calls.add("resetWarPlanning"); }
         @Override public void resetWarPlanner() { calls.add("resetWarPlanner"); }

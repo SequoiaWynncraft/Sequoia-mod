@@ -8,10 +8,8 @@ import com.seqwawa.seq.managers.NicknameResolverCache;
 import com.seqwawa.seq.managers.RaidPartySnapshotTracker;
 import com.seqwawa.seq.managers.SequoiaGuildMembership;
 import com.seqwawa.seq.network.ConnectionManager;
-import com.seqwawa.seq.network.LeafEventStream;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
-import com.seqwawa.seq.ui.unlock.UnlockOverlay;
 
 /** The steps a session's end takes in the game, each the call the game made for it before. */
 final class LiveSessionSteps implements SessionManager.Steps {
@@ -106,21 +104,6 @@ final class LiveSessionSteps implements SessionManager.Steps {
     @Override
     public void resetNicknames() {
         NicknameResolverCache.reset();
-    }
-
-    @Override
-    public void resetLeafEvents() {
-        LeafEventStream.getInstance().reset();
-    }
-
-    @Override
-    public void endLeafEventsKeepingCursor() {
-        LeafEventStream.getInstance().endSessionKeepingCursor();
-    }
-
-    @Override
-    public void clearPopups() {
-        UnlockOverlay.getInstance().clear();
     }
 
     @Override

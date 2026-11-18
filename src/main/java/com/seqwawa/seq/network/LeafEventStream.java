@@ -4,8 +4,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.seqwawa.seq.client.SeqClient;
-import com.seqwawa.seq.managers.LeafQuestService;
-import com.seqwawa.seq.ui.unlock.UnlockOverlay;
+import com.seqwawa.seq.session.SessionManager;
 import com.seqwawa.seq.ui.unlock.UnlockPopup;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -13,8 +12,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Iterator;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 /**
@@ -23,6 +25,10 @@ import java.util.stream.Stream;
  * popup. Leaf ends the stream every 15 minutes; it reconnects with the last id
  * it saw, so nothing in between is missed and nothing is shown twice. A first
  * connection without an id starts from now, so old events are never replayed.
+ * <p>
+ * Each session has its own, reading with that session's token and handing popups to
+ * that session's queue. When the session ends its stream stops, and a popup it had
+ * already received lands in a queue nobody draws, so the next account never sees it.
  */
 public final class LeafEventStream {
 
@@ -31,27 +37,40 @@ public final class LeafEventStream {
     /** Someone who is not a guild member asks again this rarely. */
     private static final long NOT_MEMBER_RETRY_MS = 15 * 60_000;
 
-    private static final LeafEventStream INSTANCE = new LeafEventStream();
+    /** One for every session's stream: each client keeps a thread of its own. */
+    private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+    private final Function<Boolean, CompletableFuture<String>> tokens;
+    private final Consumer<UnlockPopup> show;
+    private final Runnable leafChanged;
     private volatile Thread worker;
     private volatile Stream<String> open;
     private volatile String lastEventId;
-    /** Moves on at each {@link #reset()}; a worker's popups carry the value it started under. */
-    private long generation;
 
-    private LeafEventStream() {}
+    /**
+     * Reads with {@code tokens}, the session's own, so a stream whose session has ended
+     * cannot sign in again. Resumes after {@code resumeAfter}, or from now when it is null.
+     * Each popup goes to {@code show}, and {@code leafChanged} hears that the balance moved;
+     * both are called on the stream's own thread.
+     */
+    public LeafEventStream(Function<Boolean, CompletableFuture<String>> tokens, String resumeAfter,
+            Consumer<UnlockPopup> show, Runnable leafChanged) {
+        this.tokens = Objects.requireNonNull(tokens, "tokens");
+        this.lastEventId = resumeAfter;
+        this.show = Objects.requireNonNull(show, "show");
+        this.leafChanged = Objects.requireNonNull(leafChanged, "leafChanged");
+    }
 
+    /** The current session's. */
     public static LeafEventStream getInstance() {
-        return INSTANCE;
+        return SessionManager.getInstance().current().leafEvents();
     }
 
     /** Called every client tick: listens while {@code allowed}, and stops otherwise. */
     public synchronized void tick(boolean allowed) {
         boolean wanted = allowed && WynncraftServerPolicy.isCurrentServerAllowed() && ConnectionManager.isConnected();
         if (wanted && worker == null) {
-            long startedFor = generation;
-            Thread thread = new Thread(() -> run(startedFor), "seq-leaf-events");
+            Thread thread = new Thread(this::run, "seq-leaf-events");
             thread.setDaemon(true);
             worker = thread;
             thread.start();
@@ -60,49 +79,14 @@ public final class LeafEventStream {
         }
     }
 
-    /** Stops listening and forgets where it was, for a different account. */
-    public synchronized void reset() {
-        stop();
-        lastEventId = null;
-        generation++;
-    }
-
-    /**
-     * Stops listening for a session that ended while the account stayed the same, as a
-     * rejected token does: popups the stopped stream had yet to hand over are dropped with
-     * that session, but the next one resumes from the last event seen, so nothing that
-     * happened while it signed in again is missed.
-     */
-    public synchronized void endSessionKeepingCursor() {
-        stop();
-        generation++;
-    }
-
     /** The id of the last event seen, which the next connection resumes after, or null to start from now. */
-    String cursor() {
+    public String cursor() {
         return lastEventId;
     }
 
     /** Remembers the last event seen. */
     void advanceCursor(String eventId) {
         if (eventId != null) lastEventId = eventId;
-    }
-
-    synchronized long generation() {
-        return generation;
-    }
-
-    /**
-     * {@code show}, for the client thread to run, unless the stream has been reset by then.
-     * An account change resets the stream and clears the popups in one tick, so a popup
-     * posted just before would otherwise still show the previous account's unlock.
-     */
-    Runnable unlessResetSince(long startedFor, Runnable show) {
-        return () -> {
-            if (generation() == startedFor) {
-                show.run();
-            }
-        };
     }
 
     public synchronized void stop() {
@@ -113,13 +97,13 @@ public final class LeafEventStream {
         if (thread != null) thread.interrupt();
     }
 
-    private void run(long startedFor) {
+    private void run() {
         long retryMs = FIRST_RETRY_MS;
         boolean freshToken = false;
         while (worker == Thread.currentThread()) {
             long waitMs = retryMs;
             try {
-                String token = SeqClient.getAuthService().ensureValidToken(freshToken).get(30, TimeUnit.SECONDS);
+                String token = tokens.apply(freshToken).get(30, TimeUnit.SECONDS);
                 freshToken = false;
                 HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(BuildConfig.LEAF_API_URL + "/v1/me/events/stream"))
                         .header("Authorization", "Bearer " + token)
@@ -127,7 +111,7 @@ public final class LeafEventStream {
                         .header(ClientVersion.MOD_VERSION_HEADER, ClientVersion.resolveInstalledVersion())
                         .GET();
                 if (lastEventId != null) request.header("Last-Event-ID", lastEventId);
-                HttpResponse<Stream<String>> response = http.send(request.build(), HttpResponse.BodyHandlers.ofLines());
+                HttpResponse<Stream<String>> response = HTTP.send(request.build(), HttpResponse.BodyHandlers.ofLines());
                 int status = response.statusCode();
                 if (status != 200) {
                     response.body().close();
@@ -136,7 +120,7 @@ public final class LeafEventStream {
                 } else {
                     retryMs = FIRST_RETRY_MS;
                     waitMs = 1_000;
-                    read(response.body(), startedFor);
+                    read(response.body());
                 }
             } catch (InterruptedException interrupted) {
                 return;
@@ -153,7 +137,7 @@ public final class LeafEventStream {
         }
     }
 
-    private void read(Stream<String> lines, long startedFor) {
+    private void read(Stream<String> lines) {
         open = lines;
         try (lines) {
             SseParser parser = new SseParser();
@@ -162,8 +146,10 @@ public final class LeafEventStream {
                 SseParser.Event event = parser.accept(iterator.next());
                 advanceCursor(parser.lastEventId());
                 if (event != null) {
-                    dispatch(event, popup -> SeqClient.mc.execute(
-                            unlessResetSince(startedFor, () -> UnlockOverlay.getInstance().enqueue(popup))));
+                    dispatch(event, popup -> {
+                        leafChanged.run();
+                        show.accept(popup);
+                    });
                 }
             }
         } finally {
@@ -171,7 +157,7 @@ public final class LeafEventStream {
         }
     }
 
-    /** Turns one event into a popup, and tells an open quest board that something changed. */
+    /** Turns one event into a popup, skipping what it cannot show. */
     static void dispatch(SseParser.Event event, Consumer<UnlockPopup> show) {
         JsonObject data;
         try {
@@ -184,7 +170,6 @@ public final class LeafEventStream {
         }
         UnlockPopup popup = UnlockPopup.fromEvent(event.type(), data);
         if (popup == null) return;
-        LeafQuestService.getInstance().markStale();
         show.accept(popup);
     }
 }

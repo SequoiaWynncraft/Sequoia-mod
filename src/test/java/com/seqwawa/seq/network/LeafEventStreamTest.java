@@ -1,71 +1,34 @@
 package com.seqwawa.seq.network;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
 class LeafEventStreamTest {
 
-    @Test
-    void aPopupPostedBeforeAnAccountChangeIsDroppedWhenItRuns() {
-        LeafEventStream stream = LeafEventStream.getInstance();
-        AtomicInteger shown = new AtomicInteger();
-        Runnable posted = stream.unlessResetSince(stream.generation(), shown::incrementAndGet);
-
-        // The account change resets the stream and clears the popups in the same tick, before the post runs.
-        stream.reset();
-        posted.run();
-
-        assertEquals(0, shown.get());
+    private static LeafEventStream resumingAfter(String eventId) {
+        return new LeafEventStream(force -> new CompletableFuture<>(), eventId, popup -> {}, () -> {});
     }
 
     @Test
-    void aPopupFromTheCurrentStreamStillShows() {
-        LeafEventStream stream = LeafEventStream.getInstance();
-        AtomicInteger shown = new AtomicInteger();
-
-        stream.unlessResetSince(stream.generation(), shown::incrementAndGet).run();
-
-        assertEquals(1, shown.get());
+    void aStreamForTheSamePlayerResumesAfterTheEventTheLastOneSaw() {
+        assertEquals("event-41", resumingAfter("event-41").cursor());
     }
 
     @Test
-    void aStreamStoppedForADisconnectKeepsItsPopups() {
-        LeafEventStream stream = LeafEventStream.getInstance();
-        AtomicInteger shown = new AtomicInteger();
-        Runnable posted = stream.unlessResetSince(stream.generation(), shown::incrementAndGet);
-
-        // The same account's unlock still belongs to the player.
-        stream.stop();
-        posted.run();
-
-        assertEquals(1, shown.get());
+    void aStreamForANewAccountStartsFromNow() {
+        assertNull(resumingAfter(null).cursor());
     }
 
     @Test
-    void aSessionEndedForTheSameAccountDropsItsPopupsButResumesFromTheLastEvent() {
-        LeafEventStream stream = LeafEventStream.getInstance();
-        stream.reset();
-        stream.advanceCursor("event-41");
-        AtomicInteger shown = new AtomicInteger();
-        Runnable posted = stream.unlessResetSince(stream.generation(), shown::incrementAndGet);
+    void remembersTheLastEventSeenAndIgnoresEventsWithoutAnId() {
+        LeafEventStream stream = resumingAfter(null);
 
-        // A rejected token ends the session; the account is the same, so the stream picks up where it was.
-        stream.endSessionKeepingCursor();
-        posted.run();
+        stream.advanceCursor("event-42");
+        stream.advanceCursor(null);
 
-        assertEquals(0, shown.get());
-        assertEquals("event-41", stream.cursor());
-    }
-
-    @Test
-    void anAccountChangeStartsTheNextStreamFromNow() {
-        LeafEventStream stream = LeafEventStream.getInstance();
-        stream.advanceCursor("event-41");
-
-        stream.reset();
-
-        assertEquals(null, stream.cursor());
+        assertEquals("event-42", stream.cursor());
     }
 }
