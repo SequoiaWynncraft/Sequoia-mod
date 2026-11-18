@@ -5,6 +5,7 @@ import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.RaidProfilesSession;
+import com.seqwawa.seq.network.auth.SignIn;
 import com.seqwawa.seq.network.auth.StoredAuthSession;
 import java.util.Objects;
 import java.util.UUID;
@@ -34,8 +35,11 @@ public final class SessionManager {
         /** Ends the sign-in; nothing signs the player in again until they connect. */
         void signOut();
 
-        /** Ends the sign-in the backend refused; the connection signs in again by itself. */
-        void invalidateSignIn(AuthErrorCode code, String message);
+        /**
+         * Ends the sign-in the backend refused, if it still holds {@code token}; the connection
+         * signs in again by itself. Returns the sign-in it ended, or null when there was none.
+         */
+        SignIn invalidateSignIn(String token, AuthErrorCode code, String message);
 
         void disconnect();
 
@@ -182,15 +186,18 @@ public final class SessionManager {
                 steps.tellPlayer("Backend session cleared. Run /seq connect to sign in again.");
             }
             case EndReason.TokenRejected rejected -> {
-                Session refused = current;
                 // At once, on the socket's thread: no request may use or renew the refused token.
-                steps.invalidateSignIn(rejected.code(), rejected.message());
+                // A socket's refusal that lands after its sign-in ended has nothing left to end.
+                SignIn refused = steps.invalidateSignIn(rejected.token(), rejected.code(), rejected.message());
+                if (refused == null) {
+                    return;
+                }
                 gameThread.execute(() -> {
                     // Another end may have got there first; the session it started is not this one's to end.
-                    if (current == refused) {
+                    if (current.id() == refused.id()) {
                         startNextSession(true);
+                        endSessionState();
                     }
-                    endSessionState();
                 });
             }
         }

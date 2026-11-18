@@ -230,8 +230,24 @@ class MinecraftAuthServiceTest {
         assertFalse(auth.isSignedOutByUser());
 
         var rejected = new MinecraftAuthService(SESSION);
-        rejected.invalidateSession(AuthErrorCode.TOKEN_INVALID, "Backend rejected the stored token.");
+        rejected.invalidateSession("session-token", AuthErrorCode.TOKEN_INVALID, "Backend rejected the stored token.");
         assertFalse(rejected.isSignedOutByUser(), "a rejected token signs in afresh");
+    }
+
+    @Test
+    void aRefusalOfATokenTheSignInNoLongerHoldsEndsNothing() {
+        var auth = new MinecraftAuthService(SESSION);
+        SignIn first = auth.currentSignIn();
+
+        assertTrue(auth.invalidateSession("session-token", AuthErrorCode.TOKEN_INVALID, "Rejected.") == first);
+        SignIn next = auth.currentSignIn();
+
+        // The same refusal again, as a second socket message or an old socket's after a switch.
+        org.junit.jupiter.api.Assertions.assertNull(
+                auth.invalidateSession("session-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
+        assertTrue(next == auth.currentSignIn(), "the sign-in that replaced it carries on");
+        org.junit.jupiter.api.Assertions.assertNull(
+                auth.invalidateSession(null, AuthErrorCode.TOKEN_INVALID, "Rejected."), "a socket with no token");
     }
 
     @Test

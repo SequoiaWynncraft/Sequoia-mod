@@ -117,7 +117,7 @@ class SessionManagerTest {
 
     @Test
     void aRejectedTokenStopsTheSignInAtOnce() {
-        sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Backend rejected the stored token."));
+        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Backend rejected the stored token."));
 
         assertEquals(List.of("invalidateSignIn: TOKEN_INVALID Backend rejected the stored token."), steps.calls);
     }
@@ -125,7 +125,7 @@ class SessionManagerTest {
     @Test
     void aRejectedTokenEndsTheWholeSessionOnTheGameThreadButKeepsTheLeafCursor() {
         services.recordEndOf(sessions.current());
-        sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_EXPIRED, "Backend token expired."));
+        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_EXPIRED, "Backend token expired."));
         steps.calls.clear();
 
         ticks.runDue();
@@ -137,7 +137,7 @@ class SessionManagerTest {
 
     @Test
     void aRejectedTokenLeavesTheConnectionToReconnectByItself() {
-        sessions.end(new EndReason.TokenRejected(AuthErrorCode.WEBSOCKET_AUTH_REJECTED, "Rejected."));
+        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.WEBSOCKET_AUTH_REJECTED, "Rejected."));
         ticks.runDue();
 
         assertFalse(steps.calls.contains("disconnect"));
@@ -184,11 +184,12 @@ class SessionManagerTest {
 
     @Test
     void everyWayOutStartsANewSessionWithNoToken() {
+        // The rejection first, while the sign-in still holds the token it refuses.
         for (EndReason reason : List.of(
+                new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."),
                 new EndReason.AccountSwitch(OPERATOR, SHARED_ACCOUNT, false),
                 EndReason.SIGN_OUT,
-                EndReason.CLEAR_SESSION,
-                new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Rejected."))) {
+                EndReason.CLEAR_SESSION)) {
             Session before = sessions.current();
 
             sessions.end(reason);
@@ -229,7 +230,7 @@ class SessionManagerTest {
     void aRejectedTokenRefusesAtOnceAndTheNextSessionStartsOnTheGameThread() {
         Session refused = sessions.current();
 
-        sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Rejected."));
+        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
 
         assertSame(refused, sessions.current(), "the game thread has not caught up yet");
         assertNotSignedIn(refused.token(false));
@@ -242,14 +243,33 @@ class SessionManagerTest {
 
     @Test
     void aRejectionThatLandsAfterAnotherEndLeavesTheNewSessionAlone() {
-        sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Rejected."));
+        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
         sessions.end(EndReason.SIGN_OUT);
         Session afterSignOut = sessions.current();
+        steps.calls.clear();
 
         ticks.runDue();
 
         assertSame(afterSignOut, sessions.current());
         assertFalse(afterSignOut.isEnded());
+        assertEquals(List.of(), steps.calls, "nor does it reset the party finder the new session has");
+    }
+
+    @Test
+    void anOldSocketsRejectionAfterAnAccountSwitchLeavesTheNewAccountsSignInAlone() {
+        sessions.end(new EndReason.AccountSwitch(OPERATOR, SHARED_ACCOUNT, false));
+        Session shared = sessions.current();
+        long sharedSignIn = auth.sessionGeneration();
+        steps.calls.clear();
+
+        // The operator's socket reports its refusal after the switch has replaced its sign-in.
+        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
+        ticks.runDue();
+
+        assertEquals(sharedSignIn, auth.sessionGeneration(), "the shared account's sign-in is not ended");
+        assertSame(shared, sessions.current());
+        assertFalse(shared.isEnded());
+        assertFalse(steps.calls.contains("resetPartyFinder"));
     }
 
     @Test
@@ -297,7 +317,7 @@ class SessionManagerTest {
     void aRejectedTokenStopsTheSessionsObjectsOnTheGameThread() {
         sessions.current().raidProgress();
 
-        sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Rejected."));
+        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
         assertEquals(List.of(), services.stopped, "not on the socket's thread");
 
         ticks.runDue();
@@ -343,9 +363,9 @@ class SessionManagerTest {
     @Test
     void theSamePlayersNextSessionResumesTheLeafStreamWhereTheLastOneWas() {
         for (EndReason samePlayer : List.of(
+                new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."),
                 EndReason.SIGN_OUT,
-                EndReason.CLEAR_SESSION,
-                new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Rejected."))) {
+                EndReason.CLEAR_SESSION)) {
             seenLeafEvent("event-41");
 
             sessions.end(samePlayer);
@@ -376,7 +396,7 @@ class SessionManagerTest {
     @Test
     void aCursorCarriesAcrossSessionsThatNeverOpenedAStream() {
         seenLeafEvent("event-41");
-        sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Rejected."));
+        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
         ticks.runDue();
 
         // This session ends before its stream is ever asked for.
@@ -404,7 +424,7 @@ class SessionManagerTest {
         Session signedIn = sessions.current();
         assertTrue(signedIn.hasToken());
 
-        sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Rejected."));
+        sessions.end(new EndReason.TokenRejected("operator-token", AuthErrorCode.TOKEN_INVALID, "Rejected."));
 
         assertFalse(signedIn.hasToken(), "the refused token is gone at once, before the game thread catches up");
         ticks.runDue();
@@ -510,9 +530,10 @@ class SessionManagerTest {
             calls.add("signOut");
             auth.signOut();
         }
-        @Override public void invalidateSignIn(AuthErrorCode code, String message) {
+        @Override public com.seqwawa.seq.network.auth.SignIn invalidateSignIn(
+                String token, AuthErrorCode code, String message) {
             calls.add("invalidateSignIn: " + code + " " + message);
-            auth.invalidateSession(code, message);
+            return auth.invalidateSession(token, code, message);
         }
         @Override public void disconnect() { calls.add("disconnect"); }
         @Override public void dropPendingWarEvents() { calls.add("dropPendingWarEvents"); }

@@ -98,11 +98,8 @@ record ConnectionEnvironment(
         /** A token for the bearer handshake, signing in afresh when there is none or {@code forceRefresh}. */
         CompletableFuture<String> ensureValidToken(boolean forceRefresh);
 
-        /** Ends the session because the backend refused its token; the next connect signs in again. */
-        void invalidateSession(AuthErrorCode code, String message);
-
-        /** The message of the last sign-in failure, which {@link #invalidateSession} sets. */
-        String lastErrorMessage();
+        /** Ends the session if it still holds {@code token}, which the backend refused; the next connect signs in again. */
+        void invalidateSession(String token, AuthErrorCode code, String message);
 
         /** The player asked to connect, so a sign-out of theirs no longer holds. */
         void allowSignIn();
@@ -209,13 +206,8 @@ record ConnectionEnvironment(
         }
 
         @Override
-        public void invalidateSession(AuthErrorCode code, String message) {
-            SessionManager.getInstance().end(new EndReason.TokenRejected(code, message));
-        }
-
-        @Override
-        public String lastErrorMessage() {
-            return SeqClient.getAuthService().getLastError().getMessage();
+        public void invalidateSession(String token, AuthErrorCode code, String message) {
+            SessionManager.getInstance().end(new EndReason.TokenRejected(token, code, message));
         }
 
         @Override

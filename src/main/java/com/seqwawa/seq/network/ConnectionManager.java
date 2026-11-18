@@ -1031,11 +1031,9 @@ public class ConnectionManager {
         switch (kind) {
             case AUTH_REJECTED -> {
                 authFailed = true;
-                environment.tokens()
-                        .invalidateSession(
-                                AuthErrorCode.WEBSOCKET_AUTH_REJECTED,
-                                "Backend rejected websocket authentication. Re-authenticating.");
-                notifyConnectionFailure(environment.tokens().lastErrorMessage(), false);
+                String message = "Backend rejected websocket authentication. Re-authenticating.";
+                environment.tokens().invalidateSession(handshakeToken, AuthErrorCode.WEBSOCKET_AUTH_REJECTED, message);
+                notifyConnectionFailure(message, false);
                 registerAuthFailure();
                 recordAuthRejection();
             }
@@ -2300,10 +2298,10 @@ public class ConnectionManager {
                             authFailed = true;
                             authenticated = false;
                             registerAuthFailure();
-                            environment.tokens()
-                                    .invalidateSession(
-                                            AuthErrorCode.TOKEN_INVALID,
-                                            "Backend rejected the stored token. Re-authentication required.");
+                            environment.tokens().invalidateSession(
+                                    handshakeToken,
+                                    AuthErrorCode.TOKEN_INVALID,
+                                    "Backend rejected the stored token. Re-authentication required.");
                             recordAuthRejection();
                             closeToReauthenticate();
                         } else if ("mod_version_unsupported".equalsIgnoreCase(backendCode)) {
@@ -2365,13 +2363,14 @@ public class ConnectionManager {
                             authFailed = true;
                             authenticated = false;
                             registerAuthFailure();
-                            environment.tokens()
-                                    .invalidateSession(
-                                            expired ? AuthErrorCode.TOKEN_EXPIRED : AuthErrorCode.TOKEN_INVALID,
-                                            expired
-                                                    ? "Backend token expired. Re-authentication required."
-                                                    : "Backend rejected the stored token. Re-authentication required.");
-                            notify(environment.tokens().lastErrorMessage());
+                            String rejection = expired
+                                    ? "Backend token expired. Re-authentication required."
+                                    : "Backend rejected the stored token. Re-authentication required.";
+                            environment.tokens().invalidateSession(
+                                    handshakeToken,
+                                    expired ? AuthErrorCode.TOKEN_EXPIRED : AuthErrorCode.TOKEN_INVALID,
+                                    rejection);
+                            notify(rejection);
                             recordAuthRejection();
                             closeToReauthenticate();
                         }

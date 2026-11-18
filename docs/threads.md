@@ -71,8 +71,9 @@ one way: `end(reason)`, for an account switch, /seq logout, Clear session or a r
 - **Ask your own session.** Work that belongs to a session takes its token from `Session.token`,
   not the auth service, and hands results to its own session's objects. `getInstance()` answers
   with whichever session is current by the time it is called.
-- **Off the game thread.** A rejected token arrives on the socket's thread: the sign-in ends
-  there and then, and the next session starts on the game thread.
+- **Off the game thread.** A rejected token arrives on the socket's thread: the sign-in that
+  still holds it ends there and then, and the next session starts on the game thread. A refusal
+  that lands after its sign-in already ended ends nothing.
 
 What lasts the whole game, whoever is signed in, lives in `AppServices` (`SeqClient.app()`).
 Which server the game is on, and joins, disconnects and world changes, come from

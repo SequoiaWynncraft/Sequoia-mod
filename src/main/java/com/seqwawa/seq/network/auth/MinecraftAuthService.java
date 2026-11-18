@@ -386,12 +386,21 @@ public class MinecraftAuthService {
     }
 
     /**
-     * Ends the sign-in whose token the backend refused; the next one starts afresh. Only
+     * Ends the sign-in whose token the backend refused, {@code token}, if the current one still
+     * holds it; the next one starts afresh. A refusal that arrives after that sign-in ended, such
+     * as an old socket's after an account switch, leaves its replacement alone. Only
      * {@code SessionManager.end} calls it.
+     *
+     * @return the sign-in it ended, or null when the current one holds another token or none
      */
-    public synchronized void invalidateSession(AuthErrorCode code, String message) {
+    public synchronized SignIn invalidateSession(String token, AuthErrorCode code, String message) {
+        if (!holdsToken(token)) {
+            return null;
+        }
+        SignIn refused = current;
         startNextSession();
         setState(AuthState.FAILED, new AuthException(code, message, true));
+        return refused;
     }
 
     /**

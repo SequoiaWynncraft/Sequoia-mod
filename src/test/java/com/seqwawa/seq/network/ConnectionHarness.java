@@ -265,7 +265,6 @@ final class ConnectionHarness implements AutoCloseable {
         final List<AuthErrorCode> invalidations = new ArrayList<>();
         /** The token every request gets at once, or null to leave requests waiting in {@link #pending}. */
         String token = "session-token";
-        String lastError;
         boolean signedOutByUser;
         String signedInUsername;
         /** The token the current sign-in holds: the last one handed out, until the sign-in ends. */
@@ -285,15 +284,9 @@ final class ConnectionHarness implements AutoCloseable {
         }
 
         @Override
-        public void invalidateSession(AuthErrorCode code, String message) {
+        public void invalidateSession(String token, AuthErrorCode code, String message) {
             invalidations.add(code);
-            lastError = message;
             held = null;
-        }
-
-        @Override
-        public String lastErrorMessage() {
-            return lastError;
         }
 
         @Override

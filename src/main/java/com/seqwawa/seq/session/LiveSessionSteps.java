@@ -10,6 +10,7 @@ import com.seqwawa.seq.managers.SequoiaGuildMembership;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.MinecraftAuthService;
+import com.seqwawa.seq.network.auth.SignIn;
 
 /** The steps a session's end takes in the game, each the call the game made for it before. */
 final class LiveSessionSteps implements SessionManager.Steps {
@@ -43,8 +44,8 @@ final class LiveSessionSteps implements SessionManager.Steps {
     }
 
     @Override
-    public void invalidateSignIn(AuthErrorCode code, String message) {
-        SeqClient.getAuthService().invalidateSession(code, message);
+    public SignIn invalidateSignIn(String token, AuthErrorCode code, String message) {
+        return SeqClient.getAuthService().invalidateSession(token, code, message);
     }
 
     @Override

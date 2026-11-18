@@ -25,6 +25,15 @@ public sealed interface EndReason {
     /** The player cleared the session: a sign-out that also forgets the linked Discord name. */
     record ClearSession() implements EndReason {}
 
-    /** The backend refused the session's token; the connection signs in again by itself. */
-    record TokenRejected(AuthErrorCode code, String message) implements EndReason {}
+    /**
+     * The backend refused {@code token}, the one a socket signed in with; the connection signs in
+     * again by itself. Only the sign-in that still holds it ends.
+     */
+    record TokenRejected(String token, AuthErrorCode code, String message) implements EndReason {
+        /** Leaves the token out of logs. */
+        @Override
+        public String toString() {
+            return "TokenRejected[code=" + code + ", message=" + message + "]";
+        }
+    }
 }
