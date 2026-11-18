@@ -1,5 +1,6 @@
 package com.seqwawa.seq.ui.widget;
 
+import com.seqwawa.seq.ui.UiBounds;
 import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
@@ -76,7 +77,7 @@ public class BooleanWidget extends SettingWidget<Setting.BooleanSetting> {
 
     @Override
     public boolean mouseClicked(float mouseX, float mouseY, int button) {
-        if (isEnabled() && button == 0 && isHovered(mouseX, mouseY, x, y, width, height)) {
+        if (isEnabled() && button == 0 && new UiBounds(x, y, width, height).contains(mouseX, mouseY)) {
             setting.setValue(!setting.getValue());
             return true;
         }

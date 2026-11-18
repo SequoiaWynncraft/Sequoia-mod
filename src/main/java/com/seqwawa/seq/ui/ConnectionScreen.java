@@ -4,7 +4,6 @@ import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
 import java.awt.Color;
-import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
@@ -12,21 +11,15 @@ import org.jetbrains.annotations.NotNull;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.network.ConnectionManager;
 import com.seqwawa.seq.managers.TreasuryOutManager;
-import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 
-public class ConnectionScreen extends Screen {
-    private static final float SIDEBAR_WIDTH = 140;
-    private static final float SIDEBAR_PADDING = 10;
-    private static final float SIDEBAR_BUTTON_HEIGHT = 22;
-    private static final float SIDEBAR_BUTTON_SPACING = 6;
+public class ConnectionScreen extends SequoiaPanelScreen {
+    private static final float SIDEBAR_WIDTH = SequoiaSidebarNavigation.WIDTH;
     private static final float HEADER_HEIGHT = 30;
     private static final float SEARCH_BAR_HEIGHT = 18;
     private static final float SEARCH_BAR_MARGIN = 8;
     private static final float TITLE_FONT_SIZE = 18;
-    private static final float SIDEBAR_TITLE_SIZE = 16;
-    private static final float SIDEBAR_BUTTON_SIZE = 12;
     private static final float LABEL_FONT_SIZE = 16;
     private static final float VALUE_FONT_SIZE = 16;
     private static final float META_FONT_SIZE = 12;
@@ -39,79 +32,46 @@ public class ConnectionScreen extends Screen {
     private static final float NOTE_OFFSET = 22;
     private static final float AUTH_BUTTON_WIDTH = 118;
 
-    private float nvgMouseX;
-    private float nvgMouseY;
+    /** Matches the other panels' headers; Connection has nothing to search, so it never takes focus. */
+    private final TextField search = new TextField();
 
     public ConnectionScreen(Screen parent) {
-        super(Component.literal("Connection"));
+        super(Component.literal("Connection"), parent, SequoiaSidebarNavigation.Destination.CONNECTION);
+    }
+
+    /** Like Settings, a sidebar button opens its screen in front of this one. */
+    @Override
+    protected Screen sidebarParent() {
+        return this;
     }
 
     @Override
-    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        super.render(guiGraphics, mouseX, mouseY, partialTick);
+    protected void draw(UiCanvas canvas) {
+        float screenWidth = canvas.metrics().width();
+        float screenHeight = canvas.metrics().height();
+        float panelX = SIDEBAR_WIDTH;
+        float panelWidth = screenWidth - SIDEBAR_WIDTH;
+        String fontName = SeqClient.getFontManager().getSelectedFont();
 
-        nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
-        nvgMouseY = MinecraftUiRenderer.mouseY(mouseY);
+        canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_OVERLAY));
+        drawSidebar(canvas);
 
-        UiRenderer.renderScreen(this, canvas -> {
-            float screenWidth = canvas.metrics().width();
-            float screenHeight = canvas.metrics().height();
-            float panelX = SIDEBAR_WIDTH;
-            float panelWidth = screenWidth - SIDEBAR_WIDTH;
-            String fontName = SeqClient.getFontManager().getSelectedFont();
-
-            canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_OVERLAY));
-            renderSidebar(canvas, fontName, screenHeight);
-
-            canvas.fillRect(panelX, 0, panelWidth, screenHeight, color(BACKGROUND_BODY));
-            canvas.fillRect(panelX, 0, panelWidth, HEADER_HEIGHT, color(BACKGROUND_HEADER));
-            renderHeader(canvas, fontName, panelX, panelWidth);
-            renderStatusPanel(canvas, fontName, panelX, panelWidth, screenHeight);
-        });
-    }
-
-    private void renderSidebar(UiCanvas canvas, String fontName, float screenHeight) {
-        canvas.fillRect(0, 0, SIDEBAR_WIDTH, screenHeight, color(BACKGROUND_SIDEBAR));
-        SequoiaUiStyle.drawSidebarTitle(canvas, fontName, SIDEBAR_WIDTH);
-
-        canvas.fillRect(SIDEBAR_PADDING, 40, SIDEBAR_WIDTH - SIDEBAR_PADDING * 2, 1, color(ACCENT_PRIMARY_DARK));
-
-        float btnX = SIDEBAR_PADDING;
-        float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-
-        var destinations = SequoiaSidebarNavigation.destinations();
-        var layout = SequoiaSidebarNavigation.sidebarLayout(
-                screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
-        for (int row = 0; row < destinations.size(); row++) {
-            var destination = destinations.get(row);
-            drawSidebarButton(
-                    canvas,
-                    fontName,
-                    btnX,
-                    layout.buttonY(row),
-                    btnW,
-                    layout.buttonHeight(),
-                    destination.label(),
-                    destination == SequoiaSidebarNavigation.Destination.CONNECTION);
-        }
-        SidebarProfile.render(canvas, screenHeight, nvgMouseX, nvgMouseY);
+        canvas.fillRect(panelX, 0, panelWidth, screenHeight, color(BACKGROUND_BODY));
+        canvas.fillRect(panelX, 0, panelWidth, HEADER_HEIGHT, color(BACKGROUND_HEADER));
+        renderHeader(canvas, fontName, panelX, panelWidth);
+        renderStatusPanel(canvas, fontName, panelX, panelWidth);
     }
 
     private void renderHeader(UiCanvas canvas, String fontName, float panelX, float panelWidth) {
-        float searchX = panelX + SEARCH_BAR_MARGIN;
         float searchWidth = SequoiaUiStyle.searchWidth(panelWidth - SEARCH_BAR_MARGIN * 2);
-        float searchY = (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f;
-        canvas.fillRect(searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT, color(CONTROL_INPUT));
-        canvas.save();
-        canvas.scissor(searchX, searchY, searchWidth, SEARCH_BAR_HEIGHT);
-        drawText(canvas, fontName, 12, color(TEXT_DISABLED), UiCanvas.HorizontalAlign.LEFT,
-                searchX + 6, searchY + SEARCH_BAR_HEIGHT / 2f, "Search...");
-        canvas.restore();
+        UiBounds searchBounds = new UiBounds(panelX + SEARCH_BAR_MARGIN, (HEADER_HEIGHT - SEARCH_BAR_HEIGHT) / 2f,
+                searchWidth, SEARCH_BAR_HEIGHT);
+        search.draw(canvas, searchBounds, fontName, 12, "Search...");
         drawText(canvas, fontName, TITLE_FONT_SIZE, color(ACCENT_PRIMARY_HOVER), UiCanvas.HorizontalAlign.RIGHT,
                 panelX + panelWidth - SEARCH_BAR_MARGIN, HEADER_HEIGHT / 2f, "Connection");
     }
 
-    private void renderStatusPanel(UiCanvas canvas, String fontName, float panelX, float panelWidth, float screenHeight) {
+    private void renderStatusPanel(UiCanvas canvas, String fontName, float panelX, float panelWidth) {
         ConnectionManager connectionManager = ConnectionManager.getInstance();
         boolean treasuryAccount = isTreasuryAccount();
         boolean connected = showsConnected(
@@ -124,11 +84,9 @@ public class ConnectionScreen extends Screen {
         float baseX = panelX + 34;
         float connectionLineY = HEADER_HEIGHT + SECTION_TOP;
         float connectionMetaY = connectionLineY + META_OFFSET;
-        float connectionButtonY = connectionLineY + BUTTON_OFFSET;
-        float authLineY = connectionButtonY + BUTTON_HEIGHT + SECTION_SPACING;
+        float authLineY = connectionButton().bottom() + SECTION_SPACING;
         float authMetaY = authLineY + META_OFFSET;
-        float authButtonY = authLineY + BUTTON_OFFSET;
-        float dividerY = authButtonY + BUTTON_HEIGHT + 18;
+        float dividerY = authButton().bottom() + 18;
 
         drawStatusLine(
                 canvas,
@@ -142,11 +100,10 @@ public class ConnectionScreen extends Screen {
             drawMetaLine(canvas, fontName, baseX, connectionMetaY, "Uptime: " + uptime);
         }
 
-        ButtonBounds connectionButton = new ButtonBounds(baseX, connectionButtonY, BUTTON_WIDTH, BUTTON_HEIGHT);
         drawActionButton(
                 canvas,
                 fontName,
-                connectionButton,
+                connectionButton(),
                 connected ? "Disconnect" : "Connect",
                 connected ? color(CONTROL_DANGER) : color(ACCENT_PRIMARY),
                 connected ? color(CONTROL_DANGER_HOVER) : color(ACCENT_PRIMARY_HOVER));
@@ -171,12 +128,11 @@ public class ConnectionScreen extends Screen {
                                 ? minecraftUsername
                                 : "Unknown")
                         : "Use Connect to start a backend session when needed.");
-        if (authenticated && !treasuryAccount) {
-            ButtonBounds authButton = new ButtonBounds(baseX, authButtonY, AUTH_BUTTON_WIDTH, BUTTON_HEIGHT);
+        if (showsClearSession(authenticated, treasuryAccount)) {
             drawActionButton(
                     canvas,
                     fontName,
-                    authButton,
+                    authButton(),
                     "Clear session",
                     color(CONTROL_DANGER),
                     color(CONTROL_DANGER_HOVER));
@@ -204,21 +160,11 @@ public class ConnectionScreen extends Screen {
         drawText(canvas, fontName, META_FONT_SIZE, color(TEXT_MUTED), UiCanvas.HorizontalAlign.LEFT, x, y, text);
     }
 
-    private void drawSidebarButton(
-            UiCanvas canvas, String fontName, float x, float y, float w, float h, String label, boolean active) {
-        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
-        Color bgColor = SequoiaUiStyle.sidebarButtonColor(active, hovered);
-        canvas.fillRect(x, y, w, h, bgColor);
-        drawText(canvas, fontName, Math.min(SIDEBAR_BUTTON_SIZE, Math.max(8, h - 2)), color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
-                x + w / 2f, y + h / 2f, label);
-    }
-
     private void drawActionButton(
-            UiCanvas canvas, String fontName, ButtonBounds bounds, String label, Color base, Color hover) {
-        boolean hovered = isHovered(nvgMouseX, nvgMouseY, bounds.x(), bounds.y(), bounds.w(), bounds.h());
-        canvas.fillRect(bounds.x(), bounds.y(), bounds.w(), bounds.h(), hovered ? hover : base);
+            UiCanvas canvas, String fontName, UiBounds bounds, String label, Color base, Color hover) {
+        bounds.fill(canvas, bounds.contains(pointer) ? hover : base);
         drawText(canvas, fontName, VALUE_FONT_SIZE - 2, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
-                bounds.x() + bounds.w() / 2f, bounds.y() + bounds.h() / 2f, label);
+                bounds.centerX(), bounds.centerY(), label);
     }
 
     @Override
@@ -227,31 +173,11 @@ public class ConnectionScreen extends Screen {
             return super.mouseClicked(click, outsideScreen);
         }
 
-        float mx = MinecraftUiRenderer.mouseX(click.x());
-        float my = MinecraftUiRenderer.mouseY(click.y());
-        float screenHeight = MinecraftUiRenderer.screenHeight();
-        if (SidebarProfile.click(mx, my, screenHeight, this)) return true;
-
-        float btnX = SIDEBAR_PADDING;
-        float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
-
-        var destinations = SequoiaSidebarNavigation.destinations();
-        var layout = SequoiaSidebarNavigation.sidebarLayout(
-                screenHeight, destinations.size(), SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_SPACING);
-        for (int row = 0; row < destinations.size(); row++) {
-            if (!isHovered(mx, my, btnX, layout.buttonY(row), btnW, layout.buttonHeight())) {
-                continue;
-            }
-            var destination = destinations.get(row);
-            if (destination != SequoiaSidebarNavigation.Destination.CONNECTION) {
-                SequoiaSidebarNavigation.open(destination, this);
-            }
-            return true;
-        }
+        UiPointer at = UiPointer.at(click);
+        if (clickSidebar(at)) return true;
 
         ConnectionManager connectionManager = ConnectionManager.getInstance();
-        ButtonBounds connectionButton = getConnectionButtonBounds();
-        if (isHovered(mx, my, connectionButton.x(), connectionButton.y(), connectionButton.w(), connectionButton.h())) {
+        if (connectionButton().contains(at)) {
             // The same test as the label, so a button reading "Disconnect" disconnects.
             if (showsConnected(
                     isTreasuryAccount(), ConnectionManager.isTreasuryOutConnected(), ConnectionManager.isConnected())) {
@@ -262,11 +188,8 @@ public class ConnectionScreen extends Screen {
             return true;
         }
 
-        ButtonBounds authButton = getAuthButtonBounds();
         String token = SeqClient.getConfigManager().getToken();
-        if (token != null
-                && !token.isBlank()
-                && isHovered(mx, my, authButton.x(), authButton.y(), authButton.w(), authButton.h())) {
+        if (showsClearSession(token != null && !token.isBlank(), isTreasuryAccount()) && authButton().contains(at)) {
             connectionManager.unlinkLocally();
             return true;
         }
@@ -282,25 +205,24 @@ public class ConnectionScreen extends Screen {
         return treasuryAccount ? treasuryConnected : connected;
     }
 
+    /** Whether Clear session shows, and so whether a click where it sits clears the session. */
+    static boolean showsClearSession(boolean authenticated, boolean treasuryAccount) {
+        return authenticated && !treasuryAccount;
+    }
+
     private static boolean isTreasuryAccount() {
         return SeqClient.mc.getUser() != null
                 && TreasuryOutManager.isTreasuryMinecraftAccount(SeqClient.mc.getUser().getName());
     }
 
-    private ButtonBounds getConnectionButtonBounds() {
-        float panelX = SIDEBAR_WIDTH;
-        float baseX = panelX + 34;
-        float connectionButtonY = HEADER_HEIGHT + SECTION_TOP + BUTTON_OFFSET;
-        return new ButtonBounds(baseX, connectionButtonY, BUTTON_WIDTH, BUTTON_HEIGHT);
+    private static UiBounds connectionButton() {
+        return new UiBounds(SIDEBAR_WIDTH + 34, HEADER_HEIGHT + SECTION_TOP + BUTTON_OFFSET,
+                BUTTON_WIDTH, BUTTON_HEIGHT);
     }
 
-    private ButtonBounds getAuthButtonBounds() {
-        float panelX = SIDEBAR_WIDTH;
-        float baseX = panelX + 34;
-        float connectionButtonY = HEADER_HEIGHT + SECTION_TOP + BUTTON_OFFSET;
-        float authLineY = connectionButtonY + BUTTON_HEIGHT + SECTION_SPACING;
-        float authButtonY = authLineY + BUTTON_OFFSET;
-        return new ButtonBounds(baseX, authButtonY, AUTH_BUTTON_WIDTH, BUTTON_HEIGHT);
+    private static UiBounds authButton() {
+        float authLineY = connectionButton().bottom() + SECTION_SPACING;
+        return new UiBounds(SIDEBAR_WIDTH + 34, authLineY + BUTTON_OFFSET, AUTH_BUTTON_WIDTH, BUTTON_HEIGHT);
     }
 
     private float measureTextWidth(String fontName, float fontSize, String text) {
@@ -319,15 +241,4 @@ public class ConnectionScreen extends Screen {
         canvas.drawText(text, x, y, new UiCanvas.TextStyle(
                 font, size, color, horizontalAlign, UiCanvas.VerticalAlign.MIDDLE));
     }
-
-    private boolean isHovered(float mx, float my, float bx, float by, float bw, float bh) {
-        return mx >= bx && mx <= bx + bw && my >= by && my <= by + bh;
-    }
-
-    @Override
-    public boolean isPauseScreen() {
-        return false;
-    }
-
-    private record ButtonBounds(float x, float y, float w, float h) {}
 }

@@ -43,8 +43,8 @@ public class UpdatePromptScreen extends Screen {
     public record Button(String label, Consumer<UpdatePromptScreen> action) {}
 
     public record Placed(Button button, float x, float y) {
-        boolean contains(float pointX, float pointY) {
-            return pointX >= x && pointX <= x + BUTTON_WIDTH && pointY >= y && pointY <= y + BUTTON_HEIGHT;
+        UiBounds bounds() {
+            return new UiBounds(x, y, BUTTON_WIDTH, BUTTON_HEIGHT);
         }
     }
 
@@ -52,8 +52,8 @@ public class UpdatePromptScreen extends Screen {
     public record Content(String title, List<String> lines, float progress, List<Button> buttons) {}
 
     private final Screen parent;
-    private float mouseX;
-    private float mouseY;
+    /** Where the pointer was when this frame began. */
+    private UiPointer pointer = UiPointer.ORIGIN;
 
     public UpdatePromptScreen(Screen parent) {
         super(Component.literal("Sequoia update"));
@@ -63,8 +63,7 @@ public class UpdatePromptScreen extends Screen {
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
-        this.mouseX = MinecraftUiRenderer.mouseX(mouseX);
-        this.mouseY = MinecraftUiRenderer.mouseY(mouseY);
+        pointer = UiPointer.at(mouseX, mouseY);
         UpdateManager manager = UpdateManager.getInstance();
         Content content = content(manager.state(), manager.runningVersion(), manager.testSource());
 
@@ -92,11 +91,9 @@ public class UpdatePromptScreen extends Screen {
                 canvas.fillRect(barX, barY, barWidth * content.progress(), 8, color(ACCENT_PRIMARY_HOVER));
             }
             for (Placed placed : layout(content.buttons(), screenWidth, screenHeight)) {
-                boolean hovered = placed.contains(this.mouseX, this.mouseY);
-                canvas.fillRect(placed.x(), placed.y(), BUTTON_WIDTH, BUTTON_HEIGHT,
-                        hovered ? color(ACCENT_PRIMARY_DARK_HOVER) : color(CONTROL_INPUT_HOVER));
-                text(canvas, font, 11, color(TEXT_SECONDARY), placed.x() + BUTTON_WIDTH / 2f,
-                        placed.y() + BUTTON_HEIGHT / 2f, placed.button().label());
+                UiBounds button = placed.bounds();
+                button.fill(canvas, button.contains(pointer) ? color(ACCENT_PRIMARY_DARK_HOVER) : color(CONTROL_INPUT_HOVER));
+                text(canvas, font, 11, color(TEXT_SECONDARY), button.centerX(), button.centerY(), placed.button().label());
             }
         });
     }
@@ -104,12 +101,11 @@ public class UpdatePromptScreen extends Screen {
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
         if (click.button() != 0) return super.mouseClicked(click, outsideScreen);
-        float x = MinecraftUiRenderer.mouseX(click.x());
-        float y = MinecraftUiRenderer.mouseY(click.y());
+        UiPointer at = UiPointer.at(click);
         UpdateManager manager = UpdateManager.getInstance();
         Content content = content(manager.state(), manager.runningVersion(), manager.testSource());
         for (Placed placed : layout(content.buttons(), MinecraftUiRenderer.screenWidth(), MinecraftUiRenderer.screenHeight())) {
-            if (placed.contains(x, y)) {
+            if (placed.bounds().contains(at)) {
                 placed.button().action().accept(this);
                 return true;
             }

@@ -11,21 +11,38 @@ import com.seqwawa.seq.map.WorldEventService;
 import com.seqwawa.seq.model.LeafAccount;
 import com.seqwawa.seq.model.LeafEvents;
 import com.seqwawa.seq.model.LeafQuests;
+import com.seqwawa.seq.ui.AchievementsScreen;
+import com.seqwawa.seq.ui.ConnectionScreen;
+import com.seqwawa.seq.ui.GuildMembersScreen;
+import com.seqwawa.seq.ui.IngredientGuideScreen;
+import com.seqwawa.seq.ui.PartyFinderScreen;
+import com.seqwawa.seq.ui.PremadePartyEditorScreen;
 import com.seqwawa.seq.ui.QuestBoardScreen;
+import com.seqwawa.seq.ui.RaidProfileSetupScreen;
+import com.seqwawa.seq.ui.SequoiaScreen;
+import com.seqwawa.seq.ui.SettingsScreen;
+import com.seqwawa.seq.ui.ThemeEditorScreen;
+import com.seqwawa.seq.ui.UpdatePromptScreen;
+import com.seqwawa.seq.ui.WarQueueHudEditorScreen;
 import com.seqwawa.seq.ui.WorldMapScreen;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.function.Function;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.client.gui.screens.AccessibilityOnboardingScreen;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.tutorial.TutorialSteps;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.LevelSettings;
@@ -33,20 +50,54 @@ import net.minecraft.world.level.WorldDataConfiguration;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.WorldOptions;
 import net.minecraft.world.level.levelgen.presets.WorldPresets;
+import org.lwjgl.glfw.GLFW;
 
 /**
  * A scripted tour for development builds, so the quest board and the unlock
  * popups can be seen in a real game without a Wynncraft account. Run the
  * client with {@code -Dseq.unlockPreview=true}: it creates a world, opens the
- * quest board with sample data, plays every kind of popup, saves screenshots
- * under {@code run/screenshots/} and quits. Release builds never run it.
+ * quest board with sample data, plays every kind of popup, shows every Sequoia
+ * screen that opens without live data (the gallery), saves screenshots under
+ * {@code run/screenshots/} and quits. Release builds never run it.
+ *
+ * <p>The gallery's shots are made to come out the same on every run, so two runs
+ * can be compared pixel for pixel: the player stands in a closed box with the HUD
+ * hidden, so nothing moves behind the screens, and the pointer is held at one spot.
  */
 public final class UnlockPreview {
 
     private static final long SEED = 4_247_016_918_311L;
     private static final int FRAME_EVERY_TICKS = 2;
 
-    private enum Stage { WAIT_FOR_TITLE, WAIT_FOR_WORLD, SETTLE, BOARD, POPUPS, MAP, DONE }
+    private enum Stage { WAIT_FOR_TITLE, WAIT_FOR_WORLD, SETTLE, BOARD, POPUPS, MAP, GALLERY, DONE }
+
+    /** A screen the gallery shows, by the name its screenshots take. */
+    private record GalleryScreen(String name, Function<Screen, Screen> open) {}
+
+    /**
+     * Every Sequoia screen that opens without data the preview can't fake. The war
+     * planner and its editors need an authorized guild member, so they are left out.
+     */
+    private static final List<GalleryScreen> GALLERY = List.of(
+            new GalleryScreen("main-menu", parent -> new SequoiaScreen()),
+            new GalleryScreen("settings", SettingsScreen::new),
+            new GalleryScreen("connection", ConnectionScreen::new),
+            new GalleryScreen("party-finder", PartyFinderScreen::new),
+            new GalleryScreen("achievements", AchievementsScreen::new),
+            new GalleryScreen("quests", QuestBoardScreen::new),
+            new GalleryScreen("ingredients", IngredientGuideScreen::new),
+            new GalleryScreen("members", GuildMembersScreen::new),
+            new GalleryScreen("theme-editor", ThemeEditorScreen::new),
+            new GalleryScreen("raid-profile-setup", parent -> new RaidProfileSetupScreen(parent, true)),
+            new GalleryScreen("premade-party-editor", parent -> new PremadePartyEditorScreen(parent, null)),
+            new GalleryScreen("update-prompt", UpdatePromptScreen::new),
+            new GalleryScreen("hud-editor", WarQueueHudEditorScreen::new));
+    /** Ticks the gallery waits after closing the player in, for the blocks and their light to settle. */
+    private static final int GALLERY_SETUP_TICKS = 40;
+    /** Ticks each gallery screen has to load before its screenshot. */
+    private static final int GALLERY_TICKS_PER_SCREEN = 20;
+    /** Where the gallery holds the pointer: over a sidebar button at both UI sizes, and no main menu button. */
+    private static final MinecraftUiRenderer.PreviewPointer GALLERY_POINTER = new MinecraftUiRenderer.PreviewPointer(70, 61);
 
     private static Stage stage = Stage.WAIT_FOR_TITLE;
     private static int ticks;
@@ -165,7 +216,45 @@ public final class UnlockPreview {
                 if (inStage > 20 && statuses.stream().noneMatch(each -> each.endsWith("...") || each.equals("Not loaded"))) {
                     SeqClient.LOGGER.info("[Unlock preview] World map data: {}", String.join("; ", statuses));
                     grab("preview-world-map.png");
+                    next(Stage.GALLERY);
+                }
+            }
+            case GALLERY -> {
+                // A stage's first tick is 1: the tick that starts it belongs to the stage before.
+                if (inStage == 1) {
+                    mc.setScreen(null);
+                    enclosePlayer(mc);
+                    // The hotbar, hearts and hand move on their own; hide them as F1 does.
+                    mc.options.hideGui = true;
+                    MinecraftUiRenderer.previewPointer = GALLERY_POINTER;
+                }
+                int galleryTick = inStage - GALLERY_SETUP_TICKS;
+                if (galleryTick < 0) return;
+                int step = galleryTick / GALLERY_TICKS_PER_SCREEN;
+                if (step >= GALLERY.size() * 2) {
+                    MinecraftUiRenderer.previewUiScale = null;
+                    mc.resizeDisplay();
+                    checkEscapeGoesBack(mc);
+                    MinecraftUiRenderer.previewPointer = null;
+                    mc.options.hideGui = false;
+                    mc.setScreen(null);
                     next(Stage.DONE);
+                    return;
+                }
+                // Every screen at 1280x720 first, then every one again at the narrow size.
+                boolean narrow = step >= GALLERY.size();
+                GalleryScreen screen = GALLERY.get(step % GALLERY.size());
+                if (galleryTick % GALLERY_TICKS_PER_SCREEN == 0) {
+                    if (step == GALLERY.size()) {
+                        MinecraftUiRenderer.previewUiScale = 1.5f;
+                        mc.resizeDisplay();
+                    }
+                    // Fresh sample data, so the board's "in 6h 11m" and "12m ago" don't depend on how long the tour took.
+                    LeafQuestService.getInstance().showPreview(sampleBoard());
+                    mc.setScreen(screen.open().apply(null));
+                }
+                if (galleryTick % GALLERY_TICKS_PER_SCREEN == GALLERY_TICKS_PER_SCREEN - 1) {
+                    grab("gallery-" + screen.name() + (narrow ? "-narrow" : "") + ".png");
                 }
             }
             case DONE -> {
@@ -189,6 +278,48 @@ public final class UnlockPreview {
     /** Puts back what the preview changed for itself. */
     private static void restore(Minecraft mc) {
         MinecraftUiRenderer.previewUiScale = null;
+        MinecraftUiRenderer.previewPointer = null;
+    }
+
+    /**
+     * Builds a closed box of one block around the player, so the world behind the
+     * see-through screens shows the same thing in every screenshot: no sky, clouds,
+     * animals or water. The command runs on the world's server without a chat line.
+     */
+    private static void enclosePlayer(Minecraft mc) {
+        var server = mc.getSingleplayerServer();
+        if (server == null || mc.player == null) return;
+        BlockPos feet = mc.player.blockPosition();
+        String fill = String.format(Locale.ROOT, "fill %d %d %d %d %d %d minecraft:white_concrete hollow",
+                feet.getX() - 3, feet.getY() - 1, feet.getZ() - 3, feet.getX() + 3, feet.getY() + 3, feet.getZ() + 3);
+        server.execute(() -> {
+            try {
+                int blocks = server.getCommands().getDispatcher().execute(fill,
+                        server.createCommandSourceStack().withSuppressedOutput());
+                SeqClient.LOGGER.info("[Unlock preview] Closed the player in with {} blocks", blocks);
+            } catch (Exception e) {
+                SeqClient.LOGGER.warn("[Unlock preview] Couldn't close the player in: {}", e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Presses Esc on the screens that used to close straight to the game, each opened
+     * from the main menu, and logs where Esc went.
+     */
+    private static void checkEscapeGoesBack(Minecraft mc) {
+        for (GalleryScreen entry : GALLERY) {
+            if (!List.of("settings", "connection", "party-finder").contains(entry.name())) continue;
+            Screen parent = new SequoiaScreen();
+            mc.setScreen(parent);
+            Screen screen = entry.open().apply(parent);
+            mc.setScreen(screen);
+            screen.keyPressed(new KeyEvent(GLFW.GLFW_KEY_ESCAPE, 0, 0));
+            String outcome = mc.screen == parent ? "went back to the main menu"
+                    : mc.screen == null ? "closed to the game"
+                    : "went to " + mc.screen.getClass().getSimpleName();
+            SeqClient.LOGGER.info("[Unlock preview] Esc on {} {}", entry.name(), outcome);
+        }
     }
 
     private static void next(Stage nextStage) {

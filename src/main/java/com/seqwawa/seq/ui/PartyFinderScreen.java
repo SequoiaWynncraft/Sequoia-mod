@@ -2889,6 +2889,12 @@ public class PartyFinderScreen extends Screen implements PartyAccessor {
         return super.charTyped(characterEvent);
     }
 
+    /** Esc goes back to the screen Party Finder was opened from, like every other Sequoia screen. */
+    @Override
+    public void onClose() {
+        SeqClient.mc.setScreen(parent);
+    }
+
     @Override
     public boolean isPauseScreen() {
         return false;

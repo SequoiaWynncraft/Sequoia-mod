@@ -22,7 +22,6 @@ import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -30,7 +29,7 @@ import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
 
-public final class AchievementsScreen extends Screen {
+public final class AchievementsScreen extends SequoiaPanelScreen {
 
     private static final List<SeqRaid> RAID_ORDER = List.of(SeqRaid.NOTG, SeqRaid.NOL, SeqRaid.TCC, SeqRaid.TNA, SeqRaid.TWP);
 
@@ -41,26 +40,21 @@ public final class AchievementsScreen extends Screen {
     private static final float SUMMARY_HEIGHT = 28;
     private static final float SCROLL_SPEED = 30;
 
-    private final Screen parent;
     private final GuildRaidProgressService service = GuildRaidProgressService.getInstance();
+    private final ScrollPane scroll = new ScrollPane();
 
     private List<Row> rows = List.of();
     private State state = State.LOADING;
     private GuildRaidProgress shown = GuildRaidProgress.EMPTY;
-    private float scrollOffset;
-    private float maxScroll;
-    private float mouseX;
-    private float mouseY;
 
     public AchievementsScreen(Screen parent) {
-        super(Component.literal("Sequoia Achievements"));
-        this.parent = parent;
+        super(Component.literal("Sequoia Achievements"), parent, SequoiaSidebarNavigation.Destination.ACHIEVEMENTS);
     }
 
     @Override
     protected void init() {
         super.init();
-        scrollOffset = 0;
+        scroll.reset();
         refresh();
     }
 
@@ -69,8 +63,7 @@ public final class AchievementsScreen extends Screen {
         shown = service.progress();
         rows = buildRows(shown);
         if (state != State.READY) {
-            scrollOffset = 0;
-            maxScroll = 0;
+            scroll.setMax(0);
         }
     }
 
@@ -110,24 +103,21 @@ public final class AchievementsScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics guiGraphics, int pointerX, int pointerY, float partialTick) {
-        super.render(guiGraphics, pointerX, pointerY, partialTick);
+    protected void beforeFrame() {
         if (state != service.state() || !shown.equals(service.progress())) {
             refresh();
             triggerImmediateNarration(true);
         }
-        mouseX = MinecraftUiRenderer.mouseX(pointerX);
-        mouseY = MinecraftUiRenderer.mouseY(pointerY);
-        UiRenderer.renderScreen(this, this::renderScreen);
     }
 
-    private void renderScreen(UiCanvas canvas) {
+    @Override
+    protected void draw(UiCanvas canvas) {
         float width = canvas.metrics().width();
         float height = canvas.metrics().height();
         PanelLayout panel = panelLayout(width, height, Float.MAX_VALUE);
         SequoiaUiStyle.drawPanelFrame(canvas, HEADER_HEIGHT);
         text(canvas, "Achievements", width - MARGIN, HEADER_HEIGHT / 2, 18, color(ACCENT_PRIMARY_HOVER), RIGHT);
-        SequoiaSidebarNavigation.render(canvas, SequoiaSidebarNavigation.Destination.ACHIEVEMENTS, mouseX, mouseY);
+        drawSidebar(canvas);
 
         if (state != State.READY) {
             canvas.fillRect(panel.x(), panel.y(), panel.width(), panel.height(), color(BACKGROUND_CONTENT));
@@ -139,32 +129,27 @@ public final class AchievementsScreen extends Screen {
         }
 
         if (rows.isEmpty()) {
-            scrollOffset = 0;
-            maxScroll = 0;
+            scroll.setMax(0);
             fittedText(canvas, "No achievements available", panel.x() + 14, panel.y() + 26,
                     Math.max(0, panel.width() - 28), 16, color(TEXT_SECONDARY));
             return;
         }
-        maxScroll = Math.max(0, contentHeight(panel.width(), rows) - panel.height());
-        scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
+        scroll.setMax(contentHeight(panel.width(), rows) - panel.height());
         canvas.save();
         canvas.scissor(panel.x(), panel.y(), panel.width(), panel.height());
-        renderProgress(canvas, rows, panel.x(), panel.y() - scrollOffset, Math.max(0, panel.width() - 6));
+        renderProgress(canvas, rows, panel.x(), panel.y() - scroll.offset(), Math.max(0, panel.width() - 6));
         canvas.restore();
-        if (maxScroll > 0 && panel.height() > 0) {
-            float thumb = Math.min(panel.height(), Math.max(20, panel.height() * panel.height() / (panel.height() + maxScroll)));
-            float y = panel.y() + (panel.height() - thumb) * scrollOffset / maxScroll;
-            canvas.fillRect(panel.right() - 3, panel.y(), 3, panel.height(), color(CONTROL_TRACK));
-            canvas.fillRect(panel.right() - 3, y, 3, thumb, color(CONTROL_THUMB));
-        }
+        scroll.draw(canvas, new UiBounds(panel.right() - 3, panel.y(), 3, panel.height()));
         renderHoveredDetails(canvas, panel);
     }
 
     private void renderHoveredDetails(UiCanvas canvas, PanelLayout panel) {
+        float mouseX = pointer.x();
+        float mouseY = pointer.y();
         if (mouseX < panel.x() || mouseX >= panel.right() - 6 || mouseY < panel.y() || mouseY >= panel.bottom()) return;
         for (CardPlacement card : cardPlacements(Math.max(0, panel.width() - 6), rows)) {
             float x = panel.x() + card.x();
-            float y = panel.y() + card.y() - scrollOffset;
+            float y = panel.y() + card.y() - scroll.offset();
             if (mouseX < x || mouseX >= x + card.width() || mouseY < y || mouseY >= y + cardHeight(card.width())) continue;
             Row row = card.row();
             List<String> lines = new ArrayList<>();
@@ -282,9 +267,7 @@ public final class AchievementsScreen extends Screen {
 
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
-        if (click.button() == 0 && SequoiaSidebarNavigation.click(
-                MinecraftUiRenderer.mouseX(click.x()), MinecraftUiRenderer.mouseY(click.y()),
-                MinecraftUiRenderer.screenHeight(), SequoiaSidebarNavigation.Destination.ACHIEVEMENTS, parent)) {
+        if (click.button() == 0 && clickSidebar(UiPointer.at(click))) {
             return true;
         }
         return super.mouseClicked(click, outsideScreen);
@@ -293,9 +276,8 @@ public final class AchievementsScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         PanelLayout panel = panelLayout(MinecraftUiRenderer.screenWidth(), MinecraftUiRenderer.screenHeight(), Float.MAX_VALUE);
-        float x = MinecraftUiRenderer.mouseX(mouseX);
-        float y = MinecraftUiRenderer.mouseY(mouseY);
-        if (x < panel.x() || x >= panel.right() || y < panel.y() || y >= panel.bottom()) {
+        UiPointer at = UiPointer.at(mouseX, mouseY);
+        if (at.x() < panel.x() || at.x() >= panel.right() || at.y() < panel.y() || at.y() >= panel.bottom()) {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
         scrollBy((float) -scrollY * SCROLL_SPEED);
@@ -309,8 +291,8 @@ public final class AchievementsScreen extends Screen {
             case GLFW.GLFW_KEY_DOWN -> scrollBy(SCROLL_SPEED);
             case GLFW.GLFW_KEY_PAGE_UP -> scrollBy(-pageScrollAmount());
             case GLFW.GLFW_KEY_PAGE_DOWN -> scrollBy(pageScrollAmount());
-            case GLFW.GLFW_KEY_HOME -> scrollOffset = 0;
-            case GLFW.GLFW_KEY_END -> scrollOffset = maxScroll;
+            case GLFW.GLFW_KEY_HOME -> scroll.reset();
+            case GLFW.GLFW_KEY_END -> scroll.scrollTo(scroll.max());
             default -> {
                 return super.keyPressed(event);
             }
@@ -319,7 +301,7 @@ public final class AchievementsScreen extends Screen {
     }
 
     private void scrollBy(float amount) {
-        scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset + amount));
+        scroll.scrollBy(amount);
     }
 
     private float pageScrollAmount() {
@@ -498,16 +480,6 @@ public final class AchievementsScreen extends Screen {
             narration.append(", ").append(remainingLabel(row)).append(". ");
         }
         return Component.literal(narration.toString());
-    }
-
-    @Override
-    public void onClose() {
-        SeqClient.mc.setScreen(parent);
-    }
-
-    @Override
-    public boolean isPauseScreen() {
-        return false;
     }
 
     private static void text(

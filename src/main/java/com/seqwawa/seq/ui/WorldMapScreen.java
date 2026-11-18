@@ -18,6 +18,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
+import com.seqwawa.seq.client.Clocks;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.map.GatheringMapImageService;
 import com.seqwawa.seq.map.IngredientFarmSpot;
@@ -76,7 +77,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     private boolean mapDragMoved;
     private boolean clearIngredientSelectionOnRelease;
     private boolean insightsSidebarOpen;
-    private long centerPlayerWarningUntilMs;
+    /** Says why Center Player did nothing, for a while after it was pressed. */
+    private final TimedBanner centerPlayerWarning = new TimedBanner(Clocks::monotonicMillis);
 
     private MapDisplayMode displayMode = MapDisplayMode.GATHERING;
     private boolean mapModeDropdownOpen;
@@ -88,8 +90,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     });
     private final IngredientMapMode ingredientMode;
     private final Screen parent;
-    private float nvgMouseX;
-    private float nvgMouseY;
+    /** Where the pointer was when this frame began. */
+    private UiPointer pointer = UiPointer.ORIGIN;
 
     public WorldMapScreen(Screen parent) {
         this(parent, null, ItemStack.EMPTY, null);
@@ -152,8 +154,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
-        nvgMouseY = MinecraftUiRenderer.mouseY(mouseY);
+        pointer = UiPointer.at(mouseX, mouseY);
 
         float screenWidth = uiScreenWidth();
         float screenHeight = uiScreenHeight();
@@ -174,7 +175,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         }
 
         if (displayMode == MapDisplayMode.GATHERING) {
-            gatheringMode.refresh(mapFrame(nvgMouseX, nvgMouseY));
+            gatheringMode.refresh(mapFrame(pointer.x(), pointer.y()));
         } else if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             eventMode.refresh();
         } else if (displayMode == MapDisplayMode.INGREDIENTS) {
@@ -189,10 +190,10 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderNvg(UiCanvas canvas, MapViewport viewport) {
-        ingredientMode.beginFrame(mapFrame(nvgMouseX, nvgMouseY));
+        ingredientMode.beginFrame(mapFrame(pointer.x(), pointer.y()));
         renderMapBackground(canvas, viewport);
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
-            eventMode.renderMap(canvas, mapFrame(nvgMouseX, nvgMouseY));
+            eventMode.renderMap(canvas, mapFrame(pointer.x(), pointer.y()));
             renderPlayer(canvas, viewport);
             renderSidebar(canvas);
             renderInsightsSidebar(canvas);
@@ -206,7 +207,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             return;
         }
 
-        gatheringMode.renderMap(canvas, mapFrame(nvgMouseX, nvgMouseY));
+        gatheringMode.renderMap(canvas, mapFrame(pointer.x(), pointer.y()));
         renderSidebar(canvas);
         renderInsightsSidebar(canvas);
     }
@@ -259,7 +260,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void renderSidebar(UiCanvas canvas) {
-        WorldMapFrame frame = mapFrame(nvgMouseX, nvgMouseY);
+        WorldMapFrame frame = mapFrame(pointer.x(), pointer.y());
         if (displayMode == MapDisplayMode.INGREDIENTS) ingredientMode.renderSidebar(canvas, frame, centerPlayerButtonLabel());
         else if (displayMode == MapDisplayMode.WORLD_EVENTS) eventMode.renderSidebar(canvas, frame, centerPlayerButtonLabel());
         else gatheringMode.renderSidebar(canvas, frame, centerPlayerButtonLabel());
@@ -287,11 +288,11 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         drawButton(canvas, x + INSIGHTS_SIDEBAR_WIDTH - PADDING - 24, 10, 24, BUTTON_HEIGHT, ">", false);
         canvas.scissor(x, SIDEBAR_HEADER_HEIGHT, INSIGHTS_SIDEBAR_WIDTH, Math.max(0, screenHeight - SIDEBAR_HEADER_HEIGHT));
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
-            eventMode.renderInsights(canvas, mapFrame(nvgMouseX, nvgMouseY), x, 60, 142);
+            eventMode.renderInsights(canvas, mapFrame(pointer.x(), pointer.y()), x, 60, 142);
         } else if (displayMode == MapDisplayMode.INGREDIENTS) {
-            ingredientMode.renderInsights(canvas, mapFrame(nvgMouseX, nvgMouseY), x);
+            ingredientMode.renderInsights(canvas, mapFrame(pointer.x(), pointer.y()), x);
         } else {
-            gatheringMode.renderInsights(canvas, mapFrame(nvgMouseX, nvgMouseY), x);
+            gatheringMode.renderInsights(canvas, mapFrame(pointer.x(), pointer.y()), x);
         }
         canvas.resetScissor();
     }
@@ -307,17 +308,17 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         canvas.scissor(layout.x(), layout.y(), layout.width(),
                 layout.rowHeight() * (MapDisplayMode.values().length + 1));
         DropdownMenu.trigger(canvas, layout.x(), layout.y(), layout.width(), layout.rowHeight(),
-                displayMode.label(), mapModeDropdownOpen, true, nvgMouseX, nvgMouseY);
+                displayMode.label(), mapModeDropdownOpen, true, pointer.x(), pointer.y());
         if (mapModeDropdownOpen) {
             DropdownMenu.list(canvas, layout.x(), layout.y() + layout.rowHeight(), layout.width(), layout.rowHeight(),
                     java.util.Arrays.stream(MapDisplayMode.values()).map(MapDisplayMode::label).toList(),
-                    i -> MapDisplayMode.values()[i] == displayMode, 0, MapDisplayMode.values().length, nvgMouseX, nvgMouseY);
+                    i -> MapDisplayMode.values()[i] == displayMode, 0, MapDisplayMode.values().length, pointer.x(), pointer.y());
         }
         canvas.restore();
         canvas.save();
         canvas.scissor(layout.closeX(), layout.y(), layout.width(), layout.rowHeight());
-        boolean closeHovered = isHovered(nvgMouseX, nvgMouseY,
-                layout.closeX(), layout.y(), layout.width(), layout.rowHeight());
+        boolean closeHovered = new UiBounds(layout.closeX(), layout.y(), layout.width(), layout.rowHeight())
+                .contains(pointer);
         canvas.fillRect(layout.closeX(), layout.y(), layout.width(), layout.rowHeight(),
                 closeHovered ? color(CONTROL_DANGER_HOVER) : color(CONTROL_DANGER));
         canvas.strokeRect(layout.closeX(), layout.y(), layout.width(), layout.rowHeight(), 1, color(MAP_BORDER));
@@ -347,14 +348,15 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private void drawButton(UiCanvas canvas, float x, float y, float w, float h, String label, boolean active) {
-        boolean hovered = isHovered(nvgMouseX, nvgMouseY, x, y, w, h);
+        boolean hovered = new UiBounds(x, y, w, h).contains(pointer);
         canvas.fillRect(x, y, w, h, active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
         canvas.strokeRect(x, y, w, h, 1, color(MAP_BORDER));
         drawText(canvas, x + w / 2f, y + h / 2f, 12, label, color(MAP_TEXT), TextAlignment.CENTER);
     }
 
     private String centerPlayerButtonLabel() {
-        return System.currentTimeMillis() < centerPlayerWarningUntilMs ? "Leave housing bum !" : "Center Player";
+        String warning = centerPlayerWarning.message();
+        return warning != null ? warning : "Center Player";
     }
 
     private boolean copyHoveredCoordinates(float mx, float my, float screenWidth, float screenHeight) {
@@ -364,13 +366,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             if (insightsSidebarOpen
                     && eventMode.selected() != null
-                    && isHovered(
-                            mx,
-                            my,
-                            insightsX + PADDING,
-                            142 + 4,
-                            INSIGHTS_SIDEBAR_WIDTH - PADDING * 2,
-                            WORLD_EVENT_DETAIL_HEIGHT)) {
+                    && new UiBounds(insightsX + PADDING, 142 + 4,
+                            INSIGHTS_SIDEBAR_WIDTH - PADDING * 2, WORLD_EVENT_DETAIL_HEIGHT).contains(mx, my)) {
                 copyToClipboard(WorldEventMapMode.worldEventCoordinates(eventMode.selected().locations().getFirst()));
                 return true;
             }
@@ -438,8 +435,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
-        float mx = scaledMouseX(click.x());
-        float my = scaledMouseY(click.y());
+        UiPointer at = UiPointer.at(click);
+        float mx = at.x();
+        float my = at.y();
         float screenWidth = uiScreenWidth();
         float screenHeight = uiScreenHeight();
 
@@ -475,8 +473,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         }
         MapViewport focusedViewport = mapViewport(screenWidth, screenHeight);
         if (displayMode == MapDisplayMode.INGREDIENTS) {
-            if (isHovered(mx, my, PADDING, 58, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
-                if (!centerOnPlayer()) centerPlayerWarningUntilMs = System.currentTimeMillis() + CENTER_PLAYER_WARNING_DURATION_MS;
+            if (new UiBounds(PADDING, 58, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT).contains(mx, my)) {
+                if (!centerOnPlayer()) centerPlayerWarning.show("Leave housing bum !", CENTER_PLAYER_WARNING_DURATION_MS);
                 return true;
             }
             if (focusedViewport.isInsideScreen(mx, my)) {
@@ -494,8 +492,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             }
             return super.mouseClicked(click, outsideScreen);
         }
-        if (isHovered(mx, my, PADDING, 58, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
-            if (!centerOnPlayer()) centerPlayerWarningUntilMs = System.currentTimeMillis() + CENTER_PLAYER_WARNING_DURATION_MS;
+        if (new UiBounds(PADDING, 58, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT).contains(mx, my)) {
+            if (!centerOnPlayer()) centerPlayerWarning.show("Leave housing bum !", CENTER_PLAYER_WARNING_DURATION_MS);
             return true;
         }
         return gatheringMode.click(mapFrame(mx, my)) || super.mouseClicked(click, outsideScreen);
@@ -503,13 +501,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     private boolean mouseClickedInsights(float mx, float my, float screenWidth, float screenHeight) {
         if (!insightsSidebarOpen) {
-            if (isHovered(
-                    mx,
-                    my,
-                    screenWidth - INSIGHTS_RAIL_WIDTH,
-                    10,
-                    INSIGHTS_RAIL_WIDTH,
-                    BUTTON_HEIGHT)) {
+            if (new UiBounds(screenWidth - INSIGHTS_RAIL_WIDTH, 10, INSIGHTS_RAIL_WIDTH, BUTTON_HEIGHT)
+                    .contains(mx, my)) {
                 setInsightsSidebarOpen(true);
                 return true;
             }
@@ -520,13 +513,7 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         if (mx < x || mx > screenWidth) {
             return false;
         }
-        if (isHovered(
-                mx,
-                my,
-                x + INSIGHTS_SIDEBAR_WIDTH - PADDING - 24,
-                10,
-                24,
-                BUTTON_HEIGHT)) {
+        if (new UiBounds(x + INSIGHTS_SIDEBAR_WIDTH - PADDING - 24, 10, 24, BUTTON_HEIGHT).contains(mx, my)) {
             setInsightsSidebarOpen(false);
             return true;
         }
@@ -546,8 +533,8 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
     }
 
     private boolean mouseClickedWorldEvents(float mx, float my, float screenWidth, float screenHeight) {
-        if (isHovered(mx, my, PADDING, 58, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
-            if (!centerOnPlayer()) centerPlayerWarningUntilMs = System.currentTimeMillis() + CENTER_PLAYER_WARNING_DURATION_MS;
+        if (new UiBounds(PADDING, 58, SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT).contains(mx, my)) {
+            if (!centerOnPlayer()) centerPlayerWarning.show("Leave housing bum !", CENTER_PLAYER_WARNING_DURATION_MS);
             return true;
         }
         WorldMapFrame frame = mapFrame(mx, my);
@@ -592,8 +579,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        float mx = scaledMouseX(mouseX);
-        float my = scaledMouseY(mouseY);
+        UiPointer at = UiPointer.at(mouseX, mouseY);
+        float mx = at.x();
+        float my = at.y();
         if (mapModeDropdownLayout().contains(mx, my, mapModeDropdownOpen)
                 || mapModeDropdownLayout().containsClose(mx, my)) {
             return true;
@@ -638,24 +626,12 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
         return super.charTyped(characterEvent);
     }
 
-    private float scaledMouseX(double rawX) {
-        return MinecraftUiRenderer.mouseX(rawX);
-    }
-
-    private float scaledMouseY(double rawY) {
-        return MinecraftUiRenderer.mouseY(rawY);
-    }
-
     private static float uiScreenWidth() {
         return MinecraftUiRenderer.screenWidth();
     }
 
     private static float uiScreenHeight() {
         return MinecraftUiRenderer.screenHeight();
-    }
-
-    private static boolean isHovered(float mx, float my, float x, float y, float w, float h) {
-        return mx >= x && mx <= x + w && my >= y && my <= y + h;
     }
 
     private static String searchText(CharacterEvent characterEvent) {

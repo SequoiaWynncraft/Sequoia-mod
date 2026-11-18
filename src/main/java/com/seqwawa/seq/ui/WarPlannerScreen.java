@@ -124,8 +124,9 @@ public final class WarPlannerScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
-        nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
-        nvgMouseY = MinecraftUiRenderer.mouseY(mouseY);
+        UiPointer pointer = UiPointer.at(mouseX, mouseY);
+        nvgMouseX = pointer.x();
+        nvgMouseY = pointer.y();
         UiRenderer.renderScreen(this, this::renderPlanner);
     }
 
@@ -154,7 +155,8 @@ public final class WarPlannerScreen extends Screen {
         float height = canvas.metrics().height();
         PlannerViewport viewport = plannerViewport(screenWidth);
         SequoiaUiStyle.drawPanelFrame(canvas, headerHeight(viewport.width()));
-        SequoiaSidebarNavigation.render(canvas, SequoiaSidebarNavigation.Destination.WAR, nvgMouseX, nvgMouseY);
+        SequoiaSidebarNavigation.render(canvas, SequoiaSidebarNavigation.Destination.WAR,
+                new UiPointer(nvgMouseX, nvgMouseY), SequoiaSidebarNavigation.Foot.profileCard(height));
         float screenMouseX = nvgMouseX;
         nvgMouseX -= viewport.x();
         canvas.save();
@@ -338,8 +340,8 @@ public final class WarPlannerScreen extends Screen {
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
         if (!plannerModalOpen() && click.button() != 0) {
-            float mx = MinecraftUiRenderer.mouseX(click.x()) - plannerViewport(MinecraftUiRenderer.screenWidth()).x();
-            float my = MinecraftUiRenderer.mouseY(click.y());
+            float mx = UiPointer.at(click).x() - plannerViewport(MinecraftUiRenderer.screenWidth()).x();
+            float my = UiPointer.at(click).y();
             if (sectionDropdownOpen || zones.dropdownOpen()) return true;
             if (tab == Tab.ZONES) {
                 float width = plannerViewport(MinecraftUiRenderer.screenWidth()).width();
@@ -351,8 +353,8 @@ public final class WarPlannerScreen extends Screen {
         if ((warPingPicker.isOpen() || zones.actionsOpen()) && click.button() != 0) return true;
         if (click.button() == 1) {
             PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
-            float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
-            float my = MinecraftUiRenderer.mouseY(click.y());
+            float mx = UiPointer.at(click).x() - viewport.x();
+            float my = UiPointer.at(click).y();
             WarPlannerSnapshot snapshot = manager == null ? null : manager.snapshot();
             if (!warPingPicker.isOpen()
                     && !roleEditor.isOpen()
@@ -373,8 +375,8 @@ public final class WarPlannerScreen extends Screen {
             return super.mouseClicked(click, outsideScreen);
         }
         PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
-        float mx = MinecraftUiRenderer.mouseX(click.x()) - viewport.x();
-        float my = MinecraftUiRenderer.mouseY(click.y());
+        float mx = UiPointer.at(click).x() - viewport.x();
+        float my = UiPointer.at(click).y();
         float width = viewport.width();
         float height = MinecraftUiRenderer.screenHeight();
 
@@ -392,7 +394,7 @@ public final class WarPlannerScreen extends Screen {
         }
         if (clickPlannerDropdown(mx, my, width, height)) return true;
         if (zones.clickActions(mx, my)) return true;
-        if (SequoiaSidebarNavigation.click(mx + viewport.x(), my, height,
+        if (SequoiaSidebarNavigation.click(new UiPointer(mx + viewport.x(), my), height,
                 SequoiaSidebarNavigation.Destination.WAR, parent)) return true;
         HeaderControls header = headerControls(width);
         if (tab == Tab.ZONES) {
@@ -412,24 +414,30 @@ public final class WarPlannerScreen extends Screen {
         }
         AvailabilityLayout availability = availabilityLayout(width);
         float availabilityY = headerHeight(width) + availability.y();
-        if (hit(mx, my, availability.buttonX(0), availabilityY, availability.buttonWidth(0), BUTTON_HEIGHT)) {
+        if (new UiBounds(availability.buttonX(0), availabilityY, availability.buttonWidth(0), BUTTON_HEIGHT)
+                .contains(mx, my)) {
             return setAvailability(30);
         }
-        if (hit(mx, my, availability.buttonX(1), availabilityY, availability.buttonWidth(1), BUTTON_HEIGHT)) {
+        if (new UiBounds(availability.buttonX(1), availabilityY, availability.buttonWidth(1), BUTTON_HEIGHT)
+                .contains(mx, my)) {
             return setAvailability(60);
         }
-        if (hit(mx, my, availability.buttonX(2), availabilityY, availability.buttonWidth(2), BUTTON_HEIGHT)) {
+        if (new UiBounds(availability.buttonX(2), availabilityY, availability.buttonWidth(2), BUTTON_HEIGHT)
+                .contains(mx, my)) {
             return setAvailability(120);
         }
-        if (hit(mx, my, availability.buttonX(3), availabilityY, availability.buttonWidth(3), BUTTON_HEIGHT)) {
+        if (new UiBounds(availability.buttonX(3), availabilityY, availability.buttonWidth(3), BUTTON_HEIGHT)
+                .contains(mx, my)) {
             SeqClient.mc.setScreen(new WarAvailabilityEditorScreen(this));
             return true;
         }
-        if (hit(mx, my, availability.buttonX(4), availabilityY, availability.buttonWidth(4), BUTTON_HEIGHT)) {
+        if (new UiBounds(availability.buttonX(4), availabilityY, availability.buttonWidth(4), BUTTON_HEIGHT)
+                .contains(mx, my)) {
             return setAvailability(0);
         }
 
-        if (manager.canManage() && tab != Tab.ZONES && hit(mx, my, PADDING, contentTop(width), 80, BUTTON_HEIGHT)) {
+        if (manager.canManage() && tab != Tab.ZONES && new UiBounds(PADDING, contentTop(width), 80, BUTTON_HEIGHT)
+                .contains(mx, my)) {
             if (tab == Tab.ROSTER && !manager.isMutating() && !pingCandidates(manager.snapshot(), "").isEmpty()) {
                 if (opacitySlider != null) opacitySlider.onHidden();
                 zones.cancelMapDrag();
@@ -492,17 +500,17 @@ public final class WarPlannerScreen extends Screen {
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (warPingPicker.isOpen()) return true;
         if (tab == Tab.ZONES && opacitySlider != null && click.button() == 0 && !plannerModalOpen()
-                && opacitySlider.mouseDragged(MinecraftUiRenderer.mouseX(click.x())
-                        - plannerViewport(MinecraftUiRenderer.screenWidth()).x(), MinecraftUiRenderer.mouseY(click.y()))) {
+                && opacitySlider.mouseDragged(UiPointer.at(click).x()
+                        - plannerViewport(MinecraftUiRenderer.screenWidth()).x(), UiPointer.at(click).y())) {
             return true;
         }
         if (tab == Tab.ZONES && click.button() == 0 && zones.drag(
-                MinecraftUiRenderer.mouseX(click.x()) - plannerViewport(MinecraftUiRenderer.screenWidth()).x(),
-                MinecraftUiRenderer.mouseY(click.y()), plannerViewport(MinecraftUiRenderer.screenWidth()).width(),
+                UiPointer.at(click).x() - plannerViewport(MinecraftUiRenderer.screenWidth()).x(),
+                UiPointer.at(click).y(), plannerViewport(MinecraftUiRenderer.screenWidth()).width(),
                 MinecraftUiRenderer.screenHeight(), MinecraftUiRenderer.mouseDelta(deltaX), MinecraftUiRenderer.mouseDelta(deltaY))) return true;
         if (tab == Tab.TEAMS && click.button() == 0 && teamsTab.drag(
-                MinecraftUiRenderer.mouseX(click.x()) - plannerViewport(MinecraftUiRenderer.screenWidth()).x(),
-                MinecraftUiRenderer.mouseY(click.y()))) return true;
+                UiPointer.at(click).x() - plannerViewport(MinecraftUiRenderer.screenWidth()).x(),
+                UiPointer.at(click).y())) return true;
         return super.mouseDragged(click, deltaX, deltaY);
     }
 
@@ -510,17 +518,17 @@ public final class WarPlannerScreen extends Screen {
     public boolean mouseReleased(@NotNull MouseButtonEvent click) {
         if (warPingPicker.isOpen()) return true;
         if (opacitySlider != null && opacitySlider.mouseReleased(
-                MinecraftUiRenderer.mouseX(click.x()) - plannerViewport(MinecraftUiRenderer.screenWidth()).x(),
-                MinecraftUiRenderer.mouseY(click.y()), click.button())) {
+                UiPointer.at(click).x() - plannerViewport(MinecraftUiRenderer.screenWidth()).x(),
+                UiPointer.at(click).y(), click.button())) {
             SeqClient.getConfigManager().save();
             return true;
         }
         if (tab == Tab.ZONES && click.button() == 0 && zones.release(
-                MinecraftUiRenderer.mouseX(click.x()) - plannerViewport(MinecraftUiRenderer.screenWidth()).x(),
-                MinecraftUiRenderer.mouseY(click.y()), plannerViewport(MinecraftUiRenderer.screenWidth()).width(), MinecraftUiRenderer.screenHeight())) return true;
+                UiPointer.at(click).x() - plannerViewport(MinecraftUiRenderer.screenWidth()).x(),
+                UiPointer.at(click).y(), plannerViewport(MinecraftUiRenderer.screenWidth()).width(), MinecraftUiRenderer.screenHeight())) return true;
         if (tab == Tab.TEAMS && click.button() == 0 && teamsTab.release(
-                MinecraftUiRenderer.mouseX(click.x()) - plannerViewport(MinecraftUiRenderer.screenWidth()).x(),
-                MinecraftUiRenderer.mouseY(click.y()), plannerViewport(MinecraftUiRenderer.screenWidth()).width(), MinecraftUiRenderer.screenHeight())) return true;
+                UiPointer.at(click).x() - plannerViewport(MinecraftUiRenderer.screenWidth()).x(),
+                UiPointer.at(click).y(), plannerViewport(MinecraftUiRenderer.screenWidth()).width(), MinecraftUiRenderer.screenHeight())) return true;
         return super.mouseReleased(click);
     }
 
@@ -570,11 +578,13 @@ public final class WarPlannerScreen extends Screen {
             supportEditor.scroll(delta);
         } else {
             PlannerViewport viewport = plannerViewport(MinecraftUiRenderer.screenWidth());
-            float localMouseX = MinecraftUiRenderer.mouseX(mouseX) - viewport.x();
-            float localMouseY = MinecraftUiRenderer.mouseY(mouseY);
+            UiPointer at = UiPointer.at(mouseX, mouseY);
+            float localMouseX = at.x() - viewport.x();
+            float localMouseY = at.y();
             float scrollTop = contentTop(viewport.width()) + (tab == Tab.ZONES ? 0 : 28);
-            if (!hit(localMouseX, localMouseY, PADDING, scrollTop,
-                    viewport.width() - PADDING * 2, MinecraftUiRenderer.screenHeight() - scrollTop - PADDING)) {
+            if (!new UiBounds(PADDING, scrollTop,
+                    viewport.width() - PADDING * 2, MinecraftUiRenderer.screenHeight() - scrollTop - PADDING)
+                    .contains(localMouseX, localMouseY)) {
                 return true;
             }
             if (tab == Tab.TEAMS) { teamsTab.scroll(snapshot, localMouseX, localMouseY, viewport.width(), MinecraftUiRenderer.screenHeight(), delta); return true; }
@@ -725,10 +735,6 @@ public final class WarPlannerScreen extends Screen {
 
     private void button(UiCanvas canvas, float x, float y, float width, float height, String label, boolean danger, boolean disabled) {
         tonedButton(canvas, nvgMouseX, nvgMouseY, x, y, width, height, label, danger ? ButtonTone.DANGER : ButtonTone.SECONDARY, disabled);
-    }
-
-    private static boolean hit(float mx, float my, float x, float y, float width, float height) {
-        return mx >= x && mx <= x + width && my >= y && my <= y + height;
     }
 
     private enum Tab {

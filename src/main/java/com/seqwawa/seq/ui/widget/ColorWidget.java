@@ -1,5 +1,6 @@
 package com.seqwawa.seq.ui.widget;
 
+import com.seqwawa.seq.ui.UiBounds;
 import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
@@ -271,7 +272,7 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
         if (!prepareEnabledState()) {
             return false;
         }
-        if (button == 1 && isHovered(mouseX, mouseY, swatchX(), controlY(), SWATCH_WIDTH, CONTROL_HEIGHT)) {
+        if (button == 1 && new UiBounds(swatchX(), controlY(), SWATCH_WIDTH, CONTROL_HEIGHT).contains(mouseX, mouseY)) {
             editing = false;
             draggingSaturationValue = false;
             draggingHue = false;
@@ -285,53 +286,37 @@ public class ColorWidget extends SettingWidget<Setting.ColorSetting> {
             return false;
         }
 
-        if (isHovered(mouseX, mouseY, hexBoxX(), controlY(), HEX_BOX_WIDTH, CONTROL_HEIGHT)) {
+        if (new UiBounds(hexBoxX(), controlY(), HEX_BOX_WIDTH, CONTROL_HEIGHT).contains(mouseX, mouseY)) {
             editing = true;
             editBuffer = hexDigits(setting);
             cursorBlink = 0;
             return true;
         }
 
-        if (isHovered(mouseX, mouseY, swatchX(), controlY(), SWATCH_WIDTH, CONTROL_HEIGHT)) {
+        if (new UiBounds(swatchX(), controlY(), SWATCH_WIDTH, CONTROL_HEIGHT).contains(mouseX, mouseY)) {
             finishEditing();
             expanded = !expanded;
             height = expanded ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT;
             return true;
         }
 
-        if (previewStateConsumer != null && isHovered(
-                mouseX,
-                mouseY,
-                previewButtonX(),
-                controlY(),
-                PREVIEW_BUTTON_WIDTH,
-                CONTROL_HEIGHT)) {
+        if (previewStateConsumer != null && new UiBounds(previewButtonX(), controlY(),
+                PREVIEW_BUTTON_WIDTH, CONTROL_HEIGHT).contains(mouseX, mouseY)) {
             finishEditing();
             previewActive = !previewActive;
             previewStateConsumer.accept(previewActive);
             return true;
         }
 
-        if (expanded && isHovered(
-                mouseX,
-                mouseY,
-                pickerX(),
-                pickerY(),
-                pickerWidth(),
-                SATURATION_VALUE_HEIGHT)) {
+        if (expanded && new UiBounds(pickerX(), pickerY(), pickerWidth(), SATURATION_VALUE_HEIGHT)
+                .contains(mouseX, mouseY)) {
             finishEditing();
             draggingSaturationValue = true;
             updateSaturationValue(mouseX, mouseY);
             return true;
         }
 
-        if (expanded && isHovered(
-                mouseX,
-                mouseY,
-                pickerX(),
-                hueBarY(),
-                pickerWidth(),
-                HUE_BAR_HEIGHT)) {
+        if (expanded && new UiBounds(pickerX(), hueBarY(), pickerWidth(), HUE_BAR_HEIGHT).contains(mouseX, mouseY)) {
             finishEditing();
             draggingHue = true;
             updateHue(mouseX);

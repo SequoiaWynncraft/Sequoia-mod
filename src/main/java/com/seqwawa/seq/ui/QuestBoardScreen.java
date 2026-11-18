@@ -29,7 +29,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
-import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
@@ -40,7 +39,7 @@ import org.jetbrains.annotations.NotNull;
  * endless quest, with progress, reward and how long is left. Opened with
  * {@code /seq quests} or from the sidebar.
  */
-public final class QuestBoardScreen extends Screen {
+public final class QuestBoardScreen extends SequoiaPanelScreen {
 
     static final List<String> SLOTS = List.of(LeafQuests.DAILY, LeafQuests.WEEKLY, LeafQuests.REPEATABLE);
     static final float CARD_HEIGHT = 160;
@@ -53,26 +52,21 @@ public final class QuestBoardScreen extends Screen {
     private static final float MIN_CARD_WIDTH = 140;
     private static final float SCROLL_SPEED = 30;
 
-    private final Screen parent;
     private final LeafQuestService service = LeafQuestService.getInstance();
+    private final ScrollPane scroll = new ScrollPane();
 
     private State state = State.LOADING;
     private Snapshot shown = Snapshot.EMPTY;
     private boolean stale;
-    private float scrollOffset;
-    private float maxScroll;
-    private float mouseX;
-    private float mouseY;
 
     public QuestBoardScreen(Screen parent) {
-        super(Component.literal("Sequoia Quests"));
-        this.parent = parent;
+        super(Component.literal("Sequoia Quests"), parent, SequoiaSidebarNavigation.Destination.QUESTS);
     }
 
     @Override
     protected void init() {
         super.init();
-        scrollOffset = 0;
+        scroll.reset();
         // Runs again on every resize, so it takes the once-a-minute limit like the rest.
         service.requestRefresh();
         state = service.state();
@@ -81,8 +75,7 @@ public final class QuestBoardScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics guiGraphics, int pointerX, int pointerY, float partialTick) {
-        super.render(guiGraphics, pointerX, pointerY, partialTick);
+    protected void beforeFrame() {
         service.requestRefresh();
         if (state != service.state() || !shown.equals(service.snapshot()) || stale != service.refreshFailed()) {
             state = service.state();
@@ -90,18 +83,16 @@ public final class QuestBoardScreen extends Screen {
             stale = service.refreshFailed();
             triggerImmediateNarration(true);
         }
-        mouseX = MinecraftUiRenderer.mouseX(pointerX);
-        mouseY = MinecraftUiRenderer.mouseY(pointerY);
-        UiRenderer.renderScreen(this, this::renderScreen);
     }
 
-    private void renderScreen(UiCanvas canvas) {
+    @Override
+    protected void draw(UiCanvas canvas) {
         float width = canvas.metrics().width();
         float height = canvas.metrics().height();
         Panel panel = panel(width, height);
         SequoiaUiStyle.drawPanelFrame(canvas, HEADER_HEIGHT);
         text(canvas, "Quests", width - MARGIN, HEADER_HEIGHT / 2, 18, color(ACCENT_PRIMARY_HOVER), RIGHT);
-        SequoiaSidebarNavigation.render(canvas, SequoiaSidebarNavigation.Destination.QUESTS, mouseX, mouseY);
+        drawSidebar(canvas);
 
         if (state != State.READY) {
             float p = QuestCard.P;
@@ -124,11 +115,10 @@ public final class QuestBoardScreen extends Screen {
         // The header, the quest cards under it, and the latest Leaf under them, each a card's gap apart.
         float cardsTop = headerHeight(shown.account(), contentWidth) + CARD_GAP;
         float recentTop = cardsTop + cardsHeight(contentWidth, cards.size()) + CARD_GAP;
-        maxScroll = Math.max(0, recentTop + RecentLeaf.height(recent.size()) - panel.height());
-        scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
+        scroll.setMax(recentTop + RecentLeaf.height(recent.size()) - panel.height());
         canvas.save();
         canvas.scissor(panel.x(), panel.y(), panel.width(), panel.height());
-        float top = panel.y() - scrollOffset;
+        float top = panel.y() - scroll.offset();
         LeafHeader.render(canvas, shown.account(), stale, panel.x(), top, contentWidth);
         List<Placement> placements = placements(contentWidth, cards.size(), cardsTop);
         for (int i = 0; i < cards.size(); i++) {
@@ -137,12 +127,7 @@ public final class QuestBoardScreen extends Screen {
         }
         RecentLeaf.render(canvas, recent, shown.recentFailed(), now, panel.x(), top + recentTop, contentWidth);
         canvas.restore();
-        if (maxScroll > 0 && panel.height() > 0) {
-            float thumb = Math.min(panel.height(), Math.max(20, panel.height() * panel.height() / (panel.height() + maxScroll)));
-            float y = panel.y() + (panel.height() - thumb) * scrollOffset / maxScroll;
-            canvas.fillRect(panel.right() - 3, panel.y(), 3, panel.height(), color(CONTROL_TRACK));
-            canvas.fillRect(panel.right() - 3, y, 3, thumb, color(CONTROL_THUMB));
-        }
+        scroll.draw(canvas, new UiBounds(panel.right() - 3, panel.y(), 3, panel.height()));
     }
 
     private static float headerHeight(LeafAccount account, float width) {
@@ -333,28 +318,25 @@ public final class QuestBoardScreen extends Screen {
 
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
-        if (click.button() == 0 && SequoiaSidebarNavigation.click(
-                MinecraftUiRenderer.mouseX(click.x()), MinecraftUiRenderer.mouseY(click.y()),
-                MinecraftUiRenderer.screenHeight(), SequoiaSidebarNavigation.Destination.QUESTS, parent)) {
+        if (click.button() == 0 && clickSidebar(UiPointer.at(click))) {
             return true;
         }
         return super.mouseClicked(click, outsideScreen);
     }
 
-    /** Scrolls the board by {@code amount} UI pixels, down for positive; kept within the board at the next frame. */
+    /** Scrolls the board by {@code amount} UI pixels, down for positive, as far as the board goes. */
     public void scrollBy(float amount) {
-        scrollOffset = Math.max(0, scrollOffset + amount);
+        scroll.scrollBy(amount);
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         Panel panel = panel(MinecraftUiRenderer.screenWidth(), MinecraftUiRenderer.screenHeight());
-        float x = MinecraftUiRenderer.mouseX(mouseX);
-        float y = MinecraftUiRenderer.mouseY(mouseY);
-        if (x < panel.x() || x >= panel.right() || y < panel.y() || y >= panel.bottom()) {
+        UiPointer at = UiPointer.at(mouseX, mouseY);
+        if (at.x() < panel.x() || at.x() >= panel.right() || at.y() < panel.y() || at.y() >= panel.bottom()) {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
-        scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset - (float) scrollY * SCROLL_SPEED));
+        scroll.scrollBy(-(float) scrollY * SCROLL_SPEED);
         return true;
     }
 
@@ -378,16 +360,6 @@ public final class QuestBoardScreen extends Screen {
                     .append(", ").append(rewardLabel(card.quest().reward())).append(". ");
         }
         return Component.literal(narration.toString());
-    }
-
-    @Override
-    public void onClose() {
-        SeqClient.mc.setScreen(parent);
-    }
-
-    @Override
-    public boolean isPauseScreen() {
-        return false;
     }
 
     // ── Text ──

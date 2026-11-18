@@ -28,12 +28,15 @@ loom {
         client {
             property("devauth.configDir", getRootProject().file(".devauth").absolutePath)
             vmArgs "-ea"
-            // ./gradlew runClient -Punlock_preview creates a world, shows the quest board and every unlock
-            // popup with sample data, saves screenshots under run/screenshots/ and quits.
+            // ./gradlew runClient -Punlock_preview creates a world, shows the quest board, every unlock
+            // popup and every Sequoia screen with sample data, saves screenshots under run/screenshots/
+            // and quits.
             if (project.hasProperty("unlock_preview")) {
                 property("seq.unlockPreview", "true")
                 // The tour plays offline; it never needs a Microsoft sign-in.
                 property("devauth.enabled", "false")
+                // One name on every run, where the sidebar's profile card shows it, so screenshots compare.
+                programArgs "--username", "SeqPreview"
             }
             client()
         }

@@ -32,8 +32,8 @@ public final class WarQueueHudEditorScreen extends Screen {
     private DragTarget dragging;
     private float dragOffsetX;
     private float dragOffsetY;
-    private float mouseX;
-    private float mouseY;
+    /** Where the pointer was when this frame began. */
+    private UiPointer pointer = UiPointer.ORIGIN;
 
     public WarQueueHudEditorScreen(Screen parent) {
         super(Component.literal("HUD layout"));
@@ -43,8 +43,7 @@ public final class WarQueueHudEditorScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int rawMouseX, int rawMouseY, float partialTick) {
         super.render(graphics, rawMouseX, rawMouseY, partialTick);
-        mouseX = MinecraftUiRenderer.mouseX(rawMouseX);
-        mouseY = MinecraftUiRenderer.mouseY(rawMouseY);
+        pointer = UiPointer.at(rawMouseX, rawMouseY);
         UiRenderer.renderScreen(this, canvas -> {
             float width = canvas.metrics().width();
             float height = canvas.metrics().height();
@@ -94,8 +93,9 @@ public final class WarQueueHudEditorScreen extends Screen {
         if (click.button() != 0) {
             return super.mouseClicked(click, outsideScreen);
         }
-        float x = MinecraftUiRenderer.mouseX(click.x());
-        float y = MinecraftUiRenderer.mouseY(click.y());
+        UiPointer at = UiPointer.at(click);
+        float x = at.x();
+        float y = at.y();
         float width = MinecraftUiRenderer.screenWidth();
         float height = MinecraftUiRenderer.screenHeight();
         if (resetButton().contains(x, y)) {
@@ -136,8 +136,9 @@ public final class WarQueueHudEditorScreen extends Screen {
         if (dragging == null) {
             return super.mouseDragged(click, deltaX, deltaY);
         }
-        float x = MinecraftUiRenderer.mouseX(click.x());
-        float y = MinecraftUiRenderer.mouseY(click.y());
+        UiPointer at = UiPointer.at(click);
+        float x = at.x();
+        float y = at.y();
         float width = MinecraftUiRenderer.screenWidth();
         float height = MinecraftUiRenderer.screenHeight();
         if (dragging == DragTarget.TNA_BEAMS) {
@@ -187,13 +188,13 @@ public final class WarQueueHudEditorScreen extends Screen {
         return false;
     }
 
-    private void drawButton(UiCanvas canvas, String font, Rect bounds, String label) {
+    private void drawButton(UiCanvas canvas, String font, UiBounds bounds, String label) {
         canvas.fillRect(
                 bounds.x(),
                 bounds.y(),
                 bounds.width(),
                 bounds.height(),
-                color(bounds.contains(mouseX, mouseY) ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
+                color(bounds.contains(pointer.x(), pointer.y()) ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
         drawText(
                 canvas,
                 font,
@@ -236,18 +237,12 @@ public final class WarQueueHudEditorScreen extends Screen {
                         UiCanvas.VerticalAlign.MIDDLE));
     }
 
-    private static Rect resetButton() {
-        return new Rect(7f, 6f, BUTTON_WIDTH, BUTTON_HEIGHT);
+    private static UiBounds resetButton() {
+        return new UiBounds(7f, 6f, BUTTON_WIDTH, BUTTON_HEIGHT);
     }
 
-    private static Rect doneButton() {
-        return new Rect(14f + BUTTON_WIDTH, 6f, BUTTON_WIDTH, BUTTON_HEIGHT);
-    }
-
-    private record Rect(float x, float y, float width, float height) {
-        boolean contains(float pointX, float pointY) {
-            return pointX >= x && pointX <= x + width && pointY >= y && pointY <= y + height;
-        }
+    private static UiBounds doneButton() {
+        return new UiBounds(14f + BUTTON_WIDTH, 6f, BUTTON_WIDTH, BUTTON_HEIGHT);
     }
 
     private enum DragTarget {

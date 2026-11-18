@@ -48,12 +48,23 @@ public final class MinecraftUiRenderer {
         return metrics().height();
     }
 
+    /**
+     * Where the development preview holds the pointer, in UI pixels, so a screenshot shows the
+     * same hover states wherever the real cursor is. Null otherwise.
+     */
+    public static volatile PreviewPointer previewPointer;
+
+    /** A pointer position in UI pixels. */
+    public record PreviewPointer(float x, float y) {}
+
     public static float mouseX(double rawX) {
-        return metrics().mouseX(rawX);
+        PreviewPointer pinned = previewPointer;
+        return pinned != null ? pinned.x() : metrics().mouseX(rawX);
     }
 
     public static float mouseY(double rawY) {
-        return metrics().mouseY(rawY);
+        PreviewPointer pinned = previewPointer;
+        return pinned != null ? pinned.y() : metrics().mouseY(rawY);
     }
 
     public static double mouseDelta(double rawDelta) {

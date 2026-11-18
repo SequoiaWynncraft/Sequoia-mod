@@ -125,7 +125,7 @@ final class WarTeamsTab {
         boolean ownTeam = caller != null && caller.teamId() != null && caller.teamId() == team.id();
         boolean dropTarget = memberDrag != null
                 && memberDrag.active()
-                && hit(nvgMouseX, nvgMouseY, x, y + 1, width, Math.max(0, visibleHeight - 2));
+                && new UiBounds(x, y + 1, width, Math.max(0, visibleHeight - 2)).contains(nvgMouseX, nvgMouseY);
         canvas.fillRect(x, y + 1, width, Math.max(1, visibleHeight - 2),
                 plannerBackground(color(dropTarget
                         ? CONTROL_INPUT_HOVER
@@ -209,7 +209,8 @@ final class WarTeamsTab {
                     .findFirst()
                     .orElse(null);
             boolean hovered = manager.canManage()
-                    && hit(nvgMouseX, nvgMouseY, placement.x(), placement.y(), placement.width(), placement.height());
+                    && new UiBounds(placement.x(), placement.y(), placement.width(), placement.height())
+                            .contains(nvgMouseX, nvgMouseY);
             canvas.fillRect(placement.x(), placement.y(), placement.width(), placement.height(),
                     color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
             String name = slot == null
@@ -245,7 +246,7 @@ final class WarTeamsTab {
                     .findFirst()
                     .orElse(null);
             boolean hovered = manager.canManage()
-                    && hit(nvgMouseX, nvgMouseY, x + 7, y, panelWidth - 14, SUPPORT_ROW_HEIGHT);
+                    && new UiBounds(x + 7, y, panelWidth - 14, SUPPORT_ROW_HEIGHT).contains(nvgMouseX, nvgMouseY);
             canvas.fillRect(x + 7, y, panelWidth - 14, SUPPORT_ROW_HEIGHT,
                     color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
             text(canvas, index == 0 ? "Lead" : "Eco " + index, x + 13, y + 11, 10, color(TEXT_MUTED), false);
@@ -261,7 +262,7 @@ final class WarTeamsTab {
         if (poolY + 34 >= bottom) return;
         boolean dropTarget = memberDrag != null
                 && memberDrag.active()
-                && hit(nvgMouseX, nvgMouseY, x, poolY, panelWidth, bottom - poolY);
+                && new UiBounds(x, poolY, panelWidth, bottom - poolY).contains(nvgMouseX, nvgMouseY);
         canvas.fillRect(x, poolY, panelWidth, bottom - poolY,
                 plannerBackground(color(dropTarget ? CONTROL_INPUT_HOVER : BACKGROUND_CONTENT)));
         text(canvas, "Unassigned", x + 10, poolY + 16, 12, color(ACCENT_PRIMARY), false);
@@ -273,7 +274,8 @@ final class WarTeamsTab {
         for (int index = start; index < members.size() && index - start < visibleRows; index++) {
             float rowY = rowsTop + (index - start) * UNASSIGNED_ROW_HEIGHT;
             RosterMember member = members.get(index);
-            boolean hovered = memberDrag == null && hit(nvgMouseX, nvgMouseY, x + 6, rowY, panelWidth - 12, UNASSIGNED_ROW_HEIGHT - 2);
+            boolean hovered = memberDrag == null && new UiBounds(x + 6, rowY,
+                    panelWidth - 12, UNASSIGNED_ROW_HEIGHT - 2).contains(nvgMouseX, nvgMouseY);
             canvas.fillRect(x + 6, rowY, panelWidth - 12, UNASSIGNED_ROW_HEIGHT - 2,
                     color(hovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
             text(canvas, truncate(member.displayName(), 19), x + 12, rowY + 11, 11, color(TEXT_SECONDARY), false);
@@ -305,7 +307,8 @@ final class WarTeamsTab {
                         ? actions.firstMemberRight()
                         : placement.x() + placement.width() - 8;
                 float memberX = placement.x() + 8;
-                if (hit(mouseX, mouseY, memberX, memberY - 6, Math.max(0, memberRight - memberX), TEAM_MEMBER_ROW_STEP)) {
+                if (new UiBounds(memberX, memberY - 6, Math.max(0, memberRight - memberX), TEAM_MEMBER_ROW_STEP)
+                        .contains(mouseX, mouseY)) {
                     return new MemberDrag(
                             members.get(memberIndex).playerUuid(),
                             team.id(),
@@ -325,13 +328,8 @@ final class WarTeamsTab {
         if (layout.compactAuxiliary()) return null;
         float rowsTop = contentTop(width) + 28 + UNASSIGNED_POOL_TOP + 36;
         float bottom = height - PADDING;
-        if (!hit(
-                mouseX,
-                mouseY,
-                layout.sidebarX() + 6,
-                rowsTop,
-                layout.sidebarWidth() - 12,
-                Math.max(0, bottom - rowsTop))) {
+        if (!new UiBounds(layout.sidebarX() + 6, rowsTop, layout.sidebarWidth() - 12, Math.max(0, bottom - rowsTop))
+                .contains(mouseX, mouseY)) {
             return null;
         }
         int row = unassignedScrollRows + (int) ((mouseY - rowsTop) / UNASSIGNED_ROW_HEIGHT);
@@ -360,13 +358,8 @@ final class WarTeamsTab {
         float contentBottom = height - PADDING;
         if (drag.sourceTeamId() == null
                 || poolY + 34 >= contentBottom
-                || !hit(
-                        mouseX,
-                        mouseY,
-                        layout.sidebarX(),
-                        poolY,
-                        layout.sidebarWidth(),
-                        contentBottom - poolY)) {
+                || !new UiBounds(layout.sidebarX(), poolY, layout.sidebarWidth(), contentBottom - poolY)
+                        .contains(mouseX, mouseY)) {
             return;
         }
         moveTeamMember(drag, null);
@@ -689,7 +682,7 @@ final class WarTeamsTab {
             float visibleHeight,
             TeamActionLayout actions) {
         boolean contains(float mouseX, float mouseY) {
-            return hit(mouseX, mouseY, x, y, width, visibleHeight);
+            return new UiBounds(x, y, width, visibleHeight).contains(mouseX, mouseY);
         }
 
         boolean fullyShows(float relativeY, float itemHeight) {
@@ -717,7 +710,7 @@ final class WarTeamsTab {
         TeamsLayout teamsLayout = teamsLayout(width, contentTop(width) + 28, height - PADDING, snapshot.teams().size());
         if (manager.canManage()) {
             for (SupportPlacement support : supportPlacements(teamsLayout)) {
-                if (hit(mx, my, support.x(), support.y(), support.width(), support.height())) {
+                if (new UiBounds(support.x(), support.y(), support.width(), support.height()).contains(mx, my)) {
                     host.openSupport(support.index());
                     return true;
                 }
@@ -748,7 +741,8 @@ final class WarTeamsTab {
             TeamActionLayout actions = placement.actions();
             if (caller != null
                     && placement.fullyShows(actions.selfY(), BUTTON_HEIGHT)
-                    && hit(mx, my, actions.selfX(), rowY + actions.selfY(), actions.selfWidth(), BUTTON_HEIGHT)) {
+                    && new UiBounds(actions.selfX(), rowY + actions.selfY(), actions.selfWidth(), BUTTON_HEIGHT)
+                            .contains(mx, my)) {
                 if (canChangeOwnTeam(snapshot, team) && !manager.isMutating()) {
                     boolean ownTeam = caller.teamId() != null && caller.teamId() == team.id();
                     host.result(ownTeam ? manager.leaveTeam() : manager.joinTeam(team.id()));
@@ -757,13 +751,15 @@ final class WarTeamsTab {
             }
             if (manager.canManage()
                     && placement.fullyShows(actions.managerY(), BUTTON_HEIGHT)
-                    && hit(mx, my, actions.editX(), rowY + actions.managerY(), actions.editWidth(), BUTTON_HEIGHT)) {
+                    && new UiBounds(actions.editX(), rowY + actions.managerY(), actions.editWidth(), BUTTON_HEIGHT)
+                            .contains(mx, my)) {
                 host.openTeam(team);
                 return true;
             }
             if (manager.canManage()
                     && placement.fullyShows(actions.managerY(), BUTTON_HEIGHT)
-                    && hit(mx, my, actions.deleteX(), rowY + actions.managerY(), actions.deleteWidth(), BUTTON_HEIGHT)) {
+                    && new UiBounds(actions.deleteX(), rowY + actions.managerY(), actions.deleteWidth(), BUTTON_HEIGHT)
+                            .contains(mx, my)) {
                 if (pendingDeleteTeam != null && pendingDeleteTeam.id() == team.id()) {
                     host.result(manager.deleteTeam(team.id(), pendingDeleteTeam.version()));
                     pendingDeleteTeam = null;
@@ -811,8 +807,8 @@ final class WarTeamsTab {
         if (manager.canManage() && !layout.compactAuxiliary()) {
             float poolY = contentTop(width) + 28 + UNASSIGNED_POOL_TOP;
             float contentBottom = height - PADDING;
-            if (poolY + 34 < contentBottom && hit(mx, my, layout.sidebarX(), poolY,
-                    layout.sidebarWidth(), contentBottom - poolY)) {
+            if (poolY + 34 < contentBottom && new UiBounds(layout.sidebarX(), poolY,
+                    layout.sidebarWidth(), contentBottom - poolY).contains(mx, my)) {
                 unassignedScrollRows = clampRows(unassignedScrollRows + delta, unassignedOnlineRoster(snapshot).size());
                 return;
             }
@@ -833,7 +829,4 @@ final class WarTeamsTab {
         tonedButton(canvas, nvgMouseX, nvgMouseY, x, y, width, height, label, confirming ? ButtonTone.DANGER : ButtonTone.QUIET_DANGER, disabled);
     }
 
-    private static boolean hit(float mx, float my, float x, float y, float width, float height) {
-        return mx >= x && mx <= x + width && my >= y && my <= y + height;
-    }
 }

@@ -50,8 +50,8 @@ public final class ThemeEditorScreen extends Screen {
     private static final float BUTTON_WIDTH = 70;
     private static final int MAX_STATUS_TICKS = 240;
 
-    private static final Rect EDITOR_TAB = new Rect(10, 50, SIDEBAR_WIDTH - 20, 22);
-    private static final Rect WIDGET_PREVIEW_TAB = new Rect(10, 78, SIDEBAR_WIDTH - 20, 22);
+    private static final UiBounds EDITOR_TAB = new UiBounds(10, 50, SIDEBAR_WIDTH - 20, 22);
+    private static final UiBounds WIDGET_PREVIEW_TAB = new UiBounds(10, 78, SIDEBAR_WIDTH - 20, 22);
 
     private final Screen parent;
     private final ThemeWidgetPreview widgetPreview = new ThemeWidgetPreview();
@@ -72,13 +72,9 @@ public final class ThemeEditorScreen extends Screen {
     private UiColor draggingHue;
     private UiColor draggingAlpha;
     private String colorEditBuffer = "";
-    private float scrollOffset;
-    private float maxScroll;
-    private boolean scrollbarDragging;
-    private float scrollbarDragStart;
-    private float scrollOffsetDragStart;
-    private float nvgMouseX;
-    private float nvgMouseY;
+    private final ScrollPane scroll = new ScrollPane();
+    /** Where the pointer was when this frame began. */
+    private UiPointer pointer = UiPointer.ORIGIN;
     private int cursorBlink;
     private String status = "";
     private boolean statusError;
@@ -98,8 +94,7 @@ public final class ThemeEditorScreen extends Screen {
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
-        nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
-        nvgMouseY = MinecraftUiRenderer.mouseY(mouseY);
+        pointer = UiPointer.at(mouseX, mouseY);
         cursorBlink++;
         if (statusTicks > 0) {
             statusTicks--;
@@ -128,12 +123,12 @@ public final class ThemeEditorScreen extends Screen {
                     showingWidgets ? "Widget preview" : "Theme editor");
 
             if (showingWidgets) {
-                widgetPreview.render(canvas, nvgMouseX, nvgMouseY);
+                widgetPreview.render(canvas, pointer.x(), pointer.y());
                 return;
             }
             renderToolbar(canvas, font, layout);
             renderColorGroups(canvas, font, layout);
-            renderScrollbar(canvas, layout);
+            scroll.draw(canvas, scrollTrack(layout));
         });
     }
 
@@ -145,9 +140,9 @@ public final class ThemeEditorScreen extends Screen {
         drawSidebarTab(canvas, font, WIDGET_PREVIEW_TAB, "Widget preview", showingWidgets);
     }
 
-    private void drawSidebarTab(UiCanvas canvas, String font, Rect bounds, String label, boolean active) {
+    private void drawSidebarTab(UiCanvas canvas, String font, UiBounds bounds, String label, boolean active) {
         canvas.fillRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(),
-                SequoiaUiStyle.sidebarButtonColor(active, bounds.contains(nvgMouseX, nvgMouseY)));
+                SequoiaUiStyle.sidebarButtonColor(active, bounds.contains(pointer)));
         drawText(canvas, font, FONT_SIZE, color(TEXT_PRIMARY), UiCanvas.HorizontalAlign.CENTER,
                 bounds.x() + bounds.width() / 2, bounds.y() + bounds.height() / 2, label);
     }
@@ -158,7 +153,7 @@ public final class ThemeEditorScreen extends Screen {
         draggingSaturationValue = null;
         draggingHue = null;
         draggingAlpha = null;
-        scrollbarDragging = false;
+        scroll.release();
         showingWidgets = show;
         widgetPreview.onHidden();
         if (show || previewActive) applyPreview();
@@ -233,17 +228,12 @@ public final class ThemeEditorScreen extends Screen {
                 layout.screenWidth() - SIDEBAR_WIDTH,
                 layout.contentHeight());
 
-        float cursorY = layout.contentTop() - scrollOffset + PADDING;
+        float cursorY = layout.contentTop() - scroll.offset() + PADDING;
         int rowIndex = 0;
         for (Map.Entry<String, List<UiColor>> group : colorGroups.entrySet()) {
             boolean collapsed = collapsedGroups.contains(group.getKey());
-            boolean hovered = isHovered(
-                    nvgMouseX,
-                    nvgMouseY,
-                    SIDEBAR_WIDTH,
-                    cursorY,
-                    layout.screenWidth() - SIDEBAR_WIDTH,
-                    GROUP_HEIGHT);
+            boolean hovered = new UiBounds(SIDEBAR_WIDTH, cursorY, layout.screenWidth() - SIDEBAR_WIDTH, GROUP_HEIGHT)
+                    .contains(pointer);
             canvas.fillRect(
                     SIDEBAR_WIDTH,
                     cursorY,
@@ -297,14 +287,13 @@ public final class ThemeEditorScreen extends Screen {
             cursorY += 6;
         }
 
-        maxScroll = Math.max(0, cursorY + scrollOffset - layout.contentTop() - layout.contentHeight());
-        scrollOffset = clamp(scrollOffset, 0, maxScroll);
+        scroll.setMax(cursorY + scroll.offset() - layout.contentTop() - layout.contentHeight());
         canvas.restore();
     }
 
     private void renderColorRow(UiCanvas canvas, String font, Layout layout, UiColor token, float rowY) {
-        Rect hex = hexField(layout, rowY);
-        Rect swatch = swatch(layout, rowY);
+        UiBounds hex = hexField(layout, rowY);
+        UiBounds swatch = swatch(layout, rowY);
         boolean editing = token == editingToken;
         String value = editing ? colorEditBuffer : toHex(draftColors.get(token));
 
@@ -392,17 +381,9 @@ public final class ThemeEditorScreen extends Screen {
                 "Opacity: " + selected.getAlpha());
     }
 
-    private void renderScrollbar(UiCanvas canvas, Layout layout) {
-        if (maxScroll <= 0) {
-            return;
-        }
-        float x = layout.screenWidth() - 5;
-        canvas.fillRect(x, layout.contentTop(), 4, layout.contentHeight(), color(CONTROL_TRACK));
-        float thumbRatio = layout.contentHeight() / (layout.contentHeight() + maxScroll);
-        float thumbHeight = Math.max(20, layout.contentHeight() * thumbRatio);
-        float thumbY = layout.contentTop()
-                + scrollOffset / maxScroll * (layout.contentHeight() - thumbHeight);
-        canvas.fillRect(x, thumbY, 4, thumbHeight, color(CONTROL_THUMB));
+    /** The scrollbar, along the screen's right edge beside the colour list. */
+    private static UiBounds scrollTrack(Layout layout) {
+        return new UiBounds(layout.screenWidth() - 5, layout.contentTop(), 4, layout.contentHeight());
     }
 
     @Override
@@ -410,8 +391,9 @@ public final class ThemeEditorScreen extends Screen {
         if (click.button() != 0 && !showingWidgets) {
             return super.mouseClicked(click, outsideScreen);
         }
-        float mx = MinecraftUiRenderer.mouseX(click.x());
-        float my = MinecraftUiRenderer.mouseY(click.y());
+        UiPointer at = UiPointer.at(click);
+        float mx = at.x();
+        float my = at.y();
         Layout layout = layout(MinecraftUiRenderer.screenWidth(), MinecraftUiRenderer.screenHeight());
 
         if (click.button() == 0 && (EDITOR_TAB.contains(mx, my) || WIDGET_PREVIEW_TAB.contains(mx, my))) {
@@ -455,16 +437,16 @@ public final class ThemeEditorScreen extends Screen {
         if (my < layout.contentTop() || my > layout.screenHeight()) {
             return super.mouseClicked(click, outsideScreen);
         }
-        if (maxScroll > 0 && mx >= layout.screenWidth() - 8) {
-            scrollbarDragging = true;
-            scrollbarDragStart = my;
-            scrollOffsetDragStart = scrollOffset;
+        // Anything in the last eight pixels of the list grabs the scrollbar.
+        UiBounds scrollGrab = new UiBounds(layout.screenWidth() - 8, layout.contentTop(), 8,
+                layout.screenHeight() - layout.contentTop());
+        if (scroll.startDrag(at, scrollGrab)) {
             return true;
         }
 
-        float cursorY = layout.contentTop() - scrollOffset + PADDING;
+        float cursorY = layout.contentTop() - scroll.offset() + PADDING;
         for (Map.Entry<String, List<UiColor>> group : colorGroups.entrySet()) {
-            if (isHovered(mx, my, SIDEBAR_WIDTH, cursorY, layout.screenWidth() - SIDEBAR_WIDTH, GROUP_HEIGHT)) {
+            if (new UiBounds(SIDEBAR_WIDTH, cursorY, layout.screenWidth() - SIDEBAR_WIDTH, GROUP_HEIGHT).contains(at)) {
                 if (!collapsedGroups.add(group.getKey())) {
                     collapsedGroups.remove(group.getKey());
                 }
@@ -474,8 +456,8 @@ public final class ThemeEditorScreen extends Screen {
             if (!collapsedGroups.contains(group.getKey())) {
                 for (UiColor token : group.getValue()) {
                     float rowHeight = token == expandedToken ? EXPANDED_COLOR_ROW_HEIGHT : COLOR_ROW_HEIGHT;
-                    Rect hex = hexField(layout, cursorY);
-                    Rect swatch = swatch(layout, cursorY);
+                    UiBounds hex = hexField(layout, cursorY);
+                    UiBounds swatch = swatch(layout, cursorY);
                     if (hex.contains(mx, my)) {
                         editingToken = token;
                         colorEditBuffer = toHex(draftColors.get(token));
@@ -488,17 +470,17 @@ public final class ThemeEditorScreen extends Screen {
                     }
                     if (token == expandedToken) {
                         PickerLayout picker = pickerLayout(layout, cursorY);
-                        if (isHovered(mx, my, picker.x(), picker.y(), picker.width(), PICKER_HEIGHT)) {
+                        if (new UiBounds(picker.x(), picker.y(), picker.width(), PICKER_HEIGHT).contains(mx, my)) {
                             draggingSaturationValue = token;
                             updateSaturationValue(token, mx, my, picker);
                             return true;
                         }
-                        if (isHovered(mx, my, picker.x(), picker.hueY(), picker.width(), BAR_HEIGHT)) {
+                        if (new UiBounds(picker.x(), picker.hueY(), picker.width(), BAR_HEIGHT).contains(mx, my)) {
                             draggingHue = token;
                             updateHue(token, mx, picker);
                             return true;
                         }
-                        if (isHovered(mx, my, picker.x(), picker.alphaY(), picker.width(), BAR_HEIGHT)) {
+                        if (new UiBounds(picker.x(), picker.alphaY(), picker.width(), BAR_HEIGHT).contains(mx, my)) {
                             draggingAlpha = token;
                             updateAlpha(token, mx, picker);
                             return true;
@@ -515,10 +497,10 @@ public final class ThemeEditorScreen extends Screen {
     @Override
     public boolean mouseReleased(@NotNull MouseButtonEvent click) {
         if (showingWidgets) {
-            widgetPreview.mouseReleased(MinecraftUiRenderer.mouseX(click.x()), MinecraftUiRenderer.mouseY(click.y()), click.button());
+            widgetPreview.mouseReleased(UiPointer.at(click).x(), UiPointer.at(click).y(), click.button());
             return true;
         }
-        scrollbarDragging = false;
+        scroll.release();
         draggingSaturationValue = null;
         draggingHue = null;
         draggingAlpha = null;
@@ -527,15 +509,12 @@ public final class ThemeEditorScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
-        float mx = MinecraftUiRenderer.mouseX(click.x());
-        float my = MinecraftUiRenderer.mouseY(click.y());
+        UiPointer at = UiPointer.at(click);
+        float mx = at.x();
+        float my = at.y();
         Layout layout = layout(MinecraftUiRenderer.screenWidth(), MinecraftUiRenderer.screenHeight());
         if (showingWidgets) return widgetPreview.mouseDragged(mx, my);
-        if (scrollbarDragging && maxScroll > 0) {
-            float thumbRatio = layout.contentHeight() / (layout.contentHeight() + maxScroll);
-            float thumbHeight = Math.max(20, layout.contentHeight() * thumbRatio);
-            float range = layout.contentHeight() - thumbHeight;
-            scrollOffset = clamp(scrollOffsetDragStart + (my - scrollbarDragStart) / range * maxScroll, 0, maxScroll);
+        if (scroll.canScroll() && scroll.drag(at, scrollTrack(layout))) {
             return true;
         }
 
@@ -560,7 +539,7 @@ public final class ThemeEditorScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (showingWidgets) { widgetPreview.scroll(scrollY); return true; }
-        scrollOffset = clamp(scrollOffset - (float) scrollY * SCROLL_SPEED, 0, maxScroll);
+        scroll.scrollBy(-(float) scrollY * SCROLL_SPEED);
         return true;
     }
 
@@ -814,7 +793,7 @@ public final class ThemeEditorScreen extends Screen {
     }
 
     private float rowYFor(UiColor target, Layout layout) {
-        float cursorY = layout.contentTop() - scrollOffset + PADDING;
+        float cursorY = layout.contentTop() - scroll.offset() + PADDING;
         for (Map.Entry<String, List<UiColor>> group : colorGroups.entrySet()) {
             cursorY += GROUP_HEIGHT;
             if (!collapsedGroups.contains(group.getKey())) {
@@ -854,13 +833,13 @@ public final class ThemeEditorScreen extends Screen {
         float sourceWidth = Math.min(180, availableFields * 0.45f);
         float nameWidth = Math.max(120, availableFields - sourceWidth);
         float fieldY = HEADER_HEIGHT + 27;
-        Rect source = new Rect(SIDEBAR_WIDTH + PADDING, fieldY, sourceWidth, FIELD_HEIGHT);
-        Rect name = new Rect(source.x() + source.width() + BUTTON_GAP, fieldY, nameWidth, FIELD_HEIGHT);
+        UiBounds source = new UiBounds(SIDEBAR_WIDTH + PADDING, fieldY, sourceWidth, FIELD_HEIGHT);
+        UiBounds name = new UiBounds(source.x() + source.width() + BUTTON_GAP, fieldY, nameWidth, FIELD_HEIGHT);
         float buttonX = name.x() + name.width() + BUTTON_GAP;
-        Rect preview = new Rect(buttonX, fieldY, BUTTON_WIDTH, FIELD_HEIGHT);
-        Rect save = new Rect(buttonX + BUTTON_WIDTH + BUTTON_GAP, fieldY, BUTTON_WIDTH, FIELD_HEIGHT);
-        Rect revert = new Rect(buttonX + (BUTTON_WIDTH + BUTTON_GAP) * 2, fieldY, BUTTON_WIDTH, FIELD_HEIGHT);
-        Rect back = new Rect(SIDEBAR_WIDTH + PADDING, 5, 58, 20);
+        UiBounds preview = new UiBounds(buttonX, fieldY, BUTTON_WIDTH, FIELD_HEIGHT);
+        UiBounds save = new UiBounds(buttonX + BUTTON_WIDTH + BUTTON_GAP, fieldY, BUTTON_WIDTH, FIELD_HEIGHT);
+        UiBounds revert = new UiBounds(buttonX + (BUTTON_WIDTH + BUTTON_GAP) * 2, fieldY, BUTTON_WIDTH, FIELD_HEIGHT);
+        UiBounds back = new UiBounds(SIDEBAR_WIDTH + PADDING, 5, 58, 20);
         float contentTop = HEADER_HEIGHT + TOOLBAR_HEIGHT;
         return new Layout(
                 screenWidth,
@@ -875,12 +854,12 @@ public final class ThemeEditorScreen extends Screen {
                 back);
     }
 
-    private Rect hexField(Layout layout, float rowY) {
-        return new Rect(layout.screenWidth() - 148, rowY + 9, 100, 22);
+    private UiBounds hexField(Layout layout, float rowY) {
+        return new UiBounds(layout.screenWidth() - 148, rowY + 9, 100, 22);
     }
 
-    private Rect swatch(Layout layout, float rowY) {
-        return new Rect(layout.screenWidth() - 40, rowY + 9, 28, 22);
+    private UiBounds swatch(Layout layout, float rowY) {
+        return new UiBounds(layout.screenWidth() - 40, rowY + 9, 28, 22);
     }
 
     private PickerLayout pickerLayout(Layout layout, float rowY) {
@@ -891,7 +870,7 @@ public final class ThemeEditorScreen extends Screen {
     }
 
     private void drawField(
-            UiCanvas canvas, String font, Rect bounds, String value, boolean focused, boolean valid) {
+            UiCanvas canvas, String font, UiBounds bounds, String value, boolean focused, boolean valid) {
         canvas.fillRect(
                 bounds.x(),
                 bounds.y(),
@@ -930,8 +909,8 @@ public final class ThemeEditorScreen extends Screen {
         }
     }
 
-    private void drawButton(UiCanvas canvas, String font, Rect bounds, String label, boolean active) {
-        boolean hovered = bounds.contains(nvgMouseX, nvgMouseY);
+    private void drawButton(UiCanvas canvas, String font, UiBounds bounds, String label, boolean active) {
+        boolean hovered = bounds.contains(pointer);
         canvas.fillRect(
                 bounds.x(),
                 bounds.y(),
@@ -1047,18 +1026,8 @@ public final class ThemeEditorScreen extends Screen {
         }
     }
 
-    private static boolean isHovered(float mx, float my, float x, float y, float width, float height) {
-        return mx >= x && mx <= x + width && my >= y && my <= y + height;
-    }
-
     private static float clamp(float value, float minimum, float maximum) {
         return Math.max(minimum, Math.min(maximum, value));
-    }
-
-    private record Rect(float x, float y, float width, float height) {
-        private boolean contains(float mouseX, float mouseY) {
-            return isHovered(mouseX, mouseY, x, y, width, height);
-        }
     }
 
     private record PickerLayout(float x, float y, float width, float hueY, float alphaY) {}
@@ -1068,10 +1037,10 @@ public final class ThemeEditorScreen extends Screen {
             float screenHeight,
             float contentTop,
             float contentHeight,
-            Rect sourceField,
-            Rect nameField,
-            Rect previewButton,
-            Rect saveButton,
-            Rect revertButton,
-            Rect backButton) {}
+            UiBounds sourceField,
+            UiBounds nameField,
+            UiBounds previewButton,
+            UiBounds saveButton,
+            UiBounds revertButton,
+            UiBounds backButton) {}
 }

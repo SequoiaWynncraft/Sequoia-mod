@@ -137,7 +137,6 @@ final class IngredientMapMode {
     private void drawButton(UiCanvas canvas, float x, float y, float w, float h, String label, boolean active) {
         MapSidebar.button(canvas, x, y, w, h, label, active, frame);
     }
-    private static boolean isHovered(float mx, float my, float x, float y, float w, float h) { return MapSidebar.hit(mx, my, x, y, w, h); }
     private static double markerDistance(double x, double y) { return Math.max(Math.abs(x), Math.abs(y)); }
 
     boolean scroll(WorldMapFrame frame, double delta, boolean insightsOpen, float insightsX) {
@@ -485,20 +484,10 @@ final class IngredientMapMode {
             List<Entry> ingredients = ingredientFarmSpotEntries(spot);
             float cardHeight = ingredientFarmSpotCardHeight(spot, ingredients, contentWidth);
             boolean selected = ingredientMapSelection.isTotemSelected(spot.id());
-            boolean hovered = isHovered(
-                            frame.mouseX(),
-                            frame.mouseY(),
-                            0,
-                            SIDEBAR_PANEL_TOP,
-                            SIDEBAR_WIDTH,
-                            Math.max(0, frame.height() - SIDEBAR_PANEL_TOP))
-                    && isHovered(
-                            frame.mouseX(),
-                            frame.mouseY(),
-                            PADDING,
-                            rowY,
-                            contentWidth,
-                            cardHeight);
+            boolean hovered = new UiBounds(0, SIDEBAR_PANEL_TOP,
+                    SIDEBAR_WIDTH, Math.max(0, frame.height() - SIDEBAR_PANEL_TOP))
+                    .contains(frame.mouseX(), frame.mouseY())
+                    && new UiBounds(PADDING, rowY, contentWidth, cardHeight).contains(frame.mouseX(), frame.mouseY());
             canvas.fillRect(
                     PADDING,
                     rowY,
@@ -672,7 +661,7 @@ final class IngredientMapMode {
             IngredientMapCategory category = IngredientMapCategory.values()[index];
             float x = PADDING + index * segmentWidth;
             boolean active = ingredientMapCategory == category;
-            boolean hovered = isHovered(frame.mouseX(), frame.mouseY(), x, y, segmentWidth, BUTTON_HEIGHT);
+            boolean hovered = new UiBounds(x, y, segmentWidth, BUTTON_HEIGHT).contains(frame.mouseX(), frame.mouseY());
             canvas.fillRect(
                     x,
                     y,
@@ -694,13 +683,8 @@ final class IngredientMapMode {
     private void drawIngredientCheckbox(
             UiCanvas canvas, float x, float y, float width, String label, boolean checked) {
         float checkboxY = y + (INGREDIENT_OPTION_HEIGHT - INGREDIENT_CHECKBOX_SIZE) / 2f;
-        boolean hovered = isHovered(
-                frame.mouseX(),
-                frame.mouseY(),
-                x,
-                checkboxY,
-                INGREDIENT_CHECKBOX_SIZE,
-                INGREDIENT_CHECKBOX_SIZE);
+        boolean hovered = new UiBounds(x, checkboxY, INGREDIENT_CHECKBOX_SIZE, INGREDIENT_CHECKBOX_SIZE)
+                .contains(frame.mouseX(), frame.mouseY());
         canvas.fillRect(
                 x,
                 checkboxY,
@@ -938,7 +922,7 @@ final class IngredientMapMode {
         float buttonWidth = SIDEBAR_WIDTH - PADDING * 2;
         boolean insideScrollablePanel = my >= SIDEBAR_PANEL_TOP && my <= screenHeight;
         if (insideScrollablePanel
-                && isHovered(mx, my, PADDING, sidebar.y(layout.titleY()), buttonWidth, BUTTON_HEIGHT)) {
+                && new UiBounds(PADDING, sidebar.y(layout.titleY()), buttonWidth, BUTTON_HEIGHT).contains(mx, my)) {
             IngredientMapCategory nextCategory = ingredientMapCategoryAt(mx);
             if (nextCategory != ingredientMapCategory) {
                 ingredientMapCategory = nextCategory;
@@ -950,51 +934,31 @@ final class IngredientMapMode {
             return true;
         }
         if (insideScrollablePanel
-                && isHovered(
-                        mx,
-                        my,
-                        PADDING,
-                        sidebar.y(layout.renderWaypointsY()),
-                        buttonWidth,
-                        BUTTON_HEIGHT)) {
+                && new UiBounds(PADDING, sidebar.y(layout.renderWaypointsY()), buttonWidth, BUTTON_HEIGHT)
+                        .contains(mx, my)) {
             renderSelectedIngredientWaypoints();
             return true;
         }
         float radiusCheckboxY = sidebar.y(layout.radiusToggleY())
                 + (INGREDIENT_OPTION_HEIGHT - INGREDIENT_CHECKBOX_SIZE) / 2f;
         if (insideScrollablePanel
-                && isHovered(
-                        mx,
-                        my,
-                        PADDING,
-                        radiusCheckboxY,
-                        INGREDIENT_CHECKBOX_SIZE,
-                        INGREDIENT_CHECKBOX_SIZE)) {
+                && new UiBounds(PADDING, radiusCheckboxY, INGREDIENT_CHECKBOX_SIZE, INGREDIENT_CHECKBOX_SIZE)
+                        .contains(mx, my)) {
             mapSettings.setShowIngredientWaypointRadii(!mapSettings.showIngredientWaypointRadii());
             return true;
         }
         float radiusColorCheckboxY = sidebar.y(layout.radiusColorToggleY())
                 + (INGREDIENT_OPTION_HEIGHT - INGREDIENT_CHECKBOX_SIZE) / 2f;
         if (insideScrollablePanel
-                && isHovered(
-                        mx,
-                        my,
-                        PADDING,
-                        radiusColorCheckboxY,
-                        INGREDIENT_CHECKBOX_SIZE,
-                        INGREDIENT_CHECKBOX_SIZE)) {
+                && new UiBounds(PADDING, radiusColorCheckboxY, INGREDIENT_CHECKBOX_SIZE, INGREDIENT_CHECKBOX_SIZE)
+                        .contains(mx, my)) {
             mapSettings.setColorIngredientWaypointRadiiByProximity(
                     !mapSettings.colorIngredientWaypointRadiiByProximity());
             return true;
         }
         if (insideScrollablePanel
-                && isHovered(
-                        mx,
-                        my,
-                        PADDING,
-                        sidebar.y(layout.clearWaypointsY()),
-                        buttonWidth,
-                        BUTTON_HEIGHT)) {
+                && new UiBounds(PADDING, sidebar.y(layout.clearWaypointsY()), buttonWidth, BUTTON_HEIGHT)
+                        .contains(mx, my)) {
             IngredientWaypointManager.getInstance().clear();
             return true;
         }
@@ -1006,13 +970,7 @@ final class IngredientMapMode {
                             spot,
                             ingredientFarmSpotEntries(spot),
                             buttonWidth);
-                    if (isHovered(
-                            mx,
-                            my,
-                            PADDING,
-                            rowY,
-                            buttonWidth,
-                            cardHeight)) {
+                    if (new UiBounds(PADDING, rowY, buttonWidth, cardHeight).contains(mx, my)) {
                         selectIngredientFarmSpot(spot);
                         return true;
                     }
@@ -1020,14 +978,14 @@ final class IngredientMapMode {
                 }
             }
         } else if (insideScrollablePanel
-                && isHovered(mx, my, PADDING, sidebar.y(layout.guideY()), buttonWidth, BUTTON_HEIGHT)) {
+                && new UiBounds(PADDING, sidebar.y(layout.guideY()), buttonWidth, BUTTON_HEIGHT).contains(mx, my)) {
             actions.openGuide();
             return true;
         }
         if (ingredientMapCategory == IngredientMapCategory.SPAWNS
                 && selectedFocusMarker != null
                 && insideScrollablePanel
-                && isHovered(mx, my, PADDING, sidebar.y(layout.copyY()), buttonWidth, BUTTON_HEIGHT)) {
+                && new UiBounds(PADDING, sidebar.y(layout.copyY()), buttonWidth, BUTTON_HEIGHT).contains(mx, my)) {
             actions.copy(selectedFocusMarker.coordinates());
             return true;
         }

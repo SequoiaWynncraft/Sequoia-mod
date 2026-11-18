@@ -14,6 +14,18 @@ Screen commands are tied to the screen instance that submitted them. HUD command
 
 `UiRenderMetrics` separates the layout pixel ratio from NanoVG's render pixel ratio. Layout dimensions and input conversion use the former, while the latter applies capped oversampling for sharper text and vector edges without changing UI size or hitboxes. At large manually entered UI scales, the render ratio never drops below the layout ratio.
 
+## Screens
+
+Sequoia screens share a few small pieces in `com.seqwawa.seq.ui`, so what a screen draws and what it answers clicks on can't drift apart:
+
+- `UiBounds` is the one hit-test rule: a point on the edge is inside, and an empty rectangle has nothing inside.
+- `UiPointer` is the pointer in UI pixels. Convert Minecraft's mouse coordinates with `UiPointer.at`, not by hand.
+- `ScrollPane` keeps a scroll offset within range and places the scrollbar's thumb by one rule, for drawing and for dragging.
+- `TextField` is the Party Finder style search field. `TimedBanner` shows a message for a while, on a clock handed in.
+- `SequoiaPanelScreen` is the base for screens with the Sequoia sidebar. It keeps the screen Esc goes back to, the pointer for the frame, and the sidebar's drawing and clicks.
+
+The development preview tour (`./gradlew runClient -Punlock_preview`) screenshots every screen that opens without live data, named `gallery-*.png`, the same way on every run. Compare a refactor's shots against the ones before it with `compare -metric AE`.
+
 ## Themes
 
 UI colors are semantic tokens defined by `UiColor`. Screens request tokens through `ThemeManager.color(...)`; they should not declare screen-level color palettes. Shared surface, text, control, status, and map tokens keep layout code independent from concrete RGBA values.
