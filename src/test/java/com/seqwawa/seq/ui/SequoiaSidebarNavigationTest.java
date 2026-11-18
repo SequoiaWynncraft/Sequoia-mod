@@ -107,4 +107,32 @@ class SequoiaSidebarNavigationTest {
         assertFalse(SettingsScreen.princessPromptFits(floor, layout.bottom()));
         assertEquals(SequoiaSidebarNavigation.sidebarLayout(200, rows, 22, 6, 84), layout);
     }
+
+    @Test
+    void settingsLeavesTheProfileCardOutWhereItWouldHideThePrincessToggle() {
+        int rows = 10;
+        // At 240 the card fits under the buttons, but then the prompt does not, though it would without the card.
+        assertTrue(SidebarProfile.fits(240, rows));
+        assertTrue(SettingsScreen.princessPromptFits(240, SettingsScreen.settingsSidebarLayout(240, rows, 240, true).bottom()));
+        assertFalse(SettingsScreen.profileLeavesPrincessRoom(240, rows, SidebarProfile.top(240), true, false));
+        // At 360 both fit, and with the prompt switched off the card never gives way.
+        assertTrue(SettingsScreen.profileLeavesPrincessRoom(360, rows, SidebarProfile.top(360), true, false));
+        assertTrue(SettingsScreen.profileLeavesPrincessRoom(240, rows, SidebarProfile.top(240), false, false));
+    }
+
+    @Test
+    void settingsLeavesTheProfileCardOutWhereItWouldHideThePrincessLeaderboard() {
+        int rows = 10;
+        float floor = SidebarProfile.top(440);
+        // At 440 the leaderboard fits under the buttons without the card, and not with it.
+        float without = SettingsScreen.settingsSidebarLayout(440, rows, 440, true).bottom();
+        assertTrue(SettingsScreen.princessLeaderboardHeight(440, without, true) >= PrincessLeaderboardPanel.MIN_HEIGHT);
+        float with = SettingsScreen.settingsSidebarLayout(440, rows, floor, true).bottom();
+        assertTrue(SettingsScreen.princessLeaderboardHeight(floor, with, true) < PrincessLeaderboardPanel.MIN_HEIGHT);
+
+        assertFalse(SettingsScreen.profileLeavesPrincessRoom(440, rows, floor, true, true));
+        assertTrue(SettingsScreen.profileLeavesPrincessRoom(440, rows, floor, true, false), "unless the mode is off");
+        assertTrue(SettingsScreen.profileLeavesPrincessRoom(720, rows, SidebarProfile.top(720), true, true),
+                "a tall window has room for all of it");
+    }
 }

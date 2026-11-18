@@ -305,13 +305,21 @@ public final class PixelArt {
     }
 
     public static String fit(String value, float width, float size) {
+        return fit(value, width, text -> measure(text, size));
+    }
+
+    /**
+     * {@code value} as it fits in {@code width}, cut short with "..." when it does
+     * not. It cuts whole characters, so an emoji is never split in half.
+     */
+    public static String fit(String value, float width, java.util.function.Function<String, Float> textWidth) {
         if (value == null || width <= 0) return "";
+        if (textWidth.apply(value) <= width) return value;
         String shown = value;
-        if (measure(shown, size) > width) {
-            while (!shown.isEmpty() && measure(shown + "...", size) > width) shown = shown.substring(0, shown.length() - 1);
-            shown = shown.isEmpty() ? "" : shown + "...";
+        while (!shown.isEmpty() && textWidth.apply(shown + "...") > width) {
+            shown = shown.substring(0, shown.offsetByCodePoints(shown.length(), -1));
         }
-        return shown;
+        return shown.isEmpty() ? "" : shown + "...";
     }
 
     /**

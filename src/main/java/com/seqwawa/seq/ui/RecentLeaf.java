@@ -166,9 +166,10 @@ final class RecentLeaf {
             Color labelColour = row.kind() == Kind.DEFENCE ? color(ACHIEVEMENT_GOLD) : color(TEXT_SECONDARY);
             String label = PixelArt.fit(row.label(), textWidth, 10);
             PixelArt.text(canvas, label, textX, top + 12 * p, 10, labelColour, HorizontalAlign.LEFT);
-            String when = "  ·  " + ago(row.at(), now);
+            String ago = ago(row.at(), now);
+            String when = "  ·  " + ago;
             float labelWidth = PixelArt.measure(label, 10);
-            if (labelWidth + PixelArt.measure(when, 10) <= textWidth) {
+            if (!ago.isEmpty() && labelWidth + PixelArt.measure(when, 10) <= textWidth) {
                 PixelArt.text(canvas, when, textX + labelWidth, top + 12 * p, 10, color(TEXT_MUTED), HorizontalAlign.LEFT);
             }
         }

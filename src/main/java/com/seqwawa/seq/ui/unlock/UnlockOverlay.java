@@ -84,7 +84,8 @@ public final class UnlockOverlay {
     };
 
     private static final UnlockOverlay INSTANCE = new UnlockOverlay(
-            () -> System.nanoTime() / 1_000_000L, UnlockOverlay::playSound, CombatState::inCombat);
+            () -> UnlockPreview.isRunning() ? UnlockPreview.animationMs() : System.nanoTime() / 1_000_000L,
+            UnlockOverlay::playSound, CombatState::inCombat);
 
     private final LongSupplier clock;
     private final Consumer<UnlockPopup> onStart;

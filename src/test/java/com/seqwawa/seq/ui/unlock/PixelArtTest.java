@@ -37,4 +37,19 @@ class PixelArtTest {
         assertEquals(3, PixelArt.notchesThatFit(10, 18, 2));
         assertEquals(0, PixelArt.notchesThatFit(10, 2, 2), "a one-pixel track has no room for any");
     }
+
+    @Test
+    void cutsTextShortByWholeCharactersSoAnEmojiIsNeverSplit() {
+        // Six pixels a character, counting each half of an emoji's surrogate pair as one.
+        java.util.function.Function<String, Float> width = text -> text.length() * 6f;
+        String shield = "Defend \uD83D\uDEE1";
+
+        assertEquals(shield, PixelArt.fit(shield, 54, width));
+        String cut = PixelArt.fit(shield + " again", 72, width);
+        assertEquals("Defend \uD83D\uDEE1...", cut);
+        // 66 has room for half the emoji and the dots: it goes whole instead.
+        String shorter = PixelArt.fit(shield + " again", 66, width);
+        assertEquals("Defend ...", shorter);
+        assertEquals("", PixelArt.fit("anything", 0, width));
+    }
 }

@@ -9,8 +9,10 @@ import com.seqwawa.seq.managers.LeafQuestService.State;
 import com.seqwawa.seq.model.LeafAccount;
 import com.seqwawa.seq.model.LeafQuests;
 import com.seqwawa.seq.network.ApiClient;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BooleanSupplier;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -23,11 +25,18 @@ class LeafQuestServiceTest {
     private final AtomicReference<CompletableFuture<Snapshot>> answer =
             new AtomicReference<>(CompletableFuture.completedFuture(snapshot(12_480)));
 
+    private final AtomicReference<BooleanSupplier> sessionCurrent = new AtomicReference<>();
+
     private LeafQuestService service() {
-        return new LeafQuestService(() -> {
+        return service(LeafQuestService.READ_DEADLINE);
+    }
+
+    private LeafQuestService service(Duration readDeadline) {
+        return new LeafQuestService(current -> {
             calls.incrementAndGet();
+            sessionCurrent.set(current);
             return answer.get();
-        }, now::get);
+        }, now::get, readDeadline);
     }
 
     private static Snapshot snapshot(long leaf) {
@@ -164,5 +173,38 @@ class LeafQuestServiceTest {
 
         assertEquals(1, snapshot.recent().size());
         assertFalse(snapshot.recentFailed());
+    }
+
+    @Test
+    void aReadThatNeverFinishesGivesUpSoTheBoardCanReadAgain() throws InterruptedException {
+        answer.set(new CompletableFuture<>());
+        LeafQuestService service = service(Duration.ofMillis(20));
+
+        service.requestRefresh();
+        for (int waited = 0; service.state() == State.LOADING && waited < 2_000; waited += 10) Thread.sleep(10);
+
+        assertEquals(State.UNAVAILABLE, service.state());
+        now.addAndGet(LeafQuestService.REFRESH_INTERVAL_MS);
+        assertTrue(service.requestRefresh(), "the stalled read no longer holds the next one back");
+    }
+
+    @Test
+    void aReadStillRunningWhenTheSessionIsClearedCannotSignInAgain() {
+        answer.set(new CompletableFuture<>());
+        LeafQuestService service = service();
+        service.requestRefresh();
+        assertTrue(sessionCurrent.get().getAsBoolean());
+
+        service.reset();
+
+        assertFalse(sessionCurrent.get().getAsBoolean());
+        AtomicInteger signIns = new AtomicInteger();
+        var tokenFor = LeafQuestService.sessionToken(sessionCurrent.get(), force -> {
+            signIns.incrementAndGet();
+            return CompletableFuture.completedFuture("token");
+        });
+        assertTrue(tokenFor.apply(false).isCompletedExceptionally());
+        assertTrue(tokenFor.apply(true).isCompletedExceptionally(), "nor the fresh sign-in a 401 asks for");
+        assertEquals(0, signIns.get());
     }
 }

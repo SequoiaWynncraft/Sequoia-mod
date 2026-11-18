@@ -48,6 +48,15 @@ public final class UnlockPreview {
     private static volatile boolean running;
     /** Screenshots asked for since the last frame was drawn. */
     private static final List<String> pendingShots = new ArrayList<>();
+    /** Ticks the script has waited for a frame to screenshot; past {@link #MAX_HOLD_TICKS} the shot is given up. */
+    private static int heldTicks;
+    private static final int MAX_HOLD_TICKS = 200;
+    /**
+     * The popups' clock while the tour runs: one tick's worth for each tick the
+     * script moves on, so every screenshot shows the animation at a fixed step
+     * however slowly the frames come.
+     */
+    private static volatile long animationMs = 1_000_000;
 
     private UnlockPreview() {}
 
@@ -62,10 +71,16 @@ public final class UnlockPreview {
     private static void tick(Minecraft mc) {
         ticks++;
         if (!pendingShots.isEmpty()) {
-            // Hold the script still until the frame being screenshotted is drawn, so the shot shows what was asked.
-            stageStart++;
-            return;
+            if (++heldTicks <= MAX_HOLD_TICKS) {
+                // Hold the script, and the popups' clock, until the frame to screenshot is drawn.
+                stageStart++;
+                return;
+            }
+            SeqClient.LOGGER.warn("[Unlock preview] Gave up on {}: no frame was drawn without a loading screen", pendingShots);
+            pendingShots.clear();
+            heldTicks = 0;
         }
+        animationMs += 50;
         int inStage = ticks - stageStart;
         if (inStage > 4 * 60 * 20) {
             SeqClient.LOGGER.warn("[Unlock preview] Stuck at {}, giving up", stage);
@@ -158,8 +173,18 @@ public final class UnlockPreview {
         pendingShots.add(name);
     }
 
-    /** Called by the game renderer after each frame: saves the screenshots asked for since the last one. */
+    /** The popups' clock while the tour runs, in milliseconds. */
+    static long animationMs() {
+        return animationMs;
+    }
+
+    /**
+     * Called by the game renderer after each frame: saves the screenshots asked
+     * for since the last one, unless a loading screen covered that frame.
+     */
     public static void afterFrame(Minecraft mc) {
+        if (pendingShots.isEmpty() || mc.getOverlay() != null) return;
+        heldTicks = 0;
         for (String name : pendingShots) {
             Screenshot.grab(mc.gameDirectory, name, mc.getMainRenderTarget(), 1, message -> {});
         }

@@ -8,9 +8,12 @@ import com.seqwawa.seq.network.ApiClient;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 import java.util.function.LongSupplier;
-import java.util.function.Supplier;
 
 /**
  * The member's Leaf and quests, read from the Leaf service for the quest board.
@@ -49,11 +52,21 @@ public final class LeafQuestService {
     }
 
     static final long REFRESH_INTERVAL_MS = Duration.ofMinutes(1).toMillis();
+    /**
+     * How long a whole read may take. A request's own timeout ends once the reply's
+     * headers arrive, so a reply that stalls after them would otherwise keep the
+     * board loading for good.
+     */
+    static final Duration READ_DEADLINE = Duration.ofSeconds(45);
+    /** How long the recent events may take before the board shows the rest without them. */
+    static final Duration EVENTS_DEADLINE = Duration.ofSeconds(20);
 
     private static LeafQuestService instance;
 
-    private final Supplier<CompletableFuture<Snapshot>> fetcher;
+    /** Reads Leaf; it is told whether the session it started under is still the current one. */
+    private final Function<BooleanSupplier, CompletableFuture<Snapshot>> fetcher;
     private final LongSupplier clock;
+    private final Duration readDeadline;
 
     private volatile Snapshot snapshot = Snapshot.EMPTY;
     private volatile State state = State.LOADING;
@@ -63,31 +76,49 @@ public final class LeafQuestService {
     private volatile int generation;
     private volatile boolean preview;
 
-    LeafQuestService(Supplier<CompletableFuture<Snapshot>> fetcher, LongSupplier clock) {
+    LeafQuestService(Function<BooleanSupplier, CompletableFuture<Snapshot>> fetcher, LongSupplier clock,
+            Duration readDeadline) {
         this.fetcher = fetcher;
         this.clock = clock;
+        this.readDeadline = readDeadline;
     }
 
     public static synchronized LeafQuestService getInstance() {
         if (instance == null) {
-            instance = new LeafQuestService(LeafQuestService::fetch, System::currentTimeMillis);
+            instance = new LeafQuestService(LeafQuestService::fetch, System::currentTimeMillis, READ_DEADLINE);
         }
         return instance;
     }
 
-    private static CompletableFuture<Snapshot> fetch() {
+    private static CompletableFuture<Snapshot> fetch(BooleanSupplier sessionCurrent) {
         ApiClient api = ApiClient.getInstance();
+        Function<Boolean, CompletableFuture<String>> tokenFor = sessionToken(sessionCurrent,
+                force -> SeqClient.getAuthService().ensureValidToken(force));
         // Quests first: with sync=1 Leaf pays what was just finished, so the balance read after it includes it.
         // The recent events are a nicety: without them the board still shows the balance and the quests, and
         // says the list could not be read. A blank answer is an empty list, not a failure.
-        return api.getLeafQuests(true).thenCompose(quests -> {
-            CompletableFuture<LeafEvents> events = api.getLeafEvents()
+        return api.getLeafQuests(true, tokenFor).thenCompose(quests -> {
+            CompletableFuture<LeafEvents> events = api.getLeafEvents(tokenFor)
+                    .orTimeout(EVENTS_DEADLINE.toMillis(), TimeUnit.MILLISECONDS)
                     .thenApply(recent -> recent == null ? LeafEvents.EMPTY : recent)
                     .exceptionally(failure -> null);
-            return api.getLeafAccount().thenCombine(events, (account, recent) -> recent == null
+            return api.getLeafAccount(tokenFor).thenCombine(events, (account, recent) -> recent == null
                     ? new Snapshot(account, quests, List.of(), true)
                     : new Snapshot(account, quests, recent.eventsOrEmpty(), false));
         });
+    }
+
+    /**
+     * Where a read gets its tokens, the fresh one after a 401 included: from
+     * {@code tokens} while the session the read started under is current, and
+     * nowhere once it has been cleared, so a read still running then can finish
+     * but never signs the player in again.
+     */
+    static Function<Boolean, CompletableFuture<String>> sessionToken(BooleanSupplier sessionCurrent,
+            Function<Boolean, CompletableFuture<String>> tokens) {
+        return force -> sessionCurrent.getAsBoolean()
+                ? tokens.apply(force)
+                : CompletableFuture.failedFuture(new CancellationException("The session this read started under has ended"));
     }
 
     public Snapshot snapshot() {
@@ -145,7 +176,10 @@ public final class LeafQuestService {
         }
         int startedFor = generation;
         try {
-            fetcher.get().whenComplete((fetched, failure) -> accept(startedFor, fetched, failure));
+            fetcher.apply(() -> startedFor == generation)
+                    .copy()
+                    .orTimeout(readDeadline.toMillis(), TimeUnit.MILLISECONDS)
+                    .whenComplete((fetched, failure) -> accept(startedFor, fetched, failure));
         } catch (RuntimeException failure) {
             accept(startedFor, null, failure);
         }

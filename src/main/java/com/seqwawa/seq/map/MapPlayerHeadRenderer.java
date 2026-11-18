@@ -33,7 +33,8 @@ public final class MapPlayerHeadRenderer implements AutoCloseable {
     private final Map<String, CompletableFuture<byte[]>> faceDownloads = new HashMap<>();
     private final Map<String, UiImage> faces = new HashMap<>();
     /** Heads that could not be had, and when to ask again: a failure may only mean the player was offline. */
-    private final Map<String, Long> retryAt = new HashMap<>();
+    /** When each head last failed, on {@link #clock}. */
+    private final Map<String, Long> failedAt = new HashMap<>();
     static final long RETRY_MS = 60_000;
     private final Function<String, CompletableFuture<byte[]>> downloadFace;
     private final Function<byte[], UiImage> createImage;
@@ -47,7 +48,8 @@ public final class MapPlayerHeadRenderer implements AutoCloseable {
 
     MapPlayerHeadRenderer(Function<String, CompletableFuture<byte[]>> downloadFace,
             Function<byte[], UiImage> createImage, Consumer<UiImage> deleteImage) {
-        this(downloadFace, createImage, deleteImage, System::currentTimeMillis);
+        // Monotonic, so a change to the system clock cannot hold a retry back.
+        this(downloadFace, createImage, deleteImage, () -> System.nanoTime() / 1_000_000);
     }
 
     MapPlayerHeadRenderer(Function<String, CompletableFuture<byte[]>> downloadFace,
@@ -97,16 +99,16 @@ public final class MapPlayerHeadRenderer implements AutoCloseable {
         faces.values().forEach(deleteImage);
         faces.clear();
         faceDownloads.clear();
-        retryAt.clear();
+        failedAt.clear();
     }
 
     private UiImage face(String username) {
         UiImage existing = faces.get(username);
         if (existing != null) return existing;
-        Long retry = retryAt.get(username);
-        if (retry != null) {
-            if (clock.getAsLong() < retry) return null;
-            retryAt.remove(username);
+        Long failed = failedAt.get(username);
+        if (failed != null) {
+            if (clock.getAsLong() - failed < RETRY_MS) return null;
+            failedAt.remove(username);
         }
 
         CompletableFuture<byte[]> download = faceDownloads.computeIfAbsent(username, downloadFace);
@@ -114,16 +116,16 @@ public final class MapPlayerHeadRenderer implements AutoCloseable {
         byte[] bytes = download.getNow(null);
         faceDownloads.remove(username);
         if (bytes == null) {
-            retryAt.put(username, clock.getAsLong() + RETRY_MS);
+            failedAt.put(username, clock.getAsLong());
             return null;
         }
         try {
             UiImage image = createImage.apply(bytes);
-            if (image == null) retryAt.put(username, clock.getAsLong() + RETRY_MS);
+            if (image == null) failedAt.put(username, clock.getAsLong());
             else faces.put(username, image);
             return image;
         } catch (RuntimeException exception) {
-            retryAt.put(username, clock.getAsLong() + RETRY_MS);
+            failedAt.put(username, clock.getAsLong());
             return null;
         }
     }
@@ -156,7 +158,7 @@ public final class MapPlayerHeadRenderer implements AutoCloseable {
             entry.getValue().cancel(true);
             return true;
         });
-        retryAt.keySet().removeIf(username -> !live.contains(username));
+        failedAt.keySet().removeIf(username -> !live.contains(username));
     }
 
 }

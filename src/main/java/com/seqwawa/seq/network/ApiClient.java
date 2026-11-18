@@ -19,6 +19,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import com.seqwawa.seq.client.SeqClient;
@@ -362,10 +363,15 @@ public class ApiClient {
 
     // ── Leaf ──
 
-    /** The member's Leaf, XP and level, from the Leaf service, which takes the same sign-in token. */
-    public CompletableFuture<LeafAccount> getLeafAccount() {
-        return callWithTokenRetry(
-                force -> SeqClient.getAuthService().ensureValidToken(force),
+    /*
+     * Leaf takes the same sign-in token as the backend. Each call is given where its
+     * token comes from, including the fresh one it asks for after a 401, so a caller
+     * can tie it to the session it started under.
+     */
+
+    /** The member's Leaf, XP and level. */
+    public CompletableFuture<LeafAccount> getLeafAccount(Function<Boolean, CompletableFuture<String>> tokenFor) {
+        return callWithTokenRetry(tokenFor,
                 token -> sendAsync(newRequestWithToken(leafBaseUrl, "/v1/me", token).GET().build(), LeafAccount.class));
     }
 
@@ -373,17 +379,15 @@ public class ApiClient {
      * The member's quests. With {@code sync}, Leaf first reads the raids and wars
      * finished in the last minute, so one just finished already counts.
      */
-    public CompletableFuture<LeafQuests> getLeafQuests(boolean sync) {
+    public CompletableFuture<LeafQuests> getLeafQuests(boolean sync, Function<Boolean, CompletableFuture<String>> tokenFor) {
         String path = sync ? "/v1/me/quests?sync=1" : "/v1/me/quests";
-        return callWithTokenRetry(
-                force -> SeqClient.getAuthService().ensureValidToken(force),
+        return callWithTokenRetry(tokenFor,
                 token -> sendAsync(newRequestWithToken(leafBaseUrl, path, token).GET().build(), LeafQuests.class));
     }
 
     /** The member's latest Leaf events, newest first: what paid Leaf, finished a quest or reached a level. */
-    public CompletableFuture<LeafEvents> getLeafEvents() {
-        return callWithTokenRetry(
-                force -> SeqClient.getAuthService().ensureValidToken(force),
+    public CompletableFuture<LeafEvents> getLeafEvents(Function<Boolean, CompletableFuture<String>> tokenFor) {
+        return callWithTokenRetry(tokenFor,
                 token -> sendAsync(newRequestWithToken(leafBaseUrl, "/v1/me/events", token).GET().build(), LeafEvents.class));
     }
 

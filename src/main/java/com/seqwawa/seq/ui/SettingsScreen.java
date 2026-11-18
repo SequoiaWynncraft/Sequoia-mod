@@ -263,13 +263,7 @@ public class SettingsScreen extends Screen {
             boolean princessPromptFits = princessPromptFits(floor, sidebarLayout.bottom());
             if (princessLeaderboardVisible()) {
                 float leaderboardY = sidebarLayout.bottom() + SIDEBAR_BUTTON_SPACING;
-                float availableBottom = princessPromptFits
-                        ? princessPromptY(floor, 1f)
-                        : floor - SIDEBAR_PADDING;
-                float availableHeight = availableBottom
-                        - SIDEBAR_BUTTON_SPACING
-                        - leaderboardY;
-                float leaderboardHeight = Math.min(PrincessLeaderboardPanel.HEIGHT, availableHeight);
+                float leaderboardHeight = princessLeaderboardHeight(floor, sidebarLayout.bottom(), princessPromptFits);
                 if (leaderboardHeight >= PrincessLeaderboardPanel.MIN_HEIGHT) {
                     PrincessLeaderboardPanel.render(
                             canvas,
@@ -285,7 +279,9 @@ public class SettingsScreen extends Screen {
             if (princessPromptFits) {
                 renderPrincessPrompt(canvas, fontName, screenHeight, System.currentTimeMillis());
             }
-            SidebarProfile.render(canvas, screenHeight, nvgMouseX, nvgMouseY);
+            if (profileShown(screenHeight)) {
+                SidebarProfile.render(canvas, screenHeight, nvgMouseX, nvgMouseY);
+            }
 
             // === Main Content Panel (fills rest of screen) ===
             float panelX = SIDEBAR_WIDTH;
@@ -583,7 +579,43 @@ public class SettingsScreen extends Screen {
 
     /** Where the sidebar's free space ends: the profile card's top while the card shows, else the screen's bottom. */
     private static float sidebarFloor(float screenHeight) {
-        return screenHeight - SidebarProfile.reserved(screenHeight);
+        return profileShown(screenHeight) ? screenHeight - SidebarProfile.reserved(screenHeight) : screenHeight;
+    }
+
+    /** Whether Settings shows the profile card: where it fits, and leaves the Princess mode controls their room. */
+    private static boolean profileShown(float screenHeight) {
+        float card = SidebarProfile.reserved(screenHeight);
+        return card > 0 && profileLeavesPrincessRoom(screenHeight, SequoiaSidebarNavigation.destinations().size(),
+                screenHeight - card, princessPromptAllowed(), princessLeaderboardVisible());
+    }
+
+    /**
+     * Whether the profile card, its top at {@code cardFloor}, leaves room for the
+     * Princess mode prompt and, while the mode is on, its leaderboard. The card is
+     * a shortcut and they are settings, so where one of them fits without the card
+     * and not with it, Settings leaves the card out.
+     */
+    static boolean profileLeavesPrincessRoom(float screenHeight, int rows, float cardFloor, boolean promptAllowed,
+            boolean leaderboardVisible) {
+        if (!promptAllowed) return true;
+        float withoutBottom = settingsSidebarLayout(screenHeight, rows, screenHeight, true).bottom();
+        float withBottom = settingsSidebarLayout(screenHeight, rows, cardFloor, true).bottom();
+        boolean promptWithout = princessPromptFits(screenHeight, withoutBottom);
+        boolean promptWith = princessPromptFits(cardFloor, withBottom);
+        if (promptWithout && !promptWith) return false;
+        if (!leaderboardVisible) return true;
+        boolean boardWithout = princessLeaderboardHeight(screenHeight, withoutBottom, promptWithout)
+                >= PrincessLeaderboardPanel.MIN_HEIGHT;
+        boolean boardWith = princessLeaderboardHeight(cardFloor, withBottom, promptWith)
+                >= PrincessLeaderboardPanel.MIN_HEIGHT;
+        return boardWith || !boardWithout;
+    }
+
+    /** How tall the leaderboard can be between the last button and the prompt, or the floor when there is no prompt. */
+    static float princessLeaderboardHeight(float floor, float navigationBottom, boolean promptFits) {
+        float top = navigationBottom + SIDEBAR_BUTTON_SPACING;
+        float bottom = promptFits ? princessPromptY(floor, 1f) : floor - SIDEBAR_PADDING;
+        return Math.min(PrincessLeaderboardPanel.HEIGHT, bottom - SIDEBAR_BUTTON_SPACING - top);
     }
 
     private static SequoiaSidebarNavigation.SidebarLayout settingsSidebarLayout(float screenHeight, int rows) {
@@ -668,7 +700,7 @@ public class SettingsScreen extends Screen {
         if (click.button() == 0) {
 
             // Sidebar button clicks
-            if (SidebarProfile.click(mx, my, screenHeight, this)) return true;
+            if (profileShown(screenHeight) && SidebarProfile.click(mx, my, screenHeight, this)) return true;
             float btnX = SIDEBAR_PADDING;
             float btnW = SIDEBAR_WIDTH - SIDEBAR_PADDING * 2;
 
