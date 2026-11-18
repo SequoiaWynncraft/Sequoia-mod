@@ -42,4 +42,30 @@ class LeafEventStreamTest {
 
         assertEquals(1, shown.get());
     }
+
+    @Test
+    void aSessionEndedForTheSameAccountDropsItsPopupsButResumesFromTheLastEvent() {
+        LeafEventStream stream = LeafEventStream.getInstance();
+        stream.reset();
+        stream.advanceCursor("event-41");
+        AtomicInteger shown = new AtomicInteger();
+        Runnable posted = stream.unlessResetSince(stream.generation(), shown::incrementAndGet);
+
+        // A rejected token ends the session; the account is the same, so the stream picks up where it was.
+        stream.endSessionKeepingCursor();
+        posted.run();
+
+        assertEquals(0, shown.get());
+        assertEquals("event-41", stream.cursor());
+    }
+
+    @Test
+    void anAccountChangeStartsTheNextStreamFromNow() {
+        LeafEventStream stream = LeafEventStream.getInstance();
+        stream.advanceCursor("event-41");
+
+        stream.reset();
+
+        assertEquals(null, stream.cursor());
+    }
 }

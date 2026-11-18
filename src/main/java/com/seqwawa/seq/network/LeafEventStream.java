@@ -67,6 +67,27 @@ public final class LeafEventStream {
         generation++;
     }
 
+    /**
+     * Stops listening for a session that ended while the account stayed the same, as a
+     * rejected token does: popups the stopped stream had yet to hand over are dropped with
+     * that session, but the next one resumes from the last event seen, so nothing that
+     * happened while it signed in again is missed.
+     */
+    public synchronized void endSessionKeepingCursor() {
+        stop();
+        generation++;
+    }
+
+    /** The id of the last event seen, which the next connection resumes after, or null to start from now. */
+    String cursor() {
+        return lastEventId;
+    }
+
+    /** Remembers the last event seen. */
+    void advanceCursor(String eventId) {
+        if (eventId != null) lastEventId = eventId;
+    }
+
     synchronized long generation() {
         return generation;
     }
@@ -139,7 +160,7 @@ public final class LeafEventStream {
             Iterator<String> iterator = lines.iterator();
             while (worker == Thread.currentThread() && iterator.hasNext()) {
                 SseParser.Event event = parser.accept(iterator.next());
-                if (parser.lastEventId() != null) lastEventId = parser.lastEventId();
+                advanceCursor(parser.lastEventId());
                 if (event != null) {
                     dispatch(event, popup -> SeqClient.mc.execute(
                             unlessResetSince(startedFor, () -> UnlockOverlay.getInstance().enqueue(popup))));

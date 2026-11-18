@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import java.util.ArrayList;
 import java.util.List;
@@ -14,7 +15,8 @@ import org.junit.jupiter.api.Test;
  * Pins what each way of ending a session does, step by step and in order. Each list
  * is the one its path ran before {@link SessionManager} existed: the account switch in
  * SeqClient's tick, /seq logout and Clear session in ConnectionManager (and the command's
- * war planner reset), and a rejected token in the auth service.
+ * war planner reset), and a rejected token in the auth service. A rejected token now
+ * ends the whole session, as agreed with the owner, keeping only the Leaf stream's place.
  */
 class SessionManagerTest {
 
@@ -22,7 +24,9 @@ class SessionManagerTest {
     private static final UUID SHARED_ACCOUNT = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
 
     private final RecordingSteps steps = new RecordingSteps();
-    private final SessionManager sessions = new SessionManager(steps);
+    /** The game thread: what an end from another thread hands over waits here until a test runs it. */
+    private final TickQueue ticks = new TickQueue(() -> 0L);
+    private final SessionManager sessions = new SessionManager(steps, ticks);
 
     @Test
     void anAccountSwitchResetsWhatThePreviousAccountHadInOrder() {
@@ -92,10 +96,38 @@ class SessionManagerTest {
     }
 
     @Test
-    void aRejectedTokenInvalidatesTheSignIn() {
+    void aRejectedTokenStopsTheSignInAtOnce() {
         sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Backend rejected the stored token."));
 
         assertEquals(List.of("invalidateSignIn: TOKEN_INVALID Backend rejected the stored token."), steps.calls);
+    }
+
+    @Test
+    void aRejectedTokenEndsTheWholeSessionOnTheGameThreadButKeepsTheLeafCursor() {
+        sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_EXPIRED, "Backend token expired."));
+        steps.calls.clear();
+
+        ticks.runDue();
+
+        assertEquals(List.of(
+                "resetPartyFinder",
+                "clearRaidProfilesSignIn",
+                "resetGuildRaidProgress",
+                "resetLeafQuests",
+                "endLeafEventsKeepingCursor",
+                "clearPopups",
+                "resetWarPlanning",
+                "resetPrincessStats"), steps.calls);
+    }
+
+    @Test
+    void aRejectedTokenLeavesTheConnectionToReconnectByItself() {
+        sessions.end(new EndReason.TokenRejected(AuthErrorCode.WEBSOCKET_AUTH_REJECTED, "Rejected."));
+        ticks.runDue();
+
+        assertFalse(steps.calls.contains("disconnect"));
+        assertFalse(steps.calls.contains("signOut"), "a rejected token is not the player signing out");
+        assertFalse(steps.calls.contains("resetLeafEvents"), "the same account's stream resumes");
     }
 
     @Test
@@ -172,6 +204,7 @@ class SessionManagerTest {
         @Override public void resetGuildRaidProgress() { calls.add("resetGuildRaidProgress"); }
         @Override public void resetLeafQuests() { calls.add("resetLeafQuests"); }
         @Override public void resetLeafEvents() { calls.add("resetLeafEvents"); }
+        @Override public void endLeafEventsKeepingCursor() { calls.add("endLeafEventsKeepingCursor"); }
         @Override public void clearPopups() { calls.add("clearPopups"); }
         @Override public void resetWarTracking() { calls.add("resetWarTracking"); }
         @Override public void resetWarPlanning() { calls.add("resetWarPlanning"); }

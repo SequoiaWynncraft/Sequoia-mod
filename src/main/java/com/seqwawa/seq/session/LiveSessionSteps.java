@@ -141,6 +141,11 @@ final class LiveSessionSteps implements SessionManager.Steps {
     }
 
     @Override
+    public void endLeafEventsKeepingCursor() {
+        LeafEventStream.getInstance().endSessionKeepingCursor();
+    }
+
+    @Override
     public void clearPopups() {
         UnlockOverlay.getInstance().clear();
     }

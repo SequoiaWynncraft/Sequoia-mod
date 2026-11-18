@@ -1,9 +1,11 @@
 package com.seqwawa.seq.session;
 
+import com.seqwawa.seq.client.ClientThread;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 
 /**
  * Notices when the player switches Minecraft account, and is the one way a session ends:
@@ -64,7 +66,11 @@ public final class SessionManager {
 
         void resetLeafQuests();
 
+        /** Stops the Leaf stream and forgets where it was: the next account's starts from now. */
         void resetLeafEvents();
+
+        /** Stops the Leaf stream, dropping what it had yet to show, but the next session resumes from it. */
+        void endLeafEventsKeepingCursor();
 
         void clearPopups();
 
@@ -82,16 +88,19 @@ public final class SessionManager {
     private static SessionManager instance;
 
     private final Steps steps;
+    /** Where the game-side steps of an end that arrives from another thread run. */
+    private final Executor gameThread;
     /** The account seen on the last tick. Game thread only. */
     private UUID lastSeenAccount;
 
-    SessionManager(Steps steps) {
+    SessionManager(Steps steps, Executor gameThread) {
         this.steps = Objects.requireNonNull(steps, "steps");
+        this.gameThread = Objects.requireNonNull(gameThread, "gameThread");
     }
 
     public static synchronized SessionManager getInstance() {
         if (instance == null) {
-            instance = new SessionManager(new LiveSessionSteps());
+            instance = new SessionManager(new LiveSessionSteps(), ClientThread.executor());
         }
         return instance;
     }
@@ -155,8 +164,29 @@ public final class SessionManager {
                 steps.forgetDiscordName();
                 steps.tellPlayer("Backend session cleared. Run /seq connect to sign in again.");
             }
-            case EndReason.TokenRejected rejected -> steps.invalidateSignIn(rejected.code(), rejected.message());
+            case EndReason.TokenRejected rejected -> {
+                // At once, on the socket's thread: no request may use or renew the refused token.
+                steps.invalidateSignIn(rejected.code(), rejected.message());
+                gameThread.execute(this::endSessionState);
+            }
         }
+    }
+
+    /**
+     * Everything that belonged to the sign-in, for a session that ends while the account
+     * stays: what was read with its token, what was waiting to show, and the raid-profile
+     * sign-in. The Leaf stream resumes from where it was, since the events are the same
+     * player's. The connection reconnects by itself, so it is not touched here.
+     */
+    private void endSessionState() {
+        steps.resetPartyFinder();
+        steps.clearRaidProfilesSignIn();
+        steps.resetGuildRaidProgress();
+        steps.resetLeafQuests();
+        steps.endLeafEventsKeepingCursor();
+        steps.clearPopups();
+        steps.resetWarPlanning();
+        steps.resetPrincessStats();
     }
 
     private void endForAccountSwitch(boolean keepSignIn) {
