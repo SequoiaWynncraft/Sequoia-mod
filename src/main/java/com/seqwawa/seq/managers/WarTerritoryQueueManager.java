@@ -224,6 +224,23 @@ public final class WarTerritoryQueueManager {
                         || SeqClient.getWarQueueHudEnabledSetting().getValue());
     }
 
+    /**
+     * The queue for one session: your availability, queues and joins come from {@code planner},
+     * that session's war planner, and it polls while {@code signedIn} says the session has a token.
+     */
+    public static WarTerritoryQueueManager forSession(
+            java.util.function.Supplier<WarPlannerManager> planner, BooleanSupplier signedIn) {
+        return new WarTerritoryQueueManager(
+                new ApiGateway(ApiClient.getInstance()),
+                Clock.systemUTC(),
+                new RuntimeAvailabilityContext(planner, signedIn),
+                NotificationAccessor::notifyPlayer,
+                () -> SeqClient.getWarQueueMissMessagesSetting() != null
+                        && SeqClient.getWarQueueMissMessagesSetting().getValue(),
+                () -> SeqClient.getWarQueueHudEnabledSetting() == null
+                        || SeqClient.getWarQueueHudEnabledSetting().getValue());
+    }
+
     WarTerritoryQueueManager(Gateway gateway, Clock clock, AvailabilityContext availabilityContext) {
         this(gateway, clock, availabilityContext, NotificationAccessor::notifyPlayer, () -> true);
     }

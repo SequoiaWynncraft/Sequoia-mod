@@ -3,6 +3,8 @@ package com.seqwawa.seq.session;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.managers.PrincessRaidStatsManager;
+import com.seqwawa.seq.managers.WarPlannerManager;
+import com.seqwawa.seq.managers.WarTerritoryQueueManager;
 import com.seqwawa.seq.network.LeafEventStream;
 import com.seqwawa.seq.network.auth.RaidProfilesSession;
 import com.seqwawa.seq.ui.unlock.UnlockOverlay;
@@ -70,6 +72,20 @@ final class LiveSessionServices implements Session.Services {
         UnlockOverlay popups = UnlockOverlay.create();
         session.onEnd(popups::clear);
         return popups;
+    }
+
+    @Override
+    public WarPlannerManager warPlanner(Session session) {
+        WarPlannerManager planner = WarPlannerManager.forSession(session::hasToken);
+        session.onEnd(planner::reset);
+        return planner;
+    }
+
+    @Override
+    public WarTerritoryQueueManager warQueue(Session session) {
+        WarTerritoryQueueManager queue = WarTerritoryQueueManager.forSession(session::warPlanner, session::hasToken);
+        session.onEnd(queue::reset);
+        return queue;
     }
 
     /**

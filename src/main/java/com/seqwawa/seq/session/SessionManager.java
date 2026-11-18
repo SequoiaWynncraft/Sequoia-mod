@@ -60,12 +60,6 @@ public final class SessionManager {
         void resetNicknames();
 
         void resetWarTracking();
-
-        /** The war planner and the war queue. */
-        void resetWarPlanning();
-
-        /** The war planner alone, as /seq logout did. */
-        void resetWarPlanner();
     }
 
     private static volatile SessionManager instance;
@@ -180,10 +174,7 @@ public final class SessionManager {
     public void end(EndReason reason) {
         switch (reason) {
             case EndReason.AccountSwitch accountSwitch -> endForAccountSwitch(accountSwitch.keepSignIn());
-            case EndReason.SignOut ignored -> {
-                signOut();
-                steps.resetWarPlanner();
-            }
+            case EndReason.SignOut ignored -> signOut();
             case EndReason.ClearSession ignored -> {
                 steps.dropPendingWarEvents();
                 signOut();
@@ -207,7 +198,8 @@ public final class SessionManager {
 
     /**
      * Ends the current session, which stops everything it owned: what it read with its
-     * token, its raid-profile sign-in, its Leaf stream and its popups. Then starts the next
+     * token, its raid-profile sign-in, its Leaf stream and popups, and its war planner and
+     * queues. Then starts the next
      * one with the auth service's current sign-in. {@code samePlayer} when the account
      * stays: its Leaf stream then resumes from the last event the ended one saw, so nothing
      * that happened in between is missed.
@@ -221,12 +213,10 @@ public final class SessionManager {
 
     /**
      * The rest of what belonged to the sign-in, for a session that ends while the account
-     * stays: the party it was in and the war planner. The connection reconnects by itself,
-     * so it is not touched here.
+     * stays: the party it was in. The connection reconnects by itself, so it is not touched here.
      */
     private void endSessionState() {
         steps.resetPartyFinder();
-        steps.resetWarPlanning();
     }
 
     private void endForAccountSwitch(boolean keepSignIn) {
@@ -245,7 +235,6 @@ public final class SessionManager {
         steps.resetGuildMembership();
         steps.resetNicknames();
         steps.resetWarTracking();
-        steps.resetWarPlanning();
     }
 
     /**

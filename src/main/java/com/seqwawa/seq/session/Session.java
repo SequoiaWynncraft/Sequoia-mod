@@ -3,6 +3,8 @@ package com.seqwawa.seq.session;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.LeafQuestService;
 import com.seqwawa.seq.managers.PrincessRaidStatsManager;
+import com.seqwawa.seq.managers.WarPlannerManager;
+import com.seqwawa.seq.managers.WarTerritoryQueueManager;
 import com.seqwawa.seq.network.LeafEventStream;
 import com.seqwawa.seq.network.auth.NotSignedInException;
 import com.seqwawa.seq.network.auth.RaidProfilesSession;
@@ -49,6 +51,11 @@ public final class Session {
         LeafEventStream leafEvents(Session session, String resumeAfter);
 
         UnlockOverlay popups(Session session);
+
+        WarPlannerManager warPlanner(Session session);
+
+        /** Reads the account's availability and queues from the session's own {@link #warPlanner()}. */
+        WarTerritoryQueueManager warQueue(Session session);
     }
 
     private final SignIn signIn;
@@ -65,6 +72,8 @@ public final class Session {
     private RaidProfilesSession raidProfiles;
     private LeafEventStream leafEvents;
     private UnlockOverlay popups;
+    private WarPlannerManager warPlanner;
+    private WarTerritoryQueueManager warQueue;
 
     Session(SignIn signIn, Tokens tokens, Services services, String resumeLeafAfter) {
         this.signIn = Objects.requireNonNull(signIn, "signIn");
@@ -81,6 +90,12 @@ public final class Session {
     /** The session's token, expired or not, or null while it has not signed in or once it has ended. */
     public StoredAuthSession signedIn() {
         return ended ? null : signIn.token();
+    }
+
+    /** Whether the session has a token to read with. */
+    public boolean hasToken() {
+        StoredAuthSession token = signedIn();
+        return token != null && token.hasToken();
     }
 
     /**
@@ -146,6 +161,22 @@ public final class Session {
             popups = services.popups(this);
         }
         return popups;
+    }
+
+    /** The guild's war plan, as this account sees and may change it. */
+    public synchronized WarPlannerManager warPlanner() {
+        if (warPlanner == null) {
+            warPlanner = services.warPlanner(this);
+        }
+        return warPlanner;
+    }
+
+    /** The territory queues, with the account's own availability and joins. */
+    public synchronized WarTerritoryQueueManager warQueue() {
+        if (warQueue == null) {
+            warQueue = services.warQueue(this);
+        }
+        return warQueue;
     }
 
     /** The last Leaf event this session saw, for a next session of the same player to resume after. */

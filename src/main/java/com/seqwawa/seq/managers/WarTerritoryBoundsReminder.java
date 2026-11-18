@@ -18,7 +18,7 @@ public final class WarTerritoryBoundsReminder {
     private String trackedTerritory;
 
     public void tick(Minecraft client) {
-        WarTerritoryQueueManager queues = SeqClient.warTerritoryQueueManager;
+        WarTerritoryQueueManager queues = SeqClient.getWarTerritoryQueueManager();
         if (client == null
                 || client.player == null
                 || client.level == null

@@ -111,11 +111,15 @@ public class SeqClient implements ClientModInitializer {
     @Getter
     public static PartyFinderManager partyFinderManager;
 
-    @Getter
-    public static WarPlannerManager warPlannerManager;
+    /** The current session's war planner. */
+    public static WarPlannerManager getWarPlannerManager() {
+        return SessionManager.getInstance().current().warPlanner();
+    }
 
-    @Getter
-    public static WarTerritoryQueueManager warTerritoryQueueManager;
+    /** The current session's territory queues. */
+    public static WarTerritoryQueueManager getWarTerritoryQueueManager() {
+        return SessionManager.getInstance().current().warQueue();
+    }
 
     public static WarTerritoryBoundsReminder warTerritoryBoundsReminder;
 
@@ -394,8 +398,6 @@ public class SeqClient implements ClientModInitializer {
         fontManager = new FontManager();
         gameManager = new GameManager();
         partyFinderManager = new PartyFinderManager();
-        warPlannerManager = new WarPlannerManager();
-        warTerritoryQueueManager = new WarTerritoryQueueManager();
         warTerritoryBoundsReminder = new WarTerritoryBoundsReminder();
         wynnPartySyncManager = new WynnPartySyncManager();
         guildWarTracker = GuildWarTrackers.create();
@@ -562,12 +564,8 @@ public class SeqClient implements ClientModInitializer {
 
             maybeRecoverProductionConnection(serverScope, previousServerScope, currentHost);
 
-            if (warPlannerManager != null) {
-                warPlannerManager.tick();
-            }
-            if (warTerritoryQueueManager != null) {
-                warTerritoryQueueManager.tick();
-            }
+            getWarPlannerManager().tick();
+            getWarTerritoryQueueManager().tick();
             if (warTerritoryBoundsReminder != null) {
                 warTerritoryBoundsReminder.tick(client);
             }
@@ -646,21 +644,13 @@ public class SeqClient implements ClientModInitializer {
     }
 
     private static void resetWarPlanningState() {
-        if (warPlannerManager != null) {
-            warPlannerManager.reset();
-        }
-        if (warTerritoryQueueManager != null) {
-            warTerritoryQueueManager.reset();
-        }
+        getWarPlannerManager().reset();
+        getWarTerritoryQueueManager().reset();
     }
 
     private static void resetWarPlanningStateForWorldTransition() {
-        if (warTerritoryQueueManager != null) {
-            warTerritoryQueueManager.resetForWorldTransition();
-        }
-        if (warPlannerManager != null) {
-            warPlannerManager.reset();
-        }
+        getWarTerritoryQueueManager().resetForWorldTransition();
+        getWarPlannerManager().reset();
     }
 
     private static UUID currentMinecraftProfileId() {
@@ -1148,7 +1138,7 @@ public class SeqClient implements ClientModInitializer {
                 "Manager-only view that hides territories not assigned to a zone.",
                 "War planner display");
         warPlannerLockTerritoriesSetting.setVisibilityCondition(
-                () -> warPlannerManager != null && warPlannerManager.canManage());
+                () -> getWarPlannerManager().canManage());
         getConfigManager().register(com.seqwawa.seq.map.WorldMapSettings.getInstance().gatheringNodeSourceSetting());
         getConfigManager().register(autoConnectSetting);
         getConfigManager().register(showDiscordChatSetting);

@@ -114,19 +114,4 @@ final class LiveSessionSteps implements SessionManager.Steps {
             MinecraftWarTowerTracker.getInstance().reset();
         }
     }
-
-    @Override
-    public void resetWarPlanning() {
-        resetWarPlanner();
-        if (SeqClient.getWarTerritoryQueueManager() != null) {
-            SeqClient.getWarTerritoryQueueManager().reset();
-        }
-    }
-
-    @Override
-    public void resetWarPlanner() {
-        if (SeqClient.getWarPlannerManager() != null) {
-            SeqClient.getWarPlannerManager().reset();
-        }
-    }
 }

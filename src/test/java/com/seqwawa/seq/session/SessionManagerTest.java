@@ -68,8 +68,7 @@ class SessionManagerTest {
                 "resetGuildPresence",
                 "resetGuildMembership",
                 "resetNicknames",
-                "resetWarTracking",
-                "resetWarPlanning"), steps.calls);
+                "resetWarTracking"), steps.calls);
     }
 
     @Test
@@ -98,8 +97,7 @@ class SessionManagerTest {
                 "signOut",
                 "end session",
                 "disconnect",
-                "resetPartyFinder",
-                "resetWarPlanner"), steps.calls);
+                "resetPartyFinder"), steps.calls);
     }
 
     @Test
@@ -134,8 +132,7 @@ class SessionManagerTest {
 
         assertEquals(List.of(
                 "end session",
-                "resetPartyFinder",
-                "resetWarPlanning"), steps.calls);
+                "resetPartyFinder"), steps.calls);
     }
 
     @Test
@@ -388,6 +385,32 @@ class SessionManagerTest {
         assertEquals("event-41", sessions.current().leafEvents().cursor());
     }
 
+    @Test
+    void eachSessionHasItsOwnWarPlannerAndQueue() {
+        Session first = sessions.current();
+        var planner = first.warPlanner();
+        var queue = first.warQueue();
+
+        sessions.end(EndReason.CLEAR_SESSION);
+
+        assertNotSame(planner, sessions.current().warPlanner());
+        assertNotSame(queue, sessions.current().warQueue());
+        assertEquals(List.of("warPlanner stopped", "warQueue stopped"), services.stopped,
+                "Clear session drops the planner and queue too, as /seq logout did the planner");
+    }
+
+    @Test
+    void aSessionReadsThePlannerOnlyWhileItHasAToken() {
+        Session signedIn = sessions.current();
+        assertTrue(signedIn.hasToken());
+
+        sessions.end(new EndReason.TokenRejected(AuthErrorCode.TOKEN_INVALID, "Rejected."));
+
+        assertFalse(signedIn.hasToken(), "the refused token is gone at once, before the game thread catches up");
+        ticks.runDue();
+        assertFalse(sessions.current().hasToken());
+    }
+
     /** Has the current session's stream seen {@code eventId}, as if it had read it from Leaf. */
     private void seenLeafEvent(String eventId) {
         services.nextStreamHasSeen = eventId;
@@ -458,6 +481,14 @@ class SessionManagerTest {
             watch(session, "popups");
             return live.popups(session);
         }
+        @Override public com.seqwawa.seq.managers.WarPlannerManager warPlanner(Session session) {
+            watch(session, "warPlanner");
+            return live.warPlanner(session);
+        }
+        @Override public com.seqwawa.seq.managers.WarTerritoryQueueManager warQueue(Session session) {
+            watch(session, "warQueue");
+            return live.warQueue(session);
+        }
     }
 
     /** Records each step by name, in the order it ran; the sign-in steps also end the auth service's sign-in. */
@@ -495,7 +526,5 @@ class SessionManagerTest {
         @Override public void resetGuildMembership() { calls.add("resetGuildMembership"); }
         @Override public void resetNicknames() { calls.add("resetNicknames"); }
         @Override public void resetWarTracking() { calls.add("resetWarTracking"); }
-        @Override public void resetWarPlanning() { calls.add("resetWarPlanning"); }
-        @Override public void resetWarPlanner() { calls.add("resetWarPlanner"); }
     }
 }

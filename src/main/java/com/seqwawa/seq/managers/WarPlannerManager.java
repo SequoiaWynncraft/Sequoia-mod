@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /** Owns the immutable war-planner snapshot and keeps all network work off the render thread. */
@@ -92,6 +93,8 @@ public final class WarPlannerManager {
 
     private final Gateway gateway;
     private final Clock clock;
+    /** Whether the session has a backend token to read the planner with. */
+    private final BooleanSupplier signedIn;
 
     private volatile State state = State.UNKNOWN;
     private volatile WarPlannerSnapshot snapshot;
@@ -112,8 +115,18 @@ public final class WarPlannerManager {
     }
 
     public WarPlannerManager(Gateway gateway, Clock clock) {
+        this(gateway, clock, WarPlannerManager::hasSessionToken);
+    }
+
+    private WarPlannerManager(Gateway gateway, Clock clock, BooleanSupplier signedIn) {
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.signedIn = Objects.requireNonNull(signedIn, "signedIn");
+    }
+
+    /** The planner for one session, which reads while {@code signedIn} says that session has a token. */
+    public static WarPlannerManager forSession(BooleanSupplier signedIn) {
+        return new WarPlannerManager(new ApiGateway(ApiClient.getInstance()), Clock.systemUTC(), signedIn);
     }
 
     public State state() {
@@ -169,7 +182,7 @@ public final class WarPlannerManager {
     }
 
     public void tick() {
-        tick(WynncraftServerPolicy.isCurrentServerAllowed(), hasSessionToken());
+        tick(WynncraftServerPolicy.isCurrentServerAllowed(), signedIn.getAsBoolean());
     }
 
     /** Whether the session has a backend token; logout and session invalidation end it. */

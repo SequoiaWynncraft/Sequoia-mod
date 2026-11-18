@@ -384,11 +384,13 @@ public class MinecraftAuthService {
     }
 
     /**
-     * Leaves the ended session's sign-in, token and all, with that session, and starts the
-     * next one signed out. A sign-in still running finishes for the ended one, so it is dropped.
+     * Ends the current session's sign-in, dropping its token, and starts the next one signed
+     * out. A sign-in still running finishes for the ended one, so it is dropped too.
      */
     private void startNextSession() {
-        current = new SignIn(current.id() + 1, null);
+        SignIn ended = current;
+        current = new SignIn(ended.id() + 1, null);
+        ended.setToken(null);
         inFlightAuthentication = null;
     }
 

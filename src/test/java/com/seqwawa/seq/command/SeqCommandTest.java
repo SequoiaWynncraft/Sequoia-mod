@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.seqwawa.seq.model.PartyRole;
-import com.seqwawa.seq.client.SeqClient;
 import java.util.concurrent.atomic.AtomicReference;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import org.junit.jupiter.api.Test;
@@ -76,17 +75,12 @@ class SeqCommandTest {
     @Test
     void warSubtreeExistsButFailsClosedBeforeAuthorizedSnapshot() {
         CommandDispatcher<FabricClientCommandSource> dispatcher = new CommandDispatcher<>();
-        var previous = SeqClient.warPlannerManager;
-        try {
-            SeqClient.warPlannerManager = null;
-            SeqCommand.registerCommands(dispatcher, null);
+        // A new session's planner has no authorized snapshot yet.
+        SeqCommand.registerCommands(dispatcher, null);
 
-            var war = dispatcher.getRoot().getChild("seq").getChild("war");
-            assertNotNull(war);
-            assertFalse(war.canUse(null));
-        } finally {
-            SeqClient.warPlannerManager = previous;
-        }
+        var war = dispatcher.getRoot().getChild("seq").getChild("war");
+        assertNotNull(war);
+        assertFalse(war.canUse(null));
     }
 
     @Test
