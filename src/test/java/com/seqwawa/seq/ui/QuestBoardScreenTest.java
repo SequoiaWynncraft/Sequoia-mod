@@ -28,7 +28,7 @@ class QuestBoardScreenTest {
     }
 
     @Test
-    void showsOneCardPerSlotInTheOrderDailyWeeklyRepeatable() {
+    void showsOneCardPerSlotInTheOrderDailyWeeklyEndless() {
         LeafQuests quests = new LeafQuests(new Daily(2, 3, Instant.parse("2026-11-18T00:00:00Z")), List.of(
                 quest("repeatable", new Objective("raids", null), 3, 8, null, null),
                 quest("daily", new Objective("raids", "nol"), 1, 3, null, null),
@@ -38,7 +38,7 @@ class QuestBoardScreenTest {
         List<QuestBoardScreen.Card> cards = QuestBoardScreen.cards(quests, NOW);
 
         assertEquals(List.of("daily", "weekly", "repeatable"), cards.stream().map(QuestBoardScreen.Card::slot).toList());
-        assertEquals(List.of("Daily (2/3)", "Weekly", "Repeatable"),
+        assertEquals(List.of("Daily (2/3)", "Weekly", "Endless"),
                 cards.stream().map(QuestBoardScreen.Card::heading).toList());
         assertEquals(List.of("Next daily in 6h 12m", "Ends in 5d 6h", "Next one when done"),
                 cards.stream().map(QuestBoardScreen.Card::timer).toList());

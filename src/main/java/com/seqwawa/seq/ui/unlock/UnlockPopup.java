@@ -136,8 +136,10 @@ public record UnlockPopup(
         return ladder;
     }
 
+    /** "Daily", "Weekly" or "Endless": players know Leaf's {@code repeatable} slot as Endless. */
     public static String slotName(String slot) {
         if (slot == null || slot.isEmpty()) return "Quest";
+        if ("repeatable".equals(slot)) return "Endless";
         return capitalise(slot);
     }
 

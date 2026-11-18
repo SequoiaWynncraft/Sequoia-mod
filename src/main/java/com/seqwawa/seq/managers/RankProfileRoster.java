@@ -2,21 +2,29 @@ package com.seqwawa.seq.managers;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.seqwawa.seq.client.Background;
+import com.seqwawa.seq.client.ClientThread;
+import com.seqwawa.seq.client.Clocks;
+import com.seqwawa.seq.client.Refreshable;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.RankProfilesResponse;
 import com.seqwawa.seq.network.ApiClient;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
 import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import net.fabricmc.loader.api.FabricLoader;
 
@@ -35,33 +43,46 @@ import net.fabricmc.loader.api.FabricLoader;
  * arrives; the roster itself interprets nothing.
  */
 public final class RankProfileRoster {
-    private static final long REFRESH_INTERVAL_MS = 5 * 60 * 1000L;
+    static final long REFRESH_INTERVAL_MS = 5 * 60 * 1000L;
 
     private static RankProfileRoster instance;
 
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
     private final List<Consumer<RankProfilesResponse>> subscribers = new CopyOnWriteArrayList<>();
     private final Path cachePath;
-    private final Supplier<CompletableFuture<RankProfilesResponse>> fetchProfiles;
-    private volatile RankProfilesResponse snapshot;
-    private volatile boolean cacheLoaded;
-    private volatile boolean refreshInFlight;
-    private volatile long lastRefreshAttemptMs;
+    private final Executor disk;
+    private final Clock clock;
+    /** A failed refresh keeps the last snapshot, so badges and ranks keep working while the backend is down. */
+    private final Refreshable<RankProfilesResponse> profiles;
     private volatile Instant lastSuccessfulRefresh;
-    private volatile String status = "not loaded";
+    /** What reading the cache came to, shown until a refresh has worked. */
+    private volatile String cacheStatus = "not loaded";
 
     private RankProfileRoster() {
-        this(defaultCachePath(), () -> ApiClient.getInstance().getRecognizedRankProfiles());
+        this(defaultCachePath(), () -> ApiClient.getInstance().getRecognizedRankProfiles(), Background.disk(),
+                ClientThread.executor(), Clocks::monotonicMillis, Clock.systemUTC());
     }
 
     /** Test seam for exercising cache and refresh behavior without a game directory. */
-    RankProfileRoster(Path cachePath, Supplier<CompletableFuture<RankProfilesResponse>> fetchProfiles) {
+    RankProfileRoster(Path cachePath, Supplier<CompletableFuture<RankProfilesResponse>> fetchProfiles, Executor disk,
+            Executor handBack, LongSupplier millis, Clock clock) {
         this.cachePath = Objects.requireNonNull(cachePath, "cachePath");
-        this.fetchProfiles = Objects.requireNonNull(fetchProfiles, "fetchProfiles");
-        loadCache();
+        Objects.requireNonNull(fetchProfiles, "fetchProfiles");
+        this.disk = Objects.requireNonNull(disk, "disk");
+        this.clock = Objects.requireNonNull(clock, "clock");
+        this.profiles = Refreshable.<RankProfilesResponse>builder("rank profiles",
+                        () -> fetchProfiles.get().thenApply(RankProfileRoster::requireValidSnapshot))
+                .clock(millis)
+                .handBack(handBack)
+                .refreshEveryMs(REFRESH_INTERVAL_MS)
+                .whenFetched(this::fetched)
+                .whenFailed(failure -> SeqClient.LOGGER.debug(
+                        "[RankProfiles] Failed to refresh roster: {}", rootMessage(failure)))
+                .build();
+        loadCache(handBack);
     }
 
-    /** The shared roster; created on first use, which loads the on-disk cache. */
+    /** The shared roster; created on first use, which starts reading the on-disk cache. */
     public static synchronized RankProfileRoster getInstance() {
         if (instance == null) {
             instance = new RankProfileRoster();
@@ -71,65 +92,52 @@ public final class RankProfileRoster {
 
     /**
      * Registers {@code consumer} for every future snapshot, and hands it the current
-     * one straight away when the cache has already produced one. Without that catch-up
-     * a consumer created after the cache load would sit empty until the next refresh.
+     * one straight away when there already is one. Without that catch-up a consumer
+     * created after the cache load would sit empty until the next refresh. Snapshots
+     * arrive on the game thread.
      */
     public void subscribe(Consumer<RankProfilesResponse> consumer) {
+        ClientThread.check("RankProfileRoster.subscribe");
         subscribers.add(consumer);
-        RankProfilesResponse current = snapshot;
-        if (current != null) {
-            deliver(consumer, current);
+        Refreshable.State<RankProfilesResponse> current = profiles.state();
+        if (current.hasValue()) {
+            deliver(consumer, current.value());
         }
     }
 
-    /** Refreshes when the cache has never loaded or the interval has elapsed. */
+    /** Refreshes when there has been no refresh yet or the interval has passed. Game thread only. */
     public void tick() {
-        long now = System.currentTimeMillis();
-        if (!cacheLoaded || now - lastRefreshAttemptMs >= REFRESH_INTERVAL_MS) {
-            refreshAsync();
-        }
+        profiles.request();
     }
 
     /**
-     * Re-fetches the roster and publishes it. A failure leaves the previous snapshot
-     * in place rather than clearing it, so features keep working while the backend is
-     * unreachable.
+     * Re-fetches the roster now and says how it went, for the refresh commands. A
+     * failure leaves the previous snapshot in place rather than clearing it.
      */
     public CompletableFuture<String> refreshAsync() {
-        if (refreshInFlight) {
+        if (!profiles.force()) {
             return CompletableFuture.completedFuture("Rank profile refresh already running.");
         }
-        refreshInFlight = true;
-        lastRefreshAttemptMs = System.currentTimeMillis();
-        status = "refreshing";
-
-        return fetchProfiles
-                .get()
-                .thenApply(response -> {
-                    publish(response);
-                    writeCache(response);
-                    lastSuccessfulRefresh = Instant.now();
-                    status = "loaded " + profileCount(response) + " profiles";
-                    return "Rank profiles refreshed: " + profileCount(response) + " profiles.";
-                })
-                .exceptionally(throwable -> {
-                    status = "refresh failed";
-                    SeqClient.LOGGER.debug("[RankProfiles] Failed to refresh roster: {}", rootMessage(throwable));
-                    return "Rank profile refresh failed; using cached profiles. Cause: " + rootMessage(throwable);
-                })
-                .whenComplete((ignored, throwable) -> refreshInFlight = false);
+        return profiles.settled().thenApply(state -> state.failure() == null
+                ? "Rank profiles refreshed: " + profileCount(state.value()) + " profiles."
+                : "Rank profile refresh failed; using cached profiles. Cause: " + rootMessage(state.failure()));
     }
 
     /** One-line diagnostic shared by the rank and badge status commands. */
     public String status() {
+        Refreshable.State<RankProfilesResponse> state = profiles.state();
+        String phase = state.loading() ? "refreshing"
+                : state.failure() != null ? "refresh failed"
+                : lastSuccessfulRefresh != null ? "loaded " + profileCount(state.value()) + " profiles"
+                : cacheStatus;
         String refreshed = lastSuccessfulRefresh == null ? "never" : lastSuccessfulRefresh.toString();
-        return "roster=" + profileCount(snapshot) + " profiles | status=" + status + " | last refresh=" + refreshed;
+        return "roster=" + profileCount(state.value()) + " profiles | status=" + phase + " | last refresh=" + refreshed;
     }
 
-    private void publish(RankProfilesResponse response) {
-        requireValidSnapshot(response);
-        snapshot = response;
+    private void fetched(RankProfilesResponse response) {
+        lastSuccessfulRefresh = clock.instant();
         subscribers.forEach(consumer -> deliver(consumer, response));
+        disk.execute(() -> writeCache(response));
     }
 
     /**
@@ -144,23 +152,37 @@ public final class RankProfileRoster {
         }
     }
 
-    private void loadCache() {
-        cacheLoaded = true;
+    /**
+     * Reads and checks the cache on the disk thread, then shows it on the game thread
+     * unless a refresh already brought a newer roster.
+     */
+    private void loadCache(Executor handBack) {
+        CompletableFuture.supplyAsync(this::readCache, disk).whenComplete((cached, failure) -> handBack.execute(() -> {
+            if (failure != null) {
+                cacheStatus = "cache load failed";
+                SeqClient.LOGGER.warn("[RankProfiles] Failed to load the cached roster.", failure);
+            } else if (cached == null) {
+                cacheStatus = "no cache";
+            } else if (profiles.seed(cached)) {
+                cacheStatus = "loaded " + profileCount(cached) + " cached profiles";
+                subscribers.forEach(consumer -> deliver(consumer, cached));
+            }
+        }));
+    }
+
+    /** The cached roster, null when there is no cache file. Throws when it can't be read or isn't valid. */
+    private RankProfilesResponse readCache() {
         if (!Files.isRegularFile(cachePath)) {
-            status = "no cache";
-            return;
+            return null;
         }
         try {
-            publish(gson.fromJson(Files.readString(cachePath), RankProfilesResponse.class));
-            status = "loaded " + profileCount(snapshot) + " cached profiles";
-        } catch (IOException | RuntimeException exception) {
-            status = "cache load failed";
-            SeqClient.LOGGER.warn("[RankProfiles] Failed to load the cached roster.", exception);
+            return requireValidSnapshot(gson.fromJson(Files.readString(cachePath), RankProfilesResponse.class));
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
         }
     }
 
     private void writeCache(RankProfilesResponse response) {
-        requireValidSnapshot(response);
         try {
             Files.createDirectories(cachePath.getParent());
             Path temp = cachePath.resolveSibling(cachePath.getFileName() + ".tmp");
@@ -179,7 +201,7 @@ public final class RankProfileRoster {
         return response == null || response.profiles() == null ? 0 : response.profiles().size();
     }
 
-    private static void requireValidSnapshot(RankProfilesResponse response) {
+    private static RankProfilesResponse requireValidSnapshot(RankProfilesResponse response) {
         if (response == null) {
             throw new IllegalArgumentException("Rank-profile snapshot is empty");
         }
@@ -189,6 +211,7 @@ public final class RankProfileRoster {
         if (response.catalog() == null || response.profiles() == null) {
             throw new IllegalArgumentException("Rank-profile snapshot is incomplete");
         }
+        return response;
     }
 
     private static Path defaultCachePath() {

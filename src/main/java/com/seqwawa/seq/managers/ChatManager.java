@@ -9,6 +9,8 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.network.chat.TextColor;
 import com.seqwawa.seq.accessors.NotificationAccessor;
+import com.seqwawa.seq.client.ClientThread;
+import com.seqwawa.seq.client.Clocks;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.events.DiscordChatEvent;
 import com.seqwawa.seq.integrations.WynntilsGuildRankAccess;
@@ -28,8 +30,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 import java.time.Duration;
@@ -77,7 +77,7 @@ public class ChatManager {
 
     /** Sends the guild copy; the backend independently posts earned achievements to Campfire. */
     static void announceAchievements(List<String> messages, BooleanSupplier currentSession) {
-        mc.execute(() -> {
+        ClientThread.execute(() -> {
             if (!currentSession.getAsBoolean() || !canAnnounceAchievements()) {
                 return;
             }
@@ -88,15 +88,15 @@ public class ChatManager {
                         || message.chars().anyMatch(c -> Character.isISOControl(c) || c == '§')) {
                     continue;
                 }
-                long now = System.currentTimeMillis();
+                long now = Clocks.monotonicMillis();
                 long delay = Math.max(0, nextAchievementSendAt - now);
                 nextAchievementSendAt = now + delay + 3_000;
-                CompletableFuture.delayedExecutor(delay, TimeUnit.MILLISECONDS).execute(() -> mc.execute(() -> {
+                ClientThread.after(Duration.ofMillis(delay), () -> {
                     if (currentSession.getAsBoolean() && canAnnounceAchievements()
                             && mc.player.connection == connection && mc.getUser().getProfileId().equals(player)) {
                         connection.sendCommand("g " + message);
                     }
-                }));
+                });
             }
         });
     }

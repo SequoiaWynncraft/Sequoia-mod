@@ -17,6 +17,7 @@ import com.seqwawa.seq.model.LeafQuests.Quest;
 import com.seqwawa.seq.model.LeafQuests.Reward;
 import com.seqwawa.seq.ui.theme.UiColor;
 import com.seqwawa.seq.ui.unlock.PixelArt;
+import com.seqwawa.seq.ui.unlock.UnlockPopup;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiCanvas.HorizontalAlign;
@@ -36,7 +37,7 @@ import org.jetbrains.annotations.NotNull;
 
 /**
  * The member's Leaf quests: one card each for the daily, the weekly and the
- * repeatable, with progress, reward and how long is left. Opened with
+ * endless quest, with progress, reward and how long is left. Opened with
  * {@code /seq quests} or from the sidebar.
  */
 public final class QuestBoardScreen extends Screen {
@@ -190,7 +191,7 @@ public final class QuestBoardScreen extends Screen {
                     ? "Daily (" + daily.charges() + "/" + daily.chargeCap() + ")"
                     : "Daily";
             case LeafQuests.WEEKLY -> "Weekly";
-            default -> "Repeatable";
+            default -> UnlockPopup.slotName(LeafQuests.REPEATABLE);
         };
     }
 

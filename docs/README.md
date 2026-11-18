@@ -18,6 +18,7 @@
 
 - [Tools, tasks, and releases](development.md)
 - [Image decoder builds](../native/README.md)
+- [Threads, refreshes, and clocks](threads.md)
 - [Rendering and themes](rendering.md)
 - [Theme file schema](theme-template.theme.yml)
 - [Media test fixtures](../src/test/resources/README.md)

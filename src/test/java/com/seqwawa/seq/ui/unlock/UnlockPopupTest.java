@@ -73,6 +73,14 @@ class UnlockPopupTest {
     }
 
     @Test
+    void playersKnowTheRepeatableSlotAsEndless() {
+        assertEquals("Endless", UnlockPopup.slotName("repeatable"));
+        assertEquals("Daily", UnlockPopup.slotName("daily"));
+        assertEquals("Endless quest completed", from("quest_completed",
+                "{\"quest\":{\"slot\":\"repeatable\",\"title\":\"Complete 8 raids or 24 wars\"}}").eyebrow());
+    }
+
+    @Test
     void milestonesFromPlatinumUpGetTheWholeScreen() {
         List<String> tiers = List.of("bronze", "silver", "gold", "platinum", "diamond", "obsidian", "mythril");
         List<Kind> kinds = tiers.stream()

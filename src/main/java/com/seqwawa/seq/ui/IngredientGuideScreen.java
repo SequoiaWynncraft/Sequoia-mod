@@ -147,6 +147,8 @@ public final class IngredientGuideScreen extends Screen implements MinecraftGuiO
         super.render(guiGraphics, mouseX, mouseY, partialTick);
         nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
         nvgMouseY = MinecraftUiRenderer.mouseY(mouseY);
+        // Throttled by the manager: after a failed load it asks again a minute later while the guide stays open.
+        manager.requestRefresh();
         refreshVisibleIngredients();
         UiRenderer.renderScreen(this, this::renderGuide);
     }

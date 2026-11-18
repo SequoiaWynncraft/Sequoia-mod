@@ -177,6 +177,9 @@ public class WorldMapScreen extends Screen implements MinecraftGuiOverlay {
             gatheringMode.refresh(mapFrame(nvgMouseX, nvgMouseY));
         } else if (displayMode == MapDisplayMode.WORLD_EVENTS) {
             eventMode.refresh();
+        } else if (displayMode == MapDisplayMode.INGREDIENTS) {
+            // Throttled by the manager: after a failed load it asks again a minute later while the map stays open.
+            IngredientGuideManager.getInstance().requestRefresh();
         }
         MapViewport viewport = new MapViewport(centerX, centerZ, pixelsPerBlock, mapX, mapY, mapW, mapH);
         UiRenderer.renderScreen(this, canvas -> {

@@ -1,5 +1,8 @@
 package com.seqwawa.seq.map;
 
+import com.seqwawa.seq.client.ClientThread;
+import com.seqwawa.seq.client.Clocks;
+import com.seqwawa.seq.client.Refreshable;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.war.WarStatusSnapshot;
 import com.seqwawa.seq.model.war.WarStatusSnapshot.Player;
@@ -16,6 +19,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.function.BooleanSupplier;
+import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
 /** Draws the opted-in telemetry roster over the war planner map. */
 public final class TelemetryPlayerMapOverlay implements AutoCloseable {
@@ -25,39 +32,48 @@ public final class TelemetryPlayerMapOverlay implements AutoCloseable {
     private static final float MARKER_HALF_SIZE = 3;
     private static final Color PLATE = new Color(12, 14, 23, 217);
     private static final Color GOLD = new Color(245, 197, 66);
-    private final ApiClient api = ApiClient.getInstance();
     private final MapPlayerHeadRenderer playerHeads = new MapPlayerHeadRenderer();
-    private volatile WarStatusSnapshot snapshot = WarStatusSnapshot.EMPTY;
-    private volatile CompletableFuture<WarStatusSnapshot> refresh;
-    private long nextRefreshAtMs;
-    private volatile long generation;
+    private final BooleanSupplier signedIn;
+    /** Cleared when a fetch fails: an old position is worse than none on a live map. */
+    private final Refreshable<WarStatusSnapshot> roster;
 
-    public TelemetryPlayerMapOverlay() {}
+    public TelemetryPlayerMapOverlay() {
+        this(() -> ApiClient.getInstance().getWarStatusSnapshot(), TelemetryPlayerMapOverlay::hasToken,
+                Clocks::monotonicMillis, ClientThread.executor());
+    }
 
-    public void tick() {
-        long now = System.currentTimeMillis();
+    TelemetryPlayerMapOverlay(Supplier<CompletableFuture<WarStatusSnapshot>> fetch, BooleanSupplier signedIn,
+            LongSupplier clock, Executor handBack) {
+        this.signedIn = signedIn;
+        this.roster = Refreshable.builder("war map players", fetch)
+                .clock(clock)
+                .handBack(handBack)
+                .refreshEveryMs(REFRESH_INTERVAL_MS)
+                .clearOnFailure()
+                .emptyValue(WarStatusSnapshot.EMPTY)
+                .build();
+    }
+
+    private static boolean hasToken() {
         String token = SeqClient.getConfigManager().getToken();
-        if (token == null || token.isBlank()) {
-            cancelRefresh();
-            snapshot = WarStatusSnapshot.EMPTY;
-            nextRefreshAtMs = now + REFRESH_INTERVAL_MS;
+        return token != null && !token.isBlank();
+    }
+
+    /** Fetches the roster every five seconds while there is a token; without one, shows nobody. */
+    public void tick() {
+        if (!signedIn.getAsBoolean()) {
+            if (roster.hasValue() || roster.isLoading()) roster.reset();
             return;
         }
-        if (now < nextRefreshAtMs || refresh != null && !refresh.isDone()) return;
+        roster.request();
+    }
 
-        nextRefreshAtMs = now + REFRESH_INTERVAL_MS;
-        long requestGeneration = generation;
-        CompletableFuture<WarStatusSnapshot> request = api.getWarStatusSnapshot();
-        refresh = request;
-        request.whenComplete((received, throwable) -> {
-            if (generation == requestGeneration) {
-                snapshot = throwable == null && received != null ? received : WarStatusSnapshot.EMPTY;
-            }
-        });
+    WarStatusSnapshot snapshot() {
+        return roster.value();
     }
 
     public void render(UiCanvas canvas, MapViewport viewport, GuildTerritoryIndex territories) {
-        List<PlayerPoint> points = resolvePlayerPoints(snapshot.players(), territories);
+        List<PlayerPoint> points = resolvePlayerPoints(roster.value().players(), territories);
         Set<String> usernames = new HashSet<>();
         points.forEach(point -> usernames.add(point.username()));
         playerHeads.retain(usernames);
@@ -80,22 +96,11 @@ public final class TelemetryPlayerMapOverlay implements AutoCloseable {
         }
     }
 
+    /** Forgets the roster, and the reply to a fetch still running, when the map closes. */
     @Override
     public void close() {
-        generation++;
-        cancelRefresh();
+        roster.reset();
         playerHeads.close();
-        snapshot = WarStatusSnapshot.EMPTY;
-        nextRefreshAtMs = 0;
-    }
-
-    private void cancelRefresh() {
-        CompletableFuture<WarStatusSnapshot> active = refresh;
-        refresh = null;
-        if (active != null) {
-            generation++;
-            if (!active.isDone()) active.cancel(true);
-        }
     }
 
     static List<PlayerPoint> resolvePlayerPoints(List<Player> players, GuildTerritoryIndex territories) {

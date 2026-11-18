@@ -399,6 +399,8 @@ public class SeqClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        // First, so everything below can hand results to the game thread.
+        ClientThread.install();
         try {
             eventBus = new EventBus(mc::execute);
             eventBus.subscribe(this);

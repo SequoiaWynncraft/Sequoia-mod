@@ -7,15 +7,19 @@ import com.seqwawa.seq.map.WorldEventNotificationTracker;
 import com.seqwawa.seq.map.WorldEventService;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.ui.WorldMapScreen;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import net.minecraft.client.Minecraft;
 
 public final class WorldEventManager {
-    private static final WorldEventManager INSTANCE = new WorldEventManager(WorldEventService.getInstance());
+    private static final WorldEventManager INSTANCE =
+            new WorldEventManager(WorldEventService.getInstance(), Clock.systemUTC());
 
     private final WorldEventService service;
+    /** For the countdown in a detection message. */
+    private final Clock clock;
     private final WorldEventNotificationTracker notificationTracker = new WorldEventNotificationTracker();
     private boolean notificationsActive;
     private long processedSnapshotVersion = -1;
@@ -24,8 +28,9 @@ public final class WorldEventManager {
         return INSTANCE;
     }
 
-    private WorldEventManager(WorldEventService service) {
+    private WorldEventManager(WorldEventService service, Clock clock) {
         this.service = service;
+        this.clock = clock;
     }
 
     public WorldEventService service() {
@@ -64,7 +69,7 @@ public final class WorldEventManager {
                 snapshot.events(),
                 SeqClient.getConfigManager().trackedWorldEventIds());
         for (WorldEventDefinition event : detected) {
-            NotificationAccessor.notifyPlayer(detectionMessage(event, Instant.now()));
+            NotificationAccessor.notifyPlayer(detectionMessage(event, clock.instant()));
         }
     }
 

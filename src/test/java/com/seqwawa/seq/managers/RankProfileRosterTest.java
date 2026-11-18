@@ -5,36 +5,60 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.model.RankProfilesResponse;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class RankProfileRosterTest {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-11-18T20:00:00Z"), ZoneOffset.UTC);
+
+    /** Where finished reads and fetches wait for the game thread. */
+    private final TickQueue ticks = new TickQueue(() -> 0);
+
+    /** A roster whose disk work runs at once, with its cache read already shown. */
+    private RankProfileRoster roster(Path cachePath, Supplier<CompletableFuture<RankProfilesResponse>> fetch) {
+        RankProfileRoster roster = new RankProfileRoster(cachePath, fetch, Runnable::run, ticks, () -> 0, CLOCK);
+        ticks.runDue();
+        return roster;
+    }
+
+    /** Refreshes, lets the result reach the game thread, and returns what the command would say. */
+    private String refresh(RankProfileRoster roster) {
+        CompletableFuture<String> result = roster.refreshAsync();
+        ticks.runDue();
+        return result.join();
+    }
 
     @Test
     void validRefreshPublishesAndCachesTheSnapshot(@TempDir Path tempDir) throws IOException {
         Path cachePath = tempDir.resolve("cache/rank-profiles.json");
         RankProfilesResponse remote = validSnapshot("RemotePlayer");
-        RankProfileRoster roster =
-                new RankProfileRoster(cachePath, () -> CompletableFuture.completedFuture(remote));
+        RankProfileRoster roster = roster(cachePath, () -> CompletableFuture.completedFuture(remote));
         List<RankProfilesResponse> delivered = new ArrayList<>();
         roster.subscribe(delivered::add);
 
-        String result = roster.refreshAsync().join();
+        String result = refresh(roster);
 
         assertEquals("Rank profiles refreshed: 1 profiles.", result);
         assertEquals(List.of(remote), delivered);
         assertEquals(remote, GSON.fromJson(Files.readString(cachePath), RankProfilesResponse.class));
         assertTrue(roster.status().contains("status=loaded 1 profiles"));
+        assertTrue(roster.status().contains("last refresh=2026-11-18T20:00:00Z"));
     }
 
     @Test
@@ -48,12 +72,11 @@ class RankProfileRosterTest {
             String cachedJson = GSON.toJson(cached);
             Files.writeString(cachePath, cachedJson);
 
-            RankProfileRoster roster =
-                    new RankProfileRoster(cachePath, () -> CompletableFuture.completedFuture(invalid));
+            RankProfileRoster roster = roster(cachePath, () -> CompletableFuture.completedFuture(invalid));
             List<RankProfilesResponse> delivered = new ArrayList<>();
             roster.subscribe(delivered::add);
 
-            String result = roster.refreshAsync().join();
+            String result = refresh(roster);
 
             assertTrue(result.startsWith("Rank profile refresh failed; using cached profiles."));
             assertEquals(List.of(cached), delivered, "invalid refresh must not publish a second snapshot");
@@ -67,8 +90,7 @@ class RankProfileRosterTest {
         Path cachePath = tempDir.resolve("rank-profiles.json");
         Files.writeString(cachePath, "null");
         RankProfilesResponse remote = validSnapshot("RecoveredPlayer");
-        RankProfileRoster roster =
-                new RankProfileRoster(cachePath, () -> CompletableFuture.completedFuture(remote));
+        RankProfileRoster roster = roster(cachePath, () -> CompletableFuture.completedFuture(remote));
         AtomicInteger deliveries = new AtomicInteger();
         roster.subscribe(ignored -> deliveries.incrementAndGet());
 
@@ -76,10 +98,39 @@ class RankProfileRosterTest {
         assertTrue(roster.status().contains("status=cache load failed"));
         assertEquals("null", Files.readString(cachePath));
 
-        roster.refreshAsync().join();
+        refresh(roster);
 
         assertEquals(1, deliveries.get());
         assertEquals(remote, GSON.fromJson(Files.readString(cachePath), RankProfilesResponse.class));
+    }
+
+    @Test
+    void aCacheReadThatFinishesAfterARefreshDoesNotReplaceIt(@TempDir Path tempDir) throws IOException {
+        Path cachePath = tempDir.resolve("rank-profiles.json");
+        Files.writeString(cachePath, GSON.toJson(validSnapshot("CachedPlayer")));
+        RankProfilesResponse remote = validSnapshot("RemotePlayer");
+        ArrayDeque<Runnable> disk = new ArrayDeque<>();
+        RankProfileRoster roster = new RankProfileRoster(
+                cachePath, () -> CompletableFuture.completedFuture(remote), disk::add, ticks, () -> 0, CLOCK);
+        List<RankProfilesResponse> delivered = new ArrayList<>();
+        roster.subscribe(delivered::add);
+
+        assertEquals("Rank profiles refreshed: 1 profiles.", refresh(roster));
+        while (!disk.isEmpty()) disk.remove().run();
+        ticks.runDue();
+
+        assertEquals(List.of(remote), delivered, "the slow cache read is not shown over the fresh roster");
+        assertEquals(remote, GSON.fromJson(Files.readString(cachePath), RankProfilesResponse.class));
+    }
+
+    @Test
+    void aRefreshCommandWhileOneRunsSaysSo(@TempDir Path tempDir) {
+        CompletableFuture<RankProfilesResponse> pending = new CompletableFuture<>();
+        RankProfileRoster roster = roster(tempDir.resolve("rank-profiles.json"), () -> pending);
+        roster.tick();
+
+        assertEquals("Rank profile refresh already running.", roster.refreshAsync().join());
+        assertTrue(roster.status().contains("status=refreshing"));
     }
 
     private static List<RankProfilesResponse> invalidSnapshots() {
