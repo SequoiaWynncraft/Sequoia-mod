@@ -346,8 +346,9 @@ public class MinecraftAuthService {
     }
 
     /**
-     * Ends the session without signing out, as an account change does: the next account
-     * signs in the usual way, even if the previous one had signed out.
+     * Ends the session's sign-in without signing out, as an account change does: the next
+     * account signs in the usual way, even if the previous one had signed out. Only
+     * {@code SessionManager.end} calls it, which also ends what the session owned.
      */
     public void clearSession() {
         endSession(false);
@@ -356,7 +357,8 @@ public class MinecraftAuthService {
     /**
      * Signs the player out (/seq logout, Clear session). Until {@link #allowSignIn()}, which
      * only their own connect calls, a token request fails with {@link NotSignedInException}
-     * instead of starting a sign-in, whichever feature asks.
+     * instead of starting a sign-in, whichever feature asks. Only {@code SessionManager.end}
+     * calls it.
      */
     public void signOut() {
         endSession(true);
@@ -377,7 +379,10 @@ public class MinecraftAuthService {
         setState(AuthState.IDLE, null);
     }
 
-    /** Ends the session whose token the backend refused. The next sign-in starts afresh. */
+    /**
+     * Ends the sign-in whose token the backend refused; the next one starts afresh. Only
+     * {@code SessionManager.end} calls it.
+     */
     public synchronized void invalidateSession(AuthErrorCode code, String message) {
         startNextSession();
         setState(AuthState.FAILED, new AuthException(code, message, true));
@@ -392,20 +397,6 @@ public class MinecraftAuthService {
         current = new SignIn(ended.id() + 1, null);
         ended.setToken(null);
         inFlightAuthentication = null;
-    }
-
-    public void clearSessionIfNotActiveProfile(UUID activeProfileId) {
-        StoredAuthSession session = getCurrentSession();
-        if (activeProfileId == null || session == null || session.minecraftUuid() == null) {
-            return;
-        }
-        try {
-            if (!UUID.fromString(session.minecraftUuid()).equals(activeProfileId)) {
-                clearSession();
-            }
-        } catch (IllegalArgumentException exception) {
-            clearSession();
-        }
     }
 
     static StoredAuthSession toStoredSession(MinecraftAuthCompleteResponse response) {
