@@ -6,14 +6,19 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonObject;
+import com.seqwawa.seq.model.GuildWarQueueSubmission;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import org.java_websocket.exceptions.WebsocketNotConnectedException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class GuildWarOutboundQueueTest {
     private static final String QUEUED_AT = "2026-09-25T09:00:21Z";
+    private static final GuildWarQueueSubmission QUEUE = new GuildWarQueueSubmission(
+            "Balloon Airbase", "a9e1132c-c13f-4fd4-abea-812ebf35d5c3", QUEUED_AT, "Very Low", 11);
 
     @AfterEach
     void resetConnection() {
@@ -82,34 +87,36 @@ class GuildWarOutboundQueueTest {
     }
 
     @Test
-    void replacingConnectionDoesNotDiscardBufferedEvents() throws Exception {
-        GuildWarOutboundQueue queue = connectionQueue();
-        queue.offer("guild_war_queue", queuePayload());
-        ConnectionManager first = ConnectionManager.getInstance();
-        first.disconnect();
-        assertNotSame(first, ConnectionManager.getInstance());
+    void replacingConnectionDoesNotDiscardBufferedEvents(@TempDir Path config) {
+        try (var harness = new ConnectionHarness(config)) {
+            ConnectionManager first = harness.connection();
+            // Accepted while disconnected: it waits for a signed-in socket.
+            assertTrue(first.sendGuildWarQueue(QUEUE));
+            first.disconnect();
+            assertNotSame(first, harness.connection());
 
-        var delivered = new ArrayList<String>();
-        connectionQueue().flushOne((type, payload) -> {
-            delivered.add(type);
-            return true;
-        });
-        assertEquals(List.of("guild_war_queue"), delivered);
+            harness.connectAutomatically();
+            FakeBackendSocket socket = harness.open();
+            harness.signIn();
+
+            assertEquals(List.of("get_connected", "guild_war_queue"), socket.sentTypes());
+            assertEquals(QUEUED_AT, socket.lastSent("guild_war_queue").get("submitted_at").getAsString());
+        }
     }
 
     @Test
-    void accountChangeClearsBacklogEvenBetweenConnections() throws Exception {
-        connectionQueue().offer("guild_war_queue", queuePayload());
-        ConnectionManager.getInstance().disconnect();
-        ConnectionManager.resetForAccountChange();
-        ConnectionManager.getInstance();
+    void accountChangeClearsBacklogEvenBetweenConnections(@TempDir Path config) {
+        try (var harness = new ConnectionHarness(config)) {
+            assertTrue(harness.connection().sendGuildWarQueue(QUEUE));
+            harness.connection().disconnect();
+            ConnectionManager.resetForAccountChange();
 
-        var delivered = new ArrayList<String>();
-        connectionQueue().flushOne((type, payload) -> {
-            delivered.add(type);
-            return true;
-        });
-        assertTrue(delivered.isEmpty());
+            harness.connectAutomatically();
+            FakeBackendSocket socket = harness.open();
+            harness.signIn();
+
+            assertEquals(List.of("get_connected"), socket.sentTypes());
+        }
     }
 
     @Test
@@ -132,12 +139,6 @@ class GuildWarOutboundQueueTest {
         assertEquals(0, delivered.getFirst());
         assertEquals(1023, delivered.getLast());
         assertTrue(queue.offer("guild_war_queue", queuePayload()));
-    }
-
-    private static GuildWarOutboundQueue connectionQueue() throws Exception {
-        var field = ConnectionManager.class.getDeclaredField("pendingGuildWarEvents");
-        field.setAccessible(true);
-        return (GuildWarOutboundQueue) field.get(null);
     }
 
     private static JsonObject queuePayload() {

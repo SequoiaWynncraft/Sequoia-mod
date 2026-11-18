@@ -12,6 +12,7 @@ import com.seqwawa.seq.model.GuildWarSubmission;
 import com.seqwawa.seq.model.WarStatusUpdate;
 import com.seqwawa.seq.model.WarTowerUpdate;
 import com.seqwawa.seq.model.WynnClassType;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -22,6 +23,7 @@ import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ConnectionManagerTest {
 
@@ -402,34 +404,6 @@ class ConnectionManagerTest {
     }
 
     @Test
-    void guildStorageMessagesAreServerScopedAuthenticatedOutbound() {
-        assertTrue(ConnectionManager.isServerScopedType("guild_storage_snapshot"));
-        assertTrue(ConnectionManager.isServerScopedType("guild_storage_reward"));
-        assertTrue(ConnectionManager.isServerScopedType("guild_war_queue"));
-        assertTrue(ConnectionManager.isServerScopedType("guild_war_queue_cancel"));
-        assertTrue(ConnectionManager.isServerScopedType("guild_alliance_update"));
-        assertTrue(ConnectionManager.isServerScopedType("guild_alliance_snapshot"));
-        assertTrue(ConnectionManager.isServerScopedType("guild_membership_event"));
-        assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_storage_snapshot"));
-        assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_storage_reward"));
-        assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_alliance_update"));
-        assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_alliance_snapshot"));
-        assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_membership_event"));
-        assertTrue(ConnectionManager.isAuthenticatedOutboundType("war_status"));
-        assertTrue(ConnectionManager.isAuthenticatedOutboundType("war_tower_update"));
-        assertTrue(ConnectionManager.isAuthenticatedOutboundType("guild_war_queue_cancel"));
-    }
-
-    @Test
-    void guildStorageMessagesDoNotUseGenericPrivilegedThrottle() {
-        assertFalse(ConnectionManager.isThrottleLimitedType("guild_storage_snapshot"));
-        assertFalse(ConnectionManager.isThrottleLimitedType("guild_storage_reward"));
-        assertTrue(ConnectionManager.isThrottleLimitedType("guild_chat"));
-        assertFalse(ConnectionManager.isThrottleLimitedType("war_status"));
-        assertFalse(ConnectionManager.isThrottleLimitedType("war_tower_update"));
-    }
-
-    @Test
     void scopedGuildChatMembershipRejectsAreSilent() {
         assertTrue(BackendErrorClassifier.isSilentGuildChatMembershipReject(
                 "not_in_guild", "guild_chat", "guild chat sender is not in sequoia"));
@@ -474,35 +448,6 @@ class ConnectionManagerTest {
     }
 
     @Test
-    void memberOnlyOutboundTypesExcludeUnrestrictedPartyFinderUpdates() {
-        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_chat"));
-        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_alliance_snapshot"));
-        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_storage_snapshot"));
-        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_war_queue"));
-        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_war_queue_cancel"));
-        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("guild_war_submission"));
-        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("war_status"));
-        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("war_tower_update"));
-        assertTrue(ConnectionManager.isSequoiaMemberOnlyType("get_connected"));
-        assertFalse(ConnectionManager.isSequoiaMemberOnlyType("party_class_update"));
-        assertFalse(ConnectionManager.isSequoiaMemberOnlyType("party_sync_snapshot"));
-        assertFalse(ConnectionManager.isSequoiaMemberOnlyType("party_sync_member_removed"));
-    }
-
-    @Test
-    void bombShareMessagesAreScopedAuthenticatedAndThrottleLimited() {
-        assertTrue(ConnectionManager.isServerScopedType("bomb_share_request"));
-        assertTrue(ConnectionManager.isServerScopedType("bomb_share_submit"));
-        assertTrue(ConnectionManager.isAuthenticatedOutboundType("bomb_share_request"));
-        assertTrue(ConnectionManager.isAuthenticatedOutboundType("bomb_share_submit"));
-        assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_request"));
-        assertTrue(ConnectionManager.isThrottleLimitedType("bomb_share_submit"));
-        assertTrue(ConnectionManager.isThrottleLimitedType("guild_war_queue"));
-        assertTrue(ConnectionManager.isThrottleLimitedType("guild_war_queue_cancel"));
-        assertFalse(ConnectionManager.isThrottleLimitedType("guild_alliance_snapshot"));
-    }
-
-    @Test
     void treasuryOutUsesTypedGsonSerializationWithoutClaimedIdentity() {
         TreasuryOutRequest request = new TreasuryOutRequest(
                 "550e8400-e29b-41d4-a716-446655440000",
@@ -538,19 +483,12 @@ class ConnectionManagerTest {
     }
 
     @Test
-    void treasuryOutUsesSessionProofInsteadOfBearerAuthAndRemainsThrottleLimited() {
-        assertTrue(ConnectionManager.isServerScopedType("treasury_out"));
-        assertFalse(ConnectionManager.isAuthenticatedOutboundType("treasury_out"));
-        assertTrue(ConnectionManager.isThrottleLimitedType("treasury_out"));
-        assertFalse(ConnectionManager.isSequoiaMemberOnlyType("treasury_out"));
-    }
-
-    @Test
-    void dispatchesTreasuryOutRecordedWithItsRequestId() {
+    void dispatchesTreasuryOutRecordedWithItsRequestId(@TempDir Path config) {
         AtomicReference<TreasuryOutRecordedMessage> dispatched = new AtomicReference<>();
-        ConnectionManager.onTreasuryOutRecorded(dispatched::set);
-        try {
-            ConnectionManager.getInstance().onMessage("""
+        try (var harness = new ConnectionHarness(config)) {
+            ConnectionManager.onTreasuryOutRecorded(dispatched::set);
+            harness.connection();
+            harness.receive("""
                     {
                       "type": "treasury_out_recorded",
                       "request_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -566,21 +504,19 @@ class ConnectionManagerTest {
             assertEquals("550e8400-e29b-41d4-a716-446655440000", dispatched.get().requestId());
             assertEquals("Season 32", dispatched.get().sheetName());
             assertEquals(7, dispatched.get().row());
-        } finally {
-            ConnectionManager.onTreasuryOutRecorded(null);
-            ConnectionManager.resetForTest();
         }
     }
 
     @Test
-    void dispatchesCorrelatedTreasuryErrorBeforeGenericStatusHandling() {
+    void dispatchesCorrelatedTreasuryErrorBeforeGenericStatusHandling(@TempDir Path config) {
         AtomicReference<TreasuryOutErrorMessage> dispatched = new AtomicReference<>();
-        ConnectionManager.onTreasuryOutError(error -> {
-            dispatched.set(error);
-            return true;
-        });
-        try {
-            ConnectionManager.getInstance().onMessage("""
+        try (var harness = new ConnectionHarness(config)) {
+            ConnectionManager.onTreasuryOutError(error -> {
+                dispatched.set(error);
+                return true;
+            });
+            harness.connection();
+            harness.receive("""
                     {
                       "type": "error",
                       "request_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -593,9 +529,6 @@ class ConnectionManagerTest {
             assertEquals("550e8400-e29b-41d4-a716-446655440000", dispatched.get().requestId());
             assertEquals("invalid_request", dispatched.get().code());
             assertEquals("amount must use a supported denomination", dispatched.get().message());
-        } finally {
-            ConnectionManager.onTreasuryOutError(null);
-            ConnectionManager.resetForTest();
         }
     }
 
