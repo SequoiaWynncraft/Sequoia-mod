@@ -8,7 +8,7 @@ Guild services require a linked Minecraft and Discord account. Access depends on
 
 ## Install
 
-Use Minecraft **1.21.11**, Java **21**, Fabric Loader **0.18.4 or newer**, and Fabric API **0.141.2+1.21.11**.
+Use Minecraft **1.21.11**, Java **21**, update 21.0.13.1 or later (fixes CVE-2026-114938), Fabric Loader **0.18.4 or newer**, and Fabric API **0.141.2+1.21.11**.
 
 1. Install Fabric and Fabric API.
 2. Download Sequoia from [Modrinth](https://modrinth.com/project/sequoia) or [GitHub releases](https://github.com/SequoiaWynncraft/Sequoia-mod/releases).
