@@ -132,6 +132,9 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static boolean autoReconnect = true;
     private static int reconnectAttempt = 0;
     private static final PendingReconnect pendingReconnect = new PendingReconnect();
+    /** Ordinary backend errors, each shown at most once every ten minutes; all are logged. */
+    private static final RepeatedNotice otherErrors =
+            new RepeatedNotice(java.time.Duration.ofMinutes(10).toMillis(), () -> System.nanoTime() / 1_000_000L);
     private static boolean autoConnectSuppressedByManualDisconnect;
     /** Set when the backend refuses us in a way no retry fixes (version, ban); an explicit connect clears it. */
     private static volatile boolean autoConnectPausedByBackend;
@@ -2337,7 +2340,11 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                 notify(error);
                             }
                         }
-                        case OTHER -> notify("Error: " + error);
+                        case OTHER -> {
+                            if (otherErrors.shouldShow(error)) {
+                                notify("Error: " + error);
+                            }
+                        }
                     }
                 }
                 default -> SeqClient.LOGGER.warn("[WebSocket] Unhandled incoming message type={}", type);
