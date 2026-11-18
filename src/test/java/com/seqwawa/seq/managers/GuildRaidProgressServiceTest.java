@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.managers.GuildRaidProgressService.State;
 import com.seqwawa.seq.model.GuildRaidProgress;
 import com.seqwawa.seq.model.GuildRaidProgress.Entry;
@@ -16,7 +17,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 
@@ -28,12 +28,28 @@ class GuildRaidProgressServiceTest {
     private final AtomicBoolean unreachable = new AtomicBoolean();
     private final AtomicReference<CompletableFuture<GuildRaidProgress>> answer =
             new AtomicReference<>(CompletableFuture.completedFuture(progress(512)));
+    /** The game thread: finished reads and the raid's settle delay wait here until a test runs it. */
+    private final TickQueue ticks = new TickQueue(now::get);
+
+    /** Lets the game thread catch up, as the next client tick would. */
+    private void settle() {
+        ticks.runDue();
+    }
+
+    /** A raid finishes, the settle delay passes, and its read is handed back. */
+    private void finishRaid(GuildRaidProgressService service) {
+        service.onLocalRaidCompleted();
+        now.addAndGet(GuildRaidProgressService.RAID_SETTLE_DELAY_MS);
+        settle();
+        settle();
+    }
 
     @Test
     void readsWhatTheBackendSends() {
         GuildRaidProgressService service = service();
 
         assertTrue(service.requestRefresh());
+        settle();
 
         assertEquals(State.READY, service.state());
         assertEquals(512, service.progress().count(SeqRaid.TNA));
@@ -54,6 +70,8 @@ class GuildRaidProgressServiceTest {
 
         service.requestRefresh();
 
+        settle();
+
         assertEquals(State.UNAVAILABLE, service.state());
         assertEquals(0, service.progress().totalCount());
     }
@@ -62,10 +80,12 @@ class GuildRaidProgressServiceTest {
     void aFailedReadKeepsWhatWasAlreadyLoaded() {
         GuildRaidProgressService service = service();
         service.requestRefresh();
+        settle();
 
         answer.set(CompletableFuture.failedFuture(new IllegalStateException("offline")));
         now.addAndGet(GuildRaidProgressService.REFRESH_INTERVAL_MS);
         service.requestRefresh();
+        settle();
 
         assertEquals(State.READY, service.state());
         assertEquals(512, service.progress().count(SeqRaid.TNA));
@@ -76,6 +96,7 @@ class GuildRaidProgressServiceTest {
         GuildRaidProgressService service = service();
 
         assertTrue(service.requestRefresh());
+        settle();
         assertFalse(service.requestRefresh());
         assertEquals(1, calls.get());
 
@@ -90,6 +111,8 @@ class GuildRaidProgressServiceTest {
 
         service.tick();
 
+        settle();
+
         assertEquals(1, calls.get());
         assertEquals(State.READY, service.state());
         assertEquals(512, service.progress().count(SeqRaid.TNA));
@@ -99,8 +122,11 @@ class GuildRaidProgressServiceTest {
     void firstTickDoesNotDiscardARefreshThatAlreadyCompleted() {
         GuildRaidProgressService service = service();
         service.requestRefresh();
+        settle();
 
         service.tick();
+
+        settle();
 
         assertEquals(1, calls.get());
         assertEquals(State.READY, service.state());
@@ -112,11 +138,15 @@ class GuildRaidProgressServiceTest {
         GuildRaidProgressService service = service();
 
         service.tick();
+
+        settle();
         service.tick();
+        settle();
         assertEquals(1, calls.get());
 
         now.addAndGet(GuildRaidProgressService.REFRESH_INTERVAL_MS);
         service.tick();
+        settle();
         assertEquals(2, calls.get());
     }
 
@@ -127,6 +157,8 @@ class GuildRaidProgressServiceTest {
 
         service.tick();
 
+        settle();
+
         assertEquals(0, calls.get());
         assertEquals(State.UNAVAILABLE, service.state());
     }
@@ -136,10 +168,14 @@ class GuildRaidProgressServiceTest {
         GuildRaidProgressService service = service();
 
         service.tick(false);
+
+        settle();
         assertEquals(0, calls.get());
         assertEquals(State.UNAVAILABLE, service.state());
 
         service.tick();
+
+        settle();
         assertEquals(1, calls.get());
         assertEquals(State.READY, service.state());
     }
@@ -149,9 +185,11 @@ class GuildRaidProgressServiceTest {
         connected.set(false);
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
 
         connected.set(true);
         service.tick();
+        settle();
 
         assertEquals(1, calls.get());
         assertEquals(State.READY, service.state());
@@ -161,9 +199,11 @@ class GuildRaidProgressServiceTest {
     void goingOfflineDoesNotWipeWhatIsAlreadyOnScreen() {
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
 
         connected.set(false);
         service.tick();
+        settle();
 
         assertEquals(State.READY, service.state());
         assertEquals(512, service.progress().count(SeqRaid.TNA));
@@ -173,10 +213,17 @@ class GuildRaidProgressServiceTest {
     void aFinishedRaidRefreshesWithoutWaitingForTheInterval() {
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
         assertEquals(1, calls.get());
 
         answer.set(CompletableFuture.completedFuture(progress(513)));
         service.onLocalRaidCompleted();
+        now.addAndGet(GuildRaidProgressService.RAID_SETTLE_DELAY_MS - 1);
+        settle();
+        assertEquals(1, calls.get(), "the backend gets a few seconds to count the raid");
+        now.addAndGet(1);
+        settle();
+        settle();
 
         assertEquals(2, calls.get());
         assertEquals(513, service.progress().count(SeqRaid.TNA));
@@ -188,24 +235,46 @@ class GuildRaidProgressServiceTest {
         answer.set(pending);
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
 
         answer.set(CompletableFuture.completedFuture(progress(513)));
-        service.onLocalRaidCompleted();
+        finishRaid(service);
         assertEquals(1, calls.get());
 
         pending.complete(progress(512));
+        settle();
+        service.tick();
+        settle();
 
-        assertEquals(2, calls.get());
+        assertEquals(2, calls.get(), "the next tick reads again, since the running read may predate the raid");
         assertEquals(513, service.progress().count(SeqRaid.TNA));
+    }
+
+    @Test
+    void aRaidFinishedWhereReadingIsNotAllowedIsReadOnTheNextAllowedTick() {
+        GuildRaidProgressService service = service();
+        service.tick();
+        settle();
+        service.tick(false);
+        settle();
+
+        finishRaid(service);
+        assertEquals(1, calls.get(), "the scope doesn't allow reading");
+        service.tick();
+        settle();
+
+        assertEquals(2, calls.get(), "the raid isn't left for the five-minute interval");
     }
 
     @Test
     void aFinishedRaidPushesTheNextScheduledReadBack() {
         GuildRaidProgressService service = service();
         service.tick();
-        service.onLocalRaidCompleted();
+        settle();
+        finishRaid(service);
 
         service.tick();
+        settle();
 
         assertEquals(2, calls.get());
     }
@@ -214,13 +283,16 @@ class GuildRaidProgressServiceTest {
     void aNewSessionForgetsWhatThePreviousOneLoaded() {
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
         assertEquals(512, service.progress().count(SeqRaid.TNA));
 
         connected.set(false);
         service.tick();
+        settle();
         connected.set(true);
         answer.set(CompletableFuture.completedFuture(progress(7)));
         service.tick();
+        settle();
 
         assertEquals(2, calls.get());
         assertEquals(7, service.progress().count(SeqRaid.TNA));
@@ -232,13 +304,17 @@ class GuildRaidProgressServiceTest {
         answer.set(pending);
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
 
         connected.set(false);
         service.tick();
+        settle();
         connected.set(true);
         answer.set(CompletableFuture.completedFuture(progress(7)));
         service.tick();
+        settle();
         pending.complete(progress(512));
+        settle();
 
         assertEquals(7, service.progress().count(SeqRaid.TNA));
     }
@@ -249,10 +325,13 @@ class GuildRaidProgressServiceTest {
         answer.set(pending);
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
 
         connected.set(false);
         service.tick();
+        settle();
         pending.complete(progress(512));
+        settle();
 
         assertEquals(State.UNAVAILABLE, service.state());
         assertEquals(0, service.progress().totalCount());
@@ -262,8 +341,11 @@ class GuildRaidProgressServiceTest {
     void aSteadyConnectionIsNotTreatedAsANewSession() {
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
         service.tick();
+        settle();
         service.tick();
+        settle();
 
         assertEquals(1, calls.get());
         assertEquals(512, service.progress().count(SeqRaid.TNA));
@@ -273,21 +355,22 @@ class GuildRaidProgressServiceTest {
     void aFinishedRaidIsDroppedWhileTheBackendIsGone() {
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
 
         connected.set(false);
-        service.onLocalRaidCompleted();
+        finishRaid(service);
 
         assertEquals(1, calls.get());
     }
 
     @Test
     void aDelayedRaidRefreshCannotCrossAnAccountReset() {
-        AtomicReference<Runnable> delayedRefresh = new AtomicReference<>();
-        GuildRaidProgressService service = service(delayedRefresh::set);
+        GuildRaidProgressService service = service();
 
         service.onLocalRaidCompleted();
         service.reset();
-        delayedRefresh.get().run();
+        now.addAndGet(GuildRaidProgressService.RAID_SETTLE_DELAY_MS);
+        settle();
 
         assertEquals(0, calls.get());
         assertEquals(State.LOADING, service.state());
@@ -297,6 +380,7 @@ class GuildRaidProgressServiceTest {
     void switchingAccountForgetsTheProgressOfThePreviousOne() {
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
         assertEquals(512, service.progress().count(SeqRaid.TNA));
 
         service.reset();
@@ -309,10 +393,12 @@ class GuildRaidProgressServiceTest {
     void switchingAccountReadsAgainWithoutWaitingForTheInterval() {
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
 
         service.reset();
         answer.set(CompletableFuture.completedFuture(progress(7)));
         service.tick();
+        settle();
 
         assertEquals(2, calls.get());
         assertEquals(7, service.progress().count(SeqRaid.TNA));
@@ -324,9 +410,11 @@ class GuildRaidProgressServiceTest {
         answer.set(pending);
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
 
         service.reset();
         pending.complete(progress(512));
+        settle();
 
         assertEquals(State.LOADING, service.state());
         assertEquals(0, service.progress().totalCount());
@@ -338,11 +426,14 @@ class GuildRaidProgressServiceTest {
         answer.set(pending);
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
 
         service.reset();
         pending.complete(progress(512));
+        settle();
         answer.set(CompletableFuture.completedFuture(progress(7)));
         service.tick();
+        settle();
 
         assertEquals(State.READY, service.state());
         assertEquals(7, service.progress().count(SeqRaid.TNA));
@@ -355,6 +446,8 @@ class GuildRaidProgressServiceTest {
 
         service.tick();
 
+        settle();
+
         assertEquals(1, calls.get());
         assertEquals(State.UNAVAILABLE, service.state());
     }
@@ -364,10 +457,12 @@ class GuildRaidProgressServiceTest {
         unreachable.set(true);
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
 
         unreachable.set(false);
         now.addAndGet(GuildRaidProgressService.REFRESH_INTERVAL_MS);
         service.tick();
+        settle();
 
         assertEquals(2, calls.get());
         assertEquals(State.READY, service.state());
@@ -379,19 +474,16 @@ class GuildRaidProgressServiceTest {
         unreachable.set(true);
         GuildRaidProgressService service = service();
         service.tick();
+        settle();
 
         unreachable.set(false);
-        service.onLocalRaidCompleted();
+        finishRaid(service);
 
         assertEquals(2, calls.get());
         assertEquals(State.READY, service.state());
     }
 
     private GuildRaidProgressService service() {
-        return service(Runnable::run);
-    }
-
-    private GuildRaidProgressService service(Consumer<Runnable> raidDelay) {
         return new GuildRaidProgressService(
                 () -> {
                     calls.incrementAndGet();
@@ -402,7 +494,8 @@ class GuildRaidProgressServiceTest {
                 },
                 now::get,
                 connected::get,
-                raidDelay);
+                ticks,
+                (messages, valid) -> {});
     }
 
     private static GuildRaidProgress progress(int tnaCount) {
@@ -416,10 +509,12 @@ class GuildRaidProgressServiceTest {
                 List.of("Baptiste reached Diamond (1,000 raids) in TNA!"));
         var service = new GuildRaidProgressService(
                 () -> { calls.incrementAndGet(); return CompletableFuture.completedFuture(response); },
-                now::get, connected::get, Runnable::run,
+                now::get, connected::get, ticks,
                 (messages, valid) -> { if (valid.getAsBoolean()) sent.addAll(messages); });
         service.tick();
+        settle();
         service.tick();
+        settle();
         assertEquals(1, calls.get());
         assertEquals(response.announcements(), sent);
         assertEquals(1000, service.progress().totalCount());
@@ -430,8 +525,9 @@ class GuildRaidProgressServiceTest {
         AtomicReference<BooleanSupplier> valid = new AtomicReference<>();
         var response = new GuildRaidProgress(1, Map.of(), List.of("Baptiste earned the Gold Insignia badge!"));
         var service = new GuildRaidProgressService(() -> CompletableFuture.completedFuture(response),
-                now::get, connected::get, Runnable::run, (messages, check) -> valid.set(check));
+                now::get, connected::get, ticks, (messages, check) -> valid.set(check));
         service.tick();
+        settle();
         assertTrue(valid.get().getAsBoolean());
         connected.set(false);
         assertFalse(valid.get().getAsBoolean());
@@ -444,11 +540,13 @@ class GuildRaidProgressServiceTest {
     void aPreviousAccountsResponseNeverSchedulesAnnouncements() {
         CompletableFuture<GuildRaidProgress> pending = new CompletableFuture<>();
         List<String> scheduled = new ArrayList<>();
-        var service = new GuildRaidProgressService(() -> pending, now::get, connected::get, Runnable::run,
+        var service = new GuildRaidProgressService(() -> pending, now::get, connected::get, ticks,
                 (messages, valid) -> scheduled.addAll(messages));
         service.tick();
+        settle();
         service.reset();
         pending.complete(new GuildRaidProgress(1, Map.of(), List.of("Previous player reached Gold!")));
+        settle();
         assertTrue(scheduled.isEmpty());
     }
 }

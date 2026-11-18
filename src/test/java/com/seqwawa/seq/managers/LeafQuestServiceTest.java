@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.managers.LeafQuestService.Snapshot;
 import com.seqwawa.seq.managers.LeafQuestService.State;
 import com.seqwawa.seq.model.LeafAccount;
@@ -29,6 +30,8 @@ class LeafQuestServiceTest {
     private final AtomicReference<LeafQuestService.Read> lastRead = new AtomicReference<>();
     /** The auth service's session, as it counts them. */
     private final AtomicLong authSession = new AtomicLong();
+    /** The game thread: finished reads wait here until a test lets it catch up. */
+    private final TickQueue ticks = new TickQueue(now::get);
 
     private LeafQuestService service() {
         return service(LeafQuestService.READ_DEADLINE);
@@ -40,7 +43,7 @@ class LeafQuestServiceTest {
             sessionCurrent.set(read.wanted());
             lastRead.set(read);
             return answer.get();
-        }, now::get, readDeadline, authSession::get);
+        }, now::get, readDeadline, authSession::get, ticks);
     }
 
     private static Snapshot snapshot(long leaf) {
@@ -61,6 +64,7 @@ class LeafQuestServiceTest {
         LeafQuestService service = service();
 
         assertTrue(service.requestRefresh());
+        ticks.runDue();
 
         assertEquals(State.READY, service.state());
         assertEquals(12_480, service.snapshot().account().leaf());
@@ -70,6 +74,7 @@ class LeafQuestServiceTest {
     void reopeningOrResizingTheBoardWithinAMinuteShowsWhatItHasInsteadOfReadingAgain() {
         LeafQuestService service = service();
         service.requestRefresh();
+        ticks.runDue();
 
         now.addAndGet(5_000);
         assertFalse(service.requestRefresh());
@@ -82,6 +87,7 @@ class LeafQuestServiceTest {
     void readsAtMostOnceAMinuteWhileTheBoardStaysOpen() {
         LeafQuestService service = service();
         service.requestRefresh();
+        ticks.runDue();
 
         now.addAndGet(LeafQuestService.REFRESH_INTERVAL_MS - 1);
         assertFalse(service.requestRefresh());
@@ -97,7 +103,8 @@ class LeafQuestServiceTest {
         LeafQuestService service = service();
 
         assertTrue(service.requestRefresh());
-        now.addAndGet(LeafQuestService.REFRESH_INTERVAL_MS);
+        service.markStale();
+        ticks.runDue();
         assertFalse(service.requestRefresh(), "a read is still running");
 
         assertEquals(1, calls.get());
@@ -110,6 +117,8 @@ class LeafQuestServiceTest {
 
         service.requestRefresh();
 
+        ticks.runDue();
+
         assertEquals(State.NOT_MEMBER, service.state());
     }
 
@@ -117,10 +126,12 @@ class LeafQuestServiceTest {
     void keepsShowingTheLastQuestsWhenARefreshFails() {
         LeafQuestService service = service();
         service.requestRefresh();
+        ticks.runDue();
         answer.set(CompletableFuture.failedFuture(new IllegalStateException("offline")));
 
         now.addAndGet(LeafQuestService.REFRESH_INTERVAL_MS);
         service.requestRefresh();
+        ticks.runDue();
 
         assertEquals(State.READY, service.state());
         assertEquals(12_480, service.snapshot().account().leaf());
@@ -131,13 +142,16 @@ class LeafQuestServiceTest {
     void aWorkingRefreshClearsTheOutOfDateNote() {
         LeafQuestService service = service();
         service.requestRefresh();
+        ticks.runDue();
         answer.set(CompletableFuture.failedFuture(new IllegalStateException("offline")));
         now.addAndGet(LeafQuestService.REFRESH_INTERVAL_MS);
         service.requestRefresh();
+        ticks.runDue();
 
         answer.set(CompletableFuture.completedFuture(snapshot(13_000)));
         now.addAndGet(LeafQuestService.REFRESH_INTERVAL_MS);
         service.requestRefresh();
+        ticks.runDue();
 
         assertFalse(service.refreshFailed());
         assertEquals(13_000, service.snapshot().account().leaf());
@@ -150,6 +164,8 @@ class LeafQuestServiceTest {
 
         service.requestRefresh();
 
+        ticks.runDue();
+
         assertEquals(State.UNAVAILABLE, service.state());
     }
 
@@ -159,9 +175,11 @@ class LeafQuestServiceTest {
         answer.set(late);
         LeafQuestService service = service();
         service.requestRefresh();
+        ticks.runDue();
 
         service.reset();
         late.complete(snapshot(99));
+        ticks.runDue();
 
         assertEquals(State.LOADING, service.state());
         assertEquals(Snapshot.EMPTY, service.snapshot());
@@ -180,16 +198,35 @@ class LeafQuestServiceTest {
     }
 
     @Test
-    void aReadThatNeverFinishesGivesUpSoTheBoardCanReadAgain() throws InterruptedException {
+    void aReadThatNeverFinishesGivesUpSoTheBoardCanReadAgain() {
         answer.set(new CompletableFuture<>());
-        LeafQuestService service = service(Duration.ofMillis(20));
+        LeafQuestService service = service();
 
         service.requestRefresh();
-        for (int waited = 0; service.state() == State.LOADING && waited < 2_000; waited += 10) Thread.sleep(10);
+        now.addAndGet(LeafQuestService.READ_DEADLINE.toMillis() - 1);
+        service.requestRefresh();
+        assertEquals(State.LOADING, service.state());
+        now.addAndGet(1);
+        service.requestRefresh();
+        ticks.runDue();
 
-        assertEquals(State.UNAVAILABLE, service.state());
+        assertEquals(State.UNAVAILABLE, service.state(), "the open board's next request gives the read up");
         now.addAndGet(LeafQuestService.REFRESH_INTERVAL_MS);
         assertTrue(service.requestRefresh(), "the stalled read no longer holds the next one back");
+    }
+
+    @Test
+    void aChangeLeafReportsFromAnotherThreadMakesTheNextRequestReadAtOnce() throws InterruptedException {
+        LeafQuestService service = service();
+        service.requestRefresh();
+        ticks.runDue();
+
+        Thread reporter = Thread.ofPlatform().start(service::markStale);
+        reporter.join();
+        assertFalse(service.requestRefresh(), "the mark waits for the game thread");
+        ticks.runDue();
+        assertTrue(service.requestRefresh());
+        assertEquals(2, calls.get());
     }
 
     @Test
@@ -197,6 +234,7 @@ class LeafQuestServiceTest {
         answer.set(new CompletableFuture<>());
         LeafQuestService service = service();
         service.requestRefresh();
+        ticks.runDue();
         assertTrue(sessionCurrent.get().getAsBoolean());
 
         service.reset();
@@ -220,10 +258,13 @@ class LeafQuestServiceTest {
 
         service.requestRefresh();
 
+        ticks.runDue();
+
         assertEquals(0, lastRead.get().session(), "so the auth service will not sign it in");
         service.reset();
         now.addAndGet(LeafQuestService.REFRESH_INTERVAL_MS);
         service.requestRefresh();
+        ticks.runDue();
         assertEquals(1, lastRead.get().session(), "reads after the reset belong to the new session");
     }
 
@@ -252,11 +293,12 @@ class LeafQuestServiceTest {
                 token.set(LeafQuestService.sessionToken(read.wanted(),
                         force -> auth.ensureSessionToken(force, read.session())).apply(false));
                 return new CompletableFuture<>();
-            }, now::get, LeafQuestService.READ_DEADLINE, auth::sessionGeneration);
+            }, now::get, LeafQuestService.READ_DEADLINE, auth::sessionGeneration, ticks);
 
             // The session is cleared; this board's reset has not run yet when a refresh starts.
             auth.clearSession();
             service.requestRefresh();
+            ticks.runDue();
 
             assertTrue(token.get().isCompletedExceptionally());
             assertEquals(0, signIns.get());
@@ -271,6 +313,8 @@ class LeafQuestServiceTest {
         LeafQuestService service = service();
 
         service.requestRefresh();
+
+        ticks.runDue();
 
         assertEquals(State.SIGNED_OUT, service.state());
         assertEquals(Snapshot.EMPTY, service.snapshot());
@@ -299,9 +343,12 @@ class LeafQuestServiceTest {
             LeafQuestService service = new LeafQuestService(read -> LeafQuestService.sessionToken(read.wanted(),
                             force -> auth.ensureSessionToken(force, read.session()))
                     .apply(false)
-                    .thenApply(token -> snapshot(12_480)), now::get, LeafQuestService.READ_DEADLINE, auth::sessionGeneration);
+                    .thenApply(token -> snapshot(12_480)), now::get, LeafQuestService.READ_DEADLINE, auth::sessionGeneration,
+                    ticks);
 
             service.requestRefresh();
+
+            ticks.runDue();
             assertEquals(State.READY, service.state(), "an active session reads as before");
             assertEquals(1, signIns.get());
 
@@ -309,6 +356,7 @@ class LeafQuestServiceTest {
             auth.clearSession();
             service.reset();
             service.requestRefresh();
+            ticks.runDue();
 
             assertEquals(State.SIGNED_OUT, service.state());
             assertEquals(1, signIns.get(), "the refresh started no sign-in");

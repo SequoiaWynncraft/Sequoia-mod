@@ -1,5 +1,7 @@
 package com.seqwawa.seq.client;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -8,8 +10,10 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 
 /**
  * A value fetched in the background and kept for the game: the one implementation of
@@ -77,8 +81,9 @@ public final class Refreshable<T> {
     private final long refreshEveryMs;
     private final long retryAfterMs;
     private final long deadlineMs;
-    private final boolean clearOnFailure;
+    private final Predicate<Throwable> clearOnFailure;
     private final boolean keepEqualValue;
+    private final boolean intervalFromFinish;
     private final T emptyValue;
     private final Consumer<T> whenFetched;
     private final Consumer<Throwable> whenFailed;
@@ -88,7 +93,8 @@ public final class Refreshable<T> {
     private volatile Fetch running;
     private boolean attempted;
     private boolean lastFailed;
-    private long lastStartedAtMs;
+    /** When the current interval began: the last fetch's start, or its finish with {@code intervalFromFinish}. */
+    private long intervalFromMs;
     private boolean stale;
     private CompletableFuture<State<T>> settled;
 
@@ -103,6 +109,7 @@ public final class Refreshable<T> {
         this.deadlineMs = builder.deadlineMs;
         this.clearOnFailure = builder.clearOnFailure;
         this.keepEqualValue = builder.keepEqualValue;
+        this.intervalFromFinish = builder.intervalFromFinish;
         this.emptyValue = builder.emptyValue;
         this.whenFetched = builder.whenFetched;
         this.whenFailed = builder.whenFailed;
@@ -136,6 +143,19 @@ public final class Refreshable<T> {
         return state.loading();
     }
 
+    /** Whether {@link #request()} would fetch now. Game thread only. */
+    public boolean isDue() {
+        ClientThread.check(owner);
+        Fetch current = running;
+        if (current != null) {
+            // request() fails a fetch past its deadline, then counts that as a failure.
+            long now = clockMs.getAsLong();
+            long from = intervalFromFinish ? now : intervalFromMs;
+            return deadlineMs > 0 && now - current.startedAtMs >= deadlineMs && (stale || now - from >= retryAfterMs);
+        }
+        return !attempted || stale || clockMs.getAsLong() - intervalFromMs >= (lastFailed ? retryAfterMs : refreshEveryMs);
+    }
+
     /**
      * Fetches unless a fetch is running or the last one started too recently: within the
      * refresh interval after a success, the retry interval after a failure. The first
@@ -153,7 +173,7 @@ public final class Refreshable<T> {
             }
             finish(current, null, new TimeoutException(name + " took longer than " + deadlineMs + " ms"));
         }
-        if (attempted && !stale && now - lastStartedAtMs < (lastFailed ? retryAfterMs : refreshEveryMs)) {
+        if (attempted && !stale && now - intervalFromMs < (lastFailed ? retryAfterMs : refreshEveryMs)) {
             return false;
         }
         start(now);
@@ -179,6 +199,21 @@ public final class Refreshable<T> {
     public void markStale() {
         ClientThread.check(owner);
         stale = true;
+    }
+
+    /**
+     * Drops the running fetch's answer when it arrives, and keeps the value: for when the
+     * connection the fetch needs went away. The interval still counts from that fetch's start.
+     */
+    public void cancel() {
+        ClientThread.check(owner);
+        if (running == null) {
+            return;
+        }
+        running = null;
+        State<T> current = state;
+        state = new State<>(current.value(), current.hasValue(), current.version(), false, current.failure());
+        settle();
     }
 
     /** Forgets the value, drops the running fetch's result, and lets the next request fetch at once. */
@@ -210,6 +245,25 @@ public final class Refreshable<T> {
         return true;
     }
 
+    /**
+     * Changes the value now, for a change the server confirmed outside a fetch: a profile
+     * it pushed, one the player saved. A fetch running now may have been answered before
+     * the change, so the change is made again to whatever that fetch brings back, and a
+     * slower, older answer can't undo it. With no value yet, it changes the empty value,
+     * which then counts as one.
+     */
+    public void mutate(UnaryOperator<T> change) {
+        ClientThread.check(owner);
+        Objects.requireNonNull(change, "change");
+        State<T> current = state;
+        T changed = Objects.requireNonNull(change.apply(current.value()), "the change returned no value");
+        state = new State<>(changed, true, current.version() + 1, current.loading(), current.failure());
+        Fetch fetch = running;
+        if (fetch != null) {
+            fetch.changesSince.add(change);
+        }
+    }
+
     /** Completes on the game thread once no fetch is running, with the state then; at once when none is. */
     public CompletableFuture<State<T>> settled() {
         ClientThread.check(owner);
@@ -225,7 +279,7 @@ public final class Refreshable<T> {
     private void start(long now) {
         attempted = true;
         stale = false;
-        lastStartedAtMs = now;
+        intervalFromMs = now;
         Fetch started = new Fetch(now);
         running = started;
         State<T> current = state;
@@ -245,9 +299,21 @@ public final class Refreshable<T> {
             return;
         }
         running = null;
+        if (intervalFromFinish) {
+            intervalFromMs = clockMs.getAsLong();
+        }
         Throwable cause = unwrap(failure);
         if (cause == null && value == null) {
             cause = new IllegalStateException(name + " fetched nothing");
+        }
+        if (cause == null) {
+            try {
+                for (UnaryOperator<T> change : finished.changesSince) {
+                    value = Objects.requireNonNull(change.apply(value), "the change returned no value");
+                }
+            } catch (RuntimeException replayFailure) {
+                cause = replayFailure;
+            }
         }
         State<T> current = state;
         if (cause == null) {
@@ -258,7 +324,7 @@ public final class Refreshable<T> {
             notify(whenFetched, kept);
         } else {
             lastFailed = true;
-            state = clearOnFailure && current.hasValue()
+            state = clearOnFailure.test(cause) && current.hasValue()
                     ? new State<>(emptyValue, false, current.version() + 1, false, cause)
                     : new State<>(current.value(), current.hasValue(), current.version(), false, cause);
             notify(whenFailed, cause);
@@ -292,6 +358,8 @@ public final class Refreshable<T> {
 
     private final class Fetch implements Ticket {
         private final long startedAtMs;
+        /** Changes {@link #mutate} made while this fetch ran, to make again to its answer. */
+        private final List<UnaryOperator<T>> changesSince = new ArrayList<>();
 
         private Fetch(long startedAtMs) {
             this.startedAtMs = startedAtMs;
@@ -311,8 +379,9 @@ public final class Refreshable<T> {
         private long refreshEveryMs = Long.MAX_VALUE;
         private long retryAfterMs = -1;
         private long deadlineMs;
-        private boolean clearOnFailure;
+        private Predicate<Throwable> clearOnFailure = failure -> false;
         private boolean keepEqualValue;
+        private boolean intervalFromFinish;
         private T emptyValue;
         private Consumer<T> whenFetched = value -> {};
         private Consumer<Throwable> whenFailed = failure -> {};
@@ -357,13 +426,28 @@ public final class Refreshable<T> {
 
         /** Drops the value when a fetch fails, where an old answer is worse than none. Kept, by default. */
         public Builder<T> clearOnFailure() {
-            this.clearOnFailure = true;
+            return clearOnFailure(failure -> true);
+        }
+
+        /** Drops the value when a fetch fails in a way {@code when} accepts, such as "not signed in"; keeps it otherwise. */
+        public Builder<T> clearOnFailure(Predicate<Throwable> when) {
+            this.clearOnFailure = Objects.requireNonNull(when, "when");
             return this;
         }
 
         /** Keeps the current value, and its version, when a fetch returns an equal one, so readers needn't redo work. */
         public Builder<T> keepEqualValue() {
             this.keepEqualValue = true;
+            return this;
+        }
+
+        /**
+         * Counts the refresh and retry intervals from when a fetch finishes rather than when
+         * it starts, for a source whose answers are cached upstream for a while after each
+         * request and whose fetch can wait before sending it.
+         */
+        public Builder<T> intervalFromFinish() {
+            this.intervalFromFinish = true;
             return this;
         }
 

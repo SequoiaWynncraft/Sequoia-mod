@@ -160,12 +160,9 @@ public class RaidTracker {
         PrincessRaidStatsManager.Completion completion = manager.recordCompletion(raidName);
         if (completion != null) {
             PrincessRaidCelebration.triggerIfEnabled(completion.eventId(), completion.displayedRaidCount());
-            completion.confirmedRaidCount().thenAccept(count -> {
-                if (SeqClient.mc != null) {
-                    SeqClient.mc.execute(
-                            () -> PrincessRaidCelebration.updateRaidCount(completion.eventId(), count));
-                }
-            });
+            // The count is confirmed on the game thread.
+            completion.confirmedRaidCount()
+                    .thenAccept(count -> PrincessRaidCelebration.updateRaidCount(completion.eventId(), count));
         }
     }
 

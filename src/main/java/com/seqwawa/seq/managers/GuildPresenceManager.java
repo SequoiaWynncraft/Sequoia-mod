@@ -1,6 +1,10 @@
 package com.seqwawa.seq.managers;
 
+import com.seqwawa.seq.client.ClientThread;
+import com.seqwawa.seq.client.Clocks;
+import com.seqwawa.seq.client.Refreshable;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.integrations.WynntilsWorldStateAccess;
 import com.seqwawa.seq.model.GuildMemberPresence;
 import com.seqwawa.seq.model.KnownGuildMember;
@@ -24,7 +28,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.LongSupplier;
 import java.util.stream.Collectors;
 
 /**
@@ -49,25 +57,62 @@ public final class GuildPresenceManager {
 
     private static GuildPresenceManager instance;
 
-    private final Map<String, Boolean> sequoiaConnected = new ConcurrentHashMap<>();
-
-    private volatile WynncraftGuildClient.GuildRoster roster = WynncraftGuildClient.GuildRoster.empty();
-    private volatile String guildPrefix;
-    private volatile String lastError;
-    private volatile boolean refreshing;
-    private volatile long lastRefreshAtMs;
     /**
-     * Set when the roster was read with no catalog, so every clear count came out as
-     * zero. Reading it again with one gives the right numbers, so the throttle is waived.
+     * One read of the roster: the guild it is for, and whether it was read with no raid
+     * catalog, so every clear count came out as zero. Reading it again with one gives the
+     * right numbers, so the throttle is waived.
      */
-    private volatile boolean readWithoutCatalog;
-    /**
-     * Bumped by {@link #reset()}, so a fetch started for the previous account cannot
-     * land its guild's roster in the new session.
-     */
-    private volatile long generation;
+    record Read(String guildPrefix, WynncraftGuildClient.GuildRoster roster, boolean readWithoutCatalog) {
+        static final Read EMPTY = new Read(null, WynncraftGuildClient.GuildRoster.empty(), false);
+    }
 
-    private GuildPresenceManager() {}
+    /** The members whose clients are connected to the Sequoia backend, by lower-case name. */
+    private volatile Set<String> sequoiaConnected = Set.of();
+    /** A failed read keeps the last roster; a reset forgets it, and drops a read for the previous account. */
+    private final Refreshable<Read> roster;
+    private final Function<String, CompletableFuture<Read>> fetch;
+    private final BooleanSupplier catalogLoaded;
+    /** Asks the backend which members are connected; the answer may come on any thread. */
+    private final Consumer<Consumer<List<String>>> askConnectedUsers;
+    private final Executor gameThread;
+    /** Bumped by {@link #reset()}, so a party finder listing opened for the previous account can't link its party. */
+    private long generation;
+
+    private GuildPresenceManager() {
+        this(GuildPresenceManager::fetchRoster, () -> !RaidProfileStore.getInstance().catalog().isEmpty(),
+                GuildPresenceManager::askBackend, Clocks::monotonicMillis, ClientThread.queue());
+    }
+
+    /** Test seam: {@code fetch} reads the roster, given the guild prefix already known or null. */
+    GuildPresenceManager(Function<String, CompletableFuture<Read>> fetch, BooleanSupplier catalogLoaded,
+            Consumer<Consumer<List<String>>> askConnectedUsers, LongSupplier clock, TickQueue gameThread) {
+        this.fetch = fetch;
+        this.catalogLoaded = catalogLoaded;
+        this.askConnectedUsers = askConnectedUsers;
+        this.gameThread = gameThread;
+        this.roster = Refreshable.<Read>builder("guild roster", this::readRoster)
+                .clock(clock)
+                .handBack(gameThread)
+                .refreshEveryMs(refreshIntervalMs(false))
+                .retryAfterMs(refreshIntervalMs(true))
+                // A read can wait up to eight seconds for the raid catalog before it asks
+                // Wynncraft, whose answer is cached for a minute after that request.
+                .intervalFromFinish()
+                .emptyValue(Read.EMPTY)
+                .whenFetched(read -> SeqClient.LOGGER.info(
+                        "[GuildPresence] Roster refreshed guild='{}' online={} total={}",
+                        read.roster().displayName(),
+                        read.roster().online().size(),
+                        read.roster().totalMembers()))
+                .whenFailed(failure -> SeqClient.LOGGER.warn("[GuildPresence] Roster refresh failed: {}", errorText(failure)))
+                .build();
+    }
+
+    /** One read: asks who is connected on the side, and reads the roster for the guild already known, if any. */
+    private CompletableFuture<Read> readRoster() {
+        requestSequoiaConnectedUsers();
+        return fetch.apply(roster.value().guildPrefix());
+    }
 
     public static synchronized GuildPresenceManager getInstance() {
         if (instance == null) {
@@ -79,27 +124,36 @@ public final class GuildPresenceManager {
     // ── State reads ──
 
     public boolean isRefreshing() {
-        return refreshing;
+        return roster.isLoading();
     }
 
+    /** Why the last read failed, or null when it worked or none has finished. */
     public String lastError() {
-        return lastError;
+        Throwable failure = roster.state().failure();
+        return failure == null ? null : errorText(failure);
+    }
+
+    private static String errorText(Throwable failure) {
+        return failure.getMessage() == null ? "Could not reach Wynncraft." : failure.getMessage();
     }
 
     /** True once a refresh has completed, whether or not it found anyone online. */
     public boolean hasLoaded() {
-        return lastRefreshAtMs > 0L;
+        Refreshable.State<Read> current = roster.state();
+        return current.hasValue() || current.failure() != null;
     }
 
-    /** Whether enough time has passed that another roster fetch would return new data. */
-    public boolean canRefresh(long nowMs) {
-        if (refreshing) {
-            return false;
+    /** Whether another roster fetch would return new data. Game thread only. */
+    public boolean canRefresh() {
+        waiveThrottleForCatalog();
+        return roster.isDue();
+    }
+
+    /** A roster read without the raid catalog counted no clears, so it is read again once the catalog is in. */
+    private void waiveThrottleForCatalog() {
+        if (roster.value().readWithoutCatalog() && catalogLoaded.getAsBoolean() && !roster.isLoading()) {
+            roster.markStale();
         }
-        if (readWithoutCatalog && !RaidProfileStore.getInstance().catalog().isEmpty()) {
-            return true;
-        }
-        return nowMs - lastRefreshAtMs >= refreshIntervalMs(lastError != null);
     }
 
     /** The wait before the next fetch is worth making. */
@@ -111,9 +165,9 @@ public final class GuildPresenceManager {
 
     /** The online guild members, each carrying whichever extra facts are known. */
     public List<GuildMemberPresence> onlineMembers() {
-        return roster.online().stream()
+        return roster.value().roster().online().stream()
                 .map(member -> member.withSequoiaConnected(
-                        Boolean.TRUE.equals(sequoiaConnected.get(member.key()))))
+                        sequoiaConnected.contains(member.key())))
                 .toList();
     }
 
@@ -166,7 +220,7 @@ public final class GuildPresenceManager {
 
     /** Anyone in the guild by name, online or not, or null when unknown. */
     public KnownGuildMember knownMember(String username) {
-        return roster.member(username);
+        return roster.value().roster().member(username);
     }
 
     // ── Party finder ──
@@ -377,6 +431,10 @@ public final class GuildPresenceManager {
     }
 
     public String localUsername() {
+        return currentUsername();
+    }
+
+    private static String currentUsername() {
         if (SeqClient.mc == null) {
             return null;
         }
@@ -388,20 +446,23 @@ public final class GuildPresenceManager {
 
     // ── Refresh ──
 
-    /** Fetches the roster when the throttle allows it, or immediately when forced. */
-    public CompletableFuture<Void> refresh(boolean force) {
-        long now = System.currentTimeMillis();
-        if (refreshing || (!force && !canRefresh(now))) {
-            return CompletableFuture.completedFuture(null);
+    /** Fetches the roster when the throttle allows it, or at once when forced unless a fetch is running. Game thread only. */
+    public void refresh(boolean force) {
+        waiveThrottleForCatalog();
+        if (force) {
+            roster.force();
+        } else {
+            roster.request();
         }
-        refreshing = true;
-        lastError = null;
-        long startedFor = generation;
+    }
 
-        requestSequoiaConnectedUsers();
-        // Clear counts are keyed by the raid names the catalog carries, so it has to be
-        // in hand before the roster is parsed. With one cached there is nothing to wait
-        // for; without one the wait is bounded so a slow sign-in cannot keep the list empty.
+    /**
+     * The roster read the game makes: the guild prefix, resolved once per account, and
+     * the raid catalog the clear counts are keyed by. With a catalog cached there is
+     * nothing to wait for; without one the wait is bounded, so a slow sign-in can't keep
+     * the list empty.
+     */
+    private static CompletableFuture<Read> fetchRoster(String knownPrefix) {
         RaidProfileStore profileStore = RaidProfileStore.getInstance();
         boolean needsCatalog = profileStore.catalog().isEmpty();
         CompletableFuture<Void> refreshed = profileStore.refresh();
@@ -409,75 +470,49 @@ public final class GuildPresenceManager {
                 // copy(), so timing out here does not complete the shared in-flight refresh
                 ? refreshed.copy().completeOnTimeout(null, CATALOG_WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
                 : CompletableFuture.completedFuture(null);
-
-        return resolveGuildPrefix(startedFor)
+        return resolveGuildPrefix(knownPrefix)
                 .thenCombine(catalogReady, (prefix, ignored) -> prefix)
                 .thenCompose(prefix -> {
                     if (prefix == null || prefix.isBlank()) {
                         throw new IllegalStateException("Wynncraft does not list you in a guild.");
                     }
+                    RaidCatalog catalog = RaidProfileStore.getInstance().catalog();
                     return WynncraftGuildClient.getInstance()
-                            .fetchRoster(prefix, RaidProfileStore.getInstance().catalog());
-                })
-                .thenAccept(fetched -> {
-                    if (startedFor != generation) {
-                        return;
-                    }
-                    roster = fetched;
-                    readWithoutCatalog = RaidProfileStore.getInstance().catalog().isEmpty();
-                    lastRefreshAtMs = System.currentTimeMillis();
-                    SeqClient.LOGGER.info(
-                            "[GuildPresence] Roster refreshed guild='{}' online={} total={}",
-                            fetched.displayName(),
-                            fetched.online().size(),
-                            fetched.totalMembers());
-                })
-                .exceptionally(throwable -> {
-                    if (startedFor != generation) {
-                        return null;
-                    }
-                    Throwable cause = throwable.getCause() != null ? throwable.getCause() : throwable;
-                    lastError = cause.getMessage() == null ? "Could not reach Wynncraft." : cause.getMessage();
-                    // A failed refresh still counts as an attempt, otherwise a broken
-                    // connection would be retried on every frame the panel is open.
-                    lastRefreshAtMs = System.currentTimeMillis();
-                    SeqClient.LOGGER.warn("[GuildPresence] Roster refresh failed: {}", lastError);
-                    return null;
-                })
-                .whenComplete((ignored, throwable) -> {
-                    if (startedFor == generation) {
-                        refreshing = false;
-                    }
+                            .fetchRoster(prefix, catalog)
+                            .thenApply(fetched -> new Read(prefix, fetched, catalog.isEmpty()));
                 });
     }
 
-    private CompletableFuture<String> resolveGuildPrefix(long startedFor) {
-        if (guildPrefix != null && !guildPrefix.isBlank()) {
-            return CompletableFuture.completedFuture(guildPrefix);
+    private static CompletableFuture<String> resolveGuildPrefix(String knownPrefix) {
+        if (knownPrefix != null && !knownPrefix.isBlank()) {
+            return CompletableFuture.completedFuture(knownPrefix);
         }
-        String username = localUsername();
+        String username = currentUsername();
         if (username == null || username.isBlank()) {
             return CompletableFuture.completedFuture(null);
         }
-        return WynncraftGuildClient.getInstance().resolveGuildPrefix(username).thenApply(prefix -> {
-            if (startedFor == generation) {
-                guildPrefix = prefix;
-            }
-            return prefix;
-        });
+        return WynncraftGuildClient.getInstance().resolveGuildPrefix(username);
     }
 
     /** Best effort, and off the refresh's critical path: a missing badge beats a panel that fails. */
     private void requestSequoiaConnectedUsers() {
-        if (!ConnectionManager.isConnected()) {
-            sequoiaConnected.clear();
-            return;
-        }
+        long requestedFor = generation;
         try {
-            ConnectionManager.getInstance().requestConnectedUsers(this::applyConnectedUsers);
+            askConnectedUsers.accept(usernames -> gameThread.execute(() -> {
+                if (requestedFor == generation) applyConnectedUsers(usernames);
+            }));
         } catch (RuntimeException e) {
             SeqClient.LOGGER.debug("[GuildPresence] Could not request connected users", e);
         }
+    }
+
+    /** Asks the backend who is connected; the answer comes on the socket's thread, or at once when disconnected. */
+    private static void askBackend(Consumer<List<String>> answer) {
+        if (!ConnectionManager.isConnected()) {
+            answer.accept(List.of());
+            return;
+        }
+        ConnectionManager.getInstance().requestConnectedUsers(answer);
     }
 
     /** Whether this member's client is currently connected to the Sequoia backend. */
@@ -485,31 +520,25 @@ public final class GuildPresenceManager {
         if (username == null || username.isBlank()) {
             return false;
         }
-        return Boolean.TRUE.equals(sequoiaConnected.get(username.trim().toLowerCase(Locale.ROOT)));
+        return sequoiaConnected.contains(username.trim().toLowerCase(Locale.ROOT));
     }
 
     void applyConnectedUsers(Collection<String> usernames) {
-        sequoiaConnected.clear();
         if (usernames == null) {
+            sequoiaConnected = Set.of();
             return;
         }
-        for (String username : usernames) {
-            if (username != null && !username.isBlank()) {
-                sequoiaConnected.put(username.trim().toLowerCase(Locale.ROOT), Boolean.TRUE);
-            }
-        }
+        sequoiaConnected = usernames.stream()
+                .filter(username -> username != null && !username.isBlank())
+                .map(username -> username.trim().toLowerCase(Locale.ROOT))
+                .collect(Collectors.toUnmodifiableSet());
     }
 
-    /** Clears cached state so a fresh session does not show the previous one's roster. */
+    /** Clears cached state so a fresh session does not show the previous one's roster. Game thread only. */
     public void reset() {
         generation++;
-        roster = WynncraftGuildClient.GuildRoster.empty();
-        sequoiaConnected.clear();
-        guildPrefix = null;
-        lastError = null;
-        lastRefreshAtMs = 0L;
-        refreshing = false;
-        readWithoutCatalog = false;
+        roster.reset();
+        sequoiaConnected = Set.of();
     }
 
     // ── Actions ──
@@ -597,8 +626,7 @@ public final class GuildPresenceManager {
     }
 
     private void scheduleDelayed(Runnable runnable, long delayMs) {
-        CompletableFuture.delayedExecutor(delayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .execute(runnable);
+        ClientThread.after(java.time.Duration.ofMillis(delayMs), runnable);
     }
 
     private boolean hasActiveWynnParty() {

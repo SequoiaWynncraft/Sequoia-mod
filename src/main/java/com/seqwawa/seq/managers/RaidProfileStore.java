@@ -9,6 +9,9 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonSerializer;
+import com.seqwawa.seq.client.Background;
+import com.seqwawa.seq.client.ClientThread;
+import com.seqwawa.seq.client.Refreshable;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.model.PremadeParty;
 import com.seqwawa.seq.model.RaidCatalog;
@@ -30,6 +33,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
@@ -84,25 +88,40 @@ public final class RaidProfileStore {
     private final List<String> friends = new CopyOnWriteArrayList<>();
     private final List<PremadeParty> premades = new CopyOnWriteArrayList<>();
 
-    private volatile RaidCatalog catalog = RaidCatalog.empty();
-    /** Keyed by Minecraft UUID, which survives a rename where a username does not. */
-    private volatile Map<String, RaidTeamProfile> profiles = Map.of();
-    /** Lowercase username to UUID, only for lookups that have no roster row. */
-    private volatile Map<String, String> uuidByUsername = Map.of();
+    /**
+     * What the backend publishes: the raid catalog, every member's profile keyed by
+     * Minecraft UUID (which survives a rename where a username does not), the lowercase
+     * name index for lookups that have no roster row, and the response it came from.
+     */
+    private record Published(
+            RaidCatalog catalog,
+            Map<String, RaidTeamProfile> profiles,
+            Map<String, String> uuidByUsername,
+            RaidProfilesResponse source) {
+        static final Published EMPTY = new Published(RaidCatalog.empty(), Map.of(), Map.of(), null);
+    }
+
+    /**
+     * A failed fetch keeps what is loaded. Pushes and saves change it through
+     * {@link Refreshable#mutate}, so a fetch answered before them can't undo them.
+     */
+    private final Refreshable<Published> published;
+    private final Executor gameThread;
+    private final Executor disk;
     private volatile boolean setupDismissed;
     private volatile boolean loaded;
-    private volatile boolean fetching;
-    private volatile boolean refreshQueued;
-    private volatile CompletableFuture<Void> inFlightRefresh = CompletableFuture.completedFuture(null);
+    /** Whether a fetch has worked since the game started. */
+    private volatile boolean fetchedOnce;
     private volatile String lastError;
-    private volatile long lastFetchAtMs;
 
     RaidProfileStore(Path localPath, Path cachePath) {
         this(
                 localPath,
                 cachePath,
                 () -> ApiClient.getInstance().getRaidProfiles(),
-                ApiClient::raidProfilesOnSeparateBackend);
+                ApiClient::raidProfilesOnSeparateBackend,
+                ClientThread.executor(),
+                Background.disk());
     }
 
     /**
@@ -119,10 +138,32 @@ public final class RaidProfileStore {
             Path cachePath,
             Supplier<CompletableFuture<RaidProfilesResponse>> fetch,
             BooleanSupplier separateBackend) {
+        // A test completes its fetches on its own thread, which stands in for the game's.
+        this(localPath, cachePath, fetch, separateBackend, Runnable::run, Runnable::run);
+    }
+
+    RaidProfileStore(
+            Path localPath,
+            Path cachePath,
+            Supplier<CompletableFuture<RaidProfilesResponse>> fetch,
+            BooleanSupplier separateBackend,
+            Executor gameThread,
+            Executor disk) {
         this.localPath = localPath;
         this.cachePath = cachePath;
         this.fetch = fetch;
         this.separateBackend = separateBackend;
+        this.gameThread = gameThread;
+        this.disk = disk;
+        this.published = Refreshable.<Published>builder("raid profiles", this::fetchPublished)
+                .handBack(gameThread)
+                .refreshEveryMs(FETCH_FRESHNESS_MS)
+                // A failure fetched nothing, so the next ask may try again at once.
+                .retryAfterMs(0)
+                .emptyValue(Published.EMPTY)
+                .whenFetched(this::fetched)
+                .whenFailed(this::fetchFailed)
+                .build();
     }
 
     public static synchronized RaidProfileStore getInstance() {
@@ -139,7 +180,8 @@ public final class RaidProfileStore {
      * backend's side: the panel still refreshes on open, on Refresh and after a save.
      */
     private void subscribeToLiveUpdates() {
-        ConnectionManager.onRaidProfileUpdate(this::onLiveUpdate);
+        // Pushes arrive on the socket's thread.
+        ConnectionManager.onRaidProfileUpdate(message -> gameThread.execute(() -> onLiveUpdate(message)));
     }
 
     void onLiveUpdate(ConnectionManager.RaidProfileUpdateMessage message) {
@@ -177,7 +219,7 @@ public final class RaidProfileStore {
 
     /** The meta as the backend publishes it, empty until the first fetch lands. */
     public RaidCatalog catalog() {
-        return catalog;
+        return published.value().catalog();
     }
 
     /** The profile for a roster member, matched on UUID. Prefer this to the by-name lookup. */
@@ -187,7 +229,7 @@ public final class RaidProfileStore {
 
     public RaidTeamProfile profileForUuid(String uuid) {
         String key = RaidProfilesResponse.normalizeUuid(uuid);
-        return key == null ? RaidTeamProfile.empty() : profiles.getOrDefault(key, RaidTeamProfile.empty());
+        return key == null ? RaidTeamProfile.empty() : published.value().profiles().getOrDefault(key, RaidTeamProfile.empty());
     }
 
     /**
@@ -199,8 +241,9 @@ public final class RaidProfileStore {
         if (key == null) {
             return RaidTeamProfile.empty();
         }
-        String uuid = uuidByUsername.get(key);
-        return uuid == null ? RaidTeamProfile.empty() : profiles.getOrDefault(uuid, RaidTeamProfile.empty());
+        Published current = published.value();
+        String uuid = current.uuidByUsername().get(key);
+        return uuid == null ? RaidTeamProfile.empty() : current.profiles().getOrDefault(uuid, RaidTeamProfile.empty());
     }
 
     /** Your own profile, read back from the backend like everyone else's. */
@@ -212,145 +255,161 @@ public final class RaidProfileStore {
     /** How many members other than you have shared a profile. */
     int sharedProfileCount() {
         String self = RaidProfilesResponse.normalizeUuid(localUuid());
-        return (int) profiles.entrySet().stream()
+        return (int) published.value().profiles().entrySet().stream()
                 .filter(entry -> entry.getValue().isComplete())
                 .filter(entry -> self == null || !entry.getKey().equals(self))
                 .count();
     }
 
     public boolean hasLoadedProfiles() {
-        return lastFetchAtMs > 0L || !profiles.isEmpty();
+        return fetchedOnce || !published.value().profiles().isEmpty();
     }
 
     public boolean isFetching() {
-        return fetching;
+        return published.isLoading();
     }
 
     public String lastError() {
         return lastError;
     }
 
-    /** Fetches only when the loaded copy is old enough to be worth replacing. */
+    /** Fetches only when the loaded copy is old enough to be worth replacing. Game thread only. */
     public CompletableFuture<Void> refreshIfStale() {
-        if (lastFetchAtMs > 0L && System.currentTimeMillis() - lastFetchAtMs < FETCH_FRESHNESS_MS) {
-            return CompletableFuture.completedFuture(null);
-        }
-        return refresh();
+        published.request();
+        return settled();
     }
 
     /**
      * Fetches the catalog and every profile, then caches the response. A failure keeps
-     * whatever was already loaded rather than emptying the panel.
+     * whatever was already loaded rather than emptying the panel. With a fetch already
+     * running, waits for that one: a push or save since it began is made again to its
+     * answer, so it can't win with older data. Game thread only; completes there.
      */
-    public synchronized CompletableFuture<Void> refresh() {
-        if (fetching) {
-            // A fetch in flight may predate a save and would overwrite it, so run once
-            // more after it lands.
-            refreshQueued = true;
-            return inFlightRefresh;
-        }
-        fetching = true;
-        refreshQueued = false;
-        CompletableFuture<RaidProfilesResponse> request;
-        try {
-            request = fetch.get();
-        } catch (RuntimeException e) {
-            // Thrown before any future existed, so nothing would ever clear the flag
-            // and every later refresh would wait on a fetch that is not running.
-            request = CompletableFuture.failedFuture(e);
-        }
-        CompletableFuture<Void> attempt = request
-                .thenAccept(response -> {
-                    if (response == null) {
-                        return;
-                    }
-                    apply(response);
-                    writeCache(response);
-                    lastError = null;
-                    lastFetchAtMs = System.currentTimeMillis();
-                    SeqClient.LOGGER.info(
-                            "[RaidProfiles] Loaded {} builds, {} raids, {} profiles",
-                            catalog.builds().size(),
-                            catalog.raids().size(),
-                            profiles.size());
-                })
-                .exceptionally(throwable -> {
-                    lastError = RaidProfileApiError.describe(throwable, "Could not load the guild's raid profiles.");
-                    SeqClient.LOGGER.warn(
-                            "[RaidProfiles] GET {}/raid-profiles failed: {} | shown: {}",
-                            BuildConfig.RAID_PROFILES_API_URL,
-                            RaidProfileApiError.describeForLog(throwable),
-                            lastError);
-                    return null;
-                })
-                .whenComplete((ignored, throwable) -> onRefreshFinished());
-        inFlightRefresh = attempt;
-        return attempt;
+    public CompletableFuture<Void> refresh() {
+        published.force();
+        return settled();
     }
 
-    private void onRefreshFinished() {
-        boolean again;
-        synchronized (this) {
-            fetching = false;
-            again = refreshQueued;
-            refreshQueued = false;
-        }
-        if (again) {
-            refresh();
-        }
+    private CompletableFuture<Void> settled() {
+        return published.settled().thenApply(state -> null);
     }
 
-    void apply(RaidProfilesResponse response) {
+    /** Reads the backend's answer into what the store shows, keeping the last catalog when it sends none. */
+    private CompletableFuture<Published> fetchPublished() {
+        return fetch.get().thenApply(response -> {
+            if (response == null) {
+                throw new IllegalStateException("The backend sent no raid profiles.");
+            }
+            return publish(response);
+        });
+    }
+
+    private Published publish(RaidProfilesResponse response) {
         RaidCatalog fetched = response.toCatalog();
         // A response with no catalog keeps the last one that worked, rather than
         // blanking every build chip.
-        catalog = fetched.isEmpty() ? catalog : fetched;
-        profiles = response.toDomain(catalog);
-        uuidByUsername = response.uuidByUsername();
+        RaidCatalog catalog = fetched.isEmpty() ? published.value().catalog() : fetched;
+        return new Published(catalog, response.toDomain(catalog), response.uuidByUsername(), response);
+    }
+
+    private void fetched(Published fetched) {
+        fetchedOnce = true;
+        lastError = null;
+        if (fetched.source() != null) {
+            disk.execute(() -> writeCache(fetched.source()));
+        }
+        SeqClient.LOGGER.info(
+                "[RaidProfiles] Loaded {} builds, {} raids, {} profiles",
+                fetched.catalog().builds().size(),
+                fetched.catalog().raids().size(),
+                fetched.profiles().size());
+    }
+
+    private void fetchFailed(Throwable failure) {
+        lastError = RaidProfileApiError.describe(failure, "Could not load the guild's raid profiles.");
+        SeqClient.LOGGER.warn(
+                "[RaidProfiles] GET {}/raid-profiles failed: {} | shown: {}",
+                BuildConfig.RAID_PROFILES_API_URL,
+                RaidProfileApiError.describeForLog(failure),
+                lastError);
+    }
+
+    /** Shows a whole response, as a fetch would. */
+    void apply(RaidProfilesResponse response) {
+        published.mutate(current -> publish(response));
     }
 
     /**
      * Applies one member's profile from a {@code raid_profile_update} push. Only for
      * the {@code updated} action: a removal carries nulls, which would store as empty.
+     * Game thread only.
      */
     public void applyProfileUpdate(RaidProfilesResponse.Profile profile) {
         String uuid = RaidProfilesResponse.identityKey(profile);
         if (uuid == null) {
             return;
         }
+        published.mutate(current -> withProfile(current, uuid, profile));
+        SeqClient.LOGGER.debug("[RaidProfiles] Applied live update for {}", profile.minecraft().username());
+    }
+
+    private static Published withProfile(Published current, String uuid, RaidProfilesResponse.Profile profile) {
         RaidProfilesResponse wrapper = new RaidProfilesResponse(
                 RaidProfilesResponse.CURRENT_SCHEMA_VERSION, null, List.of(profile));
-        RaidTeamProfile updated = wrapper.toDomain(catalog).get(uuid);
+        RaidTeamProfile updated = wrapper.toDomain(current.catalog()).get(uuid);
         if (updated == null) {
-            return;
+            return current;
         }
-
-        Map<String, RaidTeamProfile> merged = new LinkedHashMap<>(profiles);
+        Map<String, RaidTeamProfile> merged = new LinkedHashMap<>(current.profiles());
         merged.put(uuid, updated);
-        profiles = Map.copyOf(merged);
-
+        RaidProfilesResponse source = current.source() == null ? null : sourceWithout(current.source(), uuid, profile);
+        Map<String, String> names = current.uuidByUsername();
         String username = profile.minecraft().username();
         if (username != null && !username.isBlank()) {
-            Map<String, String> names = new LinkedHashMap<>(uuidByUsername);
-            names.put(username.trim().toLowerCase(Locale.ROOT), uuid);
-            uuidByUsername = Map.copyOf(names);
+            Map<String, String> renamed = new LinkedHashMap<>(names);
+            renamed.put(username.trim().toLowerCase(Locale.ROOT), uuid);
+            names = Map.copyOf(renamed);
         }
-        SeqClient.LOGGER.debug("[RaidProfiles] Applied live update for {}", username);
+        return new Published(current.catalog(), Map.copyOf(merged), names, source);
+    }
+
+    /**
+     * The fetched payload with {@code uuid}'s profile replaced by {@code replacement}, or
+     * removed when that is null, so the cache written from it matches what is shown.
+     */
+    private static RaidProfilesResponse sourceWithout(
+            RaidProfilesResponse source, String uuid, RaidProfilesResponse.Profile replacement) {
+        List<RaidProfilesResponse.Profile> profiles = new ArrayList<>();
+        if (source.profiles() != null) {
+            for (RaidProfilesResponse.Profile profile : source.profiles()) {
+                if (!uuid.equals(RaidProfilesResponse.identityKey(profile))) {
+                    profiles.add(profile);
+                }
+            }
+        }
+        if (replacement != null) {
+            profiles.add(replacement);
+        }
+        return new RaidProfilesResponse(source.schemaVersion(), source.catalog(), List.copyOf(profiles));
     }
 
     /** Drops one member's profile, matched on UUID so a rename cannot orphan it. */
     public void removeProfile(String uuid) {
         String key = RaidProfilesResponse.normalizeUuid(uuid);
-        if (key == null || !profiles.containsKey(key)) {
+        if (key == null) {
             return;
         }
-        Map<String, RaidTeamProfile> merged = new LinkedHashMap<>(profiles);
-        merged.remove(key);
-        profiles = Map.copyOf(merged);
-
-        Map<String, String> names = new LinkedHashMap<>(uuidByUsername);
-        names.values().removeIf(key::equals);
-        uuidByUsername = Map.copyOf(names);
+        published.mutate(current -> {
+            if (!current.profiles().containsKey(key)) {
+                return current;
+            }
+            Map<String, RaidTeamProfile> merged = new LinkedHashMap<>(current.profiles());
+            merged.remove(key);
+            Map<String, String> names = new LinkedHashMap<>(current.uuidByUsername());
+            names.values().removeIf(key::equals);
+            RaidProfilesResponse source = current.source() == null ? null : sourceWithout(current.source(), key, null);
+            return new Published(current.catalog(), Map.copyOf(merged), Map.copyOf(names), source);
+        });
     }
 
     /**
@@ -359,9 +418,10 @@ public final class RaidProfileStore {
      */
     public CompletableFuture<Boolean> saveSelfProfile(RaidTeamProfile profile) {
         RaidTeamProfile toSave = profile == null ? RaidTeamProfile.empty() : profile;
+        // The answer is handled on the game thread, where the store's state lives.
         return ApiClient.getInstance()
                 .putMyRaidProfile(toSave)
-                .thenApply(saved -> {
+                .thenApplyAsync(saved -> {
                     setupDismissed = false;
                     persist();
                     // The response is authoritative, including a username that may be a
@@ -372,8 +432,8 @@ public final class RaidProfileStore {
                     refresh();
                     lastError = null;
                     return true;
-                })
-                .exceptionally(throwable -> {
+                }, gameThread)
+                .exceptionallyAsync(throwable -> {
                     lastError = RaidProfileApiError.describe(throwable, "Could not save your profile.");
                     SeqClient.LOGGER.warn(
                             "[RaidProfiles] PUT {}/raid-profiles/me failed: {} | shown: {}",
@@ -381,7 +441,7 @@ public final class RaidProfileStore {
                             RaidProfileApiError.describeForLog(throwable),
                             lastError);
                     return false;
-                });
+                }, gameThread);
     }
 
     // ── Setup gating ──
@@ -517,9 +577,8 @@ public final class RaidProfileStore {
             RaidProfilesResponse cached = parseProfilesResponse(
                             Files.readString(cachePath, StandardCharsets.UTF_8))
                     .orElse(null);
-            if (cached != null) {
-                apply(cached);
-                SeqClient.LOGGER.info("[RaidProfiles] Loaded {} profiles from cache", profiles.size());
+            if (cached != null && published.seed(publish(cached))) {
+                SeqClient.LOGGER.info("[RaidProfiles] Loaded {} profiles from cache", published.value().profiles().size());
             }
         } catch (IOException | RuntimeException e) {
             SeqClient.LOGGER.warn("[RaidProfiles] Could not read cache {}: {}", cachePath, e.toString());

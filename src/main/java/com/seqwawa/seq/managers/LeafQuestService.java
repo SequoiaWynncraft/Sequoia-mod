@@ -1,6 +1,10 @@
 package com.seqwawa.seq.managers;
 
+import com.seqwawa.seq.client.ClientThread;
+import com.seqwawa.seq.client.Clocks;
+import com.seqwawa.seq.client.Refreshable;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.client.TickQueue;
 import com.seqwawa.seq.model.LeafAccount;
 import com.seqwawa.seq.model.LeafEvents;
 import com.seqwawa.seq.model.LeafQuests;
@@ -12,6 +16,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
@@ -73,40 +78,52 @@ public final class LeafQuestService {
      */
     record Read(long session, BooleanSupplier wanted) {}
 
-    private final Function<Read, CompletableFuture<Snapshot>> fetcher;
-    private final LongSupplier clock;
-    private final Duration readDeadline;
+    private final Executor gameThread;
     /** The auth service's current session, as {@link MinecraftAuthService#sessionGeneration()} counts them. */
     private final LongSupplier authSession;
+    /**
+     * Keeps what the board shows when a refresh fails, and forgets it when there is no
+     * session to read with or the player is not a member. A read that takes longer
+     * than the deadline fails, so a reply that stalls after its headers can't keep the
+     * board loading for good.
+     */
+    private final Refreshable<Snapshot> reads;
     /**
      * The session what this shows belongs to: the one current when it started or
      * was last reset. Clearing a session moves the auth service on first and resets
      * this after, so a read started in between still belongs to the old session,
      * and the auth service will not sign it in.
      */
-    private volatile long session;
-
-    private volatile Snapshot snapshot = Snapshot.EMPTY;
-    private volatile State state = State.LOADING;
-    private volatile boolean loading;
-    private volatile boolean refreshFailed;
-    private volatile long lastAttemptAtMs;
-    private volatile int generation;
-    private volatile boolean preview;
+    private long session;
+    /** Fixed sample data the development preview shows instead of reading Leaf, or null. */
+    private Snapshot preview;
 
     LeafQuestService(Function<Read, CompletableFuture<Snapshot>> fetcher, LongSupplier clock, Duration readDeadline,
-            LongSupplier authSession) {
-        this.fetcher = fetcher;
-        this.clock = clock;
-        this.readDeadline = readDeadline;
+            LongSupplier authSession, TickQueue gameThread) {
+        this.gameThread = gameThread;
         this.authSession = authSession;
         this.session = authSession.getAsLong();
+        this.reads = Refreshable.<Snapshot>builderWithTicket("Leaf quests",
+                        ticket -> fetcher.apply(new Read(session, ticket::current)))
+                .clock(clock)
+                .handBack(gameThread)
+                .refreshEveryMs(REFRESH_INTERVAL_MS)
+                .deadlineMs(readDeadline.toMillis())
+                .emptyValue(Snapshot.EMPTY)
+                .clearOnFailure(failure -> signedOut(failure) || ApiClient.isNotLeafMember(failure))
+                .whenFailed(failure -> {
+                    if (!signedOut(failure) && !ApiClient.isNotLeafMember(failure)) {
+                        SeqClient.LOGGER.warn("[Quests] Could not read quests from Leaf", failure);
+                    }
+                })
+                .build();
     }
 
     public static synchronized LeafQuestService getInstance() {
         if (instance == null) {
-            instance = new LeafQuestService(LeafQuestService::fetch, System::currentTimeMillis, READ_DEADLINE,
-                    () -> SeqClient.getAuthService() == null ? 0 : SeqClient.getAuthService().sessionGeneration());
+            instance = new LeafQuestService(LeafQuestService::fetch, Clocks::monotonicMillis, READ_DEADLINE,
+                    () -> SeqClient.getAuthService() == null ? 0 : SeqClient.getAuthService().sessionGeneration(),
+                    ClientThread.queue());
         }
         return instance;
     }
@@ -155,100 +172,53 @@ public final class LeafQuestService {
     }
 
     public Snapshot snapshot() {
-        return snapshot;
+        Snapshot shown = preview;
+        return shown != null ? shown : reads.value();
     }
 
     public State state() {
-        return state;
+        if (preview != null) return State.READY;
+        Refreshable.State<Snapshot> current = reads.state();
+        if (current.hasValue()) return State.READY;
+        if (current.loading() || current.failure() == null) return State.LOADING;
+        if (signedOut(current.failure())) return State.SIGNED_OUT;
+        if (ApiClient.isNotLeafMember(current.failure())) return State.NOT_MEMBER;
+        return State.UNAVAILABLE;
     }
 
     /** Whether the last read failed while the board still shows what an earlier one found. */
     public boolean refreshFailed() {
-        return refreshFailed;
+        Refreshable.State<Snapshot> current = reads.state();
+        return preview == null && current.hasValue() && current.failure() != null;
     }
 
-    /** Forgets everything, for a different account. */
-    public synchronized void reset() {
-        generation++;
+    /** Forgets everything, for a different account. Game thread only. */
+    public void reset() {
         session = authSession.getAsLong();
-        loading = false;
-        refreshFailed = false;
-        lastAttemptAtMs = 0;
-        preview = false;
-        snapshot = Snapshot.EMPTY;
-        state = State.LOADING;
+        preview = null;
+        reads.reset();
     }
 
-    /** Makes the next {@link #requestRefresh()} read at once: Leaf just reported a change. */
+    /**
+     * Makes the next {@link #requestRefresh()} read at once: Leaf just reported a change.
+     * Any thread may call it; it takes effect on the game thread.
+     */
     public void markStale() {
-        lastAttemptAtMs = 0;
+        gameThread.execute(reads::markStale);
     }
 
     /** Shows fixed sample data and never reads Leaf. Only for the development preview. */
-    public synchronized void showPreview(Snapshot sample) {
-        generation++;
-        preview = true;
-        loading = false;
-        refreshFailed = false;
-        snapshot = sample;
-        state = State.READY;
+    public void showPreview(Snapshot sample) {
+        reads.cancel();
+        preview = sample;
     }
 
     /**
      * Reads unless a read is running or the last attempt was under a minute ago. The
      * first read after starting, {@link #reset()} or {@link #markStale()} always goes ahead.
+     * Game thread only.
      */
-    public synchronized boolean requestRefresh() {
-        long now = clock.getAsLong();
-        if (loading || preview || lastAttemptAtMs != 0 && now - lastAttemptAtMs < REFRESH_INTERVAL_MS) {
-            return false;
-        }
-        loading = true;
-        lastAttemptAtMs = now;
-        if (state != State.READY) {
-            state = State.LOADING;
-        }
-        int startedFor = generation;
-        try {
-            fetcher.apply(new Read(session, () -> startedFor == generation))
-                    .copy()
-                    .orTimeout(readDeadline.toMillis(), TimeUnit.MILLISECONDS)
-                    .whenComplete((fetched, failure) -> accept(startedFor, fetched, failure));
-        } catch (RuntimeException failure) {
-            accept(startedFor, null, failure);
-        }
-        return true;
-    }
-
-    private synchronized void accept(int startedFor, Snapshot fetched, Throwable failure) {
-        if (startedFor != generation) {
-            return;
-        }
-        loading = false;
-        if (fetched != null) {
-            snapshot = fetched;
-            state = State.READY;
-            refreshFailed = false;
-            return;
-        }
-        if (signedOut(failure)) {
-            snapshot = Snapshot.EMPTY;
-            state = State.SIGNED_OUT;
-            refreshFailed = false;
-            return;
-        }
-        if (ApiClient.isNotLeafMember(failure)) {
-            snapshot = Snapshot.EMPTY;
-            state = State.NOT_MEMBER;
-            refreshFailed = false;
-            return;
-        }
-        // A failed refresh keeps what the board already shows, and says it may be out of date.
-        if (state == State.READY) {
-            refreshFailed = true;
-        } else {
-            state = State.UNAVAILABLE;
-        }
-        SeqClient.LOGGER.warn("[Quests] Could not read quests from Leaf", failure);
+    public boolean requestRefresh() {
+        return preview == null && reads.request();
     }
 }

@@ -8,6 +8,7 @@ import lombok.Getter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.User;
 import net.minecraft.server.Services;
+import com.seqwawa.seq.client.ClientThread;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.GuildRaidProgressService;
 import com.seqwawa.seq.managers.LeafQuestService;
@@ -357,9 +358,7 @@ public class MinecraftAuthService {
             SeqClient.getConfigManager().clearAuthSession();
             setState(AuthState.IDLE, null);
         }
-        GuildRaidProgressService.getInstance().reset();
-        // The balance and quests belong to the session that just ended.
-        LeafQuestService.getInstance().reset();
+        resetSessionServices();
     }
 
     public void invalidateSession(AuthErrorCode code, String message) {
@@ -369,8 +368,18 @@ public class MinecraftAuthService {
             SeqClient.getConfigManager().clearAuthSession();
             setState(AuthState.FAILED, new AuthException(code, message, true));
         }
-        GuildRaidProgressService.getInstance().reset();
-        LeafQuestService.getInstance().reset();
+        resetSessionServices();
+    }
+
+    /**
+     * The raid progress, balance and quests belong to the session that just ended. They
+     * live on the game thread, and a session can end on the socket's or this service's.
+     */
+    private static void resetSessionServices() {
+        ClientThread.execute(() -> {
+            GuildRaidProgressService.getInstance().reset();
+            LeafQuestService.getInstance().reset();
+        });
     }
 
     public void clearSessionIfNotActiveProfile(UUID activeProfileId) {

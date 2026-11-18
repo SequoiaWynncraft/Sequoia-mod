@@ -1,5 +1,6 @@
 package com.seqwawa.seq.managers;
 
+import com.seqwawa.seq.client.ClientThread;
 import com.seqwawa.seq.model.PrincessRaidStats;
 import com.seqwawa.seq.network.ApiClient;
 import java.time.Clock;
@@ -9,8 +10,14 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 
-/** Keeps the latest Princess raid count and leaderboard snapshot. */
+/**
+ * Keeps the latest Princess raid count and leaderboard snapshot. Its state lives on the
+ * game thread: the backend's answers are handed there before they touch it, and the
+ * futures it returns complete there.
+ */
 public final class PrincessRaidStatsManager {
     private static final int SUPPORTED_SCHEMA_VERSION = 1;
     private static final Duration LOCAL_DUPLICATE_WINDOW = Duration.ofSeconds(10);
@@ -49,6 +56,7 @@ public final class PrincessRaidStatsManager {
 
     private final Gateway gateway;
     private final Clock clock;
+    private final Executor gameThread;
 
     private volatile Snapshot snapshot = Snapshot.idle();
     private long generation;
@@ -58,19 +66,21 @@ public final class PrincessRaidStatsManager {
     private Instant recentRaidAt;
 
     public PrincessRaidStatsManager() {
-        this(new ApiGateway(ApiClient.getInstance()), Clock.systemUTC());
+        this(new ApiGateway(ApiClient.getInstance()), Clock.systemUTC(), ClientThread.executor());
     }
 
-    public PrincessRaidStatsManager(Gateway gateway, Clock clock) {
+    PrincessRaidStatsManager(Gateway gateway, Clock clock, Executor gameThread) {
         this.gateway = Objects.requireNonNull(gateway, "gateway");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.gameThread = Objects.requireNonNull(gameThread, "gameThread");
     }
 
     public Snapshot snapshot() {
         return snapshot;
     }
 
-    public synchronized CompletableFuture<Snapshot> refresh() {
+    /** Reads the leaderboard. Game thread only; the future completes there. */
+    public CompletableFuture<Snapshot> refresh() {
         long requestGeneration = generation;
         long requestId = ++nextRequestId;
         Snapshot current = snapshot;
@@ -81,12 +91,13 @@ public final class PrincessRaidStatsManager {
                 current.ownRank(),
                 current.leaderboard());
         return gateway.leaderboard()
-                .handle((response, error) -> error == null
+                .handleAsync((response, error) -> error == null
                         ? applyRefresh(requestGeneration, requestId, response)
-                        : markUnavailable(requestGeneration, requestId));
+                        : markUnavailable(requestGeneration, requestId), gameThread);
     }
 
-    public synchronized Completion recordCompletion(String raidName) {
+    /** Records a finished raid. Game thread only; the confirmed count completes there. */
+    public Completion recordCompletion(String raidName) {
         if (raidName == null || raidName.isBlank()) {
             throw new IllegalArgumentException("Princess raid name is required.");
         }
@@ -107,16 +118,21 @@ public final class PrincessRaidStatsManager {
         long requestId = ++nextRequestId;
         long displayedCount = snapshot.countKnown() ? snapshot.ownRaidCount() + 1 : 0;
         CompletableFuture<Long> confirmedCount = gateway.record(eventId, normalizedRaidName)
-                .thenApply(response -> acceptRecord(requestGeneration, requestId, response));
-        confirmedCount.whenComplete((count, error) -> {
-            if (error != null) {
-                markUnavailable(requestGeneration, requestId);
-            }
-        });
+                .handleAsync((response, error) -> {
+                    try {
+                        if (error != null) {
+                            throw error instanceof CompletionException wrapped ? wrapped : new CompletionException(error);
+                        }
+                        return acceptRecord(requestGeneration, requestId, response);
+                    } catch (RuntimeException failure) {
+                        markUnavailable(requestGeneration, requestId);
+                        throw failure;
+                    }
+                }, gameThread);
         return new Completion(eventId, displayedCount, confirmedCount);
     }
 
-    public synchronized void reset() {
+    public void reset() {
         generation++;
         recentRaidName = null;
         recentRaidAt = null;
@@ -124,7 +140,7 @@ public final class PrincessRaidStatsManager {
         snapshot = Snapshot.idle();
     }
 
-    private synchronized long acceptRecord(
+    private long acceptRecord(
             long requestGeneration, long requestId, PrincessRaidStats response) {
         if (requestGeneration != generation) {
             throw new IllegalStateException("Minecraft account changed.");
@@ -136,14 +152,14 @@ public final class PrincessRaidStatsManager {
         return updated.ownRaidCount();
     }
 
-    private synchronized Snapshot applyRefresh(
+    private Snapshot applyRefresh(
             long requestGeneration, long requestId, PrincessRaidStats response) {
         return isCompatible(response)
                 ? applyResponse(requestGeneration, requestId, response, false)
                 : markUnavailable(requestGeneration, requestId);
     }
 
-    private synchronized Snapshot applyResponse(
+    private Snapshot applyResponse(
             long requestGeneration, long requestId, PrincessRaidStats response, boolean completionResponse) {
         if (requestGeneration != generation) {
             return snapshot;
@@ -165,7 +181,7 @@ public final class PrincessRaidStatsManager {
         return snapshot;
     }
 
-    private synchronized Snapshot markUnavailable(long requestGeneration, long requestId) {
+    private Snapshot markUnavailable(long requestGeneration, long requestId) {
         if (requestGeneration != generation || requestId < latestAppliedRequestId) {
             return snapshot;
         }

@@ -43,6 +43,16 @@ Anything the mod fetches, keeps, and fetches again uses `Refreshable<T>`, instea
 - **Cached values.** `seed(value)` shows a value kept from an earlier run until a fetch replaces it.
   It never overwrites a fresher one.
 - **Waiting.** `settled()` completes once no fetch is running, for a command that reports how it went.
+- **Local changes.** `mutate(change)` changes the value now, for a change the server confirmed outside a fetch:
+  a pushed profile, a save. A fetch running then may have been answered before it, so the change is made again
+  to that fetch's answer, and an older answer can't undo it.
+- **A lost connection.** `cancel()` drops the running fetch's answer and keeps the value.
+- **Some failures clear.** `clearOnFailure(when)` drops the value only for the failures `when` accepts,
+  such as "signed out" or "not a member", and keeps it for the rest.
+- **Buttons.** `isDue()` says whether a request would fetch now, for a refresh button.
+
+Not everything fits. Princess raid stats order a refresh and a raid record by when each was asked,
+so they keep their own logic, and only hand the backend's answers to the game thread.
 
 Readers on any thread see one consistent `State`: the value, whether there is one, a version that
 changes with it, whether a fetch is running, and the last failure.
