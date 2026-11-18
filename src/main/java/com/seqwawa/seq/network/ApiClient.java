@@ -321,11 +321,26 @@ public class ApiClient {
      * since that backend signs tokens with a different secret and refuses the main one.
      */
     private <T> CompletableFuture<T> withRaidProfilesToken(java.util.function.Function<String, CompletableFuture<T>> call) {
-        if (!raidProfilesOnSeparateBackend()) {
-            return callWithTokenRetry(force -> SeqClient.getAuthService().ensureValidToken(force), call);
+        return callWithTokenRetry(raidProfilesTokens(
+                raidProfilesOnSeparateBackend(),
+                SeqClient.getAuthService(),
+                com.seqwawa.seq.network.auth.RaidProfilesSession::getInstance), call);
+    }
+
+    /**
+     * Where both attempts of a raid-profile call get their token: the session current as the
+     * call starts. A 401 that arrives after an account switch asks that session again, which
+     * refuses, rather than whoever is signed in by then, so a save never lands on the next
+     * account's profile.
+     */
+    static Function<Boolean, CompletableFuture<String>> raidProfilesTokens(boolean separateBackend,
+            MinecraftAuthService auth, Supplier<com.seqwawa.seq.network.auth.RaidProfilesSession> raidProfiles) {
+        if (separateBackend) {
+            com.seqwawa.seq.network.auth.RaidProfilesSession signIn = raidProfiles.get();
+            return signIn::ensureToken;
         }
-        return callWithTokenRetry(
-                force -> com.seqwawa.seq.network.auth.RaidProfilesSession.getInstance().ensureToken(force), call);
+        long session = auth.sessionGeneration();
+        return force -> auth.ensureValidToken(force, session);
     }
 
     /**

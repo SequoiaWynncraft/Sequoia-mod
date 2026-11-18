@@ -119,6 +119,21 @@ public class MinecraftAuthService {
         }
     }
 
+    /**
+     * A token for work the session {@code sessionId} names started, such as a raid-profile save:
+     * as {@link #ensureValidToken(boolean)}, signing in when it has to, but only while that
+     * session's sign-in is current. Once it has ended it fails with {@link NotSignedInException},
+     * so a retry after an account switch never takes the next account's token.
+     */
+    public CompletableFuture<String> ensureValidToken(boolean forceRefresh, long sessionId) {
+        synchronized (this) {
+            if (!isCurrentAuthenticationAttempt(sessionId, current.id())) {
+                return CompletableFuture.failedFuture(new NotSignedInException());
+            }
+            return ensureValidToken(forceRefresh);
+        }
+    }
+
     public CompletableFuture<StoredAuthSession> beginAuthentication() {
         try {
             ensureSecureTransport();

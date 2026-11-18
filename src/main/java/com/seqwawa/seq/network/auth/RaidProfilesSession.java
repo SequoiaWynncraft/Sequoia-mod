@@ -43,8 +43,11 @@ public final class RaidProfilesSession {
     private volatile AuthException lastFailure;
     private volatile Instant lastFailureAt = Instant.EPOCH;
     private volatile boolean linkHintShown;
-    /** Bumped by {@link #clear()}, so a sign-in started for the previous account is dropped. */
-    private volatile long generation;
+    /**
+     * Set by {@link #clear()}: the session this sign-in belonged to has ended. From then on it
+     * refuses, and a sign-in it had running is dropped, since its token speaks for that account.
+     */
+    private volatile boolean ended;
 
     RaidProfilesSession(String apiBaseUrl) {
         this.apiBaseUrl = apiBaseUrl;
@@ -78,9 +81,13 @@ public final class RaidProfilesSession {
     /**
      * A valid token for the raid-profiles backend, signing in when there is none or it
      * is about to expire. {@code force} discards the current one, which is what a 401
-     * from that backend calls for.
+     * from that backend calls for. Once its session has ended it fails with
+     * {@link NotSignedInException} and never signs in again.
      */
     public synchronized CompletableFuture<String> ensureToken(boolean force) {
+        if (ended) {
+            return CompletableFuture.failedFuture(new NotSignedInException());
+        }
         Instant now = Instant.now();
         StoredAuthSession current = session;
         if (!force && current != null && !current.expiresWithin(REFRESH_SKEW, now)) {
@@ -96,13 +103,12 @@ public final class RaidProfilesSession {
             session = null;
         }
 
-        long startedFor = generation;
         CompletableFuture<String> attempt = MinecraftAuthService.getInstance()
                 .authenticateAgainst(apiBaseUrl)
                 .thenApply(signedIn -> {
                     // Checked and stored under the lock clear() takes, so a sign-out can't land in between.
                     synchronized (this) {
-                        if (startedFor != generation) {
+                        if (ended) {
                             // The account changed, or the player signed out, mid sign-in: this token is stale.
                             throw new CompletionException(new AuthException(
                                     AuthErrorCode.NETWORK_FAILURE, "The Minecraft account changed while signing in.", true, null));
@@ -119,7 +125,7 @@ public final class RaidProfilesSession {
                 })
                 .whenComplete((token, throwable) -> {
                     // A failure from before the account changed must not hold the new one back.
-                    if (throwable != null && startedFor == generation) {
+                    if (throwable != null && !ended) {
                         onFailure(throwable);
                     }
                 });
@@ -159,9 +165,9 @@ public final class RaidProfilesSession {
         return lastFailure;
     }
 
-    /** Forgets the token and drops a sign-in in flight, for a session that ended. */
+    /** Forgets the token and drops a sign-in in flight, for a session that ended; it refuses from now on. */
     public synchronized void clear() {
-        generation++;
+        ended = true;
         session = null;
         inFlight = null;
         lastFailure = null;
