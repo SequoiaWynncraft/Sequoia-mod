@@ -95,6 +95,15 @@ jobs:
         with:
           name: guest
           path: native/out/guest
+      # The cache key: the helper's inputs as committed, which read the same on every runner whatever
+      # its line endings, and the guest it embeds. The platform jobs compute it the same way.
+      - name: Digest the helpers' inputs
+        id: inputs
+        shell: bash
+        run: |
+          { git ls-tree -r HEAD -- native/decoder native/sandbox.cpp native/windows-probe.cpp native/build-native.py
+            sha256sum native/out/guest/decoder.wasm | cut -d ' ' -f 1
+          } | sha256sum | cut -d ' ' -f 1 | sed 's/^/digest=/' >> "$GITHUB_OUTPUT"
       - name: Restore the windows-x86_64 helper
         id: windows_x86_64
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -102,7 +111,7 @@ jobs:
           path: |
             native/out/sandbox/windows-x86_64
             native/out/windows-x86_64
-          key: native-v2-windows-x86_64-${{ hashFiles('native/out/guest/decoder.wasm', 'native/decoder/**', 'native/sandbox.cpp', 'native/windows-probe.cpp', 'native/build-native.py') }}
+          key: native-v2-windows-x86_64-${{ steps.inputs.outputs.digest }}
           enableCrossOsArchive: true
       - name: Pass on the windows-x86_64 helper
         if: steps.windows_x86_64.outputs.cache-hit == 'true'
@@ -121,7 +130,7 @@ jobs:
           path: |
             native/out/sandbox/windows-aarch64
             native/out/windows-aarch64
-          key: native-v2-windows-aarch64-${{ hashFiles('native/out/guest/decoder.wasm', 'native/decoder/**', 'native/sandbox.cpp', 'native/windows-probe.cpp', 'native/build-native.py') }}
+          key: native-v2-windows-aarch64-${{ steps.inputs.outputs.digest }}
           enableCrossOsArchive: true
       - name: Pass on the windows-aarch64 helper
         if: steps.windows_aarch64.outputs.cache-hit == 'true'
@@ -140,7 +149,7 @@ jobs:
           path: |
             native/out/sandbox/linux-x86_64
             native/out/linux-x86_64
-          key: native-v2-linux-x86_64-${{ hashFiles('native/out/guest/decoder.wasm', 'native/decoder/**', 'native/sandbox.cpp', 'native/windows-probe.cpp', 'native/build-native.py') }}
+          key: native-v2-linux-x86_64-${{ steps.inputs.outputs.digest }}
           enableCrossOsArchive: true
       - name: Pass on the linux-x86_64 helper
         if: steps.linux_x86_64.outputs.cache-hit == 'true'
@@ -159,7 +168,7 @@ jobs:
           path: |
             native/out/sandbox/linux-aarch64
             native/out/linux-aarch64
-          key: native-v2-linux-aarch64-${{ hashFiles('native/out/guest/decoder.wasm', 'native/decoder/**', 'native/sandbox.cpp', 'native/windows-probe.cpp', 'native/build-native.py') }}
+          key: native-v2-linux-aarch64-${{ steps.inputs.outputs.digest }}
           enableCrossOsArchive: true
       - name: Pass on the linux-aarch64 helper
         if: steps.linux_aarch64.outputs.cache-hit == 'true'
@@ -178,7 +187,7 @@ jobs:
           path: |
             native/out/sandbox/macos-x86_64
             native/out/macos-x86_64
-          key: native-v2-macos-x86_64-${{ hashFiles('native/out/guest/decoder.wasm', 'native/decoder/**', 'native/sandbox.cpp', 'native/windows-probe.cpp', 'native/build-native.py') }}
+          key: native-v2-macos-x86_64-${{ steps.inputs.outputs.digest }}
           enableCrossOsArchive: true
       - name: Pass on the macos-x86_64 helper
         if: steps.macos_x86_64.outputs.cache-hit == 'true'
@@ -197,7 +206,7 @@ jobs:
           path: |
             native/out/sandbox/macos-aarch64
             native/out/macos-aarch64
-          key: native-v2-macos-aarch64-${{ hashFiles('native/out/guest/decoder.wasm', 'native/decoder/**', 'native/sandbox.cpp', 'native/windows-probe.cpp', 'native/build-native.py') }}
+          key: native-v2-macos-aarch64-${{ steps.inputs.outputs.digest }}
           enableCrossOsArchive: true
       - name: Pass on the macos-aarch64 helper
         if: steps.macos_aarch64.outputs.cache-hit == 'true'
@@ -252,6 +261,15 @@ jobs:
         with:
           name: guest
           path: native/out/guest
+      # The cache key: the helper's inputs as committed, which read the same on every runner whatever
+      # its line endings, and the guest it embeds. native-cache computes it the same way.
+      - name: Digest the helper's inputs
+        id: inputs
+        shell: bash
+        run: |
+          { git ls-tree -r HEAD -- native/decoder native/sandbox.cpp native/windows-probe.cpp native/build-native.py
+            sha256sum native/out/guest/decoder.wasm | cut -d ' ' -f 1
+          } | sha256sum | cut -d ' ' -f 1 | sed 's/^/digest=/' >> "$GITHUB_OUTPUT"
       # Saves the helper this job builds, for native-cache to restore on Linux; enableCrossOsArchive
       # makes a Windows runner's cache readable there. The key matches native-cache's.
       - name: Restore a helper built from the same inputs
@@ -262,7 +280,7 @@ jobs:
           path: |
             native/out/sandbox/${{ matrix.platform }}
             native/out/${{ matrix.platform }}
-          key: native-v2-${{ matrix.platform }}-${{ hashFiles('native/out/guest/decoder.wasm', 'native/decoder/**', 'native/sandbox.cpp', 'native/windows-probe.cpp', 'native/build-native.py') }}
+          key: native-v2-${{ matrix.platform }}-${{ steps.inputs.outputs.digest }}
           enableCrossOsArchive: true
       - name: Install the musl linker
         if: runner.os == 'Linux' && steps.cache.outputs.cache-hit != 'true'
