@@ -151,7 +151,7 @@ public final class Refreshable<T> {
             // request() fails a fetch past its deadline, then counts that as a failure.
             long now = clockMs.getAsLong();
             long from = intervalFromFinish ? now : intervalFromMs;
-            return deadlineMs > 0 && now - current.startedAtMs >= deadlineMs && now - from >= retryAfterMs;
+            return deadlineMs > 0 && now - current.startedAtMs >= deadlineMs && (stale || now - from >= retryAfterMs);
         }
         return !attempted || stale || clockMs.getAsLong() - intervalFromMs >= (lastFailed ? retryAfterMs : refreshEveryMs);
     }

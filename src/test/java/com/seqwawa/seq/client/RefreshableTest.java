@@ -356,6 +356,13 @@ class RefreshableTest {
         now.addAndGet(45_000);
         assertFalse(slow.isDue(), "past the deadline, but the retry interval is longer");
         assertFalse(slow.request());
+
+        Refreshable<String> marked = builder().retryAfterMs(60_000).deadlineMs(45_000).build();
+        marked.request();
+        marked.markStale();
+        now.addAndGet(45_000);
+        assertTrue(marked.isDue(), "marked stale while it ran, so no interval applies");
+        assertTrue(marked.request());
     }
 
     @Test
