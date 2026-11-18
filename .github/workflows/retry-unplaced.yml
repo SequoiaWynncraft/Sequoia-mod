@@ -3,7 +3,8 @@ name: Retry jobs no runner took
 # GitHub sometimes finds no hosted runner for a job, most often on macOS Arm, and fails it after about
 # fifteen minutes without running a step: "The job was not acquired by Runner of type hosted even
 # after multiple attempts". That says nothing about the code, so the run's failed jobs are run again,
-# at most twice, instead of the run waiting for someone to notice. A run that also has a job which
+# up to five times, instead of the run waiting for someone to notice. A job no runner takes costs no
+# minutes, and on 18 November 2026 macOS Arm took until the fourth attempt. A run that also has a job which
 # ran and failed is left alone, so a real failure is never retried.
 on:
   # zizmor: ignore[dangerous-triggers] nothing from the run is checked out or executed; this only reads its jobs and asks GitHub to rerun them
@@ -16,7 +17,7 @@ permissions: {}
 jobs:
   retry:
     # A run superseded by a newer push ends "cancelled", not "failure", and is not retried.
-    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt < 3
+    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt < 6
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
