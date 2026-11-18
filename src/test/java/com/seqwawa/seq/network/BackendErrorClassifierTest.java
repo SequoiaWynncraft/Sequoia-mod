@@ -143,6 +143,16 @@ class BackendErrorClassifierTest {
                         error("invalid_request", "Invalid auth request"),
                         Kind.SESSION_AUTH_INVALID),
                 Arguments.of(
+                        "plain 400 without a capability",
+                        new BackendError(null, "invalid_request", 400, null, "Validation failed: missing territory",
+                                null, null),
+                        Kind.VALIDATION),
+                Arguments.of(
+                        "guild invite refused for a capability",
+                        new BackendError(null, "forbidden", 403, "guild_membership_event", "Could not send guild invite",
+                                null, null),
+                        Kind.CAPABILITY_DENIED),
+                Arguments.of(
                         "party finder listing",
                         error("invalid_request", "Invalid party finder listing ID"),
                         Kind.PARTY_FINDER),

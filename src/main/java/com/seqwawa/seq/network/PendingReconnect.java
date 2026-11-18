@@ -20,8 +20,10 @@ final class PendingReconnect {
         cancel();
         ScheduledFuture<?>[] self = new ScheduledFuture<?>[1];
         self[0] = schedule.apply(() -> {
-            started(self);
-            attempt.run();
+            // A wrapper replaced while it waited for the lock is not the pending reconnect any more.
+            if (started(self)) {
+                attempt.run();
+            }
         });
         task = self[0];
     }
@@ -37,10 +39,15 @@ final class PendingReconnect {
         return task != null;
     }
 
-    /** Taking this lock also waits out {@link #replace}, so {@code self} is set by then. */
-    private synchronized void started(ScheduledFuture<?>[] self) {
+    /**
+     * Whether {@code self} is still the pending reconnect, which it then stops being. Taking this
+     * lock also waits out {@link #replace}, so {@code self} is set by then.
+     */
+    private synchronized boolean started(ScheduledFuture<?>[] self) {
         if (task == self[0]) {
             task = null;
+            return true;
         }
+        return false;
     }
 }

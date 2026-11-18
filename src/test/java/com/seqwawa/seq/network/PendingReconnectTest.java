@@ -88,4 +88,22 @@ class PendingReconnectTest {
         assertFalse(ConnectionManager.scheduledReconnectStillNeeded(true, false));
         assertFalse(ConnectionManager.scheduledReconnectStillNeeded(false, true));
     }
+
+    @Test
+    void aReconnectReplacedWhileItWaitedDoesNotRun() {
+        PendingReconnect pending = new PendingReconnect();
+        AtomicInteger first = new AtomicInteger();
+        AtomicInteger second = new AtomicInteger();
+        pending.replace(scheduler, first::incrementAndGet);
+        pending.replace(scheduler, second::incrementAndGet);
+
+        // The first wrapper had already started when it was replaced, so cancelling it could not stop it.
+        scheduled.get(0).run();
+
+        assertEquals(0, first.get());
+        assertTrue(pending.isWaiting(), "the replacement is still the pending reconnect");
+        scheduled.get(1).run();
+        assertEquals(1, second.get());
+        assertFalse(pending.isWaiting());
+    }
 }

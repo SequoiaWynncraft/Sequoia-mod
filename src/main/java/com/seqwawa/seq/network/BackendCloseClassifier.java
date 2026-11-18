@@ -31,8 +31,9 @@ final class BackendCloseClassifier {
 
     static final int POLICY_VIOLATION = 1008;
 
-    /** Java-WebSocket's reason for a handshake answered with anything but 101. */
-    private static final Pattern REFUSED_HANDSHAKE = Pattern.compile("invalid status code received: (\\d{3})");
+    /** Java-WebSocket's close code and reason for a handshake answered with anything but 101. */
+    static final int HANDSHAKE_FAILED = 1002;
+    private static final Pattern REFUSED_HANDSHAKE = Pattern.compile("^invalid status code received: (\\d{3})\\b");
 
     private BackendCloseClassifier() {}
 
@@ -42,7 +43,8 @@ final class BackendCloseClassifier {
         }
         String normalized = reason == null ? "" : reason.trim().toLowerCase(Locale.ROOT);
         Matcher refused = REFUSED_HANDSHAKE.matcher(normalized);
-        if (refused.find()) {
+        // Only the handshake failure itself: a later close whose reason quotes the same words is not one.
+        if (code == HANDSHAKE_FAILED && refused.find()) {
             return switch (refused.group(1)) {
                 case "401" -> Kind.AUTH_REJECTED;
                 case "403" -> Kind.HANDSHAKE_FORBIDDEN;

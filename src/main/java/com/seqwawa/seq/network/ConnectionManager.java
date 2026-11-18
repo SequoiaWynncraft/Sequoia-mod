@@ -138,6 +138,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private static boolean autoConnectSuppressedByManualDisconnect;
     /** Set when the backend refuses us in a way no retry fixes (version, ban); an explicit connect clears it. */
     private static volatile boolean autoConnectPausedByBackend;
+    /**
+     * Sign-in rejections since the backend last accepted a session. A new socket resets the
+     * retry budget, so without this a backend that keeps refusing would be retried forever.
+     */
+    private static volatile int consecutiveAuthRejections;
+    static final int MAX_CONSECUTIVE_AUTH_REJECTIONS = 3;
     /** The close this client sends to drop a socket the backend stopped accepting as signed in; it reconnects. */
     private static final int CLOSE_TO_REAUTHENTICATE = 4001;
     /** Set before this client closes its own socket, so onClose does not take the echo for the backend's close. */
@@ -217,6 +223,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             autoConnectSuppressedByManualDisconnect = false;
             // Asking to connect ends the player's own sign-out and any pause the backend caused.
             autoConnectPausedByBackend = false;
+            consecutiveAuthRejections = 0;
             MinecraftAuthService auth = SeqClient.getAuthService();
             if (auth != null) {
                 auth.allowSignIn();
@@ -618,6 +625,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         reconnectAttempt = 0;
         autoConnectSuppressedByManualDisconnect = false;
         autoConnectPausedByBackend = false;
+        consecutiveAuthRejections = 0;
         cancelReconnect();
         instance = null;
     }
@@ -951,6 +959,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                 "Backend rejected websocket authentication. Re-authenticating.");
                 notifyConnectionFailure(SeqClient.getAuthService().getLastError().getMessage(), false);
                 registerAuthFailure();
+                recordAuthRejection();
             }
             // The backend explains in an error just before it closes; say it here only if that went unshown.
             case VERSION_UNSUPPORTED -> pauseAutoConnect(versionRejectionShown
@@ -965,6 +974,22 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             case TREASURY_AUTH_FAILED -> autoReconnect = false;
             case CLIENT_INITIATED, OTHER -> {}
         }
+    }
+
+    /**
+     * Counts a sign-in rejection. After {@link #MAX_CONSECUTIVE_AUTH_REJECTIONS} in a row, with no
+     * session accepted in between, the backend is taken to mean it, and reconnecting stops until
+     * the player connects.
+     */
+    private void recordAuthRejection() {
+        consecutiveAuthRejections++;
+        if (shouldStopAfterAuthRejections(consecutiveAuthRejections)) {
+            pauseAutoConnect("Sequoia keeps rejecting this session. Run /seq connect to try again.");
+        }
+    }
+
+    static boolean shouldStopAfterAuthRejections(int consecutiveRejections) {
+        return consecutiveRejections >= MAX_CONSECUTIVE_AUTH_REJECTIONS;
     }
 
     /** A refusal no retry can fix: stop reconnecting, and connecting automatically, until the player connects. */
@@ -1779,6 +1804,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         UnlinkedAccountWarning.getInstance().reset();
         // A refusal (such as a ban) was about the previous account.
         autoConnectPausedByBackend = false;
+        consecutiveAuthRejections = 0;
         ConnectionManager current = instance;
         if (current == null) {
             return;
@@ -1996,6 +2022,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         return;
                     }
                     authenticated = true;
+                    consecutiveAuthRejections = 0;
                     guildRankTrackingSupported = json.has("guild_rank_tracking_supported")
                             && json.get("guild_rank_tracking_supported").isJsonPrimitive()
                             && json.get("guild_rank_tracking_supported").getAsBoolean();
@@ -2299,6 +2326,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                             authenticated = false;
                             registerAuthFailure();
                             notify("Invalid auth request. Run /seq connect to start a fresh backend session.");
+                            recordAuthRejection();
                             closeToReauthenticate();
                         }
                         case TOKEN_INVALID, TOKEN_EXPIRED -> {
@@ -2313,6 +2341,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                                     ? "Backend token expired. Re-authentication required."
                                                     : "Backend rejected the stored token. Re-authentication required.");
                             notify(SeqClient.getAuthService().getLastError().getMessage());
+                            recordAuthRejection();
                             closeToReauthenticate();
                         }
                         case PARTY_FINDER -> SeqClient.getPartyFinderManager().pushUiError(error);
@@ -2489,6 +2518,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         if (partyFinder != null) {
             partyFinder.reset();
         }
+        // Raid profiles sign in to their own backend: drop that token too, and any sign-in in flight.
+        com.seqwawa.seq.network.auth.RaidProfilesSession.getInstance().clear();
     }
 
     private boolean canAttemptAuthNow() {
@@ -2802,7 +2833,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         if (count != 1 && (interval == Integer.MAX_VALUE || count % interval != 0)) {
             return;
         }
-        versionRejectionShown = true;
+        // Only a connection-wide notice explains a version close; a warning about one feature doesn't.
+        if (capability == null || capability.isBlank()) {
+            versionRejectionShown = true;
+        }
 
         if (count == 1) {
             if (backendMessage != null && !backendMessage.isBlank() && !"Unknown backend error".equals(backendMessage)) {

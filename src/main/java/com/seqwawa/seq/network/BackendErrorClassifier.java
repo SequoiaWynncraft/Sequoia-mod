@@ -77,11 +77,12 @@ final class BackendErrorClassifier {
         if ("token_invalid".equalsIgnoreCase(code) || error.status() == 401) {
             return Kind.TOKEN_INVALID;
         }
-        if (isPartyFinderError(error, message)) {
-            return Kind.PARTY_FINDER;
-        }
+        // The backend's capability names the feature: a guild invite error is not a party finder one.
         if (isCapabilityAuthorizationReject(error.status(), capability)) {
             return Kind.CAPABILITY_DENIED;
+        }
+        if (isPartyFinderError(error, message)) {
+            return Kind.PARTY_FINDER;
         }
         // Only the backend's own verdict, never a message that merely mentions a guild.
         if (isBlank(capability) && ("not_in_guild".equalsIgnoreCase(code) || error.status() == 403)) {
@@ -113,12 +114,15 @@ final class BackendErrorClassifier {
                 && normalizedMessage.contains("member");
     }
 
+    /**
+     * The legacy "invalid auth request" answer. A bare 400 without it is an ordinary validation
+     * error: this backend sends 400 only for rejected live-war payloads, and those name a capability.
+     */
     static boolean isSessionAuthenticationError(int status, String capability, String normalizedMessage) {
         if (!isBlank(capability)) {
             return false;
         }
-        return status == 400
-                || (normalizedMessage != null && normalizedMessage.contains("invalid auth request"));
+        return normalizedMessage != null && normalizedMessage.contains("invalid auth request");
     }
 
     static boolean isCapabilityAuthorizationReject(int status, String capability) {

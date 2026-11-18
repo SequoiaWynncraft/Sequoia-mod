@@ -458,7 +458,8 @@ class ConnectionManagerTest {
         assertFalse(BackendErrorClassifier.isSessionAuthenticationError(
                 400, "war_tower_update", "invalid war tower update payload"));
 
-        assertTrue(BackendErrorClassifier.isSessionAuthenticationError(400, null, "invalid message format"));
+        // A bare 400 is an ordinary validation error; only the legacy auth answer ends the session.
+        assertFalse(BackendErrorClassifier.isSessionAuthenticationError(400, null, "invalid message format"));
         assertTrue(BackendErrorClassifier.isSessionAuthenticationError(
                 0, null, "invalid auth request"));
     }
@@ -645,5 +646,12 @@ class ConnectionManagerTest {
                 },
                 Style.EMPTY);
         assertEquals(java.util.Set.of(new ClickEvent.RunCommand("/seq _dismiss-unlinked " + account)), clicks);
+    }
+
+    @Test
+    void reconnectingStopsAfterThreeSignInRejectionsInARow() {
+        assertFalse(ConnectionManager.shouldStopAfterAuthRejections(1));
+        assertFalse(ConnectionManager.shouldStopAfterAuthRejections(2));
+        assertTrue(ConnectionManager.shouldStopAfterAuthRejections(ConnectionManager.MAX_CONSECUTIVE_AUTH_REJECTIONS));
     }
 }

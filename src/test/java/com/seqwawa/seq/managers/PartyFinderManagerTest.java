@@ -136,4 +136,31 @@ class PartyFinderManagerTest {
                 List.<ReservedSlot>of(),
                 Instant.EPOCH);
     }
+
+    @Test
+    void aReplyThatArrivesAfterAResetIsDroppedWithoutAWord() {
+        PartyFinderManager manager = new PartyFinderManager();
+        java.util.concurrent.CompletableFuture<Listing> request = new java.util.concurrent.CompletableFuture<>();
+        java.util.concurrent.CompletableFuture<Listing> guarded = manager.sinceReset(request);
+
+        manager.reset();
+        request.complete(listing(7L, "previous-leader", member("previous-leader"), member("previous-account")));
+
+        assertTrue(guarded.isCompletedExceptionally());
+        Throwable failure = guarded.handle((value, error) -> error).join();
+        assertTrue(PartyFinderManager.isSupersededByReset(failure));
+        manager.pushUiError(null);
+        assertNull(manager.consumeLatestPartyError(), "a dropped reply leaves no banner for the next account");
+    }
+
+    @Test
+    void aReplyWithNoResetInBetweenArrivesAsUsual() {
+        PartyFinderManager manager = new PartyFinderManager();
+        java.util.concurrent.CompletableFuture<String> request = new java.util.concurrent.CompletableFuture<>();
+        java.util.concurrent.CompletableFuture<String> guarded = manager.sinceReset(request);
+
+        request.complete("listing");
+
+        assertEquals("listing", guarded.join());
+    }
 }

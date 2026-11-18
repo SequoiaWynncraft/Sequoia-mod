@@ -54,6 +54,8 @@ class BackendCloseClassifierTest {
                         "Invalid status code received: 502 Status line: HTTP/1.1 502 Bad Gateway",
                         Kind.OTHER),
                 // Restarts and dropped networks, including reasons that only mention auth.
+                // A close after the upgrade whose reason quotes the handshake words is not a refused handshake.
+                Arguments.of(1011, "Invalid status code received: 403 from upstream", Kind.OTHER),
                 Arguments.of(1001, "", Kind.OTHER),
                 Arguments.of(1006, "", Kind.OTHER),
                 Arguments.of(-1, "Connection refused", Kind.OTHER),
