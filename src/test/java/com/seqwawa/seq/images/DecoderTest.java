@@ -208,7 +208,7 @@ class DecoderTest {
         assertThrows(IOException.class, () -> MediaFormat.identify(new byte[] {1, 2, 3}));
         assertThrows(IOException.class, () -> MediaFormat.identify(new byte[MediaFormat.MAX_BYTES + 1]));
         var bmp = encode(new BufferedImage(8, 8, BufferedImage.TYPE_INT_RGB), "bmp");
-        assertThrows(IOException.class, () -> ImageDecoder.decode(bmp));
+        assertThrows(IOException.class, () -> MediaFormat.identify(bmp));
     }
 
     @RequiresDecoderPacks

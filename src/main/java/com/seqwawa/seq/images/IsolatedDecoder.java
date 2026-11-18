@@ -411,6 +411,13 @@ final class IsolatedDecoder {
         }
     }
 
+    /** The helpers a platform runs: the decoder, and on Windows the broker that sandboxes it. */
+    static List<String> helpers(String platform) {
+        return platform.startsWith("windows-")
+                ? List.of("seqimages-decoder.exe", "sandbox.exe")
+                : List.of("seqimages-decoder");
+    }
+
     static String platform(String os, String arch) throws IOException {
         String system = os.startsWith("Windows")
                 ? "windows"

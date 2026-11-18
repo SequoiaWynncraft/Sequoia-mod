@@ -223,53 +223,95 @@ class SourceReuseTest(unittest.TestCase):
 
 
 class FetchPacksTest(unittest.TestCase):
-    """native:fetch swaps in a run's packs only once they have downloaded in full."""
+    """native:fetch swaps in a run's packs only once they have downloaded, and touches nothing else."""
 
     def setUp(self):
         self.fetch = load("fetch")
         self.sandbox = Path(self.enterContext(tempfile.TemporaryDirectory())) / "out" / "sandbox"
-        self.sandbox.mkdir(parents=True)
+        (self.sandbox / "linux-x86_64").mkdir(parents=True)
+        (self.sandbox / "linux-x86_64" / "seqimages-decoder").write_bytes(b"built here")
         (self.sandbox / "helpers-x86_64.xz").write_bytes(b"old pack")
+        (self.sandbox / "helpers-aarch64.xz").write_bytes(b"old arm pack")
+        (self.sandbox / "provenance.json").write_bytes(b"old index")
         self.enterContext(redirect_stdout(io.StringIO()))
+        self.calls = []
 
-    def gh(self, files=None, fail=False):
-        calls = []
-
+    def gh(self, files=None, status=0):
         def run(args, **options):
-            calls.append(args)
+            self.calls.append(args)
             if args[1:3] == ["run", "list"]:
-                return subprocess.CompletedProcess(args, 0, json.dumps([{"databaseId": 41}]), "")
-            if fail:
-                raise subprocess.CalledProcessError(1, args)
+                return subprocess.CompletedProcess(args, status, json.dumps([{"databaseId": 41}]), None)
             target = Path(args[args.index("-D") + 1])
             for name, data in (files or {}).items():
                 (target / name).write_bytes(data)
-            return subprocess.CompletedProcess(args, 0, "", "")
-        return run, calls
+            return subprocess.CompletedProcess(args, status)
+        return run
 
-    def test_without_a_run_id_it_takes_mains_newest_green_build(self):
-        run, calls = self.gh()
+    def contents(self):
+        return {str(path.relative_to(self.sandbox)): path.read_bytes()
+                for path in sorted(self.sandbox.rglob("*")) if path.is_file()}
 
-        self.assertEqual("41", self.fetch.latest_main_run(run))
-        self.assertEqual(["gh", "run", "list", "--workflow", "Build", "--branch", "main", "--status", "success",
-                          "--limit", "1", "--json", "databaseId"], calls[0])
+    def leftovers(self):
+        return sorted(path.name for path in self.sandbox.parent.iterdir() if path != self.sandbox)
 
-    def test_a_download_replaces_the_packs_already_there(self):
-        run, _ = self.gh({"helpers-aarch64.xz": b"new", "provenance.json": b"{}"})
+    def test_without_a_run_id_it_takes_the_newest_push_build_of_main(self):
+        self.assertEqual("41", self.fetch.latest_main_run(self.gh()))
+        self.assertEqual(["gh", "run", "list", "--workflow", "Build", "--branch", "main", "--event", "push",
+                          "--status", "success", "--limit", "1", "--json", "databaseId"], self.calls[0])
 
-        self.fetch.fetch("41", self.sandbox, run)
+    def test_a_failed_lookup_leaves_gh_to_explain(self):
+        with self.assertRaises(SystemExit):
+            self.fetch.latest_main_run(self.gh(status=4))
 
-        self.assertEqual(["helpers-aarch64.xz", "provenance.json"], sorted(p.name for p in self.sandbox.iterdir()))
-        self.assertEqual([self.sandbox], [p for p in self.sandbox.parent.iterdir()], "no staging left behind")
+    def test_the_packs_are_replaced_and_everything_else_stays(self):
+        self.fetch.fetch("41", self.sandbox, self.gh({"helpers-x86_64.xz": b"new pack", "provenance.json": b"new"}))
 
-    def test_a_failed_download_leaves_the_old_packs(self):
-        run, _ = self.gh(fail=True)
+        self.assertEqual({"helpers-x86_64.xz": b"new pack", "provenance.json": b"new",
+                          "linux-x86_64/seqimages-decoder": b"built here"}, self.contents(),
+                         "a pack the run did not build goes too, as the new index does not list it")
+        self.assertEqual([], self.leftovers())
 
-        with self.assertRaises(subprocess.CalledProcessError):
-            self.fetch.fetch("41", self.sandbox, run)
+    def test_a_failed_download_changes_nothing(self):
+        before = self.contents()
 
-        self.assertEqual(b"old pack", (self.sandbox / "helpers-x86_64.xz").read_bytes())
-        self.assertEqual([self.sandbox], [p for p in self.sandbox.parent.iterdir()])
+        with self.assertRaises(SystemExit):
+            self.fetch.fetch("41", self.sandbox, self.gh({"helpers-x86_64.xz": b"partial"}, status=1))
+
+        self.assertEqual(before, self.contents())
+        self.assertEqual([], self.leftovers())
+
+    def test_an_artifact_that_is_not_packs_changes_nothing(self):
+        before = self.contents()
+
+        with self.assertRaises(SystemExit):
+            self.fetch.fetch("41", self.sandbox, self.gh({"helpers-x86_64.xz": b"no index"}))
+
+        self.assertEqual(before, self.contents())
+
+    def test_the_old_packs_come_back_when_installing_the_new_ones_fails(self):
+        before = self.contents()
+        rename = Path.rename
+
+        def failing(path, target):
+            if Path(target).name == "provenance.json" and path.parent.name.startswith(".packs-new-"):
+                raise OSError("disk full")
+            return rename(path, target)
+
+        with patch.object(Path, "rename", failing), self.assertRaises(OSError):
+            self.fetch.fetch("41", self.sandbox, self.gh({"helpers-x86_64.xz": b"new", "provenance.json": b"new"}))
+
+        self.assertEqual(before, self.contents())
+        self.assertEqual([], self.leftovers())
+
+    def test_help_and_anything_but_a_run_id_touch_nothing(self):
+        before = self.contents()
+        for argv in (["--help"], ["-h"]):
+            self.fetch.main(argv)
+        with self.assertRaises(SystemExit):
+            self.fetch.fetch("--verbose", self.sandbox, self.gh())
+
+        self.assertEqual([], self.calls)
+        self.assertEqual(before, self.contents())
 
 
 class BrokerChildrenTest(unittest.TestCase):
