@@ -13,7 +13,7 @@ class IngredientGuideScreenTest {
             var layout = IngredientGuideScreen.guideLayout(width, 540);
             var list = layout.list();
             var detail = layout.detail();
-            for (var bounds : new IngredientGuideScreen.Bounds[] {list, detail, layout.category(), layout.refresh(), layout.search(), layout.scope()}) {
+            for (var bounds : new UiBounds[] {list, detail, layout.category(), layout.refresh(), layout.search(), layout.scope()}) {
                 assertTrue(bounds.x() >= SequoiaSidebarNavigation.WIDTH + 8);
                 assertTrue(bounds.x() + bounds.width() <= width - 8);
                 assertTrue(bounds.y() + bounds.height() <= 540 - 8);
@@ -22,7 +22,7 @@ class IngredientGuideScreenTest {
             assertFalse(list.contains(detail.x() + 1, detail.y() + 1));
             assertTrue(detail.contains(detail.x() + 1, detail.y() + 1));
             assertFalse(list.contains(70, 150));
-            var controls = new IngredientGuideScreen.Bounds[] {layout.search(), layout.scope(), layout.category(), layout.refresh()};
+            var controls = new UiBounds[] {layout.search(), layout.scope(), layout.category(), layout.refresh()};
             for (int i = 0; i < controls.length; i++) {
                 var control = controls[i];
                 assertTrue(control.y() + control.height() <= layout.headerHeight());

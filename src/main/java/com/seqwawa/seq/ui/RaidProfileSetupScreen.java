@@ -10,7 +10,6 @@ import com.seqwawa.seq.model.RaidBuild;
 import com.seqwawa.seq.model.RaidCatalog;
 import com.seqwawa.seq.model.RaidTeamProfile;
 import com.seqwawa.seq.model.RaidType;
-import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
 import java.awt.Color;
@@ -68,15 +67,15 @@ public class RaidProfileSetupScreen extends Screen {
     private String error;
     private boolean saving;
 
-    private float uiMouseX;
-    private float uiMouseY;
+    /** Where the pointer was when this frame began. */
+    private UiPointer pointer = UiPointer.ORIGIN;
 
     private final List<BuildHitbox> buildHitboxes = new ArrayList<>();
     private final List<RegionHitbox> regionHitboxes = new ArrayList<>();
-    private Rect aurasBounds;
-    private Rect statusBounds;
-    private Rect saveBounds;
-    private Rect skipBounds;
+    private UiBounds aurasBounds;
+    private UiBounds statusBounds;
+    private UiBounds saveBounds;
+    private UiBounds skipBounds;
 
     public RaidProfileSetupScreen(Screen parent, boolean firstRun) {
         super(Component.literal("Raid profile"));
@@ -124,8 +123,7 @@ public class RaidProfileSetupScreen extends Screen {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        uiMouseX = MinecraftUiRenderer.mouseX(mouseX);
-        uiMouseY = MinecraftUiRenderer.mouseY(mouseY);
+        pointer = UiPointer.at(mouseX, mouseY);
         syncDraftWithStore();
         buildHitboxes.clear();
         regionHitboxes.clear();
@@ -243,9 +241,9 @@ public class RaidProfileSetupScreen extends Screen {
             float cellX = x + column * (columnWidth + BUILD_COLUMN_GAP);
             float cellY = y + row * BUILD_ROW_HEIGHT;
 
-            Rect bounds = new Rect(cellX, cellY, columnWidth, BUILD_ROW_HEIGHT - 4);
+            UiBounds bounds = new UiBounds(cellX, cellY, columnWidth, BUILD_ROW_HEIGHT - 4);
             boolean checked = draft.hasBuild(build.key());
-            boolean hovered = bounds.contains(uiMouseX, uiMouseY);
+            boolean hovered = bounds.contains(pointer.x(), pointer.y());
 
             if (hovered) {
                 canvas.fillRect(
@@ -308,8 +306,8 @@ public class RaidProfileSetupScreen extends Screen {
     }
 
     private float renderAurasToggle(UiCanvas canvas, String fontName, float x, float y, float width) {
-        aurasBounds = new Rect(x, y, width, TOGGLE_ROW_HEIGHT - 4);
-        boolean hovered = aurasBounds.contains(uiMouseX, uiMouseY);
+        aurasBounds = new UiBounds(x, y, width, TOGGLE_ROW_HEIGHT - 4);
+        boolean hovered = aurasBounds.contains(pointer.x(), pointer.y());
         if (hovered) {
             canvas.fillRect(
                     x - 4, y, width + 8, TOGGLE_ROW_HEIGHT - 4, color(CONTROL_INPUT));
@@ -342,9 +340,9 @@ public class RaidProfileSetupScreen extends Screen {
         float cursorX = x + 70;
         float buttonY = y + (TOGGLE_ROW_HEIGHT - 4 - REGION_BUTTON_H) / 2f;
         for (PartyRegion region : PartyRegion.values()) {
-            Rect bounds = new Rect(cursorX, buttonY, REGION_BUTTON_W, REGION_BUTTON_H);
+            UiBounds bounds = new UiBounds(cursorX, buttonY, REGION_BUTTON_W, REGION_BUTTON_H);
             boolean selected = draft.region() == region;
-            boolean hovered = bounds.contains(uiMouseX, uiMouseY);
+            boolean hovered = bounds.contains(pointer.x(), pointer.y());
             canvas.fillRect(
                     bounds.x(),
                     bounds.y(),
@@ -367,7 +365,7 @@ public class RaidProfileSetupScreen extends Screen {
     }
 
     private float renderStatusInput(UiCanvas canvas, String fontName, float x, float y, float width) {
-        statusBounds = new Rect(x, y, width, INPUT_HEIGHT);
+        statusBounds = new UiBounds(x, y, width, INPUT_HEIGHT);
         canvas.fillRect(
                 x, y, width, INPUT_HEIGHT, statusFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
         if (statusFocused) {
@@ -420,8 +418,8 @@ public class RaidProfileSetupScreen extends Screen {
 
         // The 1.10.6 palette, as in the Player List: success for the action that commits,
         // the main accent for the other one.
-        saveBounds = new Rect(x + width - FOOTER_BUTTON_W, y, FOOTER_BUTTON_W, FOOTER_BUTTON_H);
-        boolean saveHovered = saveBounds.contains(uiMouseX, uiMouseY);
+        saveBounds = new UiBounds(x + width - FOOTER_BUTTON_W, y, FOOTER_BUTTON_W, FOOTER_BUTTON_H);
+        boolean saveHovered = saveBounds.contains(pointer.x(), pointer.y());
         canvas.fillRect(
                 saveBounds.x(),
                 saveBounds.y(),
@@ -440,8 +438,8 @@ public class RaidProfileSetupScreen extends Screen {
                 saving ? "Saving" : "Save profile",
                 UiCanvas.HorizontalAlign.CENTER);
 
-        skipBounds = new Rect(saveBounds.x() - skipWidth - 8, y, skipWidth, FOOTER_BUTTON_H);
-        boolean skipHovered = skipBounds.contains(uiMouseX, uiMouseY);
+        skipBounds = new UiBounds(saveBounds.x() - skipWidth - 8, y, skipWidth, FOOTER_BUTTON_H);
+        boolean skipHovered = skipBounds.contains(pointer.x(), pointer.y());
         canvas.fillRect(
                 skipBounds.x(),
                 skipBounds.y(),
@@ -492,8 +490,9 @@ public class RaidProfileSetupScreen extends Screen {
         if (click.button() != 0) {
             return super.mouseClicked(click, outsideScreen);
         }
-        float mx = MinecraftUiRenderer.mouseX(click.x());
-        float my = MinecraftUiRenderer.mouseY(click.y());
+        UiPointer at = UiPointer.at(click);
+        float mx = at.x();
+        float my = at.y();
 
         for (BuildHitbox hitbox : buildHitboxes) {
             if (hitbox.bounds().contains(mx, my)) {
@@ -643,13 +642,7 @@ public class RaidProfileSetupScreen extends Screen {
                         fontName, fontSize, textColor, horizontalAlign, UiCanvas.VerticalAlign.MIDDLE));
     }
 
-    private record Rect(float x, float y, float width, float height) {
-        boolean contains(float pointX, float pointY) {
-            return pointX >= x && pointX <= x + width && pointY >= y && pointY <= y + height;
-        }
-    }
+    private record BuildHitbox(UiBounds bounds, String buildKey) {}
 
-    private record BuildHitbox(Rect bounds, String buildKey) {}
-
-    private record RegionHitbox(Rect bounds, PartyRegion region) {}
+    private record RegionHitbox(UiBounds bounds, PartyRegion region) {}
 }

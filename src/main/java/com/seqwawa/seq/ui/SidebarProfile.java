@@ -78,9 +78,13 @@ public final class SidebarProfile {
         return PixelArt.snap(screenHeight - MARGIN - HEIGHT * P, P);
     }
 
+    /** Where the card is, for a sidebar on a screen {@code screenHeight} tall. */
+    static UiBounds bounds(float screenHeight) {
+        return new UiBounds(INSET, top(screenHeight), WIDTH * P, HEIGHT * P);
+    }
+
     static boolean contains(float mouseX, float mouseY, float screenHeight) {
-        float y = top(screenHeight);
-        return shown(screenHeight) && mouseX >= INSET && mouseX < INSET + WIDTH * P && mouseY >= y && mouseY < y + HEIGHT * P;
+        return shown(screenHeight) && bounds(screenHeight).contains(mouseX, mouseY);
     }
 
     /**

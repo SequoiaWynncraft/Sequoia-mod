@@ -1,5 +1,6 @@
 package com.seqwawa.seq.ui.widget;
 
+import com.seqwawa.seq.ui.UiBounds;
 import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
@@ -184,7 +185,8 @@ public final class SliderWidget extends SettingWidget<Setting<? extends Number>>
         SliderLayout layout = layout();
 
         // Click on text box - enter edit mode
-        if (isHovered(mouseX, mouseY, layout.textBoxX(), layout.textBoxY(), layout.textBoxWidth(), TEXT_BOX_HEIGHT)) {
+        if (new UiBounds(layout.textBoxX(), layout.textBoxY(), layout.textBoxWidth(), TEXT_BOX_HEIGHT)
+                .contains(mouseX, mouseY)) {
             editing = true;
             editBuffer = formatValue(getDoubleValue());
             cursorBlink = 0;
@@ -192,8 +194,8 @@ public final class SliderWidget extends SettingWidget<Setting<? extends Number>>
         }
 
         // Click on slider area
-        if (isHovered(mouseX, mouseY, layout.sliderX() - KNOB_RADIUS, layout.sliderY() - KNOB_RADIUS,
-                layout.sliderWidth() + KNOB_RADIUS * 2, SLIDER_HEIGHT + KNOB_RADIUS * 2)) {
+        if (new UiBounds(layout.sliderX() - KNOB_RADIUS, layout.sliderY() - KNOB_RADIUS,
+                layout.sliderWidth() + KNOB_RADIUS * 2, SLIDER_HEIGHT + KNOB_RADIUS * 2).contains(mouseX, mouseY)) {
             editing = false;
             dragging = true;
             updateValueFromMouse(mouseX, layout.sliderX(), layout.sliderWidth());

@@ -81,10 +81,6 @@ final class WarPlannerDialogUi {
                 color(disabled ? TEXT_DISABLED : TEXT_PRIMARY), true);
     }
 
-    static boolean hit(float mx, float my, float x, float y, float width, float height) {
-        return new UiBounds(x, y, width, height).contains(mx, my);
-    }
-
     static String rosterSearchText(RosterMember member) {
         return String.join(
                         "\n",
@@ -170,7 +166,7 @@ final class WarPlannerDialogUi {
     enum ButtonTone { SECONDARY, PRIMARY, DANGER, QUIET_DANGER }
 
     static void tonedButton(UiCanvas canvas, float nvgMouseX, float nvgMouseY, float x, float y, float width, float height, String label, ButtonTone tone, boolean disabled) {
-        boolean hovered = !disabled && hit(nvgMouseX, nvgMouseY, x, y, width, height);
+        boolean hovered = !disabled && new UiBounds(x, y, width, height).contains(nvgMouseX, nvgMouseY);
         Color background = disabled ? color(ACCENT_DISABLED) : switch (tone) {
             case PRIMARY -> color(hovered ? ACCENT_PRIMARY_HOVER : ACCENT_PRIMARY);
             case DANGER -> color(hovered ? CONTROL_DANGER_HOVER : CONTROL_DANGER);

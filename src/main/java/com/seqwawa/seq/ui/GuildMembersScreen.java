@@ -3,6 +3,7 @@ package com.seqwawa.seq.ui;
 import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
+import com.seqwawa.seq.client.Clocks;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.managers.GuildPresenceManager;
 import com.seqwawa.seq.managers.GuildRaidActivityTracker;
@@ -21,7 +22,6 @@ import com.seqwawa.seq.model.RaidPerformance;
 import com.seqwawa.seq.model.RaidTeamProfile;
 import com.seqwawa.seq.model.RaidType;
 import com.seqwawa.seq.utils.TextInputHelper;
-import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiImage;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
@@ -148,13 +148,12 @@ public class GuildMembersScreen extends Screen {
     /** init() runs again on every resize, and the fetches are wanted only on open. */
     private boolean dataRequested;
 
-    private float uiMouseX;
-    private float uiMouseY;
+    /** Where the pointer was when this frame began. */
+    private UiPointer pointer = UiPointer.ORIGIN;
     /** The canvas height of the last frame, which the sidebar needs to hit test. */
     private float uiHeight;
     private int searchCursorBlink;
-    private float scrollOffset;
-    private float maxScroll;
+    private final ScrollPane scroll = new ScrollPane();
 
     private Tab tab = Tab.MEMBERS;
     private MemberFilter filter = MemberFilter.none();
@@ -172,8 +171,7 @@ public class GuildMembersScreen extends Screen {
     /** The premade whose seats are open in the modal, or null. */
     private PremadeParty selectedPremade;
 
-    private volatile String statusBannerMessage;
-    private volatile long statusBannerExpiresAtMs;
+    private final TimedBanner statusBanner = new TimedBanner(Clocks::monotonicMillis);
 
     /** Rebuilt every frame so clicks test against exactly what was drawn. */
     private final List<ActionHitbox> actionHitboxes = new ArrayList<>();
@@ -182,22 +180,22 @@ public class GuildMembersScreen extends Screen {
     private final List<PremadeHitbox> premadeHitboxes = new ArrayList<>();
     private final List<PartyFinderHitbox> partyFinderHitboxes = new ArrayList<>();
     private final List<SortHitbox> sortHitboxes = new ArrayList<>();
-    private Rect premadeInviteBounds;
+    private UiBounds premadeInviteBounds;
     private boolean premadeInviteEnabled;
-    private Rect premadeEditBounds;
-    private Rect newPartyBounds;
-    private Rect friendToggleBounds;
-    private Rect refreshButtonBounds;
-    private Rect profileButtonBounds;
-    private Rect raidDropdownBounds;
-    private Rect aurasFilterBounds;
-    private Rect freeFilterBounds;
-    private Rect searchBounds;
-    private Rect noteBounds;
-    private Rect modalCloseBounds;
-    private Rect modalBounds;
+    private UiBounds premadeEditBounds;
+    private UiBounds newPartyBounds;
+    private UiBounds friendToggleBounds;
+    private UiBounds refreshButtonBounds;
+    private UiBounds profileButtonBounds;
+    private UiBounds raidDropdownBounds;
+    private UiBounds aurasFilterBounds;
+    private UiBounds freeFilterBounds;
+    private UiBounds searchBounds;
+    private UiBounds noteBounds;
+    private UiBounds modalCloseBounds;
+    private UiBounds modalBounds;
     /** The scissored list viewport, so a scrolled-away row cannot still be clicked. */
-    private Rect listViewport;
+    private UiBounds listViewport;
 
     /** The roster as this frame sees it, read once and shared by header, counts and rows. */
     private List<GuildMemberPresence> onlineThisFrame = List.of();
@@ -263,8 +261,7 @@ public class GuildMembersScreen extends Screen {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        uiMouseX = MinecraftUiRenderer.mouseX(mouseX);
-        uiMouseY = MinecraftUiRenderer.mouseY(mouseY);
+        pointer = UiPointer.at(mouseX, mouseY);
         actionHitboxes.clear();
         tabHitboxes.clear();
         friendHitboxes.clear();
@@ -279,8 +276,8 @@ public class GuildMembersScreen extends Screen {
 
             uiHeight = screenHeight;
             SequoiaUiStyle.drawPanelFrame(canvas, HEADER_HEIGHT);
-            SequoiaSidebarNavigation.render(
-                    canvas, SequoiaSidebarNavigation.Destination.MEMBERS, uiMouseX, uiMouseY);
+            SequoiaSidebarNavigation.render(canvas, SequoiaSidebarNavigation.Destination.MEMBERS, pointer,
+                    SequoiaSidebarNavigation.Foot.profileCard(screenHeight));
 
             float contentX = SIDEBAR_WIDTH + PADDING;
             float contentWidth = Math.max(0, screenWidth - contentX - PADDING);
@@ -303,7 +300,7 @@ public class GuildMembersScreen extends Screen {
             }
             float contentHeight = screenHeight - contentY - PADDING;
 
-            listViewport = new Rect(contentX, contentY, contentWidth, contentHeight);
+            listViewport = new UiBounds(contentX, contentY, contentWidth, contentHeight);
             canvas.save();
             canvas.scissor(contentX, contentY, contentWidth, contentHeight);
             switch (tab) {
@@ -313,14 +310,8 @@ public class GuildMembersScreen extends Screen {
             }
             canvas.restore();
 
-            if (maxScroll > 0) {
-                float trackX = contentX + contentWidth - SCROLLBAR_WIDTH;
-                canvas.fillRect(trackX, contentY, SCROLLBAR_WIDTH, contentHeight, color(CONTROL_TRACK));
-                float thumbRatio = contentHeight / (contentHeight + maxScroll);
-                float thumbHeight = Math.max(20, contentHeight * thumbRatio);
-                float thumbY = contentY + (scrollOffset / maxScroll) * (contentHeight - thumbHeight);
-                canvas.fillRect(trackX, thumbY, SCROLLBAR_WIDTH, thumbHeight, color(CONTROL_THUMB));
-            }
+            scroll.draw(canvas, new UiBounds(contentX + contentWidth - SCROLLBAR_WIDTH, contentY,
+                    SCROLLBAR_WIDTH, contentHeight));
 
             if (tab == Tab.MEMBERS) {
                 renderRaidDropdown(canvas);
@@ -351,9 +342,9 @@ public class GuildMembersScreen extends Screen {
         float segmentY = y + (TAB_STRIP_HEIGHT - HEADER_CONTROL_H) / 2f;
         float cursorX = contentX;
         for (Tab candidate : Tab.values()) {
-            Rect bounds = new Rect(cursorX, segmentY, TAB_WIDTH, HEADER_CONTROL_H);
+            UiBounds bounds = new UiBounds(cursorX, segmentY, TAB_WIDTH, HEADER_CONTROL_H);
             boolean selected = tab == candidate;
-            boolean hovered = bounds.contains(uiMouseX, uiMouseY);
+            boolean hovered = bounds.contains(pointer.x(), pointer.y());
             canvas.fillRect(
                     bounds.x(),
                     bounds.y(),
@@ -404,19 +395,18 @@ public class GuildMembersScreen extends Screen {
         List<GuildMemberPresence> members = visibleThisFrame;
         if (members.isEmpty()) {
             renderEmptyState(canvas, fontName, contentX, contentY, contentWidth, contentHeight);
-            maxScroll = 0;
+            scroll.setMax(0);
             return;
         }
 
         String localWorld = presence().currentWorld();
         String localUsername = presence().localUsername();
-        float cursorY = contentY - scrollOffset;
+        float cursorY = contentY - scroll.offset();
         for (GuildMemberPresence member : members) {
             renderMemberRow(canvas, fontName, contentX, cursorY, contentWidth, member, localWorld, localUsername);
             cursorY += ROW_HEIGHT + ROW_SPACING;
         }
-        maxScroll = Math.max(0, cursorY + scrollOffset - contentY - contentHeight);
-        scrollOffset = Math.min(scrollOffset, maxScroll);
+        scroll.setMax(cursorY + scroll.offset() - contentY - contentHeight);
     }
 
     // ── Friends ──
@@ -434,18 +424,17 @@ public class GuildMembersScreen extends Screen {
                     contentY + contentHeight / 3f,
                     "Open someone from the All tab and press Add friend.",
                     UiCanvas.HorizontalAlign.CENTER);
-            maxScroll = 0;
+            scroll.setMax(0);
             return;
         }
 
         List<GuildMemberPresence> online = onlineThisFrame;
-        float cursorY = contentY - scrollOffset;
+        float cursorY = contentY - scroll.offset();
         for (String friend : friends) {
             renderFriendRow(canvas, fontName, contentX, cursorY, contentWidth, friend, online);
             cursorY += ROW_HEIGHT + ROW_SPACING;
         }
-        maxScroll = Math.max(0, cursorY + scrollOffset - contentY - contentHeight);
-        scrollOffset = Math.min(scrollOffset, maxScroll);
+        scroll.setMax(cursorY + scroll.offset() - contentY - contentHeight);
     }
 
     private void renderFriendRow(
@@ -463,7 +452,7 @@ public class GuildMembersScreen extends Screen {
         boolean isOnline = online != null;
         boolean busy = GuildRaidActivityTracker.isBusy(friend);
         boolean clickable = isRowVisible(y);
-        boolean rowHovered = uiMouseX >= x && uiMouseX <= x + width && uiMouseY >= y && uiMouseY <= y + ROW_HEIGHT;
+        boolean rowHovered = new UiBounds(x, y, width, ROW_HEIGHT).contains(pointer);
         canvas.fillRect(x, y, width, ROW_HEIGHT, rowHovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_BODY));
 
         float centerY = y + ROW_HEIGHT / 2f;
@@ -513,21 +502,21 @@ public class GuildMembersScreen extends Screen {
         float buttonY = y + (ROW_HEIGHT - ACTION_BUTTON_H) / 2f;
         float cursorX = x + width - 10 - FRIEND_BUTTON_W;
 
-        Rect removeBounds = new Rect(cursorX, buttonY, FRIEND_BUTTON_W, ACTION_BUTTON_H);
+        UiBounds removeBounds = new UiBounds(cursorX, buttonY, FRIEND_BUTTON_W, ACTION_BUTTON_H);
         renderButton(canvas, fontName, removeBounds, "Remove", true, false);
         if (clickable) {
             friendHitboxes.add(new FriendHitbox(removeBounds, FriendAction.REMOVE, friend));
         }
         cursorX -= FRIEND_BUTTON_W + ACTION_BUTTON_GAP;
 
-        Rect inviteBounds = new Rect(cursorX, buttonY, FRIEND_BUTTON_W, ACTION_BUTTON_H);
+        UiBounds inviteBounds = new UiBounds(cursorX, buttonY, FRIEND_BUTTON_W, ACTION_BUTTON_H);
         renderButton(canvas, fontName, inviteBounds, "Invite", isOnline, false);
         if (clickable && isOnline) {
             friendHitboxes.add(new FriendHitbox(inviteBounds, FriendAction.INVITE, friend));
         }
         cursorX -= FRIEND_BUTTON_W + ACTION_BUTTON_GAP;
 
-        Rect askBounds = new Rect(cursorX, buttonY, FRIEND_BUTTON_W, ACTION_BUTTON_H);
+        UiBounds askBounds = new UiBounds(cursorX, buttonY, FRIEND_BUTTON_W, ACTION_BUTTON_H);
         renderButton(canvas, fontName, askBounds, "Raid ?", isOnline, false);
         if (clickable && isOnline) {
             friendHitboxes.add(new FriendHitbox(askBounds, FriendAction.ASK, friend));
@@ -549,7 +538,7 @@ public class GuildMembersScreen extends Screen {
                 "Groups you run with often. Click one to see who can come.",
                 UiCanvas.HorizontalAlign.LEFT);
 
-        newPartyBounds = new Rect(
+        newPartyBounds = new UiBounds(
                 contentX + contentWidth - NEW_PARTY_BUTTON_W - 8,
                 barY + (FILTER_BAR_HEIGHT - ACTION_BUTTON_H) / 2f,
                 NEW_PARTY_BUTTON_W,
@@ -570,21 +559,20 @@ public class GuildMembersScreen extends Screen {
                     contentY + contentHeight / 3f,
                     "No saved parties yet. Press New party to build one.",
                     UiCanvas.HorizontalAlign.CENTER);
-            maxScroll = 0;
+            scroll.setMax(0);
             return;
         }
 
         List<GuildMemberPresence> online = onlineThisFrame;
         String localUsername = presence().localUsername();
-        float cursorY = contentY - scrollOffset;
+        float cursorY = contentY - scroll.offset();
         for (PremadeParty party : parties) {
             PremadeAvailability availability =
                     PremadeAvailability.of(party, online, GuildRaidActivityTracker::isBusy, localUsername);
             renderPremadeRow(canvas, fontName, contentX, cursorY, contentWidth, party, availability);
             cursorY += ROW_HEIGHT + ROW_SPACING;
         }
-        maxScroll = Math.max(0, cursorY + scrollOffset - contentY - contentHeight);
-        scrollOffset = Math.min(scrollOffset, maxScroll);
+        scroll.setMax(cursorY + scroll.offset() - contentY - contentHeight);
     }
 
     private void renderPremadeRow(
@@ -596,7 +584,7 @@ public class GuildMembersScreen extends Screen {
             PremadeParty party,
             PremadeAvailability availability) {
         boolean clickable = isRowVisible(y);
-        boolean rowHovered = uiMouseX >= x && uiMouseX <= x + width && uiMouseY >= y && uiMouseY <= y + ROW_HEIGHT;
+        boolean rowHovered = new UiBounds(x, y, width, ROW_HEIGHT).contains(pointer);
         canvas.fillRect(x, y, width, ROW_HEIGHT, rowHovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_BODY));
 
         float centerY = y + ROW_HEIGHT / 2f;
@@ -638,7 +626,7 @@ public class GuildMembersScreen extends Screen {
         float buttonY = y + (ROW_HEIGHT - ACTION_BUTTON_H) / 2f;
         float cursorX = x + width - 10 - PREMADE_BUTTON_W;
 
-        Rect editBounds = new Rect(cursorX, buttonY, PREMADE_BUTTON_W, ACTION_BUTTON_H);
+        UiBounds editBounds = new UiBounds(cursorX, buttonY, PREMADE_BUTTON_W, ACTION_BUTTON_H);
         renderButton(canvas, fontName, editBounds, "Edit", true, false);
         if (clickable) {
             premadeHitboxes.add(new PremadeHitbox(editBounds, PremadeAction.EDIT, party));
@@ -646,14 +634,14 @@ public class GuildMembersScreen extends Screen {
         cursorX -= PREMADE_BUTTON_W + ACTION_BUTTON_GAP;
 
         int free = availability.freeToInvite().size();
-        Rect inviteBounds = new Rect(cursorX, buttonY, PREMADE_BUTTON_W, ACTION_BUTTON_H);
+        UiBounds inviteBounds = new UiBounds(cursorX, buttonY, PREMADE_BUTTON_W, ACTION_BUTTON_H);
         renderButton(canvas, fontName, inviteBounds, premadeInviteLabel(availability), free > 0, false);
         if (clickable && free > 0) {
             premadeHitboxes.add(new PremadeHitbox(inviteBounds, PremadeAction.INVITE, party));
         }
 
         if (clickable) {
-            Rect rowBounds = new Rect(x, y, width - buttonsWidth, ROW_HEIGHT);
+            UiBounds rowBounds = new UiBounds(x, y, width - buttonsWidth, ROW_HEIGHT);
             premadeHitboxes.add(new PremadeHitbox(rowBounds, PremadeAction.OPEN, party));
         }
     }
@@ -725,7 +713,7 @@ public class GuildMembersScreen extends Screen {
         float width = Math.min(PREMADE_MODAL_WIDTH, screenWidth - SIDEBAR_WIDTH - 24);
         float x = SIDEBAR_WIDTH + (screenWidth - SIDEBAR_WIDTH - width) / 2f;
         float y = Math.max(12, (screenHeight - height) / 2f);
-        modalBounds = new Rect(x, y, width, height);
+        modalBounds = new UiBounds(x, y, width, height);
 
         canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
         canvas.fillRect(x, y, width, height, color(BACKGROUND_POPUP));
@@ -754,12 +742,12 @@ public class GuildMembersScreen extends Screen {
                 availability.summary(),
                 UiCanvas.HorizontalAlign.LEFT);
 
-        modalCloseBounds = new Rect(x + width - 26, y + 10, 16, 16);
+        modalCloseBounds = new UiBounds(x + width - 26, y + 10, 16, 16);
         drawText(
                 canvas,
                 fontName,
                 ROW_FONT_SIZE,
-                modalCloseBounds.contains(uiMouseX, uiMouseY) ? color(TEXT_PRIMARY) : color(TEXT_MUTED),
+                modalCloseBounds.contains(pointer.x(), pointer.y()) ? color(TEXT_PRIMARY) : color(TEXT_MUTED),
                 modalCloseBounds.x() + 8,
                 modalCloseBounds.y() + 8,
                 "x",
@@ -774,7 +762,7 @@ public class GuildMembersScreen extends Screen {
         cursorY += 12;
         int free = availability.freeToInvite().size();
         premadeInviteEnabled = free > 0;
-        premadeInviteBounds = new Rect(contentX, cursorY, 110, ACTION_BUTTON_H);
+        premadeInviteBounds = new UiBounds(contentX, cursorY, 110, ACTION_BUTTON_H);
         renderButton(
                 canvas,
                 fontName,
@@ -782,7 +770,8 @@ public class GuildMembersScreen extends Screen {
                 free == 0 ? "Nobody free" : availability.everyoneFree() ? "Invite all" : "Invite the " + free + " free",
                 free > 0,
                 false);
-        premadeEditBounds = new Rect(contentX + 110 + ACTION_BUTTON_GAP, cursorY, PREMADE_BUTTON_W, ACTION_BUTTON_H);
+        premadeEditBounds = new UiBounds(contentX + 110 + ACTION_BUTTON_GAP, cursorY,
+                PREMADE_BUTTON_W, ACTION_BUTTON_H);
         renderButton(canvas, fontName, premadeEditBounds, "Edit", true, false);
     }
 
@@ -879,13 +868,13 @@ public class GuildMembersScreen extends Screen {
         renderSearchBox(canvas, fontName, cursorX, controlY, searchWidth);
         cursorX += searchWidth + HEADER_CONTROL_GAP;
 
-        profileButtonBounds = new Rect(cursorX, controlY, PROFILE_BUTTON_W, HEADER_CONTROL_H);
+        profileButtonBounds = new UiBounds(cursorX, controlY, PROFILE_BUTTON_W, HEADER_CONTROL_H);
         renderButton(canvas, fontName, profileButtonBounds, "My profile", true, false);
         cursorX += PROFILE_BUTTON_W + HEADER_CONTROL_GAP;
 
         boolean refreshing = presence().isRefreshing();
         boolean canRefresh = presence().canRefresh();
-        refreshButtonBounds = new Rect(cursorX, controlY, REFRESH_BUTTON_W, HEADER_CONTROL_H);
+        refreshButtonBounds = new UiBounds(cursorX, controlY, REFRESH_BUTTON_W, HEADER_CONTROL_H);
         renderButton(
                 canvas,
                 fontName,
@@ -901,7 +890,7 @@ public class GuildMembersScreen extends Screen {
             searchBounds = null;
             return;
         }
-        searchBounds = new Rect(x, y, width, HEADER_CONTROL_H);
+        searchBounds = new UiBounds(x, y, width, HEADER_CONTROL_H);
         canvas.fillRect(x, y, width, HEADER_CONTROL_H, searchFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
         if (searchFocused) {
             canvas.strokeRect(x, y, width, HEADER_CONTROL_H, 1, color(CONTROL_BORDER));
@@ -960,7 +949,7 @@ public class GuildMembersScreen extends Screen {
         float cursorX = contentX + 8;
 
         RaidType filtered = filteredRaid();
-        raidDropdownBounds = new Rect(cursorX, chipY, RAID_DROPDOWN_W, FILTER_CHIP_H);
+        raidDropdownBounds = new UiBounds(cursorX, chipY, RAID_DROPDOWN_W, FILTER_CHIP_H);
         DropdownMenu.trigger(
                 canvas,
                 raidDropdownBounds.x(),
@@ -970,14 +959,14 @@ public class GuildMembersScreen extends Screen {
                 filtered == null ? ALL_RAIDS : filtered.shortName(),
                 raidDropdownOpen,
                 true,
-                uiMouseX,
-                uiMouseY);
+                pointer.x(),
+                pointer.y());
         cursorX += RAID_DROPDOWN_W + 8;
-        aurasFilterBounds = new Rect(cursorX, chipY, 52, FILTER_CHIP_H);
+        aurasFilterBounds = new UiBounds(cursorX, chipY, 52, FILTER_CHIP_H);
         renderToggleChip(canvas, fontName, aurasFilterBounds, "Auras", filter.aurasOnly());
         cursorX += 52 + FILTER_CHIP_GAP;
 
-        freeFilterBounds = new Rect(cursorX, chipY, 46, FILTER_CHIP_H);
+        freeFilterBounds = new UiBounds(cursorX, chipY, 46, FILTER_CHIP_H);
         renderToggleChip(canvas, fontName, freeFilterBounds, "Free", filter.availableOnly());
     }
 
@@ -1007,8 +996,8 @@ public class GuildMembersScreen extends Screen {
                 index -> labels.get(index).equals(selected),
                 0,
                 labels.size(),
-                uiMouseX,
-                uiMouseY);
+                pointer.x(),
+                pointer.y());
     }
 
     /** The raid a click in the open list landed on, or null when it missed. */
@@ -1027,8 +1016,8 @@ public class GuildMembersScreen extends Screen {
         return (int) ((my - listY) / DropdownMenu.ROW_HEIGHT);
     }
 
-    private void renderToggleChip(UiCanvas canvas, String fontName, Rect bounds, String label, boolean active) {
-        boolean hovered = bounds.contains(uiMouseX, uiMouseY);
+    private void renderToggleChip(UiCanvas canvas, String fontName, UiBounds bounds, String label, boolean active) {
+        boolean hovered = bounds.contains(pointer.x(), pointer.y());
         canvas.fillRect(
                 bounds.x(),
                 bounds.y(),
@@ -1080,8 +1069,8 @@ public class GuildMembersScreen extends Screen {
     private void sortLabel(
             UiCanvas canvas, String fontName, float x, float y, String label, float columnWidth, MemberSort key) {
         boolean active = sort == key;
-        Rect bounds = new Rect(x - 4, y, Math.max(20, columnWidth), COLUMN_HEADER_HEIGHT);
-        boolean hovered = bounds.contains(uiMouseX, uiMouseY);
+        UiBounds bounds = new UiBounds(x - 4, y, Math.max(20, columnWidth), COLUMN_HEADER_HEIGHT);
+        boolean hovered = bounds.contains(pointer.x(), pointer.y());
         if (hovered) {
             canvas.fillRect(bounds.x(), bounds.y(), bounds.width(), bounds.height(), color(BACKGROUND_CONTENT));
         }
@@ -1149,7 +1138,7 @@ public class GuildMembersScreen extends Screen {
         boolean onLocalWorld = member.hasWorld()
                 && localWorld != null
                 && member.world().equalsIgnoreCase(localWorld.trim());
-        boolean rowHovered = uiMouseX >= x && uiMouseX <= x + width && uiMouseY >= y && uiMouseY <= y + ROW_HEIGHT;
+        boolean rowHovered = new UiBounds(x, y, width, ROW_HEIGHT).contains(pointer);
         canvas.fillRect(x, y, width, ROW_HEIGHT, rowHovered ? color(BACKGROUND_CONTENT_FOCUSED) : color(BACKGROUND_BODY));
 
         RaidTeamProfile profile = profiles().profileFor(member);
@@ -1253,7 +1242,8 @@ public class GuildMembersScreen extends Screen {
         // Pinned to the row's right edge. Greyed out on your own row rather than dropped,
         // so the column stays even.
         float buttonY = y + (ROW_HEIGHT - ACTION_BUTTON_H) / 2f;
-        Rect inviteBounds = new Rect(x + width - 10 - ACTION_BUTTON_W, buttonY, ACTION_BUTTON_W, ACTION_BUTTON_H);
+        UiBounds inviteBounds = new UiBounds(x + width - 10 - ACTION_BUTTON_W, buttonY,
+                ACTION_BUTTON_W, ACTION_BUTTON_H);
         renderButton(canvas, fontName, inviteBounds, "Invite", !isLocalPlayer, false);
         if (clickable && !isLocalPlayer) {
             actionHitboxes.add(new ActionHitbox(inviteBounds, ActionType.INVITE, member));
@@ -1261,7 +1251,7 @@ public class GuildMembersScreen extends Screen {
 
         // The whole row opens the member's profile, minus the zone the buttons own.
         if (clickable) {
-            Rect rowBounds = new Rect(x, y, width - ACTIONS_ZONE_W, ROW_HEIGHT);
+            UiBounds rowBounds = new UiBounds(x, y, width - ACTIONS_ZONE_W, ROW_HEIGHT);
             actionHitboxes.add(new ActionHitbox(rowBounds, ActionType.OPEN_PROFILE, member));
         }
     }
@@ -1282,11 +1272,11 @@ public class GuildMembersScreen extends Screen {
         String label = spot.label();
         float chipW = Math.min(PF_CHIP_MAX_W, Math.max(BUSY_CHIP_W, textWidth(label, fontName, SMALL_FONT_SIZE) + 12));
         float chipY = rowY + (ROW_HEIGHT - BUSY_CHIP_H) / 2f;
-        Rect bounds = new Rect(chipX, chipY, chipW, BUSY_CHIP_H);
+        UiBounds bounds = new UiBounds(chipX, chipY, chipW, BUSY_CHIP_H);
 
         boolean mine = myPartyThisFrame != null && myPartyThisFrame.listingId() == spot.listingId();
         boolean joinable = spot.isJoinable() && !isLocalPlayer && !presence().isInPartyFinderListing();
-        boolean hovered = bounds.contains(uiMouseX, uiMouseY) && (joinable || mine);
+        boolean hovered = bounds.contains(pointer.x(), pointer.y()) && (joinable || mine);
         // Your own party wears the accent, so it stands out from the ones you could join.
         // Elsewhere a full listing reads like Busy, since nobody else is getting in, and one
         // with room stays orange. Hovering one you can join says what a click does.
@@ -1469,7 +1459,7 @@ public class GuildMembersScreen extends Screen {
 
         float x = SIDEBAR_WIDTH + (panelWidth - width) / 2f;
         float y = Math.max(12, (screenHeight - height) / 2f);
-        modalBounds = new Rect(x, y, width, height);
+        modalBounds = new UiBounds(x, y, width, height);
 
         canvas.fillRect(0, 0, screenWidth, screenHeight, color(BACKGROUND_MODAL_OVERLAY));
         canvas.fillRect(x, y, width, height, color(BACKGROUND_POPUP));
@@ -1479,12 +1469,12 @@ public class GuildMembersScreen extends Screen {
         float cursorY = y + MODAL_PADDING;
         renderModalHeader(canvas, fontName, contentX, cursorY, innerWidth, member, profile);
 
-        modalCloseBounds = new Rect(x + width - 26, y + 10, 16, 16);
+        modalCloseBounds = new UiBounds(x + width - 26, y + 10, 16, 16);
         drawText(
                 canvas,
                 fontName,
                 ROW_FONT_SIZE,
-                modalCloseBounds.contains(uiMouseX, uiMouseY) ? color(TEXT_PRIMARY) : color(TEXT_MUTED),
+                modalCloseBounds.contains(pointer.x(), pointer.y()) ? color(TEXT_PRIMARY) : color(TEXT_MUTED),
                 modalCloseBounds.x() + 8,
                 modalCloseBounds.y() + 8,
                 "x",
@@ -1694,7 +1684,7 @@ public class GuildMembersScreen extends Screen {
         y += SECTION_TITLE_H;
 
         float inputWidth = self ? width : width - FRIEND_TOGGLE_W - 8;
-        noteBounds = new Rect(x, y, inputWidth, NOTE_INPUT_H);
+        noteBounds = new UiBounds(x, y, inputWidth, NOTE_INPUT_H);
         canvas.fillRect(x, y, inputWidth, NOTE_INPUT_H, noteFocused ? color(CONTROL_INPUT_HOVER) : color(CONTROL_INPUT));
         if (noteFocused) {
             canvas.strokeRect(x, y, inputWidth, NOTE_INPUT_H, 1, color(ACCENT_PRIMARY));
@@ -1724,7 +1714,7 @@ public class GuildMembersScreen extends Screen {
             return;
         }
         boolean isFriend = profiles().isFriend(member.username());
-        friendToggleBounds = new Rect(x + width - FRIEND_TOGGLE_W, y, FRIEND_TOGGLE_W, NOTE_INPUT_H);
+        friendToggleBounds = new UiBounds(x + width - FRIEND_TOGGLE_W, y, FRIEND_TOGGLE_W, NOTE_INPUT_H);
         renderButton(canvas, fontName, friendToggleBounds, isFriend ? "Remove friend" : "Add friend", true, !isFriend);
     }
 
@@ -1806,8 +1796,8 @@ public class GuildMembersScreen extends Screen {
     }
 
     private void renderButton(
-            UiCanvas canvas, String fontName, Rect bounds, String label, boolean enabled, boolean accent) {
-        boolean hovered = enabled && bounds.contains(uiMouseX, uiMouseY);
+            UiCanvas canvas, String fontName, UiBounds bounds, String label, boolean enabled, boolean accent) {
+        boolean hovered = enabled && bounds.contains(pointer.x(), pointer.y());
         Color background;
         if (!enabled) {
             background = color(ACCENT_DISABLED);
@@ -1829,11 +1819,8 @@ public class GuildMembersScreen extends Screen {
     }
 
     private void renderStatusBanner(UiCanvas canvas, String fontName, float screenWidth, float screenHeight) {
-        if (statusBannerMessage == null || statusBannerMessage.isBlank()) {
-            return;
-        }
-        if (System.currentTimeMillis() >= statusBannerExpiresAtMs) {
-            statusBannerMessage = null;
+        String message = statusBanner.message();
+        if (message == null) {
             return;
         }
 
@@ -1841,7 +1828,7 @@ public class GuildMembersScreen extends Screen {
         // party finder's reply tacked on can outgrow a small window.
         float panelWidth = screenWidth - SIDEBAR_WIDTH - 16;
         float width = Math.min(
-                panelWidth, Math.max(STATUS_BANNER_MIN_W, textWidth(statusBannerMessage, fontName, ROW_FONT_SIZE) + 32));
+                panelWidth, Math.max(STATUS_BANNER_MIN_W, textWidth(message, fontName, ROW_FONT_SIZE) + 32));
         // Centred on the panel, like every other overlay beside the sidebar.
         float x = SIDEBAR_WIDTH + (screenWidth - SIDEBAR_WIDTH - width) / 2f;
         float y = screenHeight - STATUS_BANNER_H - 16;
@@ -1854,16 +1841,12 @@ public class GuildMembersScreen extends Screen {
                 color(TEXT_SECONDARY),
                 x + width / 2f,
                 y + STATUS_BANNER_H / 2f,
-                fitToWidth(statusBannerMessage, fontName, ROW_FONT_SIZE, width - 16),
+                fitToWidth(message, fontName, ROW_FONT_SIZE, width - 16),
                 UiCanvas.HorizontalAlign.CENTER);
     }
 
     private void showStatusBanner(String message) {
-        if (message == null || message.isBlank()) {
-            return;
-        }
-        statusBannerMessage = message;
-        statusBannerExpiresAtMs = System.currentTimeMillis() + STATUS_BANNER_DURATION_MS;
+        statusBanner.show(message, STATUS_BANNER_DURATION_MS);
     }
 
     /** Remaining busy time as {@code m:ss}. */
@@ -1880,8 +1863,9 @@ public class GuildMembersScreen extends Screen {
             return super.mouseClicked(click, outsideScreen);
         }
 
-        float mx = MinecraftUiRenderer.mouseX(click.x());
-        float my = MinecraftUiRenderer.mouseY(click.y());
+        UiPointer at = UiPointer.at(click);
+        float mx = at.x();
+        float my = at.y();
 
         if (selectedMember != null) {
             return handleModalClick(mx, my);
@@ -1890,8 +1874,7 @@ public class GuildMembersScreen extends Screen {
             return handlePremadeModalClick(mx, my);
         }
         if (mx < SIDEBAR_WIDTH) {
-            return SequoiaSidebarNavigation.click(
-                    mx, my, uiHeight, SequoiaSidebarNavigation.Destination.MEMBERS, parent);
+            return SequoiaSidebarNavigation.click(at, uiHeight, SequoiaSidebarNavigation.Destination.MEMBERS, parent);
         }
         // The open list is drawn over the column headings and the first rows, so it
         // answers first; otherwise a click on "All raids" would sort by name instead.
@@ -1900,7 +1883,7 @@ public class GuildMembersScreen extends Screen {
             if (row != null) {
                 // Row zero is "All raids", the rest follow the catalog.
                 filter = filter.withRaid(row == 0 ? null : catalog().raids().get(row - 1));
-                scrollOffset = 0;
+                scroll.reset();
             }
             // A click anywhere else closes the list rather than acting through it.
             raidDropdownOpen = false;
@@ -1911,7 +1894,7 @@ public class GuildMembersScreen extends Screen {
         for (TabHitbox hitbox : tabHitboxes) {
             if (hitbox.bounds().contains(mx, my)) {
                 tab = hitbox.tab();
-                scrollOffset = 0;
+                scroll.reset();
                 searchFocused = false;
                 return true;
             }
@@ -1954,7 +1937,7 @@ public class GuildMembersScreen extends Screen {
                 sort = hitbox.key();
                 sortDescending = hitbox.key().descendingByDefault();
             }
-            scrollOffset = 0;
+            scroll.reset();
             searchFocused = false;
             return true;
         }
@@ -1965,12 +1948,12 @@ public class GuildMembersScreen extends Screen {
         }
         if (aurasFilterBounds != null && aurasFilterBounds.contains(mx, my)) {
             filter = filter.withAurasOnly(!filter.aurasOnly());
-            scrollOffset = 0;
+            scroll.reset();
             return true;
         }
         if (freeFilterBounds != null && freeFilterBounds.contains(mx, my)) {
             filter = filter.withAvailableOnly(!filter.availableOnly());
-            scrollOffset = 0;
+            scroll.reset();
             return true;
         }
         if (searchBounds != null && searchBounds.contains(mx, my)) {
@@ -2153,8 +2136,8 @@ public class GuildMembersScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (selectedMember == null && selectedPremade == null && maxScroll > 0) {
-            scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset - (float) scrollY * SCROLL_SPEED));
+        if (selectedMember == null && selectedPremade == null && scroll.canScroll()) {
+            scroll.scrollBy(-(float) scrollY * SCROLL_SPEED);
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
@@ -2194,7 +2177,7 @@ public class GuildMembersScreen extends Screen {
                 if (!searchInput.isEmpty()) {
                     searchInput = searchInput.substring(0, searchInput.length() - 1);
                     filter = filter.withSearch(searchInput);
-                    scrollOffset = 0;
+                    scroll.reset();
                 }
                 return true;
             }
@@ -2228,7 +2211,7 @@ public class GuildMembersScreen extends Screen {
         if (searchFocused && searchInput.length() < 16) {
             searchInput += typed;
             filter = filter.withSearch(searchInput);
-            scrollOffset = 0;
+            scroll.reset();
             return true;
         }
         return super.charTyped(characterEvent);
@@ -2277,18 +2260,12 @@ public class GuildMembersScreen extends Screen {
         return UiRenderer.measureText(text, fontName, fontSize).width();
     }
 
-    private record Rect(float x, float y, float width, float height) {
-        boolean contains(float pointX, float pointY) {
-            return pointX >= x && pointX <= x + width && pointY >= y && pointY <= y + height;
-        }
-    }
-
     private enum ActionType {
         INVITE,
         OPEN_PROFILE
     }
 
-    private record ActionHitbox(Rect bounds, ActionType type, GuildMemberPresence member) {}
+    private record ActionHitbox(UiBounds bounds, ActionType type, GuildMemberPresence member) {}
 
     private enum Tab {
         MEMBERS,
@@ -2302,9 +2279,9 @@ public class GuildMembersScreen extends Screen {
         REMOVE
     }
 
-    private record TabHitbox(Rect bounds, Tab tab) {}
+    private record TabHitbox(UiBounds bounds, Tab tab) {}
 
-    private record FriendHitbox(Rect bounds, FriendAction action, String friend) {}
+    private record FriendHitbox(UiBounds bounds, FriendAction action, String friend) {}
 
     private enum PremadeAction {
         OPEN,
@@ -2312,10 +2289,10 @@ public class GuildMembersScreen extends Screen {
         EDIT
     }
 
-    private record PremadeHitbox(Rect bounds, PremadeAction action, PremadeParty party) {}
+    private record PremadeHitbox(UiBounds bounds, PremadeAction action, PremadeParty party) {}
 
-    private record PartyFinderHitbox(Rect bounds, PartyFinderSpot spot) {}
+    private record PartyFinderHitbox(UiBounds bounds, PartyFinderSpot spot) {}
 
-    private record SortHitbox(Rect bounds, MemberSort key) {}
+    private record SortHitbox(UiBounds bounds, MemberSort key) {}
 
 }

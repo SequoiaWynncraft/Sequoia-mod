@@ -6,6 +6,8 @@ import static com.seqwawa.seq.ui.theme.UiColor.*;
 import com.seqwawa.seq.client.SeqClient;
 import com.seqwawa.seq.render.MinecraftGuiOverlay;
 import com.seqwawa.seq.ui.SequoiaUiStyle;
+import com.seqwawa.seq.ui.UiBounds;
+import com.seqwawa.seq.ui.UiPointer;
 import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiRenderMetrics;
@@ -51,8 +53,8 @@ final class PreviewScreen extends Screen implements MinecraftGuiOverlay {
             return panelY + (SequoiaUiStyle.HEADER_HEIGHT - CLOSE_SIZE) / 2;
         }
 
-        boolean overClose(float x, float y) {
-            return x >= closeX() && x < closeX() + CLOSE_SIZE && y >= closeY() && y < closeY() + CLOSE_SIZE;
+        boolean overClose(UiPointer pointer) {
+            return new UiBounds(closeX(), closeY(), CLOSE_SIZE, CLOSE_SIZE).contains(pointer);
         }
     }
 
@@ -82,7 +84,7 @@ final class PreviewScreen extends Screen implements MinecraftGuiOverlay {
         layout = layout(metrics, frames, status, font);
         var current = layout;
         boolean closeHovered =
-                current.overClose(MinecraftUiRenderer.mouseX(mouseX), MinecraftUiRenderer.mouseY(mouseY));
+                current.overClose(UiPointer.at(mouseX, mouseY));
         UiRenderer.renderScreen(this, canvas -> drawPanel(canvas, font, current, closeHovered, status));
     }
 
@@ -191,7 +193,7 @@ final class PreviewScreen extends Screen implements MinecraftGuiOverlay {
         var current = layout;
         if (click.button() == 0
                 && current != null
-                && current.overClose(MinecraftUiRenderer.mouseX(click.x()), MinecraftUiRenderer.mouseY(click.y()))) {
+                && current.overClose(UiPointer.at(click))) {
             onClose();
             return true;
         }

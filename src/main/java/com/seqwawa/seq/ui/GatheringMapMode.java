@@ -182,7 +182,6 @@ final class GatheringMapMode {
     void closeSearchDropdowns() { closeResourceSearch(); closeTerritorySearch(); }
     void renderInsights(UiCanvas canvas, WorldMapFrame frame, float x) { this.frame = frame; renderGatheringInsights(canvas, x, frame.height(), insightsLayout()); }
     private void drawButton(UiCanvas canvas, float x, float y, float w, float h, String label, boolean active) { MapSidebar.button(canvas, x, y, w, h, label, active, frame); }
-    private static boolean isHovered(float mx, float my, float x, float y, float w, float h) { return MapSidebar.hit(mx, my, x, y, w, h); }
     private static double clamp(double value, double min, double max) { return Math.max(min, Math.min(value, max)); }
     private float tooltipX(float width) { return frame.tooltipX(width); }
     private String displayMapImageSource() {
@@ -639,7 +638,8 @@ final class GatheringMapMode {
             float x = PADDING + index * segmentWidth;
             boolean enabled = scope != GatheringAnalysisScope.SELECTED_TERRITORY || selectedTerritory != null;
             boolean active = gatheringAnalysisScope == scope;
-            boolean hovered = enabled && isHovered(frame.mouseX(), frame.mouseY(), x, y, segmentWidth, BUTTON_HEIGHT);
+            boolean hovered = enabled && new UiBounds(x, y, segmentWidth, BUTTON_HEIGHT)
+                    .contains(frame.mouseX(), frame.mouseY());
             Color background = !enabled ? color(MAP_CONTROL_INACTIVE)
                     : active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL);
             canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, background);
@@ -702,13 +702,8 @@ final class GatheringMapMode {
         if (totemPanel.enabled() && totemPanel.selected() != null) {
             float totemRowsY = insights.overviewY() + 74 + (showDebugInfo ? 32 : 0);
             if (insightsSidebarOpen
-                    && isHovered(
-                            mx,
-                            my,
-                            insightsX + PADDING,
-                            totemRowsY,
-                            INSIGHTS_SIDEBAR_WIDTH - PADDING * 2,
-                            48)) {
+                    && new UiBounds(insightsX + PADDING, totemRowsY, INSIGHTS_SIDEBAR_WIDTH - PADDING * 2, 48)
+                            .contains(mx, my)) {
                 actions.copy(totemCoords(totemPanel.selected()));
                 return true;
             }
@@ -727,14 +722,14 @@ final class GatheringMapMode {
         float detailWidth = INSIGHTS_SIDEBAR_WIDTH - PADDING * 2;
         if (insightsSidebarOpen
                 && clusterDetail != null
-                && isHovered(mx, my, detailX, detailY, detailWidth, CLUSTER_DETAIL_HEIGHT)) {
+                && new UiBounds(detailX, detailY, detailWidth, CLUSTER_DETAIL_HEIGHT).contains(mx, my)) {
             actions.copy(clusterCoords(clusterDetail));
             return true;
         }
         if (insightsSidebarOpen
                 && clusterDetail == null
                 && detail != null
-                && isHovered(mx, my, detailX, detailY, detailWidth, NODE_DETAIL_HEIGHT)) {
+                && new UiBounds(detailX, detailY, detailWidth, NODE_DETAIL_HEIGHT).contains(mx, my)) {
             actions.copy(nodeCoords(detail));
             return true;
         }
@@ -1408,24 +1403,29 @@ final class GatheringMapMode {
             }
         }
 
-        if (isHovered(mx, sidebarMy, PADDING, layout.mapPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)) {
+        if (new UiBounds(PADDING, layout.mapPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)
+                .contains(mx, sidebarMy)) {
             togglePanel(WorldMapSidebarPanel.MAP_AND_TERRITORY);
             return true;
         }
-        if (isHovered(mx, sidebarMy, PADDING, layout.analysisPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)) {
+        if (new UiBounds(PADDING, layout.analysisPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)
+                .contains(mx, sidebarMy)) {
             togglePanel(WorldMapSidebarPanel.GATHERING_ANALYSIS);
             return true;
         }
-        if (isHovered(mx, sidebarMy, PADDING, layout.totemPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)) {
+        if (new UiBounds(PADDING, layout.totemPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)
+                .contains(mx, sidebarMy)) {
             togglePanel(WorldMapSidebarPanel.TOTEM_SOLVER);
             return true;
         }
-        if (isHovered(mx, sidebarMy, PADDING, layout.filtersPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)) {
+        if (new UiBounds(PADDING, layout.filtersPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)
+                .contains(mx, sidebarMy)) {
             togglePanel(WorldMapSidebarPanel.RESOURCE_FILTERS);
             return true;
         }
         if (layout.sourceY() >= 0 && my >= SIDEBAR_PANEL_TOP && my <= screenHeight
-                && isHovered(mx, sidebarMy, PADDING, layout.sourceY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+                && new UiBounds(PADDING, layout.sourceY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)
+                        .contains(mx, sidebarMy)) {
             float sourceWidth = (SIDEBAR_WIDTH - PADDING * 2 - SPLIT_CONTROL_GAP) / 2;
             GatheringNodeSource source = mx <= PADDING + sourceWidth ? GatheringNodeSource.STATIC
                     : mx >= PADDING + sourceWidth + SPLIT_CONTROL_GAP ? GatheringNodeSource.WYNN_API : null;
@@ -1439,7 +1439,8 @@ final class GatheringMapMode {
         }
         float territoryToggleWidth = SIDEBAR_WIDTH - PADDING * 2;
         if (layout.territoryToggleY() >= 0
-                && isHovered(mx, sidebarMy, PADDING, layout.territoryToggleY(), territoryToggleWidth, BUTTON_HEIGHT)) {
+                && new UiBounds(PADDING, layout.territoryToggleY(), territoryToggleWidth, BUTTON_HEIGHT)
+                        .contains(mx, sidebarMy)) {
             if (!showTerritories) {
                 showTerritories = true;
                 mapSettings.setShowTerritories(true);
@@ -1457,7 +1458,8 @@ final class GatheringMapMode {
             return true;
         }
         if (layout.scopeY() >= 0
-                && isHovered(mx, sidebarMy, PADDING, layout.scopeY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+                && new UiBounds(PADDING, layout.scopeY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)
+                        .contains(mx, sidebarMy)) {
             GatheringAnalysisScope scope = scopeAt(mx);
             if (scope != null && (scope != GatheringAnalysisScope.SELECTED_TERRITORY || selectedTerritory != null)) {
                 gatheringAnalysisScope = scope;
@@ -1469,7 +1471,9 @@ final class GatheringMapMode {
             return true;
         }
         if (layout.territoryInputY() >= 0
-                && isHovered(mx, sidebarMy, PADDING, layout.territoryInputY(), SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2), INPUT_HEIGHT)) {
+                && new UiBounds(PADDING, layout.territoryInputY(),
+                        SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2), INPUT_HEIGHT)
+                        .contains(mx, sidebarMy)) {
             boolean shouldOpen = !territoryDropdownOpen;
             closeResourceSearch();
             territoryInputFocused = shouldOpen;
@@ -1479,7 +1483,8 @@ final class GatheringMapMode {
             return true;
         }
         if (layout.clustersY() >= 0
-                && isHovered(mx, sidebarMy, PADDING, layout.clustersY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+                && new UiBounds(PADDING, layout.clustersY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)
+                        .contains(mx, sidebarMy)) {
             if (!showClusters) {
                 showClusters = true;
                 mapSettings.setShowClusters(true);
@@ -1507,7 +1512,9 @@ final class GatheringMapMode {
                 this::refreshGatheringTotemPlacementNow, this::centerOnGatheringTotemPlacement,
                 placement -> actions.copy(totemCoords(placement)))) return true;
         if (layout.resourceInputY() >= 0
-                && isHovered(mx, sidebarMy, PADDING, layout.resourceInputY(), SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2), INPUT_HEIGHT)) {
+                && new UiBounds(PADDING, layout.resourceInputY(),
+                        SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2), INPUT_HEIGHT)
+                        .contains(mx, sidebarMy)) {
             boolean shouldOpen = !resourceDropdownOpen;
             closeTerritorySearch();
             resourceInputFocused = shouldOpen;
@@ -1524,7 +1531,8 @@ final class GatheringMapMode {
         if (layout.professionStartY() >= 0) {
             float toggleY = layout.professionStartY();
             for (GatheringProfession profession : gatheringProfessions()) {
-                if (isHovered(mx, sidebarMy, PADDING, toggleY, SIDEBAR_WIDTH - PADDING * 2, TOGGLE_HEIGHT)) {
+                if (new UiBounds(PADDING, toggleY, SIDEBAR_WIDTH - PADDING * 2, TOGGLE_HEIGHT)
+                        .contains(mx, sidebarMy)) {
                     boolean enabled = !professionToggles.getOrDefault(profession, true);
                     professionToggles.put(profession, enabled);
                     mapSettings.setProfessionEnabled(profession, enabled);
@@ -1575,7 +1583,8 @@ final class GatheringMapMode {
             List<GuildTerritory> territories = territoryDropdownOptions();
             int visibleRows = Math.min(TERRITORY_DROPDOWN_VISIBLE_ROWS, territories.size());
             float dropdownY = layout.territoryInputY() - sidebar.scroll() + INPUT_HEIGHT;
-            if (isHovered(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2, visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
+            if (new UiBounds(PADDING, dropdownY,
+                    SIDEBAR_WIDTH - PADDING * 2, visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT).contains(mx, my)) {
                 territoryDropdownScroll = clampDropdownScroll(
                         territoryDropdownScroll + (scrollY > 0 ? -1 : 1),
                         territories.size(),
@@ -1587,7 +1596,8 @@ final class GatheringMapMode {
             List<String> resources = resourceDropdownOptions();
             int visibleRows = Math.min(RESOURCE_DROPDOWN_VISIBLE_ROWS, resources.size());
             float dropdownY = layout.resourceInputY() - sidebar.scroll() + INPUT_HEIGHT;
-            if (isHovered(mx, my, PADDING, dropdownY, SIDEBAR_WIDTH - PADDING * 2, visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
+            if (new UiBounds(PADDING, dropdownY,
+                    SIDEBAR_WIDTH - PADDING * 2, visibleRows * RESOURCE_DROPDOWN_ROW_HEIGHT).contains(mx, my)) {
                 resourceDropdownScroll = clampResourceDropdownScroll(resourceDropdownScroll + (scrollY > 0 ? -1 : 1), resources.size());
                 return true;
             }
@@ -1692,7 +1702,7 @@ final class GatheringMapMode {
             int availableRows = Math.max(0, (int) ((screenHeight - rowY - PADDING) / 40));
             int rowCount = Math.min(Math.min(SIDEBAR_CLUSTER_LIMIT, cachedClusters.size()), availableRows);
             for (int index = 0; index < rowCount; index++) {
-                if (isHovered(mx, my, contentX, rowY, contentWidth, 34)) {
+                if (new UiBounds(contentX, rowY, contentWidth, 34).contains(mx, my)) {
                     selectedCluster = cachedClusters.get(index);
                     selectedNode = null;
                     actions.center(selectedCluster.centerX(), selectedCluster.centerZ(), Math.max(frame.viewport().pixelsPerBlock(), 0.20));

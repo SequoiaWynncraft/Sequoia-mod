@@ -197,7 +197,4 @@ public abstract class SettingWidget<T extends Setting<?>> {
         return out.toString();
     }
 
-    protected boolean isHovered(float mouseX, float mouseY, float bx, float by, float bw, float bh) {
-        return mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh;
-    }
 }

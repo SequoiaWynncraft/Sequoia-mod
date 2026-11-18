@@ -85,8 +85,7 @@ final class WarTeamEditor {
             text(canvas, truncate(flashMessage, 58), x + 12, fieldY + 78, 9, color(CONTROL_WARNING), false);
         }
         float searchY = layout.search().y();
-        boolean searchHovered = hit(
-                nvgMouseX, nvgMouseY, layout.search().x(), layout.search().y(), layout.search().width(), layout.search().height());
+        boolean searchHovered = layout.search().contains(nvgMouseX, nvgMouseY);
         layout.search().fill(canvas,
                 color(teamEditorSearchFocused || searchHovered ? CONTROL_INPUT_HOVER : CONTROL_INPUT));
         layout.search().stroke(canvas, 1,

@@ -1,5 +1,6 @@
 package com.seqwawa.seq.ui.widget;
 
+import com.seqwawa.seq.ui.UiBounds;
 import static com.seqwawa.seq.managers.ThemeManager.color;
 import static com.seqwawa.seq.ui.theme.UiColor.*;
 
@@ -94,7 +95,7 @@ public class StringWidget extends SettingWidget<Setting.StringSetting> {
         float boxY = y + 18;
         float boxWidth = indentedContentWidth(TEXT_BOX_MARGIN);
 
-        if (isHovered(mouseX, mouseY, boxX, boxY, boxWidth, TEXT_BOX_HEIGHT)) {
+        if (new UiBounds(boxX, boxY, boxWidth, TEXT_BOX_HEIGHT).contains(mouseX, mouseY)) {
             editing = true;
             editBuffer = setting.getValue() != null ? setting.getValue() : "";
             cursorBlink = 0;

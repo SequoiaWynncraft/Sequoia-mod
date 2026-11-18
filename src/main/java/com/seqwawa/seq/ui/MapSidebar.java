@@ -31,9 +31,6 @@ final class MapSidebar {
     private void clamp(float height) { scroll = Math.max(0, Math.min(scroll, maxScroll(height))); }
     private float maxScroll(float height) { return Math.max(0, contentHeight - height); }
 
-    static boolean hit(float mx, float my, float x, float y, float w, float h) {
-        return new UiBounds(x, y, w, h).contains(mx, my);
-    }
     static void button(UiCanvas canvas, float x, float y, float w, float h, String label,
             boolean active, WorldMapFrame frame) {
         UiBounds bounds = new UiBounds(x, y, w, h);
@@ -59,13 +56,8 @@ final class MapSidebar {
             String summary,
             WorldMapSidebarPanel panel, WorldMapFrame frame, WorldMapSettings settings) {
         boolean expanded = settings.sidebarPanelExpanded(panel);
-        boolean hovered = hit(
-                frame.mouseX(),
-                frame.mouseY(),
-                PADDING,
-                y,
-                SIDEBAR_WIDTH - PADDING * 2,
-                PANEL_HEADER_HEIGHT);
+        boolean hovered = new UiBounds(PADDING, y, SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)
+                .contains(frame.mouseX(), frame.mouseY());
         canvas.fillRect(PADDING,
                 y,
                 SIDEBAR_WIDTH - PADDING * 2,

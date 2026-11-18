@@ -19,4 +19,12 @@ class ConnectionScreenTest {
         assertTrue(ConnectionScreen.showsConnected(true, true, false));
         assertFalse(ConnectionScreen.showsConnected(true, false, true));
     }
+
+    @Test
+    void clearSessionIsOnlyClickableWhereItShows() {
+        org.junit.jupiter.api.Assertions.assertTrue(ConnectionScreen.showsClearSession(true, false));
+        org.junit.jupiter.api.Assertions.assertFalse(ConnectionScreen.showsClearSession(true, true),
+                "the Treasury account has no session to clear, and the button is hidden");
+        org.junit.jupiter.api.Assertions.assertFalse(ConnectionScreen.showsClearSession(false, false));
+    }
 }

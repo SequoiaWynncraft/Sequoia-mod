@@ -18,12 +18,36 @@ class SequoiaSidebarNavigationTest {
                 var layout = SequoiaSidebarNavigation.sidebarLayout(height, destinations.size(), 22, 6);
                 for (int row = 0; row < destinations.size(); row++) {
                     float y = layout.buttonY(row) + layout.buttonHeight() / 2;
-                    assertEquals(destinations.get(row), SequoiaSidebarNavigation.destinationAt(70, y, height, authorized));
-                    assertEquals(null, SequoiaSidebarNavigation.destinationAt(150, y, height, authorized));
-                    assertEquals(null, SequoiaSidebarNavigation.destinationAt(70, layout.buttonY(row) - 0.5f, height, authorized));
+                    assertEquals(destinations.get(row), SequoiaSidebarNavigation.destinationAt(70, y, height, authorized, 0));
+                    assertEquals(null, SequoiaSidebarNavigation.destinationAt(150, y, height, authorized, 0));
+                    assertEquals(null,
+                            SequoiaSidebarNavigation.destinationAt(70, layout.buttonY(row) - 0.5f, height, authorized, 0));
                 }
             }
         }
+    }
+
+    @Test
+    void aButtonIsDrawnWhereItIsClickedEdgesIncluded() {
+        var destinations = SequoiaSidebarNavigation.destinations(false);
+        var layout = SequoiaSidebarNavigation.sidebarLayout(540, destinations.size(), 22, 6, 0);
+        UiBounds first = SequoiaSidebarNavigation.buttonBounds(layout, 0);
+
+        assertEquals(new UiBounds(10, layout.buttonY(0), 120, 22), first);
+        assertEquals(PARTY_FINDER, SequoiaSidebarNavigation.destinationAt(first.right(), first.bottom(), 540, false, 0));
+        assertEquals(null, SequoiaSidebarNavigation.destinationAt(first.right() + 0.5f, first.centerY(), 540, false, 0));
+    }
+
+    @Test
+    void whatAScreenKeepsAtTheFootMovesTheButtonsTheyAreClickedAt() {
+        var destinations = SequoiaSidebarNavigation.destinations(false);
+        // On a short sidebar, keeping room at the foot packs the buttons closer together.
+        var packed = SequoiaSidebarNavigation.sidebarLayout(300, destinations.size(), 22, 6, 84);
+        UiBounds last = SequoiaSidebarNavigation.buttonBounds(packed, destinations.size() - 1);
+
+        assertEquals(GITHUB,
+                SequoiaSidebarNavigation.destinationAt(last.centerX(), last.centerY(), 300, false, 84));
+        assertTrue(last.bottom() <= 300 - 84);
     }
 
     @Test
@@ -96,6 +120,18 @@ class SequoiaSidebarNavigationTest {
                     SettingsScreen.settingsSidebarLayout(360, rows, floor, false),
                     "without the prompt the buttons only keep clear of the card");
         }
+    }
+
+    @Test
+    void settingsKeepsThePromptsPlaceFreeOnlyWhereThePromptFits() {
+        float floor = SidebarProfile.top(360);
+        int rows = SequoiaSidebarNavigation.destinations(false).size();
+
+        assertEquals(360 - floor + 10 + 24, SettingsScreen.settingsSidebarReserved(360, rows, floor, true),
+                "the profile card's room, and the prompt's above it");
+        assertEquals(360 - floor, SettingsScreen.settingsSidebarReserved(360, rows, floor, false));
+        assertEquals(84, SettingsScreen.settingsSidebarReserved(200, 10, 200 - 84, true),
+                "too short for the prompt: only the card's room");
     }
 
     @Test

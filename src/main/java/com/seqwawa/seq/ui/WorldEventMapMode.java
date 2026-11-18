@@ -105,22 +105,27 @@ final class WorldEventMapMode {
             if (worldEventDropdownOpen) { closeWorldEventSearch(); return true; }
             return false;
         }
-        if (MapSidebar.hit(mx, sidebarMy, PADDING, layout.displayPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)) {
+        if (new UiBounds(PADDING, layout.displayPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)
+                .contains(mx, sidebarMy)) {
             togglePanel(WorldMapSidebarPanel.EVENT_DISPLAY); return true;
         }
-        if (MapSidebar.hit(mx, sidebarMy, PADDING, layout.trackingPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)) {
+        if (new UiBounds(PADDING, layout.trackingPanelY(), SIDEBAR_WIDTH - PADDING * 2, PANEL_HEADER_HEIGHT)
+                .contains(mx, sidebarMy)) {
             togglePanel(WorldMapSidebarPanel.EVENT_TRACKING); return true;
         }
-        if (layout.filterY() >= 0 && MapSidebar.hit(mx, sidebarMy, PADDING, layout.filterY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+        if (layout.filterY() >= 0 && new UiBounds(PADDING, layout.filterY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)
+                .contains(mx, sidebarMy)) {
             WorldEventDisplayFilter filter = worldEventFilterAt(mx);
             if (filter != null) { worldEventDisplayFilter = filter; mapSettings.setWorldEventDisplayFilter(filter); refresh(); }
             return true;
         }
-        if (layout.eventFilterY() >= 0 && MapSidebar.hit(mx, sidebarMy, PADDING, layout.eventFilterY(), SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT)) {
+        if (layout.eventFilterY() >= 0 && new UiBounds(PADDING, layout.eventFilterY(),
+                SIDEBAR_WIDTH - PADDING * 2, BUTTON_HEIGHT).contains(mx, sidebarMy)) {
             worldEventDropdownTrackedOnly = mx >= PADDING + (SIDEBAR_WIDTH - PADDING * 2) / 2;
             worldEventDropdownOpen = true; worldEventInputFocused = true; worldEventDropdownScroll = 0; return true;
         }
-        if (layout.eventInputY() >= 0 && MapSidebar.hit(mx, sidebarMy, PADDING, layout.eventInputY(), SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2), INPUT_HEIGHT)) {
+        if (layout.eventInputY() >= 0 && new UiBounds(PADDING, layout.eventInputY(),
+                SequoiaUiStyle.searchWidth(SIDEBAR_WIDTH - PADDING * 2), INPUT_HEIGHT).contains(mx, sidebarMy)) {
             boolean open = !worldEventDropdownOpen;
             closeWorldEventSearch(); worldEventInputFocused = open; worldEventDropdownOpen = open; return true;
         }
@@ -134,8 +139,9 @@ final class WorldEventMapMode {
             var layout = worldEventSidebarLayout();
             var events = worldEventDropdownOptions();
             int visible = Math.min(WORLD_EVENT_DROPDOWN_VISIBLE_ROWS, events.size());
-            if (MapSidebar.hit(frame.mouseX(), frame.mouseY(), PADDING, sidebar.y(layout.eventInputY()) + INPUT_HEIGHT,
-                    SIDEBAR_WIDTH - PADDING * 2, visible * RESOURCE_DROPDOWN_ROW_HEIGHT)) {
+            if (new UiBounds(PADDING, sidebar.y(layout.eventInputY()) + INPUT_HEIGHT,
+                    SIDEBAR_WIDTH - PADDING * 2, visible * RESOURCE_DROPDOWN_ROW_HEIGHT)
+                    .contains(frame.mouseX(), frame.mouseY())) {
                 worldEventDropdownScroll = clampDropdownScroll(worldEventDropdownScroll + (delta > 0 ? -1 : 1), events.size(), WORLD_EVENT_DROPDOWN_VISIBLE_ROWS);
                 return true;
             }
@@ -368,7 +374,7 @@ final class WorldEventMapMode {
             WorldEventDisplayFilter filter = WorldEventDisplayFilter.values()[index];
             float x = PADDING + index * segmentWidth;
             boolean active = worldEventDisplayFilter == filter;
-            boolean hovered = MapSidebar.hit(frame.mouseX(), frame.mouseY(), x, y, segmentWidth, BUTTON_HEIGHT);
+            boolean hovered = new UiBounds(x, y, segmentWidth, BUTTON_HEIGHT).contains(frame.mouseX(), frame.mouseY());
             canvas.fillRect(x, y, segmentWidth, BUTTON_HEIGHT, active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
             canvas.strokeRect(x, y, segmentWidth, BUTTON_HEIGHT, 1, color(MAP_BORDER));
             drawText(canvas, x + segmentWidth / 2f, y + BUTTON_HEIGHT / 2f, 11, filter.label(), color(MAP_TEXT), TextAlignment.CENTER);
@@ -389,7 +395,7 @@ final class WorldEventMapMode {
     }
 
     private void drawTrackingListSegment(UiCanvas canvas, float x, float y, float width, String label, boolean active) {
-        boolean hovered = MapSidebar.hit(frame.mouseX(), frame.mouseY(), x, y, width, BUTTON_HEIGHT);
+        boolean hovered = new UiBounds(x, y, width, BUTTON_HEIGHT).contains(frame.mouseX(), frame.mouseY());
         canvas.fillRect(x, y, width, BUTTON_HEIGHT, active ? color(MAP_CONTROL_ACTIVE) : hovered ? color(MAP_CONTROL_HOVER) : color(MAP_CONTROL));
         canvas.strokeRect(x, y, width, BUTTON_HEIGHT, 1, color(MAP_BORDER));
         drawFittedText(

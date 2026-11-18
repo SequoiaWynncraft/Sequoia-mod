@@ -38,8 +38,8 @@ final class WarAvailabilityEditorScreen extends Screen {
     private String message;
     private boolean replaceOnType = true;
     private boolean saving;
-    private float mouseX;
-    private float mouseY;
+    /** Where the pointer was when this frame began. */
+    private UiPointer pointer = UiPointer.ORIGIN;
 
     WarAvailabilityEditorScreen(Screen parent) {
         super(Component.literal("Custom war availability"));
@@ -55,8 +55,7 @@ final class WarAvailabilityEditorScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
-        this.mouseX = MinecraftUiRenderer.mouseX(mouseX);
-        this.mouseY = MinecraftUiRenderer.mouseY(mouseY);
+        pointer = UiPointer.at(mouseX, mouseY);
         UiRenderer.renderScreen(this, this::renderEditor);
     }
 
@@ -88,17 +87,18 @@ final class WarAvailabilityEditorScreen extends Screen {
         float height = MinecraftUiRenderer.screenHeight();
         float x = (width - PANEL_WIDTH) / 2;
         float y = (height - PANEL_HEIGHT) / 2;
-        float mx = MinecraftUiRenderer.mouseX(click.x());
-        float my = MinecraftUiRenderer.mouseY(click.y());
-        if (hit(mx, my, x + PANEL_WIDTH - 150, y + PANEL_HEIGHT - 34, 62, BUTTON_HEIGHT)) {
+        UiPointer at = UiPointer.at(click);
+        float mx = at.x();
+        float my = at.y();
+        if (new UiBounds(x + PANEL_WIDTH - 150, y + PANEL_HEIGHT - 34, 62, BUTTON_HEIGHT).contains(mx, my)) {
             onClose();
             return true;
         }
-        if (hit(mx, my, x + PANEL_WIDTH - 80, y + PANEL_HEIGHT - 34, 66, BUTTON_HEIGHT)) {
+        if (new UiBounds(x + PANEL_WIDTH - 80, y + PANEL_HEIGHT - 34, 66, BUTTON_HEIGHT).contains(mx, my)) {
             save();
             return true;
         }
-        if (hit(mx, my, x + 14, y + 36, PANEL_WIDTH - 28, 26)) {
+        if (new UiBounds(x + 14, y + 36, PANEL_WIDTH - 28, 26).contains(mx, my)) {
             replaceOnType = false;
             return true;
         }
@@ -206,7 +206,7 @@ final class WarAvailabilityEditorScreen extends Screen {
     }
 
     private void button(UiCanvas canvas, float x, float y, float width, String label, boolean disabled, boolean primary) {
-        boolean hovered = !disabled && hit(mouseX, mouseY, x, y, width, BUTTON_HEIGHT);
+        boolean hovered = !disabled && new UiBounds(x, y, width, BUTTON_HEIGHT).contains(pointer);
         canvas.fillRect(x, y, width, BUTTON_HEIGHT,
                 color(disabled ? ACCENT_PRIMARY_DARK
                         : primary ? (hovered ? ACCENT_PRIMARY_HOVER : ACCENT_PRIMARY)
@@ -223,7 +223,4 @@ final class WarAvailabilityEditorScreen extends Screen {
                 UiCanvas.VerticalAlign.MIDDLE));
     }
 
-    private static boolean hit(float mx, float my, float x, float y, float width, float height) {
-        return mx >= x && mx <= x + width && my >= y && my <= y + height;
-    }
 }

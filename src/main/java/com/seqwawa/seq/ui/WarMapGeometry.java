@@ -411,11 +411,11 @@ final class WarMapGeometry {
     record WarMapLayout(
             float mapX, float mapY, float mapWidth, float mapHeight, float sidebarX, float sidebarWidth) {
         boolean containsMap(float x, float y) {
-            return hit(x, y, mapX, mapY, mapWidth, mapHeight);
+            return new UiBounds(mapX, mapY, mapWidth, mapHeight).contains(x, y);
         }
 
         boolean containsSidebar(float x, float y) {
-            return hit(x, y, sidebarX, mapY, sidebarWidth, mapHeight);
+            return new UiBounds(sidebarX, mapY, sidebarWidth, mapHeight).contains(x, y);
         }
     }
 
@@ -425,7 +425,7 @@ final class WarMapGeometry {
         }
 
         boolean contains(float pointX, float pointY) {
-            return visible() && hit(pointX, pointY, x, y, width, height);
+            return visible() && new UiBounds(x, y, width, height).contains(pointX, pointY);
         }
     }
 

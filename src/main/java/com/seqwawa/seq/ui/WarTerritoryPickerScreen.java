@@ -88,8 +88,8 @@ public final class WarTerritoryPickerScreen extends Screen {
     private ControlTarget keyboardTarget;
     private boolean replaceZoneNameOnType;
 
-    private float nvgMouseX;
-    private float nvgMouseY;
+    /** Where the pointer was when this frame began. */
+    private UiPointer pointer = UiPointer.ORIGIN;
     private double centerX = (MapCalibration.MIN_WORLD_X + MapCalibration.MAX_WORLD_X) / 2;
     private double centerZ = (MapCalibration.MIN_WORLD_Z + MapCalibration.MAX_WORLD_Z) / 2;
     private double pixelsPerBlock = 0.12;
@@ -136,8 +136,7 @@ public final class WarTerritoryPickerScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
-        nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
-        nvgMouseY = MinecraftUiRenderer.mouseY(mouseY);
+        pointer = UiPointer.at(mouseX, mouseY);
         UiRenderer.renderScreen(this, this::renderPicker);
     }
 
@@ -211,8 +210,8 @@ public final class WarTerritoryPickerScreen extends Screen {
         canvas.scissor(viewport.screenX(), viewport.screenY(), viewport.screenWidth(), viewport.screenHeight());
 
         TerritoryAccess access = territoryAccess();
-        hoveredTerritory = !draggingMap && viewport.isInsideScreen(nvgMouseX, nvgMouseY)
-                ? territoryIndex.territoryAt(viewport.screenToWorldX(nvgMouseX), viewport.screenToWorldZ(nvgMouseY))
+        hoveredTerritory = !draggingMap && viewport.isInsideScreen(pointer.x(), pointer.y())
+                ? territoryIndex.territoryAt(viewport.screenToWorldX(pointer.x()), viewport.screenToWorldZ(pointer.y()))
                 : null;
         if (hoveredTerritory != null && !access.isVisible(hoveredTerritory.name())) {
             hoveredTerritory = null;
@@ -271,14 +270,14 @@ public final class WarTerritoryPickerScreen extends Screen {
             float tooltipWidth = Math.min(280,
                     Math.max(150, 14 + Math.max(resourceText.length(), actionText.length()) * 6));
             canvas.fillRect(
-                    nvgMouseX + 10,
-                    nvgMouseY + 10,
+                    pointer.x() + 10,
+                    pointer.y() + 10,
                     tooltipWidth,
                     49,
                     WarPlannerDialogUi.plannerBackground(color(BACKGROUND_POPUP)));
-            text(canvas, hoveredTerritory.name(), nvgMouseX + 17, nvgMouseY + 21, 10, color(TEXT_PRIMARY), false);
-            text(canvas, resourceText, nvgMouseX + 17, nvgMouseY + 36, 9, color(TEXT_MUTED), false);
-            text(canvas, actionText, nvgMouseX + 17, nvgMouseY + 48, 9,
+            text(canvas, hoveredTerritory.name(), pointer.x() + 17, pointer.y() + 21, 10, color(TEXT_PRIMARY), false);
+            text(canvas, resourceText, pointer.x() + 17, pointer.y() + 36, 9, color(TEXT_MUTED), false);
+            text(canvas, actionText, pointer.x() + 17, pointer.y() + 48, 9,
                     color(unavailableOwner == null ? MAP_SUBTEXT : CONTROL_WARNING), false);
         }
     }
@@ -295,7 +294,7 @@ public final class WarTerritoryPickerScreen extends Screen {
         label(canvas, "Name", layout.nameField().y() - 14);
         field(canvas, layout.nameField(), zoneName, focus == Focus.NAME || isKeyboardTarget(NAME), saving);
         positionColorWidget(layout.colorWidget());
-        zoneColorWidget.render(canvas, nvgMouseX, nvgMouseY);
+        zoneColorWidget.render(canvas, pointer.x(), pointer.y());
         if (saving) {
             canvas.fillRect(
                     layout.colorWidget().x(),
@@ -315,7 +314,7 @@ public final class WarTerritoryPickerScreen extends Screen {
                 Team team = snapshot.teams().get(index);
                 Bounds teamBounds = layout.teamRow(shown);
                 boolean assigned = assignedTeamIds.contains(team.id());
-                boolean hovered = !saving && teamBounds.contains(nvgMouseX, nvgMouseY);
+                boolean hovered = !saving && teamBounds.contains(pointer.x(), pointer.y());
                 boolean keyboardFocused = isKeyboardTeam(index);
                 Color background = color(assigned ? STATUS_SUCCESS_BACKGROUND : STATUS_DANGER_BACKGROUND);
                 Color border = color(keyboardFocused
@@ -363,8 +362,9 @@ public final class WarTerritoryPickerScreen extends Screen {
 
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
-        float mx = MinecraftUiRenderer.mouseX(click.x());
-        float my = MinecraftUiRenderer.mouseY(click.y());
+        UiPointer at = UiPointer.at(click);
+        float mx = at.x();
+        float my = at.y();
         float width = MinecraftUiRenderer.screenWidth();
         float height = MinecraftUiRenderer.screenHeight();
         PickerControlLayout layout = controlLayout(width, height);
@@ -446,7 +446,7 @@ public final class WarTerritoryPickerScreen extends Screen {
         PickerControlLayout layout = currentControlLayout();
         positionColorWidget(layout.colorWidget());
         if (!saving && zoneColorWidget.mouseDragged(
-                MinecraftUiRenderer.mouseX(click.x()), MinecraftUiRenderer.mouseY(click.y()))) {
+                UiPointer.at(click).x(), UiPointer.at(click).y())) {
             return true;
         }
         if (draggingMap && click.button() == 0) {
@@ -465,13 +465,14 @@ public final class WarTerritoryPickerScreen extends Screen {
         PickerControlLayout layout = currentControlLayout();
         positionColorWidget(layout.colorWidget());
         if (!saving && zoneColorWidget.mouseReleased(
-                MinecraftUiRenderer.mouseX(click.x()), MinecraftUiRenderer.mouseY(click.y()), click.button())) {
+                UiPointer.at(click).x(), UiPointer.at(click).y(), click.button())) {
             return true;
         }
         if (click.button() == 0 && draggingMap) {
             draggingMap = false;
-            float mx = MinecraftUiRenderer.mouseX(click.x());
-            float my = MinecraftUiRenderer.mouseY(click.y());
+            UiPointer at = UiPointer.at(click);
+            float mx = at.x();
+            float my = at.y();
             MapViewport viewport = viewport(layout.map());
             if (!saving && !dragMoved && viewport.isInsideScreen(mx, my)) {
                 GuildTerritory territory = territoryIndex.territoryAt(
@@ -487,8 +488,9 @@ public final class WarTerritoryPickerScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        float mx = MinecraftUiRenderer.mouseX(mouseX);
-        float my = MinecraftUiRenderer.mouseY(mouseY);
+        UiPointer at = UiPointer.at(mouseX, mouseY);
+        float mx = at.x();
+        float my = at.y();
         PickerControlLayout layout = currentControlLayout();
         int visibleTeamRows = layout.visibleTeamRows();
         if (layout.teamScroll().contains(mx, my)) {
@@ -887,7 +889,7 @@ public final class WarTerritoryPickerScreen extends Screen {
             boolean danger,
             boolean disabled,
             boolean focused) {
-        boolean hovered = !disabled && bounds.contains(nvgMouseX, nvgMouseY);
+        boolean hovered = !disabled && bounds.contains(pointer.x(), pointer.y());
         Color background = disabled ? color(ACCENT_DISABLED)
                 : danger ? color(hovered ? CONTROL_DANGER_HOVER : CONTROL_DANGER)
                 : color(hovered ? MAP_CONTROL_HOVER : MAP_CONTROL);

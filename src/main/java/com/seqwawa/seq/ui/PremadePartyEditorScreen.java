@@ -11,7 +11,6 @@ import com.seqwawa.seq.model.KnownGuildMember;
 import com.seqwawa.seq.model.PremadeParty;
 import com.seqwawa.seq.utils.TextInputFilters;
 import com.seqwawa.seq.utils.TextInputHelper;
-import com.seqwawa.seq.utils.rendering.MinecraftUiRenderer;
 import com.seqwawa.seq.utils.rendering.UiCanvas;
 import com.seqwawa.seq.utils.rendering.UiImage;
 import com.seqwawa.seq.utils.rendering.UiRenderer;
@@ -59,17 +58,17 @@ public class PremadePartyEditorScreen extends Screen {
     /** Set by a first click on Delete, which a second one confirms. */
     private boolean deleteArmed;
 
-    private float uiMouseX;
-    private float uiMouseY;
+    /** Where the pointer was when this frame began. */
+    private UiPointer pointer = UiPointer.ORIGIN;
 
     private final List<MemberHitbox> memberHitboxes = new ArrayList<>();
-    private Rect nameBounds;
-    private Rect memberInputBounds;
-    private Rect addBounds;
-    private Rect addPartyBounds;
-    private Rect saveBounds;
-    private Rect cancelBounds;
-    private Rect deleteBounds;
+    private UiBounds nameBounds;
+    private UiBounds memberInputBounds;
+    private UiBounds addBounds;
+    private UiBounds addPartyBounds;
+    private UiBounds saveBounds;
+    private UiBounds cancelBounds;
+    private UiBounds deleteBounds;
 
     public PremadePartyEditorScreen(Screen parent, PremadeParty existing) {
         super(Component.literal("Premade party"));
@@ -90,8 +89,7 @@ public class PremadePartyEditorScreen extends Screen {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        uiMouseX = MinecraftUiRenderer.mouseX(mouseX);
-        uiMouseY = MinecraftUiRenderer.mouseY(mouseY);
+        pointer = UiPointer.at(mouseX, mouseY);
         memberHitboxes.clear();
 
         UiRenderer.renderScreen(this, canvas -> {
@@ -124,7 +122,7 @@ public class PremadePartyEditorScreen extends Screen {
                     UiCanvas.HorizontalAlign.LEFT);
             cursorY += 28;
 
-            nameBounds = new Rect(contentX, cursorY, contentWidth, INPUT_HEIGHT);
+            nameBounds = new UiBounds(contentX, cursorY, contentWidth, INPUT_HEIGHT);
             renderInput(canvas, fontName, nameBounds, nameInput, "Party name, like \"TNA core\"", focused == Field.NAME);
             cursorY += INPUT_HEIGHT + SECTION_GAP;
 
@@ -159,7 +157,7 @@ public class PremadePartyEditorScreen extends Screen {
             cursorY += 6;
 
             float addButtonWidth = 54;
-            memberInputBounds = new Rect(contentX, cursorY, contentWidth - addButtonWidth - 6, INPUT_HEIGHT);
+            memberInputBounds = new UiBounds(contentX, cursorY, contentWidth - addButtonWidth - 6, INPUT_HEIGHT);
             renderInput(
                     canvas,
                     fontName,
@@ -167,11 +165,11 @@ public class PremadePartyEditorScreen extends Screen {
                     memberInput,
                     draft.isFull() ? "Party is full" : "Add a username",
                     focused == Field.MEMBER);
-            addBounds = new Rect(contentX + contentWidth - addButtonWidth, cursorY, addButtonWidth, INPUT_HEIGHT);
+            addBounds = new UiBounds(contentX + contentWidth - addButtonWidth, cursorY, addButtonWidth, INPUT_HEIGHT);
             renderButton(canvas, fontName, addBounds, "Add", !draft.isFull() && !memberInput.isBlank(), false);
             cursorY += INPUT_HEIGHT + 6;
 
-            addPartyBounds = new Rect(contentX, cursorY, 128, INPUT_HEIGHT);
+            addPartyBounds = new UiBounds(contentX, cursorY, 128, INPUT_HEIGHT);
             renderButton(canvas, fontName, addPartyBounds, "Add my party", !draft.isFull(), false);
             if (error != null) {
                 drawText(
@@ -208,7 +206,7 @@ public class PremadePartyEditorScreen extends Screen {
 
     private void renderMemberRow(
             UiCanvas canvas, String fontName, float x, float y, float width, String member) {
-        boolean hovered = uiMouseX >= x && uiMouseX <= x + width && uiMouseY >= y && uiMouseY <= y + MEMBER_ROW_HEIGHT;
+        boolean hovered = new UiBounds(x, y, width, MEMBER_ROW_HEIGHT).contains(pointer);
         if (hovered) {
             canvas.fillRect(x - 4, y, width + 8, MEMBER_ROW_HEIGHT, color(CONTROL_INPUT));
         }
@@ -231,12 +229,12 @@ public class PremadePartyEditorScreen extends Screen {
                 member,
                 UiCanvas.HorizontalAlign.LEFT);
 
-        Rect removeBounds = new Rect(x + width - 18, y + (MEMBER_ROW_HEIGHT - 16) / 2f, 16, 16);
+        UiBounds removeBounds = new UiBounds(x + width - 18, y + (MEMBER_ROW_HEIGHT - 16) / 2f, 16, 16);
         drawText(
                 canvas,
                 fontName,
                 BODY_FONT_SIZE,
-                removeBounds.contains(uiMouseX, uiMouseY) ? color(CONTROL_DANGER) : color(TEXT_MUTED),
+                removeBounds.contains(pointer.x(), pointer.y()) ? color(CONTROL_DANGER) : color(TEXT_MUTED),
                 removeBounds.x() + 8,
                 removeBounds.y() + 8,
                 "x",
@@ -256,15 +254,15 @@ public class PremadePartyEditorScreen extends Screen {
 
     private void renderFooter(UiCanvas canvas, String fontName, float x, float y, float width) {
         float buttonWidth = 84;
-        saveBounds = new Rect(x + width - buttonWidth, y, buttonWidth, FOOTER_BUTTON_H);
+        saveBounds = new UiBounds(x + width - buttonWidth, y, buttonWidth, FOOTER_BUTTON_H);
         renderButton(canvas, fontName, saveBounds, "Save", canSave(), true);
 
-        cancelBounds = new Rect(saveBounds.x() - buttonWidth - 6, y, buttonWidth, FOOTER_BUTTON_H);
+        cancelBounds = new UiBounds(saveBounds.x() - buttonWidth - 6, y, buttonWidth, FOOTER_BUTTON_H);
         renderButton(canvas, fontName, cancelBounds, "Cancel", true, false);
 
         if (!isNew()) {
-            deleteBounds = new Rect(x, y, buttonWidth, FOOTER_BUTTON_H);
-            boolean hovered = deleteBounds.contains(uiMouseX, uiMouseY);
+            deleteBounds = new UiBounds(x, y, buttonWidth, FOOTER_BUTTON_H);
+            boolean hovered = deleteBounds.contains(pointer.x(), pointer.y());
             canvas.fillRect(
                     deleteBounds.x(),
                     deleteBounds.y(),
@@ -290,7 +288,7 @@ public class PremadePartyEditorScreen extends Screen {
     }
 
     private void renderInput(
-            UiCanvas canvas, String fontName, Rect bounds, String value, String placeholder, boolean isFocused) {
+            UiCanvas canvas, String fontName, UiBounds bounds, String value, String placeholder, boolean isFocused) {
         canvas.fillRect(
                 bounds.x(),
                 bounds.y(),
@@ -313,8 +311,8 @@ public class PremadePartyEditorScreen extends Screen {
     }
 
     private void renderButton(
-            UiCanvas canvas, String fontName, Rect bounds, String label, boolean enabled, boolean accent) {
-        boolean hovered = enabled && bounds.contains(uiMouseX, uiMouseY);
+            UiCanvas canvas, String fontName, UiBounds bounds, String label, boolean enabled, boolean accent) {
+        boolean hovered = enabled && bounds.contains(pointer.x(), pointer.y());
         // The 1.10.6 palette, as in the Player List: the main accent by default, the
         // success colour for the action that commits.
         Color background;
@@ -344,8 +342,9 @@ public class PremadePartyEditorScreen extends Screen {
         if (click.button() != 0) {
             return super.mouseClicked(click, outsideScreen);
         }
-        float mx = MinecraftUiRenderer.mouseX(click.x());
-        float my = MinecraftUiRenderer.mouseY(click.y());
+        UiPointer at = UiPointer.at(click);
+        float mx = at.x();
+        float my = at.y();
         error = null;
         if (deleteBounds != null && deleteBounds.contains(mx, my)) {
             if (deleteArmed) {
@@ -535,11 +534,5 @@ public class PremadePartyEditorScreen extends Screen {
         MEMBER
     }
 
-    private record Rect(float x, float y, float width, float height) {
-        boolean contains(float pointX, float pointY) {
-            return pointX >= x && pointX <= x + width && pointY >= y && pointY <= y + height;
-        }
-    }
-
-    private record MemberHitbox(Rect bounds, String member) {}
+    private record MemberHitbox(UiBounds bounds, String member) {}
 }

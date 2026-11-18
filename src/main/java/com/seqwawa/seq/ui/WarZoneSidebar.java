@@ -336,14 +336,15 @@ final class WarZoneSidebar {
         if (entry.categoryHeader()) {
             if (!manager.canManage()
                     || entry.category() == null
-                    || !hit(mx, my, layout.sidebarX() + 10, placement.y(), layout.sidebarWidth() - 84,
-                            WAR_MAP_CATEGORY_ROW_HEIGHT)) {
+                    || !new UiBounds(layout.sidebarX() + 10, placement.y(),
+                            layout.sidebarWidth() - 84, WAR_MAP_CATEGORY_ROW_HEIGHT).contains(mx, my)) {
                 return false;
             }
             actions.openCategory(entry.category());
             return true;
         }
-        if (!hit(mx, my, layout.sidebarX() + 18, placement.y() + 3, layout.sidebarWidth() - 30, 22)) return false;
+        if (!new UiBounds(layout.sidebarX() + 18, placement.y() + 3, layout.sidebarWidth() - 30, 22)
+                .contains(mx, my)) return false;
         actions.openZone(entry.zone(), true);
         return true;
     }
@@ -437,11 +438,11 @@ final class WarZoneSidebar {
         float sidebarX = layout.sidebarX();
         if (manager.canManage()) {
             float headerActionWidth = (sidebarWidth - 18) / 2;
-            if (hit(mx, my, sidebarX + 6, top + 37, headerActionWidth, 20)) {
+            if (new UiBounds(sidebarX + 6, top + 37, headerActionWidth, 20).contains(mx, my)) {
                 actions.openCategory(null);
                 return true;
             }
-            if (hit(mx, my, sidebarX + 12 + headerActionWidth, top + 37, headerActionWidth, 20)) {
+            if (new UiBounds(sidebarX + 12 + headerActionWidth, top + 37, headerActionWidth, 20).contains(mx, my)) {
                 actions.openZone(null, false);
                 return true;
             }
@@ -456,19 +457,19 @@ final class WarZoneSidebar {
         if (placement == null) return false;
         ZoneSidebarEntry entry = placement.entry();
         float rowY = placement.y();
-        if (!hit(mx, my, sidebarX + 6, rowY, sidebarWidth - 12, entry.height())) return false;
+        if (!new UiBounds(sidebarX + 6, rowY, sidebarWidth - 12, entry.height()).contains(mx, my)) return false;
         if (entry.categoryHeader()) {
             float toggleX = manager.canManage() && entry.category() != null
                     ? sidebarX + sidebarWidth - 70
                     : sidebarX + sidebarWidth - 48;
             float toggleWidth = manager.canManage() && entry.category() != null ? 38 : 42;
-            if (hit(mx, my, toggleX, rowY + 3, toggleWidth, 20)) {
+            if (new UiBounds(toggleX, rowY + 3, toggleWidth, 20).contains(mx, my)) {
                 toggleZoneCategoryDisplay(entry.categoryId());
                 return true;
             }
             if (manager.canManage()
                     && entry.category() != null
-                    && hit(mx, my, sidebarX + sidebarWidth - 28, rowY + 3, 22, 20)) {
+                    && new UiBounds(sidebarX + sidebarWidth - 28, rowY + 3, 22, 20).contains(mx, my)) {
                 if (pendingDeleteZoneCategory != null
                         && pendingDeleteZoneCategory.id() == entry.category().id()) {
                     actions.result(manager.deleteZoneCategory(
@@ -485,15 +486,16 @@ final class WarZoneSidebar {
         }
         Zone zone = entry.zone();
         float visibilityX = sidebarX + sidebarWidth - (manager.canManage() ? 84 : 54);
-        if (hit(mx, my, visibilityX, rowY + 3, 44, 20)) {
+        if (new UiBounds(visibilityX, rowY + 3, 44, 20).contains(mx, my)) {
             if (!containsCategory(hiddenZoneCategoryIds, zone.categoryId())) toggleZoneDisplay(zone.id());
             return true;
         }
-        if (manager.canManage() && hit(mx, my, sidebarX + sidebarWidth - 36, rowY + 3, 28, 20)) {
+        if (manager.canManage() && new UiBounds(sidebarX + sidebarWidth - 36, rowY + 3, 28, 20).contains(mx, my)) {
             if (!manager.isMutating()) zoneActionsId = zone.id();
             return true;
         }
-        if (manager.canManage() && !manager.isMutating() && hit(mx, my, sidebarX + 10, rowY + 2, sidebarWidth - 20, 40)) {
+        if (manager.canManage() && !manager.isMutating() && new UiBounds(sidebarX + 10, rowY + 2, sidebarWidth - 20, 40)
+                .contains(mx, my)) {
             zoneDrag = new ZoneDrag(zone.id(), zone.name(), zone.version(), mx, my, false);
             return true;
         }
@@ -511,10 +513,6 @@ final class WarZoneSidebar {
 
     private void button(UiCanvas canvas, float x, float y, float width, float height, String label, boolean danger, boolean disabled) {
         tonedButton(canvas, nvgMouseX, nvgMouseY, x, y, width, height, label, danger ? ButtonTone.DANGER : ButtonTone.SECONDARY, disabled);
-    }
-
-    private static boolean hit(float mx, float my, float x, float y, float width, float height) {
-        return mx >= x && mx <= x + width && my >= y && my <= y + height;
     }
 
     private record PendingDelete(long id, Long version) {}

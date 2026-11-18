@@ -24,8 +24,8 @@ public class SequoiaScreen extends Screen {
     private static final float TITLE_FONT_SIZE = 76.8f;
     private static final float BUTTON_FONT_SIZE = 14;
 
-    private float nvgMouseX;
-    private float nvgMouseY;
+    /** Where the pointer was when this frame began. */
+    private UiPointer pointer = UiPointer.ORIGIN;
 
     public SequoiaScreen() {
         super(Component.literal("Sequoia"));
@@ -35,8 +35,7 @@ public class SequoiaScreen extends Screen {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
-        nvgMouseX = MinecraftUiRenderer.mouseX(mouseX);
-        nvgMouseY = MinecraftUiRenderer.mouseY(mouseY);
+        pointer = UiPointer.at(mouseX, mouseY);
 
         UiRenderer.renderScreen(this, canvas -> {
             float screenWidth = canvas.metrics().width();
@@ -68,25 +67,25 @@ public class SequoiaScreen extends Screen {
                     UiCanvas.VerticalAlign.MIDDLE));
 
             // Buttons
-            float centerX = screenWidth / 2f - BUTTON_WIDTH / 2f;
-
             for (int row = 0; row < destinations.size(); row++) {
-                drawButton(canvas, centerX, menu.buttonY(row), menu.buttonHeight(), destinations.get(row).label());
+                drawButton(canvas, button(screenWidth, menu, row), destinations.get(row).label());
             }
         });
     }
 
-    private void drawButton(UiCanvas canvas, float x, float y, float height, String label) {
-        boolean hovered = nvgMouseX >= x && nvgMouseX <= x + BUTTON_WIDTH
-                && nvgMouseY >= y && nvgMouseY <= y + height;
+    /** Where the button on {@code row} is: centred across the screen. */
+    private static UiBounds button(float screenWidth, MenuLayout menu, int row) {
+        return new UiBounds(screenWidth / 2f - BUTTON_WIDTH / 2f, menu.buttonY(row), BUTTON_WIDTH, menu.buttonHeight());
+    }
 
-        Color bgColor = hovered ? color(CONTROL_INPUT_HOVER) : color(BACKGROUND_POPUP);
-        canvas.fillRect(x, y, BUTTON_WIDTH, height, bgColor);
+    private void drawButton(UiCanvas canvas, UiBounds button, String label) {
+        Color bgColor = button.contains(pointer) ? color(CONTROL_INPUT_HOVER) : color(BACKGROUND_POPUP);
+        button.fill(canvas, bgColor);
 
         String fontName = SeqClient.getFontManager().getSelectedFont();
-        canvas.drawText(label, x + BUTTON_WIDTH / 2f, y + height / 2f, new UiCanvas.TextStyle(
+        canvas.drawText(label, button.centerX(), button.centerY(), new UiCanvas.TextStyle(
                 fontName,
-                Math.min(BUTTON_FONT_SIZE, Math.max(8, height - 2)),
+                Math.min(BUTTON_FONT_SIZE, Math.max(8, button.height() - 2)),
                 color(TEXT_PRIMARY),
                 UiCanvas.HorizontalAlign.CENTER,
                 UiCanvas.VerticalAlign.MIDDLE));
@@ -95,28 +94,20 @@ public class SequoiaScreen extends Screen {
     @Override
     public boolean mouseClicked(@NotNull MouseButtonEvent click, boolean outsideScreen) {
         if (click.button() == 0) {
-            float mx = MinecraftUiRenderer.mouseX(click.x());
-            float my = MinecraftUiRenderer.mouseY(click.y());
-
+            UiPointer at = UiPointer.at(click);
             float screenWidth = MinecraftUiRenderer.screenWidth();
             float screenHeight = MinecraftUiRenderer.screenHeight();
 
             var destinations = SequoiaSidebarNavigation.mainMenuDestinations();
             MenuLayout menu = menuLayout(screenHeight, destinations.size());
-            float centerX = screenWidth / 2f - BUTTON_WIDTH / 2f;
-
             for (int row = 0; row < destinations.size(); row++) {
-                if (isInButton(mx, my, centerX, menu.buttonY(row), menu.buttonHeight())) {
+                if (button(screenWidth, menu, row).contains(at)) {
                     SequoiaSidebarNavigation.open(destinations.get(row), this);
                     return true;
                 }
             }
         }
         return super.mouseClicked(click, outsideScreen);
-    }
-
-    private boolean isInButton(float mx, float my, float bx, float by, float buttonHeight) {
-        return mx >= bx && mx <= bx + BUTTON_WIDTH && my >= by && my <= by + buttonHeight;
     }
 
     static MenuLayout menuLayout(float screenHeight, int rowCount) {
