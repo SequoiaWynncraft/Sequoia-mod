@@ -3,6 +3,7 @@ package com.seqwawa.seq.raids.tna;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.client.ServerScopeTracker;
 import com.seqwawa.seq.network.WynncraftServerPolicy;
 import com.seqwawa.seq.utils.PacketTextNormalizer;
 import java.util.ArrayList;
@@ -11,7 +12,6 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientWorldEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 import net.minecraft.client.Minecraft;
@@ -57,7 +57,7 @@ public final class TnaLineupHelper {
 
     public static void initialize() {
         ClientTickEvents.END_CLIENT_TICK.register(TnaLineupHelper::tick);
-        ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> reset());
+        ServerScopeTracker.get().onWorldChange(TnaLineupHelper::reset);
         WorldRenderEvents.BEFORE_DEBUG_RENDER.register(TnaLineupHelper::render);
     }
 

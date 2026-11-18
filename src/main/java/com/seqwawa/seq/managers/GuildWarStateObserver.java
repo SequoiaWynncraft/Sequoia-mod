@@ -1,6 +1,7 @@
 package com.seqwawa.seq.managers;
 
 import com.seqwawa.seq.client.SeqClient;
+import com.seqwawa.seq.client.ServerScopeTracker;
 import com.seqwawa.seq.model.war.GuildWarObservation;
 import com.seqwawa.seq.model.war.GuildWarState;
 import com.seqwawa.seq.network.ApiClient;
@@ -10,10 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientWorldEvents;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
@@ -22,7 +20,6 @@ import net.minecraft.world.item.ItemStack;
 
 /** Reads actual server packets and shares guild observations even when visual effects are off. */
 public final class GuildWarStateObserver {
-    private static final AtomicBoolean RESET_REQUESTED = new AtomicBoolean();
     private static final GuildWarStateSync SYNC = new GuildWarStateSync(new GuildWarStateSync.Gateway() {
         @Override public CompletableFuture<GuildWarState> fetch() { return ApiClient.getInstance().getGuildWarState(); }
         @Override public CompletableFuture<GuildWarState> observe(GuildWarObservation report) { return ApiClient.getInstance().observeGuildWarState(report); }
@@ -34,8 +31,12 @@ public final class GuildWarStateObserver {
     private GuildWarStateObserver() {}
 
     public static void initialize() {
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> RESET_REQUESTED.set(true));
-        ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> SYNC.reset());
+        ServerScopeTracker scopes = ServerScopeTracker.get();
+        // What it saw belongs to the server and world it saw it on.
+        scopes.onDisconnect(SYNC::reset);
+        scopes.onWorldChange(SYNC::reset);
+        scopes.whileBlocked(tick -> SYNC.reset());
+        scopes.whileUnknown(tick -> SYNC.reset());
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             UUID current = client.getUser().getProfileId();
             if (!java.util.Objects.equals(current, account)) { account = current; SYNC.reset(); }
@@ -44,11 +45,7 @@ public final class GuildWarStateObserver {
     }
 
     private static boolean ready() {
-        if (RESET_REQUESTED.getAndSet(false) || !WynncraftServerPolicy.isCurrentServerAllowed()) {
-            SYNC.reset();
-            return false;
-        }
-        return true;
+        return WynncraftServerPolicy.isCurrentServerAllowed();
     }
 
     public static void onSystemChat(Component message) {

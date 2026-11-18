@@ -3,18 +3,14 @@ package com.seqwawa.seq.client;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.logging.LogUtils;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 
 import com.seqwawa.seq.LightRoomTnaRange.LightRoom;
 import lombok.Getter;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientWorldEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
@@ -386,14 +382,14 @@ public class SeqClient implements ClientModInitializer {
     private static KeyMapping shareBombsKey;
     private static WynnClassType lastBroadcastPartyClass;
     private static boolean wasInPartyFinder;
-    private static WynncraftServerPolicy.Scope lastServerScope = WynncraftServerPolicy.Scope.BLOCKED;
-    private static String lastServerHost;
     private static long lastProductionRecoveryAttemptAtMs;
 
     @Override
     public void onInitializeClient() {
-        // First, so everything below can hand results to the game thread.
+        // First, so everything below can hand results to the game thread and hear server changes.
         ClientThread.install();
+        ServerScopeTracker scopes = ServerScopeTracker.get();
+        scopes.install();
         TnaSahurSoundDetector.initialize();
         fontManager = new FontManager();
         gameManager = new GameManager();
@@ -434,22 +430,22 @@ public class SeqClient implements ClientModInitializer {
         CraftedScrollRangeVisualiserClient.initialize();
         IngredientWaypointRenderer.initialize();
         TnaLineupHelper.initialize();
-        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> NicknameResolverCache.reset());
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> NicknameResolverCache.reset());
+        scopes.onJoin(NicknameResolverCache::reset);
+        scopes.onDisconnect(NicknameResolverCache::reset);
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             LeafEventStream.getInstance().stop();
             GlobalSoundListener.shutdown();
             MinecraftUiRenderer.shutdown();
         });
-        ClientPlayConnectionEvents.DISCONNECT.register(
-                (handler, client) -> UnlinkedAccountWarning.getInstance().reset());
+        scopes.onDisconnect(() -> UnlinkedAccountWarning.getInstance().reset());
         GearSharingProtectionManager gearSharingProtectionManager = new GearSharingProtectionManager();
-        ClientWorldEvents.AFTER_CLIENT_WORLD_CHANGE.register((client, world) -> {
+        scopes.onWorldChange(() -> {
             gearSharingProtectionManager.onWorldChange(
                     autoDisableWynntilsGearsharingSetting != null && autoDisableWynntilsGearsharingSetting.getValue());
             resetWarTrackingState();
             warTerritoryBoundsReminder.clear();
         });
+        listenForServerScope(scopes);
         LightRoom.init();
 
         KeyMapping.Category category =
@@ -508,15 +504,9 @@ public class SeqClient implements ClientModInitializer {
                 }
             }
 
-            WynncraftServerPolicy.Scope serverScope = WynncraftServerPolicy.currentScope();
-            String currentHost = WynncraftServerPolicy.currentNormalizedHost();
-            WynncraftServerPolicy.Scope previousServerScope = lastServerScope;
-            logServerScopeChange(serverScope, currentHost);
-            if (previousServerScope == WynncraftServerPolicy.Scope.MAIN
-                    && serverScope != WynncraftServerPolicy.Scope.MAIN) {
-                SequoiaGuildMembership.getInstance().reset();
-                NicknameResolverCache.reset();
-            }
+            ServerScopeTracker.Tick scope = scopes.update(
+                    WynncraftServerPolicy.currentScope(), WynncraftServerPolicy.currentNormalizedHost());
+            WynncraftServerPolicy.Scope serverScope = scope.current();
             boolean minecraftAccountChanged =
                     SessionManager.getInstance().checkAccount(currentMinecraftProfileId(), currentMinecraftUsername());
             com.seqwawa.seq.managers.WorldEventLootTracker.getInstance().tick(client);
@@ -526,33 +516,8 @@ public class SeqClient implements ClientModInitializer {
                         serverScope,
                         notifyTrackedWorldEventsSetting != null && notifyTrackedWorldEventsSetting.getValue());
             }
-            if (serverScope == WynncraftServerPolicy.Scope.BLOCKED) {
-                RadianceCheckerClient.reset();
-                ConnectionManager.disconnectForBlockedServer();
-                wasInPartyFinder = false;
-                lastBroadcastPartyClass = null;
-                if (wynnPartySyncManager != null) {
-                    wynnPartySyncManager.reset();
-                }
-                RaidPartySnapshotTracker.onServerUnavailable();
-                resetWarTrackingState();
-                if (guildStorageTracker != null) {
-                    guildStorageTracker.reset();
-                }
-                if (currentHost == null) {
-                    resetWarPlanningStateForWorldTransition();
-                } else {
-                    resetWarPlanningState();
-                }
-                GuildRaidProgressService.getInstance().tick(false);
-                return;
-            }
-            if (serverScope == WynncraftServerPolicy.Scope.UNKNOWN) {
-                RadianceCheckerClient.reset();
-                RaidPartySnapshotTracker.onServerUnavailable();
-                ConnectionManager.flushPendingOutbound();
-                resetWarTrackingState();
-                resetWarPlanningStateForWorldTransition();
+            if (serverScope != WynncraftServerPolicy.Scope.MAIN) {
+                scopes.away(scope);
                 GuildRaidProgressService.getInstance().tick(false);
                 return;
             }
@@ -562,7 +527,7 @@ public class SeqClient implements ClientModInitializer {
                 return;
             }
 
-            maybeRecoverProductionConnection(serverScope, previousServerScope, currentHost);
+            maybeRecoverProductionConnection(serverScope, scope.previous(), scope.host());
 
             getWarPlannerManager().tick();
             getWarTerritoryQueueManager().tick();
@@ -635,6 +600,45 @@ public class SeqClient implements ClientModInitializer {
         lastBroadcastPartyClass = null;
     }
 
+    /**
+     * What leaving Wynncraft's main servers clears, in the order the tick has always cleared
+     * it. On a server the mod does not serve, the connection closes and every tracker starts
+     * over; while a transfer settles, only what a new instance would make stale.
+     */
+    private static void listenForServerScope(ServerScopeTracker scopes) {
+        scopes.onScopeChange(tick -> {
+            if (tick.leftMain()) {
+                SequoiaGuildMembership.getInstance().reset();
+                NicknameResolverCache.reset();
+            }
+        });
+        scopes.whileBlocked(tick -> {
+            RadianceCheckerClient.reset();
+            ConnectionManager.disconnectForBlockedServer();
+            forgetPartyClassBroadcast();
+            if (wynnPartySyncManager != null) {
+                wynnPartySyncManager.reset();
+            }
+            RaidPartySnapshotTracker.onServerUnavailable();
+            resetWarTrackingState();
+            if (guildStorageTracker != null) {
+                guildStorageTracker.reset();
+            }
+            if (tick.host() == null) {
+                resetWarPlanningStateForWorldTransition();
+            } else {
+                resetWarPlanningState();
+            }
+        });
+        scopes.whileUnknown(tick -> {
+            RadianceCheckerClient.reset();
+            RaidPartySnapshotTracker.onServerUnavailable();
+            ConnectionManager.flushPendingOutbound();
+            resetWarTrackingState();
+            resetWarPlanningStateForWorldTransition();
+        });
+    }
+
     private static void resetWarTrackingState() {
         if (guildWarTracker != null) {
             guildWarTracker.reset();
@@ -666,20 +670,6 @@ public class SeqClient implements ClientModInitializer {
             return null;
         }
         return mc.getUser().getName();
-    }
-
-    private static void logServerScopeChange(WynncraftServerPolicy.Scope serverScope, String currentHost) {
-        if (serverScope == lastServerScope && Objects.equals(currentHost, lastServerHost)) {
-            return;
-        }
-        LOGGER.info(
-                "[Seq] Wynncraft scope changed {} -> {} host={} previousHost={}",
-                lastServerScope,
-                serverScope,
-                currentHost,
-                lastServerHost);
-        lastServerScope = serverScope;
-        lastServerHost = currentHost;
     }
 
     private static void maybeRecoverProductionConnection(
