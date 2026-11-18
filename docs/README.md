@@ -11,6 +11,7 @@
 - [Chat and image previews](players/chat.md)
 - [Settings and themes](players/settings.md)
 - [Achievements](players/achievements.md)
+- [Quests and Leaf](players/quests.md)
 - [HQ observations and cheapest success](cheapest-success.md)
 
 ## Development
