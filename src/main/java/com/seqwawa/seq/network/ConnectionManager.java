@@ -2177,21 +2177,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                     String minimumSafeVersion = extractMinimumSafeVersion(json);
                     String capability = extractCapability(json);
                     int status = extractStatusCode(json);
-                    String normalized = error.toLowerCase(Locale.ROOT);
-
-                    if (treasuryOnlyConnection
-                            && requestId == null
-                            && isTreasuryAuthenticationError(backendCode)) {
-                        treasurySessionAuthenticator.reset();
-                        authFailed = true;
-                        autoReconnect = false;
-                        notifyConnectionFailure(
-                                "Treasury identity verification failed: " + error,
-                                true);
-                        finishConnectFlow();
-                        closeTreasuryAuthFailure();
-                        return;
-                    }
 
                     if (requestId != null
                             && treasuryOutErrorHandler != null
@@ -2211,87 +2196,92 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                         return;
                     }
 
-                    if (isSilentGuildChatMembershipReject(backendCode, capability, normalized)) {
-                        SeqClient.LOGGER.info("[WebSocket] Guild chat relay rejected because sender is not in guild");
-                        return;
-                    }
-
-                    if (isSessionMembershipReject(backendCode, capability, normalized)) {
-                        disableMemberFeaturesForSession();
-                        return;
-                    }
-
-                    SeqClient.LOGGER.warn(
-                            "[WebSocket] Backend error status={} code={} message={}", status, backendCode, error);
-
-                    if ("mod_version_unsupported".equalsIgnoreCase(backendCode) || status == 426) {
-                        if (shouldDisableReconnectForVersionRejection(capability)) {
-                            autoReconnect = false;
-                        }
-                        maybeNotifyVersionRejection(capability, minimumSafeVersion, error);
-                        return;
-                    }
-
-                    if (isSessionAuthenticationError(status, capability, normalized)) {
-                        authFailed = true;
-                        authenticated = false;
-                        registerAuthFailure();
-                        notify("Invalid auth request. Run /seq connect to start a fresh backend session.");
-                        return;
-                    }
-
-                    if (status == 401 || normalized.contains("invalid token") || normalized.contains("expired")) {
-                        authFailed = true;
-                        authenticated = false;
-                        registerAuthFailure();
-                        SeqClient.getAuthService()
-                                .invalidateSession(
-                                        normalized.contains("expired")
-                                                ? AuthErrorCode.TOKEN_EXPIRED
-                                                : AuthErrorCode.TOKEN_INVALID,
-                                        normalized.contains("expired")
-                                                ? "Backend token expired. Re-authentication required."
-                                                : "Backend rejected the stored token. Re-authentication required.");
-                        notify(SeqClient.getAuthService().getLastError().getMessage());
-                        return;
-                    }
-
-                    if (isPartyFinderError(json, normalized)) {
-                        SeqClient.getPartyFinderManager().pushUiError(error);
-                        return;
-                    }
-
-                    if (isCapabilityAuthorizationReject(status, capability)) {
-                        SeqClient.LOGGER.info(
-                                "[WebSocket] Capability authorization rejected capability={} message={}",
-                                capability,
-                                error);
-                        notify(formatCapabilityAccessDenied(capability, error));
-                        return;
-                    }
-
-                    if (status == 403 || normalized.contains("not in guild") || normalized.contains("guild")) {
-                        notInGuild = true;
-                        authFailed = true;
-                        authenticated = false;
-                        notify("Access denied by backend authorization.");
+                    BackendErrorClassifier.Kind kind = BackendErrorClassifier.classify(
+                            new BackendErrorClassifier.BackendError(
+                                    requestId,
+                                    backendCode,
+                                    status,
+                                    capability,
+                                    error,
+                                    extractPrimitiveString(json, "context"),
+                                    extractPrimitiveString(json, "request_type")),
+                            treasuryOnlyConnection);
+                    if (kind != BackendErrorClassifier.Kind.GUILD_CHAT_SENDER_NOT_IN_GUILD
+                            && kind != BackendErrorClassifier.Kind.NOT_A_SEQUOIA_MEMBER) {
                         SeqClient.LOGGER.warn(
-                                "[WebSocket] Guild error detected; disabling auto-reconnect and closing socket");
-                        autoReconnect = false;
-                        close();
-                        return;
+                                "[WebSocket] Backend error status={} code={} kind={} message={}",
+                                status,
+                                backendCode,
+                                kind,
+                                error);
                     }
 
-                    if (normalized.contains("validation")) {
-                        if ("Unknown backend error".equals(error)) {
-                            notify("Request rejected by backend validation. Please check your input.");
-                        } else {
-                            notify(error);
+                    switch (kind) {
+                        case TREASURY_AUTH_FAILED -> {
+                            treasurySessionAuthenticator.reset();
+                            authFailed = true;
+                            autoReconnect = false;
+                            notifyConnectionFailure(
+                                    "Treasury identity verification failed: " + error,
+                                    true);
+                            finishConnectFlow();
+                            closeTreasuryAuthFailure();
                         }
-                        return;
+                        case GUILD_CHAT_SENDER_NOT_IN_GUILD -> SeqClient.LOGGER.info(
+                                "[WebSocket] Guild chat relay rejected because sender is not in guild");
+                        case NOT_A_SEQUOIA_MEMBER -> disableMemberFeaturesForSession();
+                        case VERSION_UNSUPPORTED -> {
+                            if (shouldDisableReconnectForVersionRejection(capability)) {
+                                autoReconnect = false;
+                            }
+                            maybeNotifyVersionRejection(capability, minimumSafeVersion, error);
+                        }
+                        case SESSION_AUTH_INVALID -> {
+                            authFailed = true;
+                            authenticated = false;
+                            registerAuthFailure();
+                            notify("Invalid auth request. Run /seq connect to start a fresh backend session.");
+                        }
+                        case TOKEN_INVALID, TOKEN_EXPIRED -> {
+                            boolean expired = kind == BackendErrorClassifier.Kind.TOKEN_EXPIRED;
+                            authFailed = true;
+                            authenticated = false;
+                            registerAuthFailure();
+                            SeqClient.getAuthService()
+                                    .invalidateSession(
+                                            expired ? AuthErrorCode.TOKEN_EXPIRED : AuthErrorCode.TOKEN_INVALID,
+                                            expired
+                                                    ? "Backend token expired. Re-authentication required."
+                                                    : "Backend rejected the stored token. Re-authentication required.");
+                            notify(SeqClient.getAuthService().getLastError().getMessage());
+                        }
+                        case PARTY_FINDER -> SeqClient.getPartyFinderManager().pushUiError(error);
+                        case CAPABILITY_DENIED -> {
+                            SeqClient.LOGGER.info(
+                                    "[WebSocket] Capability authorization rejected capability={} message={}",
+                                    capability,
+                                    error);
+                            notify(formatCapabilityAccessDenied(capability, error));
+                        }
+                        case NOT_IN_GUILD -> {
+                            notInGuild = true;
+                            authFailed = true;
+                            authenticated = false;
+                            notify("Access denied by backend authorization.");
+                            SeqClient.LOGGER.warn(
+                                    "[WebSocket] Guild error detected; disabling auto-reconnect and closing socket");
+                            autoReconnect = false;
+                            close();
+                        }
+                        case VALIDATION -> {
+                            if ("Unknown backend error".equals(error)) {
+                                notify("Request rejected by backend validation. Please check your input.");
+                            } else {
+                                notify(error);
+                            }
+                        }
+                        case OTHER -> notify("Error: " + error);
                     }
-
-                    notify("Error: " + error);
                 }
                 default -> SeqClient.LOGGER.warn("[WebSocket] Unhandled incoming message type={}", type);
             }
@@ -2484,11 +2474,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     static boolean shouldUseTreasuryOnlyConnection(String activeMinecraftUsername) {
         return TreasuryOutManager.isTreasuryMinecraftAccount(activeMinecraftUsername);
-    }
-
-    private static boolean isTreasuryAuthenticationError(String code) {
-        return "treasury_auth_failed".equalsIgnoreCase(code)
-                || "treasury_auth_timeout".equalsIgnoreCase(code);
     }
 
     private static void joinActiveMinecraftSession(String serverId)
@@ -2697,35 +2682,8 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return extractPrimitiveString(json, "capability");
     }
 
-    static boolean isSilentGuildChatMembershipReject(String backendCode, String capability, String normalizedMessage) {
-        return "not_in_guild".equalsIgnoreCase(backendCode)
-                && "guild_chat".equalsIgnoreCase(capability)
-                && normalizedMessage != null
-                && normalizedMessage.contains("guild");
-    }
-
-    static boolean isSessionMembershipReject(String backendCode, String capability, String normalizedMessage) {
-        return "not_in_guild".equalsIgnoreCase(backendCode)
-                && (capability == null || capability.isBlank())
-                && normalizedMessage != null
-                && normalizedMessage.contains("sequoia")
-                && normalizedMessage.contains("member");
-    }
-
-    static boolean isSessionAuthenticationError(int status, String capability, String normalizedMessage) {
-        if (capability != null && !capability.isBlank()) {
-            return false;
-        }
-        return status == 400
-                || (normalizedMessage != null && normalizedMessage.contains("invalid auth request"));
-    }
-
     static boolean shouldDisableReconnectForVersionRejection(String capability) {
         return capability == null || capability.isBlank();
-    }
-
-    private static boolean isCapabilityAuthorizationReject(int status, String capability) {
-        return status == 403 && capability != null && !capability.isBlank();
     }
 
     private static String formatCapabilityAccessDenied(String capability, String backendMessage) {
@@ -2814,32 +2772,6 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             }
         });
         return List.copyOf(values);
-    }
-
-    private static boolean isPartyFinderError(JsonObject json, String normalizedMessage) {
-        if (normalizedMessage != null
-                && (normalizedMessage.contains("party finder")
-                        || normalizedMessage.contains("party_finder")
-                        || normalizedMessage.contains("listing")
-                        || normalizedMessage.contains("invite"))) {
-            return true;
-        }
-        if (json == null) {
-            return false;
-        }
-        if (json.has("context") && json.get("context").isJsonPrimitive()) {
-            String context = json.get("context").getAsString().toLowerCase(Locale.ROOT);
-            if (context.contains("party_finder") || context.contains("party finder")) {
-                return true;
-            }
-        }
-        if (json.has("request_type") && json.get("request_type").isJsonPrimitive()) {
-            String requestType = json.get("request_type").getAsString().toLowerCase(Locale.ROOT);
-            return requestType.startsWith("party_")
-                    || requestType.contains("listing")
-                    || requestType.contains("invite");
-        }
-        return false;
     }
 
     public String getEnvironment() {
