@@ -166,7 +166,7 @@ public class PartyFinderManager implements NotificationAccessor {
     // ══════════════════════════════════════════════════════════════
 
     public CompletableFuture<List<Activity>> loadActivities() {
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .getActivities())
                 .thenApply(result -> {
                     activities.clear();
@@ -182,7 +182,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<List<Listing>> loadListings(Long activityId, PartyRegion region) {
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .getListings(activityId, region))
                 .thenApply(result -> {
                     List<Listing> deduped = deduplicateById(result);
@@ -208,7 +208,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     CommandResult.success("Activities ready.", List.copyOf(activities)));
         }
 
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .getActivities())
                 .thenApply(result -> {
                     activities.clear();
@@ -219,7 +219,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<CommandResult<List<Listing>>> refreshListingsForCommand() {
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .getListings(null, null))
                 .thenApply(result -> {
                     List<Listing> deduped = deduplicateById(result);
@@ -262,7 +262,7 @@ public class PartyFinderManager implements NotificationAccessor {
 
                 ActivityResolution resolution = selectionResult.data();
                 return executeListingCommand(
-                        sinceReset(ApiClient.getInstance()
+                        sinceReset(() -> ApiClient.getInstance()
                                 .createListing(
                                         resolution.activityIds(),
                                         listingRegion,
@@ -303,7 +303,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 ActivityResolution resolution = selectionResult.data();
                 PartyRegion region = listing.region() != null ? listing.region() : PartyRegion.NA;
                 return executeListingCommand(
-                        sinceReset(ApiClient.getInstance()
+                        sinceReset(() -> ApiClient.getInstance()
                                 .updateListing(
                                         listing.id(),
                                         resolution.activityIds(),
@@ -342,8 +342,8 @@ public class PartyFinderManager implements NotificationAccessor {
             }
 
             CompletableFuture<Listing> joinFuture = normalizedInviteToken == null
-                    ? sinceReset(ApiClient.getInstance().joinListing(listingId, resolvedRole))
-                    : sinceReset(ApiClient.getInstance().joinListing(listingId, resolvedRole, normalizedInviteToken));
+                    ? sinceReset(() -> ApiClient.getInstance().joinListing(listingId, resolvedRole))
+                    : sinceReset(() -> ApiClient.getInstance().joinListing(listingId, resolvedRole, normalizedInviteToken));
 
             return executeListingCommand(
                     joinFuture,
@@ -362,7 +362,7 @@ public class PartyFinderManager implements NotificationAccessor {
 
             Listing listing = currentResult.data();
             return executeListingCommand(
-                    sinceReset(ApiClient.getInstance().leaveListing(listing.id())),
+                    sinceReset(() -> ApiClient.getInstance().leaveListing(listing.id())),
                     this::applyLeftListingState,
                     "Unable to leave party",
                     "Failed to leave party",
@@ -400,7 +400,7 @@ public class PartyFinderManager implements NotificationAccessor {
                     return completedCommandFailureVoid("You cannot invite yourself.");
                 }
 
-                return sinceReset(ApiClient.getInstance()
+                return sinceReset(() -> ApiClient.getInstance()
                         .createInvite(listing.id(), targetUUID))
                         .thenApply(response -> {
                             applyCreatedInvite(response, listing.id(), targetUUID, normalizedUsername);
@@ -438,7 +438,7 @@ public class PartyFinderManager implements NotificationAccessor {
             }
 
             return executeListingCommand(
-                    sinceReset(ApiClient.getInstance().revokeInvite(listing.id(), invite.inviteToken())),
+                    sinceReset(() -> ApiClient.getInstance().revokeInvite(listing.id(), invite.inviteToken())),
                     updatedListing -> {
                         issuedInvites.remove(key, invite);
                         applyUpdatedCurrentListingState(updatedListing);
@@ -466,7 +466,7 @@ public class PartyFinderManager implements NotificationAccessor {
             Listing listing = currentResult.data();
             String verb = requestedReservedSlots == 1 ? "slot" : "slots";
             return executeListingCommand(
-                    sinceReset(ApiClient.getInstance().reserveSlots(listing.id(), requestedReservedSlots)),
+                    sinceReset(() -> ApiClient.getInstance().reserveSlots(listing.id(), requestedReservedSlots)),
                     this::applyUpdatedCurrentListingState,
                     "Unable to set reserved slots",
                     "Failed to set reserved slots",
@@ -479,7 +479,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return runLeaderListingCommand(
                 "Only the party leader can open the Sequoia listing.",
                 listing -> executeListingCommand(
-                        sinceReset(ApiClient.getInstance().reopenListing(listing.id())),
+                        sinceReset(() -> ApiClient.getInstance().reopenListing(listing.id())),
                         this::applyUpdatedCurrentListingState,
                         "Unable to reopen party",
                         "Failed to reopen party",
@@ -490,7 +490,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return runLeaderListingCommand(
                 "Only the party leader can close the Sequoia listing.",
                 listing -> executeListingCommand(
-                        sinceReset(ApiClient.getInstance().closeListing(listing.id())),
+                        sinceReset(() -> ApiClient.getInstance().closeListing(listing.id())),
                         this::applyUpdatedCurrentListingState,
                         "Unable to close party",
                         "Failed to close party",
@@ -513,7 +513,7 @@ public class PartyFinderManager implements NotificationAccessor {
                         return completedCommandFailure("That warning belongs to an older party listing.");
                     }
                     return executeListingCommand(
-                            sinceReset(ApiClient.getInstance().extendListing(listing.id())),
+                            sinceReset(() -> ApiClient.getInstance().extendListing(listing.id())),
                             this::applyUpdatedCurrentListingState,
                             "Unable to extend party",
                             "Failed to extend party",
@@ -526,7 +526,7 @@ public class PartyFinderManager implements NotificationAccessor {
         return runLeaderListingCommand(
                 "Only the party leader can disband the Sequoia listing.",
                 listing -> executeListingCommand(
-                        sinceReset(ApiClient.getInstance().disbandListing(listing.id())),
+                        sinceReset(() -> ApiClient.getInstance().disbandListing(listing.id())),
                         ignored -> applyDisbandedListingState(listing.id()),
                         "Unable to disband party",
                         "Failed to disband party",
@@ -541,7 +541,7 @@ public class PartyFinderManager implements NotificationAccessor {
             }
 
             return executeListingCommand(
-                    sinceReset(ApiClient.getInstance().changeMyRole(resolvedRole)),
+                    sinceReset(() -> ApiClient.getInstance().changeMyRole(resolvedRole)),
                     this::applyUpdatedCurrentListingState,
                     "Unable to change role",
                     "Failed to change role",
@@ -561,7 +561,7 @@ public class PartyFinderManager implements NotificationAccessor {
             }
 
             return executeListingCommand(
-                    sinceReset(ApiClient.getInstance().kickMember(target.listing().id(), target.targetUUID())),
+                    sinceReset(() -> ApiClient.getInstance().kickMember(target.listing().id(), target.targetUUID())),
                     this::applyUpdatedCurrentListingState,
                     "Unable to kick member",
                     "Failed to kick member",
@@ -580,7 +580,7 @@ public class PartyFinderManager implements NotificationAccessor {
                 return completedCommandFailure(target.username() + " is already the party leader.");
             }
 
-            CompletableFuture<Listing> transfer = sinceReset(ApiClient.getInstance()
+            CompletableFuture<Listing> transfer = sinceReset(() -> ApiClient.getInstance()
                     .transferLeadership(target.listing().id(), target.targetUUID()))
                     .thenApply(listing -> {
                         sendGamePartyCommandForUuid(target.targetUUID(), GAME_PARTY_PROMOTE_PREFIX);
@@ -643,7 +643,7 @@ public class PartyFinderManager implements NotificationAccessor {
             String note,
             PartyJoinPolicy joinPolicy,
             int reservedSlots) {
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .createListing(
                         activityIds,
                         region,
@@ -663,7 +663,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<Listing> joinParty(long listingId, PartyRole role) {
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .joinListing(listingId, role))
                 .thenApply(listing -> {
                     applyJoinedListingState(listing);
@@ -685,7 +685,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<Listing> leaveParty(long listingId) {
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .leaveListing(listingId))
                 .thenApply(listing -> {
                     applyLeftListingState(listing);
@@ -698,7 +698,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<Listing> closeParty(long listingId) {
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .closeListing(listingId))
                 .thenApply(listing -> {
                     applyUpdatedCurrentListingState(listing);
@@ -711,7 +711,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<Listing> reopenParty(long listingId) {
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .reopenListing(listingId))
                 .thenApply(listing -> {
                     applyUpdatedCurrentListingState(listing);
@@ -724,7 +724,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<Listing> disbandParty(long listingId) {
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .disbandListing(listingId))
                 .thenApply(listing -> {
                     listings.removeIf(l -> l.id() == listingId);
@@ -741,7 +741,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<Listing> kickMember(long listingId, UUID targetUUID) {
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .kickMember(listingId, targetUUID))
                 .thenApply(listing -> {
                     replaceListing(listing);
@@ -758,7 +758,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<Listing> changeMyRole(PartyRole role) {
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .changeMyRole(role))
                 .thenApply(listing -> {
                     applyUpdatedCurrentListingState(listing);
@@ -773,7 +773,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<Listing> reassignRole(long listingId, UUID targetUUID, PartyRole role) {
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .reassignRole(listingId, targetUUID, role))
                 .thenApply(listing -> {
                     applyUpdatedCurrentListingState(listing);
@@ -786,7 +786,7 @@ public class PartyFinderManager implements NotificationAccessor {
     }
 
     public CompletableFuture<Listing> transferLeadership(long listingId, UUID targetUUID) {
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .transferLeadership(listingId, targetUUID))
                 .thenApply(listing -> {
                     applyUpdatedCurrentListingState(listing);
@@ -1689,7 +1689,7 @@ public class PartyFinderManager implements NotificationAccessor {
                             "[PartyFinderWS] createInvite calling API listingId={} targetUUID={}",
                             requestedListingId,
                             targetUUID);
-                    return sinceReset(ApiClient.getInstance()
+                    return sinceReset(() -> ApiClient.getInstance()
                             .createInvite(requestedListingId, targetUUID))
                             .thenApply(response -> {
                                 applyCreatedInvite(response, requestedListingId, targetUUID, normalizedUsername);
@@ -2057,7 +2057,7 @@ public class PartyFinderManager implements NotificationAccessor {
         PartyJoinPolicy selectedJoinPolicy = joinPolicy != null
                 ? joinPolicy
                 : currentListing.resolvedJoinPolicy();
-        sinceReset(ApiClient.getInstance()
+        sinceReset(() -> ApiClient.getInstance()
                 .updateListing(
                         currentListing.id(),
                         activityIds,
@@ -2101,9 +2101,10 @@ public class PartyFinderManager implements NotificationAccessor {
      * party finder is reset (an account switch or sign-out) before it finishes. A reply for
      * the previous account must not restore its party, listings or invites.
      */
-    <T> CompletableFuture<T> sinceReset(CompletableFuture<T> request) {
+    <T> CompletableFuture<T> sinceReset(java.util.function.Supplier<CompletableFuture<T>> request) {
+        // Read before the request starts, so a reset that lands as it starts still counts against it.
         long startedFor = resetGeneration;
-        return request.thenApply(result -> {
+        return request.get().thenApply(result -> {
             if (startedFor != resetGeneration) {
                 throw new SupersededByReset();
             }
@@ -2257,7 +2258,7 @@ public class PartyFinderManager implements NotificationAccessor {
 
     private CompletableFuture<List<Listing>> refreshListingsSnapshot(
             Long activityId, PartyRegion region, BiConsumer<String, Throwable> failureHandler) {
-        return sinceReset(ApiClient.getInstance()
+        return sinceReset(() -> ApiClient.getInstance()
                 .getListings(activityId, region))
                 .thenApply(result -> {
                     List<Listing> deduped = deduplicateById(result);
@@ -2935,7 +2936,7 @@ public class PartyFinderManager implements NotificationAccessor {
 
     private void applyReservedSlotTarget(long listingId, int requestedReservedSlots, String context) {
         CompletableFuture<Listing> adjustFuture =
-                sinceReset(ApiClient.getInstance().reserveSlots(listingId, requestedReservedSlots));
+                sinceReset(() -> ApiClient.getInstance().reserveSlots(listingId, requestedReservedSlots));
 
         adjustFuture
                 .thenAccept(updatedListing -> {

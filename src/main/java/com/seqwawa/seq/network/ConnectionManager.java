@@ -2274,6 +2274,7 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
                                     .invalidateSession(
                                             AuthErrorCode.TOKEN_INVALID,
                                             "Backend rejected the stored token. Re-authentication required.");
+                            recordAuthRejection();
                             closeToReauthenticate();
                         } else if ("mod_version_unsupported".equalsIgnoreCase(backendCode)) {
                             autoReconnect = false;
