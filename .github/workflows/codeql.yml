@@ -1,0 +1,66 @@
+name: CodeQL
+
+# The languages, build mode, categories and action of GitHub's default setup. Default setup cannot
+# choose a JDK, and its Java extraction ran Gradle on the runner's Temurin 25.0.5, which
+# CVE-2026-114938 affects; this job runs it on mise.toml's patched JDK instead.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, c-cpp, java-kotlin, python, rust]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: matrix.language == 'java-kotlin'
+        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        env:
+          MISE_ENABLE_TOOLS: java
+        with:
+          version: 2026.10.23
+          cache_key_prefix: mise-codeql
+          cache_save: ${{ github.event_name != 'pull_request' }}
+      # The extractor picks the newest JDK among the runner's JAVA_HOME_*_X64; empty, it uses JAVA_HOME.
+      - if: matrix.language == 'java-kotlin'
+        name: Use only the patched JDK
+        env:
+          MISE_ENABLE_TOOLS: java
+        run: |
+          java_home="$(mise where java)"
+          {
+            echo "JAVA_HOME=$java_home"
+            for name in $(compgen -e | grep -E '^JAVA_HOME_[0-9]+_(X64|ARM64)$'); do echo "$name="; done
+          } >> "$GITHUB_ENV"
+          "$java_home/bin/java" -version
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          dependency-caching: true
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          category: /language:${{ matrix.language }}
