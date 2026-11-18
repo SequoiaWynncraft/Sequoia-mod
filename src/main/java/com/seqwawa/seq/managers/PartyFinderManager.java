@@ -1497,64 +1497,93 @@ public class PartyFinderManager implements NotificationAccessor {
         }
     }
 
-    /** Transfers leadership by party/member index. */
-    public void promoteMember(int partyIndex, int memberIndex) {
-        List<PartyListing> parties = getParties();
-        if (partyIndex < 0 || partyIndex >= parties.size()) return;
-        PartyListing party = parties.get(partyIndex);
-        if (memberIndex < 0 || memberIndex >= party.members.size()) return;
-        PartyMember member = party.members.get(memberIndex);
-        try {
-            String formattedTargetUuid = PlayerNameCache.formatUUID(member.playerUUID);
-            if (formattedTargetUuid == null) {
-                throw new IllegalArgumentException("Unparseable member UUID");
-            }
-            UUID targetUUID = UUID.fromString(formattedTargetUuid);
-            transferLeadership(party.id, targetUUID).thenAccept(listing -> {
-                if (listing != null) {
-                    sendGamePartyCommandForUuid(targetUUID, GAME_PARTY_PROMOTE_PREFIX);
-                    sendGameDirectMessage(targetUUID, "You were promoted to party leader.");
-                }
-            });
-        } catch (IllegalArgumentException e) {
-            SeqClient.LOGGER.error("Invalid UUID for promote: {}", member.playerUUID, e);
-        }
-    }
-
-    /**
-     * Kicks a member by party/member index (overload of kickMember(long, UUID)).
+    /*
+     * The screen's buttons name their party by listing id and their player by UUID, and
+     * these look both up when the click lands: a websocket update can reorder or rebuild
+     * the list between the frame that drew a button and the click on it. A party or player
+     * that has gone by then gets nothing.
      */
-    public void kickMember(int partyIndex, int memberIndex) {
-        List<PartyListing> parties = getParties();
-        if (partyIndex < 0 || partyIndex >= parties.size()) return;
-        PartyListing party = parties.get(partyIndex);
-        if (memberIndex < 0 || memberIndex >= party.members.size()) return;
-        PartyMember member = party.members.get(memberIndex);
-        try {
-            String formattedTargetUuid = PlayerNameCache.formatUUID(member.playerUUID);
-            if (formattedTargetUuid == null) {
-                throw new IllegalArgumentException("Unparseable member UUID");
-            }
-            UUID targetUUID = UUID.fromString(formattedTargetUuid);
-            kickMember(party.id, targetUUID).thenAccept(listing -> {
-                if (listing != null) {
-                    sendGamePartyCommandForUuid(targetUUID, GAME_PARTY_KICK_PREFIX);
-                    sendGameDirectMessage(targetUUID, "You were kicked from the party.");
-                }
-            });
-        } catch (IllegalArgumentException e) {
-            SeqClient.LOGGER.error("Invalid UUID for kick: {}", member.playerUUID, e);
+
+    /** Transfers leadership of {@code listingId} to the member {@code memberUuid}. */
+    public void promoteMemberById(long listingId, String memberUuid) {
+        UUID targetUUID = memberActionTarget(listings, listingId, memberUuid);
+        if (targetUUID == null) {
+            SeqClient.LOGGER.info("[PartyFinder] Promote skipped: listing {} no longer has that member", listingId);
+            return;
         }
+        transferLeadership(listingId, targetUUID).thenAccept(listing -> {
+            if (listing != null) {
+                sendGamePartyCommandForUuid(targetUUID, GAME_PARTY_PROMOTE_PREFIX);
+                sendGameDirectMessage(targetUUID, "You were promoted to party leader.");
+            }
+        });
     }
 
-    /** Joins a party by index with a display-name role string. */
-    public void joinParty(int partyIndex, String roleString) {
-        List<PartyListing> parties = getParties();
-        if (partyIndex < 0 || partyIndex >= parties.size()) return;
-        PartyListing party = parties.get(partyIndex);
+    /** Kicks the member {@code memberUuid} from {@code listingId}. */
+    public void kickMemberById(long listingId, String memberUuid) {
+        UUID targetUUID = memberActionTarget(listings, listingId, memberUuid);
+        if (targetUUID == null) {
+            SeqClient.LOGGER.info("[PartyFinder] Kick skipped: listing {} no longer has that member", listingId);
+            return;
+        }
+        kickMember(listingId, targetUUID).thenAccept(listing -> {
+            if (listing != null) {
+                sendGamePartyCommandForUuid(targetUUID, GAME_PARTY_KICK_PREFIX);
+                sendGameDirectMessage(targetUUID, "You were kicked from the party.");
+            }
+        });
+    }
+
+    /** Joins {@code listingId} with a display-name role string, if it is still open and the player is in no party. */
+    public void joinPartyById(long listingId, String roleString) {
+        if (listingToJoin(listings, listingId, currentListing) == null) {
+            return;
+        }
         PartyRole role = mapDisplayRole(roleString);
         if (role == null) role = PartyRole.DPS;
-        joinParty(party.id, role);
+        joinParty(listingId, role);
+    }
+
+    /** Leaves {@code listingId}, if it is still the party the player is in. */
+    public void leavePartyById(long listingId) {
+        Listing current = currentListing;
+        if (current != null && current.id() == listingId) {
+            leaveParty(listingId);
+        }
+    }
+
+    /** The UUID of {@code memberUuid} while it is still a member of {@code listingId}, else null. */
+    static UUID memberActionTarget(List<Listing> listings, long listingId, String memberUuid) {
+        String formattedTargetUuid = PlayerNameCache.formatUUID(memberUuid);
+        if (formattedTargetUuid == null) {
+            return null;
+        }
+        for (Listing listing : listings) {
+            if (listing == null || listing.id() != listingId || listing.members() == null) {
+                continue;
+            }
+            for (Member member : listing.members()) {
+                if (member != null && uuidEquals(formattedTargetUuid, member.playerUUID())) {
+                    return UUID.fromString(formattedTargetUuid);
+                }
+            }
+        }
+        return null;
+    }
+
+    /** {@code listingId} while it is listed and open to join, as the card's button showed, and the player is free. */
+    static Listing listingToJoin(List<Listing> listings, long listingId, Listing currentListing) {
+        if (currentListing != null) {
+            return null;
+        }
+        for (Listing listing : listings) {
+            if (listing != null && listing.id() == listingId) {
+                boolean joinable = listing.status() == PartyStatus.OPEN
+                        && listing.resolvedJoinPolicy() == PartyJoinPolicy.OPEN;
+                return joinable ? listing : null;
+            }
+        }
+        return null;
     }
 
     /** Creates a backend invite from the local listing using a target username. */
@@ -2067,6 +2096,30 @@ public class PartyFinderManager implements NotificationAccessor {
         String message = latestPartyError;
         latestPartyError = null;
         return message;
+    }
+
+    /**
+     * Forgets what described the previous account or session: its party, the invites it
+     * issued and the cached cards, so nothing (such as the class updates the client tick
+     * sends while in a party) acts on them for whoever signs in next. Opening the party
+     * finder loads them afresh.
+     */
+    public void reset() {
+        synchronized (listingsLock) {
+            listings.clear();
+        }
+        currentListing = null;
+        issuedInvites.clear();
+        expandedStates.clear();
+        cachedParties = null;
+        cachedVersion = -1;
+        listingsVersion++;
+        latestPartyError = null;
+        nextOpenPartyAnnouncementAtMs = 0L;
+    }
+
+    boolean hasIssuedInvite(long listingId, String username) {
+        return issuedInvites.containsKey(issuedInviteKey(listingId, username));
     }
 
     /** Loads activities and listings from the API. Called when the screen opens. */
@@ -2729,7 +2782,7 @@ public class PartyFinderManager implements NotificationAccessor {
         }
     }
 
-    private void applyJoinedListingState(Listing listing) {
+    void applyJoinedListingState(Listing listing) {
         replaceListing(listing);
         boolean shouldPublishClassUpdate = false;
         if (currentListing == null || currentListing.id() == listing.id()) {
@@ -2769,7 +2822,7 @@ public class PartyFinderManager implements NotificationAccessor {
         listingsVersion++;
     }
 
-    private void applyCreatedInvite(
+    void applyCreatedInvite(
             CreateInviteResponse response, long listingId, UUID targetUUID, String targetUsername) {
         if (response == null || response.listing() == null) {
             throw new IllegalStateException("Party invite response did not include the updated listing.");

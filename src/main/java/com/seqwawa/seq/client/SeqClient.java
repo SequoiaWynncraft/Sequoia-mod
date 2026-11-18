@@ -673,6 +673,9 @@ public class SeqClient implements ClientModInitializer {
         }
         wasInPartyFinder = false;
         lastBroadcastPartyClass = null;
+        if (partyFinderManager != null) {
+            partyFinderManager.reset();
+        }
         if (wynnPartySyncManager != null) {
             wynnPartySyncManager.reset();
         }

@@ -45,6 +45,7 @@ import com.seqwawa.seq.config.ConfigManager;
 import com.seqwawa.seq.model.ChatItemPreview;
 import com.seqwawa.seq.managers.GuildRankEventParser;
 import com.seqwawa.seq.managers.GuildStorageTracker;
+import com.seqwawa.seq.managers.PartyFinderManager;
 import com.seqwawa.seq.managers.ServerQueueDetector;
 import com.seqwawa.seq.managers.TreasuryOutManager;
 import com.seqwawa.seq.model.BombShareType;
@@ -2477,6 +2478,10 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
             auth.signOut();
         }
         disconnectInternal(false);
+        PartyFinderManager partyFinder = SeqClient.getPartyFinderManager();
+        if (partyFinder != null) {
+            partyFinder.reset();
+        }
     }
 
     private boolean canAttemptAuthNow() {
