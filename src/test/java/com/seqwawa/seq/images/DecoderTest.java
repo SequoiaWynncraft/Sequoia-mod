@@ -39,6 +39,7 @@ class DecoderTest {
         }
     }
 
+    @RequiresDecoderPacks
     @Test
     void pngPixelsAndAlphaSurviveExactly() throws Exception {
         var picture = new BufferedImage(17, 19, BufferedImage.TYPE_INT_ARGB);
@@ -55,6 +56,7 @@ class DecoderTest {
                 actual.frames().getFirst().argb());
     }
 
+    @RequiresDecoderPacks
     @Test
     void largeImagesKeepTheirAspectRatio() throws Exception {
         var actual = ImageDecoder.decode(encode(new BufferedImage(2048, 512, BufferedImage.TYPE_INT_ARGB), "png"));
@@ -63,6 +65,7 @@ class DecoderTest {
         assertEquals(0, actual.frames().getFirst().argb()[0], "transparency survives scaling");
     }
 
+    @RequiresDecoderPacks
     @Test
     void stillImagesKeepFineDetailAboveTheAnimationLimit() throws Exception {
         var picture = new BufferedImage(768, 2, BufferedImage.TYPE_INT_ARGB);
@@ -87,6 +90,7 @@ class DecoderTest {
         assertEquals(256, gif.width(), "even single-frame GIFs retain animation bounds");
     }
 
+    @RequiresDecoderPacks
     @Test
     void jpegDecodes() throws Exception {
         var picture = new BufferedImage(17, 19, BufferedImage.TYPE_INT_RGB);
@@ -98,6 +102,7 @@ class DecoderTest {
         assertTrue(((pixel >>> 8) & 255) < 40);
     }
 
+    @RequiresDecoderPacks
     @Test
     void gifTimingAndDisposalArePreserved() throws Exception {
         var writer = ImageIO.getImageWritersByFormatName("gif").next();
@@ -141,6 +146,7 @@ class DecoderTest {
         writer.writeToSequence(new IIOImage(image, null, metadata), null);
     }
 
+    @RequiresDecoderPacks
     @Test
     void klipyMp4DecodesItsRealFrames() throws Exception {
         var result = ImageDecoder.decode(resource("/klipy-report.mp4"));
@@ -162,6 +168,7 @@ class DecoderTest {
                 result.frames().getFirst().argb(), result.frames().getLast().argb()));
     }
 
+    @RequiresDecoderPacks
     @Test
     void webpPixelsAlphaAndLossyImagesDecodeThroughTheSandbox() throws Exception {
         var lossless = ImageDecoder.decode(resource("/webp-lossless.webp"));
@@ -179,6 +186,7 @@ class DecoderTest {
         assertTrue((pixel & 255) < 20);
     }
 
+    @RequiresDecoderPacks
     @Test
     void animatedWebpPreservesTimingAndComposesPartialFrames() throws Exception {
         var animation = ImageDecoder.decode(resource("/webp-animated.webp"));
@@ -203,6 +211,7 @@ class DecoderTest {
         assertThrows(IOException.class, () -> ImageDecoder.decode(bmp));
     }
 
+    @RequiresDecoderPacks
     @Test
     void malformedMediaFailsWithoutInternalDetails() throws Exception {
         byte[] klipy = resource("/klipy-report.mp4");

@@ -5,6 +5,7 @@ import io
 import json
 import lzma
 from pathlib import Path
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -219,6 +220,56 @@ class SourceReuseTest(unittest.TestCase):
         self.assertEqual(["https://example.invalid/ffmpeg-1.tar.xz.asc"],
                          [call.args[0] for call in self.download.call_args_list])
         self.assertEqual(2, self.verify.call_count)
+
+
+class FetchPacksTest(unittest.TestCase):
+    """native:fetch swaps in a run's packs only once they have downloaded in full."""
+
+    def setUp(self):
+        self.fetch = load("fetch")
+        self.sandbox = Path(self.enterContext(tempfile.TemporaryDirectory())) / "out" / "sandbox"
+        self.sandbox.mkdir(parents=True)
+        (self.sandbox / "helpers-x86_64.xz").write_bytes(b"old pack")
+        self.enterContext(redirect_stdout(io.StringIO()))
+
+    def gh(self, files=None, fail=False):
+        calls = []
+
+        def run(args, **options):
+            calls.append(args)
+            if args[1:3] == ["run", "list"]:
+                return subprocess.CompletedProcess(args, 0, json.dumps([{"databaseId": 41}]), "")
+            if fail:
+                raise subprocess.CalledProcessError(1, args)
+            target = Path(args[args.index("-D") + 1])
+            for name, data in (files or {}).items():
+                (target / name).write_bytes(data)
+            return subprocess.CompletedProcess(args, 0, "", "")
+        return run, calls
+
+    def test_without_a_run_id_it_takes_mains_newest_green_build(self):
+        run, calls = self.gh()
+
+        self.assertEqual("41", self.fetch.latest_main_run(run))
+        self.assertEqual(["gh", "run", "list", "--workflow", "Build", "--branch", "main", "--status", "success",
+                          "--limit", "1", "--json", "databaseId"], calls[0])
+
+    def test_a_download_replaces_the_packs_already_there(self):
+        run, _ = self.gh({"helpers-aarch64.xz": b"new", "provenance.json": b"{}"})
+
+        self.fetch.fetch("41", self.sandbox, run)
+
+        self.assertEqual(["helpers-aarch64.xz", "provenance.json"], sorted(p.name for p in self.sandbox.iterdir()))
+        self.assertEqual([self.sandbox], [p for p in self.sandbox.parent.iterdir()], "no staging left behind")
+
+    def test_a_failed_download_leaves_the_old_packs(self):
+        run, _ = self.gh(fail=True)
+
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.fetch.fetch("41", self.sandbox, run)
+
+        self.assertEqual(b"old pack", (self.sandbox / "helpers-x86_64.xz").read_bytes())
+        self.assertEqual([self.sandbox], [p for p in self.sandbox.parent.iterdir()])
 
 
 class BrokerChildrenTest(unittest.TestCase):

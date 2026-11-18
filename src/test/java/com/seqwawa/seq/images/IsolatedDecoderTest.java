@@ -81,6 +81,7 @@ class IsolatedDecoderTest {
             assertDoesNotThrow(() -> child.onExit().get(10, TimeUnit.SECONDS), "cancelling left the decoder running");
     }
 
+    @RequiresDecoderPacks
     @Test
     void cancellingAWaitingHelperKillsAndReapsIt() throws Exception {
         var cancellation = new MediaCancellation();
@@ -93,6 +94,7 @@ class IsolatedDecoderTest {
         session.close();
     }
 
+    @RequiresDecoderPacks
     @Test
     void closingAnUnusedSessionReapsTheHelper() throws Exception {
         var session = IsolatedDecoder.start(new MediaCancellation());
@@ -103,6 +105,7 @@ class IsolatedDecoderTest {
         for (var child : started) assertFalse(child.isAlive(), "the decoder outlived close()");
     }
 
+    @RequiresDecoderPacks
     @Test
     void cancellationDuringDecodeReportsInterruptionAndReapsTheHelper() throws Exception {
         byte[] media;

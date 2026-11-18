@@ -34,16 +34,19 @@ developer machine and in GitHub Actions.
 ## Build and test the mod
 
 The mod JAR ships the image decoder helpers as packs in `native/out/sandbox`, and Gradle refuses
-to build without them. To use the packs a CI run built, download its `packs` artifact. The run ID
-is the number after `/actions/runs/` in the run's URL:
+to build without them. Take the packs CI built:
 
 ```sh
-mise run native:fetch RUN_ID
+mise run native:fetch          # from main's newest successful Build run
+mise run native:fetch RUN_ID   # from another run, such as a branch that changes native/
 ```
 
-The download fails if the run has no `packs` artifact or `native/out/sandbox` already holds packs.
-Delete old packs first. To build helpers yourself, follow
-[image decoder builds](../native/README.md).
+The run ID is the number after `/actions/runs/` in the run's URL. The new packs replace any already
+there once they have downloaded. With them, the whole test suite runs, the decoder included. To build
+helpers yourself, follow [image decoder builds](../native/README.md).
+
+`-Pallow_partial_native` builds without packs, or with only some platforms. The decoder tests then
+skip and say to fetch the packs, instead of failing.
 
 `mise run build` compiles the mod, runs the unit tests and writes `build/libs/sequoia-VERSION.jar`.
 The build fails if the JAR exceeds `max_release_jar_bytes` in `gradle.properties`. Arguments after
@@ -73,7 +76,7 @@ account that `.devauth/config.toml` selects.
 | `fmt` | Formats the decoder's Rust code. `mise run fmt --check` only reports changes |
 | `lint` | Lints the workflows with actionlint and zizmor, and `native/build-wasm.sh` with ShellCheck |
 | `check` | Runs `build`, `test:scripts` and `lint` |
-| `native:fetch RUN_ID` | Downloads the helper packs a Build run made into `native/out/sandbox` |
+| `native:fetch [RUN_ID]` | Replaces `native/out/sandbox` with the helper packs of main's newest successful Build run, or of `RUN_ID` |
 | `native:guest` | Builds the decoder guest from authenticated sources. `--sources-only` only checks the sources, downloading any that are missing or invalid |
 | `native:wasm OUT FFMPEG ZLIB` | Compiles a guest from local FFmpeg and zlib archives with the wasi-sdk in `WASI_SDK_PATH` |
 | `native:build PLATFORM` | Builds, tests and verifies the decoder helper for this machine's platform |
