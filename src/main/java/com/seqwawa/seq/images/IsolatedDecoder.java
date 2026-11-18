@@ -92,8 +92,8 @@ final class IsolatedDecoder {
         cancellation.check();
         String platform = platform(System.getProperty("os.name"), System.getProperty("os.arch"));
         boolean windows = platform.startsWith("windows-");
-        Path helper = resource(platform, windows ? "seqimages-decoder.exe" : "seqimages-decoder");
-        Path broker = windows ? resource(platform, "sandbox.exe") : null;
+        Path helper = resource(platform, decoder(platform));
+        Path broker = windows ? resource(platform, BROKER) : null;
         Path scratch = Files.createTempDirectory("seqimages-pipes-").toRealPath();
         try {
             var command = windows
@@ -411,11 +411,17 @@ final class IsolatedDecoder {
         }
     }
 
-    /** The helpers a platform runs: the decoder, and on Windows the broker that sandboxes it. */
+    /** The Windows broker that runs the decoder in an AppContainer. */
+    static final String BROKER = "sandbox.exe";
+
+    /** The decoder's file name on a platform. */
+    static String decoder(String platform) {
+        return platform.startsWith("windows-") ? "seqimages-decoder.exe" : "seqimages-decoder";
+    }
+
+    /** The helpers a platform runs, as {@link #start} finds them: the decoder, and on Windows the broker. */
     static List<String> helpers(String platform) {
-        return platform.startsWith("windows-")
-                ? List.of("seqimages-decoder.exe", "sandbox.exe")
-                : List.of("seqimages-decoder");
+        return platform.startsWith("windows-") ? List.of(decoder(platform), BROKER) : List.of(decoder(platform));
     }
 
     static String platform(String os, String arch) throws IOException {
