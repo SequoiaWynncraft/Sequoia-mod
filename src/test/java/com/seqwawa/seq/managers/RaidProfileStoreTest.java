@@ -506,6 +506,33 @@ class RaidProfileStoreTest {
     }
 
     @Test
+    void aSaveThatLandsAfterAnAccountSwitchLeavesTheNextAccountsSkip(@TempDir Path directory) {
+        var playing = new java.util.concurrent.atomic.AtomicReference<>(ALT_ACCOUNT);
+        var answer = new CompletableFuture<RaidProfilesResponse.Profile>();
+        RaidProfileStore store = new RaidProfileStore(
+                directory.resolve("raid-profile.json"),
+                directory.resolve("cache/raid-profiles.json"),
+                () -> CompletableFuture.completedFuture(
+                        RaidProfileStore.parseProfilesResponse(BACKEND_PAYLOAD).orElse(null)),
+                () -> false,
+                Runnable::run,
+                Runnable::run,
+                playing::get,
+                profile -> answer);
+        store.load();
+        store.dismissSetup();
+        playing.set(MAIN_ACCOUNT);
+
+        CompletableFuture<Boolean> saved = store.saveSelfProfile(RaidTeamProfile.empty());
+        // The player switches to the alt before the backend answers the main account's save.
+        playing.set(ALT_ACCOUNT);
+        answer.complete(RaidProfileStore.parseProfilesResponse(BACKEND_PAYLOAD).orElseThrow().profiles().get(0));
+
+        assertTrue(saved.join());
+        assertFalse(store.needsSetup(), "the alt skipped setup, and the main account's save does not undo that");
+    }
+
+    @Test
     void friendsStaySharedBetweenAccounts(@TempDir Path directory) {
         var playing = new java.util.concurrent.atomic.AtomicReference<>(MAIN_ACCOUNT);
         RaidProfileStore store = storeFor(directory, playing);

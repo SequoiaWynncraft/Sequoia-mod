@@ -38,6 +38,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -83,6 +84,8 @@ public final class RaidProfileStore {
     private final Path localPath;
     private final Path cachePath;
     private final Supplier<CompletableFuture<RaidProfilesResponse>> fetch;
+    /** Saves the player's own profile, answering with what the backend stored. */
+    private final Function<RaidTeamProfile, CompletableFuture<RaidProfilesResponse.Profile>> save;
     /** Whether raid profiles come from another backend than the socket's. */
     private final BooleanSupplier separateBackend;
 
@@ -168,10 +171,25 @@ public final class RaidProfileStore {
             Executor gameThread,
             Executor disk,
             Supplier<String> account) {
+        this(localPath, cachePath, fetch, separateBackend, gameThread, disk, account,
+                profile -> ApiClient.getInstance().putMyRaidProfile(profile));
+    }
+
+    /** Test seam: {@code save} stands in for the backend that stores your profile. */
+    RaidProfileStore(
+            Path localPath,
+            Path cachePath,
+            Supplier<CompletableFuture<RaidProfilesResponse>> fetch,
+            BooleanSupplier separateBackend,
+            Executor gameThread,
+            Executor disk,
+            Supplier<String> account,
+            Function<RaidTeamProfile, CompletableFuture<RaidProfilesResponse.Profile>> save) {
         this.account = account;
         this.localPath = localPath;
         this.cachePath = cachePath;
         this.fetch = fetch;
+        this.save = save;
         this.separateBackend = separateBackend;
         this.gameThread = gameThread;
         this.disk = disk;
@@ -438,11 +456,12 @@ public final class RaidProfileStore {
      */
     public CompletableFuture<Boolean> saveSelfProfile(RaidTeamProfile profile) {
         RaidTeamProfile toSave = profile == null ? RaidTeamProfile.empty() : profile;
+        // Whose setup it answers: the account playing now, not whoever plays when the answer lands.
+        String savedBy = accountKey();
         // The answer is handled on the game thread, where the store's state lives.
-        return ApiClient.getInstance()
-                .putMyRaidProfile(toSave)
+        return save.apply(toSave)
                 .thenApplyAsync(saved -> {
-                    forgetSetupDismissal();
+                    forgetSetupDismissal(savedBy);
                     persist();
                     // The response is authoritative, including a username that may be a
                     // rename ahead of the token.
@@ -496,13 +515,12 @@ public final class RaidProfileStore {
         return setupDismissedBy.contains(self);
     }
 
-    /** A saved profile answers setup for this account, so its skip no longer applies. */
-    private void forgetSetupDismissal() {
-        String self = accountKey();
-        if (self == null) {
+    /** A saved profile answers setup for the account that saved it, so its skip no longer applies. */
+    private void forgetSetupDismissal(String savedBy) {
+        if (savedBy == null) {
             unclaimedSetupDismissal = false;
         } else {
-            setupDismissedBy.remove(self);
+            setupDismissedBy.remove(savedBy);
         }
     }
 
