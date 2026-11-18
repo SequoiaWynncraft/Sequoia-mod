@@ -218,4 +218,68 @@ class MinecraftAuthServiceTest {
             assertEquals(0, starts.get());
         });
     }
+
+    @Test
+    void aPlayerWhoSignedOutIsNotSignedInAgainByAnyFeature() throws Exception {
+        withConfig(() -> {
+            var auth = new MinecraftAuthService();
+
+            auth.signOut();
+
+            org.junit.jupiter.api.Assertions.assertNull(auth.getCurrentSession());
+            assertTrue(auth.isSignedOutByUser());
+            // Raid profiles, achievements, ally raids and the Leaf stream all ask this way.
+            assertNotSignedIn(auth.ensureValidToken(false));
+            assertNotSignedIn(auth.ensureValidToken(true));
+            assertNotSignedIn(auth.beginAuthentication());
+            // A raid-profiles backend of its own would sign in separately.
+            assertNotSignedIn(auth.authenticateAgainst("https://staging.seqwawa.com/api"));
+            assertEquals(AuthState.IDLE, auth.getState());
+        });
+    }
+
+    @Test
+    void connectingExplicitlyEndsASignOut() throws Exception {
+        withConfig(() -> {
+            var auth = new MinecraftAuthService();
+            auth.signOut();
+
+            auth.allowSignIn();
+
+            assertFalse(auth.isSignedOutByUser());
+        });
+    }
+
+    @Test
+    void anAccountChangeLeavesTheNextAccountFreeToSignIn() throws Exception {
+        withConfig(() -> {
+            var auth = new MinecraftAuthService();
+            auth.signOut();
+
+            auth.clearSession();
+
+            assertFalse(auth.isSignedOutByUser(), "the next account signs in as usual");
+            org.junit.jupiter.api.Assertions.assertNull(auth.getCurrentSession());
+        });
+    }
+
+    @Test
+    void clearingOrInvalidatingASessionIsNotASignOut() throws Exception {
+        withConfig(() -> {
+            var auth = new MinecraftAuthService();
+
+            auth.clearSession();
+            assertFalse(auth.isSignedOutByUser());
+
+            SeqClient.configManager.setAuthSession(SESSION);
+            auth.invalidateSession(AuthErrorCode.TOKEN_INVALID, "Backend rejected the stored token.");
+            assertFalse(auth.isSignedOutByUser(), "a rejected token signs in afresh");
+        });
+    }
+
+    private static void assertNotSignedIn(CompletableFuture<?> future) {
+        assertTrue(future.isCompletedExceptionally(), "fails at once, without starting a sign-in");
+        var failure = assertThrows(java.util.concurrent.CompletionException.class, future::join);
+        org.junit.jupiter.api.Assertions.assertInstanceOf(NotSignedInException.class, failure.getCause());
+    }
 }

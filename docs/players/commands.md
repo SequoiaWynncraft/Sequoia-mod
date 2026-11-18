@@ -16,7 +16,7 @@ Press `O` or run `/seq` to open the menu. The sidebar links to the same screens.
 | `/seq disconnect` | Disconnect. |
 | `/seq status` | Show connection state. |
 | `/seq connected` | List users connected to the backend. |
-| `/seq logout` | Clear the backend session. |
+| `/seq logout` | Sign out of the backend. The mod stays signed out, without reconnecting, until you run `/seq connect`. |
 | `/seq update` | Check for an update and show the prompt. |
 | `/seq request aspects` | Request aspects from the guild reward queue. |
 | `/seq request tome <reason>` | Request a tome from the guild reward queue. |

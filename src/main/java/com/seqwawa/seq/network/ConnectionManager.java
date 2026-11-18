@@ -52,6 +52,7 @@ import com.seqwawa.seq.model.GuildWarSubmission;
 import com.seqwawa.seq.model.WynnClassType;
 import com.seqwawa.seq.network.auth.AuthErrorCode;
 import com.seqwawa.seq.network.auth.AuthException;
+import com.seqwawa.seq.network.auth.MinecraftAuthService;
 import com.seqwawa.seq.network.auth.UnlinkedAccountWarning;
 import com.seqwawa.seq.utils.WynnClassCache;
 
@@ -210,10 +211,14 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
     private void connectInternal(boolean userInitiated, boolean forceTokenRefresh) {
         if (userInitiated) {
             autoConnectSuppressedByManualDisconnect = false;
-            // Asking to connect ends any pause the backend caused.
+            // Asking to connect ends the player's own sign-out and any pause the backend caused.
             autoConnectPausedByBackend = false;
+            MinecraftAuthService auth = SeqClient.getAuthService();
+            if (auth != null) {
+                auth.allowSignIn();
+            }
         } else if (isAutomaticConnectSuppressed()) {
-            // A reconnect or recovery already under way when the backend refused us.
+            // A reconnect or recovery already under way when the player signed out or the backend refused us.
             SeqClient.LOGGER.info("[WebSocket] Skipping automatic connect until the player connects explicitly");
             return;
         }
@@ -595,9 +600,12 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
         return autoConnectSuppressedByManualDisconnect;
     }
 
-    /** Whether only an explicit connect may connect: the player disconnected, or the backend said no. */
+    /** Whether only an explicit connect may connect: the player disconnected or signed out, or the backend said no. */
     private static boolean isAutomaticConnectSuppressed() {
-        return autoConnectSuppressedByManualDisconnect || autoConnectPausedByBackend;
+        MinecraftAuthService auth = SeqClient.getAuthService();
+        return autoConnectSuppressedByManualDisconnect
+                || autoConnectPausedByBackend
+                || (auth != null && auth.isSignedOutByUser());
     }
 
     static void resetForTest() {
@@ -2453,10 +2461,22 @@ public class ConnectionManager extends WebSocketClient implements NotificationAc
 
     public void unlinkLocally() {
         pendingGuildWarEvents.clear();
-        disconnectInternal(false);
-        SeqClient.getAuthService().clearSession();
+        signOut();
         clearDiscordUsername();
-        notify("Backend session cleared.");
+        notify("Backend session cleared. Run /seq connect to sign in again.");
+    }
+
+    /**
+     * Signs the player out, as /seq logout and Clear session do: nothing reconnects or signs
+     * them back in until they connect explicitly. The session is marked signed out before the
+     * socket closes, so a reconnect already running cannot sign in again in between.
+     */
+    public void signOut() {
+        MinecraftAuthService auth = SeqClient.getAuthService();
+        if (auth != null) {
+            auth.signOut();
+        }
+        disconnectInternal(false);
     }
 
     private boolean canAttemptAuthNow() {
