@@ -76,8 +76,11 @@ final class LeafHeader {
         return QuestBoardScreen.formatCount(left) + " XP to go";
     }
 
-    /** The next level's badge at the end of the track, in art pixels. */
+    /** The next level's medal at the end of the track, and the disc inside its rim, in art pixels. */
     static final int NEXT = 16;
+    static final int NEXT_DISC = 9;
+    /** How faded the next level's medal is, until it is reached. */
+    static final float NEXT_FADE = 0.7f;
 
     static float xpRatio(LeafAccount.Level level) {
         if (level.xpForNextLevel() <= 0) return 0;
@@ -111,12 +114,12 @@ final class LeafHeader {
         float barWidth = tw - next - 3 * p;
         PixelArt.outlinedText(canvas, "SEQUOIA LEVEL", tx, y + 13 * p, 10, green, 1f, HorizontalAlign.LEFT);
         PixelArt.progressBar(canvas, tx, y + 19 * p, barWidth, 8 * p, p, xpRatio(level), green, 1f, 10);
+        // The next level's medal, a small copy of this one, faded until it is reached.
         float nextY = y + (23 - NEXT / 2) * p;
-        canvas.fillRect(nextX + p, nextY + p, next - 2 * p, next - 2 * p, color(CONTROL_INPUT));
-        PixelArt.pixelBorder(canvas, nextX, nextY, next, next, p, PixelArt.mix(green, color(BACKGROUND_POPUP), 0.35f));
+        PixelArt.sprite(canvas, "unlock_medal_mini_level", nextX, nextY, NEXT, p, NEXT_FADE);
         String nextLevel = Long.toString(level.number() + 1L);
-        float nextSize = PixelArt.measure(nextLevel, 20) <= next - 4 * p ? 20 : 10;
-        PixelArt.levelText(canvas, nextLevel, nextX + next / 2, nextY + next / 2 + 1, nextSize, 0.6f,
+        float nextSize = PixelArt.measure(nextLevel, 20) <= NEXT_DISC * p ? 20 : 10;
+        PixelArt.levelText(canvas, nextLevel, nextX + next / 2, nextY + next / 2 + 1, nextSize, NEXT_FADE,
                 HorizontalAlign.CENTER);
         PixelArt.text(canvas, xpLine(level), tx, y + 33 * p, 10, color(TEXT_SECONDARY), HorizontalAlign.LEFT);
         String toNext = toNextLine(level);
@@ -131,9 +134,11 @@ final class LeafHeader {
             PixelArt.outlinedText(canvas, "BALANCE", rx, y + 13 * p, 10, green, 1f, HorizontalAlign.RIGHT);
             float size = layout.balanceSize();
             float amountWidth = PixelArt.leafAmountWidth(amount, size, p);
-            PixelArt.leafAmount(canvas, amount, PixelArt.snap(rx - amountWidth, p), y + 23 * p, size, 1f, p);
+            // Large digits' ink sits above their middle, so the amount goes a little lower to clear the label.
+            PixelArt.leafAmount(canvas, amount, PixelArt.snap(rx - amountWidth, p), y + (size >= 30 ? 26 : 24) * p, size,
+                    1f, p);
             if (stale) {
-                PixelArt.text(canvas, STALE_NOTE, rx, y + 33 * p, 10, color(CONTROL_WARNING), HorizontalAlign.RIGHT);
+                PixelArt.text(canvas, STALE_NOTE, rx, y + 35 * p, 10, color(CONTROL_WARNING), HorizontalAlign.RIGHT);
             }
             return;
         }

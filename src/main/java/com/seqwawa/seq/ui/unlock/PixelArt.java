@@ -207,7 +207,11 @@ public final class PixelArt {
         outlinedText(canvas, amount, x, y, size, color(CONTROL_SUCCESS), a, HorizontalAlign.LEFT);
         float s = fontPixel(size);
         float leafX = Math.round(x + outlinedInkWidth(amount, size) + LEAF_GAP * s);
-        sprite(canvas, "leaf_glyph", leafX, leafTop(y, size), LEAF_GLYPH, s, a);
+        AssetManager.Asset leaf = asset("leaf_glyph");
+        // Not rounded to a whole UI pixel: the digits' rows fall on half pixels, which are whole screen pixels.
+        if (leaf != null && a > 0) {
+            canvas.drawImage(leaf.getImage(), leafX, leafTop(y, size), LEAF_GLYPH * s, LEAF_GLYPH * s, Math.min(1f, a));
+        }
         return leafX + LEAF_GLYPH * s;
     }
 
@@ -217,12 +221,13 @@ public final class PixelArt {
     }
 
     /**
-     * The Leaf's top for text centred on {@code y}, so its nine rows sit on the
-     * digits' seven and their outline. Measured in game at 10 and 30: the font's
-     * outlined digits start six font pixels less one UI pixel above {@code y}.
+     * The Leaf's top for text centred on {@code y}, so its first row of leaf sits
+     * on the digits' first row and its outline on theirs. Measured in game from the
+     * green rows of both at 10, 20 and 30: the digits' outline starts five font
+     * pixels less half a UI pixel above the middle, on a half pixel.
      */
     static float leafTop(float y, float size) {
-        return Math.round(y - 6 * fontPixel(size) + 1);
+        return Math.round(y) - 5 * fontPixel(size) + 0.5f;
     }
 
     /** UI pixels per pixel of the Minecraft font at {@code size}: 1 at 10, 2 at 20, 3 at 30. */

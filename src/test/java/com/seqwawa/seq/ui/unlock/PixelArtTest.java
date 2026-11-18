@@ -25,9 +25,9 @@ class PixelArtTest {
         assertEquals(1, PixelArt.fontPixel(10));
         assertEquals(2, PixelArt.fontPixel(20));
         assertEquals(3, PixelArt.fontPixel(30));
-        // Where the outlined digits' ink starts, measured in game: 5 above the middle at 10, 17 at 30.
-        assertEquals(95, PixelArt.leafTop(100, 10));
-        assertEquals(89, PixelArt.leafTop(100, 20));
-        assertEquals(83, PixelArt.leafTop(100, 30));
+        // Where the outlined digits' ink starts, measured in game: on half pixels, 4.5 above the middle at 10.
+        assertEquals(95.5f, PixelArt.leafTop(100, 10));
+        assertEquals(90.5f, PixelArt.leafTop(100, 20));
+        assertEquals(85.5f, PixelArt.leafTop(100, 30));
     }
 }
